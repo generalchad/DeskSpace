@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+authors = ["DeskSpace contributors"]
+repository = "https://github.com/deskspace/deskspace"
+homepage = "https://github.com/deskspace/deskspace"
+description = "A free and open-source desktop space organizer for Windows"
+
+[workspace.dependencies]
+deskspace-core = { path = "crates/deskspace-core" }
+deskspace-config = { path = "crates/deskspace-config" }
+deskspace-platform = { path = "crates/deskspace-platform" }
+
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+directories = "6"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+windows = "0.62"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

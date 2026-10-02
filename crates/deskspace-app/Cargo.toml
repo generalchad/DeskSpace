@@ -1,0 +1,22 @@
+[package]
+name = "deskspace-app"
+description = "DeskSpace desktop application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "deskspace"
+path = "src/main.rs"
+
+[dependencies]
+deskspace-core.workspace = true
+deskspace-config.workspace = true
+deskspace-platform.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
