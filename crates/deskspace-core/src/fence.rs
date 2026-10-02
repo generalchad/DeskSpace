@@ -49,6 +49,15 @@ impl space {
         Rect::new(self.rect.x, self.rect.y, self.rect.width, self.title_height)
     }
 
+    /// The area the space occupies on screen: only the title bar while rolled up.
+    pub fn visible_rect(&self) -> Rect {
+        if self.rolled_up {
+            self.title_bar()
+        } else {
+            self.rect
+        }
+    }
+
     pub fn content_rect(&self) -> Rect {
         if self.rolled_up {
             return Rect::new(
@@ -110,5 +119,22 @@ impl space {
 
     pub fn set_position(&mut self, origin: Point) {
         self.rect = self.rect.with_position(origin);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rolled_up_space_collapses_to_title_bar() {
+        let mut space = space::new(spaceId(1), "F", Rect::new(10, 20, 200, 300));
+        assert_eq!(space.visible_rect(), space.rect);
+        space.rolled_up = true;
+        assert_eq!(
+            space.visible_rect(),
+            Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
+        );
+        assert!(space.content_rect().is_empty());
     }
 }
