@@ -1,3 +1,4 @@
+mod console;
 pub mod desktop_shell;
 pub mod dpi;
 pub mod hotkey;

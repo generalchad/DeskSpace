@@ -100,6 +100,13 @@ impl App {
         self.dispatch(Command::SetspaceRect { id, rect })
     }
 
+    fn end_drag(&mut self) {
+        if !matches!(self.drag, Drag::None) {
+            self.drag = Drag::None;
+            self.save();
+        }
+    }
+
     fn save(&self) {
         if let Err(error) = self.store.save(&self.config) {
             tracing::error!(%error, "failed to persist configuration");
@@ -161,16 +168,14 @@ impl EventHandler for App {
             WindowEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
-            } => {
-                if !matches!(self.drag, Drag::None) {
-                    self.drag = Drag::None;
-                    self.save();
-                }
             }
+            | WindowEvent::CaptureLost => self.end_drag(),
             WindowEvent::DoubleClick { x, y } => {
                 if let Some(id) = self.config.desktop.space_at(Point::new(x, y)) {
                     self.selected = Some(id);
-                    self.dispatch(Command::ToggleRollup { id });
+                    if self.dispatch(Command::ToggleRollup { id }) {
+                        self.save();
+                    }
                     ctx.request_repaint();
                 }
             }
