@@ -40,11 +40,12 @@ the first usable release (v0.2).
 
 - Initial framework committed as `b90b2ef`.
 - `cargo build`, `cargo clippy --workspace --all-targets`, and
-  `cargo test --workspace` (23 tests) are green.
+  `cargo test --workspace` (32 tests) are green.
 - The binary runs: it creates a borderless layered overlay, seeds a `Desktop`
   space from the user's desktop folder, renders spaces with GDI, supports
-  dragging spaces by the title bar, roll-up via double-click, a global toggle
-  hotkey, and TOML persistence.
+  dragging spaces by the title bar (with mouse capture), roll-up via
+  double-click, a global toggle hotkey, and TOML persistence with an orderly
+  save on exit.
 - It does not yet integrate with the real desktop icon layer, does not support
   portals, auto-hide, resizing, context menus, a tray, or a settings UI. See
   the parity matrix in section 9.
@@ -126,8 +127,9 @@ space {
 }
 ```
 
-Helpers: `title_bar()`, `content_rect()` (empty when rolled up), item
-lookup/insert/remove, and `required_size` / `resize_to_fit`.
+Helpers: `title_bar()`, `visible_rect()` (the title bar when rolled up, else
+`rect`; used for rendering and hit-testing), `content_rect()` (empty when
+rolled up), item lookup/insert/remove, and `required_size` / `resize_to_fit`.
 
 ### Desktop
 
@@ -136,7 +138,9 @@ Desktop { spaces: Vec<space>, layout: GridSpec }
 ```
 
 Operations: add/remove space, add/remove/move item, `item_count`,
-`space_at(point)` (topmost hit test), `sort_by_id`.
+`space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`.
+`move_item` validates the target before removing the item, so a failed move
+never loses it.
 
 ### Layout engine (`layout.rs`)
 
@@ -185,13 +189,22 @@ WindowSettings {
 }
 ```
 
-- `CURRENT_VERSION = 1`. `Config::migrate` currently only backfills version 0.
+- `CURRENT_VERSION = 1`. `Config::migrate` currently only backfills version 0;
+  a missing `version` key deserializes as 0.
+- `WindowSettings`, `GridSpec`, and `Theme` use struct-level
+  `#[serde(default)]`, and `Item.kind` / `Item.position` default, so partial
+  tables fill in defaults instead of failing the whole file.
 - `ConfigStore` resolves its path via `directories::ProjectDirs` (Roaming
   AppData on Windows; the exact path is machine-specific) with file name
   `deskspace.toml`, or accepts an explicit path.
 - `save` writes to a sibling `*.toml.tmp` then renames, so a crash never
   truncates the config.
-- `load_or_default` logs a warning and falls back to defaults on a corrupt file.
+- `load_or_default` returns defaults when no file exists. If the file cannot be
+  parsed, it copies it to `deskspace.toml.unreadable-<millis>.bak` before
+  falling back to defaults; a file from a newer version is loaded but copied to
+  `*.newer-<millis>.bak` first, because saving would drop unknown fields.
+  `--reset` copies the existing file to `*.reset-<millis>.bak` and refuses to
+  start if that copy fails.
 
 ## 6. Platform layer (`deskspace-platform`)
 
@@ -200,11 +213,27 @@ WindowSettings {
 - `WindowConfig { title, x, y, width, height, placement, click_through,
   color_key, visible }`.
 - `Placement { TopLevel (default), DesktopBackground, DesktopForeground }`.
-- `DesktopWindow::create(config, handler)` registers a window class (once),
-  creates the window, stores a `Box<WindowState>` behind `GWLP_USERDATA`, and
-  returns a handle. `run(self)` pumps messages until `WM_QUIT`.
+- `DesktopWindow::create(config, handler)` registers a window class (once,
+  with `CS_DBLCLKS` so double-clicks are delivered), creates the window, stores
+  a `Box<WindowState>` behind `GWLP_USERDATA`, and returns a handle.
+  `run(self)` pumps messages until `WM_QUIT` (returning an error if
+  `GetMessageW` fails) and, while running, installs a console control handler
+  (`win32/console.rs`) that turns Ctrl+C, Ctrl+Break, and console close into
+  `WM_CLOSE`. It waits up to 4.5 s for the loop to finish so the save
+  completes before Windows terminates the process.
 - `WindowState` owns the `Box<dyn EventHandler>` and the `Painter`; it is freed
-  exactly once in `WM_NCDESTROY`.
+  exactly once, in `WM_NCDESTROY` or, if that arrives while the handler is
+  running, by the outermost `dispatch` afterwards.
+- Re-entrancy: Win32 calls made from the handler (`ShowWindow`,
+  `SetWindowPos`, modal loops) re-enter `wndproc`. `dispatch` moves the
+  handler and painter out of the state while the handler runs, so no two
+  `&mut WindowState` coexist. Nested events are queued and delivered when the
+  handler returns. A nested `WM_PAINT` is validated and replayed as a repaint
+  afterwards.
+- Mouse capture: any button-down calls `SetCapture`; the last button-up
+  releases it. Losing capture to another window emits `CaptureLost`.
+- `WM_ENDSESSION` (top-level windows only) emits `CloseRequested` so the app
+  saves at logoff/shutdown.
 - `EventHandler::on_event(WindowEvent, &mut WindowContext)` is the app's entry
   point. `WindowContext` exposes `hwnd`, size, color key, `paint(&Scene)`,
   `request_repaint`, and `show(bool)`.
@@ -246,7 +275,8 @@ WindowSettings {
 ### Events (`input.rs`)
 
 `WindowEvent`: `Created`, `Paint`, `Resized`, `MouseMove`, `MouseDown`,
-`MouseUp`, `MouseLeave` (declared, not currently emitted), `DoubleClick`,
+`MouseUp`, `MouseLeave` (declared, not currently emitted), `CaptureLost`,
+`DoubleClick`,
 `DpiChanged`, `Hotkey`, `Timer` (declared, no timer currently set),
 `VisibilityChanged` (declared, not emitted), `CloseRequested`.
 
@@ -263,14 +293,18 @@ WindowSettings {
 5. On `Paint`, the app builds a `Scene` from `Config.desktop` plus the icon
    cache and hands it to `Painter`.
 6. Mouse events hit-test spaces, drag by title bar via `SetspaceRect`, and
-   double-clicks toggle roll-up.
-7. On `CloseRequested`, the app unregisters the hotkey and saves the config.
+   double-clicks toggle roll-up. The config is saved when a drag ends
+   (`MouseUp` or `CaptureLost`) and after each roll-up toggle.
+7. On `CloseRequested` (window destroyed, console Ctrl+C/close, or session
+   end), the app unregisters the hotkey and saves the config.
 
 ## 8. Controls (current)
 
 - Drag a space title bar to move it (snaps to the grid).
 - Double-click a space to roll it up or down.
 - `Ctrl+Alt+D` (configurable in the config file) hides or shows the overlay.
+- Ctrl+C in, or closing, the console window exits and saves. There is no
+  in-app quit control yet.
 - CLI flags: `--config`, `--placement`, `--width`, `--height`, `--reset`,
   `--hidden`, `--no-icons`, `--click-through`, `-v`.
 
@@ -321,7 +355,9 @@ WindowSettings {
   rules, no "show as" modes.
 - **`WindowEvent` variants declared but unused** (`MouseLeave`, `Timer`,
   `VisibilityChanged`), and no `SetTimer` is installed.
-- **Auto-save only on close** (plus drag end). No periodic or on-change save.
+- **Auto-save only on close, drag end, and roll-up.** No debounced on-change
+  save. A desktop-hosted (child) window does not receive `WM_ENDSESSION`, so
+  logoff with a hosted placement relies on the last save.
 - **Icon cache has no eviction** and is never invalidated.
 - **Config is not yet migrated beyond version 0**, and `window.background_alpha`
   / `always_on_desktop` / `start_hidden` are not wired to behavior.
