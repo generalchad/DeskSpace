@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::Point;
 use crate::id::ItemId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ItemKind {
     File,
     Folder,
     Shortcut,
     Drive,
+    #[default]
     Other,
 }
 
@@ -37,7 +38,9 @@ pub struct Item {
     pub id: ItemId,
     pub path: PathBuf,
     pub label: String,
+    #[serde(default)]
     pub kind: ItemKind,
+    #[serde(default)]
     pub position: Point,
 }
 

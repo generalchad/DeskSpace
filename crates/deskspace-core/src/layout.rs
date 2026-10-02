@@ -4,6 +4,7 @@ use crate::space::{DEFAULT_TITLE_HEIGHT, space};
 use crate::geometry::{Point, Rect, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GridSpec {
     pub cell_width: i32,
     pub cell_height: i32,

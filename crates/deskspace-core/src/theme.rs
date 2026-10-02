@@ -59,6 +59,7 @@ impl Default for Color {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Theme {
     pub color_key: Color,
     pub background_fill: Color,

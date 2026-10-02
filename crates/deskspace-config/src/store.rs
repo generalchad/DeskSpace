@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use directories::ProjectDirs;
 
@@ -44,15 +45,61 @@ impl ConfigStore {
         Ok(config)
     }
 
+    /// Loads the configuration, falling back to defaults when there is no file.
+    ///
+    /// A file that cannot be parsed, or that was written by a newer version, is
+    /// copied aside first: the app saves on exit, and without the copy that save
+    /// would silently replace the user's layout with defaults or drop unknown
+    /// fields.
     pub fn load_or_default(&self) -> Config {
+        if !self.exists() {
+            return Config::new();
+        }
         match self.load() {
-            Ok(config) => config,
-            Err(error) => {
-                if self.exists() {
-                    tracing::warn!(%error, path = %self.path.display(), "using default configuration");
+            Ok(config) => {
+                if config.is_from_newer_version() {
+                    tracing::warn!(
+                        version = config.version,
+                        path = %self.path.display(),
+                        "configuration was written by a newer DeskSpace"
+                    );
+                    self.backup_logged("newer");
                 }
+                config
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %self.path.display(), "using default configuration");
+                self.backup_logged("unreadable");
                 Config::new()
             }
+        }
+    }
+
+    /// Copies the current file to `<file>.<reason>-<unix millis>.bak` beside it.
+    pub fn backup(&self, reason: &str) -> Result<PathBuf, ConfigError> {
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis())
+            .unwrap_or_default();
+        let file_name = self
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| FILE_NAME.to_string());
+        let target = self
+            .path
+            .with_file_name(format!("{file_name}.{reason}-{millis}.bak"));
+        std::fs::copy(&self.path, &target)
+            .map_err(|source| ConfigError::io(target.clone(), source))?;
+        Ok(target)
+    }
+
+    fn backup_logged(&self, reason: &str) {
+        match self.backup(reason) {
+            Ok(target) => {
+                tracing::warn!(backup = %target.display(), "previous configuration backed up")
+            }
+            Err(error) => tracing::error!(%error, "could not back up previous configuration"),
         }
     }
 
@@ -80,6 +127,14 @@ impl Default for ConfigStore {
 mod tests {
     use super::*;
 
+    fn backups_in(dir: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "bak"))
+            .collect()
+    }
+
     #[test]
     fn save_then_load_round_trips() {
         let dir = tempfile::tempdir().unwrap();
@@ -92,5 +147,41 @@ mod tests {
         assert!(store.exists());
         let loaded = store.load().unwrap();
         assert_eq!(loaded.desktop.spaces[0].title, "F");
+    }
+
+    #[test]
+    fn missing_file_loads_defaults_without_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConfigStore::with_path(dir.path().join("deskspace.toml"));
+        assert_eq!(store.load_or_default(), Config::new());
+        assert!(backups_in(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn unreadable_file_is_backed_up_before_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deskspace.toml");
+        std::fs::write(&path, "this is = = not toml").unwrap();
+        let store = ConfigStore::with_path(&path);
+
+        assert_eq!(store.load_or_default(), Config::new());
+
+        let backups = backups_in(dir.path());
+        assert_eq!(backups.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(&backups[0]).unwrap(),
+            "this is = = not toml"
+        );
+    }
+
+    #[test]
+    fn newer_file_is_backed_up_but_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deskspace.toml");
+        std::fs::write(&path, "version = 99\nfuture_field = true\n").unwrap();
+        let store = ConfigStore::with_path(&path);
+
+        assert_eq!(store.load_or_default().version, 99);
+        assert_eq!(backups_in(dir.path()).len(), 1);
     }
 }

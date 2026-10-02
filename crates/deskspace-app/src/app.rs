@@ -199,6 +199,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     let mut config = if cli.reset {
+        if store.exists() {
+            match store.backup("reset") {
+                Ok(path) => {
+                    tracing::info!(backup = %path.display(), "previous configuration backed up")
+                }
+                Err(error) => {
+                    anyhow::bail!(
+                        "refusing to reset: could not back up the existing configuration: {error}"
+                    )
+                }
+            }
+        }
         Config::new()
     } else {
         store.load_or_default()
