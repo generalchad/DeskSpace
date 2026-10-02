@@ -111,6 +111,9 @@ impl Desktop {
                 None => CommandOutcome::NotFound,
             },
             Command::MoveItem { id, target } => {
+                if self.item(id).is_none() || self.space(target).is_none() {
+                    return CommandOutcome::NotFound;
+                }
                 if self.move_item(id, target) {
                     self.rearrange(target);
                     CommandOutcome::Applied
@@ -194,6 +197,31 @@ mod tests {
             CommandOutcome::Rejected
         );
         assert_eq!(desktop.space(id).unwrap().rect.x, 0);
+    }
+
+    #[test]
+    fn move_item_to_missing_space_is_not_found_and_keeps_item() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.apply(
+            Command::AddItem {
+                space: id,
+                path: "file.txt".into(),
+            },
+            bounds(),
+        );
+        let item = desktop.spaces[0].items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::MoveItem {
+                    id: item,
+                    target: spaceId(999),
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+        assert_eq!(desktop.item_count(), 1);
     }
 
     #[test]

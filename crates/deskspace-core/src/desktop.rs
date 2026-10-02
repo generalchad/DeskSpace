@@ -91,18 +91,20 @@ impl Desktop {
         None
     }
 
+    /// Moves `item` into `target`. Returns `false` without changing anything if
+    /// the item or the target space does not exist, or the item is already there.
     pub fn move_item(&mut self, item: ItemId, target: spaceId) -> bool {
-        if self.space_containing(item) == Some(target) {
+        let Some(target_index) = self.spaces.iter().position(|space| space.id == target) else {
+            return false;
+        };
+        if self.spaces[target_index].contains_item(item) {
             return false;
         }
         let Some(mut moved) = self.remove_item(item) else {
             return false;
         };
-        let Some(space) = self.space_mut(target) else {
-            return false;
-        };
         moved.position = crate::geometry::Point::ZERO;
-        space.push_item(moved);
+        self.spaces[target_index].push_item(moved);
         true
     }
 
@@ -114,7 +116,7 @@ impl Desktop {
         self.spaces
             .iter()
             .rev()
-            .find(|space| space.rect.contains(point))
+            .find(|space| space.visible_rect().contains(point))
             .map(|space| space.id)
     }
 
@@ -148,5 +150,28 @@ mod tests {
         assert_eq!(desktop.space_containing(item_id), Some(a));
         assert!(desktop.move_item(item_id, b));
         assert_eq!(desktop.space_containing(item_id), Some(b));
+    }
+
+    #[test]
+    fn move_item_to_missing_space_keeps_item() {
+        let mut desktop = Desktop::new();
+        let a = desktop.add_space("A", Rect::ZERO);
+        let item = Item::new(desktop.next_item_id(), "file.txt");
+        let item_id = item.id;
+        desktop.add_item(a, item);
+        assert!(!desktop.move_item(item_id, spaceId(999)));
+        assert_eq!(desktop.space_containing(item_id), Some(a));
+    }
+
+    #[test]
+    fn rolled_up_space_is_only_hit_on_its_title_bar() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 200, 200));
+        desktop.space_mut(id).unwrap().rolled_up = true;
+        assert_eq!(
+            desktop.space_at(crate::geometry::Point::new(10, 10)),
+            Some(id)
+        );
+        assert_eq!(desktop.space_at(crate::geometry::Point::new(10, 100)), None);
     }
 }

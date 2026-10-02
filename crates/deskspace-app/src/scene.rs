@@ -19,7 +19,7 @@ pub fn build_scene(request: &SceneRequest<'_>, icons: &mut IconCache) -> Scene {
     for space in &request.desktop.spaces {
         let mut visual = spaceVisual {
             id: space.id.0,
-            rect: space.rect,
+            rect: space.visible_rect(),
             title: space.title.clone(),
             title_rect: space.title_bar(),
             content_rect: space.content_rect(),
