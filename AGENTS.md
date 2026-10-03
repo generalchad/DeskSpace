@@ -27,6 +27,10 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 | Lint   | `cargo clippy --workspace --all-targets` |
 | Format | `cargo fmt --all` |
 | Release| `cargo build --release` |
+| Dev loop | `./scripts/dev.ps1` (scratch config; `-Fresh`, `-OnTop`, `-Settings`, `-Check`, `-Release`; `Get-Help ./scripts/dev.ps1`) |
+
+`scripts/dev.ps1` stops any DeskSpace running from `target\` before building,
+because the running executable is locked.
 
 Always run `cargo fmt --all`, `cargo clippy --workspace --all-targets`, and
 `cargo test --workspace` before considering a change complete. CI should treat
