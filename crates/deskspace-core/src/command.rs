@@ -8,6 +8,7 @@ use crate::layout::{
     arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions, snap_rect,
 };
 use crate::space::ResizeEdges;
+use crate::theme::Color;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -40,6 +41,21 @@ pub enum Command {
     /// Drops a user size so the space grows to fit its items again.
     FitToContents {
         id: SpaceId,
+    },
+    /// Per-space tint alpha multiplier (255 keeps the theme's).
+    SetSpaceOpacity {
+        id: SpaceId,
+        opacity: u8,
+    },
+    /// Per-space body tint override; `None` returns to the theme's tint.
+    SetSpaceTint {
+        id: SpaceId,
+        tint: Option<Color>,
+    },
+    /// Per-space title and label text override; `None` returns to the theme's.
+    SetSpaceText {
+        id: SpaceId,
+        text: Option<Color>,
     },
     ToggleLock {
         id: SpaceId,
@@ -152,6 +168,27 @@ impl Desktop {
                 space.rect = clamp_to_bounds(space.rect, bounds);
                 CommandOutcome::Applied
             }
+            Command::SetSpaceOpacity { id, opacity } => match self.space_mut(id) {
+                Some(space) => {
+                    space.opacity = opacity;
+                    CommandOutcome::Applied
+                }
+                None => CommandOutcome::NotFound,
+            },
+            Command::SetSpaceTint { id, tint } => match self.space_mut(id) {
+                Some(space) => {
+                    space.tint = tint;
+                    CommandOutcome::Applied
+                }
+                None => CommandOutcome::NotFound,
+            },
+            Command::SetSpaceText { id, text } => match self.space_mut(id) {
+                Some(space) => {
+                    space.text = text;
+                    CommandOutcome::Applied
+                }
+                None => CommandOutcome::NotFound,
+            },
             Command::ToggleLock { id } => match self.space_mut(id) {
                 Some(space) => {
                     space.locked = !space.locked;

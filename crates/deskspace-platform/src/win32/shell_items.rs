@@ -21,10 +21,9 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, GA_ROOT,
-    GetAncestor, GetClassNameW, GetCursorPos, MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_SEPARATOR,
-    MF_STRING, PostMessageW, SW_SHOWNORMAL, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenuEx, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL,
-    WindowFromPoint,
+    GetAncestor, GetClassNameW, GetCursorPos, MF_SEPARATOR, PostMessageW, SW_SHOWNORMAL,
+    SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, WM_DRAWITEM,
+    WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL, WindowFromPoint,
 };
 use windows::core::{Interface, PCSTR, PCWSTR};
 
@@ -143,7 +142,7 @@ pub(crate) fn track_item_menu(
     // is kept alive in ACTIVE_MENU while tracking and released afterwards.
     unsafe {
         let menu = CreatePopupMenu().ok()?;
-        append_entries(menu, entries);
+        crate::win32::menu::append_entries(menu, entries);
         if let Some(shell_menu) = &shell_menu {
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let index = entries.len() as u32 + 1;
@@ -191,38 +190,6 @@ pub(crate) fn track_item_menu(
         };
         let _ = DestroyMenu(menu);
         choice
-    }
-}
-
-unsafe fn append_entries(
-    menu: windows::Win32::UI::WindowsAndMessaging::HMENU,
-    entries: &[MenuEntry],
-) {
-    for entry in entries {
-        // SAFETY: `menu` is a live menu; labels outlive the calls.
-        unsafe {
-            match entry {
-                MenuEntry::Separator => {
-                    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-                }
-                MenuEntry::Item {
-                    id,
-                    label,
-                    checked,
-                    enabled,
-                } => {
-                    let mut flags: MENU_ITEM_FLAGS = MF_STRING;
-                    if *checked {
-                        flags |= MF_CHECKED;
-                    }
-                    if !*enabled {
-                        flags |= MF_GRAYED;
-                    }
-                    let text = wide(label);
-                    let _ = AppendMenuW(menu, flags, *id as usize, PCWSTR(text.as_ptr()));
-                }
-            }
-        }
     }
 }
 

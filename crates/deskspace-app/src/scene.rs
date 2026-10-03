@@ -73,17 +73,26 @@ pub fn space_scene(
             .collect()
     };
 
+    // A per-space tint keeps the theme's alpha; text overrides the title and
+    // label color together.
+    let tint = space
+        .tint
+        .map_or(palette.tint, |color| color.with_alpha(palette.tint.a))
+        .fade(space.opacity);
+    let title_text = space.text.unwrap_or(palette.title_text);
+    let item_text = space.text.unwrap_or(palette.item_text);
+
     SpaceScene {
         title: space.title.clone(),
         title_height: space.title_height,
-        tint: palette.tint.fade(space.opacity),
+        tint,
         title_fill: palette.title_fill,
-        title_text: palette.title_text,
-        item_text: palette.item_text,
+        title_text,
+        item_text,
         hover_fill: palette.hover_fill,
         selected_fill: palette.selected_fill,
         border: palette.border,
-        text_shadow: text_shadow(palette, space.opacity),
+        text_shadow: text_shadow(item_text, tint),
         locked: space.locked,
         rolled_up: space.rolled_up,
         editing: None,
@@ -100,12 +109,13 @@ pub fn space_scene(
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
 /// A dark shadow under light text (or a light one under dark text) when the
-/// space is nearly transparent, like the labels of desktop icons.
-fn text_shadow(palette: &Palette, opacity: u8) -> Option<Color> {
-    if palette.tint.fade(opacity).a >= TEXT_SHADOW_BELOW_ALPHA {
+/// space is nearly transparent, like the labels of desktop icons. `text` and
+/// `tint` are the space's effective colors, after any per-space overrides.
+fn text_shadow(text: Color, tint: Color) -> Option<Color> {
+    if tint.a >= TEXT_SHADOW_BELOW_ALPHA {
         return None;
     }
-    Some(if palette.item_text.luminance() > 0.5 {
+    Some(if text.luminance() > 0.5 {
         Color::rgba(0, 0, 0, 170)
     } else {
         Color::rgba(255, 255, 255, 140)
@@ -215,6 +225,27 @@ mod tests {
         assert_eq!(scene.tint.a, palette.tint.fade(128).a);
     }
 
+    #[test]
+    fn per_space_appearance_overrides_the_palette() {
+        let mut space = space();
+        space.tint = Some(Color::rgb(10, 20, 30));
+        space.text = Some(Color::rgb(1, 2, 3));
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let scene = space_scene(
+            &space,
+            &theme,
+            &palette,
+            GridSpec::default(),
+            ViewState::default(),
+            &mut IconCache::new(32),
+        );
+        assert_eq!(scene.tint.r, 10);
+        assert_eq!(scene.tint.a, palette.tint.a);
+        assert_eq!(scene.title_text, Color::rgb(1, 2, 3));
+        assert_eq!(scene.item_text, Color::rgb(1, 2, 3));
+    }
+
     fn tall_space() -> Space {
         let layout = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "Tall", Rect::new(0, 0, 240, 200));
@@ -305,13 +336,18 @@ mod tests {
             ..Theme::default()
         };
         let dark = clear.palette(true);
-        assert_eq!(text_shadow(&dark, 255).map(|c| c.r), Some(0));
         assert_eq!(
-            text_shadow(&clear.palette(false), 255).map(|c| c.r),
+            text_shadow(dark.item_text, dark.tint.fade(255)).map(|c| c.r),
+            Some(0)
+        );
+        let light = clear.palette(false);
+        assert_eq!(
+            text_shadow(light.item_text, light.tint.fade(255)).map(|c| c.r),
             Some(255)
         );
-        assert_eq!(text_shadow(&Theme::default().palette(true), 255), None);
+        let default = Theme::default().palette(true);
+        assert_eq!(text_shadow(default.item_text, default.tint.fade(255)), None);
         // A low per-space opacity makes an otherwise opaque tint transparent.
-        assert!(text_shadow(&Theme::default().palette(true), 20).is_some());
+        assert!(text_shadow(default.item_text, default.tint.fade(20)).is_some());
     }
 }

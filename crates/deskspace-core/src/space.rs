@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
+use crate::theme::Color;
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
 
@@ -20,6 +21,14 @@ pub struct Space {
     /// Per-space multiplier on the theme's tint alpha; 255 keeps the theme's.
     #[serde(default = "default_opacity")]
     pub opacity: u8,
+    /// Per-space override of the body tint color (its alpha comes from the
+    /// theme). `None` uses the theme's tint.
+    #[serde(default)]
+    pub tint: Option<Color>,
+    /// Per-space override of the title and label text color. `None` uses the
+    /// theme's.
+    #[serde(default)]
+    pub text: Option<Color>,
     #[serde(default = "default_title_height")]
     pub title_height: i32,
     /// Set once the user resizes the space. A user-sized space keeps its
@@ -69,6 +78,8 @@ impl Space {
             locked: false,
             rolled_up: false,
             opacity: default_opacity(),
+            tint: None,
+            text: None,
             title_height: default_title_height(),
             user_sized: false,
         }

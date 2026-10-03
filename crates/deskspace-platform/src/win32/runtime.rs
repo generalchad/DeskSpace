@@ -289,6 +289,18 @@ impl Ui {
         }
     }
 
+    /// Opens the system color picker and returns the chosen color. Blocks in a
+    /// modal loop; other events are queued meanwhile.
+    pub fn pick_color(
+        &mut self,
+        initial: deskspace_core::theme::Color,
+    ) -> Option<deskspace_core::theme::Color> {
+        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))?;
+        // SAFETY: `owner` is a live window owned by this thread, and the picker
+        // is modal for the duration of the call.
+        unsafe { settings_window::pick_color(owner, initial) }
+    }
+
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen
     /// entry id. Blocks in a modal loop; other events are queued meanwhile.
     pub fn popup_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<u32> {

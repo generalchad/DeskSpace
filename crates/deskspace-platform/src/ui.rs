@@ -28,6 +28,12 @@ pub enum MenuEntry {
         enabled: bool,
     },
     Separator,
+    /// A nested menu. Its own entries carry the ids.
+    Submenu {
+        label: String,
+        entries: Vec<MenuEntry>,
+        enabled: bool,
+    },
 }
 
 impl MenuEntry {
@@ -36,6 +42,14 @@ impl MenuEntry {
             id,
             label: label.into(),
             checked: false,
+            enabled: true,
+        }
+    }
+
+    pub fn submenu(label: impl Into<String>, entries: Vec<MenuEntry>) -> Self {
+        Self::Submenu {
+            label: label.into(),
+            entries,
             enabled: true,
         }
     }
@@ -49,6 +63,25 @@ impl MenuEntry {
                 label,
                 checked: value,
                 enabled,
+            },
+            other => other,
+        }
+    }
+
+    pub fn enabled(self, value: bool) -> Self {
+        match self {
+            Self::Item {
+                id, label, checked, ..
+            } => Self::Item {
+                id,
+                label,
+                checked,
+                enabled: value,
+            },
+            Self::Submenu { label, entries, .. } => Self::Submenu {
+                label,
+                entries,
+                enabled: value,
             },
             Self::Separator => Self::Separator,
         }
@@ -283,6 +316,38 @@ mod tests {
         let c = form(vec![Field::text(1, "A", "x")]);
         assert!(a.same_shape(&b));
         assert!(!a.same_shape(&c));
+    }
+
+    #[test]
+    fn submenus_hold_their_own_entries_and_toggle_state() {
+        let submenu = MenuEntry::submenu(
+            "Appearance",
+            vec![MenuEntry::item(1, "Opaque").checked(true)],
+        );
+        match &submenu {
+            MenuEntry::Submenu {
+                label,
+                entries,
+                enabled,
+            } => {
+                assert_eq!(label, "Appearance");
+                assert_eq!(entries.len(), 1);
+                assert!(*enabled);
+            }
+            other => panic!("expected a submenu, got {other:?}"),
+        }
+        // `checked` is a no-op on a submenu; `enabled` applies to it.
+        assert!(matches!(
+            submenu.clone().checked(false),
+            MenuEntry::Submenu {
+                entries,
+                ..
+            } if matches!(entries[0], MenuEntry::Item { checked: true, .. })
+        ));
+        assert!(matches!(
+            submenu.enabled(false),
+            MenuEntry::Submenu { enabled: false, .. }
+        ));
     }
 
     #[test]

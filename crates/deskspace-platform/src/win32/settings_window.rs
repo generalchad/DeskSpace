@@ -1304,7 +1304,7 @@ unsafe fn on_field_command(window: HWND, id: usize, code: u32, control: HWND) {
 
 /// Opens the system color picker. Modal: messages for other windows keep
 /// flowing while it is open.
-unsafe fn pick_color(owner: HWND, initial: Color) -> Option<Color> {
+pub(crate) unsafe fn pick_color(owner: HWND, initial: Color) -> Option<Color> {
     let mut custom = CUSTOM_COLORS.with(|colors| *colors.borrow());
     let mut choose = CHOOSECOLORW {
         lStructSize: std::mem::size_of::<CHOOSECOLORW>() as u32,

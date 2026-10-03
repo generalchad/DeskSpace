@@ -87,6 +87,11 @@ started).
   stream; the app owns the edit buffer and the painter draws the selection and
   caret. Enter commits, Escape cancels, clicking away commits. IME composition
   and clipboard are not supported yet.
+- **Per-space appearance and menu submenus (F-24).** The space menu's
+  Appearance submenu sets an opacity preset and opens the system color picker
+  for a tint or text override, with a reset; `Space::tint` and `Space::text`
+  are optional overrides applied by the scene builder. `MenuEntry` gained
+  submenus (shared by the space and item menus).
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -186,7 +191,8 @@ are drawn and interactive, and dragging moves real files with undo.
   `snap_grid` remain.
 - Hotkey editor and additional bindings (`F-18` partial). **[partial]** The
   toggle hotkey is editable as text with validation and conflict reporting.
-- Per-space appearance overrides (tint, opacity) from the space menu.
+- **[done]** Per-space appearance overrides (opacity, tint, text) from the
+  space menu's Appearance submenu.
 - **[done]** Dark-mode settings window and menus, following Windows' app
   mode (undocumented uxtheme app mode for menus, Explorer's dark control
   styles, a custom-painted tab strip). The message box and color picker stay
@@ -294,8 +300,8 @@ milestone that already builds what it depends on. Global settings go in
 `#[serde(default)]` fields. All of them are changed through `Command`s.
 
 Appearance:
-- **F-24** Per-space colors and opacity: tint, text, and opacity overrides
-  from the space menu (M3; `Space::opacity` exists already).
+- **[done] F-24** Per-space colors and opacity: tint, text, and opacity
+  overrides from the space menu's Appearance submenu (M3).
 - **F-25** Icon size: small, medium, large, and extra large, globally and per
   space. Needs the jumbo-icon enumeration from M2 and DPI-aware layout. Lens
   icon sizes (F-09) share the setting (M2/M4).
@@ -362,7 +368,7 @@ Behavior:
 | F-21 | Auto-consolidate new icons | M7 | Open |
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
-| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally (clear glass, corner slider); per-space open |
+| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally and per space (menu: opacity, tint, text) |
 | F-25 | Icon size | M2/M4 | Open (polled) |
 | F-26 | Grid density | M3 | Open (polled) |
 | F-27 | Label style | M3 | Open (polled) |

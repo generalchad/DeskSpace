@@ -40,6 +40,14 @@ mod menu {
     pub const FIT: u32 = 8;
     pub const REMOVE_ITEM: u32 = 9;
     pub const RENAME: u32 = 10;
+    pub const OPACITY_100: u32 = 20;
+    pub const OPACITY_80: u32 = 21;
+    pub const OPACITY_60: u32 = 22;
+    pub const OPACITY_40: u32 = 23;
+    pub const OPACITY_20: u32 = 24;
+    pub const SPACE_TINT: u32 = 25;
+    pub const SPACE_TEXT: u32 = 26;
+    pub const RESET_APPEARANCE: u32 = 27;
 }
 
 enum Drag {
@@ -355,6 +363,73 @@ impl App {
     fn cancel_edit(&mut self, ui: &mut Ui) {
         if self.edit.is_some() {
             self.finish_rename(ui, false);
+        }
+    }
+
+    // ---- per-space appearance ------------------------------------------
+
+    fn set_space_opacity(&mut self, ui: &mut Ui, id: SpaceId, opacity: u8, at: Point) {
+        if self.dispatch(Command::SetSpaceOpacity { id, opacity }, at) {
+            self.refresh_space(ui, id);
+            self.schedule_save(ui);
+        }
+    }
+
+    fn pick_space_tint(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let palette = self.config.theme.palette(self.system_dark);
+        let Some(current) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| space.tint.unwrap_or(palette.tint).with_alpha(255))
+        else {
+            return;
+        };
+        if let Some(color) = ui.pick_color(current) {
+            if self.dispatch(
+                Command::SetSpaceTint {
+                    id,
+                    tint: Some(color),
+                },
+                at,
+            ) {
+                self.refresh_space(ui, id);
+                self.schedule_save(ui);
+            }
+        }
+    }
+
+    fn pick_space_text(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let palette = self.config.theme.palette(self.system_dark);
+        let Some(current) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| space.text.unwrap_or(palette.title_text))
+        else {
+            return;
+        };
+        if let Some(color) = ui.pick_color(current) {
+            if self.dispatch(
+                Command::SetSpaceText {
+                    id,
+                    text: Some(color),
+                },
+                at,
+            ) {
+                self.refresh_space(ui, id);
+                self.schedule_save(ui);
+            }
+        }
+    }
+
+    fn reset_space_appearance(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let opacity = self.dispatch(Command::SetSpaceOpacity { id, opacity: 255 }, at);
+        let tint = self.dispatch(Command::SetSpaceTint { id, tint: None }, at);
+        let text = self.dispatch(Command::SetSpaceText { id, text: None }, at);
+        if opacity && tint && text {
+            self.refresh_space(ui, id);
+            self.schedule_save(ui);
         }
     }
 
@@ -858,6 +933,9 @@ impl App {
         if space.user_sized && !space.locked {
             entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
         }
+        entries.push(MenuEntry::Separator);
+        entries.push(space_appearance_menu(space));
+        entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
         let delete = if delete_needs_confirmation(space) {
             "Delete space\u{2026}"
@@ -890,6 +968,14 @@ impl App {
                     self.schedule_save(ui);
                 }
             }
+            Some(menu::OPACITY_100) => self.set_space_opacity(ui, id, 255, at),
+            Some(menu::OPACITY_80) => self.set_space_opacity(ui, id, 204, at),
+            Some(menu::OPACITY_60) => self.set_space_opacity(ui, id, 153, at),
+            Some(menu::OPACITY_40) => self.set_space_opacity(ui, id, 102, at),
+            Some(menu::OPACITY_20) => self.set_space_opacity(ui, id, 51, at),
+            Some(menu::SPACE_TINT) => self.pick_space_tint(ui, id, at),
+            Some(menu::SPACE_TEXT) => self.pick_space_text(ui, id, at),
+            Some(menu::RESET_APPEARANCE) => self.reset_space_appearance(ui, id, at),
             Some(choice) => self.run_common_menu(ui, choice, at),
             None => {}
         }
@@ -1192,6 +1278,31 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
     } else {
         DoubleClickTarget::Nothing
     }
+}
+
+/// The "Appearance" submenu for a space: opacity presets, custom tint and
+/// text colors, and a reset to the theme.
+fn space_appearance_menu(space: &Space) -> MenuEntry {
+    const OPACITIES: [(u32, &str, u8); 5] = [
+        (menu::OPACITY_100, "Opacity 100%", 255),
+        (menu::OPACITY_80, "Opacity 80%", 204),
+        (menu::OPACITY_60, "Opacity 60%", 153),
+        (menu::OPACITY_40, "Opacity 40%", 102),
+        (menu::OPACITY_20, "Opacity 20%", 51),
+    ];
+    let mut entries: Vec<MenuEntry> = OPACITIES
+        .iter()
+        .map(|(id, label, value)| MenuEntry::item(*id, *label).checked(space.opacity == *value))
+        .collect();
+    entries.push(MenuEntry::Separator);
+    entries.push(
+        MenuEntry::item(menu::SPACE_TINT, "Custom tint\u{2026}").checked(space.tint.is_some()),
+    );
+    entries.push(
+        MenuEntry::item(menu::SPACE_TEXT, "Custom text\u{2026}").checked(space.text.is_some()),
+    );
+    entries.push(MenuEntry::item(menu::RESET_APPEARANCE, "Reset appearance"));
+    MenuEntry::submenu("Appearance", entries)
 }
 
 /// Deleting an empty space loses nothing, so it happens without asking.

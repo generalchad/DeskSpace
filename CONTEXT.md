@@ -146,6 +146,8 @@ Space {
     locked: bool,
     rolled_up: bool,
     opacity: u8,          // multiplier on the theme's tint alpha, default 255
+    tint: Option<Color>,  // body tint override; None uses the theme
+    text: Option<Color>,  // title/label text override; None uses the theme
     title_height: i32,    // default 28
     user_sized: bool,     // set by a resize; keeps size, reflows, scrolls
 }
@@ -197,8 +199,9 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 (`Applied | NotFound | Rejected`). Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
-`ResizeSpace`, `FitToContents`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `AutoArrange`, `SnapAll`.
+`ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
+`SetSpaceText`, `ToggleLock`, `ToggleRollup`, `AddItem`, `RemoveItem`,
+`MoveItem`, `AutoArrange`, `SnapAll`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
@@ -454,8 +457,9 @@ WindowSettings {
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
 - Right-click a space: Roll up/down, Rename, Lock position, Fit to contents
-  (resized spaces only), Delete space (asks first unless the space is empty),
-  New space, Settings…, Hide/Show spaces, Exit DeskSpace.
+  (resized spaces only), Appearance (opacity presets, custom tint or text,
+  reset), Delete space (asks first unless the space is empty), New space,
+  Settings…, Hide/Show spaces, Exit DeskSpace.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
