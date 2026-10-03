@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
@@ -249,6 +249,19 @@ impl App {
             .desktop
             .space(id)
             .and_then(|space| space.item_at(point, cell, scroll))
+    }
+
+    /// The item holding the file at `path`, comparing identity rather than the
+    /// literal string so a shell-reported short name or case difference still
+    /// matches. A path in a space must be moved, not added again.
+    fn find_item_by_file(&self, path: &Path) -> Option<ItemId> {
+        self.config
+            .desktop
+            .spaces
+            .iter()
+            .flat_map(|space| space.items.iter())
+            .find(|item| crate::storage::same_path(&item.path, path))
+            .map(|item| item.id)
     }
 
     /// Pushes the space's current geometry and draw list to its window.
@@ -735,7 +748,7 @@ impl App {
     ) {
         let mut touched = HashSet::from([target]);
         for path in paths {
-            let command = match self.config.desktop.item_with_path(&path) {
+            let command = match self.find_item_by_file(&path) {
                 Some(item) => {
                     match self.config.desktop.space_containing(item) {
                         Some(source) if source == target => continue,
@@ -927,6 +940,13 @@ impl App {
         let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
             return;
         };
+        // The file may have been moved or deleted since the item was drawn
+        // (for example by an earlier shell command); drop the stale item
+        // instead of repeatedly failing to start a drag for it.
+        if !path.exists() {
+            self.prune_missing(ui, space);
+            return;
+        }
         let Some(result) = ui.drag_out(&path) else {
             return;
         };

@@ -42,7 +42,8 @@ impl ItemStore {
     /// Whether `path` was moved into the store (and so has to be moved back
     /// out when it leaves its space).
     pub fn contains(&self, path: &Path) -> bool {
-        path.parent() == Some(self.root.as_path())
+        path.parent()
+            .is_some_and(|parent| same_path(parent, &self.root))
     }
 
     /// Moves `path` into the store and returns its new path. Items already
@@ -65,6 +66,23 @@ impl ItemStore {
     /// Moves a stored `path` out to `folder` and returns its new path.
     pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
         move_into(path, folder)
+    }
+}
+
+/// Whether two paths name the same file. Windows paths differ by case and by
+/// 8.3 short names (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report
+/// either form, so compare canonicalized paths when the file exists and fall
+/// back to a case-insensitive string compare otherwise. Exact equality is the
+/// common case and avoids the filesystem.
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&b.to_string_lossy()),
     }
 }
 
@@ -126,6 +144,25 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn same_path_tolerates_case_for_missing_files() {
+        assert!(same_path(Path::new("C:/A/B.txt"), Path::new("c:/a/b.TXT")));
+        assert!(!same_path(Path::new("C:/a"), Path::new("C:/b")));
+    }
+
+    #[test]
+    fn contains_matches_the_store_folder() {
+        let scratch = Scratch::new("contains");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        std::fs::create_dir_all(store.root()).unwrap();
+        let inside = store.root().join("a.txt");
+        std::fs::write(&inside, "x").unwrap();
+        assert!(store.contains(&inside));
+        let outside = scratch.0.join("b.txt");
+        std::fs::write(&outside, "x").unwrap();
+        assert!(!store.contains(&outside));
     }
 
     #[test]
