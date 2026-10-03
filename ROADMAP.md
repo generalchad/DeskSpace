@@ -174,8 +174,10 @@ are drawn and interactive, and dragging moves real files with undo.
 - Hotkey editor and additional bindings (`F-18` partial). **[partial]** The
   toggle hotkey is editable as text with validation and conflict reporting.
 - Per-space appearance overrides (tint, opacity) from the space menu.
-- Dark-mode settings window and menus (needs owner-drawn controls or the
-  undocumented uxtheme dark-mode APIs).
+- **[done]** Dark-mode settings window and menus, following Windows' app
+  mode (undocumented uxtheme app mode for menus, Explorer's dark control
+  styles, a custom-painted tab strip). The message box and color picker stay
+  light.
 
 Exit criteria: every runtime setting is editable without hand-editing TOML, and
 the tray menu can show/hide and open settings.
@@ -271,6 +273,45 @@ possible without a mouse.
 Exit criteria: a signed installer installs, runs, and uninstalls cleanly on a
 fresh Windows 10 and Windows 11 machine.
 
+### Customization backlog (polled 2026-10-03)
+
+The user asked for all of these; none is started. Each is listed under the
+milestone that already builds what it depends on. Global settings go in
+`Theme` / `WindowSettings`, and per-space overrides go in `Space`, as
+`#[serde(default)]` fields. All of them are changed through `Command`s.
+
+Appearance:
+- **F-24** Per-space colors and opacity: tint, text, and opacity overrides
+  from the space menu (M3; `Space::opacity` exists already).
+- **F-25** Icon size: small, medium, large, and extra large, globally and per
+  space. Needs the jumbo-icon enumeration from M2 and DPI-aware layout. Lens
+  icon sizes (F-09) share the setting (M2/M4).
+- **F-26** Grid density: tighter or looser spacing between icons, by scaling
+  the `GridSpec` gap and padding (M3).
+- **F-27** Label style: font size, one or two label lines, and label shadow
+  or outline as auto, on, or off. Today the shadow is automatic below 25 %
+  tint (M3).
+- **F-28** Title bar style: hidden, shown on hover only, or always; title
+  alignment and size. A hidden title bar needs another way to move the space,
+  such as Alt+drag or a grip (M5, with the hover work).
+- **F-29** Windows accent color for the selection highlight and border (M3).
+- **F-30** Settings-window and menu theme: follow Windows (now), always dark,
+  or always light. Feeds `Ui::set_ui_dark` (M3).
+
+Behavior:
+- **F-04** Roll up on mouse-out and expand on hover (M5, roll-up policy).
+- **F-31** Sort a normal space by name, type, size, or date, ascending or
+  descending, as a one-off arrange or a kept rule. Lenses get the same through
+  F-08 (M3/M4).
+- **F-10** Hide all on desktop double-click (M5).
+- **F-32** Hover opacity: idle spaces fade to a chosen opacity and become
+  solid on hover (M5; the transparency half of F-13).
+- **F-33** Animations on or off, and their speed (M5, together with the
+  DirectComposition animations).
+- **F-34** Start with Windows: a per-user `Run` key toggled from General
+  settings; the installer also offers it (M3, M8).
+- **F-35** Snap to other spaces, with alignment guides (M6).
+
 ## 5. Release mapping
 
 - **v0.2 "Take the desktop"**: M0, M1, M2, M3. The first usable release:
@@ -309,6 +350,17 @@ fresh Windows 10 and Windows 11 machine.
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
 | F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally (clear glass, corner slider); per-space open |
+| F-25 | Icon size | M2/M4 | Open (polled) |
+| F-26 | Grid density | M3 | Open (polled) |
+| F-27 | Label style | M3 | Open (polled) |
+| F-28 | Title bar style | M5 | Open (polled) |
+| F-29 | Windows accent color | M3 | Open (polled) |
+| F-30 | Settings and menu theme override | M3 | Open (polled); follows Windows today |
+| F-31 | Sort items in normal spaces | M3/M4 | Open (polled) |
+| F-32 | Hover opacity | M5 | Open (polled) |
+| F-33 | Animations toggle | M5 | Open (polled) |
+| F-34 | Start with Windows | M3, M8 | Open (polled) |
+| F-35 | Snap to other spaces | M6 | Open (polled) |
 
 ## 7. Open questions
 
