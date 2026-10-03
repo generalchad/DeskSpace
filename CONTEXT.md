@@ -11,15 +11,15 @@ alternative to comparable tools. It groups desktop items into movable containers
 auto-hide, and per-space appearance control.
 
 The long-term goal is to match spaces feature-for-feature while remaining
-native, lightweight, and offline. The current tree is an early framework, not a
-usable product.
+native, lightweight, and offline. The current tree is an early but usable
+framework, not a finished product.
 
 ### Goals
 
 - Native Win32 rendering and window behavior; no webview, no runtime.
 - Windows desktop integration: spaces live on the desktop, not above other apps.
 - Fast startup, low idle CPU, no background telemetry.
-- Data-driven rendering so UI and platform stay decoupled.
+- Data-driven rendering and UI so app and platform stay decoupled.
 - Simple, forward-compatible configuration.
 
 ### Non-goals (for now)
@@ -31,37 +31,41 @@ usable product.
 ### Direction (decided)
 
 See `ROADMAP.md` for the full plan. In short: DeskSpace will take over the
-desktop icon layer, render with Direct2D plus DirectComposition, relocate items
-dropped into normal spaces by move into a managed store (portals are pure views
-and never move data), and ship a tray, context menus, and a settings window in
-the first usable release (v0.2).
+desktop icon layer, render each space as its own window (Direct2D content over
+a DWM blur material), relocate items dropped into normal spaces by move into a
+managed store (portals are pure views and never move data), and ship a tray,
+context menus, and a settings window in the first usable release (v0.2).
 
 ## 2. Current status
 
-- Initial framework committed as `b90b2ef`.
-- `cargo build`, `cargo clippy --workspace --all-targets`, and
-  `cargo test --workspace` (32 tests) are green.
-- The binary runs: it creates a borderless layered overlay, seeds a `Desktop`
-  space from the user's desktop folder, renders spaces with GDI, supports
-  dragging spaces by the title bar (with mouse capture), roll-up via
-  double-click, a global toggle hotkey, and TOML persistence with an orderly
-  save on exit.
-- It does not yet integrate with the real desktop icon layer, does not support
-  portals, auto-hide, resizing, context menus, a tray, or a settings UI. See
-  the parity matrix in section 9.
+- `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
+  `cargo test --workspace` (67 tests) are green.
+- Every space is its own top-level window with a Windows 11 look: acrylic or
+  blur material behind a translucent tint, DWM rounded corners and border,
+  dark/light mode following Windows, Direct2D/DirectWrite content, hover and
+  selection highlights. Verified visually on Windows 11 build 26300.
+- A tray icon, a space right-click menu, and a native settings window
+  (Appearance, General, About) with live preview and OK/Cancel/Apply.
+- spaces can be created, deleted (with confirmation), moved by the title bar,
+  rolled up (double-click the title bar), and locked. Files dragged from
+  Explorer or the desktop onto a space are added to it.
+- Not yet: real desktop icon layer takeover (items are references; files are
+  not moved), portals, auto-hide, resizing, rename, item drag between spaces.
+  See the parity matrix in section 9.
 
 ## 3. Architecture
 
 ```
                  +------------------+
-                 |  deskspace-app   |  binary: CLI, event handler, scene builder
-                 +---------+--------+
+                 |  deskspace-app   |  binary: CLI, event handler, scene and
+                 +---------+--------+  settings-form builders
                            |  depends on
              +-------------+-------------+
              v                           v
    +------------------+        +----------------------+
    | deskspace-config |        | deskspace-platform   |
-   +---------+--------+        |  Win32 + GDI + shell |
+   +---------+--------+        |  Win32, DWM, D2D,    |
+             |                 |  shell, native UI    |
              |                 +----------+-----------+
              +------------+---------------+
                           v
@@ -72,21 +76,24 @@ the first usable release (v0.2).
 
 Rules: dependencies point downward only. `deskspace-core` has no OS or IO
 dependencies. `deskspace-platform` is the only crate containing `unsafe` or
-Win32 types. `deskspace-app` composes everything and owns the Win32 message
-loop indirectly through the platform window host.
+Win32 types. `deskspace-app` describes what to show (scenes, menus, settings
+forms) as plain data and reacts to events; the platform turns those into
+windows and controls.
 
 ### Crate responsibilities
 
-- `deskspace-core` — pure domain: geometry, ids, items, spaces, desktop,
-  layout engine, command layer, theme. `#![forbid(unsafe_code)]`.
-- `deskspace-config` — persisted schema (`Config`, `WindowSettings`),
+- `deskspace-core`: pure domain: geometry, ids, items, spaces, desktop,
+  layout engine, command layer, theme and palette. `#![forbid(unsafe_code)]`.
+- `deskspace-config`: persisted schema (`Config`, `WindowSettings`),
   versioning/migration, and an atomic `ConfigStore` over TOML.
   `#![forbid(unsafe_code)]`.
-- `deskspace-platform` — Win32 window host and message pump, GDI painter,
-  desktop-shell discovery (Progman/WorkerW), shell item enumeration and icon
-  cache, DPI awareness, global hotkeys, and the event/render data types.
-- `deskspace-app` — `clap` CLI, `EventHandler` implementation, model-to-scene
-  conversion, and bootstrap seeding.
+- `deskspace-platform`: the UI runtime and message loop, space windows, DWM
+  styling, Direct2D painter, tray icon, popup menus, the data-driven settings
+  window, desktop-shell discovery, shell item enumeration and icon cache, DPI,
+  and global hotkeys.
+- `deskspace-app`: `clap` CLI, the `EventHandler` (`App`), model-to-scene
+  conversion, the settings form and its mapping onto `Config`, and bootstrap
+  seeding.
 
 ## 4. Domain model (`deskspace-core`)
 
@@ -111,6 +118,8 @@ ItemKind { File, Folder, Shortcut, Drive, Other }
 ```
 
 `ItemKind::classify` inspects the filesystem. `label` defaults to the file stem.
+`position` is the top-left of the item's grid cell **relative to the space's
+content area**, so moving a space never touches its items.
 
 ### space
 
@@ -118,18 +127,19 @@ ItemKind { File, Folder, Shortcut, Drive, Other }
 space {
     id: spaceId,
     title: String,
-    rect: Rect,
+    rect: Rect,           // desktop coordinates
     items: Vec<Item>,
     locked: bool,
     rolled_up: bool,
-    opacity: u8,          // 0..=255, default 210
+    opacity: u8,          // multiplier on the theme's tint alpha, default 255
     title_height: i32,    // default 28
 }
 ```
 
 Helpers: `title_bar()`, `visible_rect()` (the title bar when rolled up, else
-`rect`; used for rendering and hit-testing), `content_rect()` (empty when
-rolled up), item lookup/insert/remove, and `required_size` / `resize_to_fit`.
+`rect`; used for window size and hit-testing), `content_rect()` (empty when
+rolled up), `item_at(point, cell)`, item lookup/insert/remove, and
+`required_size` / `resize_to_fit`.
 
 ### Desktop
 
@@ -138,9 +148,9 @@ Desktop { spaces: Vec<space>, layout: GridSpec }
 ```
 
 Operations: add/remove space, add/remove/move item, `item_count`,
-`space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`.
-`move_item` validates the target before removing the item, so a failed move
-never loses it.
+`item_with_path`, `space_at(point)` (topmost hit test on `visible_rect`),
+`sort_by_id`. `move_item` validates the target before removing the item, so a
+failed move never loses it.
 
 ### Layout engine (`layout.rs`)
 
@@ -151,8 +161,8 @@ GridSpec {
 }
 ```
 
-- `arrange_space` lays items into a grid inside the space and resizes the space
-  to fit (unless locked).
+- `arrange_space` resizes the space to fit its items (unless locked) and calls
+  `position_items`, which lays items on the grid in content-relative cells.
 - `snap_to_grid` / `snap_rect` snap positions to the grid.
 - `clamp_to_bounds` keeps rects inside the work area.
 - `resolve_collisions` pushes overlapping spaces down.
@@ -166,14 +176,29 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 `ToggleLock`, `ToggleRollup`, `AddItem`, `RemoveItem`, `MoveItem`,
 `AutoArrange`, `SnapAll`.
 
-Move/resize commands reject locked spaces and snap to the grid. This is the
-single choke point for domain changes and the intended place to add new
-behavior.
+Move/resize commands reject locked spaces and snap to the grid. `bounds` is the
+work area of the monitor nearest the action (`work_area_at`).
 
 ### Theme (`theme.rs`)
 
-`Color { r, g, b, a }` with `rgb`/`rgba`/`with_alpha` and hex parse/format.
-`Theme` holds `color_key`, space/title/item colors, and `selection`.
+```
+Theme {
+    mode: ThemeMode,          // System (default) | Dark | Light
+    backdrop: Backdrop,       // Acrylic (default) | Blur | Solid
+    corners: CornerStyle,     // Round (8 px) | Small (4 px) | Square
+    tint_opacity: u8,         // percent, default 40
+    title_shading: u8,        // percent, default 30
+    show_border: bool,        // default true
+    custom_colors: bool,      // default false
+    tint: Color, text: Color, // used only when custom_colors
+}
+```
+
+`Theme::palette(system_dark) -> Palette` resolves concrete colors (tint with
+alpha, title fill, text, hover/selected fills, border) from the Windows 11
+dark (`#202020` / white) or light (`#F3F3F3` / `#1A1A1A`) base, or the custom
+colors. `Backdrop::Solid` forces an opaque tint. Enums serialize snake_case;
+`Backdrop::Blur` also accepts `"mica"` from early v2 files.
 
 ## 5. Configuration (`deskspace-config`)
 
@@ -181,22 +206,25 @@ behavior.
 Config { version, desktop: Desktop, theme: Theme, window: WindowSettings }
 
 WindowSettings {
-    snap_grid: i32,             // default 16
-    background_alpha: u8,       // default 255
-    always_on_desktop: bool,    // default false
+    snap_grid: i32,             // default 16 (not wired; layout.snap is used)
+    always_on_desktop: bool,    // default false (not wired)
     toggle_hotkey: String,      // default "Ctrl+Alt+D"
     start_hidden: bool,         // default false
 }
 ```
 
-- `CURRENT_VERSION = 1`. `Config::migrate` currently only backfills version 0;
-  a missing `version` key deserializes as 0.
+- `CURRENT_VERSION = 2`. `Config::migrate` upgrades version 0/1 files: it
+  resets the theme (v1 colors were opaque and tuned for the old color-keyed
+  overlay), sets every space's `opacity` to 255, and re-runs `position_items`
+  because v1 stored absolute item positions. A missing `version` key
+  deserializes as 0.
 - `WindowSettings`, `GridSpec`, and `Theme` use struct-level
   `#[serde(default)]`, and `Item.kind` / `Item.position` default, so partial
-  tables fill in defaults instead of failing the whole file.
+  tables fill in defaults instead of failing the whole file. Unknown keys (for
+  example the removed `background_alpha`) are ignored.
 - `ConfigStore` resolves its path via `directories::ProjectDirs` (Roaming
-  AppData on Windows; the exact path is machine-specific) with file name
-  `deskspace.toml`, or accepts an explicit path.
+  AppData on Windows) with file name `deskspace.toml`, or accepts an explicit
+  path.
 - `save` writes to a sibling `*.toml.tmp` then renames, so a crash never
   truncates the config.
 - `load_or_default` returns defaults when no file exists. If the file cannot be
@@ -208,129 +236,154 @@ WindowSettings {
 
 ## 6. Platform layer (`deskspace-platform`)
 
-### Window host (`win32/window.rs`)
+### Runtime (`win32/runtime.rs`)
 
-- `WindowConfig { title, x, y, width, height, placement, click_through,
-  color_key, visible }`.
-- `Placement { TopLevel (default), DesktopBackground, DesktopForeground }`.
-- `DesktopWindow::create(config, handler)` registers a window class (once,
-  with `CS_DBLCLKS` so double-clicks are delivered), creates the window, stores
-  a `Box<WindowState>` behind `GWLP_USERDATA`, and returns a handle.
-  `run(self)` pumps messages until `WM_QUIT` (returning an error if
-  `GetMessageW` fails) and, while running, installs a console control handler
-  (`win32/console.rs`) that turns Ctrl+C, Ctrl+Break, and console close into
-  `WM_CLOSE`. It waits up to 4.5 s for the loop to finish so the save
-  completes before Windows terminates the process.
-- `WindowState` owns the `Box<dyn EventHandler>` and the `Painter`; it is freed
-  exactly once, in `WM_NCDESTROY` or, if that arrives while the handler is
-  running, by the outermost `dispatch` afterwards.
-- Re-entrancy: Win32 calls made from the handler (`ShowWindow`,
-  `SetWindowPos`, modal loops) re-enter `wndproc`. `dispatch` moves the
-  handler and painter out of the state while the handler runs, so no two
-  `&mut WindowState` coexist. Nested events are queued and delivered when the
-  handler returns. A nested `WM_PAINT` is validated and replayed as a repaint
-  afterwards.
-- Mouse capture: any button-down calls `SetCapture`; the last button-up
-  releases it. Losing capture to another window emits `CaptureLost`.
-- `WM_ENDSESSION` (top-level windows only) emits `CloseRequested` so the app
-  saves at logoff/shutdown.
-- `EventHandler::on_event(WindowEvent, &mut WindowContext)` is the app's entry
-  point. `WindowContext` exposes `hwnd`, size, color key, `paint(&Scene)`,
-  `request_repaint`, and `show(bool)`.
-- The window proc translates Win32 messages into `WindowEvent` values and
-  dispatches them. `WM_PAINT` resets a paint flag, dispatches `Paint`, and
-  validates the region if the handler did not paint.
+- `run(RunOptions, Box<dyn EventHandler>)` initialises COM (apartment) and
+  common controls, finds the desktop host for the placement, creates the
+  controller window, adds the tray icon, installs the console handler,
+  delivers `Event::Started`, and pumps messages until quit. It routes
+  `IsDialogMessageW` to the settings window for Tab/Enter/Escape handling.
+- `EventHandler::on_event(Event, &mut Ui)` is the app's single entry point for
+  every window. `Ui` creates/destroys space windows, pushes rects, scenes and
+  styles, shows/hides spaces, shows popup menus and confirmation boxes, opens/
+  updates/closes the settings window, registers hotkeys, sets the tray
+  tooltip, and quits.
+- Re-entrancy: the handler is moved out of the thread-local runtime while it
+  runs. Win32 calls it makes (SetWindowPos, DestroyWindow, TrackPopupMenu,
+  ChooseColor, MessageBox) re-enter window procedures; events raised then are
+  queued and delivered by the outermost `dispatch`. Runtime state is only
+  borrowed in short sections (`with_runtime`) that never call into Win32.
 
-### Render data (`render/scene.rs`, `render/gdi.rs`)
+### Controller (`win32/controller.rs`, `win32/tray.rs`, `win32/icon.rs`)
 
-- `Scene { width, height, color_key, status, spaces: Vec<spaceVisual> }`,
-  `spaceVisual`, `ItemVisual`. This is the only contract between the app and the
-  renderer.
-- `Painter` owns a memory DC and bitmap, recreated on resize, double-buffers
-  each frame, and draws rounded spaces, titles, item tiles, icons, and a status
-  line with GDI. Fonts are created once. `IconHandle` is an opaque `isize`
-  wrapping a Win32 `HICON`.
+- A hidden top-level window (not message-only, so it receives broadcasts). It
+  owns hotkeys (`WM_HOTKEY`), the tray callback (`NOTIFYICON_VERSION_4`: left
+  click → `TrayEvent::Activated`, right click → `TrayEvent::MenuRequested`),
+  `TaskbarCreated` (re-adds the icon after Explorer restarts),
+  `WM_SETTINGCHANGE`/"ImmersiveColorSet" (`Event::SystemThemeChanged`), and
+  session end.
+- `Ui::quit`, console Ctrl+C/close, and `WM_ENDSESSION` all lead to exactly one
+  `Event::CloseRequested`, then space and settings windows are destroyed, the
+  tray icon removed, and the loop ends.
+- The tray and settings-window icon is drawn in code (`icon.rs`) until release
+  packaging adds an `.ico` resource.
 
-### Desktop shell (`win32/desktop_shell.rs`)
+### space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
-- Finds the desktop host window: `Progman`, or the wallpaper `WorkerW` located
-  via the `0x052C` spawn trick and `EnumWindows`/`FindWindowExW`.
-- `TopLevel` does not use a host. Hosted placements create an opaque
-  `WS_CHILD` window (layered children are not supported by Win32).
+- One window per space, created by `Ui::create_space`. State is a
+  `Box<spaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
+- Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
+  WS_EX_ACCEPTFILES`, kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
+  activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
+  client area, sets dark mode, corner preference, and border color, and turns
+  on the blur material with the undocumented accent policy
+  (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND` /
+  `ACCENT_ENABLE_BLURBEHIND`). The documented `DWMWA_SYSTEMBACKDROP_TYPE` was
+  tried first and does not work here: system backdrops only render on active
+  windows, and spaces are never active.
+- Desktop-hosted placement (`--placement desktop-*`): `WS_CHILD` of Progman /
+  WorkerW, painted opaque, rounded with a (non-anti-aliased) window region.
+- Mouse input is reported in desktop coordinates as `spaceEvent`s;
+  `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
+  the last button-up. `WM_DROPFILES` becomes `spaceEvent::FilesDropped`.
+- `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
+  checked without uncovering the desktop.
 
-### Shell integration (`shell.rs`)
+### Rendering (`render/scene.rs`, `render/d2d.rs`)
 
-- `enumerate_desktop_items` resolves the user Desktop known folder and lists
-  entries (skipping `desktop.ini`), sorted by label.
-- `IconCache` loads 32px icons via `SHGetFileInfoW`, memoizes by path, and
-  destroys them on drop.
+- `spaceScene` (title, colors, corner radius, flags, `ItemVisual`s in
+  window-local coordinates) and `spaceStyle` (backdrop, corners, dark,
+  border) are the contract between app and renderer. Scenes are pushed only
+  when something changes; the window stores a `PreparedScene` with strings
+  pre-encoded to UTF-16, so painting does not allocate.
+- `Painter` owns an `ID2D1HwndRenderTarget` (premultiplied alpha, 96 DPI so
+  one DIP is one pixel), a brush, and a per-target icon bitmap cache
+  (HICON → WIC → D2D). Text uses DirectWrite (Segoe UI Variable Text when
+  installed), grayscale antialiasing on translucent surfaces, ellipsis
+  trimming, two-line wrapped labels. `D2DERR_RECREATE_TARGET` drops device
+  resources for recreation on the next paint.
 
-### DPI and hotkeys (`win32/dpi.rs`, `win32/hotkey.rs`)
+### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window.rs`)
 
-- `enable_per_monitor_awareness` sets per-monitor v2, falling back to
-  `SetProcessDPIAware`.
-- `hotkey::parse` parses strings like `Ctrl+Alt+D`; `register`/`unregister`
-  wrap `RegisterHotKey`. `hotkey_id(0)` is the toggle hotkey id.
+- `MenuEntry` lists become `TrackPopupMenuEx` menus (`Ui::popup_menu` returns
+  the chosen id).
+- `SettingsForm` → pages → `Field`s (`Heading`, `Note`, `Choice`, `Toggle`,
+  `Slider`, `Color`, `Text`, `Button`). The settings window lays them out with
+  common controls v6 under a tab control (pages are container windows that
+  forward notifications), uses Mica in the caption, reports edits as
+  `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
+  `Apply`, and opens `ChooseColorW` for color fields. `Ui::update_settings`
+  diffs a new form of the same shape into the existing controls.
+- The app embeds the common-controls v6 manifest dependency via
+  `crates/deskspace-app/build.rs`.
 
-### Events (`input.rs`)
+### Desktop shell, shell items, DPI, hotkeys
 
-`WindowEvent`: `Created`, `Paint`, `Resized`, `MouseMove`, `MouseDown`,
-`MouseUp`, `MouseLeave` (declared, not currently emitted), `CaptureLost`,
-`DoubleClick`,
-`DpiChanged`, `Hotkey`, `Timer` (declared, no timer currently set),
-`VisibilityChanged` (declared, not emitted), `CloseRequested`.
+- `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
+  `0x052C` spawn trick) for hosted placements.
+- `shell.rs`: `enumerate_desktop_items` and `IconCache` (32 px icons via
+  `SHGetFileInfoW`, memoized, destroyed on drop).
+- `dpi.rs` sets per-monitor v2 awareness; `system.rs` provides
+  `work_area_at(point)` and `system_uses_dark_mode()`.
+- `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, register/unregister
+  (on the controller window via `Ui`).
 
 ## 7. Runtime flow
 
 1. `main` parses CLI and initializes `tracing`.
-2. `app::run` enables DPI awareness, loads or creates `Config`, seeds a default
-   `Desktop` space if empty (populated from the desktop folder unless
-   `--no-icons`), and builds `WindowConfig` from the CLI.
-3. `DesktopWindow::create` creates the overlay and moves the `App` in as the
-   event handler.
-4. On `Created`, the app records the client size and registers the toggle
-   hotkey.
-5. On `Paint`, the app builds a `Scene` from `Config.desktop` plus the icon
-   cache and hands it to `Painter`.
-6. Mouse events hit-test spaces, drag by title bar via `SetspaceRect`, and
-   double-clicks toggle roll-up. The config is saved when a drag ends
-   (`MouseUp` or `CaptureLost`) and after each roll-up toggle.
-7. On `CloseRequested` (window destroyed, console Ctrl+C/close, or session
-   end), the app unregisters the hotkey and saves the config.
+2. `app::run` enables DPI awareness, loads or creates `Config` (migrating
+   older files), seeds a `Desktop` space from the desktop folder if there are
+   none (unless `--no-icons`), and calls `deskspace_platform::run`.
+3. On `Started`, the app registers the toggle hotkey, applies start-hidden,
+   creates one window per space with its style and scene, and optionally opens
+   settings (`--settings`).
+4. Pointer events update selection/hover (re-pushing that space's scene), drag
+   spaces via `SetspaceRect` (moving the window), toggle roll-up on title-bar
+   double-click, and open the space menu on right-click. Drops add or move
+   items. Config is saved after drags, roll-up, lock, create/delete, drops,
+   and Apply/OK.
+5. Settings edits apply to the live config immediately (preview); Apply/OK
+   validate and re-register the hotkey and save; Cancel or closing the window
+   restores the saved theme and window settings.
+6. On `CloseRequested`, the app unregisters the hotkey, discards unapplied
+   settings edits, and saves.
 
 ## 8. Controls (current)
 
 - Drag a space title bar to move it (snaps to the grid).
-- Double-click a space to roll it up or down.
-- `Ctrl+Alt+D` (configurable in the config file) hides or shows the overlay.
-- Ctrl+C in, or closing, the console window exits and saves. There is no
-  in-app quit control yet.
-- CLI flags: `--config`, `--placement`, `--width`, `--height`, `--reset`,
-  `--hidden`, `--no-icons`, `--click-through`, `-v`.
+- Double-click a space title bar to roll it up or down.
+- Right-click a space: Roll up/down, Lock position, Delete space…, New space,
+  Settings…, Hide/Show spaces, Exit DeskSpace.
+- Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
+  spaces, New space, Exit DeskSpace.
+- Drag files from Explorer or the desktop onto a space to add them.
+- `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
+- CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
+  `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
 
 ## 9. spaces feature parity matrix
 
 | spaces feature | Status |
 |---|---|
-| spaces (icon groups) | Partial: model + render, but items mirror the desktop folder rather than the real desktop icon layer |
+| spaces (icon groups) | Partial: per-space windows; items are references, the real desktop icons stay |
 | Folder portals (live folder mirror) | Not implemented |
-| Roll-up spaces | Implemented (double-click) |
-| Auto-hide / hide all on desktop double-click | Not implemented; only a global overlay hotkey |
-| Drag icons between spaces | Not implemented |
-| Drag files onto a space to add them | Not implemented |
-| Create / rename / delete space | Model + commands exist; no UI |
+| Roll-up spaces | Implemented (title-bar double-click, context menu) |
+| Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
+| Drag icons between spaces | Not implemented (dropping a path already in another space moves it) |
+| Drag files onto a space to add them | Implemented as references; files are not moved yet |
+| Create / rename / delete space | Create and delete via menus; rename has no UI |
 | Resize space | Not implemented; spaces auto-size to their grid |
-| Lock space | Model + move rejection; no UI |
+| Lock space | Implemented (context menu, lock glyph) |
 | Snap to grid / auto-arrange | Implemented in core |
 | Per-portal sort rules | Not implemented |
-| Appearance (color, translucency, blur/Acrylic, icon size, label options) | Minimal: fixed theme, color-key transparency, no blur or per-pixel alpha |
+| Appearance (color, translucency, blur, corners) | Implemented globally in Settings; no per-space UI |
 | Multiple pages / virtual desktops | Not implemented |
 | Backup / restore / layout snapshots | Config file only |
-| Right-click context menu | Not implemented |
-| System tray icon | Not implemented |
-| Settings UI | Not implemented |
-| Multi-monitor | Single fixed-position window |
-| Per-monitor DPI | Enabled; not yet propagated to layout/rendering |
+| Right-click context menu | Basic space menu |
+| System tray icon | Implemented |
+| Settings UI | Appearance, General, About |
+| Multi-monitor | spaces can sit on any monitor; work area of the nearest monitor bounds moves |
+| Per-monitor DPI | Process is PMv2; layout is not yet scaled per monitor |
 | Auto-consolidate new desktop icons | Not implemented |
 | Exclude rules / filters | Not implemented |
 | Keyboard navigation | Not implemented |
@@ -338,40 +391,36 @@ WindowSettings {
 
 ## 10. Known limitations and technical debt
 
-- **No desktop icon integration.** The overlay draws our own tiles; Explorer
-  still owns the real desktop icons. spaces parity requires either hiding
-  Explorer's icon layer and rendering real items, or driving real desktop items.
-- **Color-key transparency, not per-pixel alpha.** Layered child windows are
-  unsupported, so hosted placement cannot be translucent or blurred. Acrylic and
-  per-space alpha need Direct2D/DirectComposition (or `UpdateLayeredWindow` for
-  top-level windows).
-- **GDI renderer.** Fine for the skeleton but no anti-aliased rounded corners,
-  gradients, or blur. Plan a Direct2D backend behind the same `Scene` contract.
-- **Single fixed-size window.** No multi-monitor, no work-area awareness, no
-  resize handling beyond tracking client size.
-- **No interaction beyond dragging and roll-up.** No item dragging, no context
-  menu, no hover states, no resize handles, no keyboard.
-- **Portals unimplemented.** No filesystem watching, no live refresh, no sort
-  rules, no "show as" modes.
-- **`WindowEvent` variants declared but unused** (`MouseLeave`, `Timer`,
-  `VisibilityChanged`), and no `SetTimer` is installed.
-- **Auto-save only on close, drag end, and roll-up.** No debounced on-change
-  save. A desktop-hosted (child) window does not receive `WM_ENDSESSION`, so
-  logoff with a hosted placement relies on the last save.
+- **No desktop icon integration.** Explorer still owns the real desktop icons;
+  spaces show references. Dropping a file adds a reference without moving it.
+- **spaces can be hidden by Show Desktop (Win+D).** Top-level spaces sit at
+  the bottom of the z-order but are not part of the desktop window. Desktop
+  hosting fixes this but loses blur (child windows get no DWM material).
+- **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
+  If a future Windows build removes it, spaces fall back to a translucent tint
+  without blur. Rounded corners need Windows 11.
+- **Settings window is light-only**; classic controls have no supported dark
+  mode. Popup menus are light as well.
+- **No per-monitor DPI scaling of spaces.** Sizes are in physical pixels at
+  96-DPI values; the settings window is laid out for the DPI at creation.
+- **Drops use `WM_DROPFILES`**, which carries file paths only and shows no
+  drop-effect feedback. An OLE `IDropTarget` is needed for richer feedback and
+  for drag-out.
+- **WindowSettings `snap_grid` and `always_on_desktop` are not wired.**
 - **Icon cache has no eviction** and is never invalidated.
-- **Config is not yet migrated beyond version 0**, and `window.background_alpha`
-  / `always_on_desktop` / `start_hidden` are not wired to behavior.
 - **No CI, no `deny.toml`, no installer, no code signing.**
 - **License is GPL-3.0-or-later** and is a reversible decision if a more
   permissive license is preferred.
 
 ## 11. Glossary
 
-- **space** — a movable, resizable container that groups items on the desktop.
-- **Portal** — a space whose contents mirror a folder live.
-- **Roll-up** — collapsing a space to its title bar.
-- **Auto-hide** — hiding all spaces and desktop icons until the desktop is
+- **space**: a movable container window that groups items on the desktop.
+- **Portal**: a space whose contents mirror a folder live.
+- **Roll-up**: collapsing a space to its title bar.
+- **Auto-hide**: hiding all spaces and desktop icons until the desktop is
   interacted with.
-- **Placement** — where the overlay lives: a top-level window or hosted on the
-  desktop's Progman/WorkerW window.
-- **Scene** — the renderer-agnostic draw list produced by the app each frame.
+- **Placement**: where space windows live: top-level windows or children of
+  the desktop's Progman/WorkerW window.
+- **Scene**: the renderer-agnostic draw list (`spaceScene`) the app builds for
+  one space.
+- **Material / backdrop**: the blurred layer DWM draws behind a space's tint.
