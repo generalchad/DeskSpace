@@ -2,6 +2,7 @@ mod app;
 mod bootstrap;
 mod cli;
 mod scene;
+mod settings;
 
 use std::process::ExitCode;
 
