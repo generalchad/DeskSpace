@@ -61,7 +61,10 @@ context menus, and a settings window in the first usable release (v0.2).
 - Verification: the blur, corners, space content, and settings layout were
   checked on screen. Delete space, file drops, settings live preview, and the
   tray menu are covered by unit tests of the app logic but have not been
-  exercised interactively yet; confirm them before building on them.
+  exercised interactively yet; confirm them before building on them. Inline
+  rename, in-space rearranging, the Delete key, per-space appearance, sort,
+  grid/label settings, and cross-space moves were checked on screen
+  (2026-10-03). Item drag is not yet Explorer-identical (ROADMAP F-36..F-39).
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop

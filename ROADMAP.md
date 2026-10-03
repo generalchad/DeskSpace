@@ -112,9 +112,11 @@ started).
 - **Cross-space drag identity fix.** Dropped files are matched by canonical
   path (case- and 8.3-tolerant) and `ItemStore::contains` compares canonical
   parents, so moving an item between spaces moves it instead of re-adopting a
-  `(2)` copy; an item whose file vanished is pruned before a drag. Explorer
-  parity (move/copy effects, ghost image, clipboard, Recycle-Bin delete) is
-  queued as F-36..F-39.
+  `(2)` copy; an item whose file vanished is pruned before a drag. Verified by
+  manual testing 2026-10-03 (cross-space moves stay unique and persist).
+  Explorer parity (move/copy effects, ghost image, clipboard, Recycle-Bin
+  delete) is queued as F-36..F-39. **Start the next item session at F-36** (it
+  also removes the `- Copy` files dragging to the desktop leaves behind).
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
