@@ -155,3 +155,10 @@ Rust specifics:
   `Start-Process -WindowStyle Hidden`) hides the settings window: Windows
   applies the startup show command to the first `ShowWindow` on an overlapped
   window.
+- The keyboard hook (`win32/keyboard.rs`) has two modes: inline-edit capture
+  and a Delete-only watch while an item is selected. It is installed only
+  while a mode is active and consumes only the keys it handles (all editing
+  keys, or Delete); everything else passes through.
+- Dragging an item inside its space rearranges it (`ReorderItem`); only once
+  the pointer leaves the space does the app start an OLE shell drag, which is
+  what moves the real file.

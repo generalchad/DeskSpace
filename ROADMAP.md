@@ -104,6 +104,11 @@ started).
   spacing and edge padding sliders (they re-flow all spaces live) and label
   controls: one or two lines, size 60-160 %, and shadow automatic/always/
   never. Label formats are cached per size step.
+- **Rearranging items and the Delete key.** Dragging an item within its space
+  reorders it (`ReorderItem`) so the arrangement sticks; dragging past the
+  space edge still starts a shell drag. The keyboard hook gained a Delete-only
+  watch while an item is selected, delivering `Event::DeleteSelection` to
+  remove it (stored files return to the desktop).
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -167,9 +172,10 @@ on Windows 10/11. Remaining: per-monitor DPI.
   and `IShellItemImageFactory` (jumbo icons), replacing `SHGetFileInfoW`.
 - Render desktop items in a free-grid; hit-test, hover, select, rubber-band.
 - Drag items: within the desktop, into a space, and between spaces (`F-06`).
-  **[partial]** Drops onto spaces (`WM_DROPFILES`) and shell drag-out
-  (`SHDoDragDrop`) work, including between spaces; an OLE `IDropTarget` is
-  still needed for drop-effect feedback. Desktop free-grid waits for takeover.
+  **[partial]** Drops onto spaces (`WM_DROPFILES`), shell drag-out
+  (`SHDoDragDrop`), and rearranging items within a space (`ReorderItem`) work;
+  an OLE `IDropTarget` is still needed for drop-effect feedback, and the
+  desktop free-grid waits for takeover.
 - **[partial]** Drop files onto a normal space relocates them into the managed
   store by move (`D3`); lenses are unaffected because they never touch the
   store. Undo is open.
@@ -365,7 +371,7 @@ Behavior:
 | F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Done (no drop-effect feedback yet) |
+| F-06 | Drag icons in / out / between spaces | M2 | Done (rearranges within a space; no drop-effect feedback yet) |
 | F-07 | Lenses (spaces: Folder Portals) | M4 | Open (phase 0 done) |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |

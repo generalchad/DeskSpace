@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (99 tests) are green.
+  `cargo test --workspace` (122 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -50,7 +50,9 @@ context menus, and a settings window in the first usable release (v0.2).
   (Appearance, General, About) with live preview and OK/Cancel/Apply.
 - Spaces can be created, deleted (with confirmation), moved by the title bar,
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
-  (double-click the title bar), and locked. Files dropped onto a space are
+  (double-click the title bar), renamed inline, restyled per space (opacity,
+  tint, text), sorted, and locked; their items can be rearranged by dragging.
+  Files dropped onto a space are
   moved into the space storage (Shift keeps them in place). Items open on
   double-click, show Explorer's context menu on right-click, and drag out like
   Explorer items. Resize, wheel scrolling, the clear backdrop, the corner
@@ -63,8 +65,8 @@ context menus, and a settings window in the first usable release (v0.2).
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop
-  icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
-  rename, undo for file moves.
+  icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
+  for file moves.
   See the parity matrix in section 9.
 
 ## 3. Architecture
@@ -205,7 +207,7 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
 `SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `AutoArrange`, `SnapAll`.
+`RemoveItem`, `MoveItem`, `ReorderItem`, `AutoArrange`, `SnapAll`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
@@ -351,8 +353,10 @@ WindowSettings {
   `TextEdit` buffer and pushes it in the scene's `editing` field; the painter
   draws the selection highlight and caret. A `WH_KEYBOARD_LL` hook, installed
   only while editing, translates key presses into `Event::EditKey` and consumes
-  them, because spaces are never activated and cannot receive `WM_CHAR`. IME
-  composition and clipboard are not supported.
+  them, because spaces are never activated and cannot receive `WM_CHAR`. The
+  same hook also watches Delete while an item is selected
+  (`Ui::watch_delete_selection` → `Event::DeleteSelection`) and passes every
+  other key through. IME composition and clipboard are not supported.
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
@@ -485,8 +489,12 @@ WindowSettings {
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top.
+- Drag an item within its space to rearrange it; the new order sticks until a
+  Sort by reorders it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
+- Press Delete with an item selected to remove it from the space, the same as
+  the item menu's remove (stored files return to the desktop).
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
   `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
