@@ -59,4 +59,5 @@ Configuration is saved to a TOML file under the per-user config directory.
 
 ## License
 
-GPL-3.0-or-later.
+Copyright 2026 Timothy W. Brown. Licensed under the Apache License, Version
+2.0; see `LICENSE` and `NOTICE`.

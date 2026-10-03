@@ -201,7 +201,10 @@ pub fn build_form(
                 field::ABOUT_SUMMARY,
                 "A free and open-source desktop space organizer for Windows.",
             ),
-            Field::note(field::ABOUT_LICENSE, "Licensed under GPL-3.0-or-later."),
+            Field::note(
+                field::ABOUT_LICENSE,
+                "Copyright 2026 Timothy W. Brown. Licensed under the Apache License 2.0.",
+            ),
             Field::read_only_text(
                 field::CONFIG_PATH,
                 "Configuration file",

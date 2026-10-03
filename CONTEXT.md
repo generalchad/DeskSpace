@@ -488,8 +488,8 @@ WindowSettings {
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
   wheel events need Windows' "scroll inactive windows" setting.
 - **No CI, no `deny.toml`, no installer, no code signing.**
-- **License is GPL-3.0-or-later** and is a reversible decision if a more
-  permissive license is preferred.
+- **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
+  `NOTICE`). Release packaging must ship both files.
 
 ## 11. Glossary
 
