@@ -50,7 +50,6 @@ use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
 use crate::win32::{dwm, runtime};
-use deskspace_core::theme::Backdrop;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
@@ -255,11 +254,12 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Frame {
     paint: PaintFrame,
-    /// Clip the window to a rounded region of this radius. Needed where the
-    /// pixels outside the rounded corners would otherwise show: opaque
-    /// desktop-hosted windows, and the blur material, which fills the whole
-    /// window rect. Regions are not anti-aliased, so the painter still draws
-    /// smooth corners inside them.
+    /// Clip the window to a rounded region of this radius. Needed for opaque
+    /// desktop-hosted windows, whose pixels outside the rounded corners
+    /// would otherwise show. Regions are not anti-aliased, so the painter
+    /// still draws smooth corners inside them. Blurred top-level spaces use
+    /// DWM's corners instead, because the blur material ignores regions
+    /// (`Theme::effective_corner_radius`).
     region_radius: Option<i32>,
 }
 
@@ -276,14 +276,13 @@ impl Frame {
                 region_radius: None,
             };
         }
-        let blurred = matches!(style.backdrop, Backdrop::Acrylic | Backdrop::Blur);
         Self {
             paint: PaintFrame {
                 opaque: hosted,
                 radius,
                 border: style.border,
             },
-            region_radius: (radius > 0 && (hosted || blurred)).then_some(radius),
+            region_radius: (radius > 0 && hosted).then_some(radius),
         }
     }
 }

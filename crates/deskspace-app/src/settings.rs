@@ -167,8 +167,9 @@ pub fn build_form(
             Field::note(
                 field::COMPATIBILITY_NOTE,
                 "Clear glass at 0% tint and 0% title shading, without a border, \
-                 shows only the icons and labels. Rounded corners need Windows 11 \
-                 for blurred spaces. Desktop-hosted spaces are drawn opaque.",
+                 shows only the icons and labels. Acrylic and blur use Windows 11's \
+                 own corners, up to 8 px; larger radii apply to clear glass and \
+                 solid. Desktop-hosted spaces are drawn opaque.",
             ),
         ],
     };

@@ -227,6 +227,10 @@ updates the lens within ~150 ms, and sort/view settings persist.
 - Double-click empty desktop toggles icon visibility, matching spaces (`F-10`).
 - Per-space roll-up button and title-bar affordances.
 - Smooth show/hide/roll animations via DirectComposition.
+- Blurred spaces with corner radii beyond DWM's 8 px: a composition backdrop
+  clipped to an anti-aliased rounded shape. The accent blur ignores window
+  and blur regions, so blurred spaces are limited to DWM's radii until then.
+  Check first that a host backdrop renders on never-activated windows.
 
 Exit criteria: hide-all and peek are instant and reversible, and roll-up policy
 is configurable per space.

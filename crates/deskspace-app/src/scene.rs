@@ -20,7 +20,7 @@ pub struct ViewState {
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
     SpaceStyle {
         backdrop: theme.backdrop,
-        corner_radius: theme.corner_radius as i32,
+        corner_radius: theme.effective_corner_radius() as i32,
         dark: theme.is_dark(system_dark),
         border: theme.show_border,
     }
@@ -87,7 +87,12 @@ pub fn space_scene(
         locked: space.locked,
         rolled_up: space.rolled_up,
         items,
-        scroll_thumb: scroll_thumb(space, layout, view.scroll, theme.corner_radius as i32),
+        scroll_thumb: scroll_thumb(
+            space,
+            layout,
+            view.scroll,
+            theme.effective_corner_radius() as i32,
+        ),
     }
 }
 
@@ -275,7 +280,7 @@ mod tests {
         assert_eq!(start.y, tall.title_height + SCROLL_THUMB_MARGIN);
         assert_eq!(
             end.bottom(),
-            tall.rect.height - thumb_bottom_margin(theme.corner_radius as i32)
+            tall.rect.height - thumb_bottom_margin(theme.effective_corner_radius() as i32)
         );
         assert_eq!(start.right(), tall.rect.width - SCROLL_THUMB_MARGIN);
 

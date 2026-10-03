@@ -201,7 +201,31 @@ pub struct Palette {
     pub border: Color,
 }
 
+impl Backdrop {
+    /// Whether the backdrop is a blur material drawn by DWM.
+    pub const fn is_blurred(self) -> bool {
+        matches!(self, Self::Acrylic | Self::Blur)
+    }
+}
+
 impl Theme {
+    /// The corner radius spaces are drawn with. Blur materials fill the whole
+    /// window rectangle and ignore window and blur regions, so only DWM's own
+    /// corners (square, small, or Windows) can clip them; other radii showed
+    /// square patches of blur outside the corners. Blurred spaces therefore
+    /// use the nearest DWM radius at or below the chosen one, and the chosen
+    /// radius applies again with Clear or Solid.
+    pub fn effective_corner_radius(&self) -> u8 {
+        if !self.backdrop.is_blurred() {
+            return self.corner_radius;
+        }
+        match self.corner_radius {
+            0..corner::SMALL => corner::SQUARE,
+            corner::SMALL..corner::WINDOWS => corner::SMALL,
+            _ => corner::WINDOWS,
+        }
+    }
+
     pub fn is_dark(&self, system_dark: bool) -> bool {
         match self.mode {
             ThemeMode::System => system_dark,
@@ -318,6 +342,24 @@ mod tests {
             ..Theme::default()
         };
         assert_eq!(theme.palette(true).tint.a, 0);
+    }
+
+    #[test]
+    fn blurred_spaces_use_the_nearest_dwm_radius_below() {
+        let radius = |backdrop, corner_radius| {
+            Theme {
+                backdrop,
+                corner_radius,
+                ..Theme::default()
+            }
+            .effective_corner_radius()
+        };
+        assert_eq!(radius(Backdrop::Acrylic, 24), corner::WINDOWS);
+        assert_eq!(radius(Backdrop::Blur, 8), corner::WINDOWS);
+        assert_eq!(radius(Backdrop::Acrylic, 6), corner::SMALL);
+        assert_eq!(radius(Backdrop::Blur, 3), corner::SQUARE);
+        assert_eq!(radius(Backdrop::Clear, 24), 24);
+        assert_eq!(radius(Backdrop::Solid, 13), 13);
     }
 
     #[test]

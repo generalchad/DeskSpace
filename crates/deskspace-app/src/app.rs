@@ -658,13 +658,15 @@ impl App {
             .iter()
             .filter(|item| self.storage.contains(&item.path))
             .count();
-        let question = format!(
-            "Delete the space \"{}\"?\n\n{}",
-            space.title,
-            delete_consequence(space.items.len(), stored)
-        );
-        if !ui.confirm("Delete space", &question) {
-            return;
+        if delete_needs_confirmation(space) {
+            let question = format!(
+                "Delete the space \"{}\"?\n\n{}",
+                space.title,
+                delete_consequence(space.items.len(), stored)
+            );
+            if !ui.confirm("Delete space", &question) {
+                return;
+            }
         }
         // Return stored files to the desktop before the space goes; if any
         // cannot be moved, keep the space so its files stay reachable.
@@ -730,8 +732,14 @@ impl App {
         if space.user_sized && !space.locked {
             entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
         }
+        // The ellipsis promises a dialog, which only non-empty spaces show.
+        let delete = if delete_needs_confirmation(space) {
+            "Delete space\u{2026}"
+        } else {
+            "Delete space"
+        };
         entries.extend([
-            MenuEntry::item(menu::DELETE, "Delete space\u{2026}"),
+            MenuEntry::item(menu::DELETE, delete),
             MenuEntry::Separator,
             MenuEntry::item(menu::NEW_SPACE, "New space"),
             MenuEntry::Separator,
@@ -1043,6 +1051,11 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
     }
 }
 
+/// Deleting an empty space loses nothing, so it happens without asking.
+fn delete_needs_confirmation(space: &Space) -> bool {
+    !space.items.is_empty()
+}
+
 /// What deleting a space with `count` items, `stored` of them in the space
 /// storage, does to the files.
 fn delete_consequence(count: usize, stored: usize) -> String {
@@ -1147,6 +1160,14 @@ mod tests {
         let mut app = app_with_selection(Some(SpaceId(2)), None);
         assert_eq!(app.take_selection(), None);
         assert_eq!(app.selected_space, None);
+    }
+
+    #[test]
+    fn only_spaces_with_items_ask_before_deleting() {
+        let mut space = Space::new(SpaceId(1), "S", Rect::new(0, 0, 200, 200));
+        assert!(!delete_needs_confirmation(&space));
+        space.push_item(deskspace_core::Item::new(ItemId(1), "C:/a.txt"));
+        assert!(delete_needs_confirmation(&space));
     }
 
     #[test]

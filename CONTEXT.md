@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (96 tests) are green.
+  `cargo test --workspace` (98 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -322,10 +322,15 @@ WindowSettings {
 - Desktop-hosted placement (`--placement desktop-*`): `WS_CHILD` of Progman /
   WorkerW, painted opaque, rounded with a (non-anti-aliased) window region.
 - Corners and border: DWM draws them for square, 4 px, and 8 px corners
-  (`SpaceStyle::dwm_draws_frame`). Other radii, the Clear backdrop, and hosted
-  spaces are rounded by the painter (anti-aliased fills and border), plus a
-  window region where the blur or the opaque fill would otherwise show past
-  the corners (`Frame` in `space_window.rs`).
+  (`SpaceStyle::dwm_draws_frame`). Clear and Solid spaces with other radii,
+  and hosted spaces, are rounded by the painter (anti-aliased fills and
+  border); hosted spaces also get a window region so the opaque fill does not
+  show past the corners (`Frame` in `space_window.rs`). The blur material
+  fills the whole window rectangle and ignores both the window region and
+  the `DwmEnableBlurBehindWindow` blur region (tried on build 26300), so
+  Acrylic and Blur spaces use the nearest DWM radius at or below the chosen
+  one (`Theme::effective_corner_radius`). Larger blurred radii need a
+  composition backdrop (M5).
 - Mouse input is reported in desktop coordinates as `SpaceEvent`s;
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
   the last button-up. `WM_MOUSEWHEEL` (screen coordinates) becomes
@@ -429,8 +434,8 @@ WindowSettings {
   content.
 - Double-click a space title bar to roll it up or down.
 - Right-click a space: Roll up/down, Lock position, Fit to contents (resized
-  spaces only), Delete space…, New space, Settings…, Hide/Show spaces, Exit
-  DeskSpace.
+  spaces only), Delete space (asks first unless the space is empty), New
+  space, Settings…, Hide/Show spaces, Exit DeskSpace.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
