@@ -18,6 +18,6 @@ pub use geometry::{Point, Rect, Size};
 pub use id::{spaceId, ItemId};
 pub use item::{Item, ItemKind};
 pub use layout::GridSpec;
-pub use theme::{Color, Theme};
+pub use theme::{Backdrop, Color, CornerStyle, Palette, Theme, ThemeMode};
 
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
