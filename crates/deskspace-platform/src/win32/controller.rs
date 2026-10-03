@@ -9,7 +9,7 @@
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -23,7 +23,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
-use crate::win32::{runtime, shell_items};
+use crate::win32::{outside_click, runtime, shell_items};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
@@ -120,6 +120,16 @@ unsafe extern "system" fn wndproc(
                 }
                 LRESULT(0)
             }
+            outside_click::OUTSIDE_PROBE => {
+                let point = POINT {
+                    x: wparam.0 as isize as i32,
+                    y: lparam.0 as i32,
+                };
+                if outside_click::is_outside(point) {
+                    runtime::dispatch(Event::PointerDownOutside);
+                }
+                LRESULT(0)
+            }
             WM_SETTINGCHANGE => {
                 if is_color_set_change(lparam) {
                     runtime::dispatch(Event::SystemThemeChanged);
@@ -141,6 +151,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_DESTROY => {
+                outside_click::stop();
                 runtime::dispatch_close_once();
                 runtime::destroy_ui_windows();
                 tray::remove(window);

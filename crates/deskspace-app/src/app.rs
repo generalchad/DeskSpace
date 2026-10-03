@@ -79,6 +79,9 @@ pub struct App {
     scroll: HashMap<SpaceId, i32>,
     visible: bool,
     hotkey: Option<Hotkey>,
+    /// Whether the platform is reporting clicks outside spaces; kept on only
+    /// while an item is selected.
+    watching_outside: bool,
     settings: Option<Session>,
     open_settings_on_start: bool,
 }
@@ -98,6 +101,7 @@ impl App {
             scroll: HashMap::new(),
             visible: !hidden,
             hotkey: None,
+            watching_outside: false,
             settings: None,
             open_settings_on_start: open_settings,
         }
@@ -207,7 +211,33 @@ impl App {
         ui.set_tray_tooltip(&tray_tooltip(&self.config.desktop));
     }
 
+    /// Clears the item selection, as clicking elsewhere does in Explorer.
+    /// Returns the space that showed it, which needs a new scene.
+    fn take_selection(&mut self) -> Option<SpaceId> {
+        let space = self.selected_space.take();
+        self.selected_item.take().and(space)
+    }
+
+    fn clear_selection(&mut self, ui: &mut Ui) {
+        if let Some(space) = self.take_selection() {
+            self.refresh_space(ui, space);
+        }
+    }
+
+    /// Asks for outside clicks only while there is a selection for them to
+    /// clear, because watching them hooks every mouse event in the session.
+    fn sync_outside_watch(&mut self, ui: &mut Ui) {
+        let wanted = self.selected_item.is_some();
+        if wanted != self.watching_outside {
+            ui.watch_outside_clicks(wanted);
+            self.watching_outside = wanted;
+        }
+    }
+
     fn set_visible(&mut self, ui: &mut Ui, visible: bool) {
+        if !visible {
+            self.clear_selection(ui);
+        }
         self.visible = visible;
         ui.set_spaces_visible(visible);
         tracing::info!(visible, "toggled space visibility");
@@ -409,6 +439,11 @@ impl App {
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
         if self.dispatch(Command::ToggleRollup { id }, near) {
+            // A rolled-up space hides its items, so it cannot keep one
+            // selected.
+            if self.selected_space == Some(id) {
+                self.take_selection();
+            }
             self.refresh_space(ui, id);
             self.save();
         }
@@ -912,6 +947,7 @@ impl EventHandler for App {
                 }
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
+            Event::PointerDownOutside => self.clear_selection(ui),
             Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
                 self.set_visible(ui, !self.visible);
             }
@@ -935,6 +971,7 @@ impl EventHandler for App {
                 self.save();
             }
         }
+        self.sync_outside_watch(ui);
     }
 }
 
@@ -1086,6 +1123,30 @@ mod tests {
             target(in_item.0, in_item.1, 200),
             DoubleClickTarget::Nothing
         );
+    }
+
+    fn app_with_selection(space: Option<SpaceId>, item: Option<ItemId>) -> App {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        app.selected_space = space;
+        app.selected_item = item;
+        app
+    }
+
+    #[test]
+    fn taking_a_selection_reports_the_space_to_repaint() {
+        let mut app = app_with_selection(Some(SpaceId(2)), Some(ItemId(5)));
+        assert_eq!(app.take_selection(), Some(SpaceId(2)));
+        assert_eq!((app.selected_space, app.selected_item), (None, None));
+        // Nothing is left to clear, so nothing needs repainting.
+        assert_eq!(app.take_selection(), None);
+    }
+
+    #[test]
+    fn a_space_without_a_selected_item_needs_no_repaint() {
+        let mut app = app_with_selection(Some(SpaceId(2)), None);
+        assert_eq!(app.take_selection(), None);
+        assert_eq!(app.selected_space, None);
     }
 
     #[test]

@@ -6,6 +6,7 @@ mod dwm;
 pub mod hotkey;
 mod icon;
 mod menu;
+mod outside_click;
 pub mod runtime;
 mod settings_window;
 pub mod shell_items;

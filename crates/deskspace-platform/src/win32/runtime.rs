@@ -38,7 +38,9 @@ use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
-use crate::win32::{console, controller, desktop_shell, menu, settings_window, space_window, tray};
+use crate::win32::{
+    console, controller, desktop_shell, menu, outside_click, settings_window, space_window, tray,
+};
 
 pub trait EventHandler {
     fn on_event(&mut self, event: Event, ui: &mut Ui);
@@ -117,6 +119,11 @@ pub(crate) fn dispatch_close_once() {
 
 pub(crate) fn tray_tooltip() -> String {
     with_runtime(|runtime| runtime.tray_tooltip.clone()).unwrap_or_default()
+}
+
+/// Whether `window` is one of this runtime's space windows.
+pub(crate) fn is_space_window(window: HWND) -> bool {
+    with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
 }
 
 pub(crate) fn settings_closed(window: HWND) {
@@ -235,6 +242,15 @@ impl Ui {
             unsafe {
                 let _ = ShowWindow(hwnd, command);
             }
+        }
+    }
+
+    /// Reports `Event::PointerDownOutside` for presses outside every space
+    /// while enabled. It watches every mouse event in the session, so keep
+    /// it on only while something (such as a selection) depends on it.
+    pub fn watch_outside_clicks(&mut self, enabled: bool) {
+        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+            outside_click::watch(controller, enabled);
         }
     }
 

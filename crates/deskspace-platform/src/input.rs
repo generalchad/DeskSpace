@@ -87,6 +87,10 @@ pub enum Event {
     },
     Tray(TrayEvent),
     Settings(SettingsEvent),
+    /// A mouse button went down outside every space (on the desktop, another
+    /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
+    /// is on.
+    PointerDownOutside,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Delivered once, before the runtime tears windows down: on quit, console

@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (92 tests) are green.
+  `cargo test --workspace` (96 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -292,6 +292,12 @@ WindowSettings {
   `TaskbarCreated` (re-adds the icon after Explorer restarts),
   `WM_SETTINGCHANGE`/"ImmersiveColorSet" (`Event::SystemThemeChanged`), and
   session end.
+- Outside clicks (`win32/outside_click.rs`): while the app asks for it
+  (`Ui::watch_outside_clicks`, on only while an item is selected), a
+  `WH_MOUSE_LL` hook posts each button press to the controller, which
+  raises `Event::PointerDownOutside` unless the press hit a space or a popup
+  menu. Spaces are never activated, so this is the only way to see clicks on
+  the desktop or other apps.
 - `Ui::quit`, console Ctrl+C/close, and `WM_ENDSESSION` all lead to exactly one
   `Event::CloseRequested`, then space and settings windows are destroyed, the
   tray icon removed, and the loop ends.
@@ -429,6 +435,8 @@ WindowSettings {
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
+- Click an item to select it; click empty space, the desktop, or another
+  app to clear the selection (hiding spaces and rolling up do too).
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top.
