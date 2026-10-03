@@ -4,6 +4,7 @@ pub mod scene;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub(crate) use d2d::PaintFrame;
 pub use d2d::{Painter, PreparedScene};
 pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
 

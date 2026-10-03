@@ -95,6 +95,8 @@ pub enum FieldKind {
         max: i32,
         value: i32,
         suffix: String,
+        /// Labeled tick marks under the slider.
+        marks: Vec<SliderMark>,
     },
     Color {
         color: Color,
@@ -106,6 +108,21 @@ pub enum FieldKind {
     Button {
         caption: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SliderMark {
+    pub value: i32,
+    pub label: String,
+}
+
+impl SliderMark {
+    pub fn new(value: i32, label: impl Into<String>) -> Self {
+        Self {
+            value,
+            label: label.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,8 +176,25 @@ impl Field {
                 max: range.1,
                 value,
                 suffix: "%".to_string(),
+                marks: Vec::new(),
             },
         )
+    }
+
+    /// Sets the unit shown after a slider's value (`%` by default).
+    pub fn suffix(mut self, text: impl Into<String>) -> Self {
+        if let FieldKind::Slider { suffix, .. } = &mut self.kind {
+            *suffix = text.into();
+        }
+        self
+    }
+
+    /// Adds labeled tick marks to a slider.
+    pub fn marks(mut self, new_marks: Vec<SliderMark>) -> Self {
+        if let FieldKind::Slider { marks, .. } = &mut self.kind {
+            *marks = new_marks;
+        }
+        self
     }
 
     pub fn color(id: u32, label: impl Into<String>, color: Color) -> Self {

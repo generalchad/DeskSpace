@@ -13,7 +13,7 @@
 
 use std::sync::OnceLock;
 
-use deskspace_core::theme::{Backdrop, CornerStyle};
+use deskspace_core::theme::Backdrop;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{
     DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE, DWMSBT_NONE, DWMWA_BORDER_COLOR,
@@ -92,14 +92,14 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle) {
     set(
         hwnd,
         DWMWA_WINDOW_CORNER_PREFERENCE,
-        corner_preference(style.corners),
+        corner_preference(style),
     );
     // Make sure no system backdrop competes with the accent material.
     set::<DWM_SYSTEMBACKDROP_TYPE>(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE);
     // DWMWA_COLOR_DEFAULT lets Windows pick the border (including the accent
     // color when "Show accent color on title bars" is on).
     // https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
-    let border = if style.border {
+    let border = if style.border && style.dwm_draws_frame() {
         DWMWA_COLOR_DEFAULT
     } else {
         DWMWA_COLOR_NONE
@@ -112,7 +112,7 @@ fn accent_state(backdrop: Backdrop) -> u32 {
     match backdrop {
         Backdrop::Acrylic => ACCENT_ENABLE_ACRYLICBLURBEHIND,
         Backdrop::Blur => ACCENT_ENABLE_BLURBEHIND,
-        Backdrop::Solid => ACCENT_DISABLED,
+        Backdrop::Solid | Backdrop::Clear => ACCENT_DISABLED,
     }
 }
 
@@ -143,11 +143,16 @@ fn set_accent(hwnd: HWND, state: u32) {
     }
 }
 
-fn corner_preference(corners: CornerStyle) -> DWM_WINDOW_CORNER_PREFERENCE {
-    match corners {
-        CornerStyle::Round => DWMWCP_ROUND,
-        CornerStyle::Small => DWMWCP_ROUNDSMALL,
-        CornerStyle::Square => DWMWCP_DONOTROUND,
+/// DWM's own corners where it has the radius; otherwise square, and the
+/// space rounds itself (`space_window::update_region` and the painter).
+fn corner_preference(style: SpaceStyle) -> DWM_WINDOW_CORNER_PREFERENCE {
+    if !style.dwm_draws_frame() {
+        return DWMWCP_DONOTROUND;
+    }
+    match style.corner_radius {
+        4 => DWMWCP_ROUNDSMALL,
+        8 => DWMWCP_ROUND,
+        _ => DWMWCP_DONOTROUND,
     }
 }
 
@@ -179,7 +184,30 @@ mod tests {
         );
         assert_eq!(accent_state(Backdrop::Blur), ACCENT_ENABLE_BLURBEHIND);
         assert_eq!(accent_state(Backdrop::Solid), ACCENT_DISABLED);
-        assert_eq!(corner_preference(CornerStyle::Square), DWMWCP_DONOTROUND);
+        assert_eq!(accent_state(Backdrop::Clear), ACCENT_DISABLED);
+        let style = |backdrop, corner_radius| SpaceStyle {
+            backdrop,
+            corner_radius,
+            dark: true,
+            border: true,
+        };
+        assert_eq!(corner_preference(style(Backdrop::Acrylic, 8)), DWMWCP_ROUND);
+        assert_eq!(
+            corner_preference(style(Backdrop::Blur, 4)),
+            DWMWCP_ROUNDSMALL
+        );
+        assert_eq!(
+            corner_preference(style(Backdrop::Acrylic, 0)),
+            DWMWCP_DONOTROUND
+        );
+        assert_eq!(
+            corner_preference(style(Backdrop::Acrylic, 12)),
+            DWMWCP_DONOTROUND
+        );
+        assert_eq!(
+            corner_preference(style(Backdrop::Clear, 8)),
+            DWMWCP_DONOTROUND
+        );
     }
 
     #[test]

@@ -85,6 +85,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::theme::corner;
     use deskspace_core::{Backdrop, Point};
 
     #[test]
@@ -136,7 +137,23 @@ mod tests {
         let text = toml::to_string_pretty(&Config::new()).unwrap();
         assert!(text.contains("backdrop = \"acrylic\""));
         assert!(text.contains("mode = \"system\""));
-        assert!(text.contains("corners = \"round\""));
+        assert!(text.contains("corner_radius = 8"));
+    }
+
+    #[test]
+    fn corner_radius_reads_numbers_and_old_styles() {
+        let parse = |theme: &str| {
+            toml::from_str::<Config>(&format!("version = 2\n[theme]\n{theme}"))
+                .unwrap()
+                .theme
+                .corner_radius
+        };
+        assert_eq!(parse("corner_radius = 12"), 12);
+        assert_eq!(parse("corner_radius = 99"), corner::MAX);
+        assert_eq!(parse("corners = \"square\""), corner::SQUARE);
+        assert_eq!(parse("corners = \"small\""), corner::SMALL);
+        assert_eq!(parse("corners = \"round\""), corner::WINDOWS);
+        assert_eq!(parse(""), corner::WINDOWS);
     }
 
     #[test]

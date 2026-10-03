@@ -45,10 +45,11 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, MouseButton, SpaceEvent};
-use crate::render::{Painter, PreparedScene, SpaceScene, SpaceStyle};
+use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
 use crate::win32::{dwm, runtime};
+use deskspace_core::theme::Backdrop;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
@@ -78,7 +79,7 @@ struct SpaceState {
     hosted: bool,
     /// Development placement above other windows instead of at the bottom.
     on_top: bool,
-    corner_radius: i32,
+    frame: Frame,
     /// `None` while `WM_PAINT` has it checked out.
     painter: Option<Painter>,
     scene: Option<PreparedScene>,
@@ -92,7 +93,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         id: options.id,
         hosted,
         on_top: options.on_top,
-        corner_radius: options.style.corners.radius(),
+        frame: Frame::for_style(options.style, hosted),
         painter: Some(Painter::new()),
         scene: None,
         tracking_leave: false,
@@ -144,9 +145,8 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         if options.click_through {
             let _ = SetLayeredWindowAttributes(hwnd, Default::default(), 255, LWA_ALPHA);
         }
-        if hosted {
-            update_region(hwnd, options.style.corners.radius());
-        } else {
+        update_region(hwnd);
+        if !hosted {
             dwm::apply_style(hwnd, options.style);
             let _ = SetWindowPos(
                 hwnd,
@@ -186,25 +186,15 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
 }
 
 pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
-    let radius = scene.corner_radius;
     let prepared = PreparedScene::new(scene);
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
-    let reshape = unsafe {
+    unsafe {
         with_state(hwnd, |state| {
             if let Some(painter) = state.painter.as_mut() {
                 painter.retain_icons(prepared.scene());
             }
             state.scene = Some(prepared);
-            let changed = state.corner_radius != radius;
-            state.corner_radius = radius;
-            state.hosted && changed
-        })
-    };
-    // SAFETY: `hwnd` is a live space window.
-    unsafe {
-        if reshape == Some(true) {
-            update_region(hwnd, radius);
-        }
+        });
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
 }
@@ -242,14 +232,58 @@ fn apply_cursor(shape: CursorShape) {
 }
 
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
-    // SAFETY: `hwnd` is a live space window.
-    let hosted = unsafe { with_state(hwnd, |state| state.hosted) }.unwrap_or(true);
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let hosted = unsafe {
+        with_state(hwnd, |state| {
+            state.frame = Frame::for_style(style, state.hosted);
+            state.hosted
+        })
+    }
+    .unwrap_or(true);
     if !hosted {
         dwm::apply_style(hwnd, style);
     }
     // SAFETY: `hwnd` is a live space window.
     unsafe {
+        update_region(hwnd);
         let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// Who draws a space's corners and border, and how its window is clipped.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Frame {
+    paint: PaintFrame,
+    /// Clip the window to a rounded region of this radius. Needed where the
+    /// pixels outside the rounded corners would otherwise show: opaque
+    /// desktop-hosted windows, and the blur material, which fills the whole
+    /// window rect. Regions are not anti-aliased, so the painter still draws
+    /// smooth corners inside them.
+    region_radius: Option<i32>,
+}
+
+impl Frame {
+    fn for_style(style: SpaceStyle, hosted: bool) -> Self {
+        let radius = style.corner_radius.max(0);
+        if !hosted && style.dwm_draws_frame() {
+            return Self {
+                paint: PaintFrame {
+                    opaque: false,
+                    radius: 0,
+                    border: false,
+                },
+                region_radius: None,
+            };
+        }
+        let blurred = matches!(style.backdrop, Backdrop::Acrylic | Backdrop::Blur);
+        Self {
+            paint: PaintFrame {
+                opaque: hosted,
+                radius,
+                border: style.border,
+            },
+            region_radius: (radius > 0 && (hosted || blurred)).then_some(radius),
+        }
     }
 }
 
@@ -278,12 +312,19 @@ fn ensure_class(instance: HINSTANCE) -> Result<(), PlatformError> {
     }
 }
 
-/// Clips a desktop-hosted space to a rounded rectangle. DWM rounds top-level
-/// windows itself; child windows need a region (which is not anti-aliased).
-unsafe fn update_region(hwnd: HWND, radius: i32) {
+/// Applies the frame's rounded window region, or removes it.
+unsafe fn update_region(hwnd: HWND) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let Some(radius) = (unsafe { with_state(hwnd, |state| state.frame.region_radius) }) else {
+        return;
+    };
     let mut client = Default::default();
     // SAFETY: `hwnd` is live; the system owns the region after SetWindowRgn.
     unsafe {
+        let Some(radius) = radius else {
+            let _ = SetWindowRgn(hwnd, None, true);
+            return;
+        };
         if GetClientRect(hwnd, &mut client).is_err() {
             return;
         }
@@ -360,13 +401,13 @@ unsafe fn paint(window: HWND) {
     // SAFETY (all calls): `window` is live and the state borrows are short.
     unsafe {
         let checked_out = with_state(window, |state| {
-            (state.painter.take(), state.scene.take(), state.hosted)
+            (state.painter.take(), state.scene.take(), state.frame.paint)
         });
-        let Some((Some(mut painter), scene, hosted)) = checked_out else {
+        let Some((Some(mut painter), scene, frame)) = checked_out else {
             let _ = ValidateRect(Some(window), None);
             return;
         };
-        if let Err(error) = painter.paint(window, scene.as_ref(), hosted) {
+        if let Err(error) = painter.paint(window, scene.as_ref(), frame) {
             tracing::error!(%error, "space paint failed");
         }
         with_state(window, |state| {
@@ -411,11 +452,7 @@ unsafe extern "system" fn wndproc(
             }
             WM_ERASEBKGND => LRESULT(1),
             WM_SIZE => {
-                if let Some((true, radius)) =
-                    with_state(window, |state| (state.hosted, state.corner_radius))
-                {
-                    update_region(window, radius);
-                }
+                update_region(window);
                 let _ = InvalidateRect(Some(window), None, false);
                 LRESULT(0)
             }

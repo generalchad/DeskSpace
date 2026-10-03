@@ -9,7 +9,9 @@ pub use error::PlatformError;
 pub use input::{Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
 pub use render::{Icon, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 pub use shell::{DesktopEntry, IconCache, enumerate_desktop_items};
-pub use ui::{CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsPage};
+pub use ui::{
+    CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsPage, SliderMark,
+};
 pub use win32::Placement;
 pub use win32::dpi::enable_per_monitor_awareness;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};

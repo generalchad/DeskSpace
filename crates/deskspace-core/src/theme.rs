@@ -109,28 +109,21 @@ pub enum Backdrop {
     Blur,
     /// No backdrop material; the tint is drawn fully opaque.
     Solid,
+    /// Plain glass: no blur, only the tint at its opacity. At 0 % tint, no
+    /// title shading, and no border, only the icons and labels are visible.
+    Clear,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CornerStyle {
-    #[default]
-    Round,
-    Small,
-    Square,
-}
-
-impl CornerStyle {
-    /// Radius in pixels at 96 DPI, matching the Windows 11 design guidance
-    /// (8 px for top-level windows, 4 px for small surfaces).
-    /// https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-rounded-corners
-    pub const fn radius(self) -> i32 {
-        match self {
-            Self::Round => 8,
-            Self::Small => 4,
-            Self::Square => 0,
-        }
-    }
+/// Corner radii in pixels at 96 DPI. `SMALL` and `WINDOWS` match the Windows
+/// 11 design guidance (4 px for small surfaces, 8 px for windows), and DWM
+/// draws them natively; other radii are drawn by DeskSpace.
+/// https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/apply-rounded-corners
+pub mod corner {
+    pub const SQUARE: u8 = 0;
+    pub const SMALL: u8 = 4;
+    pub const WINDOWS: u8 = 8;
+    pub const ROUND: u8 = 16;
+    pub const MAX: u8 = 24;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,7 +131,10 @@ impl CornerStyle {
 pub struct Theme {
     pub mode: ThemeMode,
     pub backdrop: Backdrop,
-    pub corners: CornerStyle,
+    /// Corner radius in pixels, `0..=corner::MAX`. Also reads the older
+    /// `corners = "round" | "small" | "square"` setting.
+    #[serde(alias = "corners", deserialize_with = "radius_or_style")]
+    pub corner_radius: u8,
     /// How strongly the tint covers the backdrop, in percent.
     pub tint_opacity: u8,
     /// How much darker (dark mode) or lighter (light mode) the title bar is
@@ -157,7 +153,7 @@ impl Default for Theme {
         Self {
             mode: ThemeMode::System,
             backdrop: Backdrop::Acrylic,
-            corners: CornerStyle::Round,
+            corner_radius: corner::WINDOWS,
             tint_opacity: 40,
             title_shading: 30,
             show_border: true,
@@ -166,6 +162,23 @@ impl Default for Theme {
             text: DARK_TEXT,
         }
     }
+}
+
+fn radius_or_style<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u8, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RadiusOrStyle {
+        Radius(i64),
+        Style(String),
+    }
+    Ok(match RadiusOrStyle::deserialize(deserializer)? {
+        RadiusOrStyle::Radius(radius) => radius.clamp(0, corner::MAX as i64) as u8,
+        RadiusOrStyle::Style(style) => match style.as_str() {
+            "square" => corner::SQUARE,
+            "small" => corner::SMALL,
+            _ => corner::WINDOWS,
+        },
+    })
 }
 
 /// Windows 11 dark and light base colors (Fluent "solid background" and
@@ -206,7 +219,9 @@ impl Theme {
         };
         let tint_alpha = match self.backdrop {
             Backdrop::Solid => 255,
-            Backdrop::Acrylic | Backdrop::Blur => percent_to_alpha(self.tint_opacity),
+            Backdrop::Acrylic | Backdrop::Blur | Backdrop::Clear => {
+                percent_to_alpha(self.tint_opacity)
+            }
         };
         let shade = if dark {
             Color::rgb(0, 0, 0)
@@ -293,6 +308,16 @@ mod tests {
         };
         assert_eq!(theme.palette(true).tint.a, 255);
         assert_eq!(Theme::default().palette(true).tint.a, percent_to_alpha(40));
+    }
+
+    #[test]
+    fn clear_backdrop_can_be_fully_transparent() {
+        let theme = Theme {
+            backdrop: Backdrop::Clear,
+            tint_opacity: 0,
+            ..Theme::default()
+        };
+        assert_eq!(theme.palette(true).tint.a, 0);
     }
 
     #[test]

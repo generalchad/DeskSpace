@@ -4,8 +4,9 @@
 use std::path::Path;
 
 use deskspace_config::{Config, WindowSettings};
-use deskspace_core::{Backdrop, CornerStyle, Theme, ThemeMode};
-use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage};
+use deskspace_core::theme::corner;
+use deskspace_core::{Backdrop, Theme, ThemeMode};
+use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage, SliderMark};
 
 pub mod field {
     pub const SPACES_HEADING: u32 = 1;
@@ -38,16 +39,21 @@ const MODES: [(ThemeMode, &str); 3] = [
     (ThemeMode::Dark, "Dark"),
     (ThemeMode::Light, "Light"),
 ];
-const BACKDROPS: [(Backdrop, &str); 3] = [
+const BACKDROPS: [(Backdrop, &str); 4] = [
     (Backdrop::Acrylic, "Acrylic (frosted)"),
     (Backdrop::Blur, "Blur"),
+    (Backdrop::Clear, "Clear glass (no blur)"),
     (Backdrop::Solid, "Solid"),
 ];
-const CORNERS: [(CornerStyle, &str); 3] = [
-    (CornerStyle::Round, "Rounded"),
-    (CornerStyle::Small, "Slightly rounded"),
-    (CornerStyle::Square, "Square"),
-];
+
+fn corner_marks() -> Vec<SliderMark> {
+    vec![
+        SliderMark::new(corner::SQUARE.into(), "Square"),
+        SliderMark::new(corner::WINDOWS.into(), "Windows 11"),
+        SliderMark::new(corner::ROUND.into(), "Round"),
+        SliderMark::new(corner::MAX.into(), "Max"),
+    ]
+}
 
 const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit, or F1-F24, \
      for example Ctrl+Alt+D.";
@@ -126,12 +132,14 @@ pub fn build_form(
                 &labels(&BACKDROPS),
                 index_of(&BACKDROPS, theme.backdrop),
             ),
-            Field::choice(
+            Field::slider(
                 field::CORNERS,
-                "Corners",
-                &labels(&CORNERS),
-                index_of(&CORNERS, theme.corners),
-            ),
+                "Corner radius",
+                (corner::SQUARE.into(), corner::MAX.into()),
+                theme.corner_radius.min(corner::MAX).into(),
+            )
+            .suffix(" px")
+            .marks(corner_marks()),
             Field::slider(
                 field::TINT_OPACITY,
                 "Tint opacity",
@@ -158,8 +166,9 @@ pub fn build_form(
             Field::button(field::RESET, "", "Restore default appearance"),
             Field::note(
                 field::COMPATIBILITY_NOTE,
-                "Rounded corners need Windows 11; on Windows 10 spaces keep square \
-                 corners. Desktop-hosted spaces are drawn opaque.",
+                "Clear glass at 0% tint and 0% title shading, without a border, \
+                 shows only the icons and labels. Rounded corners need Windows 11 \
+                 for blurred spaces. Desktop-hosted spaces are drawn opaque.",
             ),
         ],
     };
@@ -235,8 +244,8 @@ pub fn apply_field(
             theme.backdrop = BACKDROPS.get(index).map_or(theme.backdrop, |entry| entry.0);
             Effect::Appearance
         }
-        (field::CORNERS, FieldValue::Choice(index)) => {
-            theme.corners = CORNERS.get(index).map_or(theme.corners, |entry| entry.0);
+        (field::CORNERS, FieldValue::Slider(radius)) => {
+            theme.corner_radius = radius.clamp(0, corner::MAX.into()) as u8;
             Effect::Appearance
         }
         (field::TINT_OPACITY, FieldValue::Slider(value)) => {
@@ -313,7 +322,7 @@ mod tests {
         assert!(!form.field(field::TINT).unwrap().enabled);
         assert!(matches!(
             form.field(field::BACKDROP).unwrap().kind,
-            FieldKind::Choice { selected: 2, .. }
+            FieldKind::Choice { selected: 3, .. }
         ));
         assert!(!form.apply_enabled);
     }
@@ -397,6 +406,30 @@ mod tests {
             true,
         );
         assert_eq!(config.theme.title_shading, 100);
+    }
+
+    #[test]
+    fn corner_radius_is_a_marked_slider() {
+        let (mut config, mut session) = setup();
+        let form = build_form(&config, &session, true, Path::new("x"));
+        match &form.field(field::CORNERS).unwrap().kind {
+            FieldKind::Slider {
+                value, max, marks, ..
+            } => {
+                assert_eq!(*value, 8);
+                assert_eq!(*max, 24);
+                assert!(marks.iter().any(|mark| mark.value == 8));
+            }
+            other => panic!("expected a slider, got {other:?}"),
+        }
+        apply_field(
+            &mut config,
+            &mut session,
+            field::CORNERS,
+            FieldValue::Slider(40),
+            true,
+        );
+        assert_eq!(config.theme.corner_radius, corner::MAX);
     }
 
     #[test]

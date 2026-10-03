@@ -52,7 +52,7 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
-use crate::ui::{Field, FieldKind, FieldValue, SettingsForm};
+use crate::ui::{Field, FieldKind, FieldValue, SettingsForm, SliderMark};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::{runtime, tray};
 
@@ -72,12 +72,21 @@ const PART_SECONDARY: usize = 1;
 /// Static and trackbar styles that `windows` exposes under different types
 /// than `WINDOW_STYLE`; the values are from WinUser.h / CommCtrl.h.
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
+const SS_LEFT: u32 = 0x0000;
+const SS_CENTER: u32 = 0x0001;
+const SS_RIGHT: u32 = 0x0002;
 const SS_NOPREFIX: u32 = 0x0080;
 const SS_CENTERIMAGE: u32 = 0x0200;
-/// TBM_GETPOS is WM_USER; TBM_SETRANGEMAX follows TBM_SETRANGEMIN.
-/// https://learn.microsoft.com/en-us/windows/win32/controls/tbm-getpos
+/// Trackbar messages are WM_USER-based: TBM_GETPOS is WM_USER, TBM_SETTIC
+/// WM_USER + 4, TBM_GETTHUMBRECT WM_USER + 25; TBM_SETRANGEMAX follows
+/// TBM_SETRANGEMIN.
+/// https://learn.microsoft.com/en-us/windows/win32/controls/bumper-trackbar-control-reference-messages
 const TBM_GETPOS: u32 = 0x0400;
+const TBM_SETTIC: u32 = 0x0404;
+const TBM_GETTHUMBRECT: u32 = 0x0419;
 const TBM_SETRANGEMAX: u32 = TBM_SETRANGEMIN + 1;
+/// Height of the labels under a slider's tick marks, at 96 DPI.
+const MARK_LABEL_HEIGHT: i32 = 16;
 
 static REGISTER_CLASSES: Once = Once::new();
 static CLASSES_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -96,6 +105,8 @@ struct FieldControls {
     value_text: Option<HWND>,
     swatch: Option<HWND>,
     swatch_brush: Option<HBRUSH>,
+    /// Labels under a slider's tick marks.
+    marks: Vec<HWND>,
 }
 
 struct SettingsState {
@@ -113,8 +124,12 @@ struct SettingsState {
 }
 
 impl FieldControls {
-    fn handles(&self) -> [Option<HWND>; 4] {
+    fn handles(&self) -> Vec<HWND> {
         [self.label, self.main, self.value_text, self.swatch]
+            .into_iter()
+            .flatten()
+            .chain(self.marks.iter().copied())
+            .collect()
     }
 }
 
@@ -347,6 +362,88 @@ impl Builder {
         }
     }
 
+    /// Adds tick marks to `slider` and a label under each. Each label is
+    /// centered on the thumb position for its value, which the trackbar
+    /// reports exactly (TBM_GETTHUMBRECT) rather than this code guessing its
+    /// channel insets, and is only as wide as the space to its neighbors so
+    /// labels never overlap. Labels at the ends of the range are aligned
+    /// inward so they stay inside the page.
+    unsafe fn slider_marks(
+        &self,
+        page: HWND,
+        slider: HWND,
+        slider_x: i32,
+        top: i32,
+        (min, max): (i32, i32),
+        marks: &[SliderMark],
+    ) -> Vec<HWND> {
+        let mut centers = Vec::with_capacity(marks.len());
+        let (mut first_left, mut last_right) = (slider_x, slider_x);
+        // SAFETY: `slider` is a live trackbar of this window; the thumb rect
+        // is a valid out-parameter for TBM_GETTHUMBRECT.
+        unsafe {
+            for mark in marks {
+                SendMessageW(slider, TBM_SETTIC, None, Some(LPARAM(mark.value as isize)));
+                // The trackbar only recomputes its thumb rect when the
+                // position change is redrawn (wParam TRUE).
+                SendMessageW(
+                    slider,
+                    TBM_SETPOS,
+                    Some(WPARAM(1)),
+                    Some(LPARAM(mark.value as isize)),
+                );
+                let mut thumb = RECT::default();
+                SendMessageW(
+                    slider,
+                    TBM_GETTHUMBRECT,
+                    None,
+                    Some(LPARAM(&mut thumb as *mut RECT as isize)),
+                );
+                if mark.value <= min {
+                    first_left = slider_x + thumb.left;
+                }
+                if mark.value >= max {
+                    last_right = slider_x + thumb.right;
+                }
+                centers.push(slider_x + (thumb.left + thumb.right) / 2);
+            }
+        }
+        let widest = self.s(80);
+        let mut labels = Vec::with_capacity(marks.len());
+        for (index, mark) in marks.iter().enumerate() {
+            let center = centers[index];
+            let gap_before = index.checked_sub(1).map(|i| center - centers[i]);
+            let gap_after = centers.get(index + 1).map(|next| next - center);
+            let (x, width, align) = if mark.value <= min {
+                let width = gap_after.map_or(widest, |gap| gap - gap / 2).min(widest);
+                (first_left, width, SS_LEFT)
+            } else if mark.value >= max {
+                let width = gap_before.map_or(widest, |gap| gap - gap / 2).min(widest);
+                (last_right - width, width, SS_RIGHT)
+            } else {
+                let width = gap_before
+                    .into_iter()
+                    .chain(gap_after)
+                    .min()
+                    .unwrap_or(widest)
+                    .min(widest);
+                (center - width / 2, width, SS_CENTER)
+            };
+            // SAFETY: creating a child control of our own page.
+            labels.extend(unsafe {
+                self.control(
+                    page,
+                    WC_STATICW,
+                    &mark.label,
+                    SS_NOPREFIX | align,
+                    WINDOW_EX_STYLE(0),
+                    (x, top, width, self.s(MARK_LABEL_HEIGHT)),
+                    0,
+                )
+            });
+        }
+        labels
+    }
     unsafe fn text_height(&self, parent: HWND, text: &str, width: i32) -> i32 {
         let mut buffer: Vec<u16> = text.encode_utf16().collect();
         let mut bounds = RECT {
@@ -395,6 +492,7 @@ impl Builder {
             value_text: None,
             swatch: None,
             swatch_brush: None,
+            marks: Vec::new(),
         };
         let row = self.s(28);
         let label_bounds = (x, y, label_width, row);
@@ -477,16 +575,19 @@ impl Builder {
                     max,
                     value,
                     suffix,
+                    marks,
                 } => {
                     controls.label = self.label(page, &field.label, label_bounds);
                     let value_width = self.s(48);
+                    let ticks = if marks.is_empty() { TBS_NOTICKS } else { 0 };
+                    let slider_x = control_x - self.s(6);
                     let slider = self.control(
                         page,
                         TRACKBAR_CLASSW,
                         "",
-                        TBS_HORZ | TBS_NOTICKS | tab,
+                        TBS_HORZ | ticks | tab,
                         WINDOW_EX_STYLE(0),
-                        (control_x - self.s(6), y, control_width - value_width, row),
+                        (slider_x, y, control_width - value_width, row),
                         id_main,
                     );
                     if let Some(slider) = slider {
@@ -502,6 +603,16 @@ impl Builder {
                             Some(WPARAM(0)),
                             Some(LPARAM(*max as isize)),
                         );
+                        if !marks.is_empty() {
+                            controls.marks = self.slider_marks(
+                                page,
+                                slider,
+                                slider_x,
+                                y + row,
+                                (*min, *max),
+                                marks,
+                            );
+                        }
                         SendMessageW(
                             slider,
                             TBM_SETPOS,
@@ -520,7 +631,11 @@ impl Builder {
                             row,
                         ),
                     );
-                    self.s(38)
+                    if marks.is_empty() {
+                        self.s(38)
+                    } else {
+                        row + self.s(MARK_LABEL_HEIGHT + 14)
+                    }
                 }
                 FieldKind::Color { color } => {
                     controls.label = self.label(page, &field.label, label_bounds);
@@ -793,8 +908,8 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
     }
 }
 
-unsafe fn apply_enabled(handles: [Option<HWND>; 4], enabled: bool) {
-    for hwnd in handles.into_iter().flatten() {
+unsafe fn apply_enabled(handles: Vec<HWND>, enabled: bool) {
+    for hwnd in handles {
         // SAFETY: `hwnd` is a live control of the settings window.
         unsafe {
             let _ = EnableWindow(hwnd, enabled);
@@ -806,7 +921,7 @@ unsafe fn apply_enabled(handles: [Option<HWND>; 4], enabled: bool) {
 /// borrow and applied after it, because control messages can re-enter
 /// `wndproc` (for example SetWindowText raises EN_CHANGE).
 enum Update {
-    Enable([Option<HWND>; 4], bool),
+    Enable(Vec<HWND>, bool),
     Text(HWND, String),
     Choice(HWND, usize),
     Check(HWND, bool),

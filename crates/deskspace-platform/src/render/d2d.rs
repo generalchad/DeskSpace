@@ -230,20 +230,19 @@ impl Painter {
         Self::default()
     }
 
-    /// Paints `scene` in response to `WM_PAINT`. `opaque` is for spaces hosted
-    /// inside the desktop window, where per-pixel alpha is not composited.
-    pub fn paint(
+    /// Paints `scene` in response to `WM_PAINT`.
+    pub(crate) fn paint(
         &mut self,
         hwnd: HWND,
         scene: Option<&PreparedScene>,
-        opaque: bool,
+        frame: PaintFrame,
     ) -> Result<(), PlatformError> {
         let mut ps = PAINTSTRUCT::default();
         // SAFETY: BeginPaint/EndPaint bracket the paint for this window; the
         // render target draws to the same HWND in between.
         unsafe { BeginPaint(hwnd, &mut ps) };
         let result = match scene {
-            Some(scene) => self.render(hwnd, scene, opaque),
+            Some(scene) => self.render(hwnd, scene, frame),
             None => Ok(()),
         };
         // SAFETY: matches the BeginPaint above.
@@ -257,19 +256,21 @@ impl Painter {
         &mut self,
         hwnd: HWND,
         prepared: &PreparedScene,
-        opaque: bool,
+        frame: PaintFrame,
     ) -> Result<(), PlatformError> {
         let graphics = graphics()?;
         let (target, brush) = self.ensure_target(&graphics, hwnd)?;
         let scene = &prepared.scene;
         let width = self.size.0 as f32;
         let height = self.size.1 as f32;
+        let whole = rect_f(0.0, 0.0, width, height);
+        let radius = frame.radius as f32;
 
         // SAFETY: all calls are on live COM objects owned by this painter,
         // between BeginDraw and EndDraw on the UI thread.
         let end = unsafe {
             target.BeginDraw();
-            if opaque {
+            if frame.opaque {
                 target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
                 target.Clear(Some(&color_f(scene.tint.with_alpha(255))));
             } else {
@@ -277,16 +278,18 @@ impl Painter {
                 // translucent surface it leaves colored fringes.
                 target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
                 target.Clear(Some(&color_f(Color::TRANSPARENT)));
-                fill(&target, &brush, rect_f(0.0, 0.0, width, height), scene.tint);
+                fill_rounded(&target, &brush, whole, radius, scene.tint);
             }
 
+            // The title fill is the body's rounded shape cut at the title's
+            // bottom edge, so its top corners follow the space's corners.
             let title_height = scene.title_height as f32;
-            fill(
-                &target,
-                &brush,
-                rect_f(0.0, 0.0, width, title_height.min(height)),
-                scene.title_fill,
+            target.PushAxisAlignedClip(
+                &rect_f(0.0, 0.0, width, title_height.min(height)),
+                D2D1_ANTIALIAS_MODE_ALIASED,
             );
+            fill_rounded(&target, &brush, whole, radius, scene.title_fill);
+            target.PopAxisAlignedClip();
             self.draw_title(&graphics, &target, &brush, prepared, width, title_height);
 
             if !scene.rolled_up && height > title_height {
@@ -297,26 +300,23 @@ impl Painter {
                 self.draw_items(&graphics, &target, &brush, prepared);
                 target.PopAxisAlignedClip();
                 if let Some(thumb) = scene.scroll_thumb {
-                    brush.SetColor(&color_f(scene.item_text.fade(SCROLL_THUMB_ALPHA)));
                     let thumb = to_rect_f(thumb);
-                    let radius = (thumb.right - thumb.left) / 2.0;
-                    target.FillRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: thumb,
-                            radiusX: radius,
-                            radiusY: radius,
-                        },
+                    let thumb_radius = (thumb.right - thumb.left) / 2.0;
+                    fill_rounded(
+                        &target,
                         &brush,
+                        thumb,
+                        thumb_radius,
+                        scene.item_text.fade(SCROLL_THUMB_ALPHA),
                     );
                 }
             }
 
-            if opaque && scene.border.a > 0 {
+            if frame.border && scene.border.a > 0 {
                 brush.SetColor(&color_f(scene.border));
-                let radius = scene.corner_radius as f32;
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
-                        rect: rect_f(0.5, 0.5, width - 0.5, height - 0.5),
+                        rect: inset(whole, 0.5),
                         radiusX: radius,
                         radiusY: radius,
                     },
@@ -327,7 +327,6 @@ impl Painter {
             }
             target.EndDraw(None, None)
         };
-
         if let Err(error) = end {
             if error.code() == D2DERR_RECREATE_TARGET {
                 tracing::debug!("direct2d target lost; recreating on next paint");
@@ -352,19 +351,19 @@ impl Painter {
         let lock_width = if scene.locked { title_height } else { 0.0 };
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
-            brush.SetColor(&color_f(scene.title_text));
-            target.DrawText(
+            draw_text(
+                target,
+                brush,
                 &prepared.title,
                 &graphics.title_format,
-                &rect_f(
+                rect_f(
                     TITLE_INSET,
                     0.0,
                     (width - TITLE_INSET - lock_width).max(TITLE_INSET),
                     title_height,
                 ),
-                brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                DWRITE_MEASURING_MODE_NATURAL,
+                scene.title_text,
+                scene.text_shadow,
             );
             if let (true, Some(format)) = (scene.locked, &graphics.glyph_format) {
                 brush.SetColor(&color_f(scene.title_text.fade(170)));
@@ -425,14 +424,14 @@ impl Painter {
                 let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;
                 let label_bottom = (label_top + LABEL_LINES * LABEL_LINE_HEIGHT).min(cell.bottom);
                 if label_bottom > label_top {
-                    brush.SetColor(&color_f(scene.item_text));
-                    target.DrawText(
+                    draw_text(
+                        target,
+                        brush,
                         label,
                         &graphics.label_format,
-                        &rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                        DWRITE_MEASURING_MODE_NATURAL,
+                        rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
+                        scene.item_text,
+                        scene.text_shadow,
                     );
                 }
             }
@@ -587,10 +586,24 @@ pub(crate) fn decode_icon(hicon: HICON) -> Option<Icon> {
     }
 }
 
-unsafe fn fill(
+/// How a space window's edge is drawn; decided by the window from its style
+/// and placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PaintFrame {
+    /// Desktop-hosted windows get no per-pixel alpha; paint them opaque.
+    pub opaque: bool,
+    /// Corner radius the painter rounds the body to; 0 when DWM rounds the
+    /// window or the corners are square.
+    pub radius: i32,
+    /// Draw the border here because DWM does not.
+    pub border: bool,
+}
+
+unsafe fn fill_rounded(
     target: &ID2D1HwndRenderTarget,
     brush: &ID2D1SolidColorBrush,
     rect: D2D_RECT_F,
+    radius: f32,
     color: Color,
 ) {
     if color.a == 0 {
@@ -599,7 +612,59 @@ unsafe fn fill(
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
         brush.SetColor(&color_f(color));
-        target.FillRectangle(&rect, brush);
+        if radius > 0.0 {
+            target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect,
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                brush,
+            );
+        } else {
+            target.FillRectangle(&rect, brush);
+        }
+    }
+}
+
+/// Draws clipped text, first offset by one pixel in `shadow` when given.
+#[allow(clippy::too_many_arguments)]
+unsafe fn draw_text(
+    target: &ID2D1HwndRenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    text: &[u16],
+    format: &IDWriteTextFormat,
+    rect: D2D_RECT_F,
+    color: Color,
+    shadow: Option<Color>,
+) {
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if let Some(shadow) = shadow {
+            brush.SetColor(&color_f(shadow));
+            target.DrawText(
+                text,
+                format,
+                &rect_f(
+                    rect.left + 1.0,
+                    rect.top + 1.0,
+                    rect.right + 1.0,
+                    rect.bottom + 1.0,
+                ),
+                brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+        brush.SetColor(&color_f(color));
+        target.DrawText(
+            text,
+            format,
+            &rect,
+            brush,
+            D2D1_DRAW_TEXT_OPTIONS_CLIP,
+            DWRITE_MEASURING_MODE_NATURAL,
+        );
     }
 }
 

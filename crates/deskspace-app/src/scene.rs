@@ -1,9 +1,12 @@
-use deskspace_core::{GridSpec, ItemId, Palette, Rect, Space, Theme};
+use deskspace_core::{Color, GridSpec, ItemId, Palette, Rect, Space, Theme};
 use deskspace_platform::{IconCache, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
 const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
+/// Below this tint alpha the backdrop shows through so much that labels need
+/// a shadow to stay readable on busy wallpapers.
+const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
 
 /// Transient view state that affects how one space is drawn.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -17,7 +20,7 @@ pub struct ViewState {
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
     SpaceStyle {
         backdrop: theme.backdrop,
-        corners: theme.corners,
+        corner_radius: theme.corner_radius as i32,
         dark: theme.is_dark(system_dark),
         border: theme.show_border,
     }
@@ -80,17 +83,35 @@ pub fn space_scene(
         hover_fill: palette.hover_fill,
         selected_fill: palette.selected_fill,
         border: palette.border,
-        corner_radius: theme.corners.radius(),
+        text_shadow: text_shadow(palette, space.opacity),
         locked: space.locked,
         rolled_up: space.rolled_up,
         items,
-        scroll_thumb: scroll_thumb(space, layout, view.scroll),
+        scroll_thumb: scroll_thumb(space, layout, view.scroll, theme.corner_radius as i32),
     }
 }
 
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
-fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32) -> Option<Rect> {
+/// A dark shadow under light text (or a light one under dark text) when the
+/// space is nearly transparent, like the labels of desktop icons.
+fn text_shadow(palette: &Palette, opacity: u8) -> Option<Color> {
+    if palette.tint.fade(opacity).a >= TEXT_SHADOW_BELOW_ALPHA {
+        return None;
+    }
+    Some(if palette.item_text.luminance() > 0.5 {
+        Color::rgba(0, 0, 0, 170)
+    } else {
+        Color::rgba(255, 255, 255, 140)
+    })
+}
+
+/// Keeps the scroll indicator's bottom clear of the rounded corner.
+fn thumb_bottom_margin(corner_radius: i32) -> i32 {
+    SCROLL_THUMB_MARGIN + corner_radius / 2
+}
+
+fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32) -> Option<Rect> {
     if space.rolled_up {
         return None;
     }
@@ -101,7 +122,7 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32) -> Option<Rect> {
     let viewport = space.content_rect().height;
     let extent = viewport + max_scroll;
     let track_top = space.title_height + SCROLL_THUMB_MARGIN;
-    let track_height = viewport - SCROLL_THUMB_MARGIN * 2;
+    let track_height = viewport - SCROLL_THUMB_MARGIN - thumb_bottom_margin(corner_radius);
     if track_height <= 0 {
         return None;
     }
@@ -252,7 +273,10 @@ mod tests {
         };
         let (start, end) = (thumb(0), thumb(max));
         assert_eq!(start.y, tall.title_height + SCROLL_THUMB_MARGIN);
-        assert_eq!(end.bottom(), tall.rect.height - SCROLL_THUMB_MARGIN);
+        assert_eq!(
+            end.bottom(),
+            tall.rect.height - thumb_bottom_margin(theme.corner_radius as i32)
+        );
         assert_eq!(start.right(), tall.rect.width - SCROLL_THUMB_MARGIN);
 
         let short = space();
@@ -265,5 +289,23 @@ mod tests {
             &mut IconCache::new(32),
         );
         assert_eq!(scene.scroll_thumb, None);
+    }
+
+    #[test]
+    fn nearly_transparent_spaces_shadow_their_text() {
+        let clear = Theme {
+            backdrop: deskspace_core::Backdrop::Clear,
+            tint_opacity: 5,
+            ..Theme::default()
+        };
+        let dark = clear.palette(true);
+        assert_eq!(text_shadow(&dark, 255).map(|c| c.r), Some(0));
+        assert_eq!(
+            text_shadow(&clear.palette(false), 255).map(|c| c.r),
+            Some(255)
+        );
+        assert_eq!(text_shadow(&Theme::default().palette(true), 255), None);
+        // A low per-space opacity makes an otherwise opaque tint transparent.
+        assert!(text_shadow(&Theme::default().palette(true), 20).is_some());
     }
 }
