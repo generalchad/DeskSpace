@@ -10,7 +10,7 @@ references used across milestones and the parity checklist.
 A native, lightweight, offline Windows desktop organizer that:
 - owns the desktop icon layer and draws real desktop items itself,
 - groups items into movable, resizable, lockable spaces,
-- mirrors folders as live portals,
+- mirrors folders as live lenses,
 - hides and reveals everything quickly (roll-up, auto-hide, peek),
 - looks and feels modern (per-pixel alpha, blur, animation),
 - and stays fully configurable from a tray app, context menus, and a settings
@@ -29,8 +29,12 @@ A native, lightweight, offline Windows desktop organizer that:
   work in M5. The documented `DWMWA_SYSTEMBACKDROP_TYPE` was rejected because
   system backdrops only render on active windows and spaces are never active.
 - **D3. Item storage model.** Two mechanisms, kept strictly separate:
-  - *Portals* are pure views over a real folder. They read contents live and
-    never move, copy, or duplicate data, regardless of folder size.
+  - *Lenses* (what comparable tools calls "Folder Portals") are views over a
+    real folder. They read contents live and never move, copy, or duplicate
+    data on their own, regardless of folder size. Dropping files onto a lens
+    is a user-initiated move into the bound folder, performed with the
+    shell's `IFileOperation` so it shows the standard conflict dialogs and
+    can be undone from Explorer.
   - *Normal spaces* hold individual items. Dropping an item into a normal space
     relocates that one item into a managed store with a move, not a copy (an
     atomic rename on the same volume, so no duplication and no extra disk use).
@@ -38,6 +42,9 @@ A native, lightweight, offline Windows desktop organizer that:
     configurable. Relocation is protected by undo and a snapshot manifest.
 - **D4. v0.2 scope.** Tray icon, right-click context menus, and a settings
   window are required in the first usable release.
+- **D5. Naming.** The folder-mirror feature is called a *lens* in the UI and
+  docs. In code it is a space whose source is a folder
+  (`spaceSource::Folder`), so the user-facing name stays out of the model.
 
 ## 3. Guiding principles
 
@@ -67,6 +74,12 @@ started).
   spaces (as references); config v2 with migration; space-relative item
   positions (fixes items being left behind when a space moved). Covers most of
   M1 and parts of M0, M2, and M3.
+- **Resize and scroll (M4 phase 0).** spaces resize from any edge or corner
+  (snapped, minimum one cell, resize cursors); a resized space keeps its size,
+  reflows items into as many columns as fit, and scrolls with the mouse wheel
+  with a thin scroll indicator. Only visible items are put in the scene, so
+  icons load lazily. Icons are decoded into owned pixel buffers and the icon
+  cache is LRU-bounded. Closes F-03.
 
 ### M0 - Foundations and guardrails
 
@@ -111,11 +124,12 @@ on Windows 10/11. Remaining: per-monitor DPI.
   references; an OLE `IDropTarget` is needed for drop-effect feedback and
   drag-out.
 - Drop files onto a normal space relocates them into the managed store by move
-  (`D3`), with undo; portals are unaffected because they never touch the store.
+  (`D3`), with undo; lenses are unaffected because they never touch the store.
 - Update the item model and refresh after file operations.
 - space chrome: resize handles, lock toggle, rename inline, delete with undo
-  (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph) and delete (menu
-  + confirmation, no undo) are done; resize and rename are not.
+  (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph), delete (menu
+  + confirmation, no undo), and resize (edges/corners, "Fit to contents") are
+  done; rename is not.
 - **[done]** Basic right-click context menu for space actions (`F-14`
   partial). Item actions wait for real item support.
 - Follow desktop item changes with a filesystem watcher and re-sync.
@@ -128,10 +142,11 @@ are drawn and interactive, and dragging moves real files with undo.
 - System tray icon with menu: show/hide, pause takeover, open settings, snapshots
   (`F-16`). **[partial]** Settings, show/hide, new space, exit; takeover and
   snapshots do not exist yet.
-- Full context menu system: create space/portal, arrange, sort, lock, roll up,
-  appearance, remove (`F-14`). **[partial]** Create, delete, lock, roll up.
+- Full context menu system: create space/lens, arrange, sort, lock, roll up,
+  appearance, remove (`F-14`). **[partial]** Create, delete, lock, roll up,
+  fit to contents.
 - Settings window (own HWND) with live-applied pages: General, Appearance,
-  spaces, Portals, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
+  spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
   form engine plus Appearance (live preview), General, and About pages with
   OK/Cancel/Apply.
 - Persist all `WindowSettings` fields and wire them to behavior. **[partial]**
@@ -147,18 +162,44 @@ are drawn and interactive, and dragging moves real files with undo.
 Exit criteria: every runtime setting is editable without hand-editing TOML, and
 the tray menu can show/hide and open settings.
 
-### M4 - Folder portals
+### M4 - Lenses (folder views)
 
-- `spaceKind { Normal, Portal }` in the domain (`F-07`).
-- Portal binds to a folder path; contents mirror the folder live.
-- `ReadDirectoryChangesW` watcher drives incremental refresh.
-- Sort rules: name, type, size, date, custom, folders-first (`F-08`).
-- Show-as modes: grid, list, tiles, details; icon-size options (`F-09`).
-- Portal-only actions: open folder, include/exclude patterns, "match folder
-  view".
+Phased; each phase lands green.
 
-Exit criteria: editing a portal's backing folder updates the portal within
-milliseconds, and sort/show modes persist.
+- **[done] Phase 0 - resize and scroll.** `Resizespace` / `FitToContents`
+  commands and `space::user_sized`; columns follow width; edge/corner resize
+  with cursors; `spaceEvent::Wheel` scrolling with a scroll indicator; scenes
+  carry only visible items, clipped below the title bar; owned `Icon` pixels
+  and an LRU-bounded `IconCache` (`F-03`).
+- **Phase 1 - core model.** `space.source: spaceSource { Items, Folder(FolderView) }`
+  with `#[serde(default)]`; `FolderView { path, sort, descending,
+  folders_first, show_hidden, include, exclude }`; `FolderEntry { path,
+  label, kind, size, modified, hidden }` supplied by the platform so `core`
+  does no IO. Commands `CreateLens`, `SetLensFolder`,
+  `SetLensView`, and `SyncLens { id, entries }`, which filters, sorts
+  (natural order), and reconciles by path so `ItemId`s survive refreshes.
+  `AddItem` / `MoveItem` into a lens are `Rejected`. Lens items are not
+  persisted (`F-07`, `F-08`).
+- **Phase 2 - platform.** `FindFirstFileExW` enumeration; one watcher thread
+  per lens using `ReadDirectoryChangesW`, debounced (~100 ms), full rescan off
+  the UI thread, posted to the controller with a `WM_APP` wake;
+  `Event::Folder { Snapshot | Unavailable }` with periodic retry;
+  `Ui::watch_folder`, `pick_folder` (`IFileOpenDialog`), `open_path`
+  (`ShellExecuteExW`), and `move_into_folder` (`IFileOperation` with undo; it
+  pumps messages, so no runtime borrow may be held across it). Submenus for
+  `MenuEntry`.
+- **Phase 3 - app.** "New lens..." from space and tray menus; double-click
+  opens items (also in normal spaces); drops onto a lens move into its folder
+  (skipping items already there and rejecting a folder into itself); lens
+  menu: Open folder, Change folder..., Sort by, Folders first, Show hidden
+  files; an "unavailable" placeholder.
+- **Phase 4 - views.** List and details modes, icon sizes (`F-09`), and a
+  Lenses settings page with defaults.
+- **Later.** Browsing into subfolders inside the lens with a back control
+  (spaces does this); until then subfolders open in Explorer.
+
+Exit criteria: creating, renaming, or deleting a file in a lens's folder
+updates the lens within ~150 ms, and sort/view settings persist.
 
 ### M5 - Visibility and flow
 
@@ -213,7 +254,7 @@ fresh Windows 10 and Windows 11 machine.
 - **v0.2 "Take the desktop"**: M0, M1, M2, M3. The first usable release:
   D2D rendering with the Windows 11 look, real desktop takeover, tray +
   context menu + settings.
-- **v0.3 "Portals"**: M4.
+- **v0.3 "Lenses"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
@@ -224,13 +265,13 @@ fresh Windows 10 and Windows 11 machine.
 |----|---------|-----------|--------|
 | F-01 | spaces / icon groups | M2 | Partial (references, no takeover) |
 | F-02 | Create / rename / delete space | M2 | Create, delete done; rename open |
-| F-03 | Resize space | M2 | Open |
+| F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Drop-in done (references) |
-| F-07 | Folder portals | M4 | Open |
-| F-08 | Portal sort rules | M4 | Open |
-| F-09 | Portal show-as / icon size | M4 | Open |
+| F-07 | Lenses (spaces: Folder Portals) | M4 | Open (phase 0 done) |
+| F-08 | Lens sort rules | M4 | Open |
+| F-09 | Lens show-as / icon size | M4 | Open |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
