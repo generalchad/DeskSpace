@@ -37,10 +37,10 @@ pub struct Cli {
     #[arg(
         long,
         value_enum,
-        default_value_t = PlacementArg::TopLevel,
-        help = "Where space windows live; desktop-hosted spaces are opaque (no blur)"
+        help = "Where space windows live; defaults to top-level, or desktop-hosted \
+                when always_on_desktop is set (desktop-hosted spaces are opaque, no blur)"
     )]
-    pub placement: PlacementArg,
+    pub placement: Option<PlacementArg>,
 
     #[arg(long, help = "Ignore the saved configuration and start fresh")]
     pub reset: bool,
@@ -70,7 +70,8 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn orientation(&self) -> Placement {
-        self.placement.into()
+    /// The placement from `--placement`, if the user chose one.
+    pub fn placement(&self) -> Option<Placement> {
+        self.placement.map(Placement::from)
     }
 }

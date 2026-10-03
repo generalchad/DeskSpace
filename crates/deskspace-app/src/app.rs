@@ -8,8 +8,8 @@ use deskspace_core::layout::{arrange_space, position_items};
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
 use deskspace_platform::{
     CursorShape, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice,
-    MenuEntry, MouseButton, RunOptions, SettingsEvent, SpaceEvent, TextEdit, TrayEvent, Ui,
-    desktop_directory, drag_threshold, hotkey_id, parse_hotkey, system_uses_dark_mode,
+    MenuEntry, MouseButton, Placement, RunOptions, SettingsEvent, SpaceEvent, TextEdit, TrayEvent,
+    Ui, desktop_directory, drag_threshold, hotkey_id, parse_hotkey, system_uses_dark_mode,
     work_area_at,
 };
 
@@ -1302,8 +1302,13 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     }
 
     let hidden = cli.hidden || config.window.start_hidden;
+    let placement = match cli.placement() {
+        Some(placement) => placement,
+        None if config.window.always_on_desktop => Placement::DesktopBackground,
+        None => Placement::TopLevel,
+    };
     let options = RunOptions {
-        placement: cli.orientation(),
+        placement,
         click_through: cli.click_through,
         on_top: cli.on_top,
         tray_tooltip: tray_tooltip(&config.desktop),

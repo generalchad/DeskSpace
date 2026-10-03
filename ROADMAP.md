@@ -96,6 +96,10 @@ started).
   name (case-insensitive), type, size, or modified date, ascending or
   descending, then re-lays the grid. `Item` gains `size`/`modified` read at
   creation; a kept rule and lens sorting (F-08) remain open.
+- **Window settings wired (M3).** `snap_grid` was folded into `GridSpec.snap`
+  with a General slider (0 disables snapping); `always_on_desktop` picks
+  desktop-hosted placement at startup when no `--placement` is given; a
+  General note explains it applies next launch.
 - **Grid density and label style (F-26, F-27).** Appearance gains icon
   spacing and edge padding sliders (they re-flow all spaces live) and label
   controls: one or two lines, size 60-160 %, and shadow automatic/always/
@@ -194,10 +198,11 @@ are drawn and interactive, and dragging moves real files with undo.
   Spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
   form engine plus Appearance (live preview: material, corners, colors,
   labels, grid spacing), General, and About pages with OK/Cancel/Apply.
-- Persist all `WindowSettings` fields and wire them to behavior. **[partial]**
-  `start_hidden` and `toggle_hotkey` are wired; `background_alpha` was
-  superseded by `theme.tint_opacity` and removed; `always_on_desktop` and
-  `snap_grid` remain.
+- **[done]** Persist all `WindowSettings` fields and wire them to behavior.
+  `start_hidden` and `toggle_hotkey` are wired; `snap_grid` moved to
+  `GridSpec.snap`, edited by a General slider; `always_on_desktop` selects
+  desktop-hosted placement at startup. (`background_alpha` was superseded by
+  `theme.tint_opacity` and removed.)
 - Hotkey editor and additional bindings (`F-18` partial). **[partial]** The
   toggle hotkey is editable as text with validation and conflict reporting.
 - **[done]** Per-space appearance overrides (opacity, tint, text) from the

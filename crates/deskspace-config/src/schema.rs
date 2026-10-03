@@ -1,5 +1,5 @@
 use deskspace_core::layout::position_items;
-use deskspace_core::{Desktop, GridSpec, Theme};
+use deskspace_core::{Desktop, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -22,7 +22,8 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowSettings {
-    pub snap_grid: i32,
+    /// Host spaces on the desktop (no blur) instead of top-level windows.
+    /// Applied when DeskSpace starts.
     pub always_on_desktop: bool,
     pub toggle_hotkey: String,
     pub start_hidden: bool,
@@ -31,7 +32,6 @@ pub struct WindowSettings {
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
-            snap_grid: GridSpec::default().snap,
             always_on_desktop: false,
             toggle_hotkey: "Ctrl+Alt+D".to_string(),
             start_hidden: false,
@@ -123,9 +123,12 @@ mod tests {
         "#;
         let parsed: Config = toml::from_str(text).unwrap();
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Shift+F");
-        assert_eq!(parsed.window.snap_grid, WindowSettings::default().snap_grid);
+        assert!(!parsed.window.always_on_desktop);
         assert_eq!(parsed.desktop.layout.columns, 6);
-        assert_eq!(parsed.desktop.layout.snap, GridSpec::default().snap);
+        assert_eq!(
+            parsed.desktop.layout.snap,
+            deskspace_core::GridSpec::default().snap
+        );
         // mica from early v2 files maps onto the blur material.
         assert_eq!(parsed.theme.backdrop, Backdrop::Blur);
         assert_eq!(parsed.theme.tint_opacity, Theme::default().tint_opacity);

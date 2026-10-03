@@ -26,7 +26,9 @@ Options:
 ```
 --config <FILE>          Path to an explicit configuration file
 --placement <PLACEMENT>  top-level | desktop-background | desktop-foreground
-                         (desktop-hosted spaces are opaque, no blur)
+                         (desktop-hosted spaces are opaque, no blur; defaults
+                         to top-level, or desktop-hosted when the
+                         always_on_desktop setting is on)
 --reset                  Ignore the saved configuration and start fresh
 --hidden                 Start with spaces hidden
 --settings               Open the settings window on start

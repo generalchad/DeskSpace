@@ -244,8 +244,7 @@ blur and lets the tint reach 0 %. Enums serialize snake_case;
 Config { version, desktop: Desktop, theme: Theme, window: WindowSettings }
 
 WindowSettings {
-    snap_grid: i32,             // default 16 (not wired; layout.snap is used)
-    always_on_desktop: bool,    // default false (not wired)
+    always_on_desktop: bool,    // default false; hosted placement at startup
     toggle_hotkey: String,      // default "Ctrl+Alt+D"
     start_hidden: bool,         // default false
 }
@@ -435,7 +434,9 @@ WindowSettings {
 1. `main` parses CLI and initializes `tracing`.
 2. `app::run` enables DPI awareness, loads or creates `Config` (migrating
    older files), seeds a `Desktop` space from the desktop folder if there are
-   none (unless `--no-icons`), and calls `deskspace_platform::run`.
+   none (unless `--no-icons`), and calls `deskspace_platform::run`. Placement
+   is `--placement` when given, else desktop-hosted when `always_on_desktop`
+   is set, else top-level.
 3. On `Started`, the app registers the toggle hotkey, applies start-hidden,
    creates one window per space with its style and scene, and optionally opens
    settings (`--settings`).
@@ -542,7 +543,9 @@ WindowSettings {
 - **Drops use `WM_DROPFILES`**, which carries file paths only and shows no
   drop-effect feedback (the cursor does not say "Move"). An OLE `IDropTarget`
   would fix that. Dragging out uses OLE already.
-- **WindowSettings `snap_grid` and `always_on_desktop` are not wired.**
+- **`always_on_desktop` applies at next launch.** Switching placement recreates
+  every space window (and drops blur), so it is honored when DeskSpace starts
+  rather than live.
 - **Icon cache is invalidated only after shell menu commands.** Lens watchers
   will invalidate changed files.
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
