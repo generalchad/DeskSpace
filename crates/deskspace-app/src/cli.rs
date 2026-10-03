@@ -34,29 +34,36 @@ pub struct Cli {
     )]
     pub config: Option<PathBuf>,
 
-    #[arg(long, value_enum, default_value_t = PlacementArg::TopLevel)]
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = PlacementArg::TopLevel,
+        help = "Where space windows live; desktop-hosted spaces are opaque (no blur)"
+    )]
     pub placement: PlacementArg,
-
-    #[arg(long, help = "Overlay width in physical pixels")]
-    pub width: Option<i32>,
-
-    #[arg(long, help = "Overlay height in physical pixels")]
-    pub height: Option<i32>,
 
     #[arg(long, help = "Ignore the saved configuration and start fresh")]
     pub reset: bool,
 
-    #[arg(long, help = "Start with the overlay hidden")]
+    #[arg(long, help = "Start with spaces hidden")]
     pub hidden: bool,
+
+    #[arg(long, help = "Open the settings window on start")]
+    pub settings: bool,
 
     #[arg(long, help = "Do not populate spaces from the desktop folder")]
     pub no_icons: bool,
 
     #[arg(
         long,
-        help = "Make the whole overlay click-through (display only, no interaction)"
+        help = "Make spaces click-through (display only, no interaction)"
     )]
     pub click_through: bool,
+
+    /// Development aid: keep spaces above other windows so their appearance
+    /// can be checked without uncovering the desktop.
+    #[arg(long, hide = true)]
+    pub on_top: bool,
 
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
