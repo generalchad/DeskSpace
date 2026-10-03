@@ -308,7 +308,9 @@ WindowSettings {
   client area, sets dark mode, corner preference, and border color, and turns
   on the blur material with the undocumented accent policy
   (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND` /
-  `ACCENT_ENABLE_BLURBEHIND`). The documented `DWMWA_SYSTEMBACKDROP_TYPE` was
+  `ACCENT_ENABLE_BLURBEHIND`; Clear uses a fully transparent
+  `ACCENT_ENABLE_TRANSPARENTGRADIENT`, because disabling the accent after a
+  blur turned the space black until it was recreated). The documented `DWMWA_SYSTEMBACKDROP_TYPE` was
   tried first and does not work here: system backdrops only render on active
   windows, and spaces are never active.
 - Desktop-hosted placement (`--placement desktop-*`): `WS_CHILD` of Progman /

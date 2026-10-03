@@ -31,12 +31,16 @@ use crate::render::SpaceStyle;
 /// used with it. Not in the Windows SDK headers.
 const WCA_ACCENT_POLICY: u32 = 19;
 const ACCENT_DISABLED: u32 = 0;
+const ACCENT_ENABLE_TRANSPARENTGRADIENT: u32 = 2;
 const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
 const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 /// Acrylic needs a non-zero gradient alpha; at zero some builds stop drawing
 /// the material. The visible tint is painted by the space itself, so this is
 /// the faintest possible tint (0xAABBGGRR).
 const ACRYLIC_GRADIENT: u32 = 0x0100_0000;
+/// Accent flag that makes the gradient states use `gradient_color`; without
+/// it the transparent gradient is filled with the Windows accent color.
+const ACCENT_FLAG_GRADIENT_COLOR: u32 = 2;
 
 #[repr(C)]
 struct AccentPolicy {
@@ -112,7 +116,12 @@ fn accent_state(backdrop: Backdrop) -> u32 {
     match backdrop {
         Backdrop::Acrylic => ACCENT_ENABLE_ACRYLICBLURBEHIND,
         Backdrop::Blur => ACCENT_ENABLE_BLURBEHIND,
-        Backdrop::Solid | Backdrop::Clear => ACCENT_DISABLED,
+        // Not ACCENT_DISABLED: once a window has had a blur accent,
+        // disabling it makes DWM ignore the client's alpha and the space
+        // turns black until it is recreated. A fully transparent gradient
+        // keeps per-pixel alpha working with nothing drawn behind it.
+        Backdrop::Clear => ACCENT_ENABLE_TRANSPARENTGRADIENT,
+        Backdrop::Solid => ACCENT_DISABLED,
     }
 }
 
@@ -123,7 +132,11 @@ fn set_accent(hwnd: HWND, state: u32) {
     };
     let mut policy = AccentPolicy {
         accent_state: state,
-        accent_flags: 0,
+        accent_flags: if state == ACCENT_ENABLE_TRANSPARENTGRADIENT {
+            ACCENT_FLAG_GRADIENT_COLOR
+        } else {
+            0
+        },
         gradient_color: if state == ACCENT_ENABLE_ACRYLICBLURBEHIND {
             ACRYLIC_GRADIENT
         } else {
@@ -184,7 +197,10 @@ mod tests {
         );
         assert_eq!(accent_state(Backdrop::Blur), ACCENT_ENABLE_BLURBEHIND);
         assert_eq!(accent_state(Backdrop::Solid), ACCENT_DISABLED);
-        assert_eq!(accent_state(Backdrop::Clear), ACCENT_DISABLED);
+        assert_eq!(
+            accent_state(Backdrop::Clear),
+            ACCENT_ENABLE_TRANSPARENTGRADIENT
+        );
         let style = |backdrop, corner_radius| SpaceStyle {
             backdrop,
             corner_radius,
