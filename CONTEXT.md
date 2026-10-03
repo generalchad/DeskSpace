@@ -49,6 +49,12 @@ context menus, and a settings window in the first usable release (v0.2).
 - spaces can be created, deleted (with confirmation), moved by the title bar,
   rolled up (double-click the title bar), and locked. Files dragged from
   Explorer or the desktop onto a space are added to it.
+- Verification: the blur, corners, space content, and settings layout were
+  checked on screen. Delete space, file drops, settings live preview, and the
+  tray menu are covered by unit tests of the app logic but have not been
+  exercised interactively yet; confirm them before building on them.
+- History: commits `07dba93`..`18ffac2` replace the old overlay together and
+  only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (items are references; files are
   not moved), portals, auto-hide, resizing, rename, item drag between spaces.
   See the parity matrix in section 9.

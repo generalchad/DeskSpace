@@ -137,6 +137,11 @@ Rust specifics:
   from the accent policy in `win32/dwm.rs`.
 - spaces sit at the bottom of the z-order, so they are hidden behind your
   editor. Use `--on-top` with a scratch `--config` to look at them.
+- To check the look, run with a scratch `--config` and `--on-top` over a
+  high-contrast window (bright stripes or text) and take a screenshot. A dark
+  editor behind the space makes blur and flat translucency indistinguishable.
+  Find window rects by enumerating the `DeskSpacespace` and
+  `DeskSpaceSettings` classes. Remove the scratch config afterwards.
 - Child windows get no DWM material or composited alpha. Desktop-hosted
   placement is therefore opaque and uses a window region for rounding.
 - `WS_EX_TRANSPARENT` only makes a window click-through when combined with
