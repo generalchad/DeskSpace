@@ -13,9 +13,9 @@ use std::cell::Cell;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_BACK,
-    VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN,
-    VK_RIGHT, VK_RWIN, VK_SHIFT,
+    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_APPS,
+    VK_BACK, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_LMENU, VK_LWIN,
+    VK_MENU, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RWIN, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
@@ -96,6 +96,23 @@ fn key_down(key: VIRTUAL_KEY) -> bool {
     unsafe { GetAsyncKeyState(key.0 as i32) < 0 }
 }
 
+/// Whether `vk` is `key`.
+fn is_key(vk: u32, key: VIRTUAL_KEY) -> bool {
+    vk == key.0 as u32
+}
+
+/// Whether `vk` is a key the system owns (Alt, Windows, or the menu key).
+/// These cancel the rename and pass through, so System shortcuts (Alt+Tab,
+/// Win+D, the Start menu) keep working. The pressed key is checked directly
+/// because a low-level hook runs before `GetAsyncKeyState` reflects it.
+fn is_system_key(vk: u32) -> bool {
+    is_key(vk, VK_LWIN)
+        || is_key(vk, VK_RWIN)
+        || is_key(vk, VK_LMENU)
+        || is_key(vk, VK_RMENU)
+        || is_key(vk, VK_APPS)
+}
+
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code < 0 {
         // SAFETY: every hook must pass the event on.
@@ -107,12 +124,10 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     }
     // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
     let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-    let alt = key_down(VK_MENU);
-    let win = key_down(VK_LWIN) || key_down(VK_RWIN);
 
-    // Alt and Windows combinations belong to the system (Alt+Tab, Win+D):
-    // cancel the rename and let them through.
-    if alt || win {
+    // Alt and Windows combinations belong to the system (Alt+Tab, Win+D,
+    // Start menu): cancel the rename and let them through.
+    if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(event.vkCode) {
         post(KIND_CANCEL, 0);
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
@@ -267,6 +282,18 @@ mod tests {
             })
         );
         assert_eq!(decode(999, 0), None);
+    }
+
+    #[test]
+    fn system_keys_cancel_the_rename() {
+        for key in [VK_LWIN, VK_RWIN, VK_LMENU, VK_RMENU, VK_APPS] {
+            assert!(
+                is_system_key(key.0 as u32),
+                "{key:?} should be a system key"
+            );
+        }
+        assert!(!is_system_key(VK_A_CODE));
+        assert!(!is_system_key(VK_BACK.0 as u32));
     }
 
     #[test]
