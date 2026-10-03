@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, Space, SpaceId};
@@ -992,7 +993,8 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 
     let store = match &cli.config {
         Some(path) => ConfigStore::with_path(PathBuf::from(path)),
-        None => ConfigStore::discover()?,
+        None => ConfigStore::discover()
+            .context("could not find the per-user configuration directory")?,
     };
 
     let mut config = if cli.reset {
@@ -1002,9 +1004,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
                     tracing::info!(backup = %path.display(), "previous configuration backed up")
                 }
                 Err(error) => {
-                    anyhow::bail!(
-                        "refusing to reset: could not back up the existing configuration: {error}"
-                    )
+                    return Err(error).context(
+                        "refusing to reset: could not back up the existing configuration",
+                    );
                 }
             }
         }
@@ -1031,7 +1033,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         storage = %app.storage.root().display(),
         "starting DeskSpace"
     );
-    deskspace_platform::run(options, Box::new(app))?;
+    deskspace_platform::run(options, Box::new(app)).context("the DeskSpace UI runtime failed")?;
     Ok(())
 }
 

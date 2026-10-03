@@ -113,8 +113,9 @@ started).
   feature needs one (debounced autosave, M5 policies).
 - **[done]** Work-area awareness: commands are bounded by the work area of
   the nearest monitor (`work_area_at`).
-- Structured error boundaries: one `AppError` at the binary boundary; library
-  crates keep `thiserror`.
+- **[done]** Structured error boundaries: library crates return `thiserror`
+  errors; the binary boundary uses `anyhow` with per-step context (per
+  `AGENTS.md`).
 - Autosave on change (debounced), not just on close.
 
 Exit criteria: green CI, no unused event variants, work area drives bounds.
