@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (81 tests) are green.
+  `cargo test --workspace` (92 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -50,18 +50,21 @@ context menus, and a settings window in the first usable release (v0.2).
   (Appearance, General, About) with live preview and OK/Cancel/Apply.
 - Spaces can be created, deleted (with confirmation), moved by the title bar,
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
-  (double-click the title bar), and locked. Files dragged from Explorer or the
-  desktop onto a space are added to it. Resize and wheel scrolling were
-  checked on screen with synthesized input.
+  (double-click the title bar), and locked. Files dropped onto a space are
+  moved into the space storage (Shift keeps them in place). Items open on
+  double-click, show Explorer's context menu on right-click, and drag out like
+  Explorer items. Resize, wheel scrolling, the clear backdrop, the corner
+  slider, and the item context menu were checked on screen; dropping in and
+  dragging out have not been exercised interactively yet.
 - Verification: the blur, corners, space content, and settings layout were
   checked on screen. Delete space, file drops, settings live preview, and the
   tray menu are covered by unit tests of the app logic but have not been
   exercised interactively yet; confirm them before building on them.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Not yet: real desktop icon layer takeover (items are references; files are
-  not moved), lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
-  rename, item drag between spaces.
+- Not yet: real desktop icon layer takeover (Explorer still shows the desktop
+  icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
+  rename, undo for file moves.
   See the parity matrix in section 9.
 
 ## 3. Architecture
@@ -207,8 +210,8 @@ work area of the monitor nearest the action (`work_area_at`).
 ```
 Theme {
     mode: ThemeMode,          // System (default) | Dark | Light
-    backdrop: Backdrop,       // Acrylic (default) | Blur | Solid
-    corners: CornerStyle,     // Round (8 px) | Small (4 px) | Square
+    backdrop: Backdrop,       // Acrylic (default) | Blur | Clear | Solid
+    corner_radius: u8,        // px, 0..=24, default 8 (theme::corner presets)
     tint_opacity: u8,         // percent, default 40
     title_shading: u8,        // percent, default 30
     show_border: bool,        // default true
@@ -220,8 +223,10 @@ Theme {
 `Theme::palette(system_dark) -> Palette` resolves concrete colors (tint with
 alpha, title fill, text, hover/selected fills, border) from the Windows 11
 dark (`#202020` / white) or light (`#F3F3F3` / `#1A1A1A`) base, or the custom
-colors. `Backdrop::Solid` forces an opaque tint. Enums serialize snake_case;
-`Backdrop::Blur` also accepts `"mica"` from early v2 files.
+colors. `Backdrop::Solid` forces an opaque tint; `Backdrop::Clear` has no
+blur and lets the tint reach 0 %. Enums serialize snake_case;
+`Backdrop::Blur` also accepts `"mica"` from early v2 files, and
+`corner_radius` also reads the old `corners = "round" | "small" | "square"`.
 
 ## 5. Configuration (`deskspace-config`)
 
@@ -247,7 +252,9 @@ WindowSettings {
   example the removed `background_alpha`) are ignored.
 - `ConfigStore` resolves its path via `directories::ProjectDirs` (Roaming
   AppData on Windows) with file name `deskspace.toml`, or accepts an explicit
-  path.
+  path. `storage_dir()` is where dropped files are moved: local AppData
+  `DeskSpace\storage`, or a `storage` folder beside an explicit config file,
+  so scratch configs never touch real storage.
 - `save` writes to a sibling `*.toml.tmp` then renames, so a crash never
   truncates the config.
 - `load_or_default` returns defaults when no file exists. If the file cannot be
@@ -261,7 +268,7 @@ WindowSettings {
 
 ### Runtime (`win32/runtime.rs`)
 
-- `run(RunOptions, Box<dyn EventHandler>)` initialises COM (apartment) and
+- `run(RunOptions, Box<dyn EventHandler>)` initialises OLE (single-threaded apartment) and
   common controls, finds the desktop host for the placement, creates the
   controller window, adds the tray icon, installs the console handler,
   delivers `Event::Started`, and pumps messages until quit. It routes
@@ -306,12 +313,17 @@ WindowSettings {
   windows, and spaces are never active.
 - Desktop-hosted placement (`--placement desktop-*`): `WS_CHILD` of Progman /
   WorkerW, painted opaque, rounded with a (non-anti-aliased) window region.
+- Corners and border: DWM draws them for square, 4 px, and 8 px corners
+  (`SpaceStyle::dwm_draws_frame`). Other radii, the Clear backdrop, and hosted
+  spaces are rounded by the painter (anti-aliased fills and border), plus a
+  window region where the blur or the opaque fill would otherwise show past
+  the corners (`Frame` in `space_window.rs`).
 - Mouse input is reported in desktop coordinates as `SpaceEvent`s;
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
   the last button-up. `WM_MOUSEWHEEL` (screen coordinates) becomes
   `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
   "scroll inactive windows" setting (on by default). `WM_DROPFILES` becomes
-  `SpaceEvent::FilesDropped`.
+  `SpaceEvent::FilesDropped`, with `keep_in_place` set when Shift is down.
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
@@ -321,9 +333,9 @@ WindowSettings {
 
 ### Rendering (`render/scene.rs`, `render/d2d.rs`)
 
-- `SpaceScene` (title, colors, corner radius, flags, `ItemVisual`s in
-  window-local coordinates, optional `scroll_thumb` rect) and `SpaceStyle`
-  (backdrop, corners, dark, border) are the contract between app and
+- `SpaceScene` (title, colors, optional `text_shadow`, flags, `ItemVisual`s
+  in window-local coordinates, optional `scroll_thumb` rect) and `SpaceStyle`
+  (backdrop, corner radius, dark, border) are the contract between app and
   renderer. The app scrolls by offsetting item rects and includes only items
   that intersect the content area; the renderer clips items below the title
   bar. Scenes are pushed only when something changes; the window stores a
@@ -334,17 +346,20 @@ WindowSettings {
   therefore never point at freed handles.
 - `Painter` owns an `ID2D1HwndRenderTarget` (premultiplied alpha, 96 DPI so
   one DIP is one pixel), a brush, and a per-target bitmap cache keyed by
-  `Icon::id`, pruned to the current scene's icons whenever a scene is set. Text uses DirectWrite (Segoe UI Variable Text when
+  `Icon::id`, pruned to the current scene's icons whenever a scene is set.
+  Text uses DirectWrite (Segoe UI Variable Text when
   installed), grayscale antialiasing on translucent surfaces, ellipsis
-  trimming, two-line wrapped labels. `D2DERR_RECREATE_TARGET` drops device
-  resources for recreation on the next paint.
+  trimming, two-line wrapped labels, and a 1 px shadow when the scene asks for
+  one (the app does below 25 % tint alpha). `D2DERR_RECREATE_TARGET` drops
+  device resources for recreation on the next paint.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window.rs`)
 
 - `MenuEntry` lists become `TrackPopupMenuEx` menus (`Ui::popup_menu` returns
   the chosen id).
 - `SettingsForm` → pages → `Field`s (`Heading`, `Note`, `Choice`, `Toggle`,
-  `Slider`, `Color`, `Text`, `Button`). The settings window lays them out with
+  `Slider` (optionally with labeled `SliderMark`s), `Color`, `Text`,
+  `Button`). The settings window lays them out with
   common controls v6 under a tab control (pages are container windows that
   forward notifications), uses Mica in the caption, reports edits as
   `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
@@ -360,8 +375,14 @@ WindowSettings {
 - `shell.rs`: `enumerate_desktop_items` and `IconCache` (32 px icons via
   `SHGetFileInfoW`, decoded to `Icon`s, least-recently-used eviction at 1024
   entries, `invalidate(path)`).
+- `shell_items.rs`: Explorer behavior for items. `Ui::open_path`
+  (`ShellExecuteExW`), `Ui::item_menu` (the app's entries above the shell's
+  `IContextMenu`; the controller forwards owner-draw and submenu messages to
+  it while it is open), and `Ui::drag_out` (`SHDoDragDrop` with the item's
+  shell data object; reports the effect and whether it ended over the
+  desktop). The runtime uses `OleInitialize`, which drag and drop needs.
 - `dpi.rs` sets per-monitor v2 awareness; `system.rs` provides
-  `work_area_at(point)` and `system_uses_dark_mode()`.
+  `work_area_at(point)`, `drag_threshold()`, and `system_uses_dark_mode()`.
 - `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, register/unregister
   (on the controller window via `Ui`).
 
@@ -378,9 +399,12 @@ WindowSettings {
    spaces via `SetSpaceRect` (moving the window), resize them via
    `ResizeSpace` when grabbed within 6 px of an edge, scroll them on the wheel
    (per-space offsets live in the app, not the config), toggle roll-up on
-   title-bar double-click, and open the space menu on right-click. Drops add
-   or move items. Config is saved after drags and resizes, roll-up, lock,
-   create/delete, drops, and Apply/OK.
+   title-bar double-click, and open the space menu on right-click. Items open
+   on double-click, show the item menu on right-click, and start a shell drag
+   past the system drag threshold. Drops add items (moving new files into
+   storage via `storage::ItemStore`) or move them between spaces. Config is
+   saved after drags and resizes, roll-up, lock, create/delete, drops, item
+   removal, and Apply/OK.
 5. Settings edits apply to the live config immediately (preview); Apply/OK
    validate and re-register the hotkey and save; Cancel or closing the window
    restores the saved theme and window settings.
@@ -398,7 +422,13 @@ WindowSettings {
   DeskSpace.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
-- Drag files from Explorer or the desktop onto a space to add them.
+- Drop files from Explorer or the desktop onto a space to move them into it;
+  hold Shift to leave them where they are and only show them in the space.
+- Double-click an item to open it. Right-click it for Explorer's context
+  menu, with "Move back to desktop" (or "Remove from space" for items left in
+  place) on top.
+- Drag an item out: into a folder or app like an Explorer item, onto another
+  space to move it there, or onto the desktop to take it out of the space.
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
   `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
@@ -407,21 +437,21 @@ WindowSettings {
 
 | spaces feature | Status |
 |---|---|
-| Spaces (icon groups) | Partial: per-space windows; items are references, the real desktop icons stay |
+| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer is not taken over |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
-| Drag icons between spaces | Not implemented (dropping a path already in another space moves it) |
-| Drag files onto a space to add them | Implemented as references; files are not moved yet |
+| Drag icons in / out / between spaces | Implemented (shell drag out, `WM_DROPFILES` in) |
+| Drag files onto a space to add them | Implemented; files move into storage, Shift keeps them in place |
 | Create / rename / delete space | Create and delete via menus; rename has no UI |
 | Resize space | Implemented (edges/corners, scrolling, fit to contents) |
 | Lock space | Implemented (context menu, lock glyph) |
 | Snap to grid / auto-arrange | Implemented in core |
 | Per-lens sort rules | Not implemented |
-| Appearance (color, translucency, blur, corners) | Implemented globally in Settings; no per-space UI |
+| Appearance (color, translucency, blur, corners) | Implemented globally in Settings (incl. clear glass, corner slider); no per-space UI |
 | Multiple pages / virtual desktops | Not implemented |
 | Backup / restore / layout snapshots | Config file only |
-| Right-click context menu | Basic space menu |
+| Right-click context menu | Space menu; item menu is Explorer's |
 | System tray icon | Implemented |
 | Settings UI | Appearance, General, About |
 | Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
@@ -433,8 +463,12 @@ WindowSettings {
 
 ## 10. Known limitations and technical debt
 
-- **No desktop icon integration.** Explorer still owns the real desktop icons;
-  spaces show references. Dropping a file adds a reference without moving it.
+- **No desktop icon integration.** Explorer still owns the desktop icon
+  layer. Dropping a file moves it into storage, so it leaves the desktop.
+- **File moves have no undo yet.** "Move back to desktop" and deleting a space
+  return stored files; files from another drive stay in place (a move there
+  would copy). There is no filesystem watcher: a stored file deleted outside
+  DeskSpace stays listed until an item action notices it is gone.
 - **Spaces can be hidden by Show Desktop (Win+D).** Top-level spaces sit at
   the bottom of the z-order but are not part of the desktop window. Desktop
   hosting fixes this but loses blur (child windows get no DWM material).
@@ -446,11 +480,11 @@ WindowSettings {
 - **No per-monitor DPI scaling of spaces.** Sizes are in physical pixels at
   96-DPI values; the settings window is laid out for the DPI at creation.
 - **Drops use `WM_DROPFILES`**, which carries file paths only and shows no
-  drop-effect feedback. An OLE `IDropTarget` is needed for richer feedback and
-  for drag-out.
+  drop-effect feedback (the cursor does not say "Move"). An OLE `IDropTarget`
+  would fix that. Dragging out uses OLE already.
 - **WindowSettings `snap_grid` and `always_on_desktop` are not wired.**
-- **Icon cache is never invalidated automatically.** It is LRU-bounded and has
-  `invalidate(path)`, but nothing calls it until lens watchers exist.
+- **Icon cache is invalidated only after shell menu commands.** Lens watchers
+  will invalidate changed files.
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
   wheel events need Windows' "scroll inactive windows" setting.
 - **No CI, no `deny.toml`, no installer, no code signing.**
@@ -459,7 +493,9 @@ WindowSettings {
 
 ## 11. Glossary
 
-- **Space**: a movable container window that groups items on the desktop.
+- **Space**: a movable container window that groups items on the desktop
+  (comparable tools: "space").
+- **Storage**: the folder files dropped into spaces are moved to.
 - **Lens**: a space whose contents mirror a folder live (comparable tools:
   "Folder Portal"). In code, a space with a folder source.
 - **User-sized**: a space the user resized; it keeps its size, reflows items

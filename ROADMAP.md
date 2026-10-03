@@ -38,8 +38,14 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Normal spaces* hold individual items. Dropping an item into a normal space
     relocates that one item into a managed store with a move, not a copy (an
     atomic rename on the same volume, so no duplication and no extra disk use).
-    The store root defaults to `%LOCALAPPDATA%\DeskSpace\storage\<space>` and is
-    configurable. Relocation is protected by undo and a snapshot manifest.
+    The store is one folder shared by all spaces,
+    `%LOCALAPPDATA%\DeskSpace\storage` (beside the config file for an explicit
+    `--config`), so moving an item between spaces never touches the file.
+    Holding Shift while dropping keeps the file in place, as does a file on
+    another drive (moving it would copy). Name clashes get " (2)" like
+    Explorer; nothing is overwritten. Removing an item or deleting its space
+    moves stored files back to the desktop. Still planned: undo, a
+    configurable root, and a snapshot manifest.
 - **D4. v0.2 scope.** Tray icon, right-click context menus, and a settings
   window are required in the first usable release.
 - **D5. Naming.** Containers are *spaces* (spaces calls them spaces) in the
@@ -82,6 +88,15 @@ started).
   with a thin scroll indicator. Only visible items are put in the scene, so
   icons load lazily. Icons are decoded into owned pixel buffers and the icon
   cache is LRU-bounded. Closes F-03.
+- **Spaces, item interaction, clear glass.** "spaces" renamed to "spaces"
+  throughout (D5). Items open on double-click, show Explorer's own context
+  menu (with "Move back to desktop" on top), and drag out like Explorer items
+  (OLE `SHDoDragDrop`): into folders and apps, onto other spaces, or onto the
+  desktop to leave the space. Dropped files move into the store (D3), Shift
+  keeps them in place. Appearance gains a corner-radius slider (0-24 px with
+  labeled presets; non-DWM radii drawn by the painter) and a Clear backdrop
+  that can be made fully invisible apart from the items, with label shadows
+  for legibility.
 
 ### M0 - Foundations and guardrails
 
@@ -122,18 +137,19 @@ on Windows 10/11. Remaining: per-monitor DPI.
   and `IShellItemImageFactory` (jumbo icons), replacing `SHGetFileInfoW`.
 - Render desktop items in a free-grid; hit-test, hover, select, rubber-band.
 - Drag items: within the desktop, into a space, and between spaces (`F-06`).
-  **[partial]** Shell drops onto a space are accepted (`WM_DROPFILES`) and add
-  references; an OLE `IDropTarget` is needed for drop-effect feedback and
-  drag-out.
-- Drop files onto a normal space relocates them into the managed store by move
-  (`D3`), with undo; lenses are unaffected because they never touch the store.
+  **[partial]** Drops onto spaces (`WM_DROPFILES`) and shell drag-out
+  (`SHDoDragDrop`) work, including between spaces; an OLE `IDropTarget` is
+  still needed for drop-effect feedback. Desktop free-grid waits for takeover.
+- **[partial]** Drop files onto a normal space relocates them into the managed
+  store by move (`D3`); lenses are unaffected because they never touch the
+  store. Undo is open.
 - Update the item model and refresh after file operations.
 - Space chrome: resize handles, lock toggle, rename inline, delete with undo
   (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph), delete (menu
   + confirmation, no undo), and resize (edges/corners, "Fit to contents") are
   done; rename is not.
 - **[done]** Basic right-click context menu for space actions (`F-14`
-  partial). Item actions wait for real item support.
+  partial). Items get Explorer's context menu plus "Move back to desktop".
 - Follow desktop item changes with a filesystem watcher and re-sync.
 
 Exit criteria: with DeskSpace running, the Explorer icon layer is gone, items
@@ -270,7 +286,7 @@ fresh Windows 10 and Windows 11 machine.
 | F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Drop-in done (references) |
+| F-06 | Drag icons in / out / between spaces | M2 | Done (no drop-effect feedback yet) |
 | F-07 | Lenses (spaces: Folder Portals) | M4 | Open (phase 0 done) |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
@@ -278,7 +294,7 @@ fresh Windows 10 and Windows 11 machine.
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
 | F-13 | Quick peek / transparency toggle | M5 | Open |
-| F-14 | Right-click context menu | M2 (basic), M3 (full) | Basic done |
+| F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu + shell item menu |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done (takeover items pending) |
 | F-17 | Settings window | M3 | Partial (3 of 7 pages) |
@@ -288,7 +304,7 @@ fresh Windows 10 and Windows 11 machine.
 | F-21 | Auto-consolidate new icons | M7 | Open |
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
-| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally; per-space open |
+| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally (clear glass, corner slider); per-space open |
 
 ## 7. Open questions
 
@@ -310,9 +326,8 @@ milestone that raises them.
    re-shows top-level spaces.
 3. Undo model (M2): single-level or multi-level undo stack, and does it cover
    file moves (which are destructive)?
-4. Store layout (M2): one subfolder per space, and what happens to relocations
-   when a space is renamed or deleted (restore items to the desktop vs keep in
-   store)?
+4. **Resolved.** Store layout (M2): one shared folder; deleting a space moves
+   its stored files back to the desktop (see D3).
 
 ## 8. Risks
 
