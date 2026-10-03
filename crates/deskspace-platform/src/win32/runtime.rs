@@ -23,8 +23,8 @@ use windows::Win32::UI::Controls::{
     InitCommonControlsEx,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, DispatchMessageW, GetMessageW, IsDialogMessageW, IsWindow, MSG, PostMessageW,
-    SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow, TranslateMessage, WM_CLOSE,
+    DestroyWindow, DispatchMessageW, GetMessageW, IsDialogMessageW, IsWindow, KillTimer, MSG,
+    PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SetTimer, ShowWindow, TranslateMessage, WM_CLOSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_YESNO, MessageBoxW, SetForegroundWindow,
@@ -254,6 +254,29 @@ impl Ui {
     pub fn watch_outside_clicks(&mut self, enabled: bool) {
         if let Some(controller) = with_runtime(|runtime| runtime.controller) {
             outside_click::watch(controller, enabled);
+        }
+    }
+
+    /// Arms a timer that delivers `Event::Timer` with `id` every `millis`
+    /// milliseconds until it is cleared. Calling it again with the same id
+    /// restarts it, which is how a caller debounces a burst of changes; clear
+    /// it in the handler to stop it.
+    pub fn set_timer(&mut self, id: usize, millis: u32) {
+        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+            // SAFETY: the controller is a live window owned by this thread.
+            unsafe {
+                SetTimer(Some(controller), id, millis, None);
+            }
+        }
+    }
+
+    /// Cancels a timer armed with `set_timer`.
+    pub fn clear_timer(&mut self, id: usize) {
+        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+            // SAFETY: as in `set_timer`.
+            unsafe {
+                let _ = KillTimer(Some(controller), id);
+            }
         }
     }
 

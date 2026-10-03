@@ -79,6 +79,9 @@ started).
   `cargo clippy --workspace --all-targets -D warnings`, and
   `cargo test --workspace` on Windows, plus `cargo deny check all` (licenses,
   advisories, bans, sources) from `deny.toml`.
+- **Debounced autosave and a timer primitive.** `Ui::set_timer`/`clear_timer`
+  deliver `Event::Timer`; layout changes defer their configuration write by
+  about 700 ms, while file moves and settings save at once and closing flushes.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -116,7 +119,7 @@ started).
 - **[done]** Structured error boundaries: library crates return `thiserror`
   errors; the binary boundary uses `anyhow` with per-step context (per
   `AGENTS.md`).
-- Autosave on change (debounced), not just on close.
+- **[done]** Autosave on change (debounced), not just on close.
 
 Exit criteria: green CI, no unused event variants, work area drives bounds.
 

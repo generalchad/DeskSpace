@@ -87,6 +87,11 @@ pub enum Event {
     },
     Tray(TrayEvent),
     Settings(SettingsEvent),
+    /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
+    /// timer id, so the app can tell timers apart.
+    Timer {
+        id: usize,
+    },
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
     /// is on.

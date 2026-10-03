@@ -15,7 +15,7 @@ use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterClassW,
     RegisterWindowMessageW, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
-    WM_QUERYENDSESSION, WM_SETTINGCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -118,6 +118,12 @@ unsafe extern "system" fn wndproc(
                     }
                     _ => {}
                 }
+                LRESULT(0)
+            }
+            // SetTimer with no callback posts WM_TIMER; wParam is the timer id.
+            // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-timer
+            WM_TIMER => {
+                runtime::dispatch(Event::Timer { id: wparam.0 });
                 LRESULT(0)
             }
             outside_click::OUTSIDE_PROBE => {

@@ -23,6 +23,10 @@ const RESIZE_BORDER: i32 = 6;
 /// `WHEEL_DELTA`: one notch of a standard mouse wheel.
 /// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
 const WHEEL_DELTA: i32 = 120;
+/// Timer id for the debounced configuration save.
+const AUTOSAVE_TIMER: usize = 1;
+/// How long after the last change the configuration is written.
+const AUTOSAVE_DELAY_MS: u32 = 700;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -55,6 +59,24 @@ enum Drag {
     },
 }
 
+/// Coalesces configuration writes: every change marks it dirty, and one save
+/// pays for all of them once the user pauses.
+#[derive(Debug, Default)]
+struct Autosave {
+    dirty: bool,
+}
+
+impl Autosave {
+    fn mark(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Reports whether a save is due, clearing the flag.
+    fn take(&mut self) -> bool {
+        std::mem::take(&mut self.dirty)
+    }
+}
+
 fn cursor_for(edges: ResizeEdges) -> CursorShape {
     match (edges.left, edges.top, edges.right, edges.bottom) {
         (true, true, _, _) | (_, _, true, true) => CursorShape::SizeNorthWestSouthEast,
@@ -75,6 +97,8 @@ pub struct App {
     selected_item: Option<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
+    /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
+    autosave: Autosave,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
     /// current maximum after a resize, so read it through `scroll_of`.
     scroll: HashMap<SpaceId, i32>,
@@ -99,6 +123,7 @@ impl App {
             selected_item: None,
             hovered: None,
             drag: Drag::None,
+            autosave: Autosave::default(),
             scroll: HashMap::new(),
             visible: !hidden,
             hotkey: None,
@@ -119,6 +144,22 @@ impl App {
         } else {
             tracing::debug!(path = %self.store.path().display(), "configuration saved");
         }
+    }
+
+    /// Defers a configuration write until the user pauses, restarting the
+    /// timer on every change so a burst of them writes once.
+    fn schedule_save(&mut self, ui: &mut Ui) {
+        self.autosave.mark();
+        ui.set_timer(AUTOSAVE_TIMER, AUTOSAVE_DELAY_MS);
+    }
+
+    /// Writes any deferred change now and stops the autosave timer. Used when
+    /// the timer fires and when the app closes, so nothing is lost.
+    fn flush_save(&mut self, ui: &mut Ui) {
+        if self.autosave.take() {
+            ui.clear_timer(AUTOSAVE_TIMER);
+        }
+        self.save();
     }
 
     // ---- space windows -------------------------------------------------
@@ -270,7 +311,7 @@ impl App {
                 button: MouseButton::Left,
                 ..
             }
-            | SpaceEvent::CaptureLost => self.end_drag(),
+            | SpaceEvent::CaptureLost => self.end_drag(ui),
             SpaceEvent::MouseUp {
                 x,
                 y,
@@ -418,10 +459,10 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    fn end_drag(&mut self) {
+    fn end_drag(&mut self, ui: &mut Ui) {
         match std::mem::replace(&mut self.drag, Drag::None) {
             Drag::None | Drag::Item { .. } => {}
-            Drag::Space { .. } | Drag::Resize { .. } => self.save(),
+            Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
         }
     }
 
@@ -446,7 +487,7 @@ impl App {
                 self.take_selection();
             }
             self.refresh_space(ui, id);
-            self.save();
+            self.schedule_save(ui);
         }
     }
 
@@ -755,13 +796,13 @@ impl App {
                 if self.dispatch(Command::FitToContents { id }, at) {
                     self.scroll.remove(&id);
                     self.refresh_space(ui, id);
-                    self.save();
+                    self.schedule_save(ui);
                 }
             }
             Some(menu::LOCK) => {
                 if self.dispatch(Command::ToggleLock { id }, at) {
                     self.refresh_space(ui, id);
-                    self.save();
+                    self.schedule_save(ui);
                 }
             }
             Some(choice) => self.run_common_menu(ui, choice, at),
@@ -803,7 +844,7 @@ impl App {
                 self.set_visible(ui, true);
             }
             self.sync_windows(ui);
-            self.save();
+            self.schedule_save(ui);
         }
     }
 
@@ -969,6 +1010,8 @@ impl EventHandler for App {
                 self.show_tray_menu(ui, Point::new(x, y));
             }
             Event::Settings(event) => self.on_settings_event(ui, event),
+            Event::Timer { id } if id == AUTOSAVE_TIMER => self.flush_save(ui),
+            Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 ui.set_ui_dark(self.system_dark);
@@ -981,7 +1024,7 @@ impl EventHandler for App {
                 }
                 // Unapplied edits in an open settings window are discarded.
                 self.cancel_settings(ui);
-                self.save();
+                self.flush_save(ui);
             }
         }
         self.sync_outside_watch(ui);
@@ -1092,6 +1135,16 @@ fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn autosave_coalesces_changes_into_one_write() {
+        let mut save = Autosave::default();
+        assert!(!save.take());
+        save.mark();
+        save.mark();
+        assert!(save.take());
+        assert!(!save.take());
+    }
 
     #[test]
     fn resize_cursor_matches_grabbed_edges() {

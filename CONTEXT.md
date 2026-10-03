@@ -276,8 +276,8 @@ WindowSettings {
 - `EventHandler::on_event(Event, &mut Ui)` is the app's single entry point for
   every window. `Ui` creates/destroys space windows, pushes rects, scenes and
   styles, shows/hides spaces, shows popup menus and confirmation boxes, opens/
-  updates/closes the settings window, registers hotkeys, sets the tray
-  tooltip, and quits.
+  updates/closes the settings window, registers hotkeys, arms and cancels
+  timers, sets the tray tooltip, and quits.
 - Re-entrancy: the handler is moved out of the thread-local runtime while it
   runs. Win32 calls it makes (SetWindowPos, DestroyWindow, TrackPopupMenu,
   ChooseColor, MessageBox) re-enter window procedures; events raised then are
@@ -287,7 +287,8 @@ WindowSettings {
 ### Controller (`win32/controller.rs`, `win32/tray.rs`, `win32/icon.rs`)
 
 - A hidden top-level window (not message-only, so it receives broadcasts). It
-  owns hotkeys (`WM_HOTKEY`), the tray callback (`NOTIFYICON_VERSION_4`: left
+  owns hotkeys (`WM_HOTKEY`), timers (`Ui::set_timer`/`clear_timer` via
+  `WM_TIMER` → `Event::Timer`), the tray callback (`NOTIFYICON_VERSION_4`: left
   click → `TrayEvent::Activated`, right click → `TrayEvent::MenuRequested`),
   `TaskbarCreated` (re-adds the icon after Explorer restarts),
   `WM_SETTINGCHANGE`/"ImmersiveColorSet" (`Event::SystemThemeChanged`), and
@@ -428,8 +429,10 @@ WindowSettings {
    on double-click, show the item menu on right-click, and start a shell drag
    past the system drag threshold. Drops add items (moving new files into
    storage via `storage::ItemStore`) or move them between spaces. Config is
-   saved after drags and resizes, roll-up, lock, create/delete, drops, item
-   removal, and Apply/OK.
+   written. Configuration writes are debounced: drags, resizes, roll-up, lock,
+   and space creation schedule a save that fires about 700 ms after the last
+   change, while file-moving operations (drops, item removal, delete) and
+   Apply/OK save at once, and closing flushes any pending write.
 5. Settings edits apply to the live config immediately (preview); Apply/OK
    validate and re-register the hotkey and save; Cancel or closing the window
    restores the saved theme and window settings.
