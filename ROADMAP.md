@@ -21,9 +21,13 @@ A native, lightweight, offline Windows desktop organizer that:
 - **D1. Desktop takeover.** DeskSpace hides Explorer's `SHELLDLL_DefView` icon
   listview and renders desktop items on a desktop-hosted window. Items are real
   filesystem entries; moving an item into a space relocates the real file.
-- **D2. Rendering backend.** Direct2D for drawing plus DirectComposition for
-  per-pixel alpha, blur/Acrylic, and composited animation. GDI is retired once
-  the D2D renderer reaches parity with the current look.
+- **D2. Rendering backend (revised).** Each space is its own window. Content
+  is drawn with Direct2D/DirectWrite into a premultiplied-alpha HWND target
+  over a DWM-extended frame; the blur material comes from the accent policy
+  (`SetWindowCompositionAttribute`) and corners/border/dark mode from DWM
+  attributes. GDI is retired. DirectComposition is deferred to the animation
+  work in M5. The documented `DWMWA_SYSTEMBACKDROP_TYPE` was rejected because
+  system backdrops only render on active windows and spaces are never active.
 - **D3. Item storage model.** Two mechanisms, kept strictly separate:
   - *Portals* are pure views over a real folder. They read contents live and
     never move, copy, or duplicate data, regardless of folder size.
@@ -50,33 +54,49 @@ A native, lightweight, offline Windows desktop organizer that:
 
 ## 4. Milestones
 
+Progress is marked inline as **[done]**, **[partial]**, or unmarked (not
+started).
+
+### Progress log
+
+- **Windows 11 look and control center (current).** Per-space windows with
+  acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
+  tray icon; space context menu; data-driven settings window with Appearance,
+  General, and About pages and live preview; delete space; file drops onto
+  spaces (as references); config v2 with migration; space-relative item
+  positions (fixes items being left behind when a space moved). Covers most of
+  M1 and parts of M0, M2, and M3.
+
 ### M0 - Foundations and guardrails
 
 - CI: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
   `cargo test --workspace`, on Windows.
 - `deny.toml` for licenses/advisories; `cargo-deny` in CI.
-- Wire the declared-but-unused events: `SetTimer`/`WM_TIMER`, mouse tracking
-  (`WM_MOUSELEAVE`), visibility notifications. Remove or implement
-  `WindowEvent::VisibilityChanged`.
-- Work-area awareness: replace the hardcoded bounds with
-  `SPI_GETWORKAREA` / per-monitor work areas.
+- **[done]** Wire the declared-but-unused events: the old `WindowEvent` enum
+  was replaced by `Event`/`spaceEvent`, which only declares what is emitted;
+  mouse tracking (`WM_MOUSELEAVE`) drives hover. Timers are added when a
+  feature needs one (debounced autosave, M5 policies).
+- **[done]** Work-area awareness: commands are bounded by the work area of
+  the nearest monitor (`work_area_at`).
 - Structured error boundaries: one `AppError` at the binary boundary; library
   crates keep `thiserror`.
 - Autosave on change (debounced), not just on close.
 
 Exit criteria: green CI, no unused event variants, work area drives bounds.
 
-### M1 - Direct2D and DirectComposition renderer
+### M1 - Direct2D renderer and Windows 11 look
 
-- New `render/d2d.rs` implementing the existing `Scene` contract.
-- Per-pixel alpha; anti-aliased rounded rectangles; text via DirectWrite.
-- DirectComposition target so the overlay can be partially transparent and, on
-  supported systems, blurred (Acrylic) behind space bodies.
-- Device-lost handling and per-monitor DPI scaling of the scene.
-- Keep the GDI painter as a fallback behind a runtime flag until D2D is proven.
+- **[done]** `render/d2d.rs` implementing the `spaceScene` contract.
+- **[done]** Per-pixel alpha; DWM rounded corners; text via DirectWrite.
+- **[done]** Acrylic/blur behind space bodies on Windows 10 1803+ and 11
+  (accent policy; see D2), verified on Windows 11 build 26300.
+- **[done]** Device-lost handling (`D2DERR_RECREATE_TARGET`).
+- Per-monitor DPI scaling of space layout and scenes.
+- **[dropped]** GDI fallback painter: the D2D path has no known failure mode
+  that GDI would cover, and GDI cannot draw over the blur material correctly.
 
-Exit criteria: the app renders the same scene through D2D at 60fps idle with a
-matching or better look, and BlurBehind/Acrylic works on Windows 10/11.
+Exit criteria: spaces render through D2D with a Windows 11 look and blur works
+on Windows 10/11. Remaining: per-monitor DPI.
 
 ### M2 - Desktop takeover core
 
@@ -86,12 +106,17 @@ matching or better look, and BlurBehind/Acrylic works on Windows 10/11.
   and `IShellItemImageFactory` (jumbo icons), replacing `SHGetFileInfoW`.
 - Render desktop items in a free-grid; hit-test, hover, select, rubber-band.
 - Drag items: within the desktop, into a space, and between spaces (`F-06`).
+  **[partial]** Shell drops onto a space are accepted (`WM_DROPFILES`) and add
+  references; an OLE `IDropTarget` is needed for drop-effect feedback and
+  drag-out.
 - Drop files onto a normal space relocates them into the managed store by move
   (`D3`), with undo; portals are unaffected because they never touch the store.
 - Update the item model and refresh after file operations.
 - space chrome: resize handles, lock toggle, rename inline, delete with undo
-  (`F-02`, `F-03`, `F-05`).
-- Basic right-click context menu for space and item actions (`F-14` partial).
+  (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph) and delete (menu
+  + confirmation, no undo) are done; resize and rename are not.
+- **[done]** Basic right-click context menu for space actions (`F-14`
+  partial). Item actions wait for real item support.
 - Follow desktop item changes with a filesystem watcher and re-sync.
 
 Exit criteria: with DeskSpace running, the Explorer icon layer is gone, items
@@ -100,14 +125,23 @@ are drawn and interactive, and dragging moves real files with undo.
 ### M3 - Control center: tray, context menu, settings
 
 - System tray icon with menu: show/hide, pause takeover, open settings, snapshots
-  (`F-16`).
+  (`F-16`). **[partial]** Settings, show/hide, new space, exit; takeover and
+  snapshots do not exist yet.
 - Full context menu system: create space/portal, arrange, sort, lock, roll up,
-  appearance, remove (`F-14`).
+  appearance, remove (`F-14`). **[partial]** Create, delete, lock, roll up.
 - Settings window (own HWND) with live-applied pages: General, Appearance,
-  spaces, Portals, Hotkeys, Advanced, About (`F-17`).
-- Persist all `WindowSettings` fields and wire them to behavior
-  (`background_alpha`, `always_on_desktop`, `start_hidden`, `snap_grid`).
-- Hotkey editor and additional bindings (`F-18` partial).
+  spaces, Portals, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
+  form engine plus Appearance (live preview), General, and About pages with
+  OK/Cancel/Apply.
+- Persist all `WindowSettings` fields and wire them to behavior. **[partial]**
+  `start_hidden` and `toggle_hotkey` are wired; `background_alpha` was
+  superseded by `theme.tint_opacity` and removed; `always_on_desktop` and
+  `snap_grid` remain.
+- Hotkey editor and additional bindings (`F-18` partial). **[partial]** The
+  toggle hotkey is editable as text with validation and conflict reporting.
+- Per-space appearance overrides (tint, opacity) from the space menu.
+- Dark-mode settings window and menus (needs owner-drawn controls or the
+  undocumented uxtheme dark-mode APIs).
 
 Exit criteria: every runtime setting is editable without hand-editing TOML, and
 the tray menu can show/hide and open settings.
@@ -176,7 +210,8 @@ fresh Windows 10 and Windows 11 machine.
 ## 5. Release mapping
 
 - **v0.2 "Take the desktop"**: M0, M1, M2, M3. The first usable release:
-  D2D/DComp rendering, real desktop takeover, tray + context menu + settings.
+  D2D rendering with the Windows 11 look, real desktop takeover, tray +
+  context menu + settings.
 - **v0.3 "Portals"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
@@ -184,32 +219,32 @@ fresh Windows 10 and Windows 11 machine.
 
 ## 6. spaces parity checklist
 
-| Id | Feature | Milestone |
-|----|---------|-----------|
-| F-01 | spaces / icon groups | M2 |
-| F-02 | Create / rename / delete space | M2 |
-| F-03 | Resize space | M2 |
-| F-04 | Roll-up spaces | M2 (manual), M5 (policy) |
-| F-05 | Lock space | M2 |
-| F-06 | Drag icons in / out / between spaces | M2 |
-| F-07 | Folder portals | M4 |
-| F-08 | Portal sort rules | M4 |
-| F-09 | Portal show-as / icon size | M4 |
-| F-10 | Hide all on desktop double-click | M5 |
-| F-11 | Auto-hide | M5 |
-| F-12 | Pages / virtual desktops | M6 |
-| F-13 | Quick peek / transparency toggle | M5 |
-| F-14 | Right-click context menu | M2 (basic), M3 (full) |
-| F-15 | Snap to grid / auto-arrange | Core (done) |
-| F-16 | System tray | M3 |
-| F-17 | Settings window | M3 |
-| F-18 | Hotkeys | M2 (toggle), M3 (editor) |
-| F-19 | Multi-monitor | M6 |
-| F-20 | Backup / restore / snapshots | M6 |
-| F-21 | Auto-consolidate new icons | M7 |
-| F-22 | Exclude rules / filters | M7 |
-| F-23 | Keyboard navigation | M7 |
-| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) |
+| Id | Feature | Milestone | Status |
+|----|---------|-----------|--------|
+| F-01 | spaces / icon groups | M2 | Partial (references, no takeover) |
+| F-02 | Create / rename / delete space | M2 | Create, delete done; rename open |
+| F-03 | Resize space | M2 | Open |
+| F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
+| F-05 | Lock space | M2 | Done |
+| F-06 | Drag icons in / out / between spaces | M2 | Drop-in done (references) |
+| F-07 | Folder portals | M4 | Open |
+| F-08 | Portal sort rules | M4 | Open |
+| F-09 | Portal show-as / icon size | M4 | Open |
+| F-10 | Hide all on desktop double-click | M5 | Open |
+| F-11 | Auto-hide | M5 | Open |
+| F-12 | Pages / virtual desktops | M6 | Open |
+| F-13 | Quick peek / transparency toggle | M5 | Open |
+| F-14 | Right-click context menu | M2 (basic), M3 (full) | Basic done |
+| F-15 | Snap to grid / auto-arrange | Core | Done |
+| F-16 | System tray | M3 | Done (takeover items pending) |
+| F-17 | Settings window | M3 | Partial (3 of 7 pages) |
+| F-18 | Hotkeys | M2 (toggle), M3 (editor) | Toggle + text editor done |
+| F-19 | Multi-monitor | M6 | Partial (per-monitor work areas) |
+| F-20 | Backup / restore / snapshots | M6 | Open |
+| F-21 | Auto-consolidate new icons | M7 | Open |
+| F-22 | Exclude rules / filters | M7 | Open |
+| F-23 | Keyboard navigation | M7 | Open |
+| F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally; per-space open |
 
 ## 7. Open questions
 
@@ -220,8 +255,15 @@ milestone that raises them.
 1. Takeover safety (M2): when Explorer restarts or recovers from a crash, how
    aggressively should DeskSpace re-hide `SHELLDLL_DefView`? A watchdog timer is
    likely needed.
-2. Blur/Acrylic fallback (M1): what is the minimum Windows build for composited
-   blur, and what is the non-blur fallback?
+2. **Resolved.** Blur/Acrylic fallback (M1): the accent policy blurs on
+   Windows 10 1803+ and Windows 11 regardless of activation; rounded corners
+   need Windows 11. Without the API, spaces keep a translucent tint with no
+   blur. Desktop-hosted spaces are opaque because child windows get no DWM
+   material.
+5. Desktop layer vs blur (M2): top-level spaces have blur but are hidden by
+   Show Desktop (Win+D); desktop-hosted spaces survive Win+D but cannot blur.
+   Takeover (D1) needs a placement that gets both, or a Win+D watcher that
+   re-shows top-level spaces.
 3. Undo model (M2): single-level or multi-level undo stack, and does it cover
    file moves (which are destructive)?
 4. Store layout (M2): one subfolder per space, and what happens to relocations
@@ -238,5 +280,8 @@ milestone that raises them.
   bulk operations.
 - **Composition complexity.** DirectComposition plus per-monitor DPI plus
   animation is the largest single technical investment.
+- **Undocumented blur API.** `SetWindowCompositionAttribute` could change in a
+  future Windows release. The failure mode is graceful (no blur), and the
+  code path is isolated in `win32/dwm.rs`.
 - **Scope.** The parity checklist spans a lot of surface area; the milestone
   gates exist to keep each release shippable.
