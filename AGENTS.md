@@ -22,6 +22,7 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 |--------|---------|
 | Build  | `cargo build --workspace` |
 | Run    | `cargo run -p deskspace-app -- --no-icons` |
+| Inspect| `cargo run -p deskspace-app -- --config <scratch.toml> --on-top --settings` |
 | Test   | `cargo test --workspace` |
 | Lint   | `cargo clippy --workspace --all-targets` |
 | Format | `cargo fmt --all` |
@@ -36,8 +37,10 @@ clippy warnings as failures.
 ```
 crates/deskspace-core      Domain model. No OS or IO dependencies.
 crates/deskspace-config    Serde/TOML configuration schema and persistence.
-crates/deskspace-platform  Win32 window host, GDI renderer, shell, hotkeys.
-crates/deskspace-app       Application binary, CLI, event handler, scene builder.
+crates/deskspace-platform  UI runtime, space windows, DWM, Direct2D painter,
+                           tray, menus, settings window, shell, hotkeys.
+crates/deskspace-app       Application binary, CLI, event handler, scene and
+                           settings-form builders.
 ```
 
 Dependency direction: `app -> {config, platform} -> core`. `core` depends on
@@ -51,9 +54,12 @@ nothing in the workspace. Do not introduce upward dependencies.
 - Mutate the domain only through `Command` and `Desktop::apply`. Add a new
   `Command` variant instead of mutating `Desktop` directly from UI or platform
   code.
-- Rendering is data-driven. `deskspace-app` converts the model into a
-  `deskspace_platform::Scene`; the platform `Painter` only draws the scene.
-  Keep Win32 types out of `core` and out of the app where possible.
+- Rendering and UI are data-driven. `deskspace-app` converts the model into a
+  `spaceScene` / `spaceStyle` per space, menus into `MenuEntry` lists, and
+  settings into a `SettingsForm`; the platform only turns that data into
+  windows, controls, and pixels. Keep Win32 types out of `core` and the app.
+- Push scenes only when something changed. space windows repaint from their
+  stored `PreparedScene`; there is no per-frame callback into the app.
 - Persistent types derive `serde` and mark new fields `#[serde(default)]` for
   forward compatibility. For breaking changes, bump `CURRENT_VERSION` and
   extend `Config::migrate`.
@@ -89,8 +95,8 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/
    until the intent is obvious rather than papering over it.
 4. Do not cause confusion. If a comment itself needs explaining, delete it.
 5. Explain unidiomatic code. This codebase has plenty: manual `LOWORD`/`HIWORD`
-   extraction, the `0x052C` WorkerW spawn trick, color-key math, and raw
-   `GWLP_USERDATA` pointers. Add a short note on why the code is the way it is,
+   extraction, the `0x052C` WorkerW spawn trick, the undocumented accent
+   policy, and raw `GWLP_USERDATA` pointers. Add a short note on why the code is the way it is,
    so nobody simplifies it away.
 6. Cite copied code. Any snippet adapted from a forum, gist, or another project
    gets a comment with its URL. Stack Overflow content requires attribution.
@@ -117,13 +123,26 @@ Rust specifics:
 
 - The bundled MCP cargo tooling passes `--locked`. Keep `Cargo.lock` current
   when adding or updating dependencies.
-- Window state lives behind a raw `*mut WindowState` stored in `GWLP_USERDATA`
-  and is freed exactly once in `WM_NCDESTROY`. Do not free it elsewhere.
-- `DesktopWindow::create` moves the `EventHandler` into the window;
-  `DesktopWindow::run` blocks on the Win32 message pump.
-- Win32 does not support layered child windows. Desktop-hosted placement
-  (`Placement::DesktopBackground` / `DesktopForeground`) is therefore opaque
-  and non-layered; only `TopLevel` uses color-key transparency.
-- `WS_EX_TRANSPARENT` makes the entire window click-through. Do not use it to
-  achieve click-through for empty areas; color-keyed layered windows already
-  pass mouse input through color-keyed pixels.
+- space and settings window state live behind raw pointers in
+  `GWLP_USERDATA` and are freed exactly once in `WM_NCDESTROY`. Do not free
+  them elsewhere.
+- `deskspace_platform::run` takes the `EventHandler` and blocks on the message
+  pump. The handler is checked out of the runtime while it runs; never hold a
+  `with_runtime` / `with_state` borrow across a Win32 call that can send
+  messages, and make `runtime::dispatch` the last statement in a window-proc
+  branch, because the handler may destroy that window.
+- spaces are never activated. Anything that depends on activation does not
+  work for them. In particular, `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic
+  system backdrops) renders a flat color on inactive windows; the blur comes
+  from the accent policy in `win32/dwm.rs`.
+- spaces sit at the bottom of the z-order, so they are hidden behind your
+  editor. Use `--on-top` with a scratch `--config` to look at them.
+- Child windows get no DWM material or composited alpha. Desktop-hosted
+  placement is therefore opaque and uses a window region for rounding.
+- `WS_EX_TRANSPARENT` only makes a window click-through when combined with
+  `WS_EX_LAYERED`, and layering disables the blur. `--click-through` is a
+  display-only mode.
+- Launching the binary with a hidden show state (for example PowerShell
+  `Start-Process -WindowStyle Hidden`) hides the settings window: Windows
+  applies the startup show command to the first `ShowWindow` on an overlapped
+  window.
