@@ -92,6 +92,10 @@ started).
   for a tint or text override, with a reset; `Space::tint` and `Space::text`
   are optional overrides applied by the scene builder. `MenuEntry` gained
   submenus (shared by the space and item menus).
+- **Sort a space (F-31).** The space menu's Sort by submenu reorders items by
+  name (case-insensitive), type, size, or modified date, ascending or
+  descending, then re-lays the grid. `Item` gains `size`/`modified` read at
+  creation; a kept rule and lens sorting (F-08) remain open.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -180,7 +184,8 @@ are drawn and interactive, and dragging moves real files with undo.
   snapshots do not exist yet.
 - Full context menu system: create space/lens, arrange, sort, lock, roll up,
   appearance, remove (`F-14`). **[partial]** Create, delete, lock, roll up,
-  fit to contents.
+  fit to contents, per-space appearance, and sort (one-off) are done; lenses
+  and submenus for create/arrange remain.
 - Settings window (own HWND) with live-applied pages: General, Appearance,
   Spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
   form engine plus Appearance (live preview), General, and About pages with
@@ -319,9 +324,10 @@ Appearance:
 
 Behavior:
 - **F-04** Roll up on mouse-out and expand on hover (M5, roll-up policy).
-- **F-31** Sort a normal space by name, type, size, or date, ascending or
-  descending, as a one-off arrange or a kept rule. Lenses get the same through
-  F-08 (M3/M4).
+- **[done, one-off] F-31** Sort a normal space by name, type, size, or date,
+  ascending or descending, from the space menu's Sort by submenu. A kept sort
+  rule (for normal spaces and lenses, F-08) remains open. `Item` now carries
+  `size` and `modified`, read once at creation.
 - **F-10** Hide all on desktop double-click (M5).
 - **F-32** Hover opacity: idle spaces fade to a chosen opacity and become
   solid on hover (M5; the transparency half of F-13).
@@ -375,7 +381,7 @@ Behavior:
 | F-28 | Title bar style | M5 | Open (polled) |
 | F-29 | Windows accent color | M3 | Open (polled) |
 | F-30 | Settings and menu theme override | M3 | Open (polled); follows Windows today |
-| F-31 | Sort items in normal spaces | M3/M4 | Open (polled) |
+| F-31 | Sort items in normal spaces | M3/M4 | Done (one-off by name/type/size/date; kept rule open) |
 | F-32 | Hover opacity | M5 | Open (polled) |
 | F-33 | Animations toggle | M5 | Open (polled) |
 | F-34 | Start with Windows | M3, M8 | Open (polled) |

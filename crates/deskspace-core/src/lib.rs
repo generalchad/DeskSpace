@@ -10,7 +10,7 @@ pub mod layout;
 pub mod space;
 pub mod theme;
 
-pub use command::{Command, CommandOutcome};
+pub use command::{Command, CommandOutcome, SortKey};
 pub use desktop::Desktop;
 pub use error::CoreError;
 pub use geometry::{Point, Rect, Size};

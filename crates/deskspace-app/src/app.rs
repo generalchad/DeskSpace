@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
-use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, Space, SpaceId};
+use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
 use deskspace_platform::{
     CursorShape, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice,
     MenuEntry, MouseButton, RunOptions, SettingsEvent, SpaceEvent, TextEdit, TrayEvent, Ui,
@@ -48,6 +48,13 @@ mod menu {
     pub const SPACE_TINT: u32 = 25;
     pub const SPACE_TEXT: u32 = 26;
     pub const RESET_APPEARANCE: u32 = 27;
+    pub const SORT_NAME_ASC: u32 = 30;
+    pub const SORT_NAME_DESC: u32 = 31;
+    pub const SORT_KIND: u32 = 32;
+    pub const SORT_SIZE_ASC: u32 = 33;
+    pub const SORT_SIZE_DESC: u32 = 34;
+    pub const SORT_DATE_ASC: u32 = 35;
+    pub const SORT_DATE_DESC: u32 = 36;
 }
 
 enum Drag {
@@ -428,6 +435,20 @@ impl App {
         let tint = self.dispatch(Command::SetSpaceTint { id, tint: None }, at);
         let text = self.dispatch(Command::SetSpaceText { id, text: None }, at);
         if opacity && tint && text {
+            self.refresh_space(ui, id);
+            self.schedule_save(ui);
+        }
+    }
+
+    fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
+        if self.dispatch(
+            Command::SortSpace {
+                id,
+                key,
+                descending,
+            },
+            at,
+        ) {
             self.refresh_space(ui, id);
             self.schedule_save(ui);
         }
@@ -935,6 +956,7 @@ impl App {
         }
         entries.push(MenuEntry::Separator);
         entries.push(space_appearance_menu(space));
+        entries.push(space_sort_menu());
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
         let delete = if delete_needs_confirmation(space) {
@@ -976,6 +998,13 @@ impl App {
             Some(menu::SPACE_TINT) => self.pick_space_tint(ui, id, at),
             Some(menu::SPACE_TEXT) => self.pick_space_text(ui, id, at),
             Some(menu::RESET_APPEARANCE) => self.reset_space_appearance(ui, id, at),
+            Some(menu::SORT_NAME_ASC) => self.sort_space(ui, id, SortKey::Name, false, at),
+            Some(menu::SORT_NAME_DESC) => self.sort_space(ui, id, SortKey::Name, true, at),
+            Some(menu::SORT_KIND) => self.sort_space(ui, id, SortKey::Kind, false, at),
+            Some(menu::SORT_SIZE_ASC) => self.sort_space(ui, id, SortKey::Size, false, at),
+            Some(menu::SORT_SIZE_DESC) => self.sort_space(ui, id, SortKey::Size, true, at),
+            Some(menu::SORT_DATE_ASC) => self.sort_space(ui, id, SortKey::Modified, false, at),
+            Some(menu::SORT_DATE_DESC) => self.sort_space(ui, id, SortKey::Modified, true, at),
             Some(choice) => self.run_common_menu(ui, choice, at),
             None => {}
         }
@@ -1303,6 +1332,22 @@ fn space_appearance_menu(space: &Space) -> MenuEntry {
     );
     entries.push(MenuEntry::item(menu::RESET_APPEARANCE, "Reset appearance"));
     MenuEntry::submenu("Appearance", entries)
+}
+
+/// The "Sort by" submenu; a one-off reorder of the space's items.
+fn space_sort_menu() -> MenuEntry {
+    MenuEntry::submenu(
+        "Sort by",
+        vec![
+            MenuEntry::item(menu::SORT_NAME_ASC, "Name (A\u{2013}Z)"),
+            MenuEntry::item(menu::SORT_NAME_DESC, "Name (Z\u{2013}A)"),
+            MenuEntry::item(menu::SORT_KIND, "Type"),
+            MenuEntry::item(menu::SORT_SIZE_ASC, "Size (smallest)"),
+            MenuEntry::item(menu::SORT_SIZE_DESC, "Size (largest)"),
+            MenuEntry::item(menu::SORT_DATE_ASC, "Date (oldest)"),
+            MenuEntry::item(menu::SORT_DATE_DESC, "Date (newest)"),
+        ],
+    )
 }
 
 /// Deleting an empty space loses nothing, so it happens without asking.

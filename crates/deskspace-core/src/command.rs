@@ -1,9 +1,10 @@
+use std::cmp::Ordering;
 use std::path::PathBuf;
 
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect};
 use crate::id::{ItemId, SpaceId};
-use crate::item::Item;
+use crate::item::{Item, ItemKind};
 use crate::layout::{
     arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions, snap_rect,
 };
@@ -42,6 +43,12 @@ pub enum Command {
     FitToContents {
         id: SpaceId,
     },
+    /// Reorders a space's items by `key` and re-lays them out.
+    SortSpace {
+        id: SpaceId,
+        key: SortKey,
+        descending: bool,
+    },
     /// Per-space tint alpha multiplier (255 keeps the theme's).
     SetSpaceOpacity {
         id: SpaceId,
@@ -78,6 +85,15 @@ pub enum Command {
         id: SpaceId,
     },
     SnapAll,
+}
+
+/// How `Command::SortSpace` orders a space's items.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Name,
+    Kind,
+    Size,
+    Modified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +182,37 @@ impl Desktop {
                 space.user_sized = false;
                 arrange_space(space, layout);
                 space.rect = clamp_to_bounds(space.rect, bounds);
+                CommandOutcome::Applied
+            }
+            Command::SortSpace {
+                id,
+                key,
+                descending,
+            } => {
+                let layout = self.layout;
+                let Some(space) = self.space_mut(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                space.items.sort_by(|a, b| {
+                    let order = match key {
+                        SortKey::Name => compare_names(&a.label, &b.label),
+                        SortKey::Kind => kind_rank(a.kind)
+                            .cmp(&kind_rank(b.kind))
+                            .then_with(|| compare_names(&a.label, &b.label)),
+                        SortKey::Size => a
+                            .size
+                            .unwrap_or(0)
+                            .cmp(&b.size.unwrap_or(0))
+                            .then_with(|| compare_names(&a.label, &b.label)),
+                        SortKey::Modified => a
+                            .modified
+                            .unwrap_or(0)
+                            .cmp(&b.modified.unwrap_or(0))
+                            .then_with(|| compare_names(&a.label, &b.label)),
+                    };
+                    if descending { order.reverse() } else { order }
+                });
+                position_items(space, layout);
                 CommandOutcome::Applied
             }
             Command::SetSpaceOpacity { id, opacity } => match self.space_mut(id) {
@@ -274,6 +321,35 @@ impl Desktop {
         if let Some(space) = self.space_mut(id) {
             arrange_space(space, layout);
         }
+    }
+}
+
+/// Case-insensitive label order, comparing lowered characters without
+/// allocating.
+fn compare_names(a: &str, b: &str) -> Ordering {
+    let mut left = a.chars().flat_map(char::to_lowercase);
+    let mut right = b.chars().flat_map(char::to_lowercase);
+    loop {
+        match (left.next(), right.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => match x.cmp(&y) {
+                Ordering::Equal => continue,
+                other => return other,
+            },
+        }
+    }
+}
+
+/// Group order for `SortKey::Kind`: folders, files, shortcuts, drives, other.
+fn kind_rank(kind: ItemKind) -> u8 {
+    match kind {
+        ItemKind::Folder => 0,
+        ItemKind::File => 1,
+        ItemKind::Shortcut => 2,
+        ItemKind::Drive => 3,
+        ItemKind::Other => 4,
     }
 }
 
@@ -466,5 +542,125 @@ mod tests {
         let b = &desktop.spaces[1].rect;
         assert_eq!(a.x % desktop.layout.snap, 0);
         assert!(!a.intersects(*b));
+    }
+
+    fn space_with_items(items: Vec<Item>) -> (Desktop, SpaceId) {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 400, 400));
+        for item in items {
+            desktop.add_item(id, item);
+        }
+        (desktop, id)
+    }
+
+    fn item(id: u64, label: &str, kind: ItemKind, size: u64, modified: u64) -> Item {
+        let mut item = Item::new(ItemId(id), format!("C:/missing/{label}"));
+        item.label = label.to_string();
+        item.kind = kind;
+        item.size = Some(size);
+        item.modified = Some(modified);
+        item
+    }
+
+    fn labels(desktop: &Desktop, id: SpaceId) -> Vec<String> {
+        desktop
+            .space(id)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.label.clone())
+            .collect()
+    }
+
+    #[test]
+    fn sort_space_by_name_is_case_insensitive_both_ways() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "banana", ItemKind::File, 1, 1),
+            item(2, "Apple", ItemKind::File, 1, 1),
+            item(3, "cherry", ItemKind::File, 1, 1),
+        ]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Name,
+                descending: false,
+            },
+            bounds(),
+        );
+        assert_eq!(labels(&desktop, id), ["Apple", "banana", "cherry"]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Name,
+                descending: true,
+            },
+            bounds(),
+        );
+        assert_eq!(labels(&desktop, id), ["cherry", "banana", "Apple"]);
+    }
+
+    #[test]
+    fn sort_space_by_kind_groups_folders_first() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "zebra", ItemKind::File, 0, 0),
+            item(2, "alpha", ItemKind::Folder, 0, 0),
+        ]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Kind,
+                descending: false,
+            },
+            bounds(),
+        );
+        let first = &desktop.space(id).unwrap().items[0];
+        assert_eq!(first.label, "alpha");
+        assert_eq!(first.kind, ItemKind::Folder);
+    }
+
+    #[test]
+    fn sort_space_by_size_and_modified() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "big", ItemKind::File, 300, 10),
+            item(2, "small", ItemKind::File, 10, 30),
+            item(3, "mid", ItemKind::File, 100, 20),
+        ]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Size,
+                descending: false,
+            },
+            bounds(),
+        );
+        assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Modified,
+                descending: true,
+            },
+            bounds(),
+        );
+        assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+    }
+
+    #[test]
+    fn sort_space_repositions_items_from_the_top() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "b", ItemKind::File, 0, 0),
+            item(2, "a", ItemKind::File, 0, 0),
+        ]);
+        desktop.apply(
+            Command::SortSpace {
+                id,
+                key: SortKey::Name,
+                descending: false,
+            },
+            bounds(),
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.items[0].label, "a");
+        assert_eq!(space.items[0].position, desktop.layout.grid_position(0));
     }
 }
