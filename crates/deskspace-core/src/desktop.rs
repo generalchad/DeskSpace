@@ -1,15 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use crate::space::space;
 use crate::geometry::Rect;
-use crate::id::{spaceId, ItemId};
+use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::GridSpec;
+use crate::space::Space;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Desktop {
-    #[serde(default)]
-    pub spaces: Vec<space>,
+    /// Files written before spaces were renamed from "spaces" use `spaces`.
+    #[serde(default, alias = "spaces")]
+    pub spaces: Vec<Space>,
     #[serde(default)]
     pub layout: GridSpec,
 }
@@ -19,8 +20,8 @@ impl Desktop {
         Self::default()
     }
 
-    pub fn next_space_id(&self) -> spaceId {
-        spaceId(
+    pub fn next_space_id(&self) -> SpaceId {
+        SpaceId(
             self.spaces
                 .iter()
                 .map(|space| space.id.0)
@@ -42,15 +43,15 @@ impl Desktop {
         )
     }
 
-    pub fn space(&self, id: spaceId) -> Option<&space> {
+    pub fn space(&self, id: SpaceId) -> Option<&Space> {
         self.spaces.iter().find(|space| space.id == id)
     }
 
-    pub fn space_mut(&mut self, id: spaceId) -> Option<&mut space> {
+    pub fn space_mut(&mut self, id: SpaceId) -> Option<&mut Space> {
         self.spaces.iter_mut().find(|space| space.id == id)
     }
 
-    pub fn space_containing(&self, id: ItemId) -> Option<spaceId> {
+    pub fn space_containing(&self, id: ItemId) -> Option<SpaceId> {
         self.spaces
             .iter()
             .find(|space| space.contains_item(id))
@@ -70,18 +71,18 @@ impl Desktop {
             .map(|item| item.id)
     }
 
-    pub fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> spaceId {
+    pub fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> SpaceId {
         let id = self.next_space_id();
-        self.spaces.push(space::new(id, title, rect));
+        self.spaces.push(Space::new(id, title, rect));
         id
     }
 
-    pub fn remove_space(&mut self, id: spaceId) -> Option<space> {
+    pub fn remove_space(&mut self, id: SpaceId) -> Option<Space> {
         let index = self.spaces.iter().position(|space| space.id == id)?;
         Some(self.spaces.remove(index))
     }
 
-    pub fn add_item(&mut self, space: spaceId, item: Item) -> bool {
+    pub fn add_item(&mut self, space: SpaceId, item: Item) -> bool {
         match self.space_mut(space) {
             Some(target) => {
                 target.push_item(item);
@@ -102,7 +103,7 @@ impl Desktop {
 
     /// Moves `item` into `target`. Returns `false` without changing anything if
     /// the item or the target space does not exist, or the item is already there.
-    pub fn move_item(&mut self, item: ItemId, target: spaceId) -> bool {
+    pub fn move_item(&mut self, item: ItemId, target: SpaceId) -> bool {
         let Some(target_index) = self.spaces.iter().position(|space| space.id == target) else {
             return false;
         };
@@ -118,10 +119,10 @@ impl Desktop {
     }
 
     pub fn item_count(&self) -> usize {
-        self.spaces.iter().map(space::item_count).sum()
+        self.spaces.iter().map(Space::item_count).sum()
     }
 
-    pub fn space_at(&self, point: crate::geometry::Point) -> Option<spaceId> {
+    pub fn space_at(&self, point: crate::geometry::Point) -> Option<SpaceId> {
         self.spaces
             .iter()
             .rev()
@@ -182,7 +183,7 @@ mod tests {
         let item = Item::new(desktop.next_item_id(), "file.txt");
         let item_id = item.id;
         desktop.add_item(a, item);
-        assert!(!desktop.move_item(item_id, spaceId(999)));
+        assert!(!desktop.move_item(item_id, SpaceId(999)));
         assert_eq!(desktop.space_containing(item_id), Some(a));
     }
 

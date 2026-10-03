@@ -7,10 +7,10 @@ pub enum MouseButton {
     Middle,
 }
 
-/// Input on a space window. Coordinates are desktop coordinates (the same
-/// space as `space::rect`), not client coordinates.
+/// Input on a space window. Coordinates are desktop coordinates (the
+/// coordinate system of `Space::rect`), not client coordinates.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum spaceEvent {
+pub enum SpaceEvent {
     MouseMove {
         x: i32,
         y: i32,
@@ -76,9 +76,9 @@ pub enum SettingsEvent {
 pub enum Event {
     /// The runtime is ready; create space windows now.
     Started,
-    space {
+    Space {
         id: u64,
-        event: spaceEvent,
+        event: SpaceEvent,
     },
     Hotkey {
         id: i32,

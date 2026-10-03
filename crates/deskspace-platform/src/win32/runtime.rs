@@ -32,11 +32,11 @@ use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
 use crate::input::Event;
-use crate::render::{spaceScene, spaceStyle, d2d};
+use crate::render::{SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::system::wide;
-use crate::win32::{console, controller, desktop_shell, space_window, menu, settings_window, tray};
+use crate::win32::{console, controller, desktop_shell, menu, settings_window, space_window, tray};
 
 pub trait EventHandler {
     fn on_event(&mut self, event: Event, ui: &mut Ui);
@@ -152,7 +152,7 @@ impl Ui {
         &mut self,
         id: u64,
         rect: Rect,
-        style: spaceStyle,
+        style: SpaceStyle,
     ) -> Result<(), PlatformError> {
         let Some((host, click_through, on_top, visible, exists)) = with_runtime(|runtime| {
             (
@@ -168,7 +168,7 @@ impl Ui {
         if exists {
             return Ok(());
         }
-        let options = space_window::spaceWindowOptions {
+        let options = space_window::SpaceWindowOptions {
             id,
             rect,
             style,
@@ -201,7 +201,7 @@ impl Ui {
         }
     }
 
-    pub fn set_space_scene(&mut self, id: u64, scene: spaceScene) {
+    pub fn set_space_scene(&mut self, id: u64, scene: SpaceScene) {
         if let Some(hwnd) = space_hwnd(id) {
             space_window::set_scene(hwnd, scene);
         }
@@ -215,7 +215,7 @@ impl Ui {
         }
     }
 
-    pub fn set_space_style(&mut self, id: u64, style: spaceStyle) {
+    pub fn set_space_style(&mut self, id: u64, style: SpaceStyle) {
         if let Some(hwnd) = space_hwnd(id) {
             space_window::set_style(hwnd, style);
         }

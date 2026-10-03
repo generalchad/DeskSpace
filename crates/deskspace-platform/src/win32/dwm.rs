@@ -25,7 +25,7 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::UI::Controls::MARGINS;
 use windows::core::{BOOL, s, w};
 
-use crate::render::spaceStyle;
+use crate::render::SpaceStyle;
 
 /// `WINDOWCOMPOSITIONATTRIB::WCA_ACCENT_POLICY` and the `ACCENT_STATE` values
 /// used with it. Not in the Windows SDK headers.
@@ -72,7 +72,7 @@ fn set_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
     })
 }
 
-pub(crate) fn apply_style(hwnd: HWND, style: spaceStyle) {
+pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle) {
     // Negative margins extend the frame over the whole client area ("sheet of
     // glass"), so DWM composites the client's per-pixel alpha over the
     // material instead of treating the client as opaque.

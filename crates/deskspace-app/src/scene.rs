@@ -1,5 +1,5 @@
-use deskspace_core::{space, GridSpec, ItemId, Palette, Rect, Theme};
-use deskspace_platform::{spaceScene, spaceStyle, IconCache, ItemState, ItemVisual};
+use deskspace_core::{GridSpec, ItemId, Palette, Rect, Space, Theme};
+use deskspace_platform::{IconCache, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -14,8 +14,8 @@ pub struct ViewState {
     pub scroll: i32,
 }
 
-pub fn space_style(theme: &Theme, system_dark: bool) -> spaceStyle {
-    spaceStyle {
+pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
+    SpaceStyle {
         backdrop: theme.backdrop,
         corners: theme.corners,
         dark: theme.is_dark(system_dark),
@@ -28,13 +28,13 @@ pub fn space_style(theme: &Theme, system_dark: bool) -> spaceStyle {
 /// partly inside the content area are included, so icons of scrolled-away
 /// items are neither drawn nor loaded.
 pub fn space_scene(
-    space: &space,
+    space: &Space,
     theme: &Theme,
     palette: &Palette,
     layout: GridSpec,
     view: ViewState,
     icons: &mut IconCache,
-) -> spaceScene {
+) -> SpaceScene {
     let cell = layout.cell();
     let content_top = space.title_height;
     let content_bottom = space.rect.height;
@@ -70,7 +70,7 @@ pub fn space_scene(
             .collect()
     };
 
-    spaceScene {
+    SpaceScene {
         title: space.title.clone(),
         title_height: space.title_height,
         tint: palette.tint.fade(space.opacity),
@@ -90,7 +90,7 @@ pub fn space_scene(
 
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
-fn scroll_thumb(space: &space, layout: GridSpec, scroll: i32) -> Option<Rect> {
+fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32) -> Option<Rect> {
     if space.rolled_up {
         return None;
     }
@@ -121,10 +121,10 @@ fn scroll_thumb(space: &space, layout: GridSpec, scroll: i32) -> Option<Rect> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::{spaceId, Item, Point};
+    use deskspace_core::{Item, Point, SpaceId};
 
-    fn space() -> space {
-        let mut space = space::new(spaceId(1), "Work", Rect::new(500, 300, 240, 200));
+    fn space() -> Space {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(500, 300, 240, 200));
         let mut item = Item::new(ItemId(4), "C:/missing/report.txt");
         item.position = Point::new(12, 12);
         space.push_item(item);
@@ -188,9 +188,9 @@ mod tests {
         assert_eq!(scene.tint.a, palette.tint.fade(128).a);
     }
 
-    fn tall_space() -> space {
+    fn tall_space() -> Space {
         let layout = GridSpec::default();
-        let mut space = space::new(spaceId(1), "Tall", Rect::new(0, 0, 240, 200));
+        let mut space = Space::new(SpaceId(1), "Tall", Rect::new(0, 0, 240, 200));
         space.user_sized = true;
         for index in 0..10u64 {
             let mut item = Item::new(ItemId(index + 1), format!("C:/missing/{index}.txt"));

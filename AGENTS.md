@@ -59,10 +59,10 @@ nothing in the workspace. Do not introduce upward dependencies.
   `Command` variant instead of mutating `Desktop` directly from UI or platform
   code.
 - Rendering and UI are data-driven. `deskspace-app` converts the model into a
-  `spaceScene` / `spaceStyle` per space, menus into `MenuEntry` lists, and
+  `SpaceScene` / `SpaceStyle` per space, menus into `MenuEntry` lists, and
   settings into a `SettingsForm`; the platform only turns that data into
   windows, controls, and pixels. Keep Win32 types out of `core` and the app.
-- Push scenes only when something changed. space windows repaint from their
+- Push scenes only when something changed. Space windows repaint from their
   stored `PreparedScene`; there is no per-frame callback into the app.
 - Persistent types derive `serde` and mark new fields `#[serde(default)]` for
   forward compatibility. For breaking changes, bump `CURRENT_VERSION` and
@@ -127,7 +127,7 @@ Rust specifics:
 
 - The bundled MCP cargo tooling passes `--locked`. Keep `Cargo.lock` current
   when adding or updating dependencies.
-- space and settings window state live behind raw pointers in
+- Space and settings window state live behind raw pointers in
   `GWLP_USERDATA` and are freed exactly once in `WM_NCDESTROY`. Do not free
   them elsewhere.
 - `deskspace_platform::run` takes the `EventHandler` and blocks on the message
@@ -135,16 +135,16 @@ Rust specifics:
   `with_runtime` / `with_state` borrow across a Win32 call that can send
   messages, and make `runtime::dispatch` the last statement in a window-proc
   branch, because the handler may destroy that window.
-- spaces are never activated. Anything that depends on activation does not
+- Spaces are never activated. Anything that depends on activation does not
   work for them. In particular, `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic
   system backdrops) renders a flat color on inactive windows; the blur comes
   from the accent policy in `win32/dwm.rs`.
-- spaces sit at the bottom of the z-order, so they are hidden behind your
+- Spaces sit at the bottom of the z-order, so they are hidden behind your
   editor. Use `--on-top` with a scratch `--config` to look at them.
 - To check the look, run with a scratch `--config` and `--on-top` over a
   high-contrast window (bright stripes or text) and take a screenshot. A dark
   editor behind the space makes blur and flat translucency indistinguishable.
-  Find window rects by enumerating the `DeskSpacespace` and
+  Find window rects by enumerating the `DeskSpaceSpace` and
   `DeskSpaceSettings` classes. Remove the scratch config afterwards.
 - Child windows get no DWM material or composited alpha. Desktop-hosted
   placement is therefore opaque and uses a window region for rounding.

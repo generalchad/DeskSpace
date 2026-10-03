@@ -6,8 +6,8 @@ pub mod ui;
 pub mod win32;
 
 pub use error::PlatformError;
-pub use input::{Event, spaceEvent, MouseButton, SettingsEvent, TrayEvent};
-pub use render::{spaceScene, spaceStyle, Icon, ItemState, ItemVisual};
+pub use input::{Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
+pub use render::{Icon, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 pub use shell::{DesktopEntry, IconCache, enumerate_desktop_items};
 pub use ui::{CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsPage};
 pub use win32::Placement;

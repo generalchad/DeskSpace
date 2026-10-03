@@ -8,7 +8,7 @@
 //! WorkerW. Child windows get neither DWM backdrops nor composited alpha, so
 //! they are painted opaque and rounded with a window region.
 //!
-//! Window state lives behind a raw `*mut spaceState` in `GWLP_USERDATA` and
+//! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA` and
 //! is freed exactly once, in `WM_NCDESTROY`.
 
 use std::ffi::OsString;
@@ -44,13 +44,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
-use crate::input::{Event, spaceEvent, MouseButton};
-use crate::render::{spaceScene, spaceStyle, Painter, PreparedScene};
+use crate::input::{Event, MouseButton, SpaceEvent};
+use crate::render::{Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
 use crate::win32::{dwm, runtime};
 
-const CLASS_NAME: PCWSTR = w!("DeskSpacespace");
+const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
 /// Mouse-button bits of the `wParam` key state on mouse messages. Defined here
 /// to avoid pulling in `Win32_System_SystemServices` for three constants.
@@ -63,17 +63,17 @@ const MK_ANY_BUTTON: usize = MK_LBUTTON | MK_RBUTTON | MK_MBUTTON;
 static REGISTER_CLASS: Once = Once::new();
 static CLASS_ATOM: AtomicU32 = AtomicU32::new(0);
 
-pub(crate) struct spaceWindowOptions {
+pub(crate) struct SpaceWindowOptions {
     pub id: u64,
     pub rect: Rect,
-    pub style: spaceStyle,
+    pub style: SpaceStyle,
     pub host: Option<HWND>,
     pub click_through: bool,
     pub on_top: bool,
     pub visible: bool,
 }
 
-struct spaceState {
+struct SpaceState {
     id: u64,
     hosted: bool,
     /// Development placement above other windows instead of at the bottom.
@@ -86,9 +86,9 @@ struct spaceState {
     cursor: CursorShape,
 }
 
-pub(crate) fn create(options: spaceWindowOptions) -> Result<HWND, PlatformError> {
+pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
     let hosted = options.host.is_some();
-    let state = Box::into_raw(Box::new(spaceState {
+    let state = Box::into_raw(Box::new(SpaceState {
         id: options.id,
         hosted,
         on_top: options.on_top,
@@ -185,7 +185,7 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
     }
 }
 
-pub(crate) fn set_scene(hwnd: HWND, scene: spaceScene) {
+pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
     let radius = scene.corner_radius;
     let prepared = PreparedScene::new(scene);
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
@@ -241,7 +241,7 @@ fn apply_cursor(shape: CursorShape) {
     }
 }
 
-pub(crate) fn set_style(hwnd: HWND, style: spaceStyle) {
+pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     // SAFETY: `hwnd` is a live space window.
     let hosted = unsafe { with_state(hwnd, |state| state.hosted) }.unwrap_or(true);
     if !hosted {
@@ -300,14 +300,14 @@ unsafe fn update_region(hwnd: HWND, radius: i32) {
     }
 }
 
-unsafe fn state_of(window: HWND) -> *mut spaceState {
+unsafe fn state_of(window: HWND) -> *mut SpaceState {
     // SAFETY: reading the user-data slot of a window of our class.
-    unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut spaceState }
+    unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SpaceState }
 }
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
-unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut spaceState) -> R) -> Option<R> {
+unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut SpaceState) -> R) -> Option<R> {
     // SAFETY: a non-null pointer is the live state (WM_NCDESTROY clears the
     // slot before freeing), and `f` cannot re-enter to create a second borrow.
     unsafe { state_of(window).as_mut() }.map(f)
@@ -387,9 +387,9 @@ unsafe extern "system" fn wndproc(
     // SAFETY: called by Windows with valid arguments for `message`; state
     // access follows the rules on `with_state`.
     unsafe {
-        let space_event = |event: spaceEvent| {
+        let space_event = |event: SpaceEvent| {
             if let Some(id) = with_state(window, |state| state.id) {
-                runtime::dispatch(Event::space { id, event });
+                runtime::dispatch(Event::Space { id, event });
             }
         };
         let hosted = || with_state(window, |state| state.hosted).unwrap_or(false);
@@ -398,7 +398,7 @@ unsafe extern "system" fn wndproc(
             WM_NCCREATE => {
                 let create = lparam.0 as *const CREATESTRUCTW;
                 if !create.is_null() {
-                    let state = (*create).lpCreateParams as *mut spaceState;
+                    let state = (*create).lpCreateParams as *mut SpaceState;
                     if !state.is_null() {
                         SetWindowLongPtrW(window, GWLP_USERDATA, state as isize);
                     }
@@ -452,7 +452,7 @@ unsafe extern "system" fn wndproc(
                     let _ = TrackMouseEvent(&mut track);
                 }
                 let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(spaceEvent::MouseMove { x, y });
+                space_event(SpaceEvent::MouseMove { x, y });
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
@@ -460,7 +460,7 @@ unsafe extern "system" fn wndproc(
                     state.tracking_leave = false;
                     state.cursor = CursorShape::Arrow;
                 });
-                space_event(spaceEvent::MouseLeave);
+                space_event(SpaceEvent::MouseLeave);
                 LRESULT(0)
             }
             WM_SETCURSOR if loword(lparam.0) == HTCLIENT as i32 => {
@@ -481,7 +481,7 @@ unsafe extern "system" fn wndproc(
                 if hosted() {
                     MapWindowPoints(None, GetParent(window).ok(), &mut point);
                 }
-                space_event(spaceEvent::Wheel {
+                space_event(SpaceEvent::Wheel {
                     x: point[0].x,
                     y: point[0].y,
                     delta,
@@ -494,7 +494,7 @@ unsafe extern "system" fn wndproc(
                 // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
                 SetCapture(window);
                 let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(spaceEvent::MouseDown {
+                space_event(SpaceEvent::MouseDown {
                     x,
                     y,
                     button: button_for(message),
@@ -503,7 +503,7 @@ unsafe extern "system" fn wndproc(
             }
             WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
                 let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(spaceEvent::MouseUp {
+                space_event(SpaceEvent::MouseUp {
                     x,
                     y,
                     button: button_for(message),
@@ -515,7 +515,7 @@ unsafe extern "system" fn wndproc(
             }
             WM_LBUTTONDBLCLK => {
                 let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(spaceEvent::DoubleClick { x, y });
+                space_event(SpaceEvent::DoubleClick { x, y });
                 LRESULT(0)
             }
             WM_DROPFILES => {
@@ -530,7 +530,7 @@ unsafe extern "system" fn wndproc(
                 };
                 MapWindowPoints(Some(window), target, &mut point);
                 if !paths.is_empty() {
-                    space_event(spaceEvent::FilesDropped {
+                    space_event(SpaceEvent::FilesDropped {
                         x: point[0].x,
                         y: point[0].y,
                         paths,
@@ -543,7 +543,7 @@ unsafe extern "system" fn wndproc(
                 // after the last button-up also lands here, after MouseUp has
                 // been delivered, so a CaptureLost then is harmless.
                 if lparam.0 != window.0 as isize {
-                    space_event(spaceEvent::CaptureLost);
+                    space_event(SpaceEvent::CaptureLost);
                 }
                 LRESULT(0)
             }

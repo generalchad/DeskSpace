@@ -8,7 +8,7 @@ use deskspace_core::{Backdrop, CornerStyle, Theme, ThemeMode};
 use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage};
 
 pub mod field {
-    pub const spaceS_HEADING: u32 = 1;
+    pub const SPACES_HEADING: u32 = 1;
     pub const MODE: u32 = 2;
     pub const BACKDROP: u32 = 3;
     pub const CORNERS: u32 = 4;
@@ -113,7 +113,7 @@ pub fn build_form(
     let appearance = SettingsPage {
         title: "Appearance".into(),
         fields: vec![
-            Field::heading(field::spaceS_HEADING, "spaces"),
+            Field::heading(field::SPACES_HEADING, "Spaces"),
             Field::choice(
                 field::MODE,
                 "Color mode",

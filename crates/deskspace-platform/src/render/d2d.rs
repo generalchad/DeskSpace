@@ -47,7 +47,7 @@ use windows::core::{BOOL, HRESULT, PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::render::Icon;
-use crate::render::scene::{spaceScene, ItemState};
+use crate::render::scene::{ItemState, SpaceScene};
 
 const ICON_SIZE: f32 = 32.0;
 const ICON_TOP: f32 = 10.0;
@@ -191,13 +191,13 @@ unsafe fn first_installed(fonts: &IDWriteFontCollection, families: &[PCWSTR]) ->
 
 /// A scene with its strings pre-encoded, so painting does not allocate.
 pub struct PreparedScene {
-    scene: spaceScene,
+    scene: SpaceScene,
     title: Vec<u16>,
     labels: Vec<Vec<u16>>,
 }
 
 impl PreparedScene {
-    pub fn new(scene: spaceScene) -> Self {
+    pub fn new(scene: SpaceScene) -> Self {
         let title = scene.title.encode_utf16().collect();
         let labels = scene
             .items
@@ -211,7 +211,7 @@ impl PreparedScene {
         }
     }
 
-    pub fn scene(&self) -> &spaceScene {
+    pub fn scene(&self) -> &SpaceScene {
         &self.scene
     }
 }
@@ -536,7 +536,7 @@ impl Painter {
 
     /// Drops cached bitmaps for icons `scene` no longer shows, so the cache
     /// is bounded by what is on screen rather than by everything ever shown.
-    pub fn retain_icons(&mut self, scene: &spaceScene) {
+    pub fn retain_icons(&mut self, scene: &SpaceScene) {
         if self.icons.is_empty() {
             return;
         }

@@ -42,16 +42,18 @@ A native, lightweight, offline Windows desktop organizer that:
     configurable. Relocation is protected by undo and a snapshot manifest.
 - **D4. v0.2 scope.** Tray icon, right-click context menus, and a settings
   window are required in the first usable release.
-- **D5. Naming.** The folder-mirror feature is called a *lens* in the UI and
-  docs. In code it is a space whose source is a folder
-  (`spaceSource::Folder`), so the user-facing name stays out of the model.
+- **D5. Naming.** Containers are *spaces* (spaces calls them spaces) in the
+  UI, docs, and code (`Space`, `SpaceId`); config files that still use the
+  old `spaces` key load unchanged. The folder-mirror feature is called a
+  *lens* in the UI and docs. In code it is a space whose source is a folder
+  (`SpaceSource::Folder`), so the user-facing name stays out of the model.
 
 ## 3. Guiding principles
 
 - Keep the domain pure: all new behavior is expressed as `Command` variants in
   `deskspace-core`; platform code never mutates the model directly.
-- Keep rendering and UI data-driven: the app builds a `spaceScene` /
-  `spaceStyle` per space, `MenuEntry` lists, and `SettingsForm`s; the platform
+- Keep rendering and UI data-driven: the app builds a `SpaceScene` /
+  `SpaceStyle` per space, `MenuEntry` lists, and `SettingsForm`s; the platform
   only turns them into windows, controls, and pixels.
 - Make destructive operations recoverable: file moves and layout changes get an
   undo path and a snapshot/restore mechanism.
@@ -74,7 +76,7 @@ started).
   spaces (as references); config v2 with migration; space-relative item
   positions (fixes items being left behind when a space moved). Covers most of
   M1 and parts of M0, M2, and M3.
-- **Resize and scroll (M4 phase 0).** spaces resize from any edge or corner
+- **Resize and scroll (M4 phase 0).** Spaces resize from any edge or corner
   (snapped, minimum one cell, resize cursors); a resized space keeps its size,
   reflows items into as many columns as fit, and scrolls with the mouse wheel
   with a thin scroll indicator. Only visible items are put in the scene, so
@@ -87,7 +89,7 @@ started).
   `cargo test --workspace`, on Windows.
 - `deny.toml` for licenses/advisories; `cargo-deny` in CI.
 - **[done]** Wire the declared-but-unused events: the old `WindowEvent` enum
-  was replaced by `Event`/`spaceEvent`, which only declares what is emitted;
+  was replaced by `Event`/`SpaceEvent`, which only declares what is emitted;
   mouse tracking (`WM_MOUSELEAVE`) drives hover. Timers are added when a
   feature needs one (debounced autosave, M5 policies).
 - **[done]** Work-area awareness: commands are bounded by the work area of
@@ -100,7 +102,7 @@ Exit criteria: green CI, no unused event variants, work area drives bounds.
 
 ### M1 - Direct2D renderer and Windows 11 look
 
-- **[done]** `render/d2d.rs` implementing the `spaceScene` contract.
+- **[done]** `render/d2d.rs` implementing the `SpaceScene` contract.
 - **[done]** Per-pixel alpha; DWM rounded corners; text via DirectWrite.
 - **[done]** Acrylic/blur behind space bodies on Windows 10 1803+ and 11
   (accent policy; see D2), verified on Windows 11 build 26300.
@@ -126,7 +128,7 @@ on Windows 10/11. Remaining: per-monitor DPI.
 - Drop files onto a normal space relocates them into the managed store by move
   (`D3`), with undo; lenses are unaffected because they never touch the store.
 - Update the item model and refresh after file operations.
-- space chrome: resize handles, lock toggle, rename inline, delete with undo
+- Space chrome: resize handles, lock toggle, rename inline, delete with undo
   (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph), delete (menu
   + confirmation, no undo), and resize (edges/corners, "Fit to contents") are
   done; rename is not.
@@ -146,7 +148,7 @@ are drawn and interactive, and dragging moves real files with undo.
   appearance, remove (`F-14`). **[partial]** Create, delete, lock, roll up,
   fit to contents.
 - Settings window (own HWND) with live-applied pages: General, Appearance,
-  spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
+  Spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
   form engine plus Appearance (live preview), General, and About pages with
   OK/Cancel/Apply.
 - Persist all `WindowSettings` fields and wire them to behavior. **[partial]**
@@ -166,12 +168,12 @@ the tray menu can show/hide and open settings.
 
 Phased; each phase lands green.
 
-- **[done] Phase 0 - resize and scroll.** `Resizespace` / `FitToContents`
-  commands and `space::user_sized`; columns follow width; edge/corner resize
-  with cursors; `spaceEvent::Wheel` scrolling with a scroll indicator; scenes
+- **[done] Phase 0 - resize and scroll.** `ResizeSpace` / `FitToContents`
+  commands and `Space::user_sized`; columns follow width; edge/corner resize
+  with cursors; `SpaceEvent::Wheel` scrolling with a scroll indicator; scenes
   carry only visible items, clipped below the title bar; owned `Icon` pixels
   and an LRU-bounded `IconCache` (`F-03`).
-- **Phase 1 - core model.** `space.source: spaceSource { Items, Folder(FolderView) }`
+- **Phase 1 - core model.** `Space.source: SpaceSource { Items, Folder(FolderView) }`
   with `#[serde(default)]`; `FolderView { path, sort, descending,
   folders_first, show_hidden, include, exclude }`; `FolderEntry { path,
   label, kind, size, modified, hidden }` supplied by the platform so `core`
@@ -220,7 +222,7 @@ is configurable per space.
 - Pages: multiple named space layouts per monitor with a page switcher (`F-12`).
 - Snapshots: export/import full layout and managed-store manifest; restore
   (`F-20`).
-- space-to-space snapping and alignment guides.
+- Space-to-space snapping and alignment guides.
 
 Exit criteria: layouts survive monitor changes, pages switch instantly, and a
 snapshot restores both layout and store contents.
@@ -263,7 +265,7 @@ fresh Windows 10 and Windows 11 machine.
 
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
-| F-01 | spaces / icon groups | M2 | Partial (references, no takeover) |
+| F-01 | Spaces / icon groups | M2 | Partial (references, no takeover) |
 | F-02 | Create / rename / delete space | M2 | Create, delete done; rename open |
 | F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |

@@ -1,54 +1,54 @@
 use std::path::PathBuf;
 
 use crate::desktop::Desktop;
-use crate::space::ResizeEdges;
 use crate::geometry::{Point, Rect};
-use crate::id::{spaceId, ItemId};
+use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{
     arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions, snap_rect,
 };
+use crate::space::ResizeEdges;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Createspace {
+    CreateSpace {
         title: String,
         at: Point,
     },
-    Deletespace {
-        id: spaceId,
+    DeleteSpace {
+        id: SpaceId,
     },
-    Renamespace {
-        id: spaceId,
+    RenameSpace {
+        id: SpaceId,
         title: String,
     },
-    Movespace {
-        id: spaceId,
+    MoveSpace {
+        id: SpaceId,
         delta: Point,
     },
-    SetspaceRect {
-        id: spaceId,
+    SetSpaceRect {
+        id: SpaceId,
         rect: Rect,
     },
     /// Drags the grabbed `edges` of a space to `to` (desktop coordinates).
     /// The space becomes user-sized and its items reflow to the new width.
-    Resizespace {
-        id: spaceId,
+    ResizeSpace {
+        id: SpaceId,
         edges: ResizeEdges,
         to: Point,
     },
     /// Drops a user size so the space grows to fit its items again.
     FitToContents {
-        id: spaceId,
+        id: SpaceId,
     },
     ToggleLock {
-        id: spaceId,
+        id: SpaceId,
     },
     ToggleRollup {
-        id: spaceId,
+        id: SpaceId,
     },
     AddItem {
-        space: spaceId,
+        space: SpaceId,
         path: PathBuf,
     },
     RemoveItem {
@@ -56,10 +56,10 @@ pub enum Command {
     },
     MoveItem {
         id: ItemId,
-        target: spaceId,
+        target: SpaceId,
     },
     AutoArrange {
-        id: spaceId,
+        id: SpaceId,
     },
     SnapAll,
 }
@@ -80,24 +80,24 @@ impl CommandOutcome {
 impl Desktop {
     pub fn apply(&mut self, command: Command, bounds: Rect) -> CommandOutcome {
         match command {
-            Command::Createspace { title, at } => {
+            Command::CreateSpace { title, at } => {
                 let mut rect = Rect::new(at.x, at.y, 240, 120);
                 rect = clamp_to_bounds(rect, bounds);
                 self.add_space(title, rect);
                 CommandOutcome::Applied
             }
-            Command::Deletespace { id } => match self.remove_space(id) {
+            Command::DeleteSpace { id } => match self.remove_space(id) {
                 Some(_) => CommandOutcome::Applied,
                 None => CommandOutcome::NotFound,
             },
-            Command::Renamespace { id, title } => match self.space_mut(id) {
+            Command::RenameSpace { id, title } => match self.space_mut(id) {
                 Some(space) => {
                     space.title = title;
                     CommandOutcome::Applied
                 }
                 None => CommandOutcome::NotFound,
             },
-            Command::Movespace { id, delta } => {
+            Command::MoveSpace { id, delta } => {
                 let snap = self.layout.snap;
                 match self.space_mut(id) {
                     Some(space) => {
@@ -112,7 +112,7 @@ impl Desktop {
                     None => CommandOutcome::NotFound,
                 }
             }
-            Command::SetspaceRect { id, rect } => {
+            Command::SetSpaceRect { id, rect } => {
                 let snap = self.layout.snap;
                 match self.space_mut(id) {
                     Some(space) => {
@@ -125,7 +125,7 @@ impl Desktop {
                     None => CommandOutcome::NotFound,
                 }
             }
-            Command::Resizespace { id, edges, to } => {
+            Command::ResizeSpace { id, edges, to } => {
                 let layout = self.layout;
                 let Some(space) = self.space_mut(id) else {
                     return CommandOutcome::NotFound;
@@ -209,7 +209,7 @@ impl Desktop {
             }
             Command::SnapAll => {
                 let layout = self.layout;
-                let ids: Vec<spaceId> = self.spaces.iter().map(|space| space.id).collect();
+                let ids: Vec<SpaceId> = self.spaces.iter().map(|space| space.id).collect();
                 for id in ids {
                     if let Some(space) = self.space_mut(id) {
                         if !space.locked {
@@ -224,7 +224,7 @@ impl Desktop {
         }
     }
 
-    fn rearrange(&mut self, id: spaceId) {
+    fn rearrange(&mut self, id: SpaceId) {
         let layout = self.layout;
         if let Some(space) = self.space_mut(id) {
             arrange_space(space, layout);
@@ -244,7 +244,7 @@ mod tests {
     fn create_then_delete_space() {
         let mut desktop = Desktop::new();
         desktop.apply(
-            Command::Createspace {
+            Command::CreateSpace {
                 title: "New".into(),
                 at: Point::new(40, 40),
             },
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(desktop.spaces.len(), 1);
         let id = desktop.spaces[0].id;
         assert_eq!(
-            desktop.apply(Command::Deletespace { id }, bounds()),
+            desktop.apply(Command::DeleteSpace { id }, bounds()),
             CommandOutcome::Applied
         );
         assert!(desktop.spaces.is_empty());
@@ -266,7 +266,7 @@ mod tests {
         desktop.apply(Command::ToggleLock { id }, bounds());
         assert_eq!(
             desktop.apply(
-                Command::Movespace {
+                Command::MoveSpace {
                     id,
                     delta: Point::new(50, 0),
                 },
@@ -293,7 +293,7 @@ mod tests {
             desktop.apply(
                 Command::MoveItem {
                     id: item,
-                    target: spaceId(999),
+                    target: SpaceId(999),
                 },
                 bounds()
             ),
@@ -338,7 +338,7 @@ mod tests {
             ..ResizeEdges::NONE
         };
         let outcome = desktop.apply(
-            Command::Resizespace {
+            Command::ResizeSpace {
                 id,
                 edges,
                 to: Point::new(480, 320),
@@ -370,7 +370,7 @@ mod tests {
     fn locked_and_rolled_up_spaces_reject_resize() {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 300, 300));
-        let resize = Command::Resizespace {
+        let resize = Command::ResizeSpace {
             id,
             edges: ResizeEdges {
                 right: true,

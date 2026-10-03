@@ -5,7 +5,7 @@ use super::Icon;
 
 /// Window-level appearance of a space, applied through DWM rather than drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct spaceStyle {
+pub struct SpaceStyle {
     pub backdrop: Backdrop,
     pub corners: CornerStyle,
     pub dark: bool,
@@ -15,7 +15,7 @@ pub struct spaceStyle {
 /// Everything drawn inside one space window. Coordinates are relative to the
 /// window's client area.
 #[derive(Debug, Clone, PartialEq)]
-pub struct spaceScene {
+pub struct SpaceScene {
     pub title: String,
     pub title_height: i32,
     pub tint: Color,

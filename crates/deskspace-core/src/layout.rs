@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::space::{DEFAULT_TITLE_HEIGHT, space, ResizeEdges};
 use crate::geometry::{Point, Rect, Size};
+use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, Space};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -108,7 +108,7 @@ pub fn resize_rect(
 
 /// Sizes the space to fit its items (unless the user sized it) and lays the
 /// items out. Locked spaces are left alone.
-pub fn arrange_space(space: &mut space, spec: GridSpec) {
+pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     if space.locked {
         return;
     }
@@ -132,7 +132,7 @@ pub fn arrange_space(space: &mut space, spec: GridSpec) {
 /// Places items on the grid. Positions are relative to the space's content
 /// area, so moving the space never has to touch its items. User-sized spaces
 /// use as many columns as their width allows; others use `spec.columns`.
-pub fn position_items(space: &mut space, spec: GridSpec) {
+pub fn position_items(space: &mut Space, spec: GridSpec) {
     let columns = if space.user_sized {
         spec.columns_for(space.rect.width)
     } else {
@@ -173,7 +173,7 @@ pub fn clamp_to_bounds(rect: Rect, bounds: Rect) -> Rect {
     )
 }
 
-pub fn resolve_collisions(spaces: &mut [space], gap: i32, bounds: Rect) {
+pub fn resolve_collisions(spaces: &mut [Space], gap: i32, bounds: Rect) {
     let mut placed: Vec<Rect> = Vec::with_capacity(spaces.len());
     for space in spaces.iter_mut() {
         if space.locked {
@@ -195,11 +195,11 @@ pub fn resolve_collisions(spaces: &mut [space], gap: i32, bounds: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::{spaceId, ItemId};
+    use crate::id::{ItemId, SpaceId};
     use crate::item::Item;
 
-    fn space_with_items(count: usize) -> space {
-        let mut space = space::new(spaceId(1), "Test", Rect::new(0, 0, 10, 10));
+    fn space_with_items(count: usize) -> Space {
+        let mut space = Space::new(SpaceId(1), "Test", Rect::new(0, 0, 10, 10));
         for index in 0..count {
             space.push_item(Item::new(ItemId(index as u64 + 1), format!("item{index}")));
         }
@@ -298,8 +298,8 @@ mod tests {
     fn collisions_push_spaces_down() {
         let bounds = Rect::new(0, 0, 1920, 1080);
         let mut spaces = vec![
-            space::new(spaceId(1), "A", Rect::new(0, 0, 200, 200)),
-            space::new(spaceId(2), "B", Rect::new(0, 0, 200, 200)),
+            Space::new(SpaceId(1), "A", Rect::new(0, 0, 200, 200)),
+            Space::new(SpaceId(2), "B", Rect::new(0, 0, 200, 200)),
         ];
         resolve_collisions(&mut spaces, 10, bounds);
         assert!(!spaces[0].rect.intersects(spaces[1].rect));

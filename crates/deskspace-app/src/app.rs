@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, spaceId, ItemId, Rect, ResizeEdges};
+use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SpaceId};
 use deskspace_platform::{
-    CursorShape, Event, EventHandler, spaceEvent, Hotkey, IconCache, MenuEntry, MouseButton,
-    RunOptions, SettingsEvent, TrayEvent, Ui, hotkey_id, parse_hotkey, system_uses_dark_mode,
+    CursorShape, Event, EventHandler, Hotkey, IconCache, MenuEntry, MouseButton, RunOptions,
+    SettingsEvent, SpaceEvent, TrayEvent, Ui, hotkey_id, parse_hotkey, system_uses_dark_mode,
     work_area_at,
 };
 
@@ -25,7 +25,7 @@ const WHEEL_DELTA: i32 = 120;
 mod menu {
     pub const ROLL: u32 = 1;
     pub const LOCK: u32 = 2;
-    pub const NEW_space: u32 = 3;
+    pub const NEW_SPACE: u32 = 3;
     pub const SETTINGS: u32 = 4;
     pub const TOGGLE_VISIBLE: u32 = 5;
     pub const EXIT: u32 = 6;
@@ -35,8 +35,8 @@ mod menu {
 
 enum Drag {
     None,
-    space { id: spaceId, grab: Point },
-    Resize { id: spaceId, edges: ResizeEdges },
+    Space { id: SpaceId, grab: Point },
+    Resize { id: SpaceId, edges: ResizeEdges },
 }
 
 fn cursor_for(edges: ResizeEdges) -> CursorShape {
@@ -54,13 +54,13 @@ pub struct App {
     store: ConfigStore,
     icons: IconCache,
     system_dark: bool,
-    selected_space: Option<spaceId>,
+    selected_space: Option<SpaceId>,
     selected_item: Option<ItemId>,
-    hovered: Option<(spaceId, ItemId)>,
+    hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
     /// current maximum after a resize, so read it through `scroll_of`.
-    scroll: HashMap<spaceId, i32>,
+    scroll: HashMap<SpaceId, i32>,
     visible: bool,
     hotkey: Option<Hotkey>,
     settings: Option<Session>,
@@ -105,7 +105,7 @@ impl App {
     fn sync_windows(&mut self, ui: &mut Ui) {
         let existing: HashSet<u64> = ui.space_ids().into_iter().collect();
         let style = space_style(&self.config.theme, self.system_dark);
-        let ids: Vec<spaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
+        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in &ids {
             if existing.contains(&id.0) {
                 continue;
@@ -125,7 +125,7 @@ impl App {
         self.refresh_tray(ui);
     }
 
-    fn view_for(&self, id: spaceId) -> ViewState {
+    fn view_for(&self, id: SpaceId) -> ViewState {
         ViewState {
             hovered: self
                 .hovered
@@ -139,7 +139,7 @@ impl App {
     }
 
     /// The space's scroll offset, clamped to its current content.
-    fn scroll_of(&self, id: spaceId) -> i32 {
+    fn scroll_of(&self, id: SpaceId) -> i32 {
         let layout = self.config.desktop.layout;
         let max = self
             .config
@@ -149,7 +149,7 @@ impl App {
         self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
     }
 
-    fn item_at(&self, id: spaceId, point: Point) -> Option<ItemId> {
+    fn item_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
         let cell = self.config.desktop.layout.cell();
         let scroll = self.scroll_of(id);
         self.config
@@ -159,7 +159,7 @@ impl App {
     }
 
     /// Pushes the space's current geometry and draw list to its window.
-    fn refresh_space(&mut self, ui: &mut Ui, id: spaceId) {
+    fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
         let view = self.view_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -179,7 +179,7 @@ impl App {
 
     fn restyle_all(&mut self, ui: &mut Ui) {
         let style = space_style(&self.config.theme, self.system_dark);
-        let ids: Vec<spaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
+        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in ids {
             ui.set_space_style(id.0, style);
             self.refresh_space(ui, id);
@@ -198,32 +198,32 @@ impl App {
 
     // ---- pointer -------------------------------------------------------
 
-    fn on_space_event(&mut self, ui: &mut Ui, id: spaceId, event: spaceEvent) {
+    fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
         match event {
-            spaceEvent::MouseDown {
+            SpaceEvent::MouseDown {
                 x,
                 y,
                 button: MouseButton::Left,
             } => self.begin_interaction(ui, id, Point::new(x, y)),
-            spaceEvent::MouseMove { x, y } => {
+            SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
                 if !self.drag_to(ui, point) {
                     self.update_cursor(ui, id, point);
                     self.update_hover(ui, id, point);
                 }
             }
-            spaceEvent::Wheel { x, y, delta } => self.scroll_by(ui, id, Point::new(x, y), delta),
-            spaceEvent::MouseUp {
+            SpaceEvent::Wheel { x, y, delta } => self.scroll_by(ui, id, Point::new(x, y), delta),
+            SpaceEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
             }
-            | spaceEvent::CaptureLost => self.end_drag(),
-            spaceEvent::MouseUp {
+            | SpaceEvent::CaptureLost => self.end_drag(),
+            SpaceEvent::MouseUp {
                 x,
                 y,
                 button: MouseButton::Right,
             } => self.show_space_menu(ui, id, Point::new(x, y)),
-            spaceEvent::DoubleClick { x, y } => {
+            SpaceEvent::DoubleClick { x, y } => {
                 let on_title = self
                     .config
                     .desktop
@@ -233,18 +233,18 @@ impl App {
                     self.toggle_rollup(ui, id);
                 }
             }
-            spaceEvent::MouseLeave if self.hovered.is_some_and(|(space, _)| space == id) => {
+            SpaceEvent::MouseLeave if self.hovered.is_some_and(|(space, _)| space == id) => {
                 self.hovered = None;
                 self.refresh_space(ui, id);
             }
-            spaceEvent::FilesDropped { x, y, paths } => {
+            SpaceEvent::FilesDropped { x, y, paths } => {
                 self.add_dropped(ui, id, Point::new(x, y), paths);
             }
             _ => {}
         }
     }
 
-    fn begin_interaction(&mut self, ui: &mut Ui, id: spaceId, point: Point) {
+    fn begin_interaction(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
         let previous = self.selected_space.replace(id);
         self.selected_item = self.item_at(id, point);
         let Some(space) = self.config.desktop.space(id) else {
@@ -255,7 +255,7 @@ impl App {
             self.drag = Drag::Resize { id, edges };
             self.selected_item = None;
         } else if !space.locked && space.title_bar().contains(point) {
-            self.drag = Drag::space {
+            self.drag = Drag::Space {
                 id,
                 grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
             };
@@ -269,7 +269,7 @@ impl App {
     fn drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
         match self.drag {
             Drag::None => false,
-            Drag::space { id, grab } => {
+            Drag::Space { id, grab } => {
                 let Some(space) = self.config.desktop.space(id) else {
                     self.drag = Drag::None;
                     return false;
@@ -280,7 +280,7 @@ impl App {
                     space.rect.width,
                     space.rect.height,
                 );
-                if self.dispatch(Command::SetspaceRect { id, rect }, point) {
+                if self.dispatch(Command::SetSpaceRect { id, rect }, point) {
                     if let Some(space) = self.config.desktop.space(id) {
                         ui.set_space_rect(id.0, space.visible_rect());
                     }
@@ -289,7 +289,7 @@ impl App {
             }
             Drag::Resize { id, edges } => {
                 let before = self.config.desktop.space(id).map(|space| space.rect);
-                let command = Command::Resizespace {
+                let command = Command::ResizeSpace {
                     id,
                     edges,
                     to: point,
@@ -304,7 +304,7 @@ impl App {
         }
     }
 
-    fn update_cursor(&self, ui: &mut Ui, id: spaceId, point: Point) {
+    fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
         let edges = self
             .config
             .desktop
@@ -315,7 +315,7 @@ impl App {
         ui.set_space_cursor(id.0, cursor_for(edges));
     }
 
-    fn scroll_by(&mut self, ui: &mut Ui, id: spaceId, point: Point, delta: i32) {
+    fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
         let layout = self.config.desktop.layout;
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -339,7 +339,7 @@ impl App {
         }
     }
 
-    fn update_hover(&mut self, ui: &mut Ui, id: spaceId, point: Point) {
+    fn update_hover(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
         let hovered = self.item_at(id, point).map(|item| (id, item));
         if hovered == self.hovered {
             return;
@@ -351,7 +351,7 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    fn toggle_rollup(&mut self, ui: &mut Ui, id: spaceId) {
+    fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
         if self.dispatch(Command::ToggleRollup { id }, near) {
             self.refresh_space(ui, id);
@@ -362,7 +362,7 @@ impl App {
     /// Adds dropped files to `target`. A path already shown in another space
     /// moves there instead of appearing twice. Files themselves are not
     /// touched; moving them into a managed store is roadmap item D3/M2.
-    fn add_dropped(&mut self, ui: &mut Ui, target: spaceId, at: Point, paths: Vec<PathBuf>) {
+    fn add_dropped(&mut self, ui: &mut Ui, target: SpaceId, at: Point, paths: Vec<PathBuf>) {
         let mut touched = HashSet::from([target]);
         for path in paths {
             let command = match self.config.desktop.item_with_path(&path) {
@@ -390,7 +390,7 @@ impl App {
         self.save();
     }
 
-    fn delete_space(&mut self, ui: &mut Ui, id: spaceId) {
+    fn delete_space(&mut self, ui: &mut Ui, id: SpaceId) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -406,7 +406,7 @@ impl App {
             return;
         }
         let near = self.space_center(id);
-        if self.dispatch(Command::Deletespace { id }, near) {
+        if self.dispatch(Command::DeleteSpace { id }, near) {
             if self.selected_space == Some(id) {
                 self.selected_space = None;
                 self.selected_item = None;
@@ -420,7 +420,7 @@ impl App {
         }
     }
 
-    fn space_center(&self, id: spaceId) -> Point {
+    fn space_center(&self, id: SpaceId) -> Point {
         self.config
             .desktop
             .space(id)
@@ -438,7 +438,7 @@ impl App {
         MenuEntry::item(menu::TOGGLE_VISIBLE, label)
     }
 
-    fn show_space_menu(&mut self, ui: &mut Ui, id: spaceId, at: Point) {
+    fn show_space_menu(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -457,7 +457,7 @@ impl App {
         entries.extend([
             MenuEntry::item(menu::DELETE, "Delete space\u{2026}"),
             MenuEntry::Separator,
-            MenuEntry::item(menu::NEW_space, "New space"),
+            MenuEntry::item(menu::NEW_SPACE, "New space"),
             MenuEntry::Separator,
             MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
             self.visibility_entry(),
@@ -488,7 +488,7 @@ impl App {
         let entries = [
             MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
             self.visibility_entry(),
-            MenuEntry::item(menu::NEW_space, "New space"),
+            MenuEntry::item(menu::NEW_SPACE, "New space"),
             MenuEntry::Separator,
             MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
         ];
@@ -500,7 +500,7 @@ impl App {
 
     fn run_common_menu(&mut self, ui: &mut Ui, choice: u32, at: Point) {
         match choice {
-            menu::NEW_space => self.create_space(ui, at),
+            menu::NEW_SPACE => self.create_space(ui, at),
             menu::SETTINGS => self.open_settings(ui),
             menu::TOGGLE_VISIBLE => self.set_visible(ui, !self.visible),
             menu::EXIT => ui.quit(),
@@ -509,7 +509,7 @@ impl App {
     }
 
     fn create_space(&mut self, ui: &mut Ui, at: Point) {
-        let command = Command::Createspace {
+        let command = Command::CreateSpace {
             title: "New space".to_string(),
             at,
         };
@@ -670,7 +670,7 @@ impl EventHandler for App {
                     self.open_settings(ui);
                 }
             }
-            Event::space { id, event } => self.on_space_event(ui, spaceId(id), event),
+            Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
                 self.set_visible(ui, !self.visible);
             }

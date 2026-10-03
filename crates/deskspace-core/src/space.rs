@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Size};
-use crate::id::{spaceId, ItemId};
+use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct space {
-    pub id: spaceId,
+pub struct Space {
+    pub id: SpaceId,
     pub title: String,
     pub rect: Rect,
     #[serde(default)]
@@ -59,8 +59,8 @@ fn default_title_height() -> i32 {
     DEFAULT_TITLE_HEIGHT
 }
 
-impl space {
-    pub fn new(id: spaceId, title: impl Into<String>, rect: Rect) -> Self {
+impl Space {
+    pub fn new(id: SpaceId, title: impl Into<String>, rect: Rect) -> Self {
         Self {
             id,
             title: title.into(),
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn rolled_up_space_collapses_to_title_bar() {
-        let mut space = space::new(spaceId(1), "F", Rect::new(10, 20, 200, 300));
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(10, 20, 200, 300));
         assert_eq!(space.visible_rect(), space.rect);
         space.rolled_up = true;
         assert_eq!(
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn item_at_uses_content_relative_cells() {
-        let mut space = space::new(spaceId(1), "F", Rect::new(100, 100, 300, 300));
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(100, 100, 300, 300));
         let mut item = Item::new(ItemId(7), "a.txt");
         item.position = Point::new(10, 10);
         space.push_item(item);
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn item_at_accounts_for_scroll() {
-        let mut space = space::new(spaceId(1), "F", Rect::new(0, 0, 300, 100));
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 100));
         let mut item = Item::new(ItemId(3), "deep.txt");
         item.position = Point::new(10, 200);
         space.push_item(item);
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn max_scroll_is_overflow_beyond_the_content_area() {
-        let mut space = space::new(spaceId(1), "F", Rect::new(0, 0, 300, 128));
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 128));
         assert_eq!(space.max_scroll(Size::new(50, 50), 10), 0);
         let mut item = Item::new(ItemId(1), "a");
         item.position = Point::new(10, 200);
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn resize_edges_cover_borders_and_wider_corners() {
-        let space = space::new(spaceId(1), "F", Rect::new(100, 100, 200, 200));
+        let space = Space::new(SpaceId(1), "F", Rect::new(100, 100, 200, 200));
         let edges = |x, y| space.resize_edges_at(Point::new(x, y), 6);
         assert_eq!(edges(200, 200), ResizeEdges::NONE);
         assert!(edges(101, 200).left && !edges(101, 200).top);

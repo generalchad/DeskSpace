@@ -1,11 +1,11 @@
 use deskspace_core::{Desktop, Item, Rect, layout::arrange_space};
 use deskspace_platform::enumerate_desktop_items;
 
-const INITIAL_space: &str = "Desktop";
+const INITIAL_SPACE: &str = "Desktop";
 const INITIAL_RECT: Rect = Rect::new(60, 60, 440, 320);
 
 pub fn seed_default_desktop(desktop: &mut Desktop, with_icons: bool) {
-    let id = desktop.add_space(INITIAL_space, INITIAL_RECT);
+    let id = desktop.add_space(INITIAL_SPACE, INITIAL_RECT);
 
     if with_icons {
         match enumerate_desktop_items() {

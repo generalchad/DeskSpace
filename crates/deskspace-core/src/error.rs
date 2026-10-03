@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CoreError {
     #[error("space {0} was not found")]
-    spaceNotFound(u64),
+    SpaceNotFound(u64),
     #[error("item {0} was not found")]
     ItemNotFound(u64),
     #[error("invalid geometry: {0}")]

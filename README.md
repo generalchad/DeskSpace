@@ -50,7 +50,7 @@ Options:
 ```
 crates/deskspace-core      Domain model: spaces, items, geometry, layout, theme, commands
 crates/deskspace-config    Configuration schema, migration, and persistence
-crates/deskspace-platform  space windows, Direct2D rendering, DWM blur, tray, menus,
+crates/deskspace-platform  Space windows, Direct2D rendering, DWM blur, tray, menus,
                            settings window, shell integration
 crates/deskspace-app       Application binary, CLI, and event handling
 ```

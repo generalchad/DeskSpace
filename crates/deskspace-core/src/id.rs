@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct spaceId(pub u64);
+pub struct SpaceId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ItemId(pub u64);
 
-impl std::fmt::Display for spaceId {
+impl std::fmt::Display for SpaceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "space#{}", self.0)
     }
@@ -31,9 +31,9 @@ impl IdGenerator {
         Self::default()
     }
 
-    pub fn next_space(&mut self) -> spaceId {
+    pub fn next_space(&mut self) -> SpaceId {
         self.space += 1;
-        spaceId(self.space)
+        SpaceId(self.space)
     }
 
     pub fn next_item(&mut self) -> ItemId {
@@ -41,7 +41,7 @@ impl IdGenerator {
         ItemId(self.item)
     }
 
-    pub fn observe_space(&mut self, id: spaceId) {
+    pub fn observe_space(&mut self, id: SpaceId) {
         self.space = self.space.max(id.0);
     }
 

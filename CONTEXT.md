@@ -48,7 +48,7 @@ context menus, and a settings window in the first usable release (v0.2).
   selection highlights. Verified visually on Windows 11 build 26300.
 - A tray icon, a space right-click menu, and a native settings window
   (Appearance, General, About) with live preview and OK/Cancel/Apply.
-- spaces can be created, deleted (with confirmation), moved by the title bar,
+- Spaces can be created, deleted (with confirmation), moved by the title bar,
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
   (double-click the title bar), and locked. Files dragged from Explorer or the
   desktop onto a space are added to it. Resize and wheel scrolling were
@@ -117,7 +117,7 @@ windows and controls.
 
 ### Ids
 
-- `spaceId(u64)` and `ItemId(u64)`, transparent serde newtypes.
+- `SpaceId(u64)` and `ItemId(u64)`, transparent serde newtypes.
 - `Desktop::next_space_id` / `next_item_id` derive the next id from the current
   maximum, so ids stay stable across persistence without a serialized counter.
 
@@ -132,11 +132,11 @@ ItemKind { File, Folder, Shortcut, Drive, Other }
 `position` is the top-left of the item's grid cell **relative to the space's
 content area**, so moving a space never touches its items.
 
-### space
+### Space
 
 ```
-space {
-    id: spaceId,
+Space {
+    id: SpaceId,
     title: String,
     rect: Rect,           // desktop coordinates
     items: Vec<Item>,
@@ -158,8 +158,10 @@ up; corners are twice as wide as edges), item lookup/insert/remove, and
 ### Desktop
 
 ```
-Desktop { spaces: Vec<space>, layout: GridSpec }
+Desktop { spaces: Vec<Space>, layout: GridSpec }
 ```
+
+`spaces` also reads the pre-rename key `spaces`, so older config files load.
 
 Operations: add/remove space, add/remove/move item, `item_count`,
 `item_with_path`, `space_at(point)` (topmost hit test on `visible_rect`),
@@ -191,11 +193,11 @@ GridSpec {
 All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 (`Applied | NotFound | Rejected`). Variants:
 
-`Createspace`, `Deletespace`, `Renamespace`, `Movespace`, `SetspaceRect`,
-`Resizespace`, `FitToContents`, `ToggleLock`, `ToggleRollup`, `AddItem`,
+`CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
+`ResizeSpace`, `FitToContents`, `ToggleLock`, `ToggleRollup`, `AddItem`,
 `RemoveItem`, `MoveItem`, `AutoArrange`, `SnapAll`.
 
-Move/resize commands reject locked spaces and snap to the grid; `Resizespace`
+Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
 `FitToContents` clears that again. `bounds` is the
 work area of the monitor nearest the action (`work_area_at`).
@@ -289,10 +291,10 @@ WindowSettings {
 - The tray and settings-window icon is drawn in code (`icon.rs`) until release
   packaging adds an `.ico` resource.
 
-### space windows (`win32/space_window.rs`, `win32/dwm.rs`)
+### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
 - One window per space, created by `Ui::create_space`. State is a
-  `Box<spaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
+  `Box<SpaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
 - Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
   WS_EX_ACCEPTFILES`, kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
   activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
@@ -304,12 +306,12 @@ WindowSettings {
   windows, and spaces are never active.
 - Desktop-hosted placement (`--placement desktop-*`): `WS_CHILD` of Progman /
   WorkerW, painted opaque, rounded with a (non-anti-aliased) window region.
-- Mouse input is reported in desktop coordinates as `spaceEvent`s;
+- Mouse input is reported in desktop coordinates as `SpaceEvent`s;
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
   the last button-up. `WM_MOUSEWHEEL` (screen coordinates) becomes
-  `spaceEvent::Wheel`; it reaches never-focused spaces through Windows'
+  `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
   "scroll inactive windows" setting (on by default). `WM_DROPFILES` becomes
-  `spaceEvent::FilesDropped`.
+  `SpaceEvent::FilesDropped`.
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
@@ -319,8 +321,8 @@ WindowSettings {
 
 ### Rendering (`render/scene.rs`, `render/d2d.rs`)
 
-- `spaceScene` (title, colors, corner radius, flags, `ItemVisual`s in
-  window-local coordinates, optional `scroll_thumb` rect) and `spaceStyle`
+- `SpaceScene` (title, colors, corner radius, flags, `ItemVisual`s in
+  window-local coordinates, optional `scroll_thumb` rect) and `SpaceStyle`
   (backdrop, corners, dark, border) are the contract between app and
   renderer. The app scrolls by offsetting item rects and includes only items
   that intersect the content area; the renderer clips items below the title
@@ -373,8 +375,8 @@ WindowSettings {
    creates one window per space with its style and scene, and optionally opens
    settings (`--settings`).
 4. Pointer events update selection/hover (re-pushing that space's scene), drag
-   spaces via `SetspaceRect` (moving the window), resize them via
-   `Resizespace` when grabbed within 6 px of an edge, scroll them on the wheel
+   spaces via `SetSpaceRect` (moving the window), resize them via
+   `ResizeSpace` when grabbed within 6 px of an edge, scroll them on the wheel
    (per-space offsets live in the app, not the config), toggle roll-up on
    title-bar double-click, and open the space menu on right-click. Drops add
    or move items. Config is saved after drags and resizes, roll-up, lock,
@@ -405,7 +407,7 @@ WindowSettings {
 
 | spaces feature | Status |
 |---|---|
-| spaces (icon groups) | Partial: per-space windows; items are references, the real desktop icons stay |
+| Spaces (icon groups) | Partial: per-space windows; items are references, the real desktop icons stay |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
@@ -422,7 +424,7 @@ WindowSettings {
 | Right-click context menu | Basic space menu |
 | System tray icon | Implemented |
 | Settings UI | Appearance, General, About |
-| Multi-monitor | spaces can sit on any monitor; work area of the nearest monitor bounds moves |
+| Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
 | Per-monitor DPI | Process is PMv2; layout is not yet scaled per monitor |
 | Auto-consolidate new desktop icons | Not implemented |
 | Exclude rules / filters | Not implemented |
@@ -433,7 +435,7 @@ WindowSettings {
 
 - **No desktop icon integration.** Explorer still owns the real desktop icons;
   spaces show references. Dropping a file adds a reference without moving it.
-- **spaces can be hidden by Show Desktop (Win+D).** Top-level spaces sit at
+- **Spaces can be hidden by Show Desktop (Win+D).** Top-level spaces sit at
   the bottom of the z-order but are not part of the desktop window. Desktop
   hosting fixes this but loses blur (child windows get no DWM material).
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
@@ -457,7 +459,7 @@ WindowSettings {
 
 ## 11. Glossary
 
-- **space**: a movable container window that groups items on the desktop.
+- **Space**: a movable container window that groups items on the desktop.
 - **Lens**: a space whose contents mirror a folder live (comparable tools:
   "Folder Portal"). In code, a space with a folder source.
 - **User-sized**: a space the user resized; it keeps its size, reflows items
@@ -467,6 +469,6 @@ WindowSettings {
   interacted with.
 - **Placement**: where space windows live: top-level windows or children of
   the desktop's Progman/WorkerW window.
-- **Scene**: the renderer-agnostic draw list (`spaceScene`) the app builds for
+- **Scene**: the renderer-agnostic draw list (`SpaceScene`) the app builds for
   one space.
 - **Material / backdrop**: the blurred layer DWM draws behind a space's tint.

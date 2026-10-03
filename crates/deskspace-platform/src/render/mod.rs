@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use d2d::{Painter, PreparedScene};
-pub use scene::{spaceScene, spaceStyle, ItemState, ItemVisual};
+pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 /// A decoded icon: premultiplied BGRA pixels, cheap to clone. The pixels are
 /// owned here rather than borrowed from an `HICON`, so a scene stays valid
