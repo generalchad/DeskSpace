@@ -81,6 +81,11 @@ pub enum Command {
         id: ItemId,
         target: SpaceId,
     },
+    /// Moves `id` to slot `index` within its space, a manual rearrangement.
+    ReorderItem {
+        id: ItemId,
+        index: usize,
+    },
     AutoArrange {
         id: SpaceId,
     },
@@ -290,6 +295,27 @@ impl Desktop {
                 } else {
                     CommandOutcome::Rejected
                 }
+            }
+            Command::ReorderItem { id, index } => {
+                let layout = self.layout;
+                let Some(source) = self.space_containing(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(space) = self.space_mut(source) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(current) = space.items.iter().position(|item| item.id == id) else {
+                    return CommandOutcome::NotFound;
+                };
+                if index >= space.items.len() {
+                    return CommandOutcome::Rejected;
+                }
+                if index != current {
+                    let item = space.items.remove(current);
+                    space.items.insert(index, item);
+                    position_items(space, layout);
+                }
+                CommandOutcome::Applied
             }
             Command::AutoArrange { id } => {
                 if self.space(id).is_some() {
@@ -643,6 +669,43 @@ mod tests {
             bounds(),
         );
         assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+    }
+
+    #[test]
+    fn reorder_item_moves_within_its_space() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 0, 0),
+            item(2, "b", ItemKind::File, 0, 0),
+            item(3, "c", ItemKind::File, 0, 0),
+        ]);
+        let first = desktop.space(id).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItem {
+                    id: first,
+                    index: 2,
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["b", "c", "a"]);
+        assert_eq!(
+            desktop.space(id).unwrap().items[2].position,
+            desktop.layout.grid_position(2)
+        );
+        // An out-of-range slot is rejected without changing anything.
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItem {
+                    id: first,
+                    index: 9,
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+        assert_eq!(labels(&desktop, id), ["b", "c", "a"]);
     }
 
     #[test]
