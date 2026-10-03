@@ -6,9 +6,10 @@ use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, Space, SpaceId};
 use deskspace_platform::{
-    CursorShape, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton,
-    RunOptions, SettingsEvent, SpaceEvent, TrayEvent, Ui, desktop_directory, drag_threshold,
-    hotkey_id, parse_hotkey, system_uses_dark_mode, work_area_at,
+    CursorShape, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice,
+    MenuEntry, MouseButton, RunOptions, SettingsEvent, SpaceEvent, TextEdit, TrayEvent, Ui,
+    desktop_directory, drag_threshold, hotkey_id, parse_hotkey, system_uses_dark_mode,
+    work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -38,6 +39,7 @@ mod menu {
     pub const DELETE: u32 = 7;
     pub const FIT: u32 = 8;
     pub const REMOVE_ITEM: u32 = 9;
+    pub const RENAME: u32 = 10;
 }
 
 enum Drag {
@@ -57,6 +59,13 @@ enum Drag {
         item: ItemId,
         origin: Point,
     },
+}
+
+/// An in-progress title rename. The platform captures keys while it lives.
+struct EditSession {
+    space: SpaceId,
+    original: String,
+    text: TextEdit,
 }
 
 /// Coalesces configuration writes: every change marks it dirty, and one save
@@ -97,6 +106,8 @@ pub struct App {
     selected_item: Option<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
+    /// The space being renamed inline, if any.
+    edit: Option<EditSession>,
     /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
     autosave: Autosave,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
@@ -123,6 +134,7 @@ impl App {
             selected_item: None,
             hovered: None,
             drag: Drag::None,
+            edit: None,
             autosave: Autosave::default(),
             scroll: HashMap::new(),
             visible: !hidden,
@@ -228,7 +240,7 @@ impl App {
             return;
         };
         let palette = self.config.theme.palette(self.system_dark);
-        let scene = space_scene(
+        let mut scene = space_scene(
             space,
             &self.config.theme,
             &palette,
@@ -236,6 +248,9 @@ impl App {
             view,
             &mut self.icons,
         );
+        if let Some(session) = self.edit.as_ref().filter(|session| session.space == id) {
+            scene.editing = Some(session.text.clone());
+        }
         ui.set_space_rect(id.0, space.visible_rect());
         ui.set_space_scene(id.0, scene);
     }
@@ -269,7 +284,7 @@ impl App {
     /// Asks for outside clicks only while there is a selection for them to
     /// clear, because watching them hooks every mouse event in the session.
     fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted = self.selected_item.is_some();
+        let wanted = self.selected_item.is_some() || self.edit.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
@@ -285,9 +300,77 @@ impl App {
         tracing::info!(visible, "toggled space visibility");
     }
 
+    // ---- rename --------------------------------------------------------
+
+    /// Starts inline editing of a space's title, capturing keys until commit
+    /// or cancel.
+    fn begin_rename(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let original = space.title.clone();
+        self.edit = Some(EditSession {
+            space: id,
+            original: original.clone(),
+            text: TextEdit::new(original),
+        });
+        ui.capture_text_input(true);
+        self.refresh_space(ui, id);
+    }
+
+    fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
+        let Some(session) = self.edit.as_mut() else {
+            return;
+        };
+        let space = session.space;
+        let outcome = session.text.apply(key);
+        match outcome {
+            EditOutcome::Changed => self.refresh_space(ui, space),
+            EditOutcome::Commit => self.finish_rename(ui, true),
+            EditOutcome::Cancel => self.finish_rename(ui, false),
+            EditOutcome::Ignored => {}
+        }
+    }
+
+    /// Ends the rename. An empty or unchanged title is dropped on commit, so
+    /// pressing Enter without editing never changes or clears the name.
+    fn finish_rename(&mut self, ui: &mut Ui, commit: bool) {
+        let Some(session) = self.edit.take() else {
+            return;
+        };
+        ui.capture_text_input(false);
+        let id = session.space;
+        if commit {
+            let title = session.text.text().trim().to_string();
+            if !title.is_empty() && title != session.original {
+                let near = self.space_center(id);
+                if self.dispatch(Command::RenameSpace { id, title }, near) {
+                    self.schedule_save(ui);
+                }
+            }
+        }
+        self.refresh_space(ui, id);
+    }
+
+    fn cancel_edit(&mut self, ui: &mut Ui) {
+        if self.edit.is_some() {
+            self.finish_rename(ui, false);
+        }
+    }
+
     // ---- pointer -------------------------------------------------------
 
     fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
+        // Clicking anywhere commits a rename in progress before the click is
+        // handled, as clicking away from a title does elsewhere.
+        if self.edit.is_some()
+            && matches!(
+                &event,
+                SpaceEvent::MouseDown { .. } | SpaceEvent::DoubleClick { .. }
+            )
+        {
+            self.finish_rename(ui, true);
+        }
         match event {
             SpaceEvent::MouseDown {
                 x,
@@ -769,6 +852,7 @@ impl App {
         };
         let mut entries = vec![
             MenuEntry::item(menu::ROLL, roll),
+            MenuEntry::item(menu::RENAME, "Rename"),
             MenuEntry::item(menu::LOCK, "Lock position").checked(space.locked),
         ];
         if space.user_sized && !space.locked {
@@ -791,6 +875,7 @@ impl App {
         ]);
         match ui.popup_menu(&entries, at) {
             Some(menu::ROLL) => self.toggle_rollup(ui, id),
+            Some(menu::RENAME) => self.begin_rename(ui, id),
             Some(menu::DELETE) => self.delete_space(ui, id),
             Some(menu::FIT) => {
                 if self.dispatch(Command::FitToContents { id }, at) {
@@ -1000,7 +1085,14 @@ impl EventHandler for App {
                 }
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
-            Event::PointerDownOutside => self.clear_selection(ui),
+            Event::EditKey(key) => self.apply_edit_key(ui, key),
+            Event::PointerDownOutside => {
+                if self.edit.is_some() {
+                    self.finish_rename(ui, true);
+                } else {
+                    self.clear_selection(ui);
+                }
+            }
             Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
                 self.set_visible(ui, !self.visible);
             }
@@ -1022,7 +1114,9 @@ impl EventHandler for App {
                 if let Some(hotkey) = self.hotkey.take() {
                     ui.unregister_hotkey(hotkey);
                 }
-                // Unapplied edits in an open settings window are discarded.
+                // A rename in progress and unapplied settings edits are
+                // discarded.
+                self.cancel_edit(ui);
                 self.cancel_settings(ui);
                 self.flush_save(ui);
             }

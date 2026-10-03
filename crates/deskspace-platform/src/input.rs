@@ -87,6 +87,9 @@ pub enum Event {
     },
     Tray(TrayEvent),
     Settings(SettingsEvent),
+    /// A key decoded while the app is capturing text for an inline rename (see
+    /// `Ui::capture_text_input`).
+    EditKey(crate::edit::EditKey),
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {

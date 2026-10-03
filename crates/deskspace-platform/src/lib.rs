@@ -1,3 +1,4 @@
+pub mod edit;
 pub mod error;
 pub mod input;
 pub mod render;
@@ -5,6 +6,7 @@ pub mod shell;
 pub mod ui;
 pub mod win32;
 
+pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
 pub use render::{Icon, ItemState, ItemVisual, SpaceScene, SpaceStyle};

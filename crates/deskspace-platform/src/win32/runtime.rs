@@ -280,6 +280,15 @@ impl Ui {
         }
     }
 
+    /// Captures keystrokes (delivered as `Event::EditKey`) while the app is
+    /// editing a space title inline. The keys are consumed, so they do not
+    /// reach the focused app; call with `false` when editing ends.
+    pub fn capture_text_input(&mut self, enabled: bool) {
+        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+            crate::win32::keyboard::capture(controller, enabled);
+        }
+    }
+
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen
     /// entry id. Blocks in a modal loop; other events are queued meanwhile.
     pub fn popup_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<u32> {

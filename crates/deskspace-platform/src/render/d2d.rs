@@ -29,7 +29,7 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_HIT_TEST_METRICS, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
     DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
     DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
@@ -67,8 +67,12 @@ const D2DERR_RECREATE_TARGET: HRESULT = HRESULT(0x8899_000C_u32 as i32);
 /// Device-independent resources shared by every painter on the UI thread.
 struct Graphics {
     d2d: ID2D1Factory,
+    dwrite: IDWriteFactory,
     wic: IWICImagingFactory,
     title_format: IDWriteTextFormat,
+    /// Like `title_format` but without ellipsis trimming, so the caret and
+    /// selection positions match the text while renaming.
+    edit_format: IDWriteTextFormat,
     label_format: IDWriteTextFormat,
     glyph_format: Option<IDWriteTextFormat>,
 }
@@ -123,6 +127,12 @@ impl Graphics {
             let title_sign = dwrite.CreateEllipsisTrimmingSign(&title_format)?;
             title_format.SetTrimming(&character_trimming(), &title_sign)?;
 
+            let edit_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?;
+            edit_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            edit_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            edit_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+
             let label_format = make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
             label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
@@ -142,8 +152,10 @@ impl Graphics {
 
             Ok(Self {
                 d2d,
+                dwrite,
                 wic,
                 title_format,
+                edit_format,
                 label_format,
                 glyph_format,
             })
@@ -193,12 +205,18 @@ unsafe fn first_installed(fonts: &IDWriteFontCollection, families: &[PCWSTR]) ->
 pub struct PreparedScene {
     scene: SpaceScene,
     title: Vec<u16>,
+    /// The rename buffer while `scene.editing` is set.
+    edit: Option<Vec<u16>>,
     labels: Vec<Vec<u16>>,
 }
 
 impl PreparedScene {
     pub fn new(scene: SpaceScene) -> Self {
         let title = scene.title.encode_utf16().collect();
+        let edit = scene
+            .editing
+            .as_ref()
+            .map(|edit| edit.text().encode_utf16().collect());
         let labels = scene
             .items
             .iter()
@@ -207,6 +225,7 @@ impl PreparedScene {
         Self {
             scene,
             title,
+            edit,
             labels,
         }
     }
@@ -349,22 +368,30 @@ impl Painter {
     ) {
         let scene = &prepared.scene;
         let lock_width = if scene.locked { title_height } else { 0.0 };
+        let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
-            draw_text(
-                target,
-                brush,
-                &prepared.title,
-                &graphics.title_format,
-                rect_f(
+            if scene.editing.is_some() {
+                draw_edit_title(
+                    graphics,
+                    target,
+                    brush,
+                    prepared,
                     TITLE_INSET,
-                    0.0,
-                    (width - TITLE_INSET - lock_width).max(TITLE_INSET),
+                    text_right,
                     title_height,
-                ),
-                scene.title_text,
-                scene.text_shadow,
-            );
+                );
+            } else {
+                draw_text(
+                    target,
+                    brush,
+                    &prepared.title,
+                    &graphics.title_format,
+                    rect_f(TITLE_INSET, 0.0, text_right, title_height),
+                    scene.title_text,
+                    scene.text_shadow,
+                );
+            }
             if let (true, Some(format)) = (scene.locked, &graphics.glyph_format) {
                 brush.SetColor(&color_f(scene.title_text.fade(170)));
                 target.DrawText(
@@ -666,6 +693,85 @@ unsafe fn draw_text(
             DWRITE_MEASURING_MODE_NATURAL,
         );
     }
+}
+
+/// Draws the rename buffer in the title bar with its selection highlight and
+/// caret. The text layout is reused to place the caret and selection, so they
+/// match DirectWrite's own shaping.
+#[allow(clippy::too_many_arguments)]
+unsafe fn draw_edit_title(
+    graphics: &Graphics,
+    target: &ID2D1HwndRenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    prepared: &PreparedScene,
+    left: f32,
+    right: f32,
+    title_height: f32,
+) {
+    let scene = &prepared.scene;
+    let Some(edit) = &scene.editing else {
+        return;
+    };
+    let Some(buffer) = prepared.edit.as_ref() else {
+        return;
+    };
+    let width = (right - left).max(1.0);
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        let Ok(layout) =
+            graphics
+                .dwrite
+                .CreateTextLayout(buffer, &graphics.edit_format, width, title_height)
+        else {
+            draw_text(
+                target,
+                brush,
+                buffer,
+                &graphics.edit_format,
+                rect_f(left, 0.0, right, title_height),
+                scene.title_text,
+                None,
+            );
+            return;
+        };
+
+        let mut metrics = DWRITE_HIT_TEST_METRICS::default();
+        let (start, end) = edit.selection();
+        if start != end {
+            let start16 = utf16_index(edit.text(), start);
+            let end16 = utf16_index(edit.text(), end);
+            let (mut x0, mut y0, mut x1, mut y1) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            let _ = layout.HitTestTextPosition(start16, false, &mut x0, &mut y0, &mut metrics);
+            let _ = layout.HitTestTextPosition(end16, false, &mut x1, &mut y1, &mut metrics);
+            brush.SetColor(&color_f(scene.selected_fill));
+            target.FillRectangle(&rect_f(left + x0, 0.0, left + x1, title_height), brush);
+        }
+
+        draw_text(
+            target,
+            brush,
+            buffer,
+            &graphics.edit_format,
+            rect_f(left, 0.0, right, title_height),
+            scene.title_text,
+            None,
+        );
+
+        let caret16 = utf16_index(edit.text(), edit.caret());
+        let mut cx = 0.0f32;
+        let mut cy = 0.0f32;
+        let _ = layout.HitTestTextPosition(caret16, false, &mut cx, &mut cy, &mut metrics);
+        target.FillRectangle(
+            &rect_f(left + cx, 4.0, left + cx + 1.0, title_height - 4.0),
+            brush,
+        );
+    }
+}
+
+/// A byte offset in the text, counted in UTF-16 code units for DirectWrite.
+/// Clamps to the text length if the offset is not on a boundary.
+fn utf16_index(text: &str, byte: usize) -> u32 {
+    text.get(..byte).unwrap_or(text).encode_utf16().count() as u32
 }
 
 fn color_f(color: Color) -> D2D1_COLOR_F {

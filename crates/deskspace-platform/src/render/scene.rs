@@ -1,6 +1,8 @@
 use deskspace_core::geometry::Rect;
 use deskspace_core::theme::{Backdrop, Color};
 
+use crate::edit::TextEdit;
+
 use super::Icon;
 
 /// Window-level appearance of a space. DWM applies what it can (material,
@@ -42,6 +44,9 @@ pub struct SpaceScene {
     pub text_shadow: Option<Color>,
     pub locked: bool,
     pub rolled_up: bool,
+    /// While set, the painter draws this text in the title bar instead of
+    /// `title`, with the selection highlight and a caret.
+    pub editing: Option<TextEdit>,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,

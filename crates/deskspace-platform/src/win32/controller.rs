@@ -23,7 +23,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
-use crate::win32::{outside_click, runtime, shell_items};
+use crate::win32::{keyboard, outside_click, runtime, shell_items};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
@@ -126,6 +126,12 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::Timer { id: wparam.0 });
                 LRESULT(0)
             }
+            keyboard::EDIT_KEY => {
+                if let Some(key) = keyboard::decode(wparam.0, lparam.0) {
+                    runtime::dispatch(Event::EditKey(key));
+                }
+                LRESULT(0)
+            }
             outside_click::OUTSIDE_PROBE => {
                 let point = POINT {
                     x: wparam.0 as isize as i32,
@@ -158,6 +164,7 @@ unsafe extern "system" fn wndproc(
             }
             WM_DESTROY => {
                 outside_click::stop();
+                keyboard::stop();
                 runtime::dispatch_close_once();
                 runtime::destroy_ui_windows();
                 tray::remove(window);

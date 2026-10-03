@@ -82,6 +82,11 @@ started).
 - **Debounced autosave and a timer primitive.** `Ui::set_timer`/`clear_timer`
   deliver `Event::Timer`; layout changes defer their configuration write by
   about 700 ms, while file moves and settings save at once and closing flushes.
+- **Inline rename (F-02).** The space menu renames a title in place. Spaces are
+  never activated, so a low-level keyboard hook translates keys into an edit
+  stream; the app owns the edit buffer and the painter draws the selection and
+  caret. Enter commits, Escape cancels, clicking away commits. IME composition
+  and clipboard are not supported yet.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -154,8 +159,8 @@ on Windows 10/11. Remaining: per-monitor DPI.
 - Update the item model and refresh after file operations.
 - Space chrome: resize handles, lock toggle, rename inline, delete with undo
   (`F-02`, `F-03`, `F-05`). **[partial]** Lock (menu + glyph), delete (menu
-  + confirmation, no undo), and resize (edges/corners, "Fit to contents") are
-  done; rename is not.
+  + confirmation, no undo), resize (edges/corners, "Fit to contents"), and
+  inline rename (space menu; Enter commits, Escape cancels) are done.
 - **[done]** Basic right-click context menu for space actions (`F-14`
   partial). Items get Explorer's context menu plus "Move back to desktop".
 - Follow desktop item changes with a filesystem watcher and re-sync.
@@ -335,7 +340,7 @@ Behavior:
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Partial (references, no takeover) |
-| F-02 | Create / rename / delete space | M2 | Create, delete done; rename open |
+| F-02 | Create / rename / delete space | M2 | Create, delete, inline rename done |
 | F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
 | F-05 | Lock space | M2 | Done |

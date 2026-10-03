@@ -338,6 +338,12 @@ WindowSettings {
   `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
   "scroll inactive windows" setting (on by default). `WM_DROPFILES` becomes
   `SpaceEvent::FilesDropped`, with `keep_in_place` set when Shift is down.
+- Inline rename (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
+  `TextEdit` buffer and pushes it in the scene's `editing` field; the painter
+  draws the selection highlight and caret. A `WH_KEYBOARD_LL` hook, installed
+  only while editing, translates key presses into `Event::EditKey` and consumes
+  them, because spaces are never activated and cannot receive `WM_CHAR`. IME
+  composition and clipboard are not supported.
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
@@ -445,9 +451,11 @@ WindowSettings {
 - Drag a space edge or corner to resize it; the wheel scrolls overflowing
   content.
 - Double-click a space title bar to roll it up or down.
-- Right-click a space: Roll up/down, Lock position, Fit to contents (resized
-  spaces only), Delete space (asks first unless the space is empty), New
-  space, Settings…, Hide/Show spaces, Exit DeskSpace.
+- Rename a space from its right-click menu; the title is edited in place
+  (Enter commits, Escape cancels, clicking away commits).
+- Right-click a space: Roll up/down, Rename, Lock position, Fit to contents
+  (resized spaces only), Delete space (asks first unless the space is empty),
+  New space, Settings…, Hide/Show spaces, Exit DeskSpace.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
@@ -518,6 +526,9 @@ WindowSettings {
   will invalidate changed files.
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
   wheel events need Windows' "scroll inactive windows" setting.
+- **Inline rename has no IME or clipboard support.** A low-level keyboard hook
+  handles the active layout's printable characters and navigation keys only;
+  composition (Japanese, Chinese, ...) is deferred.
 - **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
   and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,

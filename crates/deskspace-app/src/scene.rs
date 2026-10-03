@@ -86,6 +86,7 @@ pub fn space_scene(
         text_shadow: text_shadow(palette, space.opacity),
         locked: space.locked,
         rolled_up: space.rolled_up,
+        editing: None,
         items,
         scroll_thumb: scroll_thumb(
             space,

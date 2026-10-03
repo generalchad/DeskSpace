@@ -6,6 +6,7 @@ pub mod dpi;
 mod dwm;
 pub mod hotkey;
 mod icon;
+mod keyboard;
 mod menu;
 mod outside_click;
 pub mod runtime;
