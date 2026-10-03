@@ -5,7 +5,7 @@ use std::path::Path;
 
 use deskspace_config::{Config, WindowSettings};
 use deskspace_core::theme::corner;
-use deskspace_core::{Backdrop, Theme, ThemeMode};
+use deskspace_core::{Backdrop, GridSpec, LabelShadow, Theme, ThemeMode};
 use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage, SliderMark};
 
 pub mod field {
@@ -22,6 +22,13 @@ pub mod field {
     pub const TEXT: u32 = 11;
     pub const RESET: u32 = 12;
     pub const COMPATIBILITY_NOTE: u32 = 13;
+    pub const LABELS_HEADING: u32 = 14;
+    pub const LABEL_LINES: u32 = 15;
+    pub const LABEL_SIZE: u32 = 16;
+    pub const LABEL_SHADOW: u32 = 17;
+    pub const LAYOUT_HEADING: u32 = 18;
+    pub const GRID_GAP: u32 = 19;
+    pub const GRID_PADDING: u32 = 41;
 
     pub const BEHAVIOR_HEADING: u32 = 20;
     pub const HOTKEY: u32 = 21;
@@ -45,6 +52,12 @@ const BACKDROPS: [(Backdrop, &str); 4] = [
     (Backdrop::Clear, "Clear glass (no blur)"),
     (Backdrop::Solid, "Solid"),
 ];
+const LABEL_LINES_OPTIONS: [(u8, &str); 2] = [(1, "One line"), (2, "Two lines")];
+const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
+    (LabelShadow::Auto, "Automatic (when nearly transparent)"),
+    (LabelShadow::On, "Always"),
+    (LabelShadow::Off, "Never"),
+];
 
 fn corner_marks() -> Vec<SliderMark> {
     vec![
@@ -65,6 +78,7 @@ const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit
 pub struct Session {
     pub saved_theme: Theme,
     pub saved_window: WindowSettings,
+    pub saved_layout: GridSpec,
     pub hotkey_text: String,
     pub hotkey_error: Option<String>,
     pub dirty: bool,
@@ -75,6 +89,7 @@ impl Session {
         Self {
             saved_theme: config.theme.clone(),
             saved_window: config.window.clone(),
+            saved_layout: config.desktop.layout,
             hotkey_text: config.window.toggle_hotkey.clone(),
             hotkey_error: None,
             dirty: false,
@@ -85,6 +100,7 @@ impl Session {
     pub fn commit(&mut self, config: &Config) {
         self.saved_theme = config.theme.clone();
         self.saved_window = config.window.clone();
+        self.saved_layout = config.desktop.layout;
         self.hotkey_error = None;
         self.dirty = false;
     }
@@ -92,6 +108,7 @@ impl Session {
     pub fn revert(&self, config: &mut Config) {
         config.theme = self.saved_theme.clone();
         config.window = self.saved_window.clone();
+        config.desktop.layout = self.saved_layout;
     }
 }
 
@@ -154,6 +171,40 @@ pub fn build_form(
                 theme.title_shading.min(100) as i32,
             ),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
+            Field::heading(field::LABELS_HEADING, "Labels"),
+            Field::choice(
+                field::LABEL_LINES,
+                "Label lines",
+                &labels(&LABEL_LINES_OPTIONS),
+                index_of(&LABEL_LINES_OPTIONS, theme.label_lines.clamp(1, 2)),
+            ),
+            Field::slider(
+                field::LABEL_SIZE,
+                "Label size",
+                (60, 160),
+                theme.label_size.clamp(60, 160) as i32,
+            ),
+            Field::choice(
+                field::LABEL_SHADOW,
+                "Label shadow",
+                &labels(&LABEL_SHADOW_OPTIONS),
+                index_of(&LABEL_SHADOW_OPTIONS, theme.label_shadow),
+            ),
+            Field::heading(field::LAYOUT_HEADING, "Layout"),
+            Field::slider(
+                field::GRID_GAP,
+                "Icon spacing",
+                (0, 24),
+                config.desktop.layout.gap.clamp(0, 24),
+            )
+            .suffix(" px"),
+            Field::slider(
+                field::GRID_PADDING,
+                "Edge padding",
+                (0, 24),
+                config.desktop.layout.padding.clamp(0, 24),
+            )
+            .suffix(" px"),
             Field::heading(field::COLORS_HEADING, "Colors"),
             Field::toggle(
                 field::CUSTOM_COLORS,
@@ -227,6 +278,8 @@ pub enum Effect {
     None,
     /// The theme changed; restyle and repaint every space.
     Appearance,
+    /// The grid changed; re-flow every space and repaint.
+    Layout,
     /// Only pending (unapplied) settings changed.
     Pending,
 }
@@ -238,48 +291,73 @@ pub fn apply_field(
     value: FieldValue,
     system_dark: bool,
 ) -> Effect {
-    let theme = &mut config.theme;
     let effect = match (id, value) {
         (field::MODE, FieldValue::Choice(index)) => {
-            theme.mode = MODES.get(index).map_or(theme.mode, |entry| entry.0);
+            config.theme.mode = MODES.get(index).map_or(config.theme.mode, |entry| entry.0);
             Effect::Appearance
         }
         (field::BACKDROP, FieldValue::Choice(index)) => {
-            theme.backdrop = BACKDROPS.get(index).map_or(theme.backdrop, |entry| entry.0);
+            config.theme.backdrop = BACKDROPS
+                .get(index)
+                .map_or(config.theme.backdrop, |entry| entry.0);
             Effect::Appearance
         }
         (field::CORNERS, FieldValue::Slider(radius)) => {
-            theme.corner_radius = radius.clamp(0, corner::MAX.into()) as u8;
+            config.theme.corner_radius = radius.clamp(0, corner::MAX.into()) as u8;
             Effect::Appearance
         }
         (field::TINT_OPACITY, FieldValue::Slider(value)) => {
-            theme.tint_opacity = value.clamp(0, 100) as u8;
+            config.theme.tint_opacity = value.clamp(0, 100) as u8;
             Effect::Appearance
         }
         (field::TITLE_SHADING, FieldValue::Slider(value)) => {
-            theme.title_shading = value.clamp(0, 100) as u8;
+            config.theme.title_shading = value.clamp(0, 100) as u8;
             Effect::Appearance
         }
         (field::BORDER, FieldValue::Toggle(on)) => {
-            theme.show_border = on;
+            config.theme.show_border = on;
             Effect::Appearance
         }
+        (field::LABEL_LINES, FieldValue::Choice(index)) => {
+            config.theme.label_lines = LABEL_LINES_OPTIONS
+                .get(index)
+                .map_or(config.theme.label_lines, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::LABEL_SIZE, FieldValue::Slider(value)) => {
+            config.theme.label_size = value.clamp(60, 160) as u8;
+            Effect::Appearance
+        }
+        (field::LABEL_SHADOW, FieldValue::Choice(index)) => {
+            config.theme.label_shadow = LABEL_SHADOW_OPTIONS
+                .get(index)
+                .map_or(config.theme.label_shadow, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::GRID_GAP, FieldValue::Slider(value)) => {
+            config.desktop.layout.gap = value.clamp(0, 24);
+            Effect::Layout
+        }
+        (field::GRID_PADDING, FieldValue::Slider(value)) => {
+            config.desktop.layout.padding = value.clamp(0, 24);
+            Effect::Layout
+        }
         (field::CUSTOM_COLORS, FieldValue::Toggle(on)) => {
-            if on && !theme.custom_colors {
+            if on && !config.theme.custom_colors {
                 // Start from what is on screen rather than a stale color.
-                let palette = theme.palette(system_dark);
-                theme.tint = palette.tint.with_alpha(255);
-                theme.text = palette.title_text;
+                let palette = config.theme.palette(system_dark);
+                config.theme.tint = palette.tint.with_alpha(255);
+                config.theme.text = palette.title_text;
             }
-            theme.custom_colors = on;
+            config.theme.custom_colors = on;
             Effect::Appearance
         }
         (field::TINT, FieldValue::Color(color)) => {
-            theme.tint = color.with_alpha(255);
+            config.theme.tint = color.with_alpha(255);
             Effect::Appearance
         }
         (field::TEXT, FieldValue::Color(color)) => {
-            theme.text = color.with_alpha(255);
+            config.theme.text = color.with_alpha(255);
             Effect::Appearance
         }
         (field::HOTKEY, FieldValue::Text(text)) => {
@@ -410,6 +488,75 @@ mod tests {
             true,
         );
         assert_eq!(config.theme.title_shading, 100);
+    }
+
+    #[test]
+    fn grid_sliders_report_a_layout_effect_and_clamp() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::GRID_GAP,
+            FieldValue::Slider(30),
+            true,
+        );
+        assert_eq!(effect, Effect::Layout);
+        assert_eq!(config.desktop.layout.gap, 24);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::GRID_PADDING,
+            FieldValue::Slider(4),
+            true,
+        );
+        assert_eq!(config.desktop.layout.padding, 4);
+    }
+
+    #[test]
+    fn label_style_edits_apply_live_and_clamp() {
+        let (mut config, mut session) = setup();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::LABEL_LINES,
+                FieldValue::Choice(0),
+                true,
+            ),
+            Effect::Appearance
+        );
+        assert_eq!(config.theme.label_lines, 1);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::LABEL_SIZE,
+            FieldValue::Slider(200),
+            true,
+        );
+        assert_eq!(config.theme.label_size, 160);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::LABEL_SHADOW,
+            FieldValue::Choice(2),
+            true,
+        );
+        assert_eq!(config.theme.label_shadow, LabelShadow::Off);
+    }
+
+    #[test]
+    fn cancel_restores_the_saved_grid() {
+        let (mut config, mut session) = setup();
+        apply_field(
+            &mut config,
+            &mut session,
+            field::GRID_GAP,
+            FieldValue::Slider(0),
+            true,
+        );
+        assert_ne!(config.desktop.layout, Config::new().desktop.layout);
+        session.revert(&mut config);
+        assert_eq!(config.desktop.layout, Config::new().desktop.layout);
     }
 
     #[test]

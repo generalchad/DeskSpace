@@ -42,6 +42,10 @@ pub struct SpaceScene {
     /// A shadow behind text so labels stay legible over a nearly
     /// transparent space, like desktop icon labels. `None` for no shadow.
     pub text_shadow: Option<Color>,
+    /// Item label lines (1 or 2).
+    pub label_lines: u8,
+    /// Item label font size as a percent of the default (100).
+    pub label_size: u8,
     pub locked: bool,
     pub rolled_up: bool,
     /// While set, the painter draws this text in the title bar instead of

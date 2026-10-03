@@ -222,6 +222,9 @@ Theme {
     tint_opacity: u8,         // percent, default 40
     title_shading: u8,        // percent, default 30
     show_border: bool,        // default true
+    label_lines: u8,          // 1 or 2, default 2
+    label_size: u8,           // percent, default 100
+    label_shadow: LabelShadow,// Auto (default) | On | Off
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
 }
@@ -360,8 +363,9 @@ WindowSettings {
 
 ### Rendering (`render/scene.rs`, `render/d2d.rs`)
 
-- `SpaceScene` (title, colors, optional `text_shadow`, flags, `ItemVisual`s
-  in window-local coordinates, optional `scroll_thumb` rect) and `SpaceStyle`
+- `SpaceScene` (title, colors, optional `text_shadow`, label lines/size,
+  flags, `ItemVisual`s in window-local coordinates, optional `scroll_thumb`
+  rect) and `SpaceStyle`
   (backdrop, corner radius, dark, border) are the contract between app and
   renderer. The app scrolls by offsetting item rects and includes only items
   that intersect the content area; the renderer clips items below the title
@@ -376,8 +380,9 @@ WindowSettings {
   `Icon::id`, pruned to the current scene's icons whenever a scene is set.
   Text uses DirectWrite (Segoe UI Variable Text when
   installed), grayscale antialiasing on translucent surfaces, ellipsis
-  trimming, two-line wrapped labels, and a 1 px shadow when the scene asks for
-  one (the app does below 25 % tint alpha). `D2DERR_RECREATE_TARGET` drops
+  trimming, wrapped labels (one or two lines at the configured size; formats
+  are cached per 10 % size step), and a 1 px shadow when the scene asks for
+  one (label shadow mode `Auto` below 25 % tint alpha, or `On`). `D2DERR_RECREATE_TARGET` drops
   device resources for recreation on the next paint.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window.rs`)
@@ -467,6 +472,9 @@ WindowSettings {
 - The space menu's Appearance submenu sets an opacity preset or a custom tint
   or text color (with a reset); Sort by reorders items by name, type, size, or
   modified date.
+- Settings → Appearance previews live: material, corners, tint, custom colors,
+  label lines/size/shadow, and icon spacing/edge padding (which re-flows every
+  space).
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;

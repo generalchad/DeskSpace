@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
+use deskspace_core::layout::{arrange_space, position_items};
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
 use deskspace_platform::{
     CursorShape, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice,
@@ -275,6 +276,29 @@ impl App {
         let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in ids {
             ui.set_space_style(id.0, style);
+            self.refresh_space(ui, id);
+        }
+    }
+
+    /// Re-flows every space for a changed grid: growing spaces resize to fit,
+    /// user-sized spaces keep their size and reflow.
+    fn relayout_all(&mut self, ui: &mut Ui) {
+        let layout = self.config.desktop.layout;
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        for id in ids {
+            if let Some(space) = self.config.desktop.space_mut(id) {
+                if space.user_sized {
+                    position_items(space, layout);
+                } else {
+                    arrange_space(space, layout);
+                }
+            }
             self.refresh_space(ui, id);
         }
     }
@@ -1106,6 +1130,8 @@ impl App {
                 );
                 if effect == Effect::Appearance {
                     self.restyle_all(ui);
+                } else if effect == Effect::Layout {
+                    self.relayout_all(ui);
                 }
                 self.refresh_settings(ui);
             }
@@ -1169,9 +1195,13 @@ impl App {
     fn cancel_settings(&mut self, ui: &mut Ui) {
         if let Some(session) = self.settings.take() {
             let restyle = session.saved_theme != self.config.theme;
+            let relayout = session.saved_layout != self.config.desktop.layout;
             session.revert(&mut self.config);
             if restyle {
                 self.restyle_all(ui);
+            }
+            if relayout {
+                self.relayout_all(ui);
             }
         }
     }

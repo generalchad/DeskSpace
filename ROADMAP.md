@@ -96,6 +96,10 @@ started).
   name (case-insensitive), type, size, or modified date, ascending or
   descending, then re-lays the grid. `Item` gains `size`/`modified` read at
   creation; a kept rule and lens sorting (F-08) remain open.
+- **Grid density and label style (F-26, F-27).** Appearance gains icon
+  spacing and edge padding sliders (they re-flow all spaces live) and label
+  controls: one or two lines, size 60-160 %, and shadow automatic/always/
+  never. Label formats are cached per size step.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -188,8 +192,8 @@ are drawn and interactive, and dragging moves real files with undo.
   and submenus for create/arrange remain.
 - Settings window (own HWND) with live-applied pages: General, Appearance,
   Spaces, Lenses, Hotkeys, Advanced, About (`F-17`). **[partial]** Data-driven
-  form engine plus Appearance (live preview), General, and About pages with
-  OK/Cancel/Apply.
+  form engine plus Appearance (live preview: material, corners, colors,
+  labels, grid spacing), General, and About pages with OK/Cancel/Apply.
 - Persist all `WindowSettings` fields and wire them to behavior. **[partial]**
   `start_hidden` and `toggle_hotkey` are wired; `background_alpha` was
   superseded by `theme.tint_opacity` and removed; `always_on_desktop` and
@@ -310,11 +314,11 @@ Appearance:
 - **F-25** Icon size: small, medium, large, and extra large, globally and per
   space. Needs the jumbo-icon enumeration from M2 and DPI-aware layout. Lens
   icon sizes (F-09) share the setting (M2/M4).
-- **F-26** Grid density: tighter or looser spacing between icons, by scaling
-  the `GridSpec` gap and padding (M3).
-- **F-27** Label style: font size, one or two label lines, and label shadow
-  or outline as auto, on, or off. Today the shadow is automatic below 25 %
-  tint (M3).
+- **[done] F-26** Grid density: icon spacing and edge padding sliders in
+  Appearance, written to `GridSpec.gap`/`padding`; changing them re-flows
+  every space (M3).
+- **[done] F-27** Label style: one or two label lines, size (60-160 %), and
+  shadow (automatic, always, never) in Appearance (M3).
 - **F-28** Title bar style: hidden, shown on hover only, or always; title
   alignment and size. A hidden title bar needs another way to move the space,
   such as Alt+drag or a grip (M5, with the hover work).
@@ -376,8 +380,8 @@ Behavior:
 | F-23 | Keyboard navigation | M7 | Open |
 | F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally and per space (menu: opacity, tint, text) |
 | F-25 | Icon size | M2/M4 | Open (polled) |
-| F-26 | Grid density | M3 | Open (polled) |
-| F-27 | Label style | M3 | Open (polled) |
+| F-26 | Grid density | M3 | Done (icon spacing + edge padding sliders) |
+| F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open (polled) |
 | F-29 | Windows accent color | M3 | Open (polled) |
 | F-30 | Settings and menu theme override | M3 | Open (polled); follows Windows today |

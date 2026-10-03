@@ -1,4 +1,4 @@
-use deskspace_core::{Color, GridSpec, ItemId, Palette, Rect, Space, Theme};
+use deskspace_core::{Color, GridSpec, ItemId, LabelShadow, Palette, Rect, Space, Theme};
 use deskspace_platform::{IconCache, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
@@ -81,6 +81,11 @@ pub fn space_scene(
         .fade(space.opacity);
     let title_text = space.text.unwrap_or(palette.title_text);
     let item_text = space.text.unwrap_or(palette.item_text);
+    let text_shadow = match theme.label_shadow {
+        LabelShadow::Auto => auto_text_shadow(item_text, tint),
+        LabelShadow::On => Some(contrast_shadow(item_text)),
+        LabelShadow::Off => None,
+    };
 
     SpaceScene {
         title: space.title.clone(),
@@ -92,7 +97,9 @@ pub fn space_scene(
         hover_fill: palette.hover_fill,
         selected_fill: palette.selected_fill,
         border: palette.border,
-        text_shadow: text_shadow(item_text, tint),
+        text_shadow,
+        label_lines: theme.label_lines.clamp(1, 2),
+        label_size: theme.label_size.clamp(60, 160),
         locked: space.locked,
         rolled_up: space.rolled_up,
         editing: None,
@@ -111,15 +118,17 @@ pub fn space_scene(
 /// A dark shadow under light text (or a light one under dark text) when the
 /// space is nearly transparent, like the labels of desktop icons. `text` and
 /// `tint` are the space's effective colors, after any per-space overrides.
-fn text_shadow(text: Color, tint: Color) -> Option<Color> {
-    if tint.a >= TEXT_SHADOW_BELOW_ALPHA {
-        return None;
-    }
-    Some(if text.luminance() > 0.5 {
+fn auto_text_shadow(text: Color, tint: Color) -> Option<Color> {
+    (tint.a < TEXT_SHADOW_BELOW_ALPHA).then(|| contrast_shadow(text))
+}
+
+/// A shadow that contrasts with `text`, so it stays legible on any backdrop.
+fn contrast_shadow(text: Color) -> Color {
+    if text.luminance() > 0.5 {
         Color::rgba(0, 0, 0, 170)
     } else {
         Color::rgba(255, 255, 255, 140)
-    })
+    }
 }
 
 /// Keeps the scroll indicator's bottom clear of the rounded corner.
@@ -246,6 +255,28 @@ mod tests {
         assert_eq!(scene.item_text, Color::rgb(1, 2, 3));
     }
 
+    #[test]
+    fn label_style_flows_into_the_scene() {
+        let space = space();
+        let theme = Theme {
+            label_lines: 1,
+            label_size: 140,
+            label_shadow: LabelShadow::On,
+            ..Theme::default()
+        };
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ViewState::default(),
+            &mut IconCache::new(32),
+        );
+        assert_eq!(scene.label_lines, 1);
+        assert_eq!(scene.label_size, 140);
+        assert!(scene.text_shadow.is_some());
+    }
+
     fn tall_space() -> Space {
         let layout = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "Tall", Rect::new(0, 0, 240, 200));
@@ -337,17 +368,20 @@ mod tests {
         };
         let dark = clear.palette(true);
         assert_eq!(
-            text_shadow(dark.item_text, dark.tint.fade(255)).map(|c| c.r),
+            auto_text_shadow(dark.item_text, dark.tint.fade(255)).map(|c| c.r),
             Some(0)
         );
         let light = clear.palette(false);
         assert_eq!(
-            text_shadow(light.item_text, light.tint.fade(255)).map(|c| c.r),
+            auto_text_shadow(light.item_text, light.tint.fade(255)).map(|c| c.r),
             Some(255)
         );
         let default = Theme::default().palette(true);
-        assert_eq!(text_shadow(default.item_text, default.tint.fade(255)), None);
+        assert_eq!(
+            auto_text_shadow(default.item_text, default.tint.fade(255)),
+            None
+        );
         // A low per-space opacity makes an otherwise opaque tint transparent.
-        assert!(text_shadow(default.item_text, default.tint.fade(20)).is_some());
+        assert!(auto_text_shadow(default.item_text, default.tint.fade(20)).is_some());
     }
 }

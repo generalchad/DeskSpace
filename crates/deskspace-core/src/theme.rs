@@ -114,6 +114,17 @@ pub enum Backdrop {
     Clear,
 }
 
+/// Whether item labels get a shadow to stay legible over a transparent space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LabelShadow {
+    /// Only when the effective tint is below the legibility threshold.
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
 /// Corner radii in pixels at 96 DPI. `SMALL` and `WINDOWS` match the Windows
 /// 11 design guidance (4 px for small surfaces, 8 px for windows), and DWM
 /// draws them natively; other radii are drawn by DeskSpace.
@@ -141,6 +152,11 @@ pub struct Theme {
     /// than the body, in percent.
     pub title_shading: u8,
     pub show_border: bool,
+    /// Item label lines, 1 or 2.
+    pub label_lines: u8,
+    /// Item label font size as a percent of the default (100).
+    pub label_size: u8,
+    pub label_shadow: LabelShadow,
     /// When false, `tint` and `text` are ignored and the palette follows the
     /// light or dark mode.
     pub custom_colors: bool,
@@ -157,6 +173,9 @@ impl Default for Theme {
             tint_opacity: 40,
             title_shading: 30,
             show_border: true,
+            label_lines: 2,
+            label_size: 100,
+            label_shadow: LabelShadow::Auto,
             custom_colors: false,
             tint: DARK_TINT,
             text: DARK_TEXT,

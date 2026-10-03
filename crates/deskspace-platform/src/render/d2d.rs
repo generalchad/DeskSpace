@@ -52,7 +52,6 @@ use crate::render::scene::{ItemState, SpaceScene};
 const ICON_SIZE: f32 = 32.0;
 const ICON_TOP: f32 = 10.0;
 const TITLE_INSET: f32 = 12.0;
-const LABEL_LINES: f32 = 2.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
@@ -74,6 +73,9 @@ struct Graphics {
     /// selection positions match the text while renaming.
     edit_format: IDWriteTextFormat,
     label_format: IDWriteTextFormat,
+    /// Label formats keyed by size percent, so scaling does not create a
+    /// format on every paint.
+    label_formats: HashMap<u8, IDWriteTextFormat>,
     glyph_format: Option<IDWriteTextFormat>,
 }
 
@@ -140,6 +142,24 @@ impl Graphics {
             let label_sign = dwrite.CreateEllipsisTrimmingSign(&label_format)?;
             label_format.SetTrimming(&character_trimming(), &label_sign)?;
 
+            // One label format per size step; the painter rounds a configured
+            // percent to the nearest step so it never formats during a paint.
+            let mut label_formats = HashMap::new();
+            for scale in (60..=160).step_by(10) {
+                let format = make_format(
+                    &dwrite,
+                    text_family,
+                    DWRITE_FONT_WEIGHT_NORMAL,
+                    12.0 * scale as f32 / 100.0,
+                )?;
+                format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+                format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+                format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+                let sign = dwrite.CreateEllipsisTrimmingSign(&format)?;
+                format.SetTrimming(&character_trimming(), &sign)?;
+                label_formats.insert(scale, format);
+            }
+
             let glyph_format = match glyph_family {
                 Some(family) => {
                     let format = make_format(&dwrite, family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
@@ -157,9 +177,20 @@ impl Graphics {
                 title_format,
                 edit_format,
                 label_format,
+                label_formats,
                 glyph_format,
             })
         }
+    }
+
+    /// The label format for a size percent, rounded to the nearest cached
+    /// step (60..=160 by 10), falling back to the default size.
+    fn label_format_for(&self, scale: u8) -> IDWriteTextFormat {
+        let rounded = (scale.clamp(60, 160) + 5) / 10 * 10;
+        self.label_formats
+            .get(&rounded)
+            .unwrap_or(&self.label_format)
+            .clone()
     }
 }
 
@@ -449,13 +480,16 @@ impl Painter {
                 }
 
                 let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;
-                let label_bottom = (label_top + LABEL_LINES * LABEL_LINE_HEIGHT).min(cell.bottom);
+                let scale = scene.label_size.clamp(60, 160) as f32 / 100.0;
+                let lines = scene.label_lines.clamp(1, 2) as f32;
+                let line_height = LABEL_LINE_HEIGHT * scale;
+                let label_bottom = (label_top + lines * line_height).min(cell.bottom);
                 if label_bottom > label_top {
                     draw_text(
                         target,
                         brush,
                         label,
-                        &graphics.label_format,
+                        &graphics.label_format_for(scene.label_size),
                         rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
                         scene.item_text,
                         scene.text_shadow,
