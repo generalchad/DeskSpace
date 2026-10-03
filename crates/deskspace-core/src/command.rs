@@ -175,10 +175,18 @@ impl Desktop {
                 self.rearrange(space);
                 CommandOutcome::Applied
             }
-            Command::RemoveItem { id } => match self.remove_item(id) {
-                Some(_) => CommandOutcome::Applied,
-                None => CommandOutcome::NotFound,
-            },
+            Command::RemoveItem { id } => {
+                let Some(source) = self.space_containing(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                self.remove_item(id);
+                // Close the gap without resizing the space under the user.
+                let layout = self.layout;
+                if let Some(space) = self.space_mut(source) {
+                    position_items(space, layout);
+                }
+                CommandOutcome::Applied
+            }
             Command::MoveItem { id, target } => {
                 if self.item(id).is_none() || self.space(target).is_none() {
                     return CommandOutcome::NotFound;
@@ -386,6 +394,29 @@ mod tests {
         desktop.space_mut(id).unwrap().rolled_up = false;
         desktop.space_mut(id).unwrap().locked = true;
         assert_eq!(desktop.apply(resize, bounds()), CommandOutcome::Rejected);
+    }
+
+    #[test]
+    fn remove_item_closes_the_gap() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        for name in ["one.txt", "two.txt"] {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: name.into(),
+                },
+                bounds(),
+            );
+        }
+        let first = desktop.space(id).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(Command::RemoveItem { id: first }, bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.items.len(), 1);
+        assert_eq!(space.items[0].position, desktop.layout.grid_position(0));
     }
 
     #[test]

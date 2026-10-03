@@ -43,6 +43,8 @@ pub enum SpaceEvent {
         x: i32,
         y: i32,
         paths: Vec<std::path::PathBuf>,
+        /// Shift was held at the drop: leave the files where they are.
+        keep_in_place: bool,
     },
     /// Another window took the mouse capture mid-gesture (for example on
     /// Alt+Tab), so no matching `MouseUp` will arrive. Cancel any drag.

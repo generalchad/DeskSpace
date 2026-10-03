@@ -5,15 +5,16 @@ use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SpaceId};
 use deskspace_platform::{
-    CursorShape, Event, EventHandler, Hotkey, IconCache, MenuEntry, MouseButton, RunOptions,
-    SettingsEvent, SpaceEvent, TrayEvent, Ui, hotkey_id, parse_hotkey, system_uses_dark_mode,
-    work_area_at,
+    CursorShape, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton,
+    RunOptions, SettingsEvent, SpaceEvent, TrayEvent, Ui, desktop_directory, drag_threshold,
+    hotkey_id, parse_hotkey, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
 use crate::scene::{ViewState, space_scene, space_style};
 use crate::settings::{self, Effect, Session};
+use crate::storage::ItemStore;
 
 const TOGGLE_HOTKEY: i32 = 0;
 /// Width of the band along a space's edges that starts a resize.
@@ -31,12 +32,26 @@ mod menu {
     pub const EXIT: u32 = 6;
     pub const DELETE: u32 = 7;
     pub const FIT: u32 = 8;
+    pub const REMOVE_ITEM: u32 = 9;
 }
 
 enum Drag {
     None,
-    Space { id: SpaceId, grab: Point },
-    Resize { id: SpaceId, edges: ResizeEdges },
+    Space {
+        id: SpaceId,
+        grab: Point,
+    },
+    Resize {
+        id: SpaceId,
+        edges: ResizeEdges,
+    },
+    /// The left button went down on an item; it becomes a shell drag once
+    /// the pointer moves past the system drag threshold.
+    Item {
+        space: SpaceId,
+        item: ItemId,
+        origin: Point,
+    },
 }
 
 fn cursor_for(edges: ResizeEdges) -> CursorShape {
@@ -52,6 +67,7 @@ fn cursor_for(edges: ResizeEdges) -> CursorShape {
 pub struct App {
     config: Config,
     store: ConfigStore,
+    storage: ItemStore,
     icons: IconCache,
     system_dark: bool,
     selected_space: Option<SpaceId>,
@@ -71,6 +87,7 @@ impl App {
     pub fn new(config: Config, store: ConfigStore, hidden: bool, open_settings: bool) -> Self {
         Self {
             config,
+            storage: ItemStore::new(store.storage_dir()),
             store,
             icons: IconCache::new(32),
             system_dark: system_uses_dark_mode(),
@@ -205,6 +222,11 @@ impl App {
                 y,
                 button: MouseButton::Left,
             } => self.begin_interaction(ui, id, Point::new(x, y)),
+            SpaceEvent::MouseDown {
+                x,
+                y,
+                button: MouseButton::Right,
+            } => self.select_at(ui, id, Point::new(x, y)),
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
                 if !self.drag_to(ui, point) {
@@ -222,23 +244,37 @@ impl App {
                 x,
                 y,
                 button: MouseButton::Right,
-            } => self.show_space_menu(ui, id, Point::new(x, y)),
+            } => {
+                let point = Point::new(x, y);
+                match self.item_at(id, point) {
+                    Some(item) => self.show_item_menu(ui, id, item, point),
+                    None => self.show_space_menu(ui, id, point),
+                }
+            }
             SpaceEvent::DoubleClick { x, y } => {
+                let point = Point::new(x, y);
                 let on_title = self
                     .config
                     .desktop
                     .space(id)
-                    .is_some_and(|space| space.title_bar().contains(Point::new(x, y)));
+                    .is_some_and(|space| space.title_bar().contains(point));
                 if on_title {
                     self.toggle_rollup(ui, id);
+                } else if let Some(path) = self.item_path_at(id, point) {
+                    ui.open_path(&path);
                 }
             }
             SpaceEvent::MouseLeave if self.hovered.is_some_and(|(space, _)| space == id) => {
                 self.hovered = None;
                 self.refresh_space(ui, id);
             }
-            SpaceEvent::FilesDropped { x, y, paths } => {
-                self.add_dropped(ui, id, Point::new(x, y), paths);
+            SpaceEvent::FilesDropped {
+                x,
+                y,
+                paths,
+                keep_in_place,
+            } => {
+                self.add_dropped(ui, id, Point::new(x, y), paths, keep_in_place);
             }
             _ => {}
         }
@@ -254,6 +290,12 @@ impl App {
         if edges.any() {
             self.drag = Drag::Resize { id, edges };
             self.selected_item = None;
+        } else if let Some(item) = self.selected_item {
+            self.drag = Drag::Item {
+                space: id,
+                item,
+                origin: point,
+            };
         } else if !space.locked && space.title_bar().contains(point) {
             self.drag = Drag::Space {
                 id,
@@ -266,9 +308,34 @@ impl App {
         self.refresh_space(ui, id);
     }
 
+    /// Selects the item under `point` (or nothing) without starting a drag,
+    /// as a right-click does before its menu opens.
+    fn select_at(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
+        let previous = self.selected_space.replace(id);
+        self.selected_item = self.item_at(id, point);
+        if let Some(previous) = previous.filter(|previous| *previous != id) {
+            self.refresh_space(ui, previous);
+        }
+        self.refresh_space(ui, id);
+    }
+
     fn drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
         match self.drag {
             Drag::None => false,
+            Drag::Item {
+                space,
+                item,
+                origin,
+            } => {
+                let threshold = drag_threshold();
+                if (point.x - origin.x).abs() >= threshold.width
+                    || (point.y - origin.y).abs() >= threshold.height
+                {
+                    self.drag = Drag::None;
+                    self.drag_item_out(ui, space, item);
+                }
+                true
+            }
             Drag::Space { id, grab } => {
                 let Some(space) = self.config.desktop.space(id) else {
                     self.drag = Drag::None;
@@ -333,9 +400,9 @@ impl App {
     }
 
     fn end_drag(&mut self) {
-        if !matches!(self.drag, Drag::None) {
-            self.drag = Drag::None;
-            self.save();
+        match std::mem::replace(&mut self.drag, Drag::None) {
+            Drag::None | Drag::Item { .. } => {}
+            Drag::Space { .. } | Drag::Resize { .. } => self.save(),
         }
     }
 
@@ -359,10 +426,19 @@ impl App {
         }
     }
 
-    /// Adds dropped files to `target`. A path already shown in another space
-    /// moves there instead of appearing twice. Files themselves are not
-    /// touched; moving them into a managed store is roadmap item D3/M2.
-    fn add_dropped(&mut self, ui: &mut Ui, target: SpaceId, at: Point, paths: Vec<PathBuf>) {
+    /// Adds dropped files to `target`. New files are moved into the space
+    /// storage (ROADMAP D3) unless Shift was held, or they cannot be moved
+    /// without copying; then the space refers to them where they are. A path
+    /// already shown in another space moves to `target` instead of appearing
+    /// twice; that never touches the file.
+    fn add_dropped(
+        &mut self,
+        ui: &mut Ui,
+        target: SpaceId,
+        at: Point,
+        paths: Vec<PathBuf>,
+        keep_in_place: bool,
+    ) {
         let mut touched = HashSet::from([target]);
         for path in paths {
             let command = match self.config.desktop.item_with_path(&path) {
@@ -378,7 +454,7 @@ impl App {
                 }
                 None => Command::AddItem {
                     space: target,
-                    path,
+                    path: self.place_dropped(path, keep_in_place),
                 },
             };
             self.dispatch(command, at);
@@ -390,19 +466,180 @@ impl App {
         self.save();
     }
 
+    /// Where a newly dropped file will live: in the storage folder, or where
+    /// it already is.
+    fn place_dropped(&self, path: PathBuf, keep_in_place: bool) -> PathBuf {
+        if keep_in_place {
+            return path;
+        }
+        match self.storage.adopt(&path) {
+            Ok(stored) => {
+                tracing::info!(from = %path.display(), to = %stored.display(), "moved into space storage");
+                stored
+            }
+            Err(error) => {
+                tracing::info!(%error, "keeping dropped file in place");
+                path
+            }
+        }
+    }
+
+    /// Takes an item out of its space. A file that was moved into the space
+    /// storage goes back to the desktop first, so nothing is left behind in
+    /// a folder the user never sees. Returns false if that move failed; the
+    /// item then stays.
+    fn release_item(&mut self, id: ItemId) -> bool {
+        let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
+            return false;
+        };
+        if self.storage.contains(&path) && path.exists() {
+            let desktop = match desktop_directory() {
+                Ok(desktop) => desktop,
+                Err(error) => {
+                    tracing::error!(%error, "cannot find the desktop folder");
+                    return false;
+                }
+            };
+            match self.storage.release(&path, &desktop) {
+                Ok(back) => {
+                    tracing::info!(to = %back.display(), "moved back to the desktop");
+                }
+                Err(error) => {
+                    tracing::error!(%error, "could not move the item back to the desktop");
+                    return false;
+                }
+            }
+        }
+        let near = self
+            .config
+            .desktop
+            .space_containing(id)
+            .map_or(Point::ZERO, |space| self.space_center(space));
+        self.dispatch(Command::RemoveItem { id }, near)
+    }
+
+    /// Removes items whose files no longer exist, for example after a shell
+    /// command deleted one or a drag moved it elsewhere.
+    fn prune_missing(&mut self, ui: &mut Ui, id: SpaceId) {
+        let missing: Vec<ItemId> = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| {
+                space
+                    .items
+                    .iter()
+                    .filter(|item| !item.path.exists())
+                    .map(|item| item.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if missing.is_empty() {
+            return;
+        }
+        for item in missing {
+            let near = self.space_center(id);
+            self.dispatch(Command::RemoveItem { id: item }, near);
+            if self.selected_item == Some(item) {
+                self.selected_item = None;
+            }
+            if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
+                self.hovered = None;
+            }
+        }
+        self.refresh_space(ui, id);
+        self.refresh_tray(ui);
+        self.save();
+    }
+
+    fn item_path_at(&self, id: SpaceId, point: Point) -> Option<PathBuf> {
+        let item = self.item_at(id, point)?;
+        self.config.desktop.item(item).map(|item| item.path.clone())
+    }
+
+    /// Drags an item out like Explorer. Wherever it lands, the drop target
+    /// decides what happens to the file; afterwards the item leaves the space
+    /// if the file is gone from its path (moved elsewhere) or it was dropped
+    /// on the desktop. Drops on spaces arrive as `FilesDropped` after this
+    /// returns and move the item between spaces.
+    fn drag_item_out(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
+        let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
+            return;
+        };
+        let Some(result) = ui.drag_out(&path) else {
+            return;
+        };
+        tracing::debug!(?result, path = %path.display(), "item drag ended");
+        if !path.exists() {
+            self.prune_missing(ui, space);
+        } else if result.over_desktop && self.release_item(item) {
+            self.selected_item = None;
+            self.refresh_space(ui, space);
+            self.refresh_tray(ui);
+            self.save();
+        }
+    }
+
+    fn show_item_menu(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, at: Point) {
+        let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
+            return;
+        };
+        let remove_label = if self.storage.contains(&path) {
+            "Move back to desktop"
+        } else {
+            "Remove from space"
+        };
+        let entries = [MenuEntry::item(menu::REMOVE_ITEM, remove_label)];
+        match ui.item_menu(&path, &entries, at) {
+            Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
+                if self.release_item(item) {
+                    self.selected_item = None;
+                    self.hovered = None;
+                    self.refresh_space(ui, space);
+                    self.refresh_tray(ui);
+                    self.save();
+                }
+            }
+            Some(ItemMenuChoice::Shell) => {
+                self.icons.invalidate(&path);
+                self.prune_missing(ui, space);
+                self.refresh_space(ui, space);
+            }
+            _ => {}
+        }
+    }
+
     fn delete_space(&mut self, ui: &mut Ui, id: SpaceId) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let count = space.items.len();
+        let stored = space
+            .items
+            .iter()
+            .filter(|item| self.storage.contains(&item.path))
+            .count();
         let question = format!(
-            "Delete the space \"{}\"?\n\nIts {} {} will be removed from DeskSpace. \
-             The files themselves are not deleted.",
+            "Delete the space \"{}\"?\n\n{}",
             space.title,
-            count,
-            if count == 1 { "item" } else { "items" }
+            delete_consequence(space.items.len(), stored)
         );
         if !ui.confirm("Delete space", &question) {
+            return;
+        }
+        // Return stored files to the desktop before the space goes; if any
+        // cannot be moved, keep the space so its files stay reachable.
+        let items: Vec<ItemId> = space.items.iter().map(|item| item.id).collect();
+        let kept = items
+            .into_iter()
+            .filter(|item| !self.release_item(*item))
+            .count();
+        if kept > 0 {
+            tracing::error!(
+                kept,
+                "space kept because some files could not be moved back"
+            );
+            self.refresh_space(ui, id);
+            self.save();
             return;
         }
         let near = self.space_center(id);
@@ -419,7 +656,6 @@ impl App {
             self.save();
         }
     }
-
     fn space_center(&self, id: SpaceId) -> Point {
         self.config
             .desktop
@@ -736,9 +972,32 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     let app = App::new(config, store, hidden, cli.settings);
-    tracing::info!(path = %app.store.path().display(), "starting DeskSpace");
+    tracing::info!(
+        path = %app.store.path().display(),
+        storage = %app.storage.root().display(),
+        "starting DeskSpace"
+    );
     deskspace_platform::run(options, Box::new(app))?;
     Ok(())
+}
+
+/// What deleting a space with `count` items, `stored` of them in the space
+/// storage, does to the files.
+fn delete_consequence(count: usize, stored: usize) -> String {
+    let plural = |n: usize| if n == 1 { "item" } else { "items" };
+    match (count, stored) {
+        (0, _) => "It is empty.".to_string(),
+        (_, 0) => format!(
+            "Its {count} {} will be removed from DeskSpace. The files themselves are not deleted.",
+            plural(count)
+        ),
+        _ => format!(
+            "Its {count} {} will be removed from DeskSpace, and the {stored} {} moved into \
+             the space will be moved back to the desktop. No files are deleted.",
+            plural(count),
+            if stored == 1 { "file" } else { "files" }
+        ),
+    }
 }
 
 fn tray_tooltip(desktop: &Desktop) -> String {
@@ -778,6 +1037,15 @@ mod tests {
             cursor_for(edges(false, true, true, false)),
             CursorShape::SizeNorthEastSouthWest
         );
+    }
+
+    #[test]
+    fn delete_message_mentions_files_moved_back() {
+        assert_eq!(delete_consequence(0, 0), "It is empty.");
+        assert!(delete_consequence(1, 0).contains("1 item will be removed"));
+        let mixed = delete_consequence(3, 2);
+        assert!(mixed.contains("3 items"));
+        assert!(mixed.contains("2 files moved into the space will be moved back"));
     }
 
     #[test]

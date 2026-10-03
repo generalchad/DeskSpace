@@ -8,6 +8,7 @@ mod icon;
 mod menu;
 pub mod runtime;
 mod settings_window;
+pub mod shell_items;
 mod space_window;
 pub mod system;
 mod tray;

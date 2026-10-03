@@ -1,9 +1,10 @@
-use deskspace_core::geometry::{Point, Rect};
+use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXDRAG, SM_CYDRAG};
 use windows::core::w;
 
 /// The work area (screen minus taskbar and docked bars) of the monitor
@@ -56,6 +57,15 @@ pub fn system_uses_dark_mode() -> bool {
         )
     };
     status == ERROR_SUCCESS && value == 0
+}
+
+/// How far the mouse must move with a button down before it counts as a
+/// drag rather than a click (the user's SM_CXDRAG / SM_CYDRAG setting).
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics
+pub fn drag_threshold() -> Size {
+    // SAFETY: plain metric queries.
+    let (x, y) = unsafe { (GetSystemMetrics(SM_CXDRAG), GetSystemMetrics(SM_CYDRAG)) };
+    Size::new(x.max(1), y.max(1))
 }
 
 pub(crate) fn wide(text: &str) -> Vec<u16> {

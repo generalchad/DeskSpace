@@ -13,10 +13,11 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
+use std::path::Path;
 
 use deskspace_core::geometry::{Point, Rect};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::UI::Controls::{
     ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX,
     InitCommonControlsEx,
@@ -35,6 +36,7 @@ use crate::input::Event;
 use crate::render::{SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
+use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{console, controller, desktop_shell, menu, settings_window, space_window, tray};
 
@@ -243,6 +245,38 @@ impl Ui {
         menu::track(owner, entries, at)
     }
 
+    /// Opens `path` with its default verb, as a double-click in Explorer does.
+    pub fn open_path(&mut self, path: &Path) {
+        if let Err(error) = shell_items::open(path) {
+            tracing::warn!(%error, path = %path.display(), "could not open item");
+        }
+    }
+
+    /// Shows `entries` followed by the shell's context menu for `path`.
+    /// Blocks in a modal loop like `popup_menu`. Entry ids must be below
+    /// 0x8000.
+    pub fn item_menu(
+        &mut self,
+        path: &Path,
+        entries: &[MenuEntry],
+        at: Point,
+    ) -> Option<ItemMenuChoice> {
+        let owner = with_runtime(|runtime| runtime.controller)?;
+        shell_items::track_item_menu(owner, path, entries, at)
+    }
+
+    /// Drags `path` out like Explorer does and blocks until it is dropped.
+    /// Drops on spaces arrive afterwards as `SpaceEvent::FilesDropped`.
+    pub fn drag_out(&mut self, path: &Path) -> Option<DragResult> {
+        match shell_items::drag_out(path) {
+            Ok(result) => Some(result),
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not start drag");
+                None
+            }
+        }
+    }
+
     /// Opens the settings window, or brings it to the front and refreshes it.
     pub fn open_settings(&mut self, form: &SettingsForm) {
         if let Some(existing) = settings_hwnd() {
@@ -353,10 +387,13 @@ fn settings_hwnd() -> Option<HWND> {
 /// Creates the controller window, delivers `Event::Started`, and pumps
 /// messages until `Ui::quit`, console close, or session end.
 pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), PlatformError> {
-    // COM is needed by WIC (icon conversion) and the shell. Apartment-threaded
-    // because every COM object here is used only on the UI thread.
+    // COM is needed by WIC (icon conversion) and the shell; OLE on top of it
+    // by drag and drop (SHDoDragDrop fails with CO_E_NOTINITIALIZED after
+    // only CoInitializeEx). OleInitialize enters a single-threaded apartment,
+    // which suits every COM object here: all are used on the UI thread.
+    // https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-oleinitialize
     // SAFETY: called once on the UI thread, balanced below.
-    let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let com = unsafe { OleInitialize(None) };
     init_common_controls();
 
     let host = desktop_shell::find_host(options.placement);
@@ -398,9 +435,9 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     drop(runtime);
     d2d::release_graphics();
     if com.is_ok() {
-        // SAFETY: balances the successful CoInitializeEx above, after every
+        // SAFETY: balances the successful OleInitialize above, after every
         // COM object owned by this thread has been released.
-        unsafe { CoUninitialize() };
+        unsafe { OleUninitialize() };
     }
     result
 }

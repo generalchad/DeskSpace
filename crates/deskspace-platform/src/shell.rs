@@ -51,7 +51,10 @@ pub fn enumerate_desktop_items() -> Result<Vec<DesktopEntry>, PlatformError> {
     Ok(entries)
 }
 
-fn desktop_directory() -> Result<PathBuf, PlatformError> {
+/// The current user's Desktop folder.
+pub fn desktop_directory() -> Result<PathBuf, PlatformError> {
+    // SAFETY: the returned string is copied before it is freed with the
+    // allocator the shell documents for it (CoTaskMemFree).
     unsafe {
         let raw = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)?;
         let result = raw.to_string().map(PathBuf::from);

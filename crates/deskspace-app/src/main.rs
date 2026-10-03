@@ -3,6 +3,7 @@ mod bootstrap;
 mod cli;
 mod scene;
 mod settings;
+mod storage;
 
 use std::process::ExitCode;
 

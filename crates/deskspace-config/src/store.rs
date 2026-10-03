@@ -10,27 +10,45 @@ const QUALIFIER: &str = "";
 const ORGANIZATION: &str = "DeskSpace";
 const APPLICATION: &str = "DeskSpace";
 const FILE_NAME: &str = "deskspace.toml";
+const STORAGE_DIR: &str = "storage";
 
 #[derive(Debug, Clone)]
 pub struct ConfigStore {
     path: PathBuf,
+    storage: PathBuf,
 }
 
 impl ConfigStore {
+    /// The per-user configuration in roaming AppData. Files moved into
+    /// spaces go to local AppData instead, so they do not roam with the
+    /// profile.
     pub fn discover() -> Result<Self, ConfigError> {
         let dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
             .ok_or(ConfigError::NoConfigDirectory)?;
         Ok(Self {
             path: dirs.config_dir().join(FILE_NAME),
+            storage: dirs.data_local_dir().join(STORAGE_DIR),
         })
     }
 
+    /// An explicit configuration file. Its space storage sits beside it, so
+    /// a scratch configuration never touches the real storage folder.
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        let path = path.into();
+        let storage = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(STORAGE_DIR);
+        Self { path, storage }
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Where files dropped into spaces are moved (ROADMAP D3).
+    pub fn storage_dir(&self) -> &Path {
+        &self.storage
     }
 
     pub fn exists(&self) -> bool {
@@ -133,6 +151,12 @@ mod tests {
             .map(|entry| entry.unwrap().path())
             .filter(|path| path.extension().is_some_and(|ext| ext == "bak"))
             .collect()
+    }
+
+    #[test]
+    fn explicit_configs_keep_storage_beside_them() {
+        let store = ConfigStore::with_path("C:/scratch/deskspace.toml");
+        assert_eq!(store.storage_dir(), Path::new("C:/scratch/storage"));
     }
 
     #[test]

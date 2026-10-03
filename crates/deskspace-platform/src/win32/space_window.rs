@@ -25,7 +25,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    GetAsyncKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    VK_SHIFT,
 };
 use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, DragQueryPoint, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -567,10 +568,15 @@ unsafe extern "system" fn wndproc(
                 };
                 MapWindowPoints(Some(window), target, &mut point);
                 if !paths.is_empty() {
+                    // WM_DROPFILES carries no key state, so read Shift now;
+                    // the asynchronous state is right even if this message
+                    // was queued behind others.
+                    let keep_in_place = GetAsyncKeyState(VK_SHIFT.0 as i32) < 0;
                     space_event(SpaceEvent::FilesDropped {
                         x: point[0].x,
                         y: point[0].y,
                         paths,
+                        keep_in_place,
                     });
                 }
                 LRESULT(0)

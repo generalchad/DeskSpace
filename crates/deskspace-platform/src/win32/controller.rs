@@ -21,9 +21,9 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
-use crate::win32::runtime;
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
+use crate::win32::{runtime, shell_items};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
@@ -93,6 +93,9 @@ unsafe extern "system" fn wndproc(
 ) -> LRESULT {
     // SAFETY: called by Windows with valid arguments for `message`.
     unsafe {
+        if let Some(result) = shell_items::forward_menu_message(message, wparam, lparam) {
+            return result;
+        }
         match message {
             WM_HOTKEY => {
                 runtime::dispatch(Event::Hotkey {

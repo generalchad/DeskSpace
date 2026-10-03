@@ -1,0 +1,180 @@
+//! The folder that files dropped into spaces are moved to (ROADMAP D3).
+//!
+//! Files are moved with a rename, which on the same volume is atomic and
+//! copies nothing. Moving to another volume would mean copy-and-delete, so
+//! those files are left where they are and the space refers to them instead.
+//! Every space shares one folder, so moving an item between spaces never
+//! touches the file. Names are never overwritten: a clash gets " (2)", " (3)",
+//! and so on, like Explorer.
+
+use std::io;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct ItemStore {
+    root: PathBuf,
+}
+
+/// Why a file was left in place instead of being moved.
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("{0} is on another drive; moving it would copy it")]
+    OtherVolume(PathBuf),
+    #[error("{0} cannot be moved into the space storage")]
+    NotMovable(PathBuf),
+    #[error("could not move {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+}
+
+impl ItemStore {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Whether `path` was moved into the store (and so has to be moved back
+    /// out when it leaves its space).
+    pub fn contains(&self, path: &Path) -> bool {
+        path.parent() == Some(self.root.as_path())
+    }
+
+    /// Moves `path` into the store and returns its new path. Items already
+    /// stored are returned unchanged.
+    pub fn adopt(&self, path: &Path) -> Result<PathBuf, StoreError> {
+        if self.contains(path) {
+            return Ok(path.to_path_buf());
+        }
+        // Drives, and folders containing the store, cannot move into it.
+        if path.parent().is_none() || self.root.starts_with(path) {
+            return Err(StoreError::NotMovable(path.to_path_buf()));
+        }
+        std::fs::create_dir_all(&self.root).map_err(|source| StoreError::Io {
+            path: self.root.clone(),
+            source,
+        })?;
+        move_into(path, &self.root)
+    }
+
+    /// Moves a stored `path` out to `folder` and returns its new path.
+    pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
+        move_into(path, folder)
+    }
+}
+
+fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
+    let name = path
+        .file_name()
+        .ok_or_else(|| StoreError::NotMovable(path.to_path_buf()))?;
+    let destination = unique_destination(folder, Path::new(name));
+    match std::fs::rename(path, &destination) {
+        Ok(()) => Ok(destination),
+        Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+            Err(StoreError::OtherVolume(path.to_path_buf()))
+        }
+        Err(source) => Err(StoreError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// `folder/name`, or `folder/stem (n).ext` with the smallest `n >= 2` that
+/// does not exist yet.
+fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
+    let first = folder.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let stem = name.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = name
+        .extension()
+        .map(|ext| format!(".{}", ext.to_string_lossy()))
+        .unwrap_or_default();
+    (2..)
+        .map(|n| folder.join(format!("{stem} ({n}){extension}")))
+        .find(|candidate| !candidate.exists())
+        .expect("an unused name exists")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh directory under the system temp folder, removed on drop.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "deskspace-storage-test-{name}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn adopt_moves_the_file_and_release_moves_it_back() {
+        let scratch = Scratch::new("round-trip");
+        let desktop = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop).unwrap();
+        let original = desktop.join("notes.txt");
+        std::fs::write(&original, "hello").unwrap();
+        let store = ItemStore::new(scratch.0.join("storage"));
+
+        let stored = store.adopt(&original).unwrap();
+        assert!(!original.exists());
+        assert!(store.contains(&stored));
+        assert_eq!(std::fs::read_to_string(&stored).unwrap(), "hello");
+        assert_eq!(store.adopt(&stored).unwrap(), stored);
+
+        let back = store.release(&stored, &desktop).unwrap();
+        assert_eq!(back, original);
+        assert!(!stored.exists());
+    }
+
+    #[test]
+    fn clashing_names_get_a_number_instead_of_overwriting() {
+        let scratch = Scratch::new("clash");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        for folder in ["a", "b"] {
+            let dir = scratch.0.join(folder);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("report.txt"), folder).unwrap();
+        }
+        let first = store.adopt(&scratch.0.join("a/report.txt")).unwrap();
+        let second = store.adopt(&scratch.0.join("b/report.txt")).unwrap();
+        assert_eq!(first.file_name().unwrap(), "report.txt");
+        assert_eq!(second.file_name().unwrap(), "report (2).txt");
+        assert_eq!(std::fs::read_to_string(second).unwrap(), "b");
+    }
+
+    #[test]
+    fn folders_containing_the_store_are_not_moved() {
+        let scratch = Scratch::new("ancestor");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        assert!(matches!(
+            store.adopt(&scratch.0),
+            Err(StoreError::NotMovable(_))
+        ));
+        assert!(matches!(
+            store.adopt(Path::new("C:\\")),
+            Err(StoreError::NotMovable(_))
+        ));
+    }
+}

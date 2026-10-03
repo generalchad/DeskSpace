@@ -134,6 +134,7 @@ dependencies = [
  "deskspace-config",
  "deskspace-core",
  "deskspace-platform",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]
