@@ -90,6 +90,9 @@ pub enum Event {
     /// A key decoded while the app is capturing text for an inline rename (see
     /// `Ui::capture_text_input`).
     EditKey(crate::edit::EditKey),
+    /// Delete was pressed while an item was selected (see
+    /// `Ui::watch_delete_selection`).
+    DeleteSelection,
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {

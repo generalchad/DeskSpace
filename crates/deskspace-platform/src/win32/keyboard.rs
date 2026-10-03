@@ -28,6 +28,9 @@ use crate::edit::{EditKey, MoveDir};
 /// lParam the character for `KIND_CHAR`.
 pub(crate) const EDIT_KEY: u32 = WM_APP + 3;
 
+/// Posted to the controller when Delete is pressed while an item is selected.
+pub(crate) const DELETE_KEY: u32 = WM_APP + 4;
+
 const KIND_CHAR: usize = 0;
 const KIND_BACKSPACE: usize = 1;
 const KIND_DELETE: usize = 2;
@@ -48,14 +51,35 @@ const VK_A_CODE: u32 = 0x41;
 thread_local! {
     static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
     static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
+    /// Capturing every editing keystroke (inline rename).
+    static EDITING: Cell<bool> = const { Cell::new(false) };
+    /// Watching only for Delete while an item is selected.
+    static WATCH_DELETE: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Starts or stops capturing keys for `controller`. Idempotent.
+/// Starts or stops capturing keys for `controller` for inline editing.
+/// Idempotent.
 pub(crate) fn capture(controller: HWND, enabled: bool) {
-    if enabled == HOOK.get().is_some() {
+    EDITING.set(enabled);
+    refresh(controller);
+}
+
+/// Starts or stops watching for Delete while an item is selected. Idempotent.
+pub(crate) fn watch_delete(controller: HWND, enabled: bool) {
+    WATCH_DELETE.set(enabled);
+    refresh(controller);
+}
+
+/// Installs or removes the hook so it is on exactly when a mode needs it.
+fn refresh(controller: HWND) {
+    let wanted = EDITING.get() || WATCH_DELETE.get();
+    if wanted == HOOK.get().is_some() {
+        if wanted {
+            CONTROLLER.set(Some(controller));
+        }
         return;
     }
-    if !enabled {
+    if !wanted {
         stop();
         return;
     }
@@ -75,11 +99,11 @@ pub(crate) fn capture(controller: HWND, enabled: bool) {
     };
     match hook {
         Ok(hook) => HOOK.set(Some(hook)),
-        Err(error) => tracing::warn!(%error, "could not capture keys for renaming"),
+        Err(error) => tracing::warn!(%error, "could not install the keyboard hook"),
     }
 }
 
-/// Removes the hook if it is installed.
+/// Removes the hook and clears both modes.
 pub(crate) fn stop() {
     if let Some(hook) = HOOK.take() {
         // SAFETY: `hook` was returned by SetWindowsHookExW on this thread.
@@ -88,6 +112,8 @@ pub(crate) fn stop() {
         }
     }
     CONTROLLER.set(None);
+    EDITING.set(false);
+    WATCH_DELETE.set(false);
 }
 
 /// Whether a modifier key is currently held.
@@ -125,6 +151,16 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
     let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
 
+    // Delete-only watch: while an item is selected, capture Delete and pass
+    // every other key through untouched.
+    if WATCH_DELETE.get() && !EDITING.get() {
+        if is_key(event.vkCode, VK_DELETE) {
+            post_message(DELETE_KEY, 0, 0);
+            return LRESULT(1);
+        }
+        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+    }
+
     // Alt and Windows combinations belong to the system (Alt+Tab, Win+D,
     // Start menu): cancel the rename and let them through.
     if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(event.vkCode) {
@@ -150,15 +186,14 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 }
 
 fn post(kind: usize, ch: usize) {
+    post_message(EDIT_KEY, kind, ch as isize);
+}
+
+fn post_message(message: u32, wparam: usize, lparam: isize) {
     if let Some(controller) = CONTROLLER.get() {
         // SAFETY: posting to our own controller window.
         unsafe {
-            let _ = PostMessageW(
-                Some(controller),
-                EDIT_KEY,
-                WPARAM(kind),
-                LPARAM(ch as isize),
-            );
+            let _ = PostMessageW(Some(controller), message, WPARAM(wparam), LPARAM(lparam));
         }
     }
 }

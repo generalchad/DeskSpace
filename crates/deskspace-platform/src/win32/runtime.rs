@@ -289,6 +289,15 @@ impl Ui {
         }
     }
 
+    /// Watches for Delete (delivered as `Event::DeleteSelection`) while an item
+    /// is selected, since selected spaces are never focused. Call with `false`
+    /// when nothing is selected; only Delete is consumed.
+    pub fn watch_delete_selection(&mut self, enabled: bool) {
+        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+            crate::win32::keyboard::watch_delete(controller, enabled);
+        }
+    }
+
     /// Opens the system color picker and returns the chosen color. Blocks in a
     /// modal loop; other events are queued meanwhile.
     pub fn pick_color(

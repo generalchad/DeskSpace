@@ -68,12 +68,14 @@ enum Drag {
         id: SpaceId,
         edges: ResizeEdges,
     },
-    /// The left button went down on an item; it becomes a shell drag once
-    /// the pointer moves past the system drag threshold.
+    /// The left button went down on an item. Past the drag threshold it
+    /// rearranges the item within its space; once the pointer leaves the
+    /// space it becomes a shell drag, as dragging an icon out of a folder.
     Item {
         space: SpaceId,
         item: ItemId,
         origin: Point,
+        active: bool,
     },
 }
 
@@ -558,6 +560,7 @@ impl App {
                 space: id,
                 item,
                 origin: point,
+                active: false,
             };
         } else if !space.locked && space.title_bar().contains(point) {
             self.drag = Drag::Space {
@@ -589,11 +592,32 @@ impl App {
                 space,
                 item,
                 origin,
+                active,
             } => {
-                let threshold = drag_threshold();
-                if (point.x - origin.x).abs() >= threshold.width
-                    || (point.y - origin.y).abs() >= threshold.height
-                {
+                if !active {
+                    let threshold = drag_threshold();
+                    if (point.x - origin.x).abs() < threshold.width
+                        && (point.y - origin.y).abs() < threshold.height
+                    {
+                        return true;
+                    }
+                    self.drag = Drag::Item {
+                        space,
+                        item,
+                        origin,
+                        active: true,
+                    };
+                }
+                // Still over the space: rearrange. Left it: hand off to the
+                // shell, which moves the file to another space or app.
+                let inside = self
+                    .config
+                    .desktop
+                    .space(space)
+                    .is_some_and(|space| space.visible_rect().contains(point));
+                if inside {
+                    self.reorder_item_at(ui, space, item, point);
+                } else {
                     self.drag = Drag::None;
                     self.drag_item_out(ui, space, item);
                 }
@@ -664,8 +688,10 @@ impl App {
 
     fn end_drag(&mut self, ui: &mut Ui) {
         match std::mem::replace(&mut self.drag, Drag::None) {
-            Drag::None | Drag::Item { .. } => {}
-            Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
+            Drag::None | Drag::Item { active: false, .. } => {}
+            Drag::Item { active: true, .. } | Drag::Space { .. } | Drag::Resize { .. } => {
+                self.schedule_save(ui)
+            }
         }
     }
 
@@ -786,6 +812,24 @@ impl App {
         self.dispatch(Command::RemoveItem { id }, near)
     }
 
+    /// Removes the selected item from its space, the same as the item menu's
+    /// remove action: stored files go back to the desktop, others are unlisted.
+    fn delete_selected_item(&mut self, ui: &mut Ui) {
+        let Some(item) = self.selected_item else {
+            return;
+        };
+        let Some(space) = self.config.desktop.space_containing(item) else {
+            return;
+        };
+        if self.release_item(item) {
+            self.selected_item = None;
+            self.hovered = None;
+            self.refresh_space(ui, space);
+            self.refresh_tray(ui);
+            self.save();
+        }
+    }
+
     /// Removes items whose files no longer exist, for example after a shell
     /// command deleted one or a drag moved it elsewhere.
     fn prune_missing(&mut self, ui: &mut Ui, id: SpaceId) {
@@ -839,6 +883,38 @@ impl App {
                 }
             }
             DoubleClickTarget::Nothing => {}
+        }
+    }
+
+    /// Places the dragged item in the grid slot under `point`, reflowing the
+    /// space. Used while an item is dragged within its own space.
+    fn reorder_item_at(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, point: Point) {
+        let layout = self.config.desktop.layout;
+        let target = self.config.desktop.space(space).and_then(|space| {
+            let content = space.content_rect();
+            let columns = if space.user_sized {
+                layout.columns_for(space.rect.width)
+            } else {
+                layout.columns
+            }
+            .max(1);
+            let step_x = layout.cell_width + layout.gap;
+            let step_y = layout.cell_height + layout.gap;
+            let column = ((point.x - content.x - layout.padding) / step_x).clamp(0, columns - 1);
+            let row = ((point.y - content.y - layout.padding) / step_y).max(0);
+            let count = space.items.len();
+            if count == 0 {
+                return None;
+            }
+            let index = ((row * columns + column) as usize).min(count - 1);
+            let current = space.items.iter().position(|entry| entry.id == item)?;
+            Some((index, current))
+        });
+        let Some((index, current)) = target else {
+            return;
+        };
+        if index != current && self.dispatch(Command::ReorderItem { id: item, index }, point) {
+            self.refresh_space(ui, space);
         }
     }
 
@@ -1231,6 +1307,7 @@ impl EventHandler for App {
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
+            Event::DeleteSelection => self.delete_selected_item(ui),
             Event::PointerDownOutside => {
                 if self.edit.is_some() {
                     self.finish_rename(ui, true);
@@ -1266,6 +1343,10 @@ impl EventHandler for App {
                 self.flush_save(ui);
             }
         }
+        // The keyboard hook is on only while it is needed: editing captures
+        // keys, and a selection watches for Delete.
+        ui.capture_text_input(self.edit.is_some());
+        ui.watch_delete_selection(self.edit.is_none() && self.selected_item.is_some());
         self.sync_outside_watch(ui);
     }
 }

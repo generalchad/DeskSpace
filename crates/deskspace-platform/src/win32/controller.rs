@@ -132,6 +132,10 @@ unsafe extern "system" fn wndproc(
                 }
                 LRESULT(0)
             }
+            keyboard::DELETE_KEY => {
+                runtime::dispatch(Event::DeleteSelection);
+                LRESULT(0)
+            }
             outside_click::OUTSIDE_PROBE => {
                 let point = POINT {
                     x: wparam.0 as isize as i32,
