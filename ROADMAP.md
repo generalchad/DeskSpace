@@ -109,6 +109,12 @@ started).
   space edge still starts a shell drag. The keyboard hook gained a Delete-only
   watch while an item is selected, delivering `Event::DeleteSelection` to
   remove it (stored files return to the desktop).
+- **Cross-space drag identity fix.** Dropped files are matched by canonical
+  path (case- and 8.3-tolerant) and `ItemStore::contains` compares canonical
+  parents, so moving an item between spaces moves it instead of re-adopting a
+  `(2)` copy; an item whose file vanished is pruned before a drag. Explorer
+  parity (move/copy effects, ghost image, clipboard, Recycle-Bin delete) is
+  queued as F-36..F-39.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -351,6 +357,25 @@ Behavior:
 - **F-34** Start with Windows: a per-user `Run` key toggled from General
   settings; the installer also offers it (M3, M8).
 - **F-35** Snap to other spaces, with alignment guides (M6).
+
+### Item interaction (next session, from manual testing 2026-10-03)
+
+Manual testing found cross-space drags duplicated items and desktop drags left
+`- Copy` files. The identity fix (canonical-path matching, `ItemStore::contains`)
+landed; the rest is planned here.
+
+- **F-36** Explorer-parity drag: dragging out defaults to **move** and copies
+  only with Shift. Set `CFSTR_PREFERREDDROPEFFECT` on the drag data object (or
+  implement `IDropSource`), and add an OLE `IDropTarget` to spaces so they show
+  the move/copy cursor and accept drops directly, replacing `WM_DROPFILES`.
+- **F-37** Ghost drag image while rearranging inside a space, so the icon
+  follows the cursor and its target cell is highlighted; the scene already
+  carries item rects.
+- **F-38** Clipboard: Ctrl+X / Ctrl+C / Ctrl+V on the selected icon via the
+  shell clipboard (`CF_HDROP`) and `IFileOperation`, matching Explorer.
+- **F-39** Delete goes to the Recycle Bin (shell Delete verb, undoable, no
+  prompt), replacing the current remove-from-space behavior for the key and the
+  item menu; keep "Remove from space" as a distinct action.
 
 ## 5. Release mapping
 

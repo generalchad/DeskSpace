@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (122 tests) are green.
+  `cargo test --workspace` (124 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -561,6 +561,11 @@ WindowSettings {
 - **Inline rename has no IME or clipboard support.** A low-level keyboard hook
   handles the active layout's printable characters and navigation keys only;
   composition (Japanese, Chinese, ...) is deferred.
+- **Item drag is not Explorer-identical yet.** Dragging out uses the default
+  OLE effect, which may copy, so dropping on the desktop can leave a `- Copy`;
+  cross-space moves now match by file identity. Planned: a move-by-default drop
+  source, an OLE `IDropTarget` (drop-effect feedback), a ghost drag image,
+  clipboard cut/copy/paste, and Recycle-Bin delete (ROADMAP F-36..F-39).
 - **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
   and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
