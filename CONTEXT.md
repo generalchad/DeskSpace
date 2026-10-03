@@ -376,7 +376,10 @@ WindowSettings {
   `SHGetFileInfoW`, decoded to `Icon`s, least-recently-used eviction at 1024
   entries, `invalidate(path)`).
 - `shell_items.rs`: Explorer behavior for items. `Ui::open_path`
-  (`ShellExecuteExW`), `Ui::item_menu` (the app's entries above the shell's
+  (`ShellExecuteExW` with the default context-menu verb; it first passes
+  DeskSpace's foreground right on with `AllowSetForegroundWindow`, because
+  spaces are never active and opened apps would otherwise stay behind), and
+  paths are given to the shell with backslashes. `Ui::item_menu` (the app's entries above the shell's
   `IContextMenu`; the controller forwards owner-draw and submenu messages to
   it while it is open), and `Ui::drag_out` (`SHDoDragDrop` with the item's
   shell data object; reports the effect and whether it ended over the

@@ -247,8 +247,10 @@ impl Ui {
 
     /// Opens `path` with its default verb, as a double-click in Explorer does.
     pub fn open_path(&mut self, path: &Path) {
-        if let Err(error) = shell_items::open(path) {
-            tracing::warn!(%error, path = %path.display(), "could not open item");
+        let owner = with_runtime(|runtime| runtime.controller);
+        match shell_items::open(owner, path) {
+            Ok(()) => tracing::debug!(path = %path.display(), "opened item"),
+            Err(error) => tracing::warn!(%error, path = %path.display(), "could not open item"),
         }
     }
 

@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore};
-use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SpaceId};
+use deskspace_core::geometry::{Point, Size};
+use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, Space, SpaceId};
 use deskspace_platform::{
     CursorShape, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton,
     RunOptions, SettingsEvent, SpaceEvent, TrayEvent, Ui, desktop_directory, drag_threshold,
@@ -251,19 +251,7 @@ impl App {
                     None => self.show_space_menu(ui, id, point),
                 }
             }
-            SpaceEvent::DoubleClick { x, y } => {
-                let point = Point::new(x, y);
-                let on_title = self
-                    .config
-                    .desktop
-                    .space(id)
-                    .is_some_and(|space| space.title_bar().contains(point));
-                if on_title {
-                    self.toggle_rollup(ui, id);
-                } else if let Some(path) = self.item_path_at(id, point) {
-                    ui.open_path(&path);
-                }
-            }
+            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, id, Point::new(x, y)),
             SpaceEvent::MouseLeave if self.hovered.is_some_and(|(space, _)| space == id) => {
                 self.hovered = None;
                 self.refresh_space(ui, id);
@@ -552,9 +540,26 @@ impl App {
         self.save();
     }
 
-    fn item_path_at(&self, id: SpaceId, point: Point) -> Option<PathBuf> {
-        let item = self.item_at(id, point)?;
-        self.config.desktop.item(item).map(|item| item.path.clone())
+    fn double_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
+        let layout = self.config.desktop.layout;
+        let scroll = self.scroll_of(id);
+        let target = self
+            .config
+            .desktop
+            .space(id)
+            .map_or(DoubleClickTarget::Nothing, |space| {
+                double_click_target(space, layout.cell(), scroll, point)
+            });
+        tracing::debug!(space = id.0, ?point, ?target, "double-click");
+        match target {
+            DoubleClickTarget::TitleBar => self.toggle_rollup(ui, id),
+            DoubleClickTarget::Item(item) => {
+                if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
+                    ui.open_path(&path);
+                }
+            }
+            DoubleClickTarget::Nothing => {}
+        }
     }
 
     /// Drags an item out like Explorer. Wherever it lands, the drop target
@@ -981,6 +986,26 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What a double-click at `point` (desktop coordinates) acts on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DoubleClickTarget {
+    /// Rolls the space up or down.
+    TitleBar,
+    /// Opens the item.
+    Item(ItemId),
+    Nothing,
+}
+
+fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> DoubleClickTarget {
+    if space.title_bar().contains(point) {
+        DoubleClickTarget::TitleBar
+    } else if let Some(item) = space.item_at(point, cell, scroll) {
+        DoubleClickTarget::Item(item)
+    } else {
+        DoubleClickTarget::Nothing
+    }
+}
+
 /// What deleting a space with `count` items, `stored` of them in the space
 /// storage, does to the files.
 fn delete_consequence(count: usize, stored: usize) -> String {
@@ -1036,6 +1061,30 @@ mod tests {
         assert_eq!(
             cursor_for(edges(false, true, true, false)),
             CursorShape::SizeNorthEastSouthWest
+        );
+    }
+
+    #[test]
+    fn double_click_rolls_on_the_title_and_opens_items() {
+        let layout = deskspace_core::GridSpec::default();
+        let mut space = Space::new(SpaceId(1), "S", Rect::new(100, 100, 240, 400));
+        let mut item = deskspace_core::Item::new(ItemId(7), "C:/a.lnk");
+        item.position = Point::new(12, 12);
+        space.push_item(item);
+        let target =
+            |x, y, scroll| double_click_target(&space, layout.cell(), scroll, Point::new(x, y));
+        let in_item = (100 + 12 + 10, 100 + space.title_height + 12 + 10);
+
+        assert_eq!(target(150, 110, 0), DoubleClickTarget::TitleBar);
+        assert_eq!(
+            target(in_item.0, in_item.1, 0),
+            DoubleClickTarget::Item(ItemId(7))
+        );
+        assert_eq!(target(300, 450, 0), DoubleClickTarget::Nothing);
+        // Scrolled past the item, the same point is empty content.
+        assert_eq!(
+            target(in_item.0, in_item.1, 200),
+            DoubleClickTarget::Nothing
         );
     }
 

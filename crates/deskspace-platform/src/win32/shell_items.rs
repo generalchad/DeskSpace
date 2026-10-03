@@ -16,14 +16,15 @@ use windows::Win32::System::Ole::{
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO, IContextMenu, IContextMenu2,
-    IContextMenu3, IShellItem, SEE_MASK_NOASYNC, SHCreateItemFromParsingName, SHDoDragDrop,
-    SHELLEXECUTEINFOW, ShellExecuteExW,
+    IContextMenu3, IShellItem, SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC,
+    SHCreateItemFromParsingName, SHDoDragDrop, SHELLEXECUTEINFOW, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, GA_ROOT, GetAncestor, GetClassNameW, GetCursorPos,
-    MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, PostMessageW, SW_SHOWNORMAL,
-    SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, WM_DRAWITEM,
-    WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL, WindowFromPoint,
+    ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, GA_ROOT,
+    GetAncestor, GetClassNameW, GetCursorPos, MENU_ITEM_FLAGS, MF_CHECKED, MF_GRAYED, MF_SEPARATOR,
+    MF_STRING, PostMessageW, SW_SHOWNORMAL, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenuEx, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL,
+    WindowFromPoint,
 };
 use windows::core::{Interface, PCSTR, PCWSTR};
 
@@ -74,26 +75,49 @@ pub enum DragEffect {
     Link,
 }
 
+/// `path` as a NUL-terminated wide string with backslash separators. The
+/// shell's parsing name APIs reject forward slashes ("The parameter is
+/// incorrect"), and hand-edited or older configs can contain them.
+fn shell_path(path: &Path) -> Vec<u16> {
+    wide(&path.to_string_lossy().replace('/', "\\"))
+}
+
 fn shell_item(path: &Path) -> Result<IShellItem, PlatformError> {
-    let path = wide(&path.to_string_lossy());
+    let path = shell_path(path);
     // SAFETY: `path` is NUL-terminated and outlives the call.
     Ok(unsafe { SHCreateItemFromParsingName(PCWSTR(path.as_ptr()), None)? })
 }
 
 /// Opens `path` with its default verb, like a double-click in Explorer.
-pub(crate) fn open(path: &Path) -> Result<(), PlatformError> {
-    let file = wide(&path.to_string_lossy());
+/// `owner` parents any error dialog the shell shows.
+pub(crate) fn open(owner: Option<HWND>, path: &Path) -> Result<(), PlatformError> {
+    let file = shell_path(path);
     let mut info = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         // NOASYNC: the call returns after the launch is handed off, so it
         // does not depend on this thread pumping messages for DDE.
-        fMask: SEE_MASK_NOASYNC,
+        // INVOKEIDLIST: run the item's default context-menu verb, as
+        // Explorer does, so shortcuts and items without a file association
+        // open the same way they do on the desktop.
+        // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-shellexecuteinfow
+        fMask: SEE_MASK_NOASYNC | SEE_MASK_INVOKEIDLIST,
+        hwnd: owner.unwrap_or_default(),
         lpFile: PCWSTR(file.as_ptr()),
         nShow: SW_SHOWNORMAL.0,
         ..Default::default()
     };
     // SAFETY: `info` is fully initialised and `file` outlives the call.
-    unsafe { ShellExecuteExW(&mut info)? };
+    unsafe {
+        // Spaces are never activated, so DeskSpace is not the foreground
+        // process when an item opens, and Windows would keep the launched
+        // app's window behind the active one (or, for an app that is already
+        // running, such as a browser, only flash its taskbar button). Having
+        // received the double-click, this process may pass its foreground
+        // right on.
+        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-allowsetforegroundwindow
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+        ShellExecuteExW(&mut info)?;
+    }
     Ok(())
 }
 
@@ -294,6 +318,14 @@ fn cursor_over_desktop() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_paths_use_backslashes() {
+        assert_eq!(
+            shell_path(Path::new("C:/Users/me/a.lnk")),
+            wide(r"C:\Users\me\a.lnk")
+        );
+    }
 
     #[test]
     fn move_wins_when_several_effects_are_reported() {
