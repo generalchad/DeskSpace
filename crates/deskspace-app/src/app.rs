@@ -1,20 +1,26 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, spaceId, ItemId, Rect};
+use deskspace_core::{Command, Desktop, spaceId, ItemId, Rect, ResizeEdges};
 use deskspace_platform::{
-    Event, EventHandler, spaceEvent, Hotkey, IconCache, MenuEntry, MouseButton, RunOptions,
-    SettingsEvent, TrayEvent, Ui, hotkey_id, parse_hotkey, system_uses_dark_mode, work_area_at,
+    CursorShape, Event, EventHandler, spaceEvent, Hotkey, IconCache, MenuEntry, MouseButton,
+    RunOptions, SettingsEvent, TrayEvent, Ui, hotkey_id, parse_hotkey, system_uses_dark_mode,
+    work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
-use crate::scene::{Highlight, space_scene, space_style};
+use crate::scene::{ViewState, space_scene, space_style};
 use crate::settings::{self, Effect, Session};
 
 const TOGGLE_HOTKEY: i32 = 0;
+/// Width of the band along a space's edges that starts a resize.
+const RESIZE_BORDER: i32 = 6;
+/// `WHEEL_DELTA`: one notch of a standard mouse wheel.
+/// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
+const WHEEL_DELTA: i32 = 120;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -24,11 +30,23 @@ mod menu {
     pub const TOGGLE_VISIBLE: u32 = 5;
     pub const EXIT: u32 = 6;
     pub const DELETE: u32 = 7;
+    pub const FIT: u32 = 8;
 }
 
 enum Drag {
     None,
     space { id: spaceId, grab: Point },
+    Resize { id: spaceId, edges: ResizeEdges },
+}
+
+fn cursor_for(edges: ResizeEdges) -> CursorShape {
+    match (edges.left, edges.top, edges.right, edges.bottom) {
+        (true, true, _, _) | (_, _, true, true) => CursorShape::SizeNorthWestSouthEast,
+        (true, _, _, true) | (_, true, true, _) => CursorShape::SizeNorthEastSouthWest,
+        (true, ..) | (_, _, true, _) => CursorShape::SizeWestEast,
+        (_, true, ..) | (.., true) => CursorShape::SizeNorthSouth,
+        _ => CursorShape::Arrow,
+    }
 }
 
 pub struct App {
@@ -40,6 +58,9 @@ pub struct App {
     selected_item: Option<ItemId>,
     hovered: Option<(spaceId, ItemId)>,
     drag: Drag,
+    /// Per-space scroll offset in pixels. Not persisted; may exceed the
+    /// current maximum after a resize, so read it through `scroll_of`.
+    scroll: HashMap<spaceId, i32>,
     visible: bool,
     hotkey: Option<Hotkey>,
     settings: Option<Session>,
@@ -57,6 +78,7 @@ impl App {
             selected_item: None,
             hovered: None,
             drag: Drag::None,
+            scroll: HashMap::new(),
             visible: !hidden,
             hotkey: None,
             settings: None,
@@ -103,8 +125,8 @@ impl App {
         self.refresh_tray(ui);
     }
 
-    fn highlight_for(&self, id: spaceId) -> Highlight {
-        Highlight {
+    fn view_for(&self, id: spaceId) -> ViewState {
+        ViewState {
             hovered: self
                 .hovered
                 .filter(|(space, _)| *space == id)
@@ -112,23 +134,43 @@ impl App {
             selected: self
                 .selected_item
                 .filter(|_| self.selected_space == Some(id)),
+            scroll: self.scroll_of(id),
         }
+    }
+
+    /// The space's scroll offset, clamped to its current content.
+    fn scroll_of(&self, id: spaceId) -> i32 {
+        let layout = self.config.desktop.layout;
+        let max = self
+            .config
+            .desktop
+            .space(id)
+            .map_or(0, |space| space.max_scroll(layout.cell(), layout.padding));
+        self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
+    }
+
+    fn item_at(&self, id: spaceId, point: Point) -> Option<ItemId> {
+        let cell = self.config.desktop.layout.cell();
+        let scroll = self.scroll_of(id);
+        self.config
+            .desktop
+            .space(id)
+            .and_then(|space| space.item_at(point, cell, scroll))
     }
 
     /// Pushes the space's current geometry and draw list to its window.
     fn refresh_space(&mut self, ui: &mut Ui, id: spaceId) {
-        let highlight = self.highlight_for(id);
+        let view = self.view_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
         let palette = self.config.theme.palette(self.system_dark);
-        let cell = self.config.desktop.layout.cell();
         let scene = space_scene(
             space,
             &self.config.theme,
             &palette,
-            cell,
-            highlight,
+            self.config.desktop.layout,
+            view,
             &mut self.icons,
         );
         ui.set_space_rect(id.0, space.visible_rect());
@@ -166,9 +208,11 @@ impl App {
             spaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
                 if !self.drag_to(ui, point) {
+                    self.update_cursor(ui, id, point);
                     self.update_hover(ui, id, point);
                 }
             }
+            spaceEvent::Wheel { x, y, delta } => self.scroll_by(ui, id, Point::new(x, y), delta),
             spaceEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
@@ -202,11 +246,15 @@ impl App {
 
     fn begin_interaction(&mut self, ui: &mut Ui, id: spaceId, point: Point) {
         let previous = self.selected_space.replace(id);
+        self.selected_item = self.item_at(id, point);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        self.selected_item = space.item_at(point, self.config.desktop.layout.cell());
-        if !space.locked && space.title_bar().contains(point) {
+        let edges = space.resize_edges_at(point, RESIZE_BORDER);
+        if edges.any() {
+            self.drag = Drag::Resize { id, edges };
+            self.selected_item = None;
+        } else if !space.locked && space.title_bar().contains(point) {
             self.drag = Drag::space {
                 id,
                 grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
@@ -219,25 +267,69 @@ impl App {
     }
 
     fn drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
-        let Drag::space { id, grab } = self.drag else {
-            return false;
-        };
-        let Some(space) = self.config.desktop.space(id) else {
-            self.drag = Drag::None;
-            return false;
-        };
-        let rect = Rect::new(
-            point.x - grab.x,
-            point.y - grab.y,
-            space.rect.width,
-            space.rect.height,
-        );
-        if self.dispatch(Command::SetspaceRect { id, rect }, point) {
-            if let Some(space) = self.config.desktop.space(id) {
-                ui.set_space_rect(id.0, space.visible_rect());
+        match self.drag {
+            Drag::None => false,
+            Drag::space { id, grab } => {
+                let Some(space) = self.config.desktop.space(id) else {
+                    self.drag = Drag::None;
+                    return false;
+                };
+                let rect = Rect::new(
+                    point.x - grab.x,
+                    point.y - grab.y,
+                    space.rect.width,
+                    space.rect.height,
+                );
+                if self.dispatch(Command::SetspaceRect { id, rect }, point) {
+                    if let Some(space) = self.config.desktop.space(id) {
+                        ui.set_space_rect(id.0, space.visible_rect());
+                    }
+                }
+                true
+            }
+            Drag::Resize { id, edges } => {
+                let before = self.config.desktop.space(id).map(|space| space.rect);
+                let command = Command::Resizespace {
+                    id,
+                    edges,
+                    to: point,
+                };
+                if self.dispatch(command, point)
+                    && self.config.desktop.space(id).map(|space| space.rect) != before
+                {
+                    self.refresh_space(ui, id);
+                }
+                true
             }
         }
-        true
+    }
+
+    fn update_cursor(&self, ui: &mut Ui, id: spaceId, point: Point) {
+        let edges = self
+            .config
+            .desktop
+            .space(id)
+            .map_or(ResizeEdges::NONE, |space| {
+                space.resize_edges_at(point, RESIZE_BORDER)
+            });
+        ui.set_space_cursor(id.0, cursor_for(edges));
+    }
+
+    fn scroll_by(&mut self, ui: &mut Ui, id: spaceId, point: Point, delta: i32) {
+        let layout = self.config.desktop.layout;
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let max = space.max_scroll(layout.cell(), layout.padding);
+        let current = self.scroll_of(id);
+        let next = (current - delta * layout.scroll_step() / WHEEL_DELTA).clamp(0, max);
+        if next == current {
+            return;
+        }
+        self.scroll.insert(id, next);
+        // Items moved under a still cursor, so the hovered one changed too.
+        self.hovered = self.item_at(id, point).map(|item| (id, item));
+        self.refresh_space(ui, id);
     }
 
     fn end_drag(&mut self) {
@@ -248,13 +340,7 @@ impl App {
     }
 
     fn update_hover(&mut self, ui: &mut Ui, id: spaceId, point: Point) {
-        let cell = self.config.desktop.layout.cell();
-        let item = self
-            .config
-            .desktop
-            .space(id)
-            .and_then(|space| space.item_at(point, cell));
-        let hovered = item.map(|item| (id, item));
+        let hovered = self.item_at(id, point).map(|item| (id, item));
         if hovered == self.hovered {
             return;
         }
@@ -328,6 +414,7 @@ impl App {
             if self.hovered.is_some_and(|(space, _)| space == id) {
                 self.hovered = None;
             }
+            self.scroll.remove(&id);
             self.sync_windows(ui);
             self.save();
         }
@@ -360,9 +447,14 @@ impl App {
         } else {
             "Roll up"
         };
-        let entries = [
+        let mut entries = vec![
             MenuEntry::item(menu::ROLL, roll),
             MenuEntry::item(menu::LOCK, "Lock position").checked(space.locked),
+        ];
+        if space.user_sized && !space.locked {
+            entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
+        }
+        entries.extend([
             MenuEntry::item(menu::DELETE, "Delete space\u{2026}"),
             MenuEntry::Separator,
             MenuEntry::item(menu::NEW_space, "New space"),
@@ -370,10 +462,17 @@ impl App {
             MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
             self.visibility_entry(),
             MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
-        ];
+        ]);
         match ui.popup_menu(&entries, at) {
             Some(menu::ROLL) => self.toggle_rollup(ui, id),
             Some(menu::DELETE) => self.delete_space(ui, id),
+            Some(menu::FIT) => {
+                if self.dispatch(Command::FitToContents { id }, at) {
+                    self.scroll.remove(&id);
+                    self.refresh_space(ui, id);
+                    self.save();
+                }
+            }
             Some(menu::LOCK) => {
                 if self.dispatch(Command::ToggleLock { id }, at) {
                     self.refresh_space(ui, id);
@@ -653,6 +752,33 @@ fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resize_cursor_matches_grabbed_edges() {
+        let edges = |left, top, right, bottom| ResizeEdges {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        assert_eq!(cursor_for(ResizeEdges::NONE), CursorShape::Arrow);
+        assert_eq!(
+            cursor_for(edges(true, false, false, false)),
+            CursorShape::SizeWestEast
+        );
+        assert_eq!(
+            cursor_for(edges(false, false, false, true)),
+            CursorShape::SizeNorthSouth
+        );
+        assert_eq!(
+            cursor_for(edges(false, false, true, true)),
+            CursorShape::SizeNorthWestSouthEast
+        );
+        assert_eq!(
+            cursor_for(edges(false, true, true, false)),
+            CursorShape::SizeNorthEastSouthWest
+        );
+    }
 
     #[test]
     fn tooltip_pluralizes() {
