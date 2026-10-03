@@ -39,7 +39,8 @@ use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    console, controller, desktop_shell, menu, outside_click, settings_window, space_window, tray,
+    console, controller, dark_mode, desktop_shell, menu, outside_click, settings_window,
+    space_window, tray,
 };
 
 pub trait EventHandler {
@@ -67,6 +68,8 @@ struct Runtime {
     spaces_visible: bool,
     spaces: HashMap<u64, HWND>,
     settings: Option<HWND>,
+    /// Dark menus and settings window; set by the app (`Ui::set_ui_dark`).
+    ui_dark: bool,
     tray_tooltip: String,
     close_dispatched: bool,
 }
@@ -295,6 +298,17 @@ impl Ui {
         }
     }
 
+    /// Switches DeskSpace's own UI (popup menus, including the shell's item
+    /// menus, and the settings window) between dark and light. The open
+    /// settings window switches at once.
+    pub fn set_ui_dark(&mut self, dark: bool) {
+        with_runtime(|runtime| runtime.ui_dark = dark);
+        dark_mode::set_menus_dark(dark);
+        if let Some(settings) = settings_hwnd() {
+            settings_window::set_dark(settings, dark);
+        }
+    }
+
     /// Opens the settings window, or brings it to the front and refreshes it.
     pub fn open_settings(&mut self, form: &SettingsForm) {
         if let Some(existing) = settings_hwnd() {
@@ -302,7 +316,8 @@ impl Ui {
             settings_window::bring_to_front(existing);
             return;
         }
-        match settings_window::create(form) {
+        let dark = with_runtime(|runtime| runtime.ui_dark).unwrap_or(false);
+        match settings_window::create(form, dark) {
             Ok(hwnd) => {
                 with_runtime(|runtime| runtime.settings = Some(hwnd));
             }
@@ -431,6 +446,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             spaces_visible: true,
             spaces: HashMap::new(),
             settings: None,
+            ui_dark: false,
             tray_tooltip: options.tray_tooltip.clone(),
             close_dispatched: false,
         });

@@ -939,6 +939,9 @@ impl EventHandler for App {
     fn on_event(&mut self, event: Event, ui: &mut Ui) {
         match event {
             Event::Started => {
+                // DeskSpace's own menus and settings window follow Windows'
+                // app mode; the spaces follow their own Color mode setting.
+                ui.set_ui_dark(self.system_dark);
                 let hotkey = self.config.window.toggle_hotkey.clone();
                 if let Err(message) = self.register_hotkey(ui, &hotkey) {
                     tracing::warn!(message, "toggle hotkey unavailable");
@@ -967,6 +970,7 @@ impl EventHandler for App {
             Event::Settings(event) => self.on_settings_event(ui, event),
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
+                ui.set_ui_dark(self.system_dark);
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }

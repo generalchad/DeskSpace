@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (98 tests) are green.
+  `cargo test --workspace` (99 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -378,6 +378,15 @@ WindowSettings {
   `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
   `Apply`, and opens `ChooseColorW` for color fields. `Ui::update_settings`
   diffs a new form of the same shape into the existing controls.
+- Dark mode (`win32/dark_mode.rs`): `Ui::set_ui_dark`, which the app calls
+  with Windows' app mode on start and on `SystemThemeChanged`, switches
+  popup menus (uxtheme ordinals 135/136, `SetPreferredAppMode` and
+  `FlushMenuThemes`) and the settings window: dark caption, body and command
+  bar colors (`UiColors`), `DarkMode_Explorer` / `DarkMode_CFD` control
+  styles, and a tab strip painted by a subclass in both modes, because the
+  tab control has no dark style. Static labels are never disabled (Windows
+  embosses disabled static text); disabled fields grey them through
+  `WM_CTLCOLORSTATIC`. The spaces follow their own Color mode setting.
 - The app embeds the common-controls v6 manifest dependency via
   `crates/deskspace-app/build.rs`.
 
@@ -493,8 +502,9 @@ WindowSettings {
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
   If a future Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.
-- **Settings window is light-only**; classic controls have no supported dark
-  mode. Popup menus are light as well.
+- **Dark mode relies on undocumented uxtheme exports** for menus and on
+  Explorer's dark control styles. The confirmation message box and the color
+  picker stay light; neither has a dark mode.
 - **No per-monitor DPI scaling of spaces.** Sizes are in physical pixels at
   96-DPI values; the settings window is laid out for the DPI at creation.
 - **Drops use `WM_DROPFILES`**, which carries file paths only and shows no

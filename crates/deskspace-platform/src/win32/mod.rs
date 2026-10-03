@@ -1,5 +1,6 @@
 mod console;
 mod controller;
+mod dark_mode;
 pub mod desktop_shell;
 pub mod dpi;
 mod dwm;

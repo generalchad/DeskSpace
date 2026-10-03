@@ -18,41 +18,46 @@ use windows::Win32::Graphics::Dwm::{
     DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, COLOR_3DFACE, COLOR_WINDOW, CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT,
-    DT_NOPREFIX, DT_WORDBREAK, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC, GetSysColor,
-    GetSysColorBrush, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT, ReleaseDC,
-    SelectObject, SetBkColor,
+    BeginPaint, CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX,
+    DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW, EndPaint,
+    FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT, RDW_ALLCHILDREN,
+    RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, SelectObject, SetBkColor,
+    SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
     NMHDR, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ, TBS_NOTICKS, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT,
-    TCM_GETCURSEL, TCM_INSERTITEMW, TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW,
-    WC_EDITW, WC_STATICW, WC_TABCONTROLW,
+    TCM_GETCURSEL, TCM_GETITEMRECT, TCM_INSERTITEMW, TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW,
+    WC_COMBOBOXW, WC_EDITW, WC_STATICW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForWindow, SystemParametersInfoForDpi,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
+use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
     CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW,
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, ES_READONLY,
-    GWLP_USERDATA, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
-    GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, NONCLIENTMETRICSW,
-    RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE,
-    SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY,
-    WM_NOTIFY, WM_PAINT, WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
-    WS_CLIPSIBLINGS, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED,
-    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    EnumChildWindows, GWLP_USERDATA, GetClassNameW, GetClientRect, GetCursorPos, GetParent,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL,
+    IsIconic, NONCLIENTMETRICSW, RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_RESTORE,
+    SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
+    WM_HSCROLL, WM_KILLFOCUS, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETFOCUS,
+    WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::{BOOL, PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
 use crate::ui::{Field, FieldKind, FieldValue, SettingsForm, SliderMark};
+use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::{runtime, tray};
 
@@ -63,6 +68,7 @@ const ID_OK: usize = 1;
 const ID_CANCEL: usize = 2;
 const ID_APPLY: usize = 3;
 const ID_TAB: usize = 4;
+const TAB_SUBCLASS_ID: usize = 1;
 /// Field controls get `CONTROL_BASE + index * 4 + part`, so the field index
 /// and which of its controls fired can be recovered from the id alone.
 const CONTROL_BASE: usize = 1000;
@@ -121,19 +127,54 @@ struct SettingsState {
     /// Set while the window itself is changing control values, so the
     /// resulting notifications are not reported as user edits.
     updating: bool,
+    colors: UiColors,
+    body_brush: HBRUSH,
+    command_bar_brush: HBRUSH,
+}
+
+impl SettingsState {
+    /// Switches to `colors`, replacing the background brushes.
+    fn set_colors(&mut self, colors: UiColors) {
+        // SAFETY: the old brushes are only selected while painting, which is
+        // not happening during this short borrow.
+        unsafe {
+            for old in [self.body_brush, self.command_bar_brush] {
+                if !old.is_invalid() {
+                    let _ = DeleteObject(HGDIOBJ(old.0));
+                }
+            }
+            self.body_brush = CreateSolidBrush(colorref(colors.body));
+            self.command_bar_brush = CreateSolidBrush(colorref(colors.command_bar));
+        }
+        self.colors = colors;
+    }
 }
 
 impl FieldControls {
-    fn handles(&self) -> Vec<HWND> {
-        [self.label, self.main, self.value_text, self.swatch]
+    /// Static text and the color swatch. These are never disabled: Windows
+    /// draws disabled static text embossed and ignores WM_CTLCOLORSTATIC,
+    /// which is unreadable on the dark body. They are greyed through
+    /// WM_CTLCOLORSTATIC instead (`SettingsState::is_disabled_label`).
+    fn labels(&self) -> Vec<HWND> {
+        [self.label, self.value_text, self.swatch]
             .into_iter()
             .flatten()
             .chain(self.marks.iter().copied())
             .collect()
     }
+
+    fn owns_label(&self, control: HWND) -> bool {
+        [self.label, self.value_text].contains(&Some(control)) || self.marks.contains(&control)
+    }
 }
 
 impl SettingsState {
+    fn is_disabled_label(&self, control: HWND) -> bool {
+        self.fields
+            .iter()
+            .any(|(field, controls)| !field.enabled && controls.owns_label(control))
+    }
+
     fn field_index_for(&self, control: HWND) -> Option<usize> {
         self.fields.iter().position(|(_, controls)| {
             controls.main == Some(control) || controls.swatch == Some(control)
@@ -154,17 +195,19 @@ impl Drop for SettingsState {
             }
             let _ = DeleteObject(HGDIOBJ(self.font.0));
             let _ = DeleteObject(HGDIOBJ(self.heading_font.0));
+            let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
+            let _ = DeleteObject(HGDIOBJ(self.command_bar_brush.0));
         }
     }
 }
 
-pub(crate) fn create(form: &SettingsForm) -> Result<HWND, PlatformError> {
+pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformError> {
     // SAFETY: Win32 window creation on the UI thread. Ownership of the state
     // passes to the window in WM_NCCREATE; it is freed in WM_NCDESTROY.
     unsafe {
         let instance = HINSTANCE(GetModuleHandleW(None)?.0);
         ensure_classes(instance)?;
-        let state = Box::into_raw(Box::new(SettingsState {
+        let mut state = SettingsState {
             form: form.clone(),
             fields: Vec::new(),
             pages: Vec::new(),
@@ -174,7 +217,12 @@ pub(crate) fn create(form: &SettingsForm) -> Result<HWND, PlatformError> {
             heading_font: HFONT::default(),
             command_bar_top: 0,
             updating: true,
-        }));
+            colors: UiColors::new(dark),
+            body_brush: HBRUSH::default(),
+            command_bar_brush: HBRUSH::default(),
+        };
+        state.set_colors(UiColors::new(dark));
+        let state = Box::into_raw(Box::new(state));
         let title = wide(&form.title);
         let hwnd = CreateWindowExW(
             WS_EX_CONTROLPARENT,
@@ -216,10 +264,63 @@ pub(crate) fn create(form: &SettingsForm) -> Result<HWND, PlatformError> {
             &mica as *const _ as *const core::ffi::c_void,
             std::mem::size_of_val(&mica) as u32,
         );
+        dark_mode::set_caption_dark(hwnd, dark);
+        theme_controls(hwnd, dark);
 
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         Ok(hwnd)
+    }
+}
+
+/// Switches an open settings window between dark and light.
+pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
+    // SAFETY: `hwnd` is the live settings window; the state borrow ends
+    // before any call that sends messages.
+    unsafe {
+        let changed = with_state(hwnd, |state| {
+            let changed = state.colors.dark != dark;
+            if changed {
+                state.set_colors(UiColors::new(dark));
+            }
+            changed
+        });
+        if changed != Some(true) {
+            return;
+        }
+        dark_mode::set_caption_dark(hwnd, dark);
+        theme_controls(hwnd, dark);
+        let _ = RedrawWindow(
+            Some(hwnd),
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME,
+        );
+    }
+}
+
+/// Gives every control the dark or light visual style for its class. The
+/// tab control is painted by `paint_tab` instead, because it has no dark
+/// style.
+unsafe fn theme_controls(window: HWND, dark: bool) {
+    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
+        let mut class = [0u16; 32];
+        // SAFETY: `control` is a live descendant being enumerated; the
+        // buffer is sized for the call.
+        let length = unsafe { GetClassNameW(control, &mut class) } as usize;
+        let theme = match String::from_utf16_lossy(&class[..length]).as_str() {
+            "Button" | "msctls_trackbar32" => Some(ControlTheme::Explorer),
+            "ComboBox" | "Edit" => Some(ControlTheme::FileDialog),
+            _ => None,
+        };
+        if let Some(theme) = theme {
+            dark_mode::theme_control(control, theme, dark.0 != 0);
+        }
+        BOOL::from(true)
+    }
+    // SAFETY: the callback only themes the enumerated controls.
+    unsafe {
+        let _ = EnumChildWindows(Some(window), Some(visit), LPARAM(dark as isize));
     }
 }
 
@@ -239,20 +340,19 @@ fn window_style() -> WINDOW_STYLE {
 
 fn ensure_classes(instance: HINSTANCE) -> Result<(), PlatformError> {
     REGISTER_CLASSES.call_once(|| {
+        // No class background brushes: both window procedures erase with
+        // the current light or dark body color (WM_ERASEBKGND).
         // SAFETY: class structs are fully initialised; strings are static.
         unsafe {
-            let background = GetSysColorBrush(COLOR_WINDOW);
             let main = WNDCLASSW {
                 lpfnWndProc: Some(wndproc),
                 hInstance: instance,
-                hbrBackground: background,
                 lpszClassName: CLASS_NAME,
                 ..Default::default()
             };
             let page = WNDCLASSW {
                 lpfnWndProc: Some(page_wndproc),
                 hInstance: instance,
-                hbrBackground: background,
                 lpszClassName: PAGE_CLASS,
                 ..Default::default()
             };
@@ -738,6 +838,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             ID_TAB,
         );
         if let Some(tab) = tab {
+            let _ = SetWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID, 0);
             for (index, page) in form.pages.iter().enumerate() {
                 let mut text = wide(&page.title);
                 let item = TCITEMW {
@@ -785,7 +886,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             for field in &page.fields {
                 let index = fields.len();
                 let (controls, height) = builder.field(container, index, field, y, page_width);
-                apply_enabled(controls.handles(), field.enabled);
+                apply_enabled(&controls, field.enabled);
                 fields.push((field.clone(), controls));
                 y += height;
             }
@@ -908,11 +1009,16 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
     }
 }
 
-unsafe fn apply_enabled(handles: Vec<HWND>, enabled: bool) {
-    for hwnd in handles {
-        // SAFETY: `hwnd` is a live control of the settings window.
-        unsafe {
-            let _ = EnableWindow(hwnd, enabled);
+/// Enables or disables a field's input control and repaints its labels,
+/// which take their color from the field's enabled state.
+unsafe fn apply_enabled(controls: &FieldControls, enabled: bool) {
+    // SAFETY: the handles are live controls of the settings window.
+    unsafe {
+        if let Some(main) = controls.main {
+            let _ = EnableWindow(main, enabled);
+        }
+        for label in controls.labels() {
+            let _ = InvalidateRect(Some(label), None, true);
         }
     }
 }
@@ -921,7 +1027,8 @@ unsafe fn apply_enabled(handles: Vec<HWND>, enabled: bool) {
 /// borrow and applied after it, because control messages can re-enter
 /// `wndproc` (for example SetWindowText raises EN_CHANGE).
 enum Update {
-    Enable(Vec<HWND>, bool),
+    /// The field's main control and labels (see `apply_enabled`).
+    Enable(Option<HWND>, Vec<HWND>, bool),
     Text(HWND, String),
     Choice(HWND, usize),
     Check(HWND, bool),
@@ -962,7 +1069,14 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     unsafe {
         for update in updates {
             match update {
-                Update::Enable(handles, enabled) => apply_enabled(handles, enabled),
+                Update::Enable(main, labels, enabled) => {
+                    if let Some(main) = main {
+                        let _ = EnableWindow(main, enabled);
+                    }
+                    for label in labels {
+                        let _ = InvalidateRect(Some(label), None, true);
+                    }
+                }
                 Update::Text(control, text) => {
                     if window_text(control) != text {
                         let text = wide(&text);
@@ -998,7 +1112,11 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
 
 fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &mut Vec<Update>) {
     if old.enabled != new.enabled {
-        updates.push(Update::Enable(controls.handles(), new.enabled));
+        updates.push(Update::Enable(
+            controls.main,
+            controls.labels(),
+            new.enabled,
+        ));
     }
     if old.label != new.label {
         let target = match new.kind {
@@ -1266,13 +1384,147 @@ unsafe fn on_paint(window: HWND) {
     unsafe {
         let mut ps = PAINTSTRUCT::default();
         let dc = BeginPaint(window, &mut ps);
-        let top = with_state(window, |state| state.command_bar_top).unwrap_or(0);
-        let mut client = RECT::default();
-        let _ = windows::Win32::UI::WindowsAndMessaging::GetClientRect(window, &mut client);
-        // Windows 11 dialogs put their buttons on a slightly darker command bar.
-        let bar = RECT { top, ..client };
-        FillRect(dc, &bar, GetSysColorBrush(COLOR_3DFACE));
+        if let Some((top, brush)) = with_state(window, |state| {
+            (state.command_bar_top, state.command_bar_brush)
+        }) {
+            let mut client = RECT::default();
+            let _ = GetClientRect(window, &mut client);
+            // Windows 11 dialogs put their buttons on a slightly darker
+            // command bar.
+            let bar = RECT { top, ..client };
+            FillRect(dc, &bar, brush);
+        }
         let _ = EndPaint(window, &ps);
+    }
+}
+
+/// Fills `window`'s client area with the settings body color. `settings`
+/// is the settings window (the window itself or a page's parent).
+unsafe fn erase_body(settings: HWND, window: HWND, dc: HDC) -> bool {
+    // SAFETY: `dc` is the erase DC for `window`, a live window of ours.
+    unsafe {
+        let Some(brush) = with_state(settings, |state| state.body_brush) else {
+            return false;
+        };
+        let mut client = RECT::default();
+        let _ = GetClientRect(window, &mut client);
+        FillRect(dc, &client, brush);
+        true
+    }
+}
+
+/// Paints the tab strip like Windows 11 navigation: tab titles on the body
+/// color, the selected one in full-strength text with an accent underline,
+/// and a divider below. The common tab control has no dark visual style, so
+/// it is painted here in both modes for a consistent look.
+unsafe fn paint_tab(tab: HWND) {
+    // SAFETY: BeginPaint/EndPaint on the live tab control; the GDI objects
+    // created here are deleted before returning, and the font is restored.
+    unsafe {
+        let mut ps = PAINTSTRUCT::default();
+        let dc = BeginPaint(tab, &mut ps);
+        let settings = GetParent(tab).unwrap_or_default();
+        let Some((colors, body, font, titles)) = with_state(settings, |state| {
+            let titles: Vec<Vec<u16>> = state
+                .form
+                .pages
+                .iter()
+                .map(|page| page.title.encode_utf16().collect())
+                .collect();
+            (state.colors, state.body_brush, state.font, titles)
+        }) else {
+            let _ = EndPaint(tab, &ps);
+            return;
+        };
+        let mut client = RECT::default();
+        let _ = GetClientRect(tab, &mut client);
+        FillRect(dc, &client, body);
+
+        let selected = SendMessageW(tab, TCM_GETCURSEL, None, None).0;
+        let focused = GetFocus() == tab;
+        let previous_font = SelectObject(dc, HGDIOBJ(font.0));
+        SetBkMode(dc, TRANSPARENT);
+        let accent = CreateSolidBrush(colorref(colors.accent));
+        let mut header_bottom = 0;
+        for (index, title) in titles.iter().enumerate() {
+            let mut item = RECT::default();
+            SendMessageW(
+                tab,
+                TCM_GETITEMRECT,
+                Some(WPARAM(index)),
+                Some(LPARAM(&mut item as *mut RECT as isize)),
+            );
+            header_bottom = header_bottom.max(item.bottom);
+            let is_selected = index as isize == selected;
+            let color = if is_selected {
+                colors.text
+            } else {
+                colors.secondary_text
+            };
+            SetTextColor(dc, colorref(color));
+            let mut text = title.clone();
+            DrawTextW(
+                dc,
+                &mut text,
+                &mut item.clone(),
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            );
+            if is_selected {
+                let inset = (item.right - item.left) / 4;
+                let underline = RECT {
+                    left: item.left + inset,
+                    right: item.right - inset,
+                    top: item.bottom - 3,
+                    bottom: item.bottom,
+                };
+                FillRect(dc, &underline, accent);
+                if focused {
+                    let _ = DrawFocusRect(dc, &item);
+                }
+            }
+        }
+        let _ = DeleteObject(HGDIOBJ(accent.0));
+        let divider = CreateSolidBrush(colorref(colors.divider));
+        let line = RECT {
+            top: header_bottom,
+            bottom: header_bottom + 1,
+            ..client
+        };
+        FillRect(dc, &line, divider);
+        let _ = DeleteObject(HGDIOBJ(divider.0));
+        SelectObject(dc, previous_font);
+        let _ = EndPaint(tab, &ps);
+    }
+}
+
+/// Subclass procedure of the tab control: takes over painting.
+/// https://learn.microsoft.com/en-us/windows/win32/controls/subclassing-overview
+unsafe extern "system" fn tab_proc(
+    tab: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    // SAFETY: called by comctl32 for the subclassed tab control.
+    unsafe {
+        match message {
+            WM_PAINT => {
+                paint_tab(tab);
+                LRESULT(0)
+            }
+            WM_ERASEBKGND => LRESULT(1),
+            WM_SETFOCUS | WM_KILLFOCUS => {
+                let _ = InvalidateRect(Some(tab), None, false);
+                DefSubclassProc(tab, message, wparam, lparam)
+            }
+            WM_NCDESTROY => {
+                let _ = RemoveWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID);
+                DefSubclassProc(tab, message, wparam, lparam)
+            }
+            _ => DefSubclassProc(tab, message, wparam, lparam),
+        }
     }
 }
 
@@ -1325,27 +1577,56 @@ unsafe extern "system" fn wndproc(
                 }
                 LRESULT(0)
             }
-            WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT => {
+            WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
                 let control = HWND(lparam.0 as *mut core::ffi::c_void);
-                let swatch = with_state(window, |state| {
-                    state
+                let Some((swatch, colors, body, field, disabled)) = with_state(window, |state| {
+                    let swatch = state
                         .fields
                         .iter()
                         .find(|(_, controls)| controls.swatch == Some(control))
-                        .and_then(|(_, controls)| controls.swatch_brush)
-                })
-                .flatten();
+                        .and_then(|(_, controls)| controls.swatch_brush);
+                    (
+                        swatch,
+                        state.colors,
+                        state.body_brush,
+                        state.command_bar_brush,
+                        state.is_disabled_label(control),
+                    )
+                }) else {
+                    return DefWindowProcW(window, message, wparam, lparam);
+                };
                 if let Some(brush) = swatch {
                     return LRESULT(brush.0 as isize);
                 }
-                if message == WM_CTLCOLOREDIT {
+                let dc = HDC(wparam.0 as *mut core::ffi::c_void);
+                let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
+                if editable && !colors.dark {
                     return DefWindowProcW(window, message, wparam, lparam);
                 }
-                // Labels, checkboxes, and trackbars default to the dialog
-                // face color; match the white page instead.
+                // Labels, checkboxes, trackbars, and read-only edits sit on
+                // the page body; in dark mode, editable fields and drop-down
+                // lists use the slightly darker field color.
+                let (background, brush) = if editable {
+                    (colors.command_bar, field)
+                } else {
+                    (colors.body, body)
+                };
+                let text = if disabled {
+                    colors.disabled_text
+                } else {
+                    colors.text
+                };
+                SetTextColor(dc, colorref(text));
+                SetBkColor(dc, colorref(background));
+                LRESULT(brush.0 as isize)
+            }
+            WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
-                SetBkColor(dc, COLORREF(GetSysColor(COLOR_WINDOW)));
-                LRESULT(GetSysColorBrush(COLOR_WINDOW).0 as isize)
+                if erase_body(window, window, dc) {
+                    LRESULT(1)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
+                }
             }
             WM_PAINT => {
                 on_paint(window);
@@ -1379,10 +1660,18 @@ unsafe extern "system" fn page_wndproc(
     // SAFETY: forwarding a message with its original arguments to our parent.
     unsafe {
         match message {
-            WM_COMMAND | WM_HSCROLL | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT => {
-                match GetParent(window) {
-                    Ok(parent) => SendMessageW(parent, message, Some(wparam), Some(lparam)),
-                    Err(_) => DefWindowProcW(window, message, wparam, lparam),
+            WM_COMMAND | WM_HSCROLL | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT
+            | WM_CTLCOLORLISTBOX => match GetParent(window) {
+                Ok(parent) => SendMessageW(parent, message, Some(wparam), Some(lparam)),
+                Err(_) => DefWindowProcW(window, message, wparam, lparam),
+            },
+            WM_ERASEBKGND => {
+                let dc = HDC(wparam.0 as *mut core::ffi::c_void);
+                let settings = GetParent(window).unwrap_or_default();
+                if erase_body(settings, window, dc) {
+                    LRESULT(1)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
                 }
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
