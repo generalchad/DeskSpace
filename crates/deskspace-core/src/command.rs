@@ -4,7 +4,9 @@ use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect};
 use crate::id::{spaceId, ItemId};
 use crate::item::Item;
-use crate::layout::{arrange_space, clamp_to_bounds, resolve_collisions, snap_rect};
+use crate::layout::{
+    arrange_space, clamp_to_bounds, position_items, resolve_collisions, snap_rect,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -114,8 +116,17 @@ impl Desktop {
                 if self.item(id).is_none() || self.space(target).is_none() {
                     return CommandOutcome::NotFound;
                 }
+                let source = self.space_containing(id);
                 if self.move_item(id, target) {
                     self.rearrange(target);
+                    if let Some(source) = source {
+                        // Close the gap the item left, without resizing the
+                        // source space under the user.
+                        let layout = self.layout;
+                        if let Some(space) = self.space_mut(source) {
+                            position_items(space, layout);
+                        }
+                    }
                     CommandOutcome::Applied
                 } else {
                     CommandOutcome::Rejected
@@ -222,6 +233,32 @@ mod tests {
             CommandOutcome::NotFound
         );
         assert_eq!(desktop.item_count(), 1);
+    }
+
+    #[test]
+    fn move_item_closes_the_gap_in_the_source_space() {
+        let mut desktop = Desktop::new();
+        let a = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let b = desktop.add_space("B", Rect::new(300, 0, 100, 100));
+        for name in ["one.txt", "two.txt"] {
+            desktop.apply(
+                Command::AddItem {
+                    space: a,
+                    path: name.into(),
+                },
+                bounds(),
+            );
+        }
+        let first = desktop.space(a).unwrap().items[0].id;
+        desktop.apply(
+            Command::MoveItem {
+                id: first,
+                target: b,
+            },
+            bounds(),
+        );
+        let remaining = &desktop.space(a).unwrap().items[0];
+        assert_eq!(remaining.position, desktop.layout.grid_position(0));
     }
 
     #[test]

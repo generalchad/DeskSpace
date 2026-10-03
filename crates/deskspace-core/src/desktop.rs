@@ -61,6 +61,15 @@ impl Desktop {
         self.spaces.iter().find_map(|space| space.item(id))
     }
 
+    /// The item referring to `path`, in whichever space holds it.
+    pub fn item_with_path(&self, path: &std::path::Path) -> Option<ItemId> {
+        self.spaces
+            .iter()
+            .flat_map(|space| space.items.iter())
+            .find(|item| item.path == path)
+            .map(|item| item.id)
+    }
+
     pub fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> spaceId {
         let id = self.next_space_id();
         self.spaces.push(space::new(id, title, rect));
@@ -150,6 +159,20 @@ mod tests {
         assert_eq!(desktop.space_containing(item_id), Some(a));
         assert!(desktop.move_item(item_id, b));
         assert_eq!(desktop.space_containing(item_id), Some(b));
+    }
+
+    #[test]
+    fn finds_items_by_path() {
+        let mut desktop = Desktop::new();
+        let a = desktop.add_space("A", Rect::ZERO);
+        let item = Item::new(desktop.next_item_id(), "C:/x/file.txt");
+        let id = item.id;
+        desktop.add_item(a, item);
+        assert_eq!(
+            desktop.item_with_path(std::path::Path::new("C:/x/file.txt")),
+            Some(id)
+        );
+        assert_eq!(desktop.item_with_path(std::path::Path::new("C:/y")), None);
     }
 
     #[test]

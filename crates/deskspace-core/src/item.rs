@@ -40,6 +40,7 @@ pub struct Item {
     pub label: String,
     #[serde(default)]
     pub kind: ItemKind,
+    /// Top-left of the item's grid cell, relative to its space's content area.
     #[serde(default)]
     pub position: Point,
 }

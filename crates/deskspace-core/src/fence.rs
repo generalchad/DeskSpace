@@ -17,6 +17,7 @@ pub struct space {
     pub locked: bool,
     #[serde(default)]
     pub rolled_up: bool,
+    /// Per-space multiplier on the theme's tint alpha; 255 keeps the theme's.
     #[serde(default = "default_opacity")]
     pub opacity: u8,
     #[serde(default = "default_title_height")]
@@ -24,7 +25,7 @@ pub struct space {
 }
 
 fn default_opacity() -> u8 {
-    210
+    255
 }
 
 fn default_title_height() -> i32 {
@@ -73,6 +74,19 @@ impl space {
             self.rect.width,
             (self.rect.height - self.title_height).max(0),
         )
+    }
+
+    /// The item whose grid cell contains `point` (desktop coordinates).
+    pub fn item_at(&self, point: Point, cell: Size) -> Option<ItemId> {
+        let content = self.content_rect();
+        if !content.contains(point) {
+            return None;
+        }
+        let local = Point::new(point.x - content.x, point.y - content.y);
+        self.items
+            .iter()
+            .find(|item| Rect::from_point_size(item.position, cell).contains(local))
+            .map(|item| item.id)
     }
 
     pub fn item(&self, id: ItemId) -> Option<&Item> {
@@ -136,5 +150,19 @@ mod tests {
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
         );
         assert!(space.content_rect().is_empty());
+    }
+
+    #[test]
+    fn item_at_uses_content_relative_cells() {
+        let mut space = space::new(spaceId(1), "F", Rect::new(100, 100, 300, 300));
+        let mut item = Item::new(ItemId(7), "a.txt");
+        item.position = Point::new(10, 10);
+        space.push_item(item);
+        let cell = Size::new(50, 50);
+        let inside = Point::new(100 + 20, 100 + DEFAULT_TITLE_HEIGHT + 20);
+        assert_eq!(space.item_at(inside, cell), Some(ItemId(7)));
+        assert_eq!(space.item_at(Point::new(100 + 200, 300), cell), None);
+        space.rolled_up = true;
+        assert_eq!(space.item_at(inside, cell), None);
     }
 }

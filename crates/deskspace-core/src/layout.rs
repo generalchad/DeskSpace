@@ -59,11 +59,14 @@ pub fn arrange_space(space: &mut space, spec: GridSpec) {
         spec.title_height + spec.padding * 2 + rows * spec.cell_height + (rows - 1) * spec.gap;
     space.rect.width = width;
     space.rect.height = height;
+    position_items(space, spec);
+}
 
-    let content = space.content_rect();
+/// Places items on the grid. Positions are relative to the space's content
+/// area, so moving the space never has to touch its items.
+pub fn position_items(space: &mut space, spec: GridSpec) {
     for (index, item) in space.items.iter_mut().enumerate() {
-        let local = spec.grid_position(index);
-        item.position = Point::new(content.x + local.x, content.y + local.y);
+        item.position = spec.grid_position(index);
     }
 }
 
@@ -139,10 +142,22 @@ mod tests {
         arrange_space(&mut space, spec);
 
         let content = space.content_rect();
+        let local_content = Rect::new(0, 0, content.width, content.height);
         assert_eq!(space.items.len(), 5);
         for item in &space.items {
-            assert!(content.contains(item.position));
+            assert!(local_content.contains(item.position));
         }
+    }
+
+    #[test]
+    fn moving_a_space_keeps_item_positions() {
+        let spec = GridSpec::default();
+        let mut space = space_with_items(3);
+        arrange_space(&mut space, spec);
+        let before: Vec<Point> = space.items.iter().map(|item| item.position).collect();
+        space.set_position(Point::new(500, 400));
+        let after: Vec<Point> = space.items.iter().map(|item| item.position).collect();
+        assert_eq!(before, after);
     }
 
     #[test]
