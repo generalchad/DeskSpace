@@ -1,7 +1,7 @@
 use deskspace_core::geometry::Rect;
 use deskspace_core::theme::{Backdrop, Color, CornerStyle};
 
-use super::IconHandle;
+use super::Icon;
 
 /// Window-level appearance of a space, applied through DWM rather than drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,7 +29,11 @@ pub struct spaceScene {
     pub corner_radius: i32,
     pub locked: bool,
     pub rolled_up: bool,
+    /// Items are clipped to the area below the title bar, so the app can
+    /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
+    /// The scroll position indicator, when the content overflows.
+    pub scroll_thumb: Option<Rect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,6 +49,6 @@ pub struct ItemVisual {
     pub id: u64,
     pub rect: Rect,
     pub label: String,
-    pub icon: Option<IconHandle>,
+    pub icon: Option<Icon>,
     pub state: ItemState,
 }

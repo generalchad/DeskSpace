@@ -33,7 +33,7 @@ use windows::core::PCWSTR;
 use crate::error::PlatformError;
 use crate::input::Event;
 use crate::render::{spaceScene, spaceStyle, d2d};
-use crate::ui::{MenuEntry, SettingsForm};
+use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::system::wide;
 use crate::win32::{console, controller, desktop_shell, space_window, menu, settings_window, tray};
@@ -204,6 +204,14 @@ impl Ui {
     pub fn set_space_scene(&mut self, id: u64, scene: spaceScene) {
         if let Some(hwnd) = space_hwnd(id) {
             space_window::set_scene(hwnd, scene);
+        }
+    }
+
+    /// Sets the pointer shape over a space. Call it while handling a mouse
+    /// event on that space; it lasts until changed or the mouse leaves.
+    pub fn set_space_cursor(&mut self, id: u64, shape: CursorShape) {
+        if let Some(hwnd) = space_hwnd(id) {
+            space_window::set_cursor(hwnd, shape);
         }
     }
 

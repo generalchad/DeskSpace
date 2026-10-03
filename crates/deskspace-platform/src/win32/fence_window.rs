@@ -30,20 +30,23 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, DragQueryPoint, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetClientRect,
-    GetParent, GetWindowLongPtrW, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, LWA_ALPHA, LoadCursorW,
-    MA_NOACTIVATE, RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DROPFILES, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SIZE,
-    WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    GetParent, GetWindowLongPtrW, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW,
+    IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, RegisterClassW,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+    WINDOWPOS, WM_CAPTURECHANGED, WM_DROPFILES, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SETCURSOR, WM_SIZE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
+    WS_EX_ACCEPTFILES, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, spaceEvent, MouseButton};
 use crate::render::{spaceScene, spaceStyle, Painter, PreparedScene};
+use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
 use crate::win32::{dwm, runtime};
 
@@ -80,6 +83,7 @@ struct spaceState {
     painter: Option<Painter>,
     scene: Option<PreparedScene>,
     tracking_leave: bool,
+    cursor: CursorShape,
 }
 
 pub(crate) fn create(options: spaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -92,6 +96,7 @@ pub(crate) fn create(options: spaceWindowOptions) -> Result<HWND, PlatformError>
         painter: Some(Painter::new()),
         scene: None,
         tracking_leave: false,
+        cursor: CursorShape::Arrow,
     }));
 
     // WS_EX_ACCEPTFILES makes the shell deliver WM_DROPFILES for files dragged
@@ -186,6 +191,9 @@ pub(crate) fn set_scene(hwnd: HWND, scene: spaceScene) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
     let reshape = unsafe {
         with_state(hwnd, |state| {
+            if let Some(painter) = state.painter.as_mut() {
+                painter.retain_icons(prepared.scene());
+            }
             state.scene = Some(prepared);
             let changed = state.corner_radius != radius;
             state.corner_radius = radius;
@@ -198,6 +206,38 @@ pub(crate) fn set_scene(hwnd: HWND, scene: spaceScene) {
             update_region(hwnd, radius);
         }
         let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// Sets the pointer shown over the space. The app calls this while handling
+/// a mouse event on the space, so the cursor is over it (or captured by it)
+/// and is updated at once. WM_SETCURSOR is not sent while the mouse is
+/// captured, so waiting for it would leave the old shape during a drag.
+pub(crate) fn set_cursor(hwnd: HWND, shape: CursorShape) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let changed = unsafe {
+        with_state(hwnd, |state| {
+            std::mem::replace(&mut state.cursor, shape) != shape
+        })
+    };
+    if changed == Some(true) {
+        apply_cursor(shape);
+    }
+}
+
+fn apply_cursor(shape: CursorShape) {
+    let id = match shape {
+        CursorShape::Arrow => IDC_ARROW,
+        CursorShape::SizeWestEast => IDC_SIZEWE,
+        CursorShape::SizeNorthSouth => IDC_SIZENS,
+        CursorShape::SizeNorthWestSouthEast => IDC_SIZENWSE,
+        CursorShape::SizeNorthEastSouthWest => IDC_SIZENESW,
+    };
+    // SAFETY: stock cursors are shared system resources and are never freed.
+    unsafe {
+        if let Ok(cursor) = LoadCursorW(None, id) {
+            SetCursor(Some(cursor));
+        }
     }
 }
 
@@ -416,8 +456,36 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
-                with_state(window, |state| state.tracking_leave = false);
+                with_state(window, |state| {
+                    state.tracking_leave = false;
+                    state.cursor = CursorShape::Arrow;
+                });
                 space_event(spaceEvent::MouseLeave);
+                LRESULT(0)
+            }
+            WM_SETCURSOR if loword(lparam.0) == HTCLIENT as i32 => {
+                let shape = with_state(window, |state| state.cursor).unwrap_or_default();
+                apply_cursor(shape);
+                LRESULT(1)
+            }
+            WM_MOUSEWHEEL => {
+                // Unlike other mouse messages, the wheel position is in screen
+                // coordinates, and the delta is the signed high word of wParam
+                // (GET_WHEEL_DELTA_WPARAM).
+                // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
+                let delta = hiword(wparam.0 as isize);
+                let mut point = [POINT {
+                    x: loword(lparam.0),
+                    y: hiword(lparam.0),
+                }];
+                if hosted() {
+                    MapWindowPoints(None, GetParent(window).ok(), &mut point);
+                }
+                space_event(spaceEvent::Wheel {
+                    x: point[0].x,
+                    y: point[0].y,
+                    delta,
+                });
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDBLCLK => {

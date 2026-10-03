@@ -4,6 +4,21 @@
 
 use deskspace_core::theme::Color;
 
+/// The mouse pointer shown over a space window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CursorShape {
+    #[default]
+    Arrow,
+    /// Left or right edge.
+    SizeWestEast,
+    /// Top or bottom edge.
+    SizeNorthSouth,
+    /// Top-left or bottom-right corner.
+    SizeNorthWestSouthEast,
+    /// Top-right or bottom-left corner.
+    SizeNorthEastSouthWest,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuEntry {
     Item {
