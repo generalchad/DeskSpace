@@ -43,12 +43,13 @@ A native, lightweight, offline Windows desktop organizer that:
 
 - Keep the domain pure: all new behavior is expressed as `Command` variants in
   `deskspace-core`; platform code never mutates the model directly.
-- Keep rendering data-driven: the app builds a `Scene`; the renderer only draws.
-  Swapping GDI for Direct2D must not change the app's contract.
+- Keep rendering and UI data-driven: the app builds a `spaceScene` /
+  `spaceStyle` per space, `MenuEntry` lists, and `SettingsForm`s; the platform
+  only turns them into windows, controls, and pixels.
 - Make destructive operations recoverable: file moves and layout changes get an
   undo path and a snapshot/restore mechanism.
-- Degrade gracefully: if takeover or composition fails, fall back to the
-  current overlay rather than crashing.
+- Degrade gracefully: if takeover or blur fails, fall back to plain top-level
+  space windows with a translucent tint rather than crashing.
 - Ship small, verified increments: every milestone lands with tests, clippy
   clean, and a runnable binary.
 
@@ -173,8 +174,8 @@ is configurable per space.
 
 ### M6 - Multi-monitor, pages, snapshots
 
-- Per-monitor overlays with independent work areas; spaces are assigned to and
-  movable across monitors (`F-19`).
+- Per-monitor work areas and DPI; spaces are assigned to and movable across
+  monitors, and survive monitor changes (`F-19`).
 - Pages: multiple named space layouts per monitor with a page switcher (`F-12`).
 - Snapshots: export/import full layout and managed-store manifest; restore
   (`F-20`).
