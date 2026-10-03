@@ -1,0 +1,24 @@
+# Dependency policy, checked in CI with `cargo deny check all`.
+
+[graph]
+# DeskSpace is Windows-only; skip dependencies that only apply to other
+# targets (for example the Redox crates `directories` pulls in).
+targets = ["x86_64-pc-windows-msvc"]
+
+[bans]
+# Multiple versions of a crate are reported but do not fail the check.
+multiple-versions = "warn"
+# Internal crates are path dependencies in `[workspace.dependencies]` with no
+# version, which cargo-deny reports as wildcards; only external crates matter.
+wildcards = "allow"
+
+[licenses]
+# Every crate in the graph is under one of these permissive licenses.
+allow = ["Apache-2.0", "MIT", "MPL-2.0", "Unicode-3.0"]
+
+[sources]
+# Dependencies may only come from crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

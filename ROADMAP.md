@@ -75,6 +75,10 @@ started).
 
 ### Progress log
 
+- **M0 guardrails.** GitHub Actions runs `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -D warnings`, and
+  `cargo test --workspace` on Windows, plus `cargo deny check all` (licenses,
+  advisories, bans, sources) from `deny.toml`.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -100,9 +104,9 @@ started).
 
 ### M0 - Foundations and guardrails
 
-- CI: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
+- **[done]** CI: `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
   `cargo test --workspace`, on Windows.
-- `deny.toml` for licenses/advisories; `cargo-deny` in CI.
+- **[done]** `deny.toml` for licenses/advisories; `cargo-deny` in CI.
 - **[done]** Wire the declared-but-unused events: the old `WindowEvent` enum
   was replaced by `Event`/`SpaceEvent`, which only declares what is emitted;
   mouse tracking (`WM_MOUSELEAVE`) drives hover. Timers are added when a

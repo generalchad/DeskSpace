@@ -515,7 +515,8 @@ WindowSettings {
   will invalidate changed files.
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
   wheel events need Windows' "scroll inactive windows" setting.
-- **No CI, no `deny.toml`, no installer, no code signing.**
+- **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
+  and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 
