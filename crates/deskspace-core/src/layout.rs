@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::space::{DEFAULT_TITLE_HEIGHT, space};
+use crate::space::{DEFAULT_TITLE_HEIGHT, space, ResizeEdges};
 use crate::geometry::{Point, Rect, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +35,11 @@ impl GridSpec {
     }
 
     pub fn grid_position(&self, index: usize) -> Point {
-        let columns = self.columns.max(1) as usize;
+        self.grid_position_in(index, self.columns)
+    }
+
+    pub fn grid_position_in(&self, index: usize, columns: i32) -> Point {
+        let columns = columns.max(1) as usize;
         let column = (index % columns) as i32;
         let row = (index / columns) as i32;
         Point::new(
@@ -43,10 +47,73 @@ impl GridSpec {
             self.padding + row * (self.cell_height + self.gap),
         )
     }
+
+    /// How many cell columns fit in a space `width` pixels wide (at least 1).
+    pub fn columns_for(&self, width: i32) -> i32 {
+        let step = (self.cell_width + self.gap).max(1);
+        ((width - self.padding * 2 + self.gap) / step).max(1)
+    }
+
+    /// The smallest space a user can resize to: one cell plus padding.
+    pub fn min_space_size(&self) -> Size {
+        Size::new(
+            self.padding * 2 + self.cell_width,
+            self.title_height + self.padding * 2 + self.cell_height,
+        )
+    }
+
+    /// The pixels one mouse-wheel notch scrolls: one row of cells.
+    pub fn scroll_step(&self) -> i32 {
+        self.cell_height + self.gap
+    }
 }
 
+/// Moves the `edges` of `rect` to `point`, snapped to `snap`, keeping the
+/// opposite edges fixed. The result is at least `min` and stays inside
+/// `bounds`.
+pub fn resize_rect(
+    rect: Rect,
+    edges: ResizeEdges,
+    point: Point,
+    min: Size,
+    snap: i32,
+    bounds: Rect,
+) -> Rect {
+    let mut left = rect.left();
+    let mut top = rect.top();
+    let mut right = rect.right();
+    let mut bottom = rect.bottom();
+    if edges.left {
+        left = snap_to_grid(point.x, snap)
+            .max(bounds.left())
+            .min(right - min.width);
+    }
+    if edges.right {
+        right = snap_to_grid(point.x, snap)
+            .min(bounds.right())
+            .max(left + min.width);
+    }
+    if edges.top {
+        top = snap_to_grid(point.y, snap)
+            .max(bounds.top())
+            .min(bottom - min.height);
+    }
+    if edges.bottom {
+        bottom = snap_to_grid(point.y, snap)
+            .min(bounds.bottom())
+            .max(top + min.height);
+    }
+    Rect::new(left, top, right - left, bottom - top)
+}
+
+/// Sizes the space to fit its items (unless the user sized it) and lays the
+/// items out. Locked spaces are left alone.
 pub fn arrange_space(space: &mut space, spec: GridSpec) {
     if space.locked {
+        return;
+    }
+    if space.user_sized {
+        position_items(space, spec);
         return;
     }
     space.title_height = spec.title_height;
@@ -63,10 +130,16 @@ pub fn arrange_space(space: &mut space, spec: GridSpec) {
 }
 
 /// Places items on the grid. Positions are relative to the space's content
-/// area, so moving the space never has to touch its items.
+/// area, so moving the space never has to touch its items. User-sized spaces
+/// use as many columns as their width allows; others use `spec.columns`.
 pub fn position_items(space: &mut space, spec: GridSpec) {
+    let columns = if space.user_sized {
+        spec.columns_for(space.rect.width)
+    } else {
+        spec.columns
+    };
     for (index, item) in space.items.iter_mut().enumerate() {
-        item.position = spec.grid_position(index);
+        item.position = spec.grid_position_in(index, columns);
     }
 }
 
@@ -173,6 +246,52 @@ mod tests {
         let rect = Rect::new(900, 700, 100, 100);
         let clamped = clamp_to_bounds(rect, bounds);
         assert_eq!(clamped, Rect::new(700, 500, 100, 100));
+    }
+
+    #[test]
+    fn columns_follow_width() {
+        let spec = GridSpec::default();
+        // 12 + 96 + 12 fits one column; each further column needs 106.
+        assert_eq!(spec.columns_for(120), 1);
+        assert_eq!(spec.columns_for(225), 1);
+        assert_eq!(spec.columns_for(226), 2);
+        assert_eq!(spec.columns_for(0), 1);
+    }
+
+    #[test]
+    fn user_sized_spaces_keep_size_and_reflow() {
+        let spec = GridSpec::default();
+        let mut space = space_with_items(5);
+        space.user_sized = true;
+        space.rect = Rect::new(0, 0, 226, 150);
+        arrange_space(&mut space, spec);
+        assert_eq!(space.rect, Rect::new(0, 0, 226, 150));
+        assert_eq!(space.items[2].position, Point::new(12, 12 + 104 + 10));
+        assert_eq!(space.items[1].position.y, space.items[0].position.y);
+    }
+
+    #[test]
+    fn resize_moves_only_grabbed_edges_and_respects_minimum() {
+        let bounds = Rect::new(0, 0, 1920, 1080);
+        let min = Size::new(120, 160);
+        let rect = Rect::new(400, 400, 400, 300);
+        let bottom_right = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        let grown = resize_rect(rect, bottom_right, Point::new(1001, 899), min, 16, bounds);
+        assert_eq!(grown, Rect::new(400, 400, 608, 496));
+
+        let left = ResizeEdges {
+            left: true,
+            ..ResizeEdges::NONE
+        };
+        let squeezed = resize_rect(rect, left, Point::new(790, 500), min, 16, bounds);
+        assert_eq!(squeezed, Rect::new(680, 400, 120, 300));
+
+        let clamped = resize_rect(rect, bottom_right, Point::new(5000, 5000), min, 16, bounds);
+        assert_eq!((clamped.right(), clamped.bottom()), (1920, 1080));
     }
 
     #[test]

@@ -1,26 +1,66 @@
 use std::path::PathBuf;
 
 use crate::desktop::Desktop;
+use crate::space::ResizeEdges;
 use crate::geometry::{Point, Rect};
 use crate::id::{spaceId, ItemId};
 use crate::item::Item;
 use crate::layout::{
-    arrange_space, clamp_to_bounds, position_items, resolve_collisions, snap_rect,
+    arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions, snap_rect,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Createspace { title: String, at: Point },
-    Deletespace { id: spaceId },
-    Renamespace { id: spaceId, title: String },
-    Movespace { id: spaceId, delta: Point },
-    SetspaceRect { id: spaceId, rect: Rect },
-    ToggleLock { id: spaceId },
-    ToggleRollup { id: spaceId },
-    AddItem { space: spaceId, path: PathBuf },
-    RemoveItem { id: ItemId },
-    MoveItem { id: ItemId, target: spaceId },
-    AutoArrange { id: spaceId },
+    Createspace {
+        title: String,
+        at: Point,
+    },
+    Deletespace {
+        id: spaceId,
+    },
+    Renamespace {
+        id: spaceId,
+        title: String,
+    },
+    Movespace {
+        id: spaceId,
+        delta: Point,
+    },
+    SetspaceRect {
+        id: spaceId,
+        rect: Rect,
+    },
+    /// Drags the grabbed `edges` of a space to `to` (desktop coordinates).
+    /// The space becomes user-sized and its items reflow to the new width.
+    Resizespace {
+        id: spaceId,
+        edges: ResizeEdges,
+        to: Point,
+    },
+    /// Drops a user size so the space grows to fit its items again.
+    FitToContents {
+        id: spaceId,
+    },
+    ToggleLock {
+        id: spaceId,
+    },
+    ToggleRollup {
+        id: spaceId,
+    },
+    AddItem {
+        space: spaceId,
+        path: PathBuf,
+    },
+    RemoveItem {
+        id: ItemId,
+    },
+    MoveItem {
+        id: ItemId,
+        target: spaceId,
+    },
+    AutoArrange {
+        id: spaceId,
+    },
     SnapAll,
 }
 
@@ -84,6 +124,33 @@ impl Desktop {
                     }
                     None => CommandOutcome::NotFound,
                 }
+            }
+            Command::Resizespace { id, edges, to } => {
+                let layout = self.layout;
+                let Some(space) = self.space_mut(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                if space.locked || space.rolled_up || !edges.any() {
+                    return CommandOutcome::Rejected;
+                }
+                let min = layout.min_space_size();
+                space.rect = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
+                space.user_sized = true;
+                position_items(space, layout);
+                CommandOutcome::Applied
+            }
+            Command::FitToContents { id } => {
+                let layout = self.layout;
+                let Some(space) = self.space_mut(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                if space.locked {
+                    return CommandOutcome::Rejected;
+                }
+                space.user_sized = false;
+                arrange_space(space, layout);
+                space.rect = clamp_to_bounds(space.rect, bounds);
+                CommandOutcome::Applied
             }
             Command::ToggleLock { id } => match self.space_mut(id) {
                 Some(space) => {
@@ -259,6 +326,66 @@ mod tests {
         );
         let remaining = &desktop.space(a).unwrap().items[0];
         assert_eq!(remaining.position, desktop.layout.grid_position(0));
+    }
+
+    #[test]
+    fn resized_space_keeps_its_size_when_items_are_added() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let edges = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        let outcome = desktop.apply(
+            Command::Resizespace {
+                id,
+                edges,
+                to: Point::new(480, 320),
+            },
+            bounds(),
+        );
+        assert_eq!(outcome, CommandOutcome::Applied);
+        let sized = desktop.space(id).unwrap().rect;
+        assert_eq!(sized, Rect::new(0, 0, 480, 320));
+        for index in 0..20 {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("file{index}.txt").into(),
+                },
+                bounds(),
+            );
+        }
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.rect, sized);
+        assert!(space.max_scroll(desktop.layout.cell(), desktop.layout.padding) > 0);
+
+        desktop.apply(Command::FitToContents { id }, bounds());
+        assert!(!desktop.space(id).unwrap().user_sized);
+        assert_ne!(desktop.space(id).unwrap().rect.size(), sized.size());
+    }
+
+    #[test]
+    fn locked_and_rolled_up_spaces_reject_resize() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 300, 300));
+        let resize = Command::Resizespace {
+            id,
+            edges: ResizeEdges {
+                right: true,
+                ..ResizeEdges::NONE
+            },
+            to: Point::new(600, 100),
+        };
+        desktop.space_mut(id).unwrap().rolled_up = true;
+        assert_eq!(
+            desktop.apply(resize.clone(), bounds()),
+            CommandOutcome::Rejected
+        );
+        desktop.space_mut(id).unwrap().rolled_up = false;
+        desktop.space_mut(id).unwrap().locked = true;
+        assert_eq!(desktop.apply(resize, bounds()), CommandOutcome::Rejected);
     }
 
     #[test]

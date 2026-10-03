@@ -13,7 +13,7 @@ pub mod theme;
 pub use command::{Command, CommandOutcome};
 pub use desktop::Desktop;
 pub use error::CoreError;
-pub use space::space;
+pub use space::{space, ResizeEdges};
 pub use geometry::{Point, Rect, Size};
 pub use id::{spaceId, ItemId};
 pub use item::{Item, ItemKind};
