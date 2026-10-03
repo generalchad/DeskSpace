@@ -5,6 +5,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 
 use crate::error::PlatformError;
 
+const HOTKEY_BASE_ID: i32 = 0x100;
+
+/// The id `Event::Hotkey` reports for the hotkey registered at `index`.
+pub fn hotkey_id(index: i32) -> i32 {
+    HOTKEY_BASE_ID + index
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hotkey {
     pub id: i32,

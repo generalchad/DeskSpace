@@ -12,4 +12,6 @@ pub enum PlatformError {
     ClassRegistration,
     #[error("the format of {0} is not valid")]
     InvalidFormat(&'static str),
+    #[error("the UI runtime is not running on this thread")]
+    NotRunning,
 }
