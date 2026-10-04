@@ -153,6 +153,10 @@ pub struct App {
     selected_items: Vec<ItemId>,
     /// The item a Shift+click extends the selection from.
     selection_anchor: Option<ItemId>,
+    /// An already-selected item pressed without Ctrl/Shift: if the press does
+    /// not become a drag, the selection collapses to it on release, so dragging
+    /// one member of a multi-selection moves the whole group.
+    pending_select: Option<ItemId>,
     /// Items on the clipboard as a cut, shown ghosted until pasted.
     cut_items: HashSet<ItemId>,
     /// Ticked items in independent item-check-box mode. Session-only.
@@ -198,6 +202,7 @@ impl App {
             selected_space: None,
             selected_items: Vec::new(),
             selection_anchor: None,
+            pending_select: None,
             cut_items: HashSet::new(),
             checked_items: Vec::new(),
             hovered: None,
@@ -872,6 +877,7 @@ impl App {
             return;
         }
         let previous = self.selected_space.replace(id);
+        self.pending_select = None;
         let item = self.item_at(id, point);
         match item {
             Some(item) => {
@@ -879,9 +885,11 @@ impl App {
                     self.extend_selection(id, item);
                 } else if ctrl {
                     self.toggle_selected(item);
+                } else if self.is_selected(item) {
+                    // Keep the whole selection so a drag of one member moves
+                    // the group; collapse it on release if this was a click.
+                    self.pending_select = Some(item);
                 } else {
-                    // A plain click selects only this item, so its check box
-                    // is the only one ticked, as Explorer's check-box mode.
                     self.selected_items = vec![item];
                 }
                 self.selection_anchor = Some(item);
@@ -1095,8 +1103,23 @@ impl App {
     }
 
     fn end_drag(&mut self, ui: &mut Ui) {
+        let pending = self.pending_select.take();
         match std::mem::replace(&mut self.drag, Drag::None) {
-            Drag::None | Drag::Item { active: false, .. } => {}
+            Drag::None => {}
+            Drag::Item {
+                space,
+                item,
+                active: false,
+                ..
+            } => {
+                // A press on an already-selected item that never became a drag
+                // is a plain click: collapse the selection to it.
+                if pending == Some(item) && self.is_selected(item) {
+                    self.selected_items = vec![item];
+                    self.selection_anchor = Some(item);
+                    self.refresh_space(ui, space);
+                }
+            }
             Drag::Item { active: true, .. } => {
                 self.end_drag_visual(ui);
                 self.schedule_save(ui);
@@ -1138,6 +1161,7 @@ impl App {
             DragImage::of_item(&scene, item.0, grab)
         });
         self.dragged = Some((space, item));
+        self.pending_select = None;
         if let Some(image) = &self.drag_image {
             ui.show_drag_ghost(image, point);
         }

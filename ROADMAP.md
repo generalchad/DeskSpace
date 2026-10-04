@@ -182,6 +182,11 @@ started).
   only one item and `SHCreateDataObject` needs a shared parent. `active_items()`
   centralizes the operand (delete/copy/cut/drag) so F-41 can swap in the
   independent check-box set. Offscreen-tested only; confirm on screen.
+- **Multi-selection drag fix.** Pressing an already-selected item no longer
+  collapses the selection, so dragging one member of a multi-selection moves
+  the whole group; the collapse waits until release, as Explorer does. A single
+  drag image is still shown for the grabbed item, and dragging a group within a
+  space still rearranges only the grabbed item (the shell drag-out moves all).
 - **Independent item check boxes (F-41).** `ShellDisplay.check_boxes` is now a
   `CheckBoxMode` (`Hidden` / `Selection` / `Independent`). In Independent mode
   the boxes are always shown and the tick is a session-only set separate from
