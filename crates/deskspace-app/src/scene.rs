@@ -1,4 +1,5 @@
-use deskspace_core::{Color, GridSpec, ItemId, LabelShadow, Palette, Rect, Space, Theme};
+use deskspace_core::item::ItemKind;
+use deskspace_core::{Color, GridSpec, Item, ItemId, LabelShadow, Palette, Rect, Space, Theme};
 use deskspace_platform::{IconCache, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
@@ -9,12 +10,19 @@ const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
 const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
 
 /// Transient view state that affects how one space is drawn.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ViewState {
     pub hovered: Option<ItemId>,
-    pub selected: Option<ItemId>,
+    /// The selected items, which may be several (Ctrl/Shift click).
+    pub selected: Vec<ItemId>,
+    /// Being dragged within the space; drawn faded, ahead of selection.
+    pub dragged: Option<ItemId>,
     /// Pixels the content is scrolled down; already clamped by the caller.
     pub scroll: i32,
+    /// Draw a check box on each item, from Explorer's view options.
+    pub show_check_boxes: bool,
+    /// Show filename extensions in labels, from Explorer's folder options.
+    pub show_extensions: bool,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -60,15 +68,21 @@ pub fn space_scene(
             .map(|(item, rect)| ItemVisual {
                 id: item.id.0,
                 rect,
-                label: item.label.clone(),
+                label: item_label(item, view.show_extensions),
                 icon: icons.icon_for(&item.path),
-                state: if view.selected == Some(item.id) {
+                state: if view.dragged == Some(item.id) {
+                    ItemState::Dragged
+                } else if view.selected.contains(&item.id) {
                     ItemState::Selected
                 } else if view.hovered == Some(item.id) {
                     ItemState::Hovered
                 } else {
                     ItemState::Normal
                 },
+                hovered: view.hovered == Some(item.id),
+                // With Explorer's auto-check-select mode (the desktop's "Use
+                // check boxes to select items"), the box mirrors selection.
+                checked: view.selected.contains(&item.id),
             })
             .collect()
     };
@@ -104,6 +118,7 @@ pub fn space_scene(
         rolled_up: space.rolled_up,
         editing: None,
         items,
+        show_check_boxes: view.show_check_boxes,
         scroll_thumb: scroll_thumb(
             space,
             layout,
@@ -111,6 +126,17 @@ pub fn space_scene(
             theme.effective_corner_radius() as i32,
         ),
     }
+}
+
+/// The item's display label. When Explorer shows extensions, files and
+/// shortcuts use their full file name instead of the extension-less label.
+fn item_label(item: &Item, show_extensions: bool) -> String {
+    if show_extensions && matches!(item.kind, ItemKind::File | ItemKind::Shortcut) {
+        if let Some(name) = item.file_name() {
+            return name.to_string();
+        }
+    }
+    item.label.clone()
 }
 
 /// A thin bar along the right edge whose length and position show which part
@@ -178,6 +204,15 @@ mod tests {
     }
 
     #[test]
+    fn extensions_are_shown_only_when_requested() {
+        let file = Item::new(ItemId(4), "C:/missing/report.txt");
+        assert_eq!(item_label(&file, false), "report");
+        assert_eq!(item_label(&file, true), "report.txt");
+        let folder = Item::new(ItemId(5), "C:/missing/folder").with_kind(ItemKind::Folder);
+        assert_eq!(item_label(&folder, true), "folder");
+    }
+
+    #[test]
     fn items_are_placed_below_the_title_in_window_coordinates() {
         let space = space();
         let theme = Theme::default();
@@ -225,13 +260,50 @@ mod tests {
             GridSpec::default(),
             ViewState {
                 hovered: Some(ItemId(4)),
-                selected: Some(ItemId(4)),
-                scroll: 0,
+                selected: vec![ItemId(4)],
+                ..ViewState::default()
             },
             &mut IconCache::new(32),
         );
         assert_eq!(scene.items[0].state, ItemState::Selected);
         assert_eq!(scene.tint.a, palette.tint.fade(128).a);
+    }
+
+    #[test]
+    fn selection_ticks_the_check_box() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ViewState {
+                selected: vec![ItemId(4)],
+                ..ViewState::default()
+            },
+            &mut IconCache::new(32),
+        );
+        assert!(scene.items[0].checked);
+    }
+
+    #[test]
+    fn a_dragged_item_is_drawn_as_dragged_even_when_selected() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ViewState {
+                selected: vec![ItemId(4)],
+                dragged: Some(ItemId(4)),
+                ..ViewState::default()
+            },
+            &mut IconCache::new(32),
+        );
+        assert_eq!(scene.items[0].state, ItemState::Dragged);
     }
 
     #[test]

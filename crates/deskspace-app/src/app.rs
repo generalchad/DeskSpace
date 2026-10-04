@@ -7,10 +7,10 @@ use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::{arrange_space, position_items};
 use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    CursorShape, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache, ItemMenuChoice,
-    MenuEntry, MouseButton, Placement, RunOptions, SettingsEvent, SpaceEvent, TextEdit, TrayEvent,
-    Ui, desktop_directory, drag_threshold, hotkey_id, parse_hotkey, system_uses_dark_mode,
-    work_area_at,
+    CursorShape, DragImage, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache,
+    ItemMenuChoice, MenuEntry, MouseButton, Placement, RunOptions, SettingsEvent, ShellDisplay,
+    SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold,
+    hotkey_id, item_check_box_hit, notify_moved, parse_hotkey, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -120,10 +120,20 @@ pub struct App {
     storage: ItemStore,
     icons: IconCache,
     system_dark: bool,
+    /// Explorer's current display options, refreshed on change.
+    shell_display: ShellDisplay,
     selected_space: Option<SpaceId>,
-    selected_item: Option<ItemId>,
+    /// Items selected in `selected_space`, in the order they were selected.
+    selected_items: Vec<ItemId>,
+    /// The item a Shift+click extends the selection from.
+    selection_anchor: Option<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
+    /// The item whose slot is drawn faded while it is dragged.
+    dragged: Option<(SpaceId, ItemId)>,
+    /// The picture under the pointer during an item drag, shown by the ghost
+    /// window inside the space and by the shell once the drag leaves it.
+    drag_image: Option<DragImage>,
     /// The space being renamed inline, if any.
     edit: Option<EditSession>,
     /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
@@ -148,10 +158,15 @@ impl App {
             store,
             icons: IconCache::new(32),
             system_dark: system_uses_dark_mode(),
+            // Read for real in `Started`, once OLE is initialized.
+            shell_display: ShellDisplay::default(),
             selected_space: None,
-            selected_item: None,
+            selected_items: Vec::new(),
+            selection_anchor: None,
             hovered: None,
             drag: Drag::None,
+            dragged: None,
+            drag_image: None,
             edit: None,
             autosave: Autosave::default(),
             scroll: HashMap::new(),
@@ -224,10 +239,32 @@ impl App {
                 .hovered
                 .filter(|(space, _)| *space == id)
                 .map(|(_, item)| item),
-            selected: self
-                .selected_item
-                .filter(|_| self.selected_space == Some(id)),
+            selected: if self.selected_space == Some(id) {
+                self.selected_items.clone()
+            } else {
+                Vec::new()
+            },
+            dragged: self
+                .dragged
+                .filter(|(space, _)| *space == id)
+                .map(|(_, item)| item),
             scroll: self.scroll_of(id),
+            show_check_boxes: self.match_explorer() && self.shell_display.check_boxes,
+            show_extensions: self.match_explorer() && self.shell_display.show_extensions,
+        }
+    }
+
+    /// Whether Explorer's display settings are mirrored.
+    fn match_explorer(&self) -> bool {
+        self.config.theme.match_explorer
+    }
+
+    /// Re-reads Explorer's display options and repaints if they changed.
+    fn refresh_shell_display(&mut self, ui: &mut Ui) {
+        let display = desktop_display();
+        if display != self.shell_display {
+            self.shell_display = display;
+            self.restyle_all(ui);
         }
     }
 
@@ -240,6 +277,26 @@ impl App {
             .space(id)
             .map_or(0, |space| space.max_scroll(layout.cell(), layout.padding));
         self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
+    }
+
+    /// The item whose Explorer-style check box contains `point`, when check
+    /// boxes are shown. `point` is in desktop coordinates.
+    fn checkbox_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
+        if !(self.match_explorer() && self.shell_display.check_boxes) {
+            return None;
+        }
+        let item = self.item_at(id, point)?;
+        let space = self.config.desktop.space(id)?;
+        let entry = space.items.iter().find(|entry| entry.id == item)?;
+        let layout = self.config.desktop.layout;
+        let content = space.content_rect();
+        let cell = Rect::new(
+            content.x + entry.position.x,
+            content.y + entry.position.y - self.scroll_of(id),
+            layout.cell_width,
+            layout.cell_height,
+        );
+        item_check_box_hit(cell).contains(point).then_some(item)
     }
 
     fn item_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
@@ -326,7 +383,9 @@ impl App {
     /// Returns the space that showed it, which needs a new scene.
     fn take_selection(&mut self) -> Option<SpaceId> {
         let space = self.selected_space.take();
-        self.selected_item.take().and(space)
+        let had = !std::mem::take(&mut self.selected_items).is_empty();
+        self.selection_anchor = None;
+        had.then_some(space).flatten()
     }
 
     fn clear_selection(&mut self, ui: &mut Ui) {
@@ -338,7 +397,7 @@ impl App {
     /// Asks for outside clicks only while there is a selection for them to
     /// clear, because watching them hooks every mouse event in the session.
     fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted = self.selected_item.is_some() || self.edit.is_some();
+        let wanted = !self.selected_items.is_empty() || self.edit.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
@@ -506,16 +565,26 @@ impl App {
         {
             self.finish_rename(ui, true);
         }
+        // A space is part of the desktop, and never takes activation, so a
+        // click here is made to behave like one on the desktop: focus it and
+        // clear its icon selection.
+        if matches!(&event, SpaceEvent::MouseDown { .. }) {
+            self.refresh_shell_display(ui);
+            ui.on_desktop_click();
+        }
         match event {
             SpaceEvent::MouseDown {
                 x,
                 y,
                 button: MouseButton::Left,
-            } => self.begin_interaction(ui, id, Point::new(x, y)),
+                ctrl,
+                shift,
+            } => self.begin_interaction(ui, id, Point::new(x, y), ctrl, shift),
             SpaceEvent::MouseDown {
                 x,
                 y,
                 button: MouseButton::Right,
+                ..
             } => self.select_at(ui, id, Point::new(x, y)),
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
@@ -558,17 +627,52 @@ impl App {
         }
     }
 
-    fn begin_interaction(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
+    fn begin_interaction(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        point: Point,
+        ctrl: bool,
+        shift: bool,
+    ) {
+        // A click on an item's check box toggles that item in the selection,
+        // as Explorer's "use check boxes to select items" does, without
+        // clearing the others.
+        if let Some(item) = self.checkbox_at(id, point) {
+            let previous = self.selected_space.replace(id);
+            self.toggle_selected(item);
+            self.selection_anchor = Some(item);
+            if let Some(previous) = previous.filter(|previous| *previous != id) {
+                self.refresh_space(ui, previous);
+            }
+            self.refresh_space(ui, id);
+            return;
+        }
         let previous = self.selected_space.replace(id);
-        self.selected_item = self.item_at(id, point);
+        let item = self.item_at(id, point);
+        match item {
+            Some(item) => {
+                if shift {
+                    self.extend_selection(id, item);
+                } else if ctrl {
+                    self.toggle_selected(item);
+                } else {
+                    // A plain click selects only this item, so its check box
+                    // is the only one ticked, as Explorer's check-box mode.
+                    self.selected_items = vec![item];
+                }
+                self.selection_anchor = Some(item);
+            }
+            None => self.selected_items.clear(),
+        }
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
         let edges = space.resize_edges_at(point, RESIZE_BORDER);
         if edges.any() {
             self.drag = Drag::Resize { id, edges };
-            self.selected_item = None;
-        } else if let Some(item) = self.selected_item {
+            self.selected_items.clear();
+        } else if let Some(item) = item {
             self.drag = Drag::Item {
                 space: id,
                 item,
@@ -587,11 +691,55 @@ impl App {
         self.refresh_space(ui, id);
     }
 
+    fn is_selected(&self, item: ItemId) -> bool {
+        self.selected_items.contains(&item)
+    }
+
+    /// Adds `item` to the selection, or removes it if it was already selected.
+    fn toggle_selected(&mut self, item: ItemId) {
+        if let Some(index) = self.selected_items.iter().position(|entry| *entry == item) {
+            self.selected_items.remove(index);
+        } else {
+            self.selected_items.push(item);
+        }
+    }
+
+    /// Selects every item between the anchor and `item` in the space's order,
+    /// as a Shift+click does.
+    fn extend_selection(&mut self, space: SpaceId, item: ItemId) {
+        let Some(anchor) = self.selection_anchor else {
+            self.selected_items = vec![item];
+            return;
+        };
+        let Some(space) = self.config.desktop.space(space) else {
+            return;
+        };
+        let index = |target| space.items.iter().position(|entry| entry.id == target);
+        let (Some(a), Some(b)) = (index(anchor), index(item)) else {
+            self.selected_items = vec![item];
+            return;
+        };
+        let (start, end) = if a <= b { (a, b) } else { (b, a) };
+        self.selected_items = space.items[start..=end]
+            .iter()
+            .map(|entry| entry.id)
+            .collect();
+    }
+
     /// Selects the item under `point` (or nothing) without starting a drag,
-    /// as a right-click does before its menu opens.
+    /// as a right-click does before its menu opens. Right-clicking an item
+    /// that is already part of a multi-selection keeps the selection.
     fn select_at(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
         let previous = self.selected_space.replace(id);
-        self.selected_item = self.item_at(id, point);
+        let item = self.item_at(id, point);
+        match item {
+            Some(item) if !self.is_selected(item) => {
+                self.selected_items = vec![item];
+                self.selection_anchor = Some(item);
+            }
+            Some(_) => {}
+            None => self.selected_items.clear(),
+        }
         if let Some(previous) = previous.filter(|previous| *previous != id) {
             self.refresh_space(ui, previous);
         }
@@ -620,6 +768,7 @@ impl App {
                         origin,
                         active: true,
                     };
+                    self.begin_drag_visual(ui, space, item, origin, point);
                 }
                 // Still over the space: rearrange. Left it: hand off to the
                 // shell, which moves the file to another space or app.
@@ -629,10 +778,14 @@ impl App {
                     .space(space)
                     .is_some_and(|space| space.visible_rect().contains(point));
                 if inside {
+                    ui.move_drag_ghost(point);
                     self.reorder_item_at(ui, space, item, point);
                 } else {
                     self.drag = Drag::None;
+                    // The shell draws the same image from here on.
+                    ui.hide_drag_ghost();
                     self.drag_item_out(ui, space, item);
+                    self.end_drag_visual(ui);
                 }
                 true
             }
@@ -702,9 +855,53 @@ impl App {
     fn end_drag(&mut self, ui: &mut Ui) {
         match std::mem::replace(&mut self.drag, Drag::None) {
             Drag::None | Drag::Item { active: false, .. } => {}
-            Drag::Item { active: true, .. } | Drag::Space { .. } | Drag::Resize { .. } => {
-                self.schedule_save(ui)
+            Drag::Item { active: true, .. } => {
+                self.end_drag_visual(ui);
+                self.schedule_save(ui);
             }
+            Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
+        }
+    }
+
+    /// Fades the item's slot and floats its drag image under the pointer, as
+    /// Explorer does once an icon drag starts. `origin` is where the button
+    /// went down, so the image keeps the spot that was grabbed.
+    fn begin_drag_visual(
+        &mut self,
+        ui: &mut Ui,
+        space: SpaceId,
+        item: ItemId,
+        origin: Point,
+        point: Point,
+    ) {
+        // Rendered from the scene as it is now, before the slot fades, so the
+        // image is the item exactly as it was picked up.
+        let view = self.view_for(space);
+        self.drag_image = self.config.desktop.space(space).and_then(|entry| {
+            let palette = self.config.theme.palette(self.system_dark);
+            let scene = space_scene(
+                entry,
+                &self.config.theme,
+                &palette,
+                self.config.desktop.layout,
+                view,
+                &mut self.icons,
+            );
+            let grab = Point::new(origin.x - entry.rect.x, origin.y - entry.rect.y);
+            DragImage::of_item(&scene, item.0, grab)
+        });
+        self.dragged = Some((space, item));
+        if let Some(image) = &self.drag_image {
+            ui.show_drag_ghost(image, point);
+        }
+        self.refresh_space(ui, space);
+    }
+
+    fn end_drag_visual(&mut self, ui: &mut Ui) {
+        ui.hide_drag_ghost();
+        self.drag_image = None;
+        if let Some((space, _)) = self.dragged.take() {
+            self.refresh_space(ui, space);
         }
     }
 
@@ -748,6 +945,13 @@ impl App {
     ) {
         let mut touched = HashSet::from([target]);
         for path in paths {
+            // A drop can name a file that no longer exists (for example a
+            // stale desktop icon). Listing it would show a label without an
+            // icon, so it is skipped.
+            if !path.exists() {
+                tracing::warn!(path = %path.display(), "dropped file does not exist; ignored");
+                continue;
+            }
             let command = match self.find_item_by_file(&path) {
                 Some(item) => {
                     match self.config.desktop.space_containing(item) {
@@ -759,9 +963,12 @@ impl App {
                     }
                     Command::MoveItem { id: item, target }
                 }
-                None => Command::AddItem {
-                    space: target,
-                    path: self.place_dropped(path, keep_in_place),
+                None => match self.place_dropped(path, keep_in_place) {
+                    Some(path) => Command::AddItem {
+                        space: target,
+                        path,
+                    },
+                    None => continue,
                 },
             };
             self.dispatch(command, at);
@@ -774,19 +981,26 @@ impl App {
     }
 
     /// Where a newly dropped file will live: in the storage folder, or where
-    /// it already is.
-    fn place_dropped(&self, path: PathBuf, keep_in_place: bool) -> PathBuf {
+    /// it already is. `None` if it vanished before it could be moved.
+    fn place_dropped(&self, path: PathBuf, keep_in_place: bool) -> Option<PathBuf> {
         if keep_in_place {
-            return path;
+            return Some(path);
         }
         match self.storage.adopt(&path) {
             Ok(stored) => {
-                tracing::info!(from = %path.display(), to = %stored.display(), "moved into space storage");
-                stored
+                if stored != path {
+                    tracing::info!(from = %path.display(), to = %stored.display(), "moved into space storage");
+                    notify_moved(&path, &stored);
+                }
+                Some(stored)
+            }
+            Err(error) if !path.exists() => {
+                tracing::warn!(%error, "dropped file disappeared; ignored");
+                None
             }
             Err(error) => {
                 tracing::info!(%error, "keeping dropped file in place");
-                path
+                Some(path)
             }
         }
     }
@@ -810,6 +1024,7 @@ impl App {
             match self.storage.release(&path, &desktop) {
                 Ok(back) => {
                     tracing::info!(to = %back.display(), "moved back to the desktop");
+                    notify_moved(&path, &back);
                 }
                 Err(error) => {
                     tracing::error!(%error, "could not move the item back to the desktop");
@@ -825,22 +1040,24 @@ impl App {
         self.dispatch(Command::RemoveItem { id }, near)
     }
 
-    /// Removes the selected item from its space, the same as the item menu's
+    /// Removes every selected item from its space, the same as the item menu's
     /// remove action: stored files go back to the desktop, others are unlisted.
-    fn delete_selected_item(&mut self, ui: &mut Ui) {
-        let Some(item) = self.selected_item else {
+    fn delete_selected_items(&mut self, ui: &mut Ui) {
+        let Some(space) = self.selected_space else {
             return;
         };
-        let Some(space) = self.config.desktop.space_containing(item) else {
+        let items = std::mem::take(&mut self.selected_items);
+        if items.is_empty() {
             return;
-        };
-        if self.release_item(item) {
-            self.selected_item = None;
-            self.hovered = None;
-            self.refresh_space(ui, space);
-            self.refresh_tray(ui);
-            self.save();
         }
+        self.selection_anchor = None;
+        self.hovered = None;
+        for item in items {
+            self.release_item(item);
+        }
+        self.refresh_space(ui, space);
+        self.refresh_tray(ui);
+        self.save();
     }
 
     /// Removes items whose files no longer exist, for example after a shell
@@ -865,9 +1082,7 @@ impl App {
         for item in missing {
             let near = self.space_center(id);
             self.dispatch(Command::RemoveItem { id: item }, near);
-            if self.selected_item == Some(item) {
-                self.selected_item = None;
-            }
+            self.selected_items.retain(|selected| *selected != item);
             if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
                 self.hovered = None;
             }
@@ -932,10 +1147,15 @@ impl App {
     }
 
     /// Drags an item out like Explorer. Wherever it lands, the drop target
-    /// decides what happens to the file; afterwards the item leaves the space
-    /// if the file is gone from its path (moved elsewhere) or it was dropped
-    /// on the desktop. Drops on spaces arrive as `FilesDropped` after this
-    /// returns and move the item between spaces.
+    /// alone decides what happens to the file, and has finished by the time
+    /// the drag returns. The item leaves the space only if its file is gone
+    /// (moved elsewhere); after a copy, link, or cancel it stays, as in
+    /// Explorer. Drops on spaces arrive as `FilesDropped` after this returns
+    /// and move the item between spaces.
+    ///
+    /// DeskSpace must never move the file itself here. It used to move a
+    /// file dropped on the desktop back out of storage even when the desktop
+    /// had copied it, which left `- Copy` and ` (2)` duplicates behind.
     fn drag_item_out(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
         let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
             return;
@@ -947,17 +1167,12 @@ impl App {
             self.prune_missing(ui, space);
             return;
         }
-        let Some(result) = ui.drag_out(&path) else {
+        let Some(result) = ui.drag_out(&path, self.drag_image.as_ref()) else {
             return;
         };
         tracing::debug!(?result, path = %path.display(), "item drag ended");
         if !path.exists() {
             self.prune_missing(ui, space);
-        } else if result.over_desktop && self.release_item(item) {
-            self.selected_item = None;
-            self.refresh_space(ui, space);
-            self.refresh_tray(ui);
-            self.save();
         }
     }
 
@@ -974,7 +1189,7 @@ impl App {
         match ui.item_menu(&path, &entries, at) {
             Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
                 if self.release_item(item) {
-                    self.selected_item = None;
+                    self.selected_items.retain(|selected| *selected != item);
                     self.hovered = None;
                     self.refresh_space(ui, space);
                     self.refresh_tray(ui);
@@ -1029,7 +1244,8 @@ impl App {
         if self.dispatch(Command::DeleteSpace { id }, near) {
             if self.selected_space == Some(id) {
                 self.selected_space = None;
-                self.selected_item = None;
+                self.selected_items.clear();
+                self.selection_anchor = None;
             }
             if self.hovered.is_some_and(|(space, _)| space == id) {
                 self.hovered = None;
@@ -1315,6 +1531,8 @@ impl EventHandler for App {
                     tracing::warn!(message, "toggle hotkey unavailable");
                 }
                 ui.set_spaces_visible(self.visible);
+                // OLE is up by now, so the desktop view can be queried.
+                self.shell_display = desktop_display();
                 self.sync_windows(ui);
                 tracing::info!(
                     spaces = self.config.desktop.spaces.len(),
@@ -1327,7 +1545,7 @@ impl EventHandler for App {
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
-            Event::DeleteSelection => self.delete_selected_item(ui),
+            Event::DeleteSelection => self.delete_selected_items(ui),
             Event::PointerDownOutside => {
                 if self.edit.is_some() {
                     self.finish_rename(ui, true);
@@ -1349,6 +1567,7 @@ impl EventHandler for App {
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 ui.set_ui_dark(self.system_dark);
+                self.shell_display = desktop_display();
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
@@ -1366,7 +1585,7 @@ impl EventHandler for App {
         // The keyboard hook is on only while it is needed: editing captures
         // keys, and a selection watches for Delete.
         ui.capture_text_input(self.edit.is_some());
-        ui.watch_delete_selection(self.edit.is_none() && self.selected_item.is_some());
+        ui.watch_delete_selection(self.edit.is_none() && !self.selected_items.is_empty());
         self.sync_outside_watch(ui);
     }
 }
@@ -1523,6 +1742,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checkbox_hit_test_matches_the_icon_corner() {
+        use deskspace_core::Item;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app
+            .config
+            .desktop
+            .add_space("S", Rect::new(100, 100, 240, 200));
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        item.position = Point::ZERO;
+        app.config.desktop.add_item(id, item);
+        app.shell_display = ShellDisplay {
+            check_boxes: true,
+            ..ShellDisplay::default()
+        };
+        let layout = app.config.desktop.layout;
+        let cell = Rect::new(100, 100 + 28, layout.cell_width, layout.cell_height);
+        let checkbox = item_check_box_hit(cell);
+        assert_eq!(
+            app.checkbox_at(id, Point::new(checkbox.x + 3, checkbox.y + 3)),
+            Some(ItemId(1))
+        );
+        assert_eq!(
+            app.checkbox_at(id, Point::new(cell.x + 60, cell.y + 60)),
+            None
+        );
+    }
+
+    #[test]
     fn autosave_coalesces_changes_into_one_write() {
         let mut save = Autosave::default();
         assert!(!save.take());
@@ -1587,15 +1835,42 @@ mod tests {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
         app.selected_space = space;
-        app.selected_item = item;
+        app.selected_items = item.into_iter().collect();
         app
+    }
+
+    #[test]
+    fn ctrl_click_toggles_and_shift_click_selects_a_range() {
+        use deskspace_core::Item;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app.config.desktop.add_space("S", Rect::new(0, 0, 400, 400));
+        for n in 1..=4u64 {
+            app.config
+                .desktop
+                .add_item(id, Item::new(ItemId(n), format!("C:/missing/{n}.txt")));
+        }
+        app.selected_space = Some(id);
+        // Ctrl+click builds a selection and toggles items off again.
+        app.toggle_selected(ItemId(1));
+        app.toggle_selected(ItemId(3));
+        assert_eq!(app.selected_items, vec![ItemId(1), ItemId(3)]);
+        app.toggle_selected(ItemId(1));
+        assert_eq!(app.selected_items, vec![ItemId(3)]);
+        // Shift+click extends from the anchor across the space's order.
+        app.selection_anchor = Some(ItemId(1));
+        app.extend_selection(id, ItemId(4));
+        assert_eq!(
+            app.selected_items,
+            vec![ItemId(1), ItemId(2), ItemId(3), ItemId(4)]
+        );
     }
 
     #[test]
     fn taking_a_selection_reports_the_space_to_repaint() {
         let mut app = app_with_selection(Some(SpaceId(2)), Some(ItemId(5)));
         assert_eq!(app.take_selection(), Some(SpaceId(2)));
-        assert_eq!((app.selected_space, app.selected_item), (None, None));
+        assert_eq!((app.selected_space, app.selected_items.len()), (None, 0));
         // Nothing is left to clear, so nothing needs repainting.
         assert_eq!(app.take_selection(), None);
     }

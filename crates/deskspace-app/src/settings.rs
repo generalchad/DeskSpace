@@ -29,6 +29,7 @@ pub mod field {
     pub const LAYOUT_HEADING: u32 = 18;
     pub const GRID_GAP: u32 = 19;
     pub const GRID_PADDING: u32 = 41;
+    pub const MATCH_EXPLORER: u32 = 42;
 
     pub const BEHAVIOR_HEADING: u32 = 20;
     pub const HOTKEY: u32 = 21;
@@ -174,6 +175,11 @@ pub fn build_form(
                 theme.title_shading.min(100) as i32,
             ),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
+            Field::toggle(
+                field::MATCH_EXPLORER,
+                "Match Explorer's display (check boxes, file extensions)",
+                theme.match_explorer,
+            ),
             Field::heading(field::LABELS_HEADING, "Labels"),
             Field::choice(
                 field::LABEL_LINES,
@@ -338,6 +344,10 @@ pub fn apply_field(
             config.theme.show_border = on;
             Effect::Appearance
         }
+        (field::MATCH_EXPLORER, FieldValue::Toggle(on)) => {
+            config.theme.match_explorer = on;
+            Effect::Appearance
+        }
         (field::LABEL_LINES, FieldValue::Choice(index)) => {
             config.theme.label_lines = LABEL_LINES_OPTIONS
                 .get(index)
@@ -450,6 +460,21 @@ mod tests {
         assert_eq!(effect, Effect::Appearance);
         assert_eq!(config.theme.backdrop, Backdrop::Blur);
         assert!(session.dirty);
+    }
+
+    #[test]
+    fn match_explorer_toggle_applies_live() {
+        let (mut config, mut session) = setup();
+        assert!(config.theme.match_explorer);
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::MATCH_EXPLORER,
+            FieldValue::Toggle(false),
+            true,
+        );
+        assert_eq!(effect, Effect::Appearance);
+        assert!(!config.theme.match_explorer);
     }
 
     #[test]
