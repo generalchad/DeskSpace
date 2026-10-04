@@ -5,17 +5,20 @@ use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::{arrange_space, position_items};
-use deskspace_core::{Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
+use deskspace_core::{
+    Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
+};
 use deskspace_platform::{
-    CursorShape, DragImage, EditKey, EditOutcome, Event, EventHandler, Hotkey, IconCache,
-    ItemMenuChoice, MenuEntry, MouseButton, Placement, RunOptions, SettingsEvent, ShellDisplay,
-    SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold,
-    hotkey_id, item_check_box_hit, notify_moved, parse_hotkey, system_uses_dark_mode, work_area_at,
+    ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome, Event,
+    EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton, Placement, RunOptions,
+    SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory,
+    desktop_display, drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
+    system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
-use crate::scene::{ViewState, space_scene, space_style};
+use crate::scene::{ViewState, item_label, space_scene, space_style};
 use crate::settings::{self, Effect, Session};
 use crate::storage::ItemStore;
 
@@ -29,6 +32,10 @@ const WHEEL_DELTA: i32 = 120;
 const AUTOSAVE_TIMER: usize = 1;
 /// How long after the last change the configuration is written.
 const AUTOSAVE_DELAY_MS: u32 = 700;
+/// Timer id for the blinking edit caret.
+const CARET_TIMER: usize = 2;
+/// Caret blink half-period, matching Windows' default.
+const CARET_BLINK_MS: u32 = 530;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -41,6 +48,7 @@ mod menu {
     pub const FIT: u32 = 8;
     pub const REMOVE_ITEM: u32 = 9;
     pub const RENAME: u32 = 10;
+    pub const RENAME_ITEM: u32 = 11;
     pub const OPACITY_100: u32 = 20;
     pub const OPACITY_80: u32 = 21;
     pub const OPACITY_60: u32 = 22;
@@ -79,9 +87,20 @@ enum Drag {
     },
 }
 
-/// An in-progress title rename. The platform captures keys while it lives.
+/// What an inline edit is renaming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditTarget {
+    /// The space's title.
+    Title,
+    /// An item's file name. `shows_extension` is true when the edited label
+    /// includes the file extension, so the typed text is the whole name.
+    Item { id: ItemId, shows_extension: bool },
+}
+
+/// An in-progress inline rename. The platform captures keys while it lives.
 struct EditSession {
     space: SpaceId,
+    target: EditTarget,
     original: String,
     text: TextEdit,
 }
@@ -127,6 +146,8 @@ pub struct App {
     selected_items: Vec<ItemId>,
     /// The item a Shift+click extends the selection from.
     selection_anchor: Option<ItemId>,
+    /// Items on the clipboard as a cut, shown ghosted until pasted.
+    cut_items: HashSet<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
     /// The item whose slot is drawn faded while it is dragged.
@@ -136,6 +157,8 @@ pub struct App {
     drag_image: Option<DragImage>,
     /// The space being renamed inline, if any.
     edit: Option<EditSession>,
+    /// Whether the edit caret is currently shown; toggled by `CARET_TIMER`.
+    caret_visible: bool,
     /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
     autosave: Autosave,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
@@ -163,11 +186,13 @@ impl App {
             selected_space: None,
             selected_items: Vec::new(),
             selection_anchor: None,
+            cut_items: HashSet::new(),
             hovered: None,
             drag: Drag::None,
             dragged: None,
             drag_image: None,
             edit: None,
+            caret_visible: true,
             autosave: Autosave::default(),
             scroll: HashMap::new(),
             visible: !hidden,
@@ -251,6 +276,7 @@ impl App {
             scroll: self.scroll_of(id),
             show_check_boxes: self.match_explorer() && self.shell_display.check_boxes,
             show_extensions: self.match_explorer() && self.shell_display.show_extensions,
+            cut: self.cut_items.iter().copied().collect(),
         }
     }
 
@@ -337,8 +363,14 @@ impl App {
             &mut self.icons,
         );
         if let Some(session) = self.edit.as_ref().filter(|session| session.space == id) {
-            scene.editing = Some(session.text.clone());
+            match session.target {
+                EditTarget::Title => scene.editing = Some(session.text.clone()),
+                EditTarget::Item { id: item, .. } => {
+                    scene.editing_item = Some((item.0, session.text.clone()));
+                }
+            }
         }
+        scene.caret_visible = self.caret_visible;
         ui.set_space_rect(id.0, space.visible_rect());
         ui.set_space_scene(id.0, scene);
     }
@@ -394,10 +426,11 @@ impl App {
         }
     }
 
-    /// Asks for outside clicks only while there is a selection for them to
+    /// Asks for outside clicks only while there is something for them to
     /// clear, because watching them hooks every mouse event in the session.
     fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted = !self.selected_items.is_empty() || self.edit.is_some();
+        let wanted =
+            !self.selected_items.is_empty() || self.edit.is_some() || self.selected_space.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
@@ -424,11 +457,56 @@ impl App {
         let original = space.title.clone();
         self.edit = Some(EditSession {
             space: id,
+            target: EditTarget::Title,
             original: original.clone(),
             text: TextEdit::new(original),
         });
+        self.caret_visible = true;
+        ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_space(ui, id);
+    }
+
+    /// Starts inline editing of the focused (last-selected) item's file name,
+    /// as F2 does in Explorer.
+    fn begin_selected_item_rename(&mut self, ui: &mut Ui) {
+        let Some(space) = self.selected_space else {
+            return;
+        };
+        let Some(item) = self.selected_items.last().copied() else {
+            return;
+        };
+        self.begin_item_rename(ui, space, item);
+    }
+
+    fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
+        let show_extensions = self.match_explorer() && self.shell_display.show_extensions;
+        let Some(entry) = self.config.desktop.item(item) else {
+            return;
+        };
+        let original = item_label(entry, show_extensions);
+        let shows_extension = show_extensions && entry.kind == ItemKind::File;
+        let mut text = TextEdit::new(original.clone());
+        if shows_extension {
+            // Select the base name and leave the extension unselected, as
+            // Explorer does when file extensions are shown.
+            if let Some(dot) = original.rfind('.') {
+                text.select_range(0, dot);
+            }
+        }
+        self.edit = Some(EditSession {
+            space,
+            target: EditTarget::Item {
+                id: item,
+                shows_extension,
+            },
+            original,
+            text,
+        });
+        self.caret_visible = true;
+        ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
+        ui.capture_text_input(true);
+        self.refresh_space(ui, space);
     }
 
     fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
@@ -438,7 +516,11 @@ impl App {
         let space = session.space;
         let outcome = session.text.apply(key);
         match outcome {
-            EditOutcome::Changed => self.refresh_space(ui, space),
+            EditOutcome::Changed => {
+                // Typing restarts the blink with the caret shown.
+                self.caret_visible = true;
+                self.refresh_space(ui, space);
+            }
             EditOutcome::Commit => self.finish_rename(ui, true),
             EditOutcome::Cancel => self.finish_rename(ui, false),
             EditOutcome::Ignored => {}
@@ -452,23 +534,93 @@ impl App {
             return;
         };
         ui.capture_text_input(false);
+        ui.clear_timer(CARET_TIMER);
         let id = session.space;
-        if commit {
-            let title = session.text.text().trim().to_string();
-            if !title.is_empty() && title != session.original {
-                let near = self.space_center(id);
-                if self.dispatch(Command::RenameSpace { id, title }, near) {
-                    self.schedule_save(ui);
+        match session.target {
+            EditTarget::Title => {
+                if commit {
+                    let title = session.text.text().trim().to_string();
+                    if !title.is_empty() && title != session.original {
+                        let near = self.space_center(id);
+                        if self.dispatch(Command::RenameSpace { id, title }, near) {
+                            self.schedule_save(ui);
+                        }
+                    }
+                }
+            }
+            EditTarget::Item {
+                id: item,
+                shows_extension,
+            } => {
+                if commit {
+                    self.commit_item_rename(ui, item, shows_extension, session.text.text());
                 }
             }
         }
         self.refresh_space(ui, id);
     }
 
+    /// Renames an item's file to the edited text and updates the model. The
+    /// original extension is kept when the label did not show it, as Explorer
+    /// does. A cancelled or skipped shell rename leaves the item unchanged.
+    fn commit_item_rename(&mut self, ui: &mut Ui, id: ItemId, shows_extension: bool, typed: &str) {
+        let typed = typed.trim();
+        let Some(item) = self.config.desktop.item(id) else {
+            return;
+        };
+        let path = item.path.clone();
+        let kind = item.kind;
+        let new_name = renamed_file_name(&path, typed, shows_extension || kind == ItemKind::Folder);
+        let Some(parent) = path.parent() else {
+            return;
+        };
+        let new_path = parent.join(&new_name);
+        if new_name.is_empty() || new_path == path {
+            return;
+        }
+        if !ui.rename_path(&path, &new_name) || !new_path.exists() {
+            return;
+        }
+        self.icons.invalidate(&path);
+        let label = if kind == ItemKind::Folder {
+            new_name.clone()
+        } else {
+            Path::new(&new_name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(new_name.as_str())
+                .to_string()
+        };
+        let near = self
+            .config
+            .desktop
+            .space_containing(id)
+            .map_or(Point::ZERO, |space| self.space_center(space));
+        self.dispatch(
+            Command::RenameItem {
+                id,
+                path: new_path,
+                label,
+            },
+            near,
+        );
+        self.save();
+    }
+
     fn cancel_edit(&mut self, ui: &mut Ui) {
         if self.edit.is_some() {
             self.finish_rename(ui, false);
         }
+    }
+
+    /// Toggles the edit caret so it blinks, as Windows does.
+    fn blink_caret(&mut self, ui: &mut Ui) {
+        let Some(space) = self.edit.as_ref().map(|session| session.space) else {
+            ui.clear_timer(CARET_TIMER);
+            return;
+        };
+        self.caret_visible = !self.caret_visible;
+        self.refresh_space(ui, space);
     }
 
     // ---- per-space appearance ------------------------------------------
@@ -1040,8 +1192,12 @@ impl App {
         self.dispatch(Command::RemoveItem { id }, near)
     }
 
-    /// Removes every selected item from its space, the same as the item menu's
-    /// remove action: stored files go back to the desktop, others are unlisted.
+    /// Sends every selected item's file to the Recycle Bin, as Explorer's
+    /// Delete key does, then drops the items whose files are gone. A file the
+    /// shell could not delete (for example one in use) stays listed. An item
+    /// whose file is already missing is dropped without a shell operation. This
+    /// is distinct from the item menu's "Remove from space", which returns a
+    /// stored file to the desktop.
     fn delete_selected_items(&mut self, ui: &mut Ui) {
         let Some(space) = self.selected_space else {
             return;
@@ -1052,12 +1208,220 @@ impl App {
         }
         self.selection_anchor = None;
         self.hovered = None;
+        let paths: Vec<PathBuf> = items
+            .iter()
+            .filter_map(|item| self.config.desktop.item(*item))
+            .filter(|item| item.path.exists())
+            .map(|item| item.path.clone())
+            .collect();
+        if !paths.is_empty() {
+            ui.delete_files(&paths);
+        }
+        // Drop every item whose file is gone, whether the shell removed it or
+        // it was already stale, so no label without an icon is left behind.
+        let near = self.space_center(space);
         for item in items {
-            self.release_item(item);
+            let gone = self
+                .config
+                .desktop
+                .item(item)
+                .is_none_or(|item| !item.path.exists());
+            if gone {
+                self.cut_items.remove(&item);
+                self.dispatch(Command::RemoveItem { id: item }, near);
+            }
         }
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
         self.save();
+    }
+
+    /// Puts the selected items on the shell clipboard, cut (to be moved on
+    /// paste) or copied. Cut items are drawn ghosted until the paste.
+    fn copy_selection(&mut self, ui: &mut Ui, cut: bool) {
+        let paths: Vec<PathBuf> = self
+            .selected_items
+            .iter()
+            .filter_map(|item| self.config.desktop.item(*item))
+            .map(|item| item.path.clone())
+            .filter(|path| path.exists())
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        if !ui.set_clipboard_files(&paths, cut) {
+            return;
+        }
+        // Replacing the cut set un-ghosts the previous items, which may live in
+        // other spaces, so repaint every space that showed one.
+        let mut touched: HashSet<SpaceId> = self
+            .cut_items
+            .iter()
+            .filter_map(|item| self.config.desktop.space_containing(*item))
+            .collect();
+        self.cut_items = if cut {
+            self.selected_items.iter().copied().collect()
+        } else {
+            HashSet::new()
+        };
+        touched.extend(
+            self.cut_items
+                .iter()
+                .filter_map(|item| self.config.desktop.space_containing(*item)),
+        );
+        if let Some(space) = self.selected_space {
+            touched.insert(space);
+        }
+        for id in touched {
+            self.refresh_space(ui, id);
+        }
+    }
+
+    /// Clears cut ghosting when the clipboard no longer holds the cut, for
+    /// example after another app (or the desktop) copies, cuts, or pastes it.
+    /// A paste elsewhere has moved the files, so any item whose file is gone is
+    /// dropped. A failed clipboard read keeps the ghost rather than clearing it
+    /// wrongly, since another process can hold the clipboard for a moment.
+    fn sync_cut_with_clipboard(&mut self, ui: &mut Ui) {
+        if self.cut_items.is_empty() {
+            return;
+        }
+        let cut_paths: Vec<PathBuf> = self
+            .cut_items
+            .iter()
+            .filter_map(|item| self.config.desktop.item(*item))
+            .map(|item| item.path.clone())
+            .collect();
+        let Some(clipboard) = ui.clipboard_files() else {
+            return;
+        };
+        if cut_matches_clipboard(&clipboard, &cut_paths) {
+            return;
+        }
+        let touched: HashSet<SpaceId> = self
+            .cut_items
+            .iter()
+            .filter_map(|item| self.config.desktop.space_containing(*item))
+            .collect();
+        self.cut_items.clear();
+        for id in touched {
+            self.prune_missing(ui, id);
+            self.refresh_space(ui, id);
+        }
+    }
+
+    /// Adds the clipboard's files to the current space, as a drop would: a cut
+    /// moves them (items already in a space just change space, sharing the
+    /// file), a copy duplicates them into the store. Physical copies and moves
+    /// go through the shell's file operation so Explorer's progress UI and undo
+    /// apply.
+    fn paste_clipboard(&mut self, ui: &mut Ui) {
+        let Some(target) = self.selected_space else {
+            return;
+        };
+        let Some(clipboard) = ui.clipboard_files() else {
+            return;
+        };
+        if clipboard.paths.is_empty() {
+            return;
+        }
+        let at = self.space_center(target);
+        let plan = plan_paste(&clipboard.paths, clipboard.cut, |path| {
+            self.find_item_by_file(path)
+        });
+        let PastePlan {
+            moved,
+            external_moves,
+            copies,
+        } = plan;
+        let mut touched = HashSet::from([target]);
+
+        for item in &moved {
+            match self.config.desktop.space_containing(*item) {
+                Some(source) if source == target => continue,
+                Some(source) => {
+                    touched.insert(source);
+                }
+                None => {}
+            }
+            self.dispatch(Command::MoveItem { id: *item, target }, at);
+        }
+
+        let store = self.storage.root().to_path_buf();
+        let mut created: Vec<PathBuf> = Vec::new();
+        if !external_moves.is_empty() {
+            if let Some(paths) = ui.transfer_files(&external_moves, &store, true) {
+                created.extend(paths);
+            }
+        }
+        if !copies.is_empty() {
+            if let Some(paths) = ui.transfer_files(&copies, &store, false) {
+                created.extend(paths);
+            }
+        }
+        for path in &created {
+            // Guard against a shell result that no longer exists; listing it
+            // would leave a label with no icon.
+            if !path.exists() {
+                tracing::warn!(path = %path.display(), "pasted file is missing; ignored");
+                continue;
+            }
+            self.dispatch(
+                Command::AddItem {
+                    space: target,
+                    path: path.clone(),
+                },
+                at,
+            );
+        }
+
+        // Select what was pasted, as Explorer does.
+        let mut pasted: Vec<ItemId> = moved
+            .iter()
+            .copied()
+            .filter(|item| self.config.desktop.space_containing(*item) == Some(target))
+            .collect();
+        pasted.extend(
+            created
+                .iter()
+                .filter_map(|path| self.find_item_by_file(path)),
+        );
+        if !pasted.is_empty() {
+            self.selected_space = Some(target);
+            self.selection_anchor = pasted.first().copied();
+            self.selected_items = pasted;
+        }
+
+        if clipboard.cut {
+            // Un-ghost every cut item, including any not part of this paste,
+            // and repaint the spaces that showed them.
+            for item in std::mem::take(&mut self.cut_items) {
+                if let Some(space) = self.config.desktop.space_containing(item) {
+                    touched.insert(space);
+                }
+            }
+            ui.clear_clipboard();
+        }
+        for id in &touched {
+            self.refresh_space(ui, *id);
+        }
+        self.refresh_tray(ui);
+        self.save();
+    }
+
+    /// Drops items whose files no longer exist in every space. Called once at
+    /// startup so leftovers from a move made while DeskSpace was closed go away.
+    fn prune_all_missing(&mut self, ui: &mut Ui) {
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        for id in ids {
+            self.prune_missing(ui, id);
+        }
     }
 
     /// Removes items whose files no longer exist, for example after a shell
@@ -1083,6 +1447,7 @@ impl App {
             let near = self.space_center(id);
             self.dispatch(Command::RemoveItem { id: item }, near);
             self.selected_items.retain(|selected| *selected != item);
+            self.cut_items.remove(&item);
             if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
                 self.hovered = None;
             }
@@ -1185,11 +1550,18 @@ impl App {
         } else {
             "Remove from space"
         };
-        let entries = [MenuEntry::item(menu::REMOVE_ITEM, remove_label)];
+        let entries = [
+            MenuEntry::item(menu::RENAME_ITEM, "Rename"),
+            MenuEntry::item(menu::REMOVE_ITEM, remove_label),
+        ];
         match ui.item_menu(&path, &entries, at) {
+            Some(ItemMenuChoice::App(menu::RENAME_ITEM)) => {
+                self.begin_item_rename(ui, space, item);
+            }
             Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
                 if self.release_item(item) {
                     self.selected_items.retain(|selected| *selected != item);
+                    self.cut_items.remove(&item);
                     self.hovered = None;
                     self.refresh_space(ui, space);
                     self.refresh_tray(ui);
@@ -1534,6 +1906,7 @@ impl EventHandler for App {
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
                 self.sync_windows(ui);
+                self.prune_all_missing(ui);
                 tracing::info!(
                     spaces = self.config.desktop.spaces.len(),
                     dark = self.system_dark,
@@ -1546,10 +1919,15 @@ impl EventHandler for App {
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
             Event::DeleteSelection => self.delete_selected_items(ui),
-            Event::PointerDownOutside => {
+            Event::Clipboard(ClipboardAction::Copy) => self.copy_selection(ui, false),
+            Event::Clipboard(ClipboardAction::Cut) => self.copy_selection(ui, true),
+            Event::Clipboard(ClipboardAction::Paste) => self.paste_clipboard(ui),
+            Event::ClipboardChanged => self.sync_cut_with_clipboard(ui),
+            Event::RenameSelection => self.begin_selected_item_rename(ui),
+            Event::PointerDownOutside { on_desktop } => {
                 if self.edit.is_some() {
                     self.finish_rename(ui, true);
-                } else {
+                } else if on_desktop {
                     self.clear_selection(ui);
                 }
             }
@@ -1563,6 +1941,7 @@ impl EventHandler for App {
             }
             Event::Settings(event) => self.on_settings_event(ui, event),
             Event::Timer { id } if id == AUTOSAVE_TIMER => self.flush_save(ui),
+            Event::Timer { id } if id == CARET_TIMER => self.blink_caret(ui),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
@@ -1583,9 +1962,12 @@ impl EventHandler for App {
             }
         }
         // The keyboard hook is on only while it is needed: editing captures
-        // keys, and a selection watches for Delete.
+        // keys, and a selection or current space watches the item keys.
         ui.capture_text_input(self.edit.is_some());
-        ui.watch_delete_selection(self.edit.is_none() && !self.selected_items.is_empty());
+        ui.watch_selection_keys(
+            self.edit.is_none() && !self.selected_items.is_empty(),
+            self.edit.is_none() && self.selected_space.is_some(),
+        );
         self.sync_outside_watch(ui);
     }
 }
@@ -1727,6 +2109,61 @@ fn delete_consequence(count: usize, stored: usize) -> String {
             if stored == 1 { "file" } else { "files" }
         ),
     }
+}
+
+/// Whether `clipboard` is the cut DeskSpace put there: the same paths in any
+/// order, still marked as a cut.
+fn cut_matches_clipboard(clipboard: &ClipboardFiles, cut: &[PathBuf]) -> bool {
+    clipboard.cut
+        && clipboard.paths.len() == cut.len()
+        && cut.iter().all(|path| {
+            clipboard
+                .paths
+                .iter()
+                .any(|clip| crate::storage::same_path(clip, path))
+        })
+}
+
+/// The file name to rename to, preserving the original extension when the
+/// edited label did not show it, as Explorer does.
+fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> String {
+    if shows_extension {
+        return typed.to_string();
+    }
+    let Some(extension) = original.extension().and_then(|ext| ext.to_str()) else {
+        return typed.to_string();
+    };
+    let suffix = format!(".{extension}");
+    if typed.to_lowercase().ends_with(&suffix.to_lowercase()) {
+        typed.to_string()
+    } else {
+        format!("{typed}{suffix}")
+    }
+}
+
+/// What a paste does with each clipboard path: change an existing item's
+/// space, move an external file into the store, or copy a file into the store.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PastePlan {
+    moved: Vec<ItemId>,
+    external_moves: Vec<PathBuf>,
+    copies: Vec<PathBuf>,
+}
+
+fn plan_paste(paths: &[PathBuf], cut: bool, known: impl Fn(&Path) -> Option<ItemId>) -> PastePlan {
+    let mut plan = PastePlan::default();
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+        match (known(path), cut) {
+            (Some(item), true) => plan.moved.push(item),
+            (Some(_), false) => plan.copies.push(path.clone()),
+            (None, true) => plan.external_moves.push(path.clone()),
+            (None, false) => plan.copies.push(path.clone()),
+        }
+    }
+    plan
 }
 
 fn tray_tooltip(desktop: &Desktop) -> String {
@@ -1897,6 +2334,76 @@ mod tests {
         let mixed = delete_consequence(3, 2);
         assert!(mixed.contains("3 items"));
         assert!(mixed.contains("2 files moved into the space will be moved back"));
+    }
+
+    #[test]
+    fn cut_matches_only_the_same_cut_files() {
+        let cut = vec![PathBuf::from("C:/A/B.txt")];
+        let matching = ClipboardFiles {
+            paths: vec![PathBuf::from("c:/a/b.TXT")],
+            cut: true,
+        };
+        assert!(cut_matches_clipboard(&matching, &cut));
+        assert!(!cut_matches_clipboard(
+            &ClipboardFiles {
+                cut: false,
+                ..matching.clone()
+            },
+            &cut
+        ));
+        assert!(!cut_matches_clipboard(
+            &ClipboardFiles {
+                paths: vec![PathBuf::from("C:/A/other.txt")],
+                cut: true,
+            },
+            &cut
+        ));
+    }
+
+    #[test]
+    fn rename_preserves_hidden_extensions() {
+        let file = Path::new("C:/x/report.txt");
+        assert_eq!(renamed_file_name(file, "notes", false), "notes.txt");
+        // Typing the extension does not double it.
+        assert_eq!(renamed_file_name(file, "notes.TXT", false), "notes.TXT");
+        // When the extension is shown (or it is a folder), the name is as typed.
+        assert_eq!(renamed_file_name(file, "notes.md", true), "notes.md");
+        assert_eq!(
+            renamed_file_name(Path::new("C:/x/my.folder"), "other", true),
+            "other"
+        );
+        // A name without an extension is used as typed.
+        assert_eq!(
+            renamed_file_name(Path::new("C:/x/README"), "NOTES", false),
+            "NOTES"
+        );
+    }
+
+    #[test]
+    fn plan_paste_classifies_known_and_external_paths() {
+        let name = |suffix: &str| {
+            let path = std::env::temp_dir()
+                .join(format!("deskspace-paste-{suffix}-{}", std::process::id()));
+            std::fs::write(&path, "x").unwrap();
+            path
+        };
+        let external = name("external.txt");
+        let known = name("known.txt");
+        let known_id = ItemId(7);
+        let paths = vec![external.clone(), known.clone()];
+        let lookup = |path: &Path| (known.as_path() == path).then_some(known_id);
+
+        let copy = plan_paste(&paths, false, lookup);
+        assert_eq!(copy.copies, paths);
+        assert!(copy.moved.is_empty() && copy.external_moves.is_empty());
+
+        let cut = plan_paste(&paths, true, lookup);
+        assert_eq!(cut.external_moves, vec![external.clone()]);
+        assert_eq!(cut.moved, vec![known_id]);
+        assert!(cut.copies.is_empty());
+
+        let _ = std::fs::remove_file(&external);
+        let _ = std::fs::remove_file(&known);
     }
 
     #[test]

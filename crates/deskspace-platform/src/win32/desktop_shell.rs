@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows::Win32::Foundation::{FALSE, HWND, LPARAM, TRUE, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, SMTO_NORMAL, SendMessageTimeoutW,
+    EnumWindows, FindWindowExW, FindWindowW, GetClassNameW, SMTO_NORMAL, SendMessageTimeoutW,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -30,6 +30,16 @@ pub fn find_host(placement: Placement) -> Option<HWND> {
         Placement::DesktopForeground => progman(),
         Placement::DesktopBackground => wallpaper_worker(),
     }
+}
+
+/// Whether `window` is the desktop shell (`Progman` or the wallpaper
+/// `WorkerW`), i.e. a press there is on the desktop background or its icons.
+pub(crate) fn is_desktop_window(window: HWND) -> bool {
+    let mut class = [0u16; 32];
+    // SAFETY: `class` is a valid buffer; the call copies at most its length.
+    let length = unsafe { GetClassNameW(window, &mut class) } as usize;
+    let class = String::from_utf16_lossy(&class[..length]);
+    class == "Progman" || class == "WorkerW"
 }
 
 fn progman() -> Option<HWND> {

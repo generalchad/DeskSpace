@@ -51,6 +51,11 @@ pub struct SpaceScene {
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,
+    /// While set, item `id`'s label is drawn as an editable buffer instead,
+    /// with the selection highlight and a caret.
+    pub editing_item: Option<(u64, TextEdit)>,
+    /// Whether the caret is currently visible, so it can blink while editing.
+    pub caret_visible: bool,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
@@ -85,4 +90,7 @@ pub struct ItemVisual {
     /// Whether the item's check box is ticked; only drawn when the scene shows
     /// check boxes.
     pub checked: bool,
+    /// Whether the item was cut; drawn ghosted until it is pasted, as Explorer
+    /// dims the items awaiting a move.
+    pub cut: bool,
 }

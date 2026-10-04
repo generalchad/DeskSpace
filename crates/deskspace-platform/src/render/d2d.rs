@@ -47,6 +47,7 @@ use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, HICON};
 use windows::core::{BOOL, HRESULT, PCWSTR, w};
 use windows_numerics::Vector2;
 
+use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
@@ -58,6 +59,8 @@ const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
 /// Opacity of an item's slot while the item itself is dragged.
 const DRAGGED_ALPHA: u8 = 90;
+/// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
+const CUT_ALPHA: u8 = 110;
 /// Explorer's item check box, anchored at the icon's top-left corner.
 const CHECK_BOX_SIZE: f32 = super::ITEM_CHECK_BOX_SIZE as f32;
 const CHECK_BOX_MARGIN: f32 = super::ITEM_CHECK_BOX_MARGIN as f32;
@@ -245,6 +248,8 @@ pub struct PreparedScene {
     title: Vec<u16>,
     /// The rename buffer while `scene.editing` is set.
     edit: Option<Vec<u16>>,
+    /// The item id and rename buffer while `scene.editing_item` is set.
+    edit_item: Option<(u64, Vec<u16>)>,
     labels: Vec<Vec<u16>>,
 }
 
@@ -255,6 +260,10 @@ impl PreparedScene {
             .editing
             .as_ref()
             .map(|edit| edit.text().encode_utf16().collect());
+        let edit_item = scene
+            .editing_item
+            .as_ref()
+            .map(|(id, edit)| (*id, edit.text().encode_utf16().collect()));
         let labels = scene
             .items
             .iter()
@@ -264,6 +273,7 @@ impl PreparedScene {
             scene,
             title,
             edit,
+            edit_item,
             labels,
         }
     }
@@ -454,8 +464,24 @@ impl Painter {
         let scene = &prepared.scene;
         for (item, label) in scene.items.iter().zip(&prepared.labels) {
             let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
+            let edit = prepared
+                .edit_item
+                .as_ref()
+                .filter(|(id, _)| *id == item.id)
+                .map(|(_, buffer)| buffer.as_slice());
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe { draw_item(graphics, target, brush, scene, item, label, bitmap.as_ref()) };
+            unsafe {
+                draw_item(
+                    graphics,
+                    target,
+                    brush,
+                    scene,
+                    item,
+                    label,
+                    bitmap.as_ref(),
+                    edit,
+                )
+            };
         }
     }
 
@@ -577,6 +603,7 @@ impl Painter {
 
 /// Draws one item cell: highlight, icon, and label. Shared by the space
 /// painter and `render_item`, so a drag image is exactly what the space shows.
+#[allow(clippy::too_many_arguments)]
 unsafe fn draw_item(
     graphics: &Graphics,
     target: &ID2D1RenderTarget,
@@ -585,6 +612,7 @@ unsafe fn draw_item(
     item: &ItemVisual,
     label: &[u16],
     icon: Option<&ID2D1Bitmap>,
+    edit: Option<&[u16]>,
 ) {
     let cell = to_rect_f(item.rect);
     let highlight = match item.state {
@@ -594,6 +622,8 @@ unsafe fn draw_item(
     };
     let alpha = if item.state == ItemState::Dragged {
         DRAGGED_ALPHA
+    } else if item.cut {
+        CUT_ALPHA
     } else {
         255
     };
@@ -628,8 +658,8 @@ unsafe fn draw_item(
                 None,
             );
         }
-        // Explorer shows a check box only while pointing at the item, and
-        // keeps it once checked.
+        // Explorer shows a check box while pointing at the item, and keeps it
+        // while the item stays selected.
         if scene.show_check_boxes && (item.checked || item.hovered) {
             draw_check_box(target, brush, icon_left, cell.top + ICON_TOP, item.checked);
         }
@@ -639,15 +669,32 @@ unsafe fn draw_item(
         let line_height = LABEL_LINE_HEIGHT * scale;
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            draw_text(
-                target,
-                brush,
-                label,
-                &graphics.label_format_for(scene.label_size),
-                rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
-                scene.item_text.fade(alpha),
-                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
-            );
+            let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
+            let format = graphics.label_format_for(scene.label_size);
+            if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
+                draw_edit_buffer(
+                    graphics,
+                    target,
+                    brush,
+                    text_edit,
+                    buffer,
+                    &format,
+                    label_rect,
+                    scene.selected_fill,
+                    scene.item_text.fade(alpha),
+                    scene.caret_visible,
+                );
+            } else {
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &format,
+                    label_rect,
+                    scene.item_text.fade(alpha),
+                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+                );
+            }
         }
     }
 }
@@ -769,6 +816,7 @@ pub(crate) fn render_item(scene: &SpaceScene, id: u64) -> Option<Icon> {
             &item,
             &label,
             icon.as_ref(),
+            None,
         );
         target.EndDraw(None, None).ok()?;
         drop(target);
@@ -896,10 +944,7 @@ unsafe fn draw_text(
     }
 }
 
-/// Draws the rename buffer in the title bar with its selection highlight and
-/// caret. The text layout is reused to place the caret and selection, so they
-/// match DirectWrite's own shaping.
-#[allow(clippy::too_many_arguments)]
+/// Draws the title rename buffer in the title bar.
 unsafe fn draw_edit_title(
     graphics: &Graphics,
     target: &ID2D1HwndRenderTarget,
@@ -916,56 +961,121 @@ unsafe fn draw_edit_title(
     let Some(buffer) = prepared.edit.as_ref() else {
         return;
     };
-    let width = (right - left).max(1.0);
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
-        let Ok(layout) =
-            graphics
-                .dwrite
-                .CreateTextLayout(buffer, &graphics.edit_format, width, title_height)
+        draw_edit_buffer(
+            graphics,
+            target,
+            brush,
+            edit,
+            buffer,
+            &graphics.edit_format,
+            rect_f(left, 0.0, right, title_height),
+            scene.selected_fill,
+            scene.title_text,
+            scene.caret_visible,
+        );
+    }
+}
+
+/// Draws an editable buffer with its selection highlight and caret. The text
+/// layout is reused to place the caret and selection, so they match
+/// DirectWrite's own shaping.
+#[allow(clippy::too_many_arguments)]
+unsafe fn draw_edit_buffer(
+    graphics: &Graphics,
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    edit: &TextEdit,
+    buffer: &[u16],
+    format: &IDWriteTextFormat,
+    rect: D2D_RECT_F,
+    fill: Color,
+    text: Color,
+    caret_visible: bool,
+) {
+    let width = (rect.right - rect.left).max(1.0);
+    let height = (rect.bottom - rect.top).max(1.0);
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        let Ok(layout) = graphics
+            .dwrite
+            .CreateTextLayout(buffer, format, width, height)
         else {
-            draw_text(
-                target,
-                brush,
-                buffer,
-                &graphics.edit_format,
-                rect_f(left, 0.0, right, title_height),
-                scene.title_text,
-                None,
-            );
+            draw_text(target, brush, buffer, format, rect, text, None);
             return;
         };
-
         let mut metrics = DWRITE_HIT_TEST_METRICS::default();
         let (start, end) = edit.selection();
         if start != end {
             let start16 = utf16_index(edit.text(), start);
             let end16 = utf16_index(edit.text(), end);
-            let (mut x0, mut y0, mut x1, mut y1) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            let (mut x0, mut y0) = (0.0f32, 0.0f32);
+            let (mut x1, mut y1) = (0.0f32, 0.0f32);
             let _ = layout.HitTestTextPosition(start16, false, &mut x0, &mut y0, &mut metrics);
+            let line_height = metrics.height.max(1.0);
             let _ = layout.HitTestTextPosition(end16, false, &mut x1, &mut y1, &mut metrics);
-            brush.SetColor(&color_f(scene.selected_fill));
-            target.FillRectangle(&rect_f(left + x0, 0.0, left + x1, title_height), brush);
+            brush.SetColor(&color_f(fill));
+            if y1 > y0 {
+                // Wrapped selection: cover the first line to the end, the last
+                // line from the start, and everything between.
+                target.FillRectangle(
+                    &rect_f(
+                        rect.left + x0,
+                        rect.top + y0,
+                        rect.right,
+                        rect.top + y0 + line_height,
+                    ),
+                    brush,
+                );
+                target.FillRectangle(
+                    &rect_f(
+                        rect.left,
+                        rect.top + y1,
+                        rect.left + x1,
+                        rect.top + y1 + metrics.height,
+                    ),
+                    brush,
+                );
+                if y1 - y0 > line_height {
+                    target.FillRectangle(
+                        &rect_f(
+                            rect.left,
+                            rect.top + y0 + line_height,
+                            rect.right,
+                            rect.top + y1,
+                        ),
+                        brush,
+                    );
+                }
+            } else {
+                target.FillRectangle(
+                    &rect_f(
+                        rect.left + x0,
+                        rect.top + y0,
+                        rect.left + x1,
+                        rect.top + y0 + line_height,
+                    ),
+                    brush,
+                );
+            }
         }
-
-        draw_text(
-            target,
-            brush,
-            buffer,
-            &graphics.edit_format,
-            rect_f(left, 0.0, right, title_height),
-            scene.title_text,
-            None,
-        );
-
-        let caret16 = utf16_index(edit.text(), edit.caret());
-        let mut cx = 0.0f32;
-        let mut cy = 0.0f32;
-        let _ = layout.HitTestTextPosition(caret16, false, &mut cx, &mut cy, &mut metrics);
-        target.FillRectangle(
-            &rect_f(left + cx, 4.0, left + cx + 1.0, title_height - 4.0),
-            brush,
-        );
+        draw_text(target, brush, buffer, format, rect, text, None);
+        if caret_visible {
+            let caret16 = utf16_index(edit.text(), edit.caret());
+            let (mut cx, mut cy) = (0.0f32, 0.0f32);
+            let _ = layout.HitTestTextPosition(caret16, false, &mut cx, &mut cy, &mut metrics);
+            let line_height = metrics.height.max(1.0);
+            target.FillRectangle(
+                &rect_f(
+                    rect.left + cx,
+                    rect.top + cy,
+                    rect.left + cx + 1.0,
+                    rect.top + cy + line_height,
+                ),
+                brush,
+            );
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+mod clipboard;
 mod console;
 mod controller;
 mod dark_mode;
@@ -8,6 +9,7 @@ mod drag_ghost;
 pub mod drag_image;
 mod drop_target;
 mod dwm;
+mod file_op;
 pub mod hotkey;
 mod icon;
 mod keyboard;
@@ -22,5 +24,6 @@ mod space_window;
 pub mod system;
 mod tray;
 
+pub use clipboard::ClipboardFiles;
 pub use desktop_shell::Placement;
 pub use runtime::{EventHandler, RunOptions, Ui, run};

@@ -8,7 +8,7 @@ pub mod win32;
 
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
-pub use input::{Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
+pub use input::{ClipboardAction, Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
 pub use render::{
     Icon, ItemState, ItemVisual, SpaceScene, SpaceStyle, item_check_box, item_check_box_hit,
 };
@@ -25,6 +25,6 @@ pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::system::{drag_threshold, system_uses_dark_mode, work_area_at};
-pub use win32::{EventHandler, RunOptions, Ui, run};
+pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, run};
 
 pub type Result<T, E = PlatformError> = std::result::Result<T, E>;

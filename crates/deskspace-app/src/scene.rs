@@ -23,6 +23,8 @@ pub struct ViewState {
     pub show_check_boxes: bool,
     /// Show filename extensions in labels, from Explorer's folder options.
     pub show_extensions: bool,
+    /// Items that were cut; drawn ghosted until they are pasted.
+    pub cut: Vec<ItemId>,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -83,6 +85,7 @@ pub fn space_scene(
                 // With Explorer's auto-check-select mode (the desktop's "Use
                 // check boxes to select items"), the box mirrors selection.
                 checked: view.selected.contains(&item.id),
+                cut: view.cut.contains(&item.id),
             })
             .collect()
     };
@@ -117,6 +120,8 @@ pub fn space_scene(
         locked: space.locked,
         rolled_up: space.rolled_up,
         editing: None,
+        editing_item: None,
+        caret_visible: true,
         items,
         show_check_boxes: view.show_check_boxes,
         scroll_thumb: scroll_thumb(
@@ -128,12 +133,19 @@ pub fn space_scene(
     }
 }
 
-/// The item's display label. When Explorer shows extensions, files and
-/// shortcuts use their full file name instead of the extension-less label.
-fn item_label(item: &Item, show_extensions: bool) -> String {
-    if show_extensions && matches!(item.kind, ItemKind::File | ItemKind::Shortcut) {
+/// The item's display label. Explorer never shows a shortcut's extension, even
+/// when "File name extensions" is on, so only real files can gain one; both
+/// forms come from the path, so toggling the option is reflected live and a
+/// label captured while extensions were on does not keep its extension.
+pub(crate) fn item_label(item: &Item, show_extensions: bool) -> String {
+    if item.kind == ItemKind::File {
         if let Some(name) = item.file_name() {
-            return name.to_string();
+            if show_extensions {
+                return name.to_string();
+            }
+            if let Some(stem) = item.path.file_stem().and_then(|stem| stem.to_str()) {
+                return stem.to_string();
+            }
         }
     }
     item.label.clone()
@@ -210,6 +222,42 @@ mod tests {
         assert_eq!(item_label(&file, true), "report.txt");
         let folder = Item::new(ItemId(5), "C:/missing/folder").with_kind(ItemKind::Folder);
         assert_eq!(item_label(&folder, true), "folder");
+    }
+
+    #[test]
+    fn shortcuts_never_show_their_extension() {
+        let lnk = Item::new(ItemId(4), "C:/missing/Notepad.lnk");
+        assert_eq!(item_label(&lnk, false), "Notepad");
+        assert_eq!(item_label(&lnk, true), "Notepad");
+        let url = Item::new(ItemId(5), "C:/missing/example.url");
+        assert_eq!(item_label(&url, true), "example");
+    }
+
+    #[test]
+    fn a_stored_extension_is_hidden_after_the_option_turns_off() {
+        let mut file = Item::new(ItemId(4), "C:/missing/report.txt");
+        // As captured from the shell while Explorer showed extensions.
+        file.label = "report.txt".to_string();
+        assert_eq!(item_label(&file, false), "report");
+        assert_eq!(item_label(&file, true), "report.txt");
+    }
+
+    #[test]
+    fn a_cut_item_is_marked_in_the_scene() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ViewState {
+                cut: vec![ItemId(4)],
+                ..ViewState::default()
+            },
+            &mut IconCache::new(32),
+        );
+        assert!(scene.items[0].cut);
     }
 
     #[test]

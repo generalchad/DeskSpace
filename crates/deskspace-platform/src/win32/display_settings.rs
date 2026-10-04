@@ -30,24 +30,26 @@ pub struct ShellDisplay {
 pub fn desktop_display() -> ShellDisplay {
     let mut display = global_display();
     if let Some(view) = shell_view::desktop_shell_view() {
-        display.check_boxes = view_check_boxes(&view);
+        // Only override when the view reports its flags; a failed read (the
+        // view is briefly unavailable) must not silently hide check boxes.
+        if let Some(check_boxes) = view_check_boxes(&view) {
+            display.check_boxes = check_boxes;
+        }
     }
     display
 }
 
-fn view_check_boxes(view: &IShellView) -> bool {
-    let Ok(folder) = view.cast::<IFolderView2>() else {
-        return false;
-    };
+fn view_check_boxes(view: &IShellView) -> Option<bool> {
+    let folder = view.cast::<IFolderView2>().ok()?;
     // Explorer sets FWF_AUTOCHECKSELECT for the desktop's "use check boxes"
     // option and FWF_CHECKSELECT elsewhere; either means show them.
     let flag = FWF_CHECKSELECT.0 as u32 | FWF_AUTOCHECKSELECT.0 as u32;
     // SAFETY: reading a flag from a live folder view.
     match unsafe { folder.GetCurrentFolderFlags() } {
-        Ok(flags) => flags & flag != 0,
+        Ok(flags) => Some(flags & flag != 0),
         Err(error) => {
             tracing::debug!(%error, "could not read the desktop view flags");
-            false
+            None
         }
     }
 }

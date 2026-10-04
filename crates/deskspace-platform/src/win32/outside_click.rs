@@ -20,7 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_MBUTTONDOWN, WM_RBUTTONDOWN, WindowFromPoint,
 };
 
-use crate::win32::runtime;
+use crate::win32::{desktop_shell, runtime};
 
 /// Posted to the controller with the press position: wParam is x, lParam y
 /// (screen coordinates).
@@ -112,5 +112,22 @@ pub(crate) fn is_outside(point: POINT) -> bool {
         let mut class = [0u16; 16];
         let length = GetClassNameW(root, &mut class) as usize;
         String::from_utf16_lossy(&class[..length]) != MENU_CLASS
+    }
+}
+
+/// Whether a press at `point` (screen coordinates) landed on the desktop
+/// background or its icon list, as opposed to another application. A press on
+/// another app keeps the item selection, as it does on the desktop.
+pub(crate) fn is_desktop(point: POINT) -> bool {
+    // SAFETY: plain window queries.
+    unsafe {
+        let window = WindowFromPoint(point);
+        if window.is_invalid() {
+            return true;
+        }
+        // Desktop icons live in a child list view, so the top-level ancestor is
+        // what identifies the desktop.
+        let root = GetAncestor(window, GA_ROOT);
+        desktop_shell::is_desktop_window(root) || desktop_shell::is_desktop_window(window)
     }
 }

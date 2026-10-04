@@ -55,6 +55,15 @@ pub enum SpaceEvent {
     CaptureLost,
 }
 
+/// A clipboard shortcut pressed while an item is selected or a space is
+/// current (see `Ui::watch_selection_keys`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipboardAction {
+    Copy,
+    Cut,
+    Paste,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left click or keyboard selection of the tray icon.
@@ -95,8 +104,15 @@ pub enum Event {
     /// `Ui::capture_text_input`).
     EditKey(crate::edit::EditKey),
     /// Delete was pressed while an item was selected (see
-    /// `Ui::watch_delete_selection`).
+    /// `Ui::watch_selection_keys`).
     DeleteSelection,
+    /// Ctrl+C, Ctrl+X, or Ctrl+V was pressed while an item was selected or a
+    /// space was current.
+    Clipboard(ClipboardAction),
+    /// The clipboard changed, so any cut ghosting may no longer apply.
+    ClipboardChanged,
+    /// F2 was pressed while an item was selected.
+    RenameSelection,
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {
@@ -105,7 +121,11 @@ pub enum Event {
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
     /// is on.
-    PointerDownOutside,
+    PointerDownOutside {
+        /// Whether the press landed on the desktop background, which clears the
+        /// item selection. A press on another app keeps it, as Explorer does.
+        on_desktop: bool,
+    },
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Delivered once, before the runtime tears windows down: on quit, console

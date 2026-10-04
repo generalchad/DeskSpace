@@ -9,6 +9,8 @@
 pub enum MoveDir {
     Left,
     Right,
+    WordLeft,
+    WordRight,
     Home,
     End,
 }
@@ -19,6 +21,8 @@ pub enum EditKey {
     Char(char),
     Backspace,
     Delete,
+    BackspaceWord,
+    DeleteWord,
     Move { dir: MoveDir, select: bool },
     SelectAll,
     Commit,
@@ -71,6 +75,14 @@ impl TextEdit {
         self.anchor
     }
 
+    /// Sets the selection to `start..end` (byte offsets), moving the caret to
+    /// `end`. Used to preselect the base name, leaving the extension unselected
+    /// as Explorer does when it shows extensions.
+    pub fn select_range(&mut self, start: usize, end: usize) {
+        self.anchor = start.min(self.text.len());
+        self.caret = end.min(self.text.len());
+    }
+
     /// The selected range as `(start, end)` byte offsets; empty when collapsed.
     pub fn selection(&self) -> (usize, usize) {
         if self.caret <= self.anchor {
@@ -109,6 +121,32 @@ impl TextEdit {
                 }
                 EditOutcome::Changed
             }
+            EditKey::BackspaceWord => {
+                if self.has_selection() {
+                    self.delete_selection();
+                } else {
+                    let target = self.prev_word_boundary(self.caret);
+                    if target == self.caret {
+                        return EditOutcome::Ignored;
+                    }
+                    self.text.replace_range(target..self.caret, "");
+                    self.caret = target;
+                    self.anchor = target;
+                }
+                EditOutcome::Changed
+            }
+            EditKey::DeleteWord => {
+                if self.has_selection() {
+                    self.delete_selection();
+                } else {
+                    let target = self.next_word_boundary(self.caret);
+                    if target == self.caret {
+                        return EditOutcome::Ignored;
+                    }
+                    self.text.replace_range(self.caret..target, "");
+                }
+                EditOutcome::Changed
+            }
             EditKey::Move { dir, select } => self.move_caret(dir, select),
             EditKey::SelectAll => {
                 self.anchor = 0;
@@ -134,6 +172,10 @@ impl TextEdit {
                 self.next_boundary(self.caret).unwrap_or(self.text.len())
             }
             MoveDir::Right => end,
+            MoveDir::WordLeft if select || !had_selection => self.prev_word_boundary(self.caret),
+            MoveDir::WordLeft => start,
+            MoveDir::WordRight if select || !had_selection => self.next_word_boundary(self.caret),
+            MoveDir::WordRight => end,
         };
         if target == self.caret && !had_selection {
             return EditOutcome::Ignored;
@@ -170,6 +212,41 @@ impl TextEdit {
     fn next_boundary(&self, at: usize) -> Option<usize> {
         let rest = self.text.get(at..)?;
         rest.chars().next().map(|c| at + c.len_utf8())
+    }
+
+    /// The start of the word before `at`, skipping spaces, as Ctrl+Left and
+    /// Ctrl+Backspace do.
+    fn prev_word_boundary(&self, at: usize) -> usize {
+        let indices: Vec<(usize, char)> = self.text[..at].char_indices().collect();
+        let mut i = indices.len();
+        while i > 0 && indices[i - 1].1.is_whitespace() {
+            i -= 1;
+        }
+        while i > 0 && !indices[i - 1].1.is_whitespace() {
+            i -= 1;
+        }
+        if i == 0 { 0 } else { indices[i].0 }
+    }
+
+    /// The end of the word after `at`, skipping spaces, as Ctrl+Right and
+    /// Ctrl+Delete do.
+    fn next_word_boundary(&self, at: usize) -> usize {
+        let indices: Vec<(usize, char)> = self.text[at..]
+            .char_indices()
+            .map(|(index, character)| (at + index, character))
+            .collect();
+        let mut i = 0;
+        while i < indices.len() && indices[i].1.is_whitespace() {
+            i += 1;
+        }
+        while i < indices.len() && !indices[i].1.is_whitespace() {
+            i += 1;
+        }
+        if i >= indices.len() {
+            self.text.len()
+        } else {
+            indices[i].0
+        }
     }
 }
 
@@ -259,6 +336,29 @@ mod tests {
         edit.apply(EditKey::SelectAll);
         assert_eq!(edit.apply(EditKey::Delete), EditOutcome::Changed);
         assert_eq!(edit.text(), "");
+    }
+
+    #[test]
+    fn ctrl_move_and_delete_stop_at_word_boundaries() {
+        let mut edit = TextEdit::new("alpha beta gamma");
+        let move_to = |edit: &mut TextEdit, dir| {
+            edit.apply(EditKey::Move { dir, select: false });
+        };
+        move_to(&mut edit, MoveDir::Home);
+        move_to(&mut edit, MoveDir::WordRight);
+        assert_eq!(edit.caret(), 5);
+        move_to(&mut edit, MoveDir::WordRight);
+        assert_eq!(edit.caret(), 10);
+        move_to(&mut edit, MoveDir::WordLeft);
+        assert_eq!(edit.caret(), 6);
+        // Ctrl+Backspace removes the previous word.
+        move_to(&mut edit, MoveDir::End);
+        edit.apply(EditKey::BackspaceWord);
+        assert_eq!(edit.text(), "alpha beta ");
+        // Ctrl+Delete removes the next word.
+        move_to(&mut edit, MoveDir::Home);
+        edit.apply(EditKey::DeleteWord);
+        assert_eq!(edit.text(), " beta ");
     }
 
     #[test]

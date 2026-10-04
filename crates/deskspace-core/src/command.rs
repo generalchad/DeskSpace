@@ -86,6 +86,12 @@ pub enum Command {
         id: ItemId,
         index: usize,
     },
+    /// Updates an item after its file was renamed on disk.
+    RenameItem {
+        id: ItemId,
+        path: PathBuf,
+        label: String,
+    },
     AutoArrange {
         id: SpaceId,
     },
@@ -324,6 +330,20 @@ impl Desktop {
                 } else {
                     CommandOutcome::NotFound
                 }
+            }
+            Command::RenameItem { id, path, label } => {
+                let Some(source) = self.space_containing(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(space) = self.space_mut(source) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(item) = space.item_mut(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                item.path = path;
+                item.label = label;
+                CommandOutcome::Applied
             }
             Command::SnapAll => {
                 let layout = self.layout;

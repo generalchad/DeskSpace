@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
 use windows::Win32::Foundation::{HWND, POINT};
@@ -36,14 +36,15 @@ use crate::error::PlatformError;
 use crate::input::Event;
 use crate::render::{SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
+use crate::win32::clipboard::ClipboardFiles;
 use crate::win32::drag_ghost::DragGhost;
 use crate::win32::drag_image::DragImage;
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    console, controller, dark_mode, desktop_shell, drop_target, menu, outside_click,
-    settings_window, shell_selection, shell_view, space_window, tray,
+    clipboard, console, controller, dark_mode, desktop_shell, drop_target, file_op, menu,
+    outside_click, settings_window, shell_selection, shell_view, space_window, tray,
 };
 
 pub trait EventHandler {
@@ -296,12 +297,12 @@ impl Ui {
         }
     }
 
-    /// Watches for Delete (delivered as `Event::DeleteSelection`) while an item
-    /// is selected, since selected spaces are never focused. Call with `false`
-    /// when nothing is selected; only Delete is consumed.
-    pub fn watch_delete_selection(&mut self, enabled: bool) {
+    /// Watches the keys that act on a selection (Delete, Ctrl+C, Ctrl+X) and on
+    /// a current space (Ctrl+V), since spaces are never focused. Call with
+    /// `false` when nothing applies; only those keys are consumed.
+    pub fn watch_selection_keys(&mut self, selection: bool, paste: bool) {
         if let Some(controller) = with_runtime(|runtime| runtime.controller) {
-            crate::win32::keyboard::watch_delete(controller, enabled);
+            crate::win32::keyboard::watch_selection(controller, selection, paste);
         }
     }
 
@@ -356,6 +357,76 @@ impl Ui {
             Err(error) => {
                 tracing::warn!(%error, path = %path.display(), "could not start drag");
                 None
+            }
+        }
+    }
+
+    /// Replaces the clipboard with `paths`, marked cut (moved on paste) or
+    /// copied, using the shell's `CF_HDROP` format. Returns whether it worked.
+    pub fn set_clipboard_files(&mut self, paths: &[PathBuf], cut: bool) -> bool {
+        match clipboard::set_file_list(paths, cut) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!(%error, "could not write the clipboard");
+                false
+            }
+        }
+    }
+
+    /// The files on the clipboard and whether they were cut, or `None` when it
+    /// holds no files.
+    pub fn clipboard_files(&mut self) -> Option<ClipboardFiles> {
+        clipboard::file_list()
+    }
+
+    /// Empties the clipboard after a cut has been pasted.
+    pub fn clear_clipboard(&mut self) {
+        if let Err(error) = clipboard::clear() {
+            tracing::warn!(%error, "could not clear the clipboard");
+        }
+    }
+
+    /// Moves or copies `paths` into `destination` with the shell's file
+    /// operation, returning where the files landed. Blocks while the shell
+    /// shows its progress UI; other events are queued meanwhile.
+    pub fn transfer_files(
+        &mut self,
+        paths: &[PathBuf],
+        destination: &Path,
+        move_items: bool,
+    ) -> Option<Vec<PathBuf>> {
+        let owner = with_runtime(|runtime| runtime.controller);
+        match file_op::transfer(owner, paths, destination, move_items) {
+            Ok(created) => Some(created),
+            Err(error) => {
+                tracing::warn!(%error, dest = %destination.display(), "file operation failed");
+                None
+            }
+        }
+    }
+
+    /// Sends `paths` to the Recycle Bin (undoable, no prompt) with the shell's
+    /// file operation. Blocks while the shell works; other events are queued.
+    pub fn delete_files(&mut self, paths: &[PathBuf]) -> bool {
+        let owner = with_runtime(|runtime| runtime.controller);
+        match file_op::delete(owner, paths) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!(%error, "delete failed");
+                false
+            }
+        }
+    }
+
+    /// Renames `path` to `new_name` (a file name, not a path) with the shell's
+    /// file operation, so the change is undoable. Blocks while the shell works.
+    pub fn rename_path(&mut self, path: &Path, new_name: &str) -> bool {
+        let owner = with_runtime(|runtime| runtime.controller);
+        match file_op::rename(owner, path, new_name) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "rename failed");
+                false
             }
         }
     }

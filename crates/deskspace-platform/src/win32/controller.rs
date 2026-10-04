@@ -10,12 +10,16 @@ use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::System::DataExchange::{
+    AddClipboardFormatListener, RemoveClipboardFormatListener,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
-    WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    RegisterWindowMessageW, WM_APP, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
+    WM_ENDSESSION, WM_HOTKEY, WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -56,7 +60,7 @@ pub(crate) fn create() -> Result<HWND, PlatformError> {
         if CLASS_ATOM.load(Ordering::SeqCst) == 0 {
             return Err(PlatformError::ClassRegistration);
         }
-        Ok(CreateWindowExW(
+        let window = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             CLASS_NAME,
             w!("DeskSpace"),
@@ -69,7 +73,11 @@ pub(crate) fn create() -> Result<HWND, PlatformError> {
             None,
             Some(instance),
             None,
-        )?)
+        )?;
+        // Watch the clipboard so a cut ghost clears when another app (or the
+        // desktop) replaces what DeskSpace put there.
+        let _ = AddClipboardFormatListener(window);
+        Ok(window)
     }
 }
 
@@ -136,13 +144,29 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::DeleteSelection);
                 LRESULT(0)
             }
+            keyboard::CLIPBOARD_KEY => {
+                if let Some(action) = keyboard::clipboard_action(wparam.0) {
+                    runtime::dispatch(Event::Clipboard(action));
+                }
+                LRESULT(0)
+            }
+            keyboard::RENAME_KEY => {
+                runtime::dispatch(Event::RenameSelection);
+                LRESULT(0)
+            }
+            WM_CLIPBOARDUPDATE => {
+                runtime::dispatch(Event::ClipboardChanged);
+                LRESULT(0)
+            }
             outside_click::OUTSIDE_PROBE => {
                 let point = POINT {
                     x: wparam.0 as isize as i32,
                     y: lparam.0 as i32,
                 };
                 if outside_click::is_outside(point) {
-                    runtime::dispatch(Event::PointerDownOutside);
+                    runtime::dispatch(Event::PointerDownOutside {
+                        on_desktop: outside_click::is_desktop(point),
+                    });
                 }
                 LRESULT(0)
             }
@@ -167,6 +191,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_DESTROY => {
+                let _ = RemoveClipboardFormatListener(window);
                 outside_click::stop();
                 keyboard::stop();
                 runtime::dispatch_close_once();
