@@ -162,6 +162,9 @@ pub struct Theme {
     pub custom_colors: bool,
     pub tint: Color,
     pub text: Color,
+    /// Mirror Explorer's display settings (item check boxes, filename
+    /// extensions) instead of hiding them, so spaces match the desktop.
+    pub match_explorer: bool,
 }
 
 impl Default for Theme {
@@ -179,6 +182,7 @@ impl Default for Theme {
             custom_colors: false,
             tint: DARK_TINT,
             text: DARK_TEXT,
+            match_explorer: true,
         }
     }
 }
