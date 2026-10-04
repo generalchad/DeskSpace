@@ -679,8 +679,10 @@ unsafe fn draw_item(
             );
         }
         // Explorer shows a check box while pointing at the item, and keeps it
-        // while the item stays selected.
-        if scene.show_check_boxes && (item.checked || item.hovered) {
+        // while the item stays selected; independent item check boxes are
+        // shown always.
+        if scene.show_check_boxes && (scene.check_boxes_persistent || item.checked || item.hovered)
+        {
             draw_check_box(target, brush, icon_left, cell.top + ICON_TOP, item.checked);
         }
         let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;

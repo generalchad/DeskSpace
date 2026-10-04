@@ -13,11 +13,25 @@ use windows::core::Interface;
 
 use crate::win32::shell_view;
 
+/// How Explorer's desktop view shows item check boxes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CheckBoxMode {
+    /// No check boxes.
+    #[default]
+    Hidden,
+    /// Auto-check-select: the tick mirrors the selection
+    /// (`FWF_AUTOCHECKSELECT`).
+    Selection,
+    /// Independent "item check boxes": the tick is separate from the selection
+    /// (`FWF_CHECKSELECT`).
+    Independent,
+}
+
 /// Explorer display options that affect how items are drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ShellDisplay {
-    /// The view shows a check box on each item (`FWF_CHECKSELECT`).
-    pub check_boxes: bool,
+    /// How the view shows item check boxes.
+    pub check_boxes: CheckBoxMode,
     /// Filenames are shown with their extension (`SSF_SHOWEXTENSIONS`).
     pub show_extensions: bool,
     /// Hidden files are listed (`SSF_SHOWALLOBJECTS`).
@@ -32,21 +46,24 @@ pub fn desktop_display() -> ShellDisplay {
     if let Some(view) = shell_view::desktop_shell_view() {
         // Only override when the view reports its flags; a failed read (the
         // view is briefly unavailable) must not silently hide check boxes.
-        if let Some(check_boxes) = view_check_boxes(&view) {
-            display.check_boxes = check_boxes;
+        if let Some(mode) = view_check_boxes(&view) {
+            display.check_boxes = mode;
         }
     }
     display
 }
 
-fn view_check_boxes(view: &IShellView) -> Option<bool> {
+fn view_check_boxes(view: &IShellView) -> Option<CheckBoxMode> {
     let folder = view.cast::<IFolderView2>().ok()?;
-    // Explorer sets FWF_AUTOCHECKSELECT for the desktop's "use check boxes"
-    // option and FWF_CHECKSELECT elsewhere; either means show them.
-    let flag = FWF_CHECKSELECT.0 as u32 | FWF_AUTOCHECKSELECT.0 as u32;
     // SAFETY: reading a flag from a live folder view.
     match unsafe { folder.GetCurrentFolderFlags() } {
-        Ok(flags) => Some(flags & flag != 0),
+        Ok(flags) => Some(if flags & FWF_CHECKSELECT.0 as u32 != 0 {
+            CheckBoxMode::Independent
+        } else if flags & FWF_AUTOCHECKSELECT.0 as u32 != 0 {
+            CheckBoxMode::Selection
+        } else {
+            CheckBoxMode::Hidden
+        }),
         Err(error) => {
             tracing::debug!(%error, "could not read the desktop view flags");
             None
@@ -63,7 +80,7 @@ fn global_display() -> ShellDisplay {
     let bits = state._bitfield1;
     let set = |flag: SSF_MASK| bits & flag.0 as i32 != 0;
     ShellDisplay {
-        check_boxes: false,
+        check_boxes: CheckBoxMode::Hidden,
         show_extensions: set(SSF_SHOWEXTENSIONS),
         show_hidden: set(SSF_SHOWALLOBJECTS),
         show_superhidden: set(SSF_SHOWSUPERHIDDEN),

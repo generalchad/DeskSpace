@@ -9,11 +9,11 @@ use deskspace_core::{
     Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
 };
 use deskspace_platform::{
-    ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome, Event,
-    EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton, Placement, RunOptions,
-    SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory,
-    desktop_display, drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
-    system_uses_dark_mode, work_area_at,
+    CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
+    Event, EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton, Placement,
+    RunOptions, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui,
+    desktop_directory, desktop_display, drag_threshold, hotkey_id, item_check_box_hit,
+    notify_moved, parse_hotkey, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -155,6 +155,8 @@ pub struct App {
     selection_anchor: Option<ItemId>,
     /// Items on the clipboard as a cut, shown ghosted until pasted.
     cut_items: HashSet<ItemId>,
+    /// Ticked items in independent item-check-box mode. Session-only.
+    checked_items: Vec<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
     /// The item whose slot is drawn faded while it is dragged.
@@ -197,6 +199,7 @@ impl App {
             selected_items: Vec::new(),
             selection_anchor: None,
             cut_items: HashSet::new(),
+            checked_items: Vec::new(),
             hovered: None,
             drag: Drag::None,
             dragged: None,
@@ -285,7 +288,9 @@ impl App {
                 .filter(|(space, _)| *space == id)
                 .map(|(_, item)| item),
             scroll: self.scroll_of(id),
-            show_check_boxes: self.match_explorer() && self.shell_display.check_boxes,
+            show_check_boxes: self.check_box_mode() != CheckBoxMode::Hidden,
+            check_boxes_persistent: self.check_box_mode() == CheckBoxMode::Independent,
+            checked: self.checked_items.clone(),
             show_extensions: self.match_explorer() && self.shell_display.show_extensions,
             cut: self.cut_items.iter().copied().collect(),
             marquee: self.marquee.and_then(|(owner, rect)| {
@@ -308,11 +313,24 @@ impl App {
         self.config.theme.match_explorer
     }
 
+    /// How the desktop shows item check boxes, honoring `match_explorer`.
+    fn check_box_mode(&self) -> CheckBoxMode {
+        if self.match_explorer() {
+            self.shell_display.check_boxes
+        } else {
+            CheckBoxMode::Hidden
+        }
+    }
+
     /// Re-reads Explorer's display options and repaints if they changed.
     fn refresh_shell_display(&mut self, ui: &mut Ui) {
         let display = desktop_display();
         if display != self.shell_display {
             self.shell_display = display;
+            // Independent ticks do not survive a switch out of that mode.
+            if self.check_box_mode() != CheckBoxMode::Independent {
+                self.checked_items.clear();
+            }
             self.restyle_all(ui);
         }
     }
@@ -331,7 +349,7 @@ impl App {
     /// The item whose Explorer-style check box contains `point`, when check
     /// boxes are shown. `point` is in desktop coordinates.
     fn checkbox_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
-        if !(self.match_explorer() && self.shell_display.check_boxes) {
+        if self.check_box_mode() == CheckBoxMode::Hidden {
             return None;
         }
         let item = self.item_at(id, point)?;
@@ -829,12 +847,21 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
-        // A click on an item's check box toggles that item in the selection,
-        // as Explorer's "use check boxes to select items" does, without
-        // clearing the others.
+        // A click on an item's check box either toggles that item in the
+        // selection (auto-check-select) or the independent tick set, and moves
+        // the highlight to it.
         if let Some(item) = self.checkbox_at(id, point) {
             let previous = self.selected_space.replace(id);
-            self.toggle_selected(item);
+            if self.check_box_mode() == CheckBoxMode::Independent {
+                if let Some(index) = self.checked_items.iter().position(|entry| *entry == item) {
+                    self.checked_items.remove(index);
+                } else {
+                    self.checked_items.push(item);
+                }
+                self.selected_items = vec![item];
+            } else {
+                self.toggle_selected(item);
+            }
             self.selection_anchor = Some(item);
             if let Some(previous) = previous.filter(|previous| *previous != id) {
                 self.refresh_space(ui, previous);
@@ -1294,13 +1321,20 @@ impl App {
                 .item(item)
                 .is_none_or(|item| !item.path.exists());
             if gone {
-                self.cut_items.remove(&item);
+                self.forget_item(item);
                 self.dispatch(Command::RemoveItem { id: item }, near);
             }
         }
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
         self.save();
+    }
+
+    /// Forgets an item's transient per-item state (cut ghosting and any
+    /// independent check) after it is removed or its file is gone.
+    fn forget_item(&mut self, item: ItemId) {
+        self.cut_items.remove(&item);
+        self.checked_items.retain(|checked| *checked != item);
     }
 
     /// Puts the selected items on the shell clipboard, cut (to be moved on
@@ -1514,7 +1548,7 @@ impl App {
             let near = self.space_center(id);
             self.dispatch(Command::RemoveItem { id: item }, near);
             self.selected_items.retain(|selected| *selected != item);
-            self.cut_items.remove(&item);
+            self.forget_item(item);
             if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
                 self.hovered = None;
             }
@@ -1617,10 +1651,14 @@ impl App {
         self.prune_all_missing(ui);
     }
 
-    /// The items an item operation acts on. Today this is the selection; F-41
-    /// will extend it to the independent check-box set.
+    /// The items an item operation acts on: the independent tick set when
+    /// check boxes are separate and any are ticked, otherwise the selection.
     fn active_items(&self) -> Vec<ItemId> {
-        self.selected_items.clone()
+        if self.check_box_mode() == CheckBoxMode::Independent && !self.checked_items.is_empty() {
+            self.checked_items.clone()
+        } else {
+            self.selected_items.clone()
+        }
     }
 
     /// Updates the rubber-band rectangle and the live selection as the pointer
@@ -1698,7 +1736,7 @@ impl App {
             Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
                 if self.release_item(item) {
                     self.selected_items.retain(|selected| *selected != item);
-                    self.cut_items.remove(&item);
+                    self.forget_item(item);
                     self.hovered = None;
                     self.refresh_space(ui, space);
                     self.refresh_tray(ui);
@@ -2334,6 +2372,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn independent_checks_are_the_operand() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        app.shell_display = ShellDisplay {
+            check_boxes: CheckBoxMode::Independent,
+            ..ShellDisplay::default()
+        };
+        app.selected_items = vec![ItemId(1)];
+        app.checked_items = vec![ItemId(2), ItemId(3)];
+        assert_eq!(app.active_items(), vec![ItemId(2), ItemId(3)]);
+        // With nothing ticked the selection is used.
+        app.checked_items.clear();
+        assert_eq!(app.active_items(), vec![ItemId(1)]);
+    }
+
+    #[test]
     fn checkbox_hit_test_matches_the_icon_corner() {
         use deskspace_core::Item;
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
@@ -2346,7 +2400,7 @@ mod tests {
         item.position = Point::ZERO;
         app.config.desktop.add_item(id, item);
         app.shell_display = ShellDisplay {
-            check_boxes: true,
+            check_boxes: CheckBoxMode::Selection,
             ..ShellDisplay::default()
         };
         let layout = app.config.desktop.layout;

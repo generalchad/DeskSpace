@@ -62,6 +62,9 @@ pub struct SpaceScene {
     /// Draw a check box on every item, as Explorer does when its "item check
     /// boxes" view option is on. Display only.
     pub show_check_boxes: bool,
+    /// Show the check boxes always (independent item check boxes) rather than
+    /// only on hover and while checked (auto-check-select).
+    pub check_boxes_persistent: bool,
     /// The rubber-band selection rectangle, in window-local coordinates, while
     /// the user drags over empty space. Drawn translucent above the items.
     pub marquee: Option<Rect>,

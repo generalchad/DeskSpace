@@ -19,7 +19,7 @@ pub use ui::{
     CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsPage, SliderMark,
 };
 pub use win32::Placement;
-pub use win32::display_settings::{ShellDisplay, desktop_display};
+pub use win32::display_settings::{CheckBoxMode, ShellDisplay, desktop_display};
 pub use win32::dpi::enable_per_monitor_awareness;
 pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};

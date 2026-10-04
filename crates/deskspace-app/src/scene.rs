@@ -21,6 +21,11 @@ pub struct ViewState {
     pub scroll: i32,
     /// Draw a check box on each item, from Explorer's view options.
     pub show_check_boxes: bool,
+    /// Show check boxes always (independent item check boxes) rather than only
+    /// on hover and while checked (auto-check-select).
+    pub check_boxes_persistent: bool,
+    /// The ticked items when check boxes are independent.
+    pub checked: Vec<ItemId>,
     /// Show filename extensions in labels, from Explorer's folder options.
     pub show_extensions: bool,
     /// Items that were cut; drawn ghosted until they are pasted.
@@ -84,9 +89,13 @@ pub fn space_scene(
                     ItemState::Normal
                 },
                 hovered: view.hovered == Some(item.id),
-                // With Explorer's auto-check-select mode (the desktop's "Use
-                // check boxes to select items"), the box mirrors selection.
-                checked: view.selected.contains(&item.id),
+                // The tick mirrors selection in auto-check-select mode, and the
+                // independent check set when item check boxes are separate.
+                checked: if view.check_boxes_persistent {
+                    view.checked.contains(&item.id)
+                } else {
+                    view.selected.contains(&item.id)
+                },
                 cut: view.cut.contains(&item.id),
             })
             .collect()
@@ -126,6 +135,7 @@ pub fn space_scene(
         caret_visible: true,
         items,
         show_check_boxes: view.show_check_boxes,
+        check_boxes_persistent: view.check_boxes_persistent,
         marquee: view.marquee,
         scroll_thumb: scroll_thumb(
             space,
@@ -243,6 +253,27 @@ mod tests {
         file.label = "report.txt".to_string();
         assert_eq!(item_label(&file, false), "report");
         assert_eq!(item_label(&file, true), "report.txt");
+    }
+
+    #[test]
+    fn independent_check_boxes_use_the_checked_set() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ViewState {
+                show_check_boxes: true,
+                check_boxes_persistent: true,
+                checked: vec![ItemId(4)],
+                ..ViewState::default()
+            },
+            &mut IconCache::new(32),
+        );
+        assert!(scene.check_boxes_persistent);
+        assert!(scene.items[0].checked);
     }
 
     #[test]
