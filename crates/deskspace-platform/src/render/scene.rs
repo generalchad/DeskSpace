@@ -99,4 +99,7 @@ pub struct ItemVisual {
     /// Whether the item was cut; drawn ghosted until it is pasted, as Explorer
     /// dims the items awaiting a move.
     pub cut: bool,
+    /// An override for the label color (Explorer's compressed/encrypted
+    /// colors); `None` uses the scene's item text color.
+    pub label_color: Option<Color>,
 }

@@ -30,6 +30,8 @@ pub struct ViewState {
     pub show_extensions: bool,
     /// Items that were cut; drawn ghosted until they are pasted.
     pub cut: Vec<ItemId>,
+    /// Color compressed/encrypted labels, from Explorer's view options.
+    pub show_compressed_color: bool,
     /// The rubber-band selection rectangle, in window-local coordinates.
     pub marquee: Option<Rect>,
 }
@@ -97,6 +99,7 @@ pub fn space_scene(
                     view.selected.contains(&item.id)
                 },
                 cut: view.cut.contains(&item.id),
+                label_color: compressed_label(item, view.show_compressed_color),
             })
             .collect()
     };
@@ -164,6 +167,25 @@ pub(crate) fn item_label(item: &Item, show_extensions: bool) -> String {
     item.label.clone()
 }
 
+/// Explorer's compressed (blue) and encrypted (green) label colors, used when
+/// the folder option `SSF_SHOWCOMPCOLOR` is on.
+const COMPRESSED_LABEL: Color = Color::rgb(0, 0, 255);
+const ENCRYPTED_LABEL: Color = Color::rgb(0, 128, 0);
+
+/// The label color override for a compressed or encrypted item.
+fn compressed_label(item: &Item, enabled: bool) -> Option<Color> {
+    if !enabled {
+        return None;
+    }
+    if item.encrypted {
+        Some(ENCRYPTED_LABEL)
+    } else if item.compressed {
+        Some(COMPRESSED_LABEL)
+    } else {
+        None
+    }
+}
+
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
 /// A dark shadow under light text (or a light one under dark text) when the
@@ -226,6 +248,21 @@ mod tests {
         item.position = Point::new(12, 12);
         space.push_item(item);
         space
+    }
+
+    #[test]
+    fn compressed_and_encrypted_items_get_explorer_colors() {
+        let mut compressed = Item::new(ItemId(4), "C:/missing/a.txt");
+        compressed.compressed = true;
+        assert_eq!(compressed_label(&compressed, true), Some(COMPRESSED_LABEL));
+        let mut encrypted = Item::new(ItemId(5), "C:/missing/b.txt");
+        encrypted.encrypted = true;
+        assert_eq!(compressed_label(&encrypted, true), Some(ENCRYPTED_LABEL));
+        assert_eq!(compressed_label(&encrypted, false), None);
+        assert_eq!(
+            compressed_label(&Item::new(ItemId(6), "C:/missing/c.txt"), true),
+            None
+        );
     }
 
     #[test]

@@ -7,7 +7,7 @@
 
 use windows::Win32::UI::Shell::{
     FWF_AUTOCHECKSELECT, FWF_CHECKSELECT, IFolderView2, IShellView, SHELLSTATEA, SHGetSetSettings,
-    SSF_MASK, SSF_SHOWALLOBJECTS, SSF_SHOWEXTENSIONS, SSF_SHOWSUPERHIDDEN,
+    SSF_MASK, SSF_SHOWALLOBJECTS, SSF_SHOWCOMPCOLOR, SSF_SHOWEXTENSIONS, SSF_SHOWSUPERHIDDEN,
 };
 use windows::core::Interface;
 
@@ -38,6 +38,9 @@ pub struct ShellDisplay {
     pub show_hidden: bool,
     /// Protected operating-system files are listed (`SSF_SHOWSUPERHIDDEN`).
     pub show_superhidden: bool,
+    /// Compressed files are colored and encrypted files are colored green
+    /// (`SSF_SHOWCOMPCOLOR`).
+    pub show_compressed_color: bool,
 }
 
 /// Reads the desktop's current display options.
@@ -73,7 +76,7 @@ fn view_check_boxes(view: &IShellView) -> Option<CheckBoxMode> {
 
 fn global_display() -> ShellDisplay {
     let mut state = SHELLSTATEA::default();
-    let mask = SSF_SHOWALLOBJECTS | SSF_SHOWEXTENSIONS | SSF_SHOWSUPERHIDDEN;
+    let mask = SSF_SHOWALLOBJECTS | SSF_SHOWEXTENSIONS | SSF_SHOWSUPERHIDDEN | SSF_SHOWCOMPCOLOR;
     // SAFETY: `state` is a valid out-structure of the documented size; the
     // call only fills the masked bits.
     unsafe { SHGetSetSettings(Some(&mut state), mask, false) };
@@ -84,5 +87,6 @@ fn global_display() -> ShellDisplay {
         show_extensions: set(SSF_SHOWEXTENSIONS),
         show_hidden: set(SSF_SHOWALLOBJECTS),
         show_superhidden: set(SSF_SHOWSUPERHIDDEN),
+        show_compressed_color: set(SSF_SHOWCOMPCOLOR),
     }
 }

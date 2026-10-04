@@ -713,7 +713,7 @@ unsafe fn draw_item(
                     label,
                     &format,
                     label_rect,
-                    scene.item_text.fade(alpha),
+                    item.label_color.unwrap_or(scene.item_text).fade(alpha),
                     scene.text_shadow.map(|shadow| shadow.fade(alpha)),
                 );
             }

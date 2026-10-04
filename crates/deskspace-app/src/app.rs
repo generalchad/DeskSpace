@@ -292,6 +292,8 @@ impl App {
             check_boxes_persistent: self.check_box_mode() == CheckBoxMode::Independent,
             checked: self.checked_items.clone(),
             show_extensions: self.match_explorer() && self.shell_display.show_extensions,
+            show_compressed_color: self.match_explorer()
+                && self.shell_display.show_compressed_color,
             cut: self.cut_items.iter().copied().collect(),
             marquee: self.marquee.and_then(|(owner, rect)| {
                 if owner != id {

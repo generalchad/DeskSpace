@@ -51,6 +51,14 @@ pub struct Item {
     /// item is created. `None` when unavailable.
     #[serde(default)]
     pub modified: Option<u64>,
+    /// NTFS compressed attribute, read at creation for Explorer's compressed
+    /// label color (`SSF_SHOWCOMPCOLOR`).
+    #[serde(default)]
+    pub compressed: bool,
+    /// NTFS encrypted attribute, read at creation for Explorer's encrypted
+    /// label color.
+    #[serde(default)]
+    pub encrypted: bool,
 }
 
 impl Item {
@@ -58,7 +66,7 @@ impl Item {
         let path = path.into();
         let kind = ItemKind::classify(&path);
         let label = default_label(&path);
-        let (size, modified) = read_metadata(&path);
+        let (size, modified, compressed, encrypted) = read_metadata(&path);
         Self {
             id,
             path,
@@ -67,6 +75,8 @@ impl Item {
             position: Point::ZERO,
             size,
             modified,
+            compressed,
+            encrypted,
         }
     }
 
@@ -96,9 +106,9 @@ fn default_label(path: &Path) -> String {
 /// The size (files only) and last-modified time of `path`, when it can be
 /// read. Like `ItemKind::classify`, this inspects the filesystem once at
 /// creation; there is no watcher yet, so the values can go stale.
-fn read_metadata(path: &Path) -> (Option<u64>, Option<u64>) {
+fn read_metadata(path: &Path) -> (Option<u64>, Option<u64>, bool, bool) {
     let Ok(metadata) = std::fs::metadata(path) else {
-        return (None, None);
+        return (None, None, false, false);
     };
     let size = metadata.is_file().then_some(metadata.len());
     let modified = metadata
@@ -106,7 +116,24 @@ fn read_metadata(path: &Path) -> (Option<u64>, Option<u64>) {
         .ok()
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|elapsed| elapsed.as_secs());
-    (size, modified)
+    let (compressed, encrypted) = file_flags(&metadata);
+    (size, modified, compressed, encrypted)
+}
+
+/// The NTFS compressed/encrypted attributes (`FILE_ATTRIBUTE_COMPRESSED` /
+/// `FILE_ATTRIBUTE_ENCRYPTED`), which Explorer uses to color labels.
+fn file_flags(metadata: &std::fs::Metadata) -> (bool, bool) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let attributes = metadata.file_attributes();
+        (attributes & 0x0000_0800 != 0, attributes & 0x0000_4000 != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = metadata;
+        (false, false)
+    }
 }
 
 #[cfg(test)]
