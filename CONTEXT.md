@@ -407,7 +407,9 @@ WindowSettings {
   `scene::item_label` shows a file's full name when
   extensions are on, except for shortcuts, whose `.lnk`/`.url` extension
   Explorer never shows; both forms are derived from the path, so the option can
-  be toggled either way. A plain click ticks one item and unticks the rest,
+  be toggled either way. `SSF_SHOWCOMPCOLOR` colors compressed labels blue and
+  encrypted labels green (`Item::compressed`/`encrypted`, read at creation).
+  A plain click ticks one item and unticks the rest,
   Ctrl+click ticks several, and clicking the box itself toggles one item
   (`render::item_check_box_hit` is the clickable region); in `Independent` mode
   the tick set is the operand for delete/copy/cut/drag (`active_items`), while
@@ -710,8 +712,9 @@ WindowSettings {
 - **Explorer display matching is partial.** Item check boxes handle both
   Explorer modes: auto-check-select (the tick mirrors the selection) and
   independent item check boxes (a session-only tick set that is the operand for
-  operations). Icon size/view mode, icon spacing, info tips, and
-  compressed/encrypted label colors are not imported yet (ROADMAP F-25/F-28).
+  operations). Compressed/encrypted label colors are imported
+  (`SSF_SHOWCOMPCOLOR`). Icon size/view mode, icon spacing, and info tips are
+  not imported yet (ROADMAP F-25/F-43/F-28).
   Only the desktop's own options are read, so a check-box setting enabled in
   one Explorer window is not reflected.
 - **Selection is within one space.** Rubber-band (marquee) selection, Ctrl+A,

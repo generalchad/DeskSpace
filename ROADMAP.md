@@ -189,6 +189,11 @@ started).
   ticks survive empty-space and desktop clicks, and `active_items()` makes the
   ticked items the operand for delete/copy/cut/drag. The set clears when the
   mode changes and is pruned as items leave.
+- **Compressed/encrypted label colors (F-43, part).** `Item` records the NTFS
+  compressed and encrypted attributes read at creation, and `ShellDisplay`
+  reads `SSF_SHOWCOMPCOLOR`. With `match_explorer` on, such labels are drawn
+  blue (compressed) or green (encrypted), as Explorer does. Info tips and
+  icon spacing from `IFolderView::GetSpacing` remain.
 - **Space click acts like a desktop click.** Clicking a space now focuses the
   desktop (deactivating the app in front) and clears the desktop icon
   selection through its `IShellView`, matching native Windows. A selection
@@ -513,8 +518,10 @@ icon overlays). All need the desktop's view settings read through
   select all, and dragging the whole multi-selection (a custom `IDataObject`
   serves the multi-file `CF_HDROP`). `active_items()` now centralizes the
   operand so F-41 can swap in the independent check-box set.
-- **F-43** Info tips, compressed/encrypted label colors (`SSF_SHOWCOMPCOLOR`),
-  and icon spacing from `IFolderView::GetSpacing`.
+- **[partial] F-43** Info tips, compressed/encrypted label colors
+  (`SSF_SHOWCOMPCOLOR`), and icon spacing from `IFolderView::GetSpacing`.
+  Compressed (blue) and encrypted (green) label colors are done; info tips and
+  icon spacing remain.
 - **F-44** Title bar style (hidden / hover-only) — see **F-28** (M5).
 
 ## 5. Release mapping
