@@ -39,11 +39,19 @@ Options:
 
 ## Controls
 
-- Drag a space title bar to move it.
-- Double-click a space title bar to roll it up or down.
-- Right-click a space for roll up, lock, delete, new space, settings, and exit.
-- Drag files from Explorer or the desktop onto a space to add them (the files
-  are not moved).
+- Drag a space title bar to move it; drag an edge or corner to resize (the wheel
+  scrolls a resized space).
+- Double-click a space title bar to roll it up or down; right-click a space for
+  roll up, rename, lock, fit to contents, appearance, sort, delete, new space,
+  settings, and exit.
+- Click an item to select it (Ctrl+click toggles, Shift+click ranges, drag empty
+  space for a rubber-band selection, Ctrl+A selects all). Drag a selection to
+  rearrange it in a space or out to another space, folder, app, or the desktop.
+- Double-click an item to open it; right-click for Explorer's context menu.
+- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items; `Delete` sends the
+  selection to the Recycle Bin; `F2` renames the focused item inline.
+- Drag files from Explorer or the desktop onto a space to move them into it
+  (hold Shift to leave them where they are).
 - Tray icon: left-click opens Settings; right-click for more.
 - Press `Ctrl+Alt+D` (editable in Settings) to hide or show spaces.
 

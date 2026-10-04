@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (137 tests) are green.
+  `cargo test --workspace` (150 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -52,15 +52,18 @@ context menus, and a settings window in the first usable release (v0.2).
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
   (double-click the title bar), renamed inline, restyled per space (opacity,
   tint, text), sorted, and locked; their items can be rearranged by dragging.
-- Items have Explorer-style multi-selection (plain click selects one,
-  Ctrl+click toggles, Shift+click ranges, Delete removes all selected), and,
-  when the desktop shows check boxes, an auto-check box mirrors the selection
-  (a click ticks one item and unticks the rest; clicking the box toggles one).
-  Labels honor Explorer's extension setting and icons carry shell overlays.
-  See section 6 and the display-settings bullet.
+- Items have Explorer-style multi-selection (plain click selects one, Ctrl+click
+  toggles, Shift+click ranges, rubber-band over empty space with Ctrl/Shift to
+  add, Ctrl+A for all, Delete removes all selected). Item check boxes follow
+  Explorer's mode: auto-check-select mirrors the selection, or independent item
+  check boxes keep a separate session tick set that becomes the operand for
+  delete/copy/cut/drag. Labels honor Explorer's extension and
+  compressed/encrypted color settings, and icons carry shell overlays. See
+  section 6 and the display-settings bullet.
 - Files dropped onto a space are moved into the space storage (Shift keeps
   them in place); items open on double-click, show Explorer's context menu on
-  right-click, and drag out like Explorer items with a drag image. A drag out
+  right-click, and drag out like Explorer items with a drag image, dragging the
+  whole selection as one shell drag. A drag out
   defaults to a move and spaces are OLE drop targets, so the shell shows the
   move/copy cursor. Selected items can be cut, copied, and pasted with
   Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
@@ -74,8 +77,10 @@ context menus, and a settings window in the first usable release (v0.2).
   Delete key, per-space appearance, sort, grid/label settings, cross-space
   moves (2026-10-03). Pending on-screen checks: the move/copy cursor, the
   `- Copy` fix, the drag image over Explorer and over spaces, the in-space
-  ghost, the space-click focus/deselect, the check-box display and
-  multi-selection, and the clipboard cut/copy/paste with its ghosting. The
+  ghost, the space-click focus/deselect, the check-box display and both
+  check-box modes, rubber-band/Ctrl+A selection and the whole-selection drag,
+  the clipboard cut/copy/paste with its ghosting and external sync, F2 item
+  rename, and the compressed/encrypted label colors. The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
@@ -652,14 +657,14 @@ WindowSettings {
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
-| Drag icons in / out / between spaces | Implemented (shell drag out, `WM_DROPFILES` in) |
+| Drag icons in / out / between spaces | Implemented (OLE drag-out of the whole selection and multi-item rearrange; spaces are OLE `IDropTarget`s) |
 | Drag files onto a space to add them | Implemented; files move into storage, Shift keeps them in place |
-| Create / rename / delete space | Create and delete via menus; rename has no UI |
+| Create / rename / delete space | Implemented (create/delete via menus, inline rename) |
 | Resize space | Implemented (edges/corners, scrolling, fit to contents) |
 | Lock space | Implemented (context menu, lock glyph) |
 | Snap to grid / auto-arrange | Implemented in core |
 | Per-lens sort rules | Not implemented |
-| Appearance (color, translucency, blur, corners) | Implemented globally in Settings (incl. clear glass, corner slider); no per-space UI |
+| Appearance (color, translucency, blur, corners) | Implemented globally in Settings and per space (menu: opacity, tint, text) |
 | Multiple pages / virtual desktops | Not implemented |
 | Backup / restore / layout snapshots | Config file only |
 | Right-click context menu | Space menu; item menu is Explorer's |

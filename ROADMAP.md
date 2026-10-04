@@ -115,8 +115,11 @@ started).
   `(2)` copy; an item whose file vanished is pruned before a drag. Verified by
   manual testing 2026-10-03 (cross-space moves stay unique and persist).
   Explorer parity (move/copy effects, ghost image, clipboard, Recycle-Bin
-  delete) is queued as F-36..F-39. **Item interaction through F-39 is complete;
-  start the next item session on the native-appearance follow-ups below.**
+  delete) is queued as F-36..F-39. **Item interaction through F-39 is complete,
+  and the native-appearance follow-ups F-41 (independent check boxes) and F-42
+  (rubber-band, Ctrl+A, multi-selection drag) are done. Next: finish F-43 (info
+  tips, icon spacing) or start F-40/icon size, which needs the M2 enumeration
+  and DPI groundwork.**
 - **Explorer-parity drag, part 1 (F-36).** Spaces are OLE `IDropTarget`s
   (`win32/drop_target.rs`, `RegisterDragDrop`, revoked in `WM_DESTROY`) rather
   than `WS_EX_ACCEPTFILES` windows, so the shell shows the move/copy cursor and
