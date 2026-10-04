@@ -182,6 +182,13 @@ started).
   only one item and `SHCreateDataObject` needs a shared parent. `active_items()`
   centralizes the operand (delete/copy/cut/drag) so F-41 can swap in the
   independent check-box set. Offscreen-tested only; confirm on screen.
+- **Independent item check boxes (F-41).** `ShellDisplay.check_boxes` is now a
+  `CheckBoxMode` (`Hidden` / `Selection` / `Independent`). In Independent mode
+  the boxes are always shown and the tick is a session-only set separate from
+  the selection; clicking a box toggles the tick and moves the highlight, the
+  ticks survive empty-space and desktop clicks, and `active_items()` makes the
+  ticked items the operand for delete/copy/cut/drag. The set clears when the
+  mode changes and is pruned as items leave.
 - **Space click acts like a desktop click.** Clicking a space now focuses the
   desktop (deactivating the app in front) and clears the desktop icon
   selection through its `IShellView`, matching native Windows. A selection
@@ -499,9 +506,9 @@ icon overlays). All need the desktop's view settings read through
 - **F-40** Icon size and view mode, driven by the desktop's
   `IFolderView2::GetViewModeAndIconSize` (and Explorer's own icon rendering);
   also covers **F-25**. Needs DPI-aware layout and jumbo icons (M2).
-- **F-41** Independent "item check boxes" mode (`FWF_CHECKSELECT`): tick state
-  kept separate from selection, unlike the current auto-check-select
-  (`FWF_AUTOCHECKSELECT`) behavior.
+- **[done] F-41** Independent "item check boxes" mode (`FWF_CHECKSELECT`): boxes
+  are always shown and the tick is a session-only set separate from the
+  selection, and the ticked items are the operand for delete/copy/cut/drag.
 - **[done] F-42** Rubber-band (marquee) selection over empty space, Ctrl+A to
   select all, and dragging the whole multi-selection (a custom `IDataObject`
   serves the multi-file `CF_HDROP`). `active_items()` now centralizes the

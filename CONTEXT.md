@@ -395,18 +395,23 @@ WindowSettings {
   desktop's `IShellView` (`win32/shell_view.rs`, shared with the click code)
   and `SHGetSetSettings`: `FWF_CHECKSELECT`/`FWF_AUTOCHECKSELECT` (item check
   boxes), `SSF_SHOWALLOBJECTS`/`SSF_SHOWSUPERHIDDEN` (hidden files),
-  `SSF_SHOWEXTENSIONS` (filename extensions). When `Theme.match_explorer` is
+  `SSF_SHOWEXTENSIONS` (filename extensions). `ShellDisplay.check_boxes` is a
+  `CheckBoxMode`: `FWF_CHECKSELECT` gives `Independent`, `FWF_AUTOCHECKSELECT`
+  gives `Selection`, neither `Hidden`. When `Theme.match_explorer` is
   on (default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
-  draws an Explorer-style check box at each icon's corner while the item is
-  hovered or selected (a failed view read leaves the last known value, so a
-  stale read never hides the boxes), and `scene::item_label` shows a file's full name when
+  draws an Explorer-style check box at each icon's corner. In `Selection` mode
+  the box is revealed on hover and while selected and its tick mirrors the
+  selection; in `Independent` mode it is always shown and its tick is a
+  session-only set separate from the selection (a failed view read leaves the
+  last known mode, so a stale read never hides the boxes).
+  `scene::item_label` shows a file's full name when
   extensions are on, except for shortcuts, whose `.lnk`/`.url` extension
   Explorer never shows; both forms are derived from the path, so the option can
-  be toggled either way. The desktop's check boxes are the auto-check-select kind
-  (`FWF_AUTOCHECKSELECT`, "use check boxes to select items"), so the box
-  mirrors the selection: a plain click ticks that item and unticks the rest,
+  be toggled either way. A plain click ticks one item and unticks the rest,
   Ctrl+click ticks several, and clicking the box itself toggles one item
-  (`render::item_check_box_hit` is the clickable region). The snapshot is
+  (`render::item_check_box_hit` is the clickable region); in `Independent` mode
+  the tick set is the operand for delete/copy/cut/drag (`active_items`), while
+  in `Selection` mode the selection is. The snapshot is
   re-read at startup, on
   `Event::SystemThemeChanged`, and on every space click, and a change repaints
   every space. Icons are fetched with `SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY`
@@ -609,10 +614,13 @@ WindowSettings {
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top; right-clicking an item already in a multi-selection keeps it.
-- Hover an item to reveal Explorer's check box at its icon's corner (when the
-  desktop shows check boxes and `match_explorer` is on). Clicking an item
-  ticks it and unticks the others (its check box mirrors selection); Ctrl+click
-  ticks several; clicking the box itself toggles that one item.
+- Item check boxes follow Explorer's mode (when the desktop shows them and
+  `match_explorer` is on). With auto-check-select, hovering reveals the box and
+  it mirrors the selection; clicking an item ticks it and unticks the others,
+  Ctrl+click ticks several, and clicking the box toggles one. With independent
+  item check boxes, the boxes are always shown, clicking a box toggles a
+  persistent tick and moves the highlight, the ticks survive empty-space and
+  desktop clicks, and delete/copy/cut/drag act on the ticked items.
 - Drag an item within its space to rearrange it: its icon follows the
   pointer and its slot fades; the new order sticks until a Sort by reorders
   it.
@@ -699,10 +707,10 @@ WindowSettings {
   composition (Japanese, Chinese, ...) is deferred. Space titles and item file
   names both rename inline; an item rename goes through the shell, so a name
   clash shows Explorer's conflict prompt.
-- **Explorer display matching is partial.** Item check boxes mirror the
-  selection, like Explorer's auto-check-select mode ("use check boxes to
-  select items"), but the independent check mode (`FWF_CHECKSELECT`) is not
-  distinguished. Icon size/view mode, icon spacing, info tips, and
+- **Explorer display matching is partial.** Item check boxes handle both
+  Explorer modes: auto-check-select (the tick mirrors the selection) and
+  independent item check boxes (a session-only tick set that is the operand for
+  operations). Icon size/view mode, icon spacing, info tips, and
   compressed/encrypted label colors are not imported yet (ROADMAP F-25/F-28).
   Only the desktop's own options are read, so a check-box setting enabled in
   one Explorer window is not reflected.
