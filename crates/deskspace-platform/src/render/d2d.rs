@@ -24,7 +24,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
-    D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
+    D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
+    ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -38,22 +39,28 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICImagingFactory,
-    WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmap, IWICImagingFactory,
+    WICBitmapCacheOnLoad, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, HICON};
 use windows::core::{BOOL, HRESULT, PCWSTR, w};
+use windows_numerics::Vector2;
 
 use crate::error::PlatformError;
 use crate::render::Icon;
-use crate::render::scene::{ItemState, SpaceScene};
+use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
 
-const ICON_SIZE: f32 = 32.0;
-const ICON_TOP: f32 = 10.0;
+const ICON_SIZE: f32 = super::ITEM_ICON_SIZE as f32;
+const ICON_TOP: f32 = super::ITEM_ICON_TOP as f32;
 const TITLE_INSET: f32 = 12.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
+/// Opacity of an item's slot while the item itself is dragged.
+const DRAGGED_ALPHA: u8 = 90;
+/// Explorer's item check box, anchored at the icon's top-left corner.
+const CHECK_BOX_SIZE: f32 = super::ITEM_CHECK_BOX_SIZE as f32;
+const CHECK_BOX_MARGIN: f32 = super::ITEM_CHECK_BOX_MARGIN as f32;
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
@@ -446,56 +453,9 @@ impl Painter {
     ) {
         let scene = &prepared.scene;
         for (item, label) in scene.items.iter().zip(&prepared.labels) {
-            let cell = to_rect_f(item.rect);
-            let highlight = match item.state {
-                ItemState::Normal => None,
-                ItemState::Hovered => Some(scene.hover_fill),
-                ItemState::Selected => Some(scene.selected_fill),
-            };
+            let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe {
-                if let Some(color) = highlight {
-                    brush.SetColor(&color_f(color));
-                    target.FillRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: inset(cell, 2.0),
-                            radiusX: 4.0,
-                            radiusY: 4.0,
-                        },
-                        brush,
-                    );
-                }
-
-                let center_x = (cell.left + cell.right) / 2.0;
-                if let Some(bitmap) = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon)) {
-                    let left = (center_x - ICON_SIZE / 2.0).round();
-                    let top = cell.top + ICON_TOP;
-                    target.DrawBitmap(
-                        &bitmap,
-                        Some(&rect_f(left, top, left + ICON_SIZE, top + ICON_SIZE)),
-                        1.0,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                        None,
-                    );
-                }
-
-                let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;
-                let scale = scene.label_size.clamp(60, 160) as f32 / 100.0;
-                let lines = scene.label_lines.clamp(1, 2) as f32;
-                let line_height = LABEL_LINE_HEIGHT * scale;
-                let label_bottom = (label_top + lines * line_height).min(cell.bottom);
-                if label_bottom > label_top {
-                    draw_text(
-                        target,
-                        brush,
-                        label,
-                        &graphics.label_format_for(scene.label_size),
-                        rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
-                        scene.item_text,
-                        scene.text_shadow,
-                    );
-                }
-            }
+            unsafe { draw_item(graphics, target, brush, scene, item, label, bitmap.as_ref()) };
         }
     }
 
@@ -615,18 +575,225 @@ impl Painter {
     }
 }
 
+/// Draws one item cell: highlight, icon, and label. Shared by the space
+/// painter and `render_item`, so a drag image is exactly what the space shows.
+unsafe fn draw_item(
+    graphics: &Graphics,
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    scene: &SpaceScene,
+    item: &ItemVisual,
+    label: &[u16],
+    icon: Option<&ID2D1Bitmap>,
+) {
+    let cell = to_rect_f(item.rect);
+    let highlight = match item.state {
+        ItemState::Normal | ItemState::Dragged => None,
+        ItemState::Hovered => Some(scene.hover_fill),
+        ItemState::Selected => Some(scene.selected_fill),
+    };
+    let alpha = if item.state == ItemState::Dragged {
+        DRAGGED_ALPHA
+    } else {
+        255
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if let Some(color) = highlight {
+            brush.SetColor(&color_f(color));
+            target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: inset(cell, 2.0),
+                    radiusX: 4.0,
+                    radiusY: 4.0,
+                },
+                brush,
+            );
+        }
+
+        let center_x = (cell.left + cell.right) / 2.0;
+        let icon_left = (center_x - ICON_SIZE / 2.0).round();
+        if let Some(bitmap) = icon {
+            let top = cell.top + ICON_TOP;
+            target.DrawBitmap(
+                bitmap,
+                Some(&rect_f(
+                    icon_left,
+                    top,
+                    icon_left + ICON_SIZE,
+                    top + ICON_SIZE,
+                )),
+                alpha as f32 / 255.0,
+                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                None,
+            );
+        }
+        // Explorer shows a check box only while pointing at the item, and
+        // keeps it once checked.
+        if scene.show_check_boxes && (item.checked || item.hovered) {
+            draw_check_box(target, brush, icon_left, cell.top + ICON_TOP, item.checked);
+        }
+        let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;
+        let scale = scene.label_size.clamp(60, 160) as f32 / 100.0;
+        let lines = scene.label_lines.clamp(1, 2) as f32;
+        let line_height = LABEL_LINE_HEIGHT * scale;
+        let label_bottom = (label_top + lines * line_height).min(cell.bottom);
+        if label_bottom > label_top {
+            draw_text(
+                target,
+                brush,
+                label,
+                &graphics.label_format_for(scene.label_size),
+                rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom),
+                scene.item_text.fade(alpha),
+                scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+            );
+        }
+    }
+}
+
+/// Draws Explorer's item check box at the top-left of an icon. A light box
+/// with a dark border stays visible on any backdrop; `checked` adds the tick.
+unsafe fn draw_check_box(
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    icon_left: f32,
+    icon_top: f32,
+    checked: bool,
+) {
+    let left = icon_left + CHECK_BOX_MARGIN;
+    let top = icon_top + CHECK_BOX_MARGIN;
+    let rect = rect_f(left, top, left + CHECK_BOX_SIZE, top + CHECK_BOX_SIZE);
+    let rounded = D2D1_ROUNDED_RECT {
+        rect,
+        radiusX: 2.5,
+        radiusY: 2.5,
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        brush.SetColor(&color_f(Color::rgba(255, 255, 255, 210)));
+        target.FillRoundedRectangle(&rounded, brush);
+        brush.SetColor(&color_f(Color::rgba(0, 0, 0, 150)));
+        target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
+        if checked {
+            brush.SetColor(&color_f(Color::rgba(0, 0, 0, 255)));
+            let s = CHECK_BOX_SIZE;
+            let stroke = 1.4;
+            target.DrawLine(
+                Vector2::new(left + s * 0.22, top + s * 0.52),
+                Vector2::new(left + s * 0.43, top + s * 0.74),
+                brush,
+                stroke,
+                None,
+            );
+            target.DrawLine(
+                Vector2::new(left + s * 0.43, top + s * 0.74),
+                Vector2::new(left + s * 0.80, top + s * 0.26),
+                brush,
+                stroke,
+                None,
+            );
+        }
+    }
+}
+
+/// Renders item `id` of `scene` on its own, exactly as the space draws it
+/// (state, icon, label, colors), into premultiplied pixels the size of its
+/// cell. Used for drag images. Needs COM on this thread (for WIC).
+pub(crate) fn render_item(scene: &SpaceScene, id: u64) -> Option<Icon> {
+    let index = scene.items.iter().position(|item| item.id == id)?;
+    let mut item = scene.items[index].clone();
+    let width = item.rect.width.max(1) as u32;
+    let height = item.rect.height.max(1) as u32;
+    item.rect = Rect::new(0, 0, item.rect.width, item.rect.height);
+    let label: Vec<u16> = item.label.encode_utf16().collect();
+    let graphics = graphics().ok()?;
+    let properties = D2D1_RENDER_TARGET_PROPERTIES {
+        r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        pixelFormat: D2D1_PIXEL_FORMAT {
+            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+        },
+        dpiX: 96.0,
+        dpiY: 96.0,
+        usage: D2D1_RENDER_TARGET_USAGE_NONE,
+        minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+    };
+    // SAFETY: the WIC bitmap and its render target live for this call only;
+    // drawing happens between BeginDraw and EndDraw, and the pixels are copied
+    // out afterwards.
+    unsafe {
+        let pixels = graphics
+            .wic
+            .CreateBitmap(
+                width,
+                height,
+                &GUID_WICPixelFormat32bppPBGRA,
+                WICBitmapCacheOnLoad,
+            )
+            .ok()?;
+        let target = graphics
+            .d2d
+            .CreateWicBitmapRenderTarget(&pixels, &properties)
+            .ok()?;
+        target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        // Transparent background: ClearType needs an opaque one.
+        target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        let brush = target
+            .CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)
+            .ok()?;
+        let icon = item.icon.as_ref().and_then(|icon| {
+            target
+                .CreateBitmap(
+                    D2D_SIZE_U {
+                        width: icon.width(),
+                        height: icon.height(),
+                    },
+                    Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
+                    icon.width() * 4,
+                    &D2D1_BITMAP_PROPERTIES {
+                        pixelFormat: properties.pixelFormat,
+                        dpiX: 96.0,
+                        dpiY: 96.0,
+                    },
+                )
+                .ok()
+        });
+        target.BeginDraw();
+        target.Clear(Some(&color_f(Color::TRANSPARENT)));
+        draw_item(
+            &graphics,
+            &target,
+            &brush,
+            scene,
+            &item,
+            &label,
+            icon.as_ref(),
+        );
+        target.EndDraw(None, None).ok()?;
+        drop(target);
+        to_icon(&graphics, &pixels)
+    }
+}
+
 /// Copies an `HICON` into an owned premultiplied-BGRA `Icon`. The caller
 /// keeps ownership of `hicon`. Needs COM on this thread (for WIC).
 pub(crate) fn decode_icon(hicon: HICON) -> Option<Icon> {
     let graphics = graphics().ok()?;
-    // SAFETY: `hicon` is a live icon owned by the caller for this call; the
-    // pixel buffer is sized from the converter's reported dimensions.
+    // SAFETY: `hicon` is a live icon owned by the caller for this call.
+    let source = unsafe { graphics.wic.CreateBitmapFromHICON(hicon).ok()? };
+    to_icon(&graphics, &source)
+}
+
+/// Converts any WIC source to top-down premultiplied BGRA pixels.
+fn to_icon(graphics: &Graphics, source: &IWICBitmap) -> Option<Icon> {
+    // SAFETY: the pixel buffer is sized from the converter's reported
+    // dimensions; `source` is a live WIC bitmap.
     unsafe {
-        let source = graphics.wic.CreateBitmapFromHICON(hicon).ok()?;
         let converter = graphics.wic.CreateFormatConverter().ok()?;
         converter
             .Initialize(
-                &source,
+                source,
                 &GUID_WICPixelFormat32bppPBGRA,
                 WICBitmapDitherTypeNone,
                 None,
@@ -691,7 +858,7 @@ unsafe fn fill_rounded(
 /// Draws clipped text, first offset by one pixel in `shadow` when given.
 #[allow(clippy::too_many_arguments)]
 unsafe fn draw_text(
-    target: &ID2D1HwndRenderTarget,
+    target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     text: &[u16],
     format: &IDWriteTextFormat,

@@ -16,7 +16,8 @@ use std::marker::PhantomData;
 use std::path::Path;
 
 use deskspace_core::geometry::{Point, Rect};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::UI::Controls::{
     ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX,
@@ -35,12 +36,14 @@ use crate::error::PlatformError;
 use crate::input::Event;
 use crate::render::{SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
+use crate::win32::drag_ghost::DragGhost;
+use crate::win32::drag_image::DragImage;
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    console, controller, dark_mode, desktop_shell, menu, outside_click, settings_window,
-    space_window, tray,
+    console, controller, dark_mode, desktop_shell, drop_target, menu, outside_click,
+    settings_window, shell_selection, shell_view, space_window, tray,
 };
 
 pub trait EventHandler {
@@ -72,6 +75,8 @@ struct Runtime {
     ui_dark: bool,
     tray_tooltip: String,
     close_dispatched: bool,
+    /// Created on the first in-space item drag and kept for reuse.
+    drag_ghost: Option<DragGhost>,
 }
 
 thread_local! {
@@ -140,12 +145,14 @@ pub(crate) fn settings_closed(window: HWND) {
 /// Destroys every space window and the settings window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
-    let windows = with_runtime(|runtime| {
+    let (windows, ghost) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.extend(runtime.settings.take());
-        windows
+        (windows, runtime.drag_ghost.take())
     })
     .unwrap_or_default();
+    // Dropped outside the borrow: destroying a window sends messages.
+    drop(ghost);
     for hwnd in windows {
         // SAFETY: each HWND was created by this runtime on this thread.
         unsafe {
@@ -339,15 +346,59 @@ impl Ui {
         shell_items::track_item_menu(owner, path, entries, at)
     }
 
-    /// Drags `path` out like Explorer does and blocks until it is dropped.
+    /// Drags `path` out like Explorer does and blocks until it is dropped,
+    /// showing `image` under the pointer (the shell's default otherwise).
     /// Drops on spaces arrive afterwards as `SpaceEvent::FilesDropped`.
-    pub fn drag_out(&mut self, path: &Path) -> Option<DragResult> {
-        match shell_items::drag_out(path) {
+    pub fn drag_out(&mut self, path: &Path, image: Option<&DragImage>) -> Option<DragResult> {
+        let owner = with_runtime(|runtime| runtime.controller);
+        match shell_items::drag_out(owner, path, image) {
             Ok(result) => Some(result),
             Err(error) => {
                 tracing::warn!(%error, path = %path.display(), "could not start drag");
                 None
             }
+        }
+    }
+
+    /// Shows `image` floating with its hotspot at `at` (desktop coordinates)
+    /// while the app drags an item inside a space.
+    pub fn show_drag_ghost(&mut self, image: &DragImage, at: Point) {
+        // Checked out of the runtime: showing the window sends messages.
+        let ghost = with_runtime(|runtime| runtime.drag_ghost.take()).flatten();
+        let ghost = match ghost {
+            Some(ghost) => Some(ghost),
+            None => DragGhost::create()
+                .map_err(|error| tracing::warn!(%error, "no drag ghost window"))
+                .ok(),
+        };
+        if let Some(mut ghost) = ghost {
+            ghost.show(image, desktop_to_screen(at));
+            with_runtime(|runtime| runtime.drag_ghost = Some(ghost));
+        }
+    }
+
+    /// Moves the image shown by `show_drag_ghost`.
+    pub fn move_drag_ghost(&mut self, at: Point) {
+        let at = desktop_to_screen(at);
+        self.with_ghost(|ghost| ghost.move_to(at));
+    }
+
+    pub fn hide_drag_ghost(&mut self) {
+        self.with_ghost(DragGhost::hide);
+    }
+
+    /// Makes a click on a space behave like a click on the desktop: the
+    /// desktop becomes the active window (deactivating whatever was in front)
+    /// and its icon selection clears. A selection inside an Explorer window is
+    /// left alone, as native Windows would.
+    pub fn on_desktop_click(&mut self) {
+        shell_selection::on_desktop_click();
+    }
+
+    fn with_ghost(&mut self, f: impl FnOnce(&DragGhost)) {
+        if let Some(ghost) = with_runtime(|runtime| runtime.drag_ghost.take()).flatten() {
+            f(&ghost);
+            with_runtime(|runtime| runtime.drag_ghost = Some(ghost));
         }
     }
 
@@ -462,6 +513,18 @@ impl Ui {
     }
 }
 
+/// Desktop coordinates (`Space::rect`'s system) are the host window's client
+/// coordinates for desktop-hosted spaces and screen coordinates otherwise.
+fn desktop_to_screen(at: Point) -> Point {
+    let Some(host) = with_runtime(|runtime| runtime.host).flatten() else {
+        return at;
+    };
+    let mut point = [POINT { x: at.x, y: at.y }];
+    // SAFETY: plain coordinate mapping from a live window to the screen.
+    unsafe { MapWindowPoints(Some(host), None, &mut point) };
+    Point::new(point[0].x, point[0].y)
+}
+
 fn space_hwnd(id: u64) -> Option<HWND> {
     with_runtime(|runtime| runtime.spaces.get(&id).copied()).flatten()
 }
@@ -502,6 +565,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             ui_dark: false,
             tray_tooltip: options.tray_tooltip.clone(),
             close_dispatched: false,
+            drag_ghost: None,
         });
     });
     tray::add(controller, &options.tray_tooltip);
@@ -521,6 +585,8 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     let runtime = RUNTIME.with(|cell| cell.borrow_mut().take());
     drop(runtime);
     d2d::release_graphics();
+    drop_target::release_image_helper();
+    shell_view::release();
     if com.is_ok() {
         // SAFETY: balances the successful OleInitialize above, after every
         // COM object owned by this thread has been released.

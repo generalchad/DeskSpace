@@ -19,6 +19,10 @@ pub enum SpaceEvent {
         x: i32,
         y: i32,
         button: MouseButton,
+        /// Ctrl was held: add to or remove from the selection, as Explorer.
+        ctrl: bool,
+        /// Shift was held: extend the selection from the anchor.
+        shift: bool,
     },
     MouseUp {
         x: i32,

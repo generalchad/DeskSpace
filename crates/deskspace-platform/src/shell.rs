@@ -1,12 +1,17 @@
 use std::collections::HashMap;
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::item::ItemKind;
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_SYSTEM,
+};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
-    FOLDERID_Desktop, KF_FLAG_DEFAULT, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW,
-    SHGetKnownFolderPath,
+    FOLDERID_Desktop, IShellItem, KF_FLAG_DEFAULT, SHCNE_CREATE, SHCNE_DELETE, SHCNF_FLUSHNOWAIT,
+    SHCNF_PATHW, SHChangeNotify, SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_ADDOVERLAYS,
+    SHGFI_ICON, SHGFI_LARGEICON, SHGFI_LINKOVERLAY, SHGetFileInfoW, SHGetKnownFolderPath,
+    SIGDN_NORMALDISPLAY,
 };
 use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
 use windows::core::PCWSTR;
@@ -14,6 +19,7 @@ use windows::core::PCWSTR;
 use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::d2d::decode_icon;
+use crate::win32::display_settings::{ShellDisplay, desktop_display};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopEntry {
@@ -24,6 +30,7 @@ pub struct DesktopEntry {
 
 pub fn enumerate_desktop_items() -> Result<Vec<DesktopEntry>, PlatformError> {
     let directory = desktop_directory()?;
+    let display = desktop_display();
     let mut entries = Vec::new();
 
     for entry in std::fs::read_dir(&directory)? {
@@ -32,16 +39,11 @@ pub fn enumerate_desktop_items() -> Result<Vec<DesktopEntry>, PlatformError> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name.eq_ignore_ascii_case("desktop.ini") {
+        if name.eq_ignore_ascii_case("desktop.ini") || !listed_by_explorer(&path, &display) {
             continue;
         }
         entries.push(DesktopEntry {
-            label: path
-                .file_stem()
-                .or_else(|| path.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or(name)
-                .to_string(),
+            label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
             kind: ItemKind::classify(&path),
             path,
         });
@@ -49,6 +51,45 @@ pub fn enumerate_desktop_items() -> Result<Vec<DesktopEntry>, PlatformError> {
 
     entries.sort_by_key(|entry| entry.label.to_lowercase());
     Ok(entries)
+}
+
+/// Whether Explorer would list this file, given its hidden and protected
+/// operating-system file settings.
+fn listed_by_explorer(path: &Path, display: &ShellDisplay) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    let attributes = metadata.file_attributes();
+    if attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0 && !display.show_hidden {
+        return false;
+    }
+    if attributes & FILE_ATTRIBUTE_SYSTEM.0 != 0 && !display.show_superhidden {
+        return false;
+    }
+    true
+}
+
+/// The label Explorer shows for a path, honoring its "hide extensions" setting
+/// (and stripping `.lnk`, using friendly folder names, and so on).
+fn display_name(path: &Path) -> Option<String> {
+    let wide = crate::win32::system::wide(&path.to_string_lossy().replace('/', "\\"));
+    // SAFETY: `wide` is NUL-terminated and outlives the parse; the returned
+    // string is copied then freed with the shell's allocator.
+    unsafe {
+        let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None).ok()?;
+        let name = item.GetDisplayName(SIGDN_NORMALDISPLAY).ok()?;
+        let text = name.to_string().ok();
+        CoTaskMemFree(Some(name.0 as *const core::ffi::c_void));
+        text.filter(|text| !text.is_empty())
+    }
+}
+
+fn fallback_label(path: &Path) -> String {
+    path.file_stem()
+        .or_else(|| path.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// The current user's Desktop folder.
@@ -60,6 +101,37 @@ pub fn desktop_directory() -> Result<PathBuf, PlatformError> {
         let result = raw.to_string().map(PathBuf::from);
         CoTaskMemFree(Some(raw.0 as *const core::ffi::c_void));
         result.map_err(|_| PlatformError::InvalidFormat("desktop path"))
+    }
+}
+
+/// Tells the shell that DeskSpace moved a file from `from` to `to`, so open
+/// views (above all the desktop) update at once, as they do after
+/// Explorer's own moves. Without it the desktop can keep showing an icon for
+/// a file already moved into a space; dragging that stale icon then drops a
+/// path that no longer exists.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shchangenotify
+pub fn notify_moved(from: &Path, to: &Path) {
+    let from = crate::win32::system::wide(&from.to_string_lossy());
+    let to = crate::win32::system::wide(&to.to_string_lossy());
+    // A delete in the old folder plus a create in the new one is understood
+    // by every folder view, whether or not it watches both folders.
+    // FLUSHNOWAIT: never block. During a drop Explorer waits inside
+    // DoDragDrop for this process, so a synchronous flush could deadlock.
+    // SAFETY: both strings are NUL-terminated and outlive the calls; the shell
+    // copies the paths before returning.
+    unsafe {
+        SHChangeNotify(
+            SHCNE_DELETE,
+            SHCNF_PATHW | SHCNF_FLUSHNOWAIT,
+            Some(from.as_ptr().cast()),
+            None,
+        );
+        SHChangeNotify(
+            SHCNE_CREATE,
+            SHCNF_PATHW | SHCNF_FLUSHNOWAIT,
+            Some(to.as_ptr().cast()),
+            None,
+        );
     }
 }
 
@@ -150,7 +222,10 @@ fn load_icon(path: &Path) -> Option<Icon> {
     wide.push(0);
 
     let mut info = SHFILEINFOW::default();
-    let flags = SHGFI_ICON | SHGFI_LARGEICON;
+    // ADDOVERLAYS composites the shell's overlays (shortcut arrow, sync
+    // badges) into the returned icon, and LINKOVERLAY forces the shortcut
+    // arrow, so space icons match Explorer's.
+    let flags = SHGFI_ICON | SHGFI_LARGEICON | SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY;
     // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure of
     // the size passed. The returned HICON is ours and destroyed below, after
     // its pixels have been copied out.

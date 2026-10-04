@@ -8,27 +8,29 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use deskspace_core::geometry::Point;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows::Win32::System::Com::IDataObject;
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
+use windows::Win32::Graphics::Gdi::DeleteObject;
+use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, IDataObject};
 use windows::Win32::System::Ole::{
     DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, IDropSource,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{
-    BHID_DataObject, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO, IContextMenu, IContextMenu2,
-    IContextMenu3, IShellItem, SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC,
-    SHCreateItemFromParsingName, SHDoDragDrop, SHELLEXECUTEINFOW, ShellExecuteExW,
+    BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMINVOKECOMMANDINFO,
+    IContextMenu, IContextMenu2, IContextMenu3, IDragSourceHelper, IShellItem,
+    SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHCreateItemFromParsingName, SHDRAGIMAGE,
+    SHDoDragDrop, SHELLEXECUTEINFOW, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, GA_ROOT,
-    GetAncestor, GetClassNameW, GetCursorPos, MF_SEPARATOR, PostMessageW, SW_SHOWNORMAL,
-    SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, WM_DRAWITEM,
-    WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL, WindowFromPoint,
+    ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, MF_SEPARATOR,
+    PostMessageW, SW_SHOWNORMAL, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenuEx, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL,
 };
 use windows::core::{Interface, PCSTR, PCWSTR};
 
 use crate::error::PlatformError;
 use crate::ui::MenuEntry;
+use crate::win32::drag_image::{self, DragImage};
 use crate::win32::system::wide;
 
 /// Shell menu commands get ids from here up; app entries must stay below.
@@ -59,11 +61,10 @@ pub enum ItemMenuChoice {
 pub struct DragResult {
     /// The effect the drop target reported. Explorer reports no effect for
     /// "optimized" moves on the same volume, so check whether the file still
-    /// exists rather than relying on `Move`.
+    /// exists rather than relying on `Move`. The source data object does not
+    /// offer asynchronous drops (`IDataObjectAsyncCapability` reports async
+    /// mode off), so the transfer has finished when the drag returns.
     pub effect: DragEffect,
-    /// The pointer was over the desktop (not a space or another window) when
-    /// the drag ended.
-    pub over_desktop: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,18 +227,38 @@ pub(crate) fn forward_menu_message(
 }
 
 /// Starts a shell drag of `path` and blocks until it ends, like dragging the
-/// item in Explorer: drop targets choose to move, copy, or link it. Mouse
-/// capture is released first because OLE tracks the mouse itself.
-pub(crate) fn drag_out(path: &Path) -> Result<DragResult, PlatformError> {
+/// item in Explorer: drop targets choose to move, copy, or link it. The drag
+/// defaults to a move (for example onto the desktop), so the item leaves the
+/// space instead of leaving a copy behind; a target that honors Shift or Ctrl
+/// can still choose another effect. `image` follows the pointer; without one
+/// the shell substitutes its own. Mouse capture is released first because OLE
+/// tracks the mouse itself.
+pub(crate) fn drag_out(
+    owner: Option<HWND>,
+    path: &Path,
+    image: Option<&DragImage>,
+) -> Result<DragResult, PlatformError> {
     let item = shell_item(path)?;
     // SAFETY: binding a handler on a live shell item; SHDoDragDrop runs a
     // modal loop on this (OLE-initialised) thread and uses its default drop
-    // source and drag image when none is given.
+    // source.
     let effect = unsafe {
         let data: IDataObject = item.BindToHandler(None, &BHID_DataObject)?;
+        if !super::drop_target::set_drop_effect(
+            &data,
+            super::drop_target::PREFERRED_DROP_EFFECT,
+            DROPEFFECT_MOVE,
+        ) {
+            tracing::debug!(
+                "could not set the preferred drop effect; the target's default applies"
+            );
+        }
+        if let Some(image) = image {
+            attach_drag_image(&data, image);
+        }
         let _ = ReleaseCapture();
         SHDoDragDrop(
-            None,
+            owner,
             &data,
             None::<&IDropSource>,
             DROPEFFECT_MOVE | DROPEFFECT_COPY | DROPEFFECT_LINK,
@@ -245,8 +266,47 @@ pub(crate) fn drag_out(path: &Path) -> Result<DragResult, PlatformError> {
     };
     Ok(DragResult {
         effect: drag_effect(effect),
-        over_desktop: cursor_over_desktop(),
     })
+}
+
+/// Hands `image` to the shell's drag-image manager, which stores it in `data`
+/// so every drop target (Explorer, the desktop, other spaces) draws it.
+/// Without this the shell invents an opaque, oversized image.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idragsourcehelper
+fn attach_drag_image(data: &IDataObject, image: &DragImage) {
+    // InitializeFromBitmap premultiplies itself, so it gets straight alpha.
+    // https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-idragsourcehelper-initializefrombitmap
+    let Some(bitmap) = drag_image::dib(&image.icon, false) else {
+        return;
+    };
+    let drag = SHDRAGIMAGE {
+        sizeDragImage: SIZE {
+            cx: image.width(),
+            cy: image.height(),
+        },
+        ptOffset: POINT {
+            x: image.hotspot.x,
+            y: image.hotspot.y,
+        },
+        hbmpDragImage: bitmap,
+        // CLR_NONE: no color key; transparency comes from the alpha channel.
+        crColorKey: COLORREF(0xFFFF_FFFF),
+    };
+    // SAFETY: the helper is a fresh in-process object; on success it owns the
+    // bitmap (the shell's own samples never free it afterwards), so it is
+    // deleted here only when the hand-off fails.
+    unsafe {
+        let attached = CoCreateInstance::<_, IDragSourceHelper>(
+            &CLSID_DragDropHelper,
+            None,
+            CLSCTX_INPROC_SERVER,
+        )
+        .and_then(|helper| helper.InitializeFromBitmap(&drag, data));
+        if let Err(error) = attached {
+            tracing::debug!(%error, "drag image not set; the shell's default applies");
+            let _ = DeleteObject(bitmap.into());
+        }
+    }
 }
 
 fn drag_effect(effect: DROPEFFECT) -> DragEffect {
@@ -258,27 +318,6 @@ fn drag_effect(effect: DROPEFFECT) -> DragEffect {
         DragEffect::Link
     } else {
         DragEffect::None
-    }
-}
-
-/// Whether the window under the cursor belongs to the desktop: Progman, or
-/// the WorkerW that hosts the icons and wallpaper.
-fn cursor_over_desktop() -> bool {
-    let mut point = POINT::default();
-    // SAFETY: plain queries; the class buffer is sized for the call.
-    unsafe {
-        if GetCursorPos(&mut point).is_err() {
-            return false;
-        }
-        let window = WindowFromPoint(point);
-        if window.is_invalid() {
-            return false;
-        }
-        let root = GetAncestor(window, GA_ROOT);
-        let mut class = [0u16; 32];
-        let length = GetClassNameW(root, &mut class) as usize;
-        let class = String::from_utf16_lossy(&class[..length]);
-        class == "Progman" || class == "WorkerW"
     }
 }
 

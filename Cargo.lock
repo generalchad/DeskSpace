@@ -168,6 +168,8 @@ dependencies = [
  "thiserror",
  "tracing",
  "windows",
+ "windows-core",
+ "windows-numerics",
 ]
 
 [[package]]

@@ -54,6 +54,9 @@ pub struct SpaceScene {
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
+    /// Draw a check box on every item, as Explorer does when its "item check
+    /// boxes" view option is on. Display only.
+    pub show_check_boxes: bool,
     /// The scroll position indicator, when the content overflows.
     pub scroll_thumb: Option<Rect>,
 }
@@ -64,6 +67,9 @@ pub enum ItemState {
     Normal,
     Hovered,
     Selected,
+    /// Being dragged within its space: its slot is drawn faded while the
+    /// drag image follows the pointer, as Explorer does.
+    Dragged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,4 +79,10 @@ pub struct ItemVisual {
     pub label: String,
     pub icon: Option<Icon>,
     pub state: ItemState,
+    /// Whether the pointer is over the item, independent of `state` (an item
+    /// can be both selected and hovered). Drives the check box's hover reveal.
+    pub hovered: bool,
+    /// Whether the item's check box is ticked; only drawn when the scene shows
+    /// check boxes.
+    pub checked: bool,
 }

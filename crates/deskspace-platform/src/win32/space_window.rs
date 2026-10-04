@@ -11,9 +11,6 @@
 //! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA` and
 //! is freed exactly once, in `WM_NCDESTROY`.
 
-use std::ffi::OsString;
-use std::os::windows::ffi::OsStringExt;
-use std::path::PathBuf;
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -25,22 +22,20 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-    VK_SHIFT,
+    GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    VK_CONTROL, VK_SHIFT,
 };
-use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, DragQueryPoint, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetClientRect,
     GetParent, GetWindowLongPtrW, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW,
     IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, RegisterClassW,
     SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
     SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
-    WINDOWPOS, WM_CAPTURECHANGED, WM_DROPFILES, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
     WM_SETCURSOR, WM_SIZE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS,
-    WS_EX_ACCEPTFILES, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -49,7 +44,7 @@ use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
-use crate::win32::{dwm, runtime};
+use crate::win32::{drop_target, dwm, runtime};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
@@ -100,10 +95,9 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         cursor: CursorShape::Arrow,
     }));
 
-    // WS_EX_ACCEPTFILES makes the shell deliver WM_DROPFILES for files dragged
-    // from Explorer or the desktop; without it the drag shows the 'no' cursor.
-    // https://learn.microsoft.com/en-us/windows/win32/shell/wm-dropfiles
-    let mut ex_style: WINDOW_EX_STYLE = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES;
+    // An OLE drop target (registered below) makes the space accept file drags
+    // and choose their effect; WS_EX_ACCEPTFILES and WM_DROPFILES are not used.
+    let mut ex_style: WINDOW_EX_STYLE = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
     if options.on_top {
         ex_style |= WS_EX_TOPMOST;
     }
@@ -164,6 +158,9 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         }
         if options.visible {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
+        if let Err(error) = drop_target::register(hwnd, options.id, hosted) {
+            tracing::warn!(%error, "space will not accept dropped files");
         }
         Ok(hwnd)
     }
@@ -378,25 +375,6 @@ fn button_for(message: u32) -> MouseButton {
     }
 }
 
-/// Reads the paths and client drop point out of a WM_DROPFILES handle.
-unsafe fn dropped_files(drop: HDROP) -> (Vec<PathBuf>, POINT) {
-    // SAFETY: `drop` is the live HDROP from WM_DROPFILES; buffers are sized
-    // from DragQueryFileW's reported length plus the NUL.
-    unsafe {
-        let count = DragQueryFileW(drop, u32::MAX, None);
-        let mut paths = Vec::with_capacity(count as usize);
-        for index in 0..count {
-            let length = DragQueryFileW(drop, index, None) as usize;
-            let mut buffer = vec![0u16; length + 1];
-            let copied = DragQueryFileW(drop, index, Some(&mut buffer)) as usize;
-            paths.push(PathBuf::from(OsString::from_wide(&buffer[..copied])));
-        }
-        let mut point = POINT::default();
-        let _ = DragQueryPoint(drop, &mut point);
-        (paths, point)
-    }
-}
-
 unsafe fn paint(window: HWND) {
     // SAFETY (all calls): `window` is live and the state borrows are short.
     unsafe {
@@ -531,10 +509,16 @@ unsafe extern "system" fn wndproc(
                 // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
                 SetCapture(window);
                 let (x, y) = to_desktop(window, lparam, hosted());
+                // SAFETY: GetKeyState reads this thread's input queue state,
+                // which matches the message being processed.
+                let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
+                let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
                 space_event(SpaceEvent::MouseDown {
                     x,
                     y,
                     button: button_for(message),
+                    ctrl,
+                    shift,
                 });
                 LRESULT(0)
             }
@@ -555,29 +539,10 @@ unsafe extern "system" fn wndproc(
                 space_event(SpaceEvent::DoubleClick { x, y });
                 LRESULT(0)
             }
-            WM_DROPFILES => {
-                let drop = HDROP(wparam.0 as *mut core::ffi::c_void);
-                let (paths, point) = dropped_files(drop);
-                DragFinish(drop);
-                let mut point = [point];
-                let target = if hosted() {
-                    GetParent(window).ok()
-                } else {
-                    None
-                };
-                MapWindowPoints(Some(window), target, &mut point);
-                if !paths.is_empty() {
-                    // WM_DROPFILES carries no key state, so read Shift now;
-                    // the asynchronous state is right even if this message
-                    // was queued behind others.
-                    let keep_in_place = GetAsyncKeyState(VK_SHIFT.0 as i32) < 0;
-                    space_event(SpaceEvent::FilesDropped {
-                        x: point[0].x,
-                        y: point[0].y,
-                        paths,
-                        keep_in_place,
-                    });
-                }
+            WM_DESTROY => {
+                // Revoke while the window still exists so OLE releases its
+                // reference to the drop target before the HWND is gone.
+                drop_target::revoke(window);
                 LRESULT(0)
             }
             WM_CAPTURECHANGED => {
