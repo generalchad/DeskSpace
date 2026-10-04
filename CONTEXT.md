@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (124 tests) are green.
+  `cargo test --workspace` (137 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -52,19 +52,28 @@ context menus, and a settings window in the first usable release (v0.2).
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
   (double-click the title bar), renamed inline, restyled per space (opacity,
   tint, text), sorted, and locked; their items can be rearranged by dragging.
-  Files dropped onto a space are
-  moved into the space storage (Shift keeps them in place). Items open on
-  double-click, show Explorer's context menu on right-click, and drag out like
-  Explorer items. Resize, wheel scrolling, the clear backdrop, the corner
-  slider, and the item context menu were checked on screen; dropping in and
-  dragging out have not been exercised interactively yet.
+- Items have Explorer-style multi-selection (plain click selects one,
+  Ctrl+click toggles, Shift+click ranges, Delete removes all selected), and,
+  when the desktop shows check boxes, an auto-check box mirrors the selection
+  (a click ticks one item and unticks the rest; clicking the box toggles one).
+  Labels honor Explorer's extension setting and icons carry shell overlays.
+  See section 6 and the display-settings bullet.
+- Files dropped onto a space are moved into the space storage (Shift keeps
+  them in place); items open on double-click, show Explorer's context menu on
+  right-click, and drag out like Explorer items with a drag image. A drag out
+  defaults to a move and spaces are OLE drop targets, so the shell shows the
+  move/copy cursor. Clicking a space also focuses the desktop and clears its
+  icon selection, like a desktop click.
 - Verification: the blur, corners, space content, and settings layout were
-  checked on screen. Delete space, file drops, settings live preview, and the
-  tray menu are covered by unit tests of the app logic but have not been
-  exercised interactively yet; confirm them before building on them. Inline
-  rename, in-space rearranging, the Delete key, per-space appearance, sort,
-  grid/label settings, and cross-space moves were checked on screen
-  (2026-10-03). Item drag is not yet Explorer-identical (ROADMAP F-36..F-39).
+  checked on screen. Many behaviors are covered by unit tests of the app logic
+  but have not been exercised interactively; confirm them before building on
+  them. On screen were checked: inline rename, in-space rearranging, the
+  Delete key, per-space appearance, sort, grid/label settings, cross-space
+  moves (2026-10-03). Pending on-screen checks: the move/copy cursor, the
+  `- Copy` fix, the drag image over Explorer and over spaces, the in-space
+  ghost, the space-click focus/deselect, and the check-box display and
+  multi-selection. The offscreen item render and a synthetic check-box click
+  were probed on the dev machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop
@@ -210,7 +219,8 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
 `SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `ReorderItem`, `AutoArrange`, `SnapAll`.
+`RemoveItem`, `MoveItem`, `ReorderItem`, `AutoArrange`,
+`SnapAll`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
@@ -232,6 +242,7 @@ Theme {
     label_shadow: LabelShadow,// Auto (default) | On | Off
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
+    match_explorer: bool,     // default true; mirror Explorer's display
 }
 ```
 
@@ -323,8 +334,8 @@ WindowSettings {
 
 - One window per space, created by `Ui::create_space`. State is a
   `Box<SpaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
-- Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
-  WS_EX_ACCEPTFILES`, kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
+- Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`,
+  kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
   activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
   client area, sets dark mode, corner preference, and border color, and turns
   on the blur material with the undocumented accent policy
@@ -350,8 +361,74 @@ WindowSettings {
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
   the last button-up. `WM_MOUSEWHEEL` (screen coordinates) becomes
   `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
-  "scroll inactive windows" setting (on by default). `WM_DROPFILES` becomes
-  `SpaceEvent::FilesDropped`, with `keep_in_place` set when Shift is down.
+  "scroll inactive windows" setting (on by default).
+- File drops (`win32/drop_target.rs`): every space is an OLE `IDropTarget`
+  (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
+  window, so it chooses the drop effect and the shell shows the move/copy
+  cursor. A `CF_HDROP` drop becomes `SpaceEvent::FilesDropped`; the effect is
+  `MOVE` by default and `COPY` while Shift is down, so `keep_in_place` is set
+  only for the latter. `Drop` marks the source's data object with the
+  "Performed DropEffect" format so a shell source does not move the files a
+  second time after DeskSpace has. A non-`CF_HDROP` drag reports `DROPEFFECT_NONE`.
+- Dragging an item out (`shell_items::drag_out`) sets the source data object's
+  "Preferred DropEffect" to `MOVE`, so dropping it on the desktop takes the file
+  out of the space instead of leaving a `- Copy` behind. The drop target alone
+  performs the transfer (the shell data object has async mode off, so it is
+  done when the drag returns); afterwards the app only removes the item if its
+  file is gone. It never moves the file itself after a drag: an earlier
+  "dropped on the desktop, so move it back" step turned desktop copies into
+  `- Copy` / ` (2)` duplicates.
+- Clicking a space is made to behave like clicking the desktop
+  (`win32/shell_selection.rs`, `Ui::on_desktop_click`): the shell's desktop
+  window (`GetShellWindow`) is made active, so the app in front goes inactive,
+  and the desktop icon selection is cleared through its `IShellView`
+  (`SelectItem(NULL, SVSI_DESELECTOTHERS)`, found via `IShellWindows` and the
+  `SID_STopLevelBrowser` service). Spaces never take activation, so nothing
+  else would do this. A selection inside an Explorer window is left alone, as
+  native Windows only changes a selection within the view that was clicked.
+  The enumerator is cached and released before `OleUninitialize`.
+- Explorer display settings (`win32/display_settings.rs`) are read from the
+  desktop's `IShellView` (`win32/shell_view.rs`, shared with the click code)
+  and `SHGetSetSettings`: `FWF_CHECKSELECT`/`FWF_AUTOCHECKSELECT` (item check
+  boxes), `SSF_SHOWALLOBJECTS`/`SSF_SHOWSUPERHIDDEN` (hidden files),
+  `SSF_SHOWEXTENSIONS` (filename extensions). When `Theme.match_explorer` is
+  on (default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
+  draws an Explorer-style check box at each icon's corner while the item is
+  hovered or selected, and `scene::item_label` shows the full file name when
+  extensions are on. The desktop's check boxes are the auto-check-select kind
+  (`FWF_AUTOCHECKSELECT`, "use check boxes to select items"), so the box
+  mirrors the selection: a plain click ticks that item and unticks the rest,
+  Ctrl+click ticks several, and clicking the box itself toggles one item
+  (`render::item_check_box_hit` is the clickable region). The snapshot is
+  re-read at startup, on
+  `Event::SystemThemeChanged`, and on every space click, and a change repaints
+  every space. Icons are fetched with `SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY`
+  so shortcut arrows and sync badges appear; labels come from
+  `IShellItem::GetDisplayName(SIGDN_NORMALDISPLAY)`, and seeding skips hidden
+  or protected items Explorer would hide.
+- Every file DeskSpace moves (into storage, back to the desktop) is reported
+  with `notify_moved` (`SHChangeNotify` delete + create, `FLUSHNOWAIT` so it
+  never blocks Explorer waiting inside a drop). Without it the desktop kept
+  stale icons for files already moved into a space, and dragging one dropped
+  a path that no longer existed. Dropped paths that do not exist are ignored
+  rather than listed (which showed a label with no icon).
+- Drag image (`win32/drag_image.rs`, `win32/drag_ghost.rs`): the picture that
+  follows the pointer, distinct from the move/copy cursor. When an item drag
+  starts, the app builds the space's scene and `DragImage::of_item` renders
+  that one item offscreen (`d2d::render_item`: a WIC bitmap render target
+  running the same `draw_item` as the space, so icon, label, colors, and
+  selection highlight match), then bakes in a uniform translucency
+  (`DRAG_IMAGE_ALPHA`). The hotspot is the grab offset in the cell. Every
+  view of the drag shows these same pixels. Inside
+  the space a layered, click-through, topmost ghost window shows it
+  (`UpdateLayeredWindow`, premultiplied DIB) and the item's slot is drawn
+  faded (`ItemState::Dragged`). Once the pointer leaves the space the ghost
+  hides and `drag_out` hands the same image to the shell's drag-image manager
+  (`IDragSourceHelper::InitializeFromBitmap`, straight-alpha DIB, since it
+  premultiplies itself). Space drop targets forward all four calls to one
+  shared `IDropTargetHelper`, without which the image vanishes over a space;
+  it is released before `OleUninitialize`. Without an image the shell
+  substitutes its own opaque, oversized one.
 - Inline rename (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
   `TextEdit` buffer and pushes it in the scene's `editing` field; the painter
   draws the selection highlight and caret. A `WH_KEYBOARD_LL` hook, installed
@@ -487,16 +564,26 @@ WindowSettings {
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
-- Click an item to select it; click empty space, the desktop, or another
-  app to clear the selection (hiding spaces and rolling up do too).
+- Click an item to select it; Ctrl+click adds or removes it from the
+  selection, and Shift+click selects the range from the last click. Click
+  empty space, the desktop, or another app to clear the selection (hiding
+  spaces and rolling up do too). Clicking anywhere on a space acts like a
+  click on the desktop: it focuses the desktop (deactivating the app in front)
+  and clears the desktop icon selection, but leaves any selection inside an
+  Explorer window alone.
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
-  place) on top.
-- Drag an item within its space to rearrange it; the new order sticks until a
-  Sort by reorders it.
+  place) on top; right-clicking an item already in a multi-selection keeps it.
+- Hover an item to reveal Explorer's check box at the icon's corner (when the
+  desktop shows check boxes and `match_explorer` is on). Clicking an item
+  ticks it and unticks the others (its check box mirrors selection); Ctrl+click
+  ticks several; clicking the box itself toggles that one item.
+- Drag an item within its space to rearrange it: its icon follows the
+  pointer and its slot fades; the new order sticks until a Sort by reorders
+  it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
-- Press Delete with an item selected to remove it from the space, the same as
+- Press Delete with items selected to remove them from the space, the same as
   the item menu's remove (stored files return to the desktop).
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
@@ -551,9 +638,11 @@ WindowSettings {
   picker stay light; neither has a dark mode.
 - **No per-monitor DPI scaling of spaces.** Sizes are in physical pixels at
   96-DPI values; the settings window is laid out for the DPI at creation.
-- **Drops use `WM_DROPFILES`**, which carries file paths only and shows no
-  drop-effect feedback (the cursor does not say "Move"). An OLE `IDropTarget`
-  would fix that. Dragging out uses OLE already.
+- **Drops use an OLE `IDropTarget`** (`win32/drop_target.rs`), which shows the
+  move/copy cursor and replaced `WM_DROPFILES`. `DragOver` recomputes the
+  effect from the modifier keys, and the app performs the file move; an
+  external shell source is told the move was already performed. Dragging out
+  uses OLE too and now defaults to a move.
 - **`always_on_desktop` applies at next launch.** Switching placement recreates
   every space window (and drops blur), so it is honored when DeskSpace starts
   rather than live.
@@ -564,11 +653,25 @@ WindowSettings {
 - **Inline rename has no IME or clipboard support.** A low-level keyboard hook
   handles the active layout's printable characters and navigation keys only;
   composition (Japanese, Chinese, ...) is deferred.
-- **Item drag is not Explorer-identical yet.** Dragging out uses the default
-  OLE effect, which may copy, so dropping on the desktop can leave a `- Copy`;
-  cross-space moves now match by file identity. Planned: a move-by-default drop
-  source, an OLE `IDropTarget` (drop-effect feedback), a ghost drag image,
-  clipboard cut/copy/paste, and Recycle-Bin delete (ROADMAP F-36..F-39).
+- **Explorer display matching is partial.** Item check boxes mirror the
+  selection, like Explorer's auto-check-select mode ("use check boxes to
+  select items"), but the independent check mode (`FWF_CHECKSELECT`) is not
+  distinguished. Icon size/view mode, icon spacing, info tips, and
+  compressed/encrypted label colors are not imported yet (ROADMAP F-25/F-28).
+  Only the desktop's own options are read, so a check-box setting enabled in
+  one Explorer window is not reflected.
+- **Selection is within one space.** Explorer's rubber-band drag, Ctrl+A, and
+  Shift/Ctrl-drag between spaces are not implemented; a shell drag moves only
+  the dragged item, not the whole multi-selection.
+- **Item drag is close to Explorer but not identical.** Dragging out defaults
+  to a move (a preferred drop effect of `MOVE`), so it no longer leaves a
+  `- Copy` on the desktop; cross-space moves still match by file identity, and
+  drops onto a space go through the OLE `IDropTarget`. The drag image is the
+  item as drawn (icon and label), single-item only; drags that start in
+  Explorer keep Explorer's own image. Planned: clipboard
+  cut/copy/paste and Recycle-Bin delete (ROADMAP F-38, F-39). Explorer's
+  Shift=move is deliberately inverted on DeskSpace targets, where Shift
+  preserves the original.
 - **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
   and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,

@@ -115,8 +115,62 @@ started).
   `(2)` copy; an item whose file vanished is pruned before a drag. Verified by
   manual testing 2026-10-03 (cross-space moves stay unique and persist).
   Explorer parity (move/copy effects, ghost image, clipboard, Recycle-Bin
-  delete) is queued as F-36..F-39. **Start the next item session at F-36** (it
-  also removes the `- Copy` files dragging to the desktop leaves behind).
+  delete) is queued as F-36..F-39. **Start the next item session at F-38**
+  (clipboard), or the native-appearance follow-ups below.
+- **Explorer-parity drag, part 1 (F-36).** Spaces are OLE `IDropTarget`s
+  (`win32/drop_target.rs`, `RegisterDragDrop`, revoked in `WM_DESTROY`) rather
+  than `WS_EX_ACCEPTFILES` windows, so the shell shows the move/copy cursor and
+  `DragOver` picks the effect: move by default, copy while Shift is held (the
+  app's "Shift preserves the original" convention). A drag that carries no
+  `CF_HDROP` is rejected, and `Drop` marks the source's data object with the
+  "Performed DropEffect" format so a shell source does not move the files a
+  second time. Dragging an item out sets the "Preferred DropEffect" to move, so
+  dropping it on the desktop no longer leaves a `- Copy`. `WM_DROPFILES` is
+  gone. Smoke-tested only; confirm both behaviors on screen.
+- **Drag image (F-37).** The picture under the pointer during an item drag
+  was the shell's opaque, oversized default. Now the item is rendered
+  offscreen exactly as its space draws it (32 px icon, label, selection
+  highlight) and made slightly translucent, like Explorer's picked-up item,
+  into a `DragImage` whose hotspot keeps the grabbed spot; the same pixels
+  are used everywhere. Inside the space a layered click-through
+  ghost window shows it and the slot fades (`ItemState::Dragged`); outside,
+  `IDragSourceHelper` gives the same image to the shell, and space drop
+  targets forward to `IDropTargetHelper` so it stays visible over spaces.
+  The offscreen render was probed; on-screen checks pending.
+  The target-cell highlight in the original F-37 note was dropped: the item
+  already moves into its target cell live.
+- **Space click acts like a desktop click.** Clicking a space now focuses the
+  desktop (deactivating the app in front) and clears the desktop icon
+  selection through its `IShellView`, matching native Windows. A selection
+  inside an Explorer window is left alone: native only changes a selection in
+  the view that was clicked. Needs on-screen confirmation.
+- **Match Explorer's display (native-display core).** Spaces now read the
+  desktop's display options and mirror them when `Theme.match_explorer` is on
+  (default, with an Appearance toggle): item check boxes
+  (`FWF_CHECKSELECT`/`FWF_AUTOCHECKSELECT`), filename extensions
+  (`SSF_SHOWEXTENSIONS`), and hidden/protected files
+  (`SSF_SHOWALLOBJECTS`/`SSF_SHOWSUPERHIDDEN`). Icons get shell overlays
+  (`SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY`, so shortcut arrows and sync badges
+  appear) and labels use `SIGDN_NORMALDISPLAY`. The desktop uses Explorer's
+  auto-check-select mode, so check boxes mirror the selection: a plain click
+  ticks one item and unticks the rest, Ctrl+click ticks several, Shift+click
+  ranges, and clicking the box toggles one item. Unlike the independent
+  "item check boxes" mode, check state is not stored separately.
+  Items have Explorer-style multi-selection (Delete removes all selected).
+  Interaction is done; icon size/view mode, spacing, info tips, and
+  compressed/encrypted colors remain (F-25, F-28). Verified the desktop's
+  flags read correctly and a synthetic click toggled a real item on the dev
+  machine; on-screen checks pending.
+- **Desktop round-trip fix.** Manual testing found desktop moves unreliable
+  and a desktop item dropped on a space that already held it appearing as a
+  label with no icon. Causes: DeskSpace moved files with a plain rename and
+  never told the shell, so the desktop kept stale icons whose files were
+  already in storage (dragging one dropped a missing path, which was then
+  listed in place); and after a drag ended over the desktop the app moved the
+  stored file out itself even when the desktop had copied it. Now every move
+  is announced with `SHChangeNotify`, missing dropped paths are ignored, and
+  a drag-out only removes the item when its file is gone. Needs on-screen
+  confirmation.
 - **Windows 11 look and control center (current).** Per-space windows with
   acrylic/blur, rounded corners, D2D/DirectWrite rendering, hover/selection;
   tray icon; space context menu; data-driven settings window with Appearance,
@@ -180,10 +234,11 @@ on Windows 10/11. Remaining: per-monitor DPI.
   and `IShellItemImageFactory` (jumbo icons), replacing `SHGetFileInfoW`.
 - Render desktop items in a free-grid; hit-test, hover, select, rubber-band.
 - Drag items: within the desktop, into a space, and between spaces (`F-06`).
-  **[partial]** Drops onto spaces (`WM_DROPFILES`), shell drag-out
-  (`SHDoDragDrop`), and rearranging items within a space (`ReorderItem`) work;
-  an OLE `IDropTarget` is still needed for drop-effect feedback, and the
-  desktop free-grid waits for takeover.
+  **[partial]** Drops onto spaces (an OLE `IDropTarget` with move/copy
+  feedback), shell drag-out (`SHDoDragDrop`, defaulting to move), and
+  rearranging items within a space (`ReorderItem`, with a drag image) work;
+  clipboard and Recycle-Bin delete (F-38, F-39) and the desktop free-grid wait
+  for later work.
 - **[partial]** Drop files onto a normal space relocates them into the managed
   store by move (`D3`); lenses are unaffected because they never touch the
   store. Undo is open.
@@ -322,7 +377,8 @@ fresh Windows 10 and Windows 11 machine.
 
 ### Customization backlog (polled 2026-10-03)
 
-The user asked for all of these; none is started. Each is listed under the
+The user asked for all of these; several have since landed (marked done).
+Each is listed under the
 milestone that already builds what it depends on. Global settings go in
 `Theme` / `WindowSettings`, and per-space overrides go in `Space`, as
 `#[serde(default)]` fields. All of them are changed through `Command`s.
@@ -364,20 +420,44 @@ Behavior:
 
 Manual testing found cross-space drags duplicated items and desktop drags left
 `- Copy` files. The identity fix (canonical-path matching, `ItemStore::contains`)
-landed; the rest is planned here.
+and the F-36 and F-37 drag changes have landed; F-38 and F-39 remain.
 
-- **F-36** Explorer-parity drag: dragging out defaults to **move** and copies
-  only with Shift. Set `CFSTR_PREFERREDDROPEFFECT` on the drag data object (or
-  implement `IDropSource`), and add an OLE `IDropTarget` to spaces so they show
-  the move/copy cursor and accept drops directly, replacing `WM_DROPFILES`.
-- **F-37** Ghost drag image while rearranging inside a space, so the icon
-  follows the cursor and its target cell is highlighted; the scene already
-  carries item rects.
+- **[done] F-36** Explorer-parity drag: dragging out defaults to **move**
+  (`CFSTR_PREFERREDDROPEFFECT` on the drag data object), and spaces are OLE
+  `IDropTarget`s that show the move/copy cursor and accept drops directly,
+  replacing `WM_DROPFILES`. On a DeskSpace target Shift means "preserve the
+  original" (a copy), the reverse of Explorer's Shift=move, matching the rest
+  of the app. Commit `28ad7af` split the identity fix out from this; confirmed
+  by smoke test only, so verify on screen.
+- **[done] F-37** Drag image: the item as drawn (icon and label), slightly
+  translucent, follows the pointer inside a space (layered ghost window, faded
+  slot) and outside it (shell drag-image manager, also over other spaces).
+  Single-item only. Needs on-screen verification.
 - **F-38** Clipboard: Ctrl+X / Ctrl+C / Ctrl+V on the selected icon via the
   shell clipboard (`CF_HDROP`) and `IFileOperation`, matching Explorer.
 - **F-39** Delete goes to the Recycle Bin (shell Delete verb, undoable, no
   prompt), replacing the current remove-from-space behavior for the key and the
   item menu; keep "Remove from space" as a distinct action.
+
+### Native-appearance follow-ups (from the display work)
+
+These continue "match Explorer as closely as possible" after the display core
+landed (check boxes mirroring selection, filename extensions, hidden files,
+icon overlays). All need the desktop's view settings read through
+`win32/display_settings.rs` / `win32/shell_view.rs`.
+
+- **F-40** Icon size and view mode, driven by the desktop's
+  `IFolderView2::GetViewModeAndIconSize` (and Explorer's own icon rendering);
+  also covers **F-25**. Needs DPI-aware layout and jumbo icons (M2).
+- **F-41** Independent "item check boxes" mode (`FWF_CHECKSELECT`): tick state
+  kept separate from selection, unlike the current auto-check-select
+  (`FWF_AUTOCHECKSELECT`) behavior.
+- **F-42** Rubber-band (marquee) selection over empty space, Ctrl+A to select
+  all, and dragging the whole multi-selection (a shell drag still moves only
+  the dragged item today).
+- **F-43** Info tips, compressed/encrypted label colors (`SSF_SHOWCOMPCOLOR`),
+  and icon spacing from `IFolderView::GetSpacing`.
+- **F-44** Title bar style (hidden / hover-only) — see **F-28** (M5).
 
 ## 5. Release mapping
 
@@ -398,7 +478,7 @@ landed; the rest is planned here.
 | F-03 | Resize space | M2 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Done (rearranges within a space; no drop-effect feedback yet) |
+| F-06 | Drag icons in / out / between spaces | M2 | Done (rearranges within a space; OLE drop feedback; drag image) |
 | F-07 | Lenses (spaces: Folder Portals) | M4 | Open (phase 0 done) |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
@@ -417,8 +497,7 @@ landed; the rest is planned here.
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
 | F-24 | Appearance: color, translucency, blur | M1 (renderer), M3 (settings) | Done globally and per space (menu: opacity, tint, text) |
-| F-25 | Icon size | M2/M4 | Open (polled) |
-| F-26 | Grid density | M3 | Done (icon spacing + edge padding sliders) |
+| F-25 | Icon size | M2/M4 | Open (polled) || F-26 | Grid density | M3 | Done (icon spacing + edge padding sliders) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open (polled) |
 | F-29 | Windows accent color | M3 | Open (polled) |
