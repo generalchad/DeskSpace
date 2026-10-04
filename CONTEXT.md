@@ -223,8 +223,8 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
 `SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `ReorderItem`, `RenameItem`, `AutoArrange`,
-`SnapAll`.
+`RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
+`AutoArrange`, `SnapAll`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
@@ -623,9 +623,10 @@ WindowSettings {
   item check boxes, the boxes are always shown, clicking a box toggles a
   persistent tick and moves the highlight, the ticks survive empty-space and
   desktop clicks, and delete/copy/cut/drag act on the ticked items.
-- Drag an item within its space to rearrange it: its icon follows the
-  pointer and its slot fades; the new order sticks until a Sort by reorders
-  it.
+- Drag an item within its space to rearrange it (`ReorderItem`); dragging one
+  member of a multi-selection moves the whole block (`ReorderItems`). Its icon
+  follows the pointer and its slot fades; the new order sticks until a Sort by
+  reorders it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space. When
   the grabbed item is part of the selection, the whole selection drags.

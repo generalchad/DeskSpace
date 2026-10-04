@@ -86,6 +86,12 @@ pub enum Command {
         id: ItemId,
         index: usize,
     },
+    /// Moves several items (a drag of a multi-selection) to `index`, keeping
+    /// their relative order.
+    ReorderItems {
+        ids: Vec<ItemId>,
+        index: usize,
+    },
     /// Updates an item after its file was renamed on disk.
     RenameItem {
         id: ItemId,
@@ -321,6 +327,36 @@ impl Desktop {
                     space.items.insert(index, item);
                     position_items(space, layout);
                 }
+                CommandOutcome::Applied
+            }
+            Command::ReorderItems { ids, index } => {
+                let layout = self.layout;
+                let Some(id) = ids.first() else {
+                    return CommandOutcome::Rejected;
+                };
+                let Some(source) = self.space_containing(*id) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(space) = self.space_mut(source) else {
+                    return CommandOutcome::NotFound;
+                };
+                let mut moving: Vec<Item> = Vec::new();
+                space.items.retain(|item| {
+                    if ids.contains(&item.id) {
+                        moving.push(item.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+                if moving.is_empty() {
+                    return CommandOutcome::Rejected;
+                }
+                let index = index.min(space.items.len());
+                for (offset, item) in moving.into_iter().enumerate() {
+                    space.items.insert(index + offset, item);
+                }
+                position_items(space, layout);
                 CommandOutcome::Applied
             }
             Command::AutoArrange { id } => {
@@ -689,6 +725,35 @@ mod tests {
             bounds(),
         );
         assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+    }
+
+    #[test]
+    fn reorder_items_moves_a_block() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 0, 0),
+            item(2, "b", ItemKind::File, 0, 0),
+            item(3, "c", ItemKind::File, 0, 0),
+            item(4, "d", ItemKind::File, 0, 0),
+        ]);
+        let ids: Vec<ItemId> = desktop
+            .space(id)
+            .unwrap()
+            .items
+            .iter()
+            .map(|i| i.id)
+            .collect();
+        // Move the first two items to the end as a block.
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItems {
+                    ids: vec![ids[0], ids[1]],
+                    index: 4,
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["c", "d", "a", "b"]);
     }
 
     #[test]

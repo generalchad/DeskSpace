@@ -1610,6 +1610,7 @@ impl App {
     /// space. Used while an item is dragged within its own space.
     fn reorder_item_at(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, point: Point) {
         let layout = self.config.desktop.layout;
+        let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
             let content = space.content_rect();
             let columns = if space.user_sized {
@@ -1633,7 +1634,15 @@ impl App {
         let Some((index, current)) = target else {
             return;
         };
-        if index != current && self.dispatch(Command::ReorderItem { id: item, index }, point) {
+        if index == current {
+            return;
+        }
+        let command = if moving.len() > 1 {
+            Command::ReorderItems { ids: moving, index }
+        } else {
+            Command::ReorderItem { id: item, index }
+        };
+        if self.dispatch(command, point) {
             self.refresh_space(ui, space);
         }
     }
@@ -1649,13 +1658,9 @@ impl App {
     /// file dropped on the desktop back out of storage even when the desktop
     /// had copied it, which left `- Copy` and ` (2)` duplicates behind.
     fn drag_item_out(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        // Dragging an item that is part of the selection drags the whole
-        // selection, as Explorer does; otherwise just that one item.
-        let ids = if self.is_selected(item) {
-            self.active_items()
-        } else {
-            vec![item]
-        };
+        // Dragging an item that is part of the active set drags the whole set,
+        // as Explorer does; otherwise just that one item.
+        let ids = self.drag_items(item);
         let paths: Vec<PathBuf> = ids
             .iter()
             .filter_map(|id| self.config.desktop.item(*id))
@@ -1684,6 +1689,17 @@ impl App {
             self.checked_items.clone()
         } else {
             self.selected_items.clone()
+        }
+    }
+
+    /// The items a drag started on `item` moves: the active set when it
+    /// includes `item`, otherwise just `item`.
+    fn drag_items(&self, item: ItemId) -> Vec<ItemId> {
+        let active = self.active_items();
+        if active.contains(&item) {
+            active
+        } else {
+            vec![item]
         }
     }
 
