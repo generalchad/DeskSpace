@@ -62,7 +62,10 @@ context menus, and a settings window in the first usable release (v0.2).
   them in place); items open on double-click, show Explorer's context menu on
   right-click, and drag out like Explorer items with a drag image. A drag out
   defaults to a move and spaces are OLE drop targets, so the shell shows the
-  move/copy cursor. Clicking a space also focuses the desktop and clears its
+  move/copy cursor. Selected items can be cut, copied, and pasted with
+  Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
+  pasted. Delete sends the selection to the Recycle Bin, and F2 renames the
+  focused item inline. Clicking a space also focuses the desktop and clears its
   icon selection, like a desktop click.
 - Verification: the blur, corners, space content, and settings layout were
   checked on screen. Many behaviors are covered by unit tests of the app logic
@@ -71,9 +74,10 @@ context menus, and a settings window in the first usable release (v0.2).
   Delete key, per-space appearance, sort, grid/label settings, cross-space
   moves (2026-10-03). Pending on-screen checks: the move/copy cursor, the
   `- Copy` fix, the drag image over Explorer and over spaces, the in-space
-  ghost, the space-click focus/deselect, and the check-box display and
-  multi-selection. The offscreen item render and a synthetic check-box click
-  were probed on the dev machine.
+  ghost, the space-click focus/deselect, the check-box display and
+  multi-selection, and the clipboard cut/copy/paste with its ghosting. The
+  offscreen item render and a synthetic check-box click were probed on the dev
+  machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop
@@ -219,7 +223,7 @@ All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
 `SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `ReorderItem`, `AutoArrange`,
+`RemoveItem`, `MoveItem`, `ReorderItem`, `RenameItem`, `AutoArrange`,
 `SnapAll`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
@@ -394,8 +398,11 @@ WindowSettings {
   `SSF_SHOWEXTENSIONS` (filename extensions). When `Theme.match_explorer` is
   on (default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
   draws an Explorer-style check box at each icon's corner while the item is
-  hovered or selected, and `scene::item_label` shows the full file name when
-  extensions are on. The desktop's check boxes are the auto-check-select kind
+  hovered or selected (a failed view read leaves the last known value, so a
+  stale read never hides the boxes), and `scene::item_label` shows a file's full name when
+  extensions are on, except for shortcuts, whose `.lnk`/`.url` extension
+  Explorer never shows; both forms are derived from the path, so the option can
+  be toggled either way. The desktop's check boxes are the auto-check-select kind
   (`FWF_AUTOCHECKSELECT`, "use check boxes to select items"), so the box
   mirrors the selection: a plain click ticks that item and unticks the rest,
   Ctrl+click ticks several, and clicking the box itself toggles one item
@@ -430,13 +437,36 @@ WindowSettings {
   it is released before `OleUninitialize`. Without an image the shell
   substitutes its own opaque, oversized one.
 - Inline rename (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
-  `TextEdit` buffer and pushes it in the scene's `editing` field; the painter
-  draws the selection highlight and caret. A `WH_KEYBOARD_LL` hook, installed
-  only while editing, translates key presses into `Event::EditKey` and consumes
-  them, because spaces are never activated and cannot receive `WM_CHAR`. The
-  same hook also watches Delete while an item is selected
-  (`Ui::watch_delete_selection` → `Event::DeleteSelection`) and passes every
-  other key through. IME composition and clipboard are not supported.
+  `TextEdit` buffer and pushes it in the scene's `editing` (a space title) or
+  `editing_item` (an item's label) field; the painter draws the selection
+  highlight and caret. A `WH_KEYBOARD_LL` hook, installed only while editing,
+  translates key presses into `Event::EditKey` and consumes them, because
+  spaces are never activated and cannot receive `WM_CHAR`. F2 on a selected
+  item starts an item rename, committed with `IFileOperation::RenameItem`
+  (undoable; the extension is preserved when the label hid it) and applied
+  through `Command::RenameItem`, which updates the item's path and label. The
+  same hook watches Delete, Ctrl+C/X/V, and F2 while an item is selected
+  (`Ui::watch_selection_keys`) and passes every other key through. IME
+  composition and clipboard are not supported.
+- Clipboard (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X put the
+  selected items on the shell clipboard as `CF_HDROP` with a "Preferred
+  DropEffect" (`MOVE` for a cut), the formats Explorer uses, so they paste into
+  Explorer and other apps; cut items render ghosted (`ItemVisual::cut`).
+  Ctrl+V pastes into the current space: an item already in a space is
+  re-pointed (`MoveItem`), while external files and copies go through
+  `IFileOperation` into the store (`FOF_RENAMEONCOLLISION` guards the shared
+  store against Explorer's Replace dialog; `FOF_ALLOWUNDO` records an undo),
+  and an `IFileOperationProgressSink` returns each created path so the pasted
+  items are listed and selected. The keys arrive through the same low-level
+  keyboard hook as Delete, now gated on a selection (Ctrl+C/X) or a current
+  space (Ctrl+V). Delete sends the selection to the Recycle Bin
+  (`IFileOperation::DeleteItem` with `FOF_ALLOWUNDO | FOF_NOCONFIRMATION`, no
+  prompt, undoable) and drops the items whose files are gone; the item menu's
+  "Remove from space" stays a distinct action. The controller registers
+  `AddClipboardFormatListener`; `Event::ClipboardChanged` clears cut ghosting
+  when another app or the desktop replaces the clipboard and prunes items whose
+  files a paste elsewhere moved away. A clipboard read that fails (another
+  process holds it) keeps the ghost rather than clearing it.
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
@@ -565,16 +595,17 @@ WindowSettings {
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
 - Click an item to select it; Ctrl+click adds or removes it from the
-  selection, and Shift+click selects the range from the last click. Click
-  empty space, the desktop, or another app to clear the selection (hiding
-  spaces and rolling up do too). Clicking anywhere on a space acts like a
+  selection, and Shift+click selects the range from the last click. Clicking
+  empty space in a space or the desktop clears the selection (hiding spaces and
+  rolling up do too); clicking another application keeps it, as Explorer keeps
+  a desktop selection. Clicking anywhere on a space acts like a
   click on the desktop: it focuses the desktop (deactivating the app in front)
-  and clears the desktop icon selection, but leaves any selection inside an
+  and clears the desktop icon selection, but leaves any selection inside a
   Explorer window alone.
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top; right-clicking an item already in a multi-selection keeps it.
-- Hover an item to reveal Explorer's check box at the icon's corner (when the
+- Hover an item to reveal Explorer's check box at its icon's corner (when the
   desktop shows check boxes and `match_explorer` is on). Clicking an item
   ticks it and unticks the others (its check box mirrors selection); Ctrl+click
   ticks several; clicking the box itself toggles that one item.
@@ -583,8 +614,16 @@ WindowSettings {
   it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
-- Press Delete with items selected to remove them from the space, the same as
-  the item menu's remove (stored files return to the desktop).
+- Press Delete with items selected to send their files to the Recycle Bin
+  (undoable, no prompt), as Explorer does. The item menu's "Remove from space"
+  / "Move back to desktop" is separate and returns a stored file to the
+  desktop.
+- Cut, copy, and paste items with Ctrl+X, Ctrl+C, and Ctrl+V. Cut items are
+  ghosted until pasted; paste goes into the current space, moving (cut) or
+  duplicating (copy) the files through the shell's file operation.
+- Press F2 with an item selected to rename its file inline (Enter commits,
+  Escape cancels, clicking away commits); the extension is kept when the label
+  hides it.
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
   `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
@@ -652,7 +691,9 @@ WindowSettings {
   wheel events need Windows' "scroll inactive windows" setting.
 - **Inline rename has no IME or clipboard support.** A low-level keyboard hook
   handles the active layout's printable characters and navigation keys only;
-  composition (Japanese, Chinese, ...) is deferred.
+  composition (Japanese, Chinese, ...) is deferred. Space titles and item file
+  names both rename inline; an item rename goes through the shell, so a name
+  clash shows Explorer's conflict prompt.
 - **Explorer display matching is partial.** Item check boxes mirror the
   selection, like Explorer's auto-check-select mode ("use check boxes to
   select items"), but the independent check mode (`FWF_CHECKSELECT`) is not
@@ -668,10 +709,13 @@ WindowSettings {
   `- Copy` on the desktop; cross-space moves still match by file identity, and
   drops onto a space go through the OLE `IDropTarget`. The drag image is the
   item as drawn (icon and label), single-item only; drags that start in
-  Explorer keep Explorer's own image. Planned: clipboard
-  cut/copy/paste and Recycle-Bin delete (ROADMAP F-38, F-39). Explorer's
-  Shift=move is deliberately inverted on DeskSpace targets, where Shift
-  preserves the original.
+  Explorer keep Explorer's own image. Explorer's Shift=move is deliberately
+  inverted on DeskSpace targets, where Shift preserves the original.
+- **Clipboard and delete match Explorer for files only.** Copy and cut
+  advertise `CF_HDROP` and "Preferred DropEffect"; the richer shell formats for
+  virtual items are not provided. Paste and delete use `IFileOperation` with an
+  undo record, but without a filesystem watcher an undo (or a move made outside
+  DeskSpace) leaves the item stale until an icon action prunes it.
 - **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
   and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,

@@ -115,8 +115,8 @@ started).
   `(2)` copy; an item whose file vanished is pruned before a drag. Verified by
   manual testing 2026-10-03 (cross-space moves stay unique and persist).
   Explorer parity (move/copy effects, ghost image, clipboard, Recycle-Bin
-  delete) is queued as F-36..F-39. **Start the next item session at F-38**
-  (clipboard), or the native-appearance follow-ups below.
+  delete) is queued as F-36..F-39. **Item interaction through F-39 is complete;
+  start the next item session on the native-appearance follow-ups below.**
 - **Explorer-parity drag, part 1 (F-36).** Spaces are OLE `IDropTarget`s
   (`win32/drop_target.rs`, `RegisterDragDrop`, revoked in `WM_DESTROY`) rather
   than `WS_EX_ACCEPTFILES` windows, so the shell shows the move/copy cursor and
@@ -139,6 +139,40 @@ started).
   The offscreen render was probed; on-screen checks pending.
   The target-cell highlight in the original F-37 note was dropped: the item
   already moves into its target cell live.
+- **Clipboard (F-38).** Ctrl+C and Ctrl+X put the selected items on the shell
+  clipboard as `CF_HDROP` (plus "Preferred DropEffect" `MOVE` for a cut), so
+  they paste into Explorer and other apps, and cut items are drawn ghosted.
+  Ctrl+V pastes into the current space: a cut re-points items already in a
+  space, while external files and copies go through `IFileOperation` with
+  `FOF_RENAMEONCOLLISION` (protecting the shared store against Explorer's
+  Replace dialog) and `FOF_ALLOWUNDO`; a progress sink reports each created
+  path so the pasted items are listed and selected. The keys arrive through the
+  same low-level hook as Delete, gated on a selection (Ctrl+C/X) or a current
+  space (Ctrl+V). Unit-tested only; on-screen checks pending.
+- **Recycle-Bin delete (F-39).** The Delete key now sends the selected files to
+  the Recycle Bin with `IFileOperation` (`FOF_ALLOWUNDO | FOF_NOCONFIRMATION`,
+  no prompt, undoable) and drops any item whose file is gone; the item menu's
+  "Remove from space"/"Move back to desktop" stays a distinct action that
+  returns a stored file to the desktop. A clipboard-change listener
+  (`AddClipboardFormatListener`) also clears cut ghosting when another app or
+  the desktop replaces the clipboard. Smoke-tested only; confirm on screen.
+- **Item rename and clipboard polish.** F2 renames the focused item inline
+  (`IFileOperation::RenameItem`, undoable, extension preserved when the label
+  hides it) and updates its path and label through `Command::RenameItem`; the
+  painter draws the edit buffer, selection, and caret on the item's label. Cut
+  ghosting now clears correctly when another item is cut (every affected space
+  repaints) and when another app replaces the clipboard, and a cut pasted into
+  Explorer or the desktop drops the now-missing item (`Event::ClipboardChanged`
+  prunes). Clipboard reads retry a held clipboard, so a transient failure no
+  longer clears the ghost.
+- **Shell-operation and check-box polish.** Paste no longer adds a path the
+  shell reported but that does not exist, and missing items are pruned at
+  startup and by Delete, so a label with no icon cannot linger; a `FileOperation`
+  with nothing queued no longer fails (which had aborted the delete). Item
+  check boxes keep Explorer's behavior: revealed on hover, left ticked while
+  the item stays selected, and cleared only by clicking empty space or the
+  desktop — clicking another app keeps the selection, and a failed view-flag
+  read leaves the last known value.
 - **Space click acts like a desktop click.** Clicking a space now focuses the
   desktop (deactivating the app in front) and clears the desktop icon
   selection through its `IShellView`, matching native Windows. A selection
@@ -161,6 +195,11 @@ started).
   compressed/encrypted colors remain (F-25, F-28). Verified the desktop's
   flags read correctly and a synthetic click toggled a real item on the dev
   machine; on-screen checks pending.
+- **Shortcut labels match Explorer.** With Explorer's "File name extensions"
+  option on, spaces no longer append `.lnk`/`.url` to shortcuts; only real
+  files gain an extension, and both label forms are derived from the path so
+  toggling the option (or a label captured while it was on) never leaves a
+  stale extension.
 - **Desktop round-trip fix.** Manual testing found desktop moves unreliable
   and a desktop item dropped on a space that already held it appearing as a
   label with no icon. Causes: DeskSpace moved files with a plain rename and
@@ -420,7 +459,7 @@ Behavior:
 
 Manual testing found cross-space drags duplicated items and desktop drags left
 `- Copy` files. The identity fix (canonical-path matching, `ItemStore::contains`)
-and the F-36 and F-37 drag changes have landed; F-38 and F-39 remain.
+and the F-36..F-39 interaction changes have landed.
 
 - **[done] F-36** Explorer-parity drag: dragging out defaults to **move**
   (`CFSTR_PREFERREDDROPEFFECT` on the drag data object), and spaces are OLE
@@ -433,11 +472,13 @@ and the F-36 and F-37 drag changes have landed; F-38 and F-39 remain.
   translucent, follows the pointer inside a space (layered ghost window, faded
   slot) and outside it (shell drag-image manager, also over other spaces).
   Single-item only. Needs on-screen verification.
-- **F-38** Clipboard: Ctrl+X / Ctrl+C / Ctrl+V on the selected icon via the
-  shell clipboard (`CF_HDROP`) and `IFileOperation`, matching Explorer.
-- **F-39** Delete goes to the Recycle Bin (shell Delete verb, undoable, no
-  prompt), replacing the current remove-from-space behavior for the key and the
-  item menu; keep "Remove from space" as a distinct action.
+- **[done] F-38** Clipboard: Ctrl+X / Ctrl+C / Ctrl+V on the selection via the
+  shell clipboard (`CF_HDROP`) and `IFileOperation`. Multi-item, pastes into the
+  current space, cut items are ghosted. Needs on-screen verification.
+- **[done] F-39** Delete sends the selection to the Recycle Bin with the shell
+  delete (undoable, no prompt) and drops the items whose files are gone; the
+  item menu's "Remove from space" / "Move back to desktop" stays a distinct
+  action. Needs on-screen verification.
 
 ### Native-appearance follow-ups (from the display work)
 
