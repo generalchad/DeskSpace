@@ -103,7 +103,7 @@ fn open_clipboard() -> Result<(), PlatformError> {
 
 /// A `CF_HDROP` buffer: a `DROPFILES` header followed by the paths as
 /// NUL-terminated UTF-16, with a final NUL ending the list.
-fn dropfiles_buffer(paths: &[PathBuf]) -> Vec<u8> {
+pub(crate) fn dropfiles_buffer(paths: &[PathBuf]) -> Vec<u8> {
     let header = std::mem::size_of::<DROPFILES>();
     let mut bytes = vec![0u8; header];
     for path in paths {

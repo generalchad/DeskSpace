@@ -5,7 +5,7 @@
 //! supplies the same verbs, menus, and drag data that Explorer would.
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
@@ -226,24 +226,33 @@ pub(crate) fn forward_menu_message(
     Some(LRESULT(0))
 }
 
-/// Starts a shell drag of `path` and blocks until it ends, like dragging the
-/// item in Explorer: drop targets choose to move, copy, or link it. The drag
-/// defaults to a move (for example onto the desktop), so the item leaves the
-/// space instead of leaving a copy behind; a target that honors Shift or Ctrl
+/// Starts a shell drag of `paths` and blocks until it ends, like dragging the
+/// items in Explorer: drop targets choose to move, copy, or link them. The drag
+/// defaults to a move (for example onto the desktop), so the items leave the
+/// space instead of leaving copies behind; a target that honors Shift or Ctrl
 /// can still choose another effect. `image` follows the pointer; without one
 /// the shell substitutes its own. Mouse capture is released first because OLE
 /// tracks the mouse itself.
 pub(crate) fn drag_out(
     owner: Option<HWND>,
-    path: &Path,
+    paths: &[PathBuf],
     image: Option<&DragImage>,
 ) -> Result<DragResult, PlatformError> {
-    let item = shell_item(path)?;
+    if paths.is_empty() {
+        return Ok(DragResult {
+            effect: DragEffect::None,
+        });
+    }
     // SAFETY: binding a handler on a live shell item; SHDoDragDrop runs a
     // modal loop on this (OLE-initialised) thread and uses its default drop
-    // source.
+    // source. A single item uses the shell's own data object (richer formats);
+    // several use ours, which carries a multi-file `CF_HDROP` list.
     let effect = unsafe {
-        let data: IDataObject = item.BindToHandler(None, &BHID_DataObject)?;
+        let data: IDataObject = if paths.len() == 1 {
+            shell_item(&paths[0])?.BindToHandler(None, &BHID_DataObject)?
+        } else {
+            super::data_object::for_files(paths.to_vec())
+        };
         if !super::drop_target::set_drop_effect(
             &data,
             super::drop_target::PREFERRED_DROP_EFFECT,

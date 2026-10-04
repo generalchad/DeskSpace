@@ -25,6 +25,8 @@ pub struct ViewState {
     pub show_extensions: bool,
     /// Items that were cut; drawn ghosted until they are pasted.
     pub cut: Vec<ItemId>,
+    /// The rubber-band selection rectangle, in window-local coordinates.
+    pub marquee: Option<Rect>,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -124,6 +126,7 @@ pub fn space_scene(
         caret_visible: true,
         items,
         show_check_boxes: view.show_check_boxes,
+        marquee: view.marquee,
         scroll_thumb: scroll_thumb(
             space,
             layout,

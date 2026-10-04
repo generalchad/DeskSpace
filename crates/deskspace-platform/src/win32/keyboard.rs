@@ -43,6 +43,9 @@ pub(crate) const CLIPBOARD_KEY: u32 = WM_APP + 5;
 /// Posted to the controller when F2 is pressed while an item is selected.
 pub(crate) const RENAME_KEY: u32 = WM_APP + 6;
 
+/// Posted to the controller when Ctrl+A is pressed while a space is current.
+pub(crate) const SELECT_ALL_KEY: u32 = WM_APP + 7;
+
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
 pub(crate) const ACTION_PASTE: usize = 2;
@@ -182,6 +185,10 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // selection or a current space, and pass every other key through untouched.
     if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
         if key_down(VK_CONTROL) {
+            if event.vkCode == VK_A_CODE {
+                post_message(SELECT_ALL_KEY, 0, 0);
+                return LRESULT(1);
+            }
             let action = if WATCH_SELECTION.get() && is_key(event.vkCode, VK_C) {
                 Some(ACTION_COPY)
             } else if WATCH_SELECTION.get() && is_key(event.vkCode, VK_X) {

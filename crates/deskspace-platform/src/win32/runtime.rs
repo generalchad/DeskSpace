@@ -347,15 +347,15 @@ impl Ui {
         shell_items::track_item_menu(owner, path, entries, at)
     }
 
-    /// Drags `path` out like Explorer does and blocks until it is dropped,
+    /// Drags `paths` out like Explorer does and blocks until it is dropped,
     /// showing `image` under the pointer (the shell's default otherwise).
     /// Drops on spaces arrive afterwards as `SpaceEvent::FilesDropped`.
-    pub fn drag_out(&mut self, path: &Path, image: Option<&DragImage>) -> Option<DragResult> {
+    pub fn drag_out(&mut self, paths: &[PathBuf], image: Option<&DragImage>) -> Option<DragResult> {
         let owner = with_runtime(|runtime| runtime.controller);
-        match shell_items::drag_out(owner, path, image) {
+        match shell_items::drag_out(owner, paths, image) {
             Ok(result) => Some(result),
             Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "could not start drag");
+                tracing::warn!(%error, "could not start drag");
                 None
             }
         }

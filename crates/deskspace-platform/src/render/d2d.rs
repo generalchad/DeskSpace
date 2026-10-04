@@ -365,6 +365,9 @@ impl Painter {
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(&graphics, &target, &brush, prepared);
+                if let Some(marquee) = scene.marquee {
+                    draw_marquee(&target, &brush, marquee, scene.selected_fill);
+                }
                 target.PopAxisAlignedClip();
                 if let Some(thumb) = scene.scroll_thumb {
                     let thumb = to_rect_f(thumb);
@@ -598,6 +601,23 @@ impl Painter {
         self.target = None;
         self.brush = None;
         self.icons.clear();
+    }
+}
+
+/// Draws the rubber-band selection rectangle over empty space.
+fn draw_marquee(
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    marquee: Rect,
+    fill: Color,
+) {
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        let rect = to_rect_f(marquee);
+        brush.SetColor(&color_f(fill.fade(70)));
+        target.FillRectangle(&rect, brush);
+        brush.SetColor(&color_f(fill.with_alpha(200)));
+        target.DrawRectangle(&rect, brush, 1.0, None);
     }
 }
 

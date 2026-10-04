@@ -154,6 +154,10 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::RenameSelection);
                 LRESULT(0)
             }
+            keyboard::SELECT_ALL_KEY => {
+                runtime::dispatch(Event::SelectAll);
+                LRESULT(0)
+            }
             WM_CLIPBOARDUPDATE => {
                 runtime::dispatch(Event::ClipboardChanged);
                 LRESULT(0)

@@ -2,6 +2,7 @@ mod clipboard;
 mod console;
 mod controller;
 mod dark_mode;
+mod data_object;
 pub mod desktop_shell;
 pub mod display_settings;
 pub mod dpi;

@@ -113,6 +113,8 @@ pub enum Event {
     ClipboardChanged,
     /// F2 was pressed while an item was selected.
     RenameSelection,
+    /// Ctrl+A was pressed while a space is current: select all its items.
+    SelectAll,
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {

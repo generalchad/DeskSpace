@@ -85,6 +85,13 @@ enum Drag {
         origin: Point,
         active: bool,
     },
+    /// Rubber-band selection over empty content.
+    Marquee {
+        space: SpaceId,
+        origin: Point,
+        /// Ctrl/Shift: add to the selection instead of replacing it.
+        additive: bool,
+    },
 }
 
 /// What an inline edit is renaming.
@@ -152,6 +159,9 @@ pub struct App {
     drag: Drag,
     /// The item whose slot is drawn faded while it is dragged.
     dragged: Option<(SpaceId, ItemId)>,
+    /// The rubber-band selection rectangle in desktop coordinates and the
+    /// space it belongs to, while the user drags over empty content.
+    marquee: Option<(SpaceId, Rect)>,
     /// The picture under the pointer during an item drag, shown by the ghost
     /// window inside the space and by the shell once the drag leaves it.
     drag_image: Option<DragImage>,
@@ -190,6 +200,7 @@ impl App {
             hovered: None,
             drag: Drag::None,
             dragged: None,
+            marquee: None,
             drag_image: None,
             edit: None,
             caret_visible: true,
@@ -277,6 +288,18 @@ impl App {
             show_check_boxes: self.match_explorer() && self.shell_display.check_boxes,
             show_extensions: self.match_explorer() && self.shell_display.show_extensions,
             cut: self.cut_items.iter().copied().collect(),
+            marquee: self.marquee.and_then(|(owner, rect)| {
+                if owner != id {
+                    return None;
+                }
+                let origin = self.config.desktop.space(id)?.rect;
+                Some(Rect::new(
+                    rect.x - origin.x,
+                    rect.y - origin.y,
+                    rect.width,
+                    rect.height,
+                ))
+            }),
         }
     }
 
@@ -613,6 +636,25 @@ impl App {
         }
     }
 
+    /// Selects every item in the current space, as Ctrl+A does.
+    fn select_all_in_space(&mut self, ui: &mut Ui) {
+        let Some(space) = self.selected_space else {
+            return;
+        };
+        let ids: Vec<ItemId> = self
+            .config
+            .desktop
+            .space(space)
+            .map(|space| space.items.iter().map(|item| item.id).collect())
+            .unwrap_or_default();
+        if ids.is_empty() {
+            return;
+        }
+        self.selected_items = ids;
+        self.selection_anchor = self.selected_items.first().copied();
+        self.refresh_space(ui, space);
+    }
+
     /// Toggles the edit caret so it blinks, as Windows does.
     fn blink_caret(&mut self, ui: &mut Ui) {
         let Some(space) = self.edit.as_ref().map(|session| session.space) else {
@@ -815,7 +857,11 @@ impl App {
                 }
                 self.selection_anchor = Some(item);
             }
-            None => self.selected_items.clear(),
+            None => {
+                if !ctrl && !shift {
+                    self.selected_items.clear();
+                }
+            }
         }
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -835,6 +881,13 @@ impl App {
             self.drag = Drag::Space {
                 id,
                 grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
+            };
+        } else if space.content_rect().contains(point) {
+            // Empty content: start a rubber-band selection.
+            self.drag = Drag::Marquee {
+                space: id,
+                origin: point,
+                additive: ctrl || shift,
             };
         }
         if let Some(previous) = previous.filter(|previous| *previous != id) {
@@ -941,6 +994,14 @@ impl App {
                 }
                 true
             }
+            Drag::Marquee {
+                space: id,
+                origin,
+                additive,
+            } => {
+                self.update_marquee(ui, id, origin, additive, point);
+                true
+            }
             Drag::Space { id, grab } => {
                 let Some(space) = self.config.desktop.space(id) else {
                     self.drag = Drag::None;
@@ -1010,6 +1071,11 @@ impl App {
             Drag::Item { active: true, .. } => {
                 self.end_drag_visual(ui);
                 self.schedule_save(ui);
+            }
+            Drag::Marquee { space, .. } => {
+                // The selection already updated live; just drop the rectangle.
+                self.marquee = None;
+                self.refresh_space(ui, space);
             }
             Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
         }
@@ -1202,10 +1268,11 @@ impl App {
         let Some(space) = self.selected_space else {
             return;
         };
-        let items = std::mem::take(&mut self.selected_items);
+        let items = self.active_items();
         if items.is_empty() {
             return;
         }
+        self.selected_items.clear();
         self.selection_anchor = None;
         self.hovered = None;
         let paths: Vec<PathBuf> = items
@@ -1239,8 +1306,8 @@ impl App {
     /// Puts the selected items on the shell clipboard, cut (to be moved on
     /// paste) or copied. Cut items are drawn ghosted until the paste.
     fn copy_selection(&mut self, ui: &mut Ui, cut: bool) {
-        let paths: Vec<PathBuf> = self
-            .selected_items
+        let active = self.active_items();
+        let paths: Vec<PathBuf> = active
             .iter()
             .filter_map(|item| self.config.desktop.item(*item))
             .map(|item| item.path.clone())
@@ -1260,7 +1327,7 @@ impl App {
             .filter_map(|item| self.config.desktop.space_containing(*item))
             .collect();
         self.cut_items = if cut {
-            self.selected_items.iter().copied().collect()
+            active.iter().copied().collect()
         } else {
             HashSet::new()
         };
@@ -1522,23 +1589,93 @@ impl App {
     /// file dropped on the desktop back out of storage even when the desktop
     /// had copied it, which left `- Copy` and ` (2)` duplicates behind.
     fn drag_item_out(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
-            return;
+        // Dragging an item that is part of the selection drags the whole
+        // selection, as Explorer does; otherwise just that one item.
+        let ids = if self.is_selected(item) {
+            self.active_items()
+        } else {
+            vec![item]
         };
-        // The file may have been moved or deleted since the item was drawn
-        // (for example by an earlier shell command); drop the stale item
-        // instead of repeatedly failing to start a drag for it.
-        if !path.exists() {
+        let paths: Vec<PathBuf> = ids
+            .iter()
+            .filter_map(|id| self.config.desktop.item(*id))
+            .map(|item| item.path.clone())
+            .filter(|path| path.exists())
+            .collect();
+        // A stale item (its file moved or deleted since it was drawn) is
+        // dropped instead of repeatedly failing to start a drag.
+        if paths.is_empty() {
             self.prune_missing(ui, space);
             return;
         }
-        let Some(result) = ui.drag_out(&path, self.drag_image.as_ref()) else {
+        let Some(result) = ui.drag_out(&paths, self.drag_image.as_ref()) else {
             return;
         };
-        tracing::debug!(?result, path = %path.display(), "item drag ended");
-        if !path.exists() {
-            self.prune_missing(ui, space);
-        }
+        tracing::debug!(?result, files = paths.len(), "item drag ended");
+        // The drop target may have moved some files out; drop any item whose
+        // file is gone, wherever it lives.
+        self.prune_all_missing(ui);
+    }
+
+    /// The items an item operation acts on. Today this is the selection; F-41
+    /// will extend it to the independent check-box set.
+    fn active_items(&self) -> Vec<ItemId> {
+        self.selected_items.clone()
+    }
+
+    /// Updates the rubber-band rectangle and the live selection as the pointer
+    /// moves over empty content.
+    fn update_marquee(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        origin: Point,
+        additive: bool,
+        point: Point,
+    ) {
+        let cell = self.config.desktop.layout.cell();
+        let Some(content) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| space.content_rect())
+        else {
+            return;
+        };
+        let scroll = self.scroll_of(id);
+        let cells: Vec<(ItemId, Rect)> = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| {
+                space
+                    .items
+                    .iter()
+                    .map(|item| {
+                        (
+                            item.id,
+                            Rect::new(
+                                content.x + item.position.x,
+                                content.y + item.position.y - scroll,
+                                cell.width,
+                                cell.height,
+                            ),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let left = origin.x.min(point.x).max(content.x);
+        let top = origin.y.min(point.y).max(content.y);
+        let right = origin.x.max(point.x).min(content.right());
+        let bottom = origin.y.max(point.y).min(content.bottom());
+        let rect = Rect::new(left, top, (right - left).max(0), (bottom - top).max(0));
+        self.marquee = Some((id, rect));
+
+        self.selected_space = Some(id);
+        self.selected_items = marquee_selection(&cells, rect, additive, &self.selected_items);
+        self.selection_anchor = None;
+        self.refresh_space(ui, id);
     }
 
     fn show_item_menu(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, at: Point) {
@@ -1924,6 +2061,7 @@ impl EventHandler for App {
             Event::Clipboard(ClipboardAction::Paste) => self.paste_clipboard(ui),
             Event::ClipboardChanged => self.sync_cut_with_clipboard(ui),
             Event::RenameSelection => self.begin_selected_item_rename(ui),
+            Event::SelectAll => self.select_all_in_space(ui),
             Event::PointerDownOutside { on_desktop } => {
                 if self.edit.is_some() {
                     self.finish_rename(ui, true);
@@ -2122,6 +2260,23 @@ fn cut_matches_clipboard(clipboard: &ClipboardFiles, cut: &[PathBuf]) -> bool {
                 .iter()
                 .any(|clip| crate::storage::same_path(clip, path))
         })
+}
+
+/// The selection a rubber-band rectangle produces: `base` when additive, plus
+/// every item whose cell intersects `rect`.
+fn marquee_selection(
+    cells: &[(ItemId, Rect)],
+    rect: Rect,
+    additive: bool,
+    base: &[ItemId],
+) -> Vec<ItemId> {
+    let mut selection = if additive { base.to_vec() } else { Vec::new() };
+    for (item, cell) in cells {
+        if cell.intersects(rect) && !selection.contains(item) {
+            selection.push(*item);
+        }
+    }
+    selection
 }
 
 /// The file name to rename to, preserving the original extension when the
@@ -2358,6 +2513,26 @@ mod tests {
             },
             &cut
         ));
+    }
+
+    #[test]
+    fn marquee_selects_intersecting_cells() {
+        let cells = [
+            (ItemId(1), Rect::new(0, 0, 10, 10)),
+            (ItemId(2), Rect::new(20, 0, 10, 10)),
+            (ItemId(3), Rect::new(0, 20, 10, 10)),
+        ];
+        assert_eq!(
+            marquee_selection(&cells, Rect::new(5, 5, 20, 20), false, &[]),
+            vec![ItemId(1), ItemId(2), ItemId(3)]
+        );
+        // A rectangle away from every cell selects nothing.
+        assert!(marquee_selection(&cells, Rect::new(100, 100, 5, 5), false, &[]).is_empty());
+        // Additive keeps the base selection and appends new hits.
+        assert_eq!(
+            marquee_selection(&cells, Rect::new(0, 0, 6, 6), true, &[ItemId(2)]),
+            vec![ItemId(2), ItemId(1)]
+        );
     }
 
     #[test]
