@@ -173,6 +173,15 @@ started).
   the item stays selected, and cleared only by clicking empty space or the
   desktop — clicking another app keeps the selection, and a failed view-flag
   read leaves the last known value.
+- **Rubber-band selection, Ctrl+A, and multi-item drag (F-42).** Dragging over
+  empty content draws a marquee and selects the items it touches (Ctrl/Shift
+  adds to the selection); Ctrl+A selects every item in the current space.
+  Dragging a selected item out drags the whole selection: a custom
+  `IDataObject` (`win32/data_object.rs`) serves a multi-file `CF_HDROP` and
+  passes the shell's drag image through, since the shell's own object covers
+  only one item and `SHCreateDataObject` needs a shared parent. `active_items()`
+  centralizes the operand (delete/copy/cut/drag) so F-41 can swap in the
+  independent check-box set. Offscreen-tested only; confirm on screen.
 - **Space click acts like a desktop click.** Clicking a space now focuses the
   desktop (deactivating the app in front) and clears the desktop icon
   selection through its `IShellView`, matching native Windows. A selection
@@ -493,9 +502,10 @@ icon overlays). All need the desktop's view settings read through
 - **F-41** Independent "item check boxes" mode (`FWF_CHECKSELECT`): tick state
   kept separate from selection, unlike the current auto-check-select
   (`FWF_AUTOCHECKSELECT`) behavior.
-- **F-42** Rubber-band (marquee) selection over empty space, Ctrl+A to select
-  all, and dragging the whole multi-selection (a shell drag still moves only
-  the dragged item today).
+- **[done] F-42** Rubber-band (marquee) selection over empty space, Ctrl+A to
+  select all, and dragging the whole multi-selection (a custom `IDataObject`
+  serves the multi-file `CF_HDROP`). `active_items()` now centralizes the
+  operand so F-41 can swap in the independent check-box set.
 - **F-43** Info tips, compressed/encrypted label colors (`SSF_SHOWCOMPCOLOR`),
   and icon spacing from `IFolderView::GetSpacing`.
 - **F-44** Title bar style (hidden / hover-only) — see **F-28** (M5).

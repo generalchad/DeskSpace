@@ -478,7 +478,7 @@ WindowSettings {
 
 - `SpaceScene` (title, colors, optional `text_shadow`, label lines/size,
   flags, `ItemVisual`s in window-local coordinates, optional `scroll_thumb`
-  rect) and `SpaceStyle`
+  rect, optional rubber-band `marquee`) and `SpaceStyle`
   (backdrop, corner radius, dark, border) are the contract between app and
   renderer. The app scrolls by offsetting item rects and includes only items
   that intersect the content area; the renderer clips items below the title
@@ -535,9 +535,11 @@ WindowSettings {
   spaces are never active and opened apps would otherwise stay behind), and
   paths are given to the shell with backslashes. `Ui::item_menu` (the app's entries above the shell's
   `IContextMenu`; the controller forwards owner-draw and submenu messages to
-  it while it is open), and `Ui::drag_out` (`SHDoDragDrop` with the item's
-  shell data object; reports the effect and whether it ended over the
-  desktop). The runtime uses `OleInitialize`, which drag and drop needs.
+  it while it is open), and `Ui::drag_out` (`SHDoDragDrop`; one item uses the
+  shell's own data object, several use `win32/data_object.rs`, a minimal
+  `IDataObject` serving a multi-file `CF_HDROP` and passing the drag image
+  through; reports the effect and whether it ended over the desktop). The
+  runtime uses `OleInitialize`, which drag and drop needs.
 - `dpi.rs` sets per-monitor v2 awareness; `system.rs` provides
   `work_area_at(point)`, `drag_threshold()`, and `system_uses_dark_mode()`.
 - `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, register/unregister
@@ -595,7 +597,9 @@ WindowSettings {
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
 - Click an item to select it; Ctrl+click adds or removes it from the
-  selection, and Shift+click selects the range from the last click. Clicking
+  selection, and Shift+click selects the range from the last click. Drag from
+  empty space to rubber-band select (Ctrl or Shift adds to the selection), and
+  Ctrl+A selects every item in the current space. Clicking
   empty space in a space or the desktop clears the selection (hiding spaces and
   rolling up do too); clicking another application keeps it, as Explorer keeps
   a desktop selection. Clicking anywhere on a space acts like a
@@ -613,7 +617,8 @@ WindowSettings {
   pointer and its slot fades; the new order sticks until a Sort by reorders
   it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
-  space to move it there, or onto the desktop to take it out of the space.
+  space to move it there, or onto the desktop to take it out of the space. When
+  the grabbed item is part of the selection, the whole selection drags.
 - Press Delete with items selected to send their files to the Recycle Bin
   (undoable, no prompt), as Explorer does. The item menu's "Remove from space"
   / "Move back to desktop" is separate and returns a stored file to the
@@ -701,9 +706,10 @@ WindowSettings {
   compressed/encrypted label colors are not imported yet (ROADMAP F-25/F-28).
   Only the desktop's own options are read, so a check-box setting enabled in
   one Explorer window is not reflected.
-- **Selection is within one space.** Explorer's rubber-band drag, Ctrl+A, and
-  Shift/Ctrl-drag between spaces are not implemented; a shell drag moves only
-  the dragged item, not the whole multi-selection.
+- **Selection is within one space.** Rubber-band (marquee) selection, Ctrl+A,
+  and dragging the whole selection are implemented; a selection cannot span
+  spaces, and Ctrl/Shift-dragging between spaces is not distinguished from a
+  plain move.
 - **Item drag is close to Explorer but not identical.** Dragging out defaults
   to a move (a preferred drop effect of `MOVE`), so it no longer leaves a
   `- Copy` on the desktop; cross-space moves still match by file identity, and
