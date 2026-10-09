@@ -47,7 +47,8 @@ context menus, and a settings window in the first usable release (v0.2).
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
   selection highlights. Verified visually on Windows 11 build 26300.
 - A tray icon, a space right-click menu, and a native settings window
-  (Appearance, General, About) with live preview and OK/Cancel/Apply.
+  (Appearance, Labels, Layout, Colors, Advanced, General, About) with live
+  preview and OK/Cancel/Apply.
 - Spaces can be created, deleted (with confirmation), moved by the title bar,
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
   (double-click the title bar), renamed inline, restyled per space (opacity,
@@ -70,6 +71,15 @@ context menus, and a settings window in the first usable release (v0.2).
   pasted. Delete sends the selection to the Recycle Bin, and F2 renames the
   focused item inline. Clicking a space also focuses the desktop and clears its
   icon selection, like a desktop click.
+- Spaces mirror the desktop's look: item check boxes (both Explorer modes),
+  filename extensions, hidden/protected files, and compressed/encrypted label
+  colors. With "Match Explorer's display" on, the desktop's own icon size
+  (`IFolderView2::GetViewModeAndIconSize`) and item spacing
+  (`IFolderView::GetSpacing`) replace the DeskSpace sliders, so spaces are 1:1
+  with the desktop. Icons are rendered by `IShellItemImageFactory` at the
+  effective pixel size (crisp at large sizes) with shell overlays composited on
+  top, and layouts scale to each monitor's DPI. Hovering an item reveals
+  Explorer's info tip.
 - Verification: the blur, corners, space content, and settings layout were
   checked on screen. Many behaviors are covered by unit tests of the app logic
   but have not been exercised interactively; confirm them before building on
@@ -80,14 +90,16 @@ context menus, and a settings window in the first usable release (v0.2).
   ghost, the space-click focus/deselect, the check-box display and both
   check-box modes, rubber-band/Ctrl+A selection and the whole-selection drag,
   the clipboard cut/copy/paste with its ghosting and external sync, F2 item
-  rename, and the compressed/encrypted label colors. The
+  rename, the compressed/encrypted label colors, the info tips, jumbo icons,
+  and per-monitor DPI on a mixed-DPI setup. The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop
   icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
-  for file moves.
+  for file moves, mapping Explorer's view mode (list/details), and a per-space
+  icon-size override.
   See the parity matrix in section 9.
 
 ## 3. Architecture
@@ -212,7 +224,18 @@ GridSpec {
 - `arrange_space` resizes the space to fit its items (unless locked or
   user-sized) and calls `position_items`, which lays items on the grid in
   content-relative cells: `columns` wide normally, `columns_for(width)` wide
-  for user-sized spaces.
+  for user-sized spaces. It also stamps `grid.title_height` onto the space, so
+  a scale change reaches the title even for user-sized spaces.
+- `GridSpec` is the logical 96-DPI / 100 % base and is what the config stores.
+  `GridSpec::scaled(scale)` produces the effective grid for a display. The app
+  derives a per-space scale (the `Theme.icon_size` setting or Explorer's icon
+  size, times the space's monitor DPI) and shares it through `layout_for(id)` /
+  `metrics_for(id)`; commands take the effective grid of the space under the
+  action: `Desktop::apply_with_layout(command, layout, bounds)`, with `apply`
+  delegating using the stored base. Scene geometry, hit tests, and scroll all
+  read the same per-space grid, so the grid the painter uses always matches the
+  grid the pointer uses. When `match_explorer` is on, Explorer's item spacing
+  replaces the cell and gap outright.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
   the work area. `scroll_step()` is one row per wheel notch.
@@ -222,8 +245,10 @@ GridSpec {
 
 ### Command layer (`command.rs`)
 
-All mutations flow through `Desktop::apply(command, bounds) -> CommandOutcome`
-(`Applied | NotFound | Rejected`). Variants:
+All mutations flow through `Desktop::apply_with_layout(command, layout, bounds)
+-> CommandOutcome` (`Applied | NotFound | Rejected`), where `layout` is the
+effective (scaled) grid; `apply(command, bounds)` is a convenience that uses
+the stored base grid. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
@@ -248,6 +273,7 @@ Theme {
     show_border: bool,        // default true
     label_lines: u8,          // 1 or 2, default 2
     label_size: u8,           // percent, default 100
+    icon_size: u8,            // percent, default 100; scales icon and grid cell
     label_shadow: LabelShadow,// Auto (default) | On | Off
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
@@ -336,6 +362,12 @@ WindowSettings {
 - `Ui::quit`, console Ctrl+C/close, and `WM_ENDSESSION` all lead to exactly one
   `Event::CloseRequested`, then space and settings windows are destroyed, the
   tray icon removed, and the loop ends.
+- Desktop integration (`win32/desktop_entry.rs`): while spaces are hidden, the
+  app writes a per-user `DesktopBackground\Shell` verb ("Show DeskSpace
+  spaces") whose command re-launches the executable with `--show`; on start
+  `--show` posts `SHOW_SPACES` to the running instance's controller window
+  (found by class) and exits, or starts with the spaces shown when none is
+  running. The verb is removed when spaces are shown and on a clean exit.
 - The tray and settings-window icon is drawn in code (`icon.rs`) until release
   packaging adds an `.ico` resource.
 
@@ -376,7 +408,10 @@ WindowSettings {
   window, so it chooses the drop effect and the shell shows the move/copy
   cursor. A `CF_HDROP` drop becomes `SpaceEvent::FilesDropped`; the effect is
   `MOVE` by default and `COPY` while Shift is down, so `keep_in_place` is set
-  only for the latter. `Drop` marks the source's data object with the
+  only for the latter. On `DragEnter` it also stores an empty "DropDescription"
+  (`DROPIMAGE_NOIMAGE`, no text) on the source's data object, so a shell source
+  such as Explorer or the desktop does not draw its default "Move"/"Copy" action
+  hint over the item image. `Drop` marks the source's data object with the
   "Performed DropEffect" format so a shell source does not move the files a
   second time after DeskSpace has. A non-`CF_HDROP` drag reports `DROPEFFECT_NONE`.
 - Dragging an item out (`shell_items::drag_out`) sets the source data object's
@@ -400,7 +435,12 @@ WindowSettings {
   desktop's `IShellView` (`win32/shell_view.rs`, shared with the click code)
   and `SHGetSetSettings`: `FWF_CHECKSELECT`/`FWF_AUTOCHECKSELECT` (item check
   boxes), `SSF_SHOWALLOBJECTS`/`SSF_SHOWSUPERHIDDEN` (hidden files),
-  `SSF_SHOWEXTENSIONS` (filename extensions). `ShellDisplay.check_boxes` is a
+  `SSF_SHOWEXTENSIONS` (filename extensions), plus `IFolderView2::GetViewModeAndIconSize`
+  (the desktop's icon size) and `IFolderView::GetSpacing` (item spacing).
+  `ShellDisplay` carries all of them; the app overlays them when
+  `Theme.match_explorer` is on. In particular the desktop icon size and item
+  spacing replace the DeskSpace icon-size and grid settings (and drive the
+  jumbo icon fetch and the per-monitor layout scale), so matching is 1:1. `ShellDisplay.check_boxes` is a
   `CheckBoxMode`: `FWF_CHECKSELECT` gives `Independent`, `FWF_AUTOCHECKSELECT`
   gives `Selection`, neither `Hidden`. When `Theme.match_explorer` is
   on (default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
@@ -421,8 +461,9 @@ WindowSettings {
   in `Selection` mode the selection is. The snapshot is
   re-read at startup, on
   `Event::SystemThemeChanged`, and on every space click, and a change repaints
-  every space. Icons are fetched with `SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY`
-  so shortcut arrows and sync badges appear; labels come from
+  every space. Icons carry the shell's overlay (`SHGFI_ADDOVERLAYS`, plus
+  `SHGFI_LINKOVERLAY` for `.lnk`/`.url` only) so shortcut arrows and sync
+  badges appear; labels come from
   `IShellItem::GetDisplayName(SIGDN_NORMALDISPLAY)`, and seeding skips hidden
   or protected items Explorer would hide.
 - Every file DeskSpace moves (into storage, back to the desktop) is reported
@@ -433,33 +474,42 @@ WindowSettings {
   rather than listed (which showed a label with no icon).
 - Drag image (`win32/drag_image.rs`, `win32/drag_ghost.rs`): the picture that
   follows the pointer, distinct from the move/copy cursor. When an item drag
-  starts, the app builds the space's scene and `DragImage::of_item` renders
-  that one item offscreen (`d2d::render_item`: a WIC bitmap render target
-  running the same `draw_item` as the space, so icon, label, colors, and
-  selection highlight match), then bakes in a uniform translucency
-  (`DRAG_IMAGE_ALPHA`). The hotspot is the grab offset in the cell. Every
-  view of the drag shows these same pixels. Inside
-  the space a layered, click-through, topmost ghost window shows it
-  (`UpdateLayeredWindow`, premultiplied DIB) and the item's slot is drawn
+  starts, the app builds a drag scene (`scene::drag_scene`) holding the whole
+  active set, including members scrolled out of view at their grid positions,
+  and `DragImage::of_selection` renders them together offscreen
+  (`d2d::render_items`: one WIC bitmap render target with a scale transform,
+  running the same `draw_item` as the space, so icons, labels, and colors
+  match), scaling the group to `MAX_DRAG_IMAGE` when it is larger and baking
+  in a uniform translucency (`DRAG_IMAGE_ALPHA`). The hotspot is the grab
+  offset in the scaled group. Every view of the drag shows these same pixels.
+  Inside the space a layered, click-through, topmost ghost window shows it
+  (`UpdateLayeredWindow`, premultiplied DIB) and every dragged slot is drawn
   faded (`ItemState::Dragged`). Once the pointer leaves the space the ghost
   hides and `drag_out` hands the same image to the shell's drag-image manager
-  (`IDragSourceHelper::InitializeFromBitmap`, straight-alpha DIB, since it
-  premultiplies itself). Space drop targets forward all four calls to one
-  shared `IDropTargetHelper`, without which the image vanishes over a space;
+  (`IDragSourceHelper2::InitializeFromBitmap`, straight-alpha DIB, since it
+  premultiplies itself; `SetFlags(0)` leaves the drop description off, so a
+  target like the desktop cannot add its "Move to ..." label and movement
+  arrow). Space drop targets forward all four calls to one shared
+  `IDropTargetHelper`, without which the image vanishes over a space;
   it is released before `OleUninitialize`. Without an image the shell
   substitutes its own opaque, oversized one.
 - Inline rename (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
   `TextEdit` buffer and pushes it in the scene's `editing` (a space title) or
-  `editing_item` (an item's label) field; the painter draws the selection
-  highlight and caret. A `WH_KEYBOARD_LL` hook, installed only while editing,
+  `editing_item` (an item's label) field; the painter draws Explorer's rename
+  field, an opaque box with a border around the laid-out text, the selection in
+  the system highlight, and a blinking caret. A `WH_KEYBOARD_LL` hook, installed only while editing,
   translates key presses into `Event::EditKey` and consumes them, because
   spaces are never activated and cannot receive `WM_CHAR`. F2 on a selected
   item starts an item rename, committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
   same hook watches Delete, Ctrl+C/X/V, and F2 while an item is selected
-  (`Ui::watch_selection_keys`) and passes every other key through. IME
-  composition and clipboard are not supported.
+  (`Ui::watch_selection_keys`) and passes every other key through. The watch
+  only consumes those keys while the desktop shell has the foreground
+  (`desktop_is_foreground`), because the selection is kept when another app is
+  focused, as Explorer keeps a desktop selection; otherwise DeskSpace would
+  steal that app's own Ctrl+C/V. IME composition and clipboard are not
+  supported.
 - Clipboard (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X put the
   selected items on the shell clipboard as `CF_HDROP` with a "Preferred
   DropEffect" (`MOVE` for a cut), the formats Explorer uses, so they paste into
@@ -515,8 +565,12 @@ WindowSettings {
 - `MenuEntry` lists become `TrackPopupMenuEx` menus (`Ui::popup_menu` returns
   the chosen id).
 - `SettingsForm` → pages → `Field`s (`Heading`, `Note`, `Choice`, `Toggle`,
-  `Slider` (optionally with labeled `SliderMark`s), `Color`, `Text`,
-  `Button`). The settings window lays them out with
+  `Slider` (optionally with labeled `SliderMark`s and, when `editable`, a
+  number box that commits on focus loss instead of a static value), `Color`,
+  `Text`, `Button`). Each page is a
+  top-level tab; Appearance is split across Appearance, Labels, Layout, Colors,
+  and Advanced so no page clips on a 1080-pixel display. The settings window lays
+  them out with
   common controls v6 under a tab control (pages are container windows that
   forward notifications), uses Mica in the caption, reports edits as
   `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
@@ -538,9 +592,18 @@ WindowSettings {
 
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
   `0x052C` spawn trick) for hosted placements.
-- `shell.rs`: `enumerate_desktop_items` and `IconCache` (32 px icons via
-  `SHGetFileInfoW`, decoded to `Icon`s, least-recently-used eviction at 1024
-  entries, `invalidate(path)`).
+- `shell.rs`: `enumerate_desktop_items` and `IconCache`. Icons are rendered by
+  `IShellItemImageFactory` at the requested pixel size, and a path the factory
+  rejects falls back to the classic 32 px icon (scaled). The overlay (shortcut
+  arrow, sync badges) is drawn the way Explorer draws it: `SHGetFileInfoW` with
+  `SHGFI_OVERLAYINDEX` names the overlay (this works in any process), and
+  `IImageList::GetOverlayImage` fetches its full-icon-sized image from the
+  system image list nearest the size (`SHIL_SMALL`..`SHIL_JUMBO`), area-averaged
+  to `theme.overlay_size` percent and anchored in the bottom-left corner before
+  compositing. HICONs are decoded from their color and
+  mask bitmaps (`decode_icon_masked`). Entries are
+  keyed by path and size with least-recently-used eviction at 1024 entries.
+  `invalidate(path)` forgets every size of one path.
 - `shell_items.rs`: Explorer behavior for items. `Ui::open_path`
   (`ShellExecuteExW` with the default context-menu verb; it first passes
   DeskSpace's foreground right on with `AllowSetForegroundWindow`, because
@@ -552,8 +615,15 @@ WindowSettings {
   `IDataObject` serving a multi-file `CF_HDROP` and passing the drag image
   through; reports the effect and whether it ended over the desktop). The
   runtime uses `OleInitialize`, which drag and drop needs.
-- `dpi.rs` sets per-monitor v2 awareness; `system.rs` provides
-  `work_area_at(point)`, `drag_threshold()`, and `system_uses_dark_mode()`.
+- `dpi.rs` sets per-monitor v2 awareness; `window_dpi`/`scale_for` back the
+  runtime's `space_dpi(id)` (the space window's own monitor scale), which the app
+  reads per space. `system.rs` provides `work_area_at(point)`,
+  `drag_threshold()`, and `system_uses_dark_mode()`.
+- Info tips (`win32/info_tip.rs`, `Ui::show_info_tip`/`hide_info_tip`): after the
+  pointer rests on an item, the app shows Explorer's info tip (name, shell type,
+  size, local modification date) in one reusable native tracking tooltip
+  (`TTF_TRACK`, `TTM_TRACKPOSITION`/`TTM_TRACKACTIVATE`). The app owns the hover
+  delay with a timer; moving off, clicking, or hiding spaces dismisses it.
 - `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, register/unregister
   (on the controller window via `Ui`).
 
@@ -601,9 +671,13 @@ WindowSettings {
 - The space menu's Appearance submenu sets an opacity preset or a custom tint
   or text color (with a reset); Sort by reorders items by name, type, size, or
   modified date.
-- Settings → Appearance previews live: material, corners, tint, custom colors,
-  label lines/size/shadow, and icon spacing/edge padding (which re-flows every
-  space).
+- Settings previews live across its Appearance, Labels, Layout, Colors, and
+  Advanced tabs: material, corners, tint, custom colors, label lines/size/shadow,
+  icon size/spacing/edge padding (which re-flow every space; icon size scales
+  the icon and the grid cell around it), and the shell overlay size (the shortcut
+  arrow badge, as a percent of the icon; default 80 %, 100 % matches Explorer).
+  Icon size defaults to 100 %, which is
+  Windows' 48 px desktop icon, and can also be typed as a percentage.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
@@ -621,6 +695,7 @@ WindowSettings {
 - Double-click an item to open it. Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top; right-clicking an item already in a multi-selection keeps it.
+  Rest the pointer on an item for a moment to see Explorer's info tip.
 - Item check boxes follow Explorer's mode (when the desktop shows them and
   `match_explorer` is on). With auto-check-select, hovering reveals the box and
   it mirrors the selection; clicking an item ticks it and unticks the others,
@@ -629,9 +704,9 @@ WindowSettings {
   persistent tick and moves the highlight, the ticks survive empty-space and
   desktop clicks, and delete/copy/cut/drag act on the ticked items.
 - Drag an item within its space to rearrange it (`ReorderItem`); dragging one
-  member of a multi-selection moves the whole block (`ReorderItems`). Its icon
-  follows the pointer and its slot fades; the new order sticks until a Sort by
-  reorders it.
+  member of a multi-selection moves the whole block (`ReorderItems`). The whole
+  selection's drag image follows the pointer and every member's slot fades; the
+  new order sticks until a Sort by reorders it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space. When
   the grabbed item is part of the selection, the whole selection drags.
@@ -645,9 +720,14 @@ WindowSettings {
 - Press F2 with an item selected to rename its file inline (Enter commits,
   Escape cancels, clicking away commits); the extension is kept when the label
   hides it.
-- `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces.
-- CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--settings`,
-  `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
+- `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
+  spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
+  right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once
+  they are shown. It runs the executable with `--show`, which signals the
+  running instance through its controller window instead of starting a second
+  copy.
+- CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--show`,
+  `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
 
 ## 9. spaces feature parity matrix
 
@@ -669,9 +749,10 @@ WindowSettings {
 | Backup / restore / layout snapshots | Config file only |
 | Right-click context menu | Space menu; item menu is Explorer's |
 | System tray icon | Implemented |
-| Settings UI | Appearance, General, About |
+| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, About |
 | Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
-| Per-monitor DPI | Process is PMv2; layout is not yet scaled per monitor |
+| Per-monitor DPI | Implemented (per-space layout, icons, and hit tests; `WM_DPICHANGED` reflows) |
+| Explorer icon size / spacing / info tips | Implemented under match; jumbo icons at any size |
 | Auto-consolidate new desktop icons | Not implemented |
 | Exclude rules / filters | Not implemented |
 | Keyboard navigation | Not implemented |
@@ -696,8 +777,11 @@ WindowSettings {
 - **Dark mode relies on undocumented uxtheme exports** for menus and on
   Explorer's dark control styles. The confirmation message box and the color
   picker stay light; neither has a dark mode.
-- **No per-monitor DPI scaling of spaces.** Sizes are in physical pixels at
-  96-DPI values; the settings window is laid out for the DPI at creation.
+- **Per-monitor DPI is scaled, with caveats.** Space layout, icons, and hit
+  tests scale to each monitor's DPI and `WM_DPICHANGED` reflows a moved space.
+  The settings window is still laid out for the DPI at creation, and an item
+  moved between monitors of different DPI is positioned from the destination
+  space's grid (correct, but not yet verified on screen).
 - **Drops use an OLE `IDropTarget`** (`win32/drop_target.rs`), which shows the
   move/copy cursor and replaced `WM_DROPFILES`. `DragOver` recomputes the
   effect from the modifier keys, and the app performs the file move; an
@@ -706,8 +790,9 @@ WindowSettings {
 - **`always_on_desktop` applies at next launch.** Switching placement recreates
   every space window (and drops blur), so it is honored when DeskSpace starts
   rather than live.
-- **Icon cache is invalidated only after shell menu commands.** Lens watchers
-  will invalidate changed files.
+- **Icon cache is invalidated only after shell menu commands and renames.** It
+  is keyed by path and pixel size, so an icon-size or DPI change reloads
+  automatically; lens watchers will invalidate changed files.
 - **Scrolling is wheel-only.** The scroll indicator cannot be dragged, and
   wheel events need Windows' "scroll inactive windows" setting.
 - **Inline rename has no IME or clipboard support.** A low-level keyboard hook
@@ -715,14 +800,18 @@ WindowSettings {
   composition (Japanese, Chinese, ...) is deferred. Space titles and item file
   names both rename inline; an item rename goes through the shell, so a name
   clash shows Explorer's conflict prompt.
-- **Explorer display matching is partial.** Item check boxes handle both
-  Explorer modes: auto-check-select (the tick mirrors the selection) and
+- **Explorer display matching is broad but not total.** Item check boxes handle
+  both Explorer modes: auto-check-select (the tick mirrors the selection) and
   independent item check boxes (a session-only tick set that is the operand for
   operations). Compressed/encrypted label colors are imported
-  (`SSF_SHOWCOMPCOLOR`). Icon size/view mode, icon spacing, and info tips are
-  not imported yet (ROADMAP F-25/F-43/F-28).
-  Only the desktop's own options are read, so a check-box setting enabled in
-  one Explorer window is not reflected.
+  (`SSF_SHOWCOMPCOLOR`). Under "Match Explorer's display" the desktop's icon
+  size (`IFolderView2::GetViewModeAndIconSize`) and item spacing
+  (`IFolderView::GetSpacing`) are imported too, replacing the DeskSpace sliders,
+  and icons are fetched at the effective pixel size with shell overlays, so
+  large sizes are crisp; info tips match Explorer's. Explorer's view mode
+  (list/details) is not mapped, only the desktop's own options are read (a
+  check-box setting enabled in one Explorer window is not reflected), and a
+  per-space icon-size override is still open (ROADMAP F-25/F-40).
 - **Selection is within one space.** Rubber-band (marquee) selection, Ctrl+A,
   and dragging the whole selection are implemented; a selection cannot span
   spaces, and Ctrl/Shift-dragging between spaces is not distinguished from a
@@ -731,7 +820,8 @@ WindowSettings {
   to a move (a preferred drop effect of `MOVE`), so it no longer leaves a
   `- Copy` on the desktop; cross-space moves still match by file identity, and
   drops onto a space go through the OLE `IDropTarget`. The drag image is the
-  item as drawn (icon and label), single-item only; drags that start in
+  whole active set drawn as Explorer draws it (icons and labels at their grid
+  positions, scaled to `MAX_DRAG_IMAGE` when large); drags that start in
   Explorer keep Explorer's own image. Explorer's Shift=move is deliberately
   inverted on DeskSpace targets, where Shift preserves the original.
 - **Clipboard and delete match Explorer for files only.** Copy and cut
@@ -739,6 +829,14 @@ WindowSettings {
   virtual items are not provided. Paste and delete use `IFileOperation` with an
   undo record, but without a filesystem watcher an undo (or a move made outside
   DeskSpace) leaves the item stale until an icon action prunes it.
+- **The desktop "Show spaces" verb is a legacy menu item.** It is a per-user
+  `DesktopBackground\Shell` entry, so on Windows 11 it appears under "Show more
+  options" (Shift+right-click), not the new top-level menu. Reaching the new
+  menu needs an `IExplorerCommand` handler inside an MSIX package with the
+  `windows.fileExplorerContextMenus` extension, an associated stub executable,
+  and signing (or Developer Mode) - deferred to M8 packaging. Its icon is a
+  real `.ico` written beside the storage folder (`icon::write_icon`), since the
+  executable has no icon resource yet.
 - **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
   and tests, with `deny.toml` for licenses/advisories.
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
