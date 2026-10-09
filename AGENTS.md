@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Guidance for automated agents and contributors working in this repository.
-For architecture and current state, read `CONTEXT.md` first.
+For architecture and current state, read `CONTEXT.md` first. For the plan,
+see `ROADMAP.md`; for ready-to-do work items, see `TASKS.md`.
 
 ## Project
 
@@ -156,9 +157,13 @@ Rust specifics:
   applies the startup show command to the first `ShowWindow` on an overlapped
   window.
 - The keyboard hook (`win32/keyboard.rs`) has two modes: inline-edit capture
-  and a Delete-only watch while an item is selected. It is installed only
-  while a mode is active and consumes only the keys it handles (all editing
-  keys, or Delete); everything else passes through.
+  (consumes all editing keys) and a selection-key watch (`Ui::watch_selection_keys`):
+  Delete, F2, Ctrl+C, and Ctrl+X while an item is selected, and Ctrl+V and
+  Ctrl+A while a space is current. The watch only consumes those keys while the
+  desktop shell has the foreground, so other apps keep their own shortcuts. The
+  hook is installed only while a mode is active; every other key passes
+  through. New global key handling goes here, not in a window procedure,
+  because spaces are never activated.
 - Dragging an item inside its space rearranges it (`ReorderItem`); only once
   the pointer leaves the space does the app start an OLE shell drag, which is
   what moves the real file.
