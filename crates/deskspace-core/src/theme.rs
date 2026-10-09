@@ -137,6 +137,12 @@ pub mod corner {
     pub const MAX: u8 = 24;
 }
 
+/// The shell draws its icon overlay (the shortcut arrow) a touch larger than
+/// most people want, so DeskSpace's default is smaller than Explorer's 100%.
+pub const OVERLAY_SIZE_DEFAULT: u8 = 80;
+/// The bounds an overlay size is clamped to. 100% matches Explorer exactly.
+pub const OVERLAY_SIZE_RANGE: (u8, u8) = (40, 100);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Theme {
@@ -156,6 +162,12 @@ pub struct Theme {
     pub label_lines: u8,
     /// Item label font size as a percent of the default (100).
     pub label_size: u8,
+    /// Item icon size as a percent of the default (100). Scales the icon and
+    /// the grid cell it sits in, so a larger icon gets more room.
+    pub icon_size: u8,
+    /// The shell's icon overlay (the shortcut arrow, a sync badge) as a percent
+    /// of the icon size (100 is Explorer's own proportion).
+    pub overlay_size: u8,
     pub label_shadow: LabelShadow,
     /// When false, `tint` and `text` are ignored and the palette follows the
     /// light or dark mode.
@@ -178,6 +190,8 @@ impl Default for Theme {
             show_border: true,
             label_lines: 2,
             label_size: 100,
+            icon_size: 100,
+            overlay_size: OVERLAY_SIZE_DEFAULT,
             label_shadow: LabelShadow::Auto,
             custom_colors: false,
             tint: DARK_TINT,
@@ -211,6 +225,43 @@ const DARK_TEXT: Color = Color::rgb(255, 255, 255);
 const LIGHT_TINT: Color = Color::rgb(243, 243, 243);
 const LIGHT_TEXT: Color = Color::rgb(26, 26, 26);
 
+/// Colors of an inline rename field, matching the box Explorer puts over the
+/// name it is editing: an opaque system-window fill, a border, and the system
+/// highlight for the selected text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditColors {
+    pub fill: Color,
+    pub text: Color,
+    pub selection: Color,
+    pub selection_text: Color,
+    pub border: Color,
+}
+
+/// Windows' default text-selection highlight (`COLOR_HIGHLIGHT`).
+const HIGHLIGHT: Color = Color::rgb(0x00, 0x78, 0xD4);
+
+impl EditColors {
+    fn new(dark: bool) -> Self {
+        if dark {
+            Self {
+                fill: Color::rgb(0x2B, 0x2B, 0x2B),
+                text: Color::rgb(0xFF, 0xFF, 0xFF),
+                selection: HIGHLIGHT,
+                selection_text: Color::rgb(0xFF, 0xFF, 0xFF),
+                border: Color::rgb(0x5A, 0x5A, 0x5A),
+            }
+        } else {
+            Self {
+                fill: Color::rgb(0xFF, 0xFF, 0xFF),
+                text: Color::rgb(0x00, 0x00, 0x00),
+                selection: HIGHLIGHT,
+                selection_text: Color::rgb(0xFF, 0xFF, 0xFF),
+                border: Color::rgb(0x00, 0x00, 0x00),
+            }
+        }
+    }
+}
+
 /// Concrete colors for drawing a space, resolved from a `Theme`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
@@ -222,6 +273,7 @@ pub struct Palette {
     pub hover_fill: Color,
     pub selected_fill: Color,
     pub border: Color,
+    pub edit: EditColors,
 }
 
 impl Backdrop {
@@ -291,6 +343,9 @@ impl Theme {
             hover_fill: highlight.with_alpha(0x18),
             selected_fill: highlight.with_alpha(0x2C),
             border: highlight.with_alpha(0x30),
+            // The rename field follows Windows' app theme, as Explorer's does,
+            // rather than the space's own Color mode override.
+            edit: EditColors::new(system_dark),
         }
     }
 }
@@ -383,6 +438,24 @@ mod tests {
         assert_eq!(radius(Backdrop::Blur, 3), corner::SQUARE);
         assert_eq!(radius(Backdrop::Clear, 24), 24);
         assert_eq!(radius(Backdrop::Solid, 13), 13);
+    }
+
+    #[test]
+    fn edit_field_contrasts_like_explorer_in_both_modes() {
+        for dark in [true, false] {
+            let edit = Theme::default().palette(dark).edit;
+            assert_eq!(edit.fill.a, 255);
+            assert_eq!(edit.selection_text.a, 255);
+            // The fill is light in light mode and dark in dark mode, with the
+            // text always contrasting against it.
+            assert_eq!(edit.fill.luminance() < 0.5, dark);
+            assert!((edit.fill.luminance() - edit.text.luminance()).abs() > 0.5);
+            // The highlight matches Windows' default selection blue.
+            assert_eq!(
+                (edit.selection.r, edit.selection.g, edit.selection.b),
+                (0, 120, 212)
+            );
+        }
     }
 
     #[test]

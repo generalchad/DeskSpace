@@ -6,7 +6,8 @@ use crate::geometry::{Point, Rect};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemKind};
 use crate::layout::{
-    arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions, snap_rect,
+    GridSpec, arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions,
+    snap_rect,
 };
 use crate::space::ResizeEdges;
 use crate::theme::Color;
@@ -127,7 +128,21 @@ impl CommandOutcome {
 }
 
 impl Desktop {
+    /// Applies `command` against the desktop's stored (logical, base) layout.
     pub fn apply(&mut self, command: Command, bounds: Rect) -> CommandOutcome {
+        let layout = self.layout;
+        self.apply_with_layout(command, layout, bounds)
+    }
+
+    /// Applies `command` against an effective layout: the stored grid scaled
+    /// for the monitor's DPI and the icon-size setting. The stored `layout`
+    /// stays logical and is never rewritten by scaling.
+    pub fn apply_with_layout(
+        &mut self,
+        command: Command,
+        layout: GridSpec,
+        bounds: Rect,
+    ) -> CommandOutcome {
         match command {
             Command::CreateSpace { title, at } => {
                 let mut rect = Rect::new(at.x, at.y, 240, 120);
@@ -147,7 +162,7 @@ impl Desktop {
                 None => CommandOutcome::NotFound,
             },
             Command::MoveSpace { id, delta } => {
-                let snap = self.layout.snap;
+                let snap = layout.snap;
                 match self.space_mut(id) {
                     Some(space) => {
                         if space.locked {
@@ -162,7 +177,7 @@ impl Desktop {
                 }
             }
             Command::SetSpaceRect { id, rect } => {
-                let snap = self.layout.snap;
+                let snap = layout.snap;
                 match self.space_mut(id) {
                     Some(space) => {
                         if space.locked {
@@ -175,7 +190,6 @@ impl Desktop {
                 }
             }
             Command::ResizeSpace { id, edges, to } => {
-                let layout = self.layout;
                 let Some(space) = self.space_mut(id) else {
                     return CommandOutcome::NotFound;
                 };
@@ -189,7 +203,6 @@ impl Desktop {
                 CommandOutcome::Applied
             }
             Command::FitToContents { id } => {
-                let layout = self.layout;
                 let Some(space) = self.space_mut(id) else {
                     return CommandOutcome::NotFound;
                 };
@@ -206,7 +219,6 @@ impl Desktop {
                 key,
                 descending,
             } => {
-                let layout = self.layout;
                 let Some(space) = self.space_mut(id) else {
                     return CommandOutcome::NotFound;
                 };
@@ -273,7 +285,7 @@ impl Desktop {
                 }
                 let item = Item::new(self.next_item_id(), path);
                 self.add_item(space, item);
-                self.rearrange(space);
+                self.rearrange(space, layout);
                 CommandOutcome::Applied
             }
             Command::RemoveItem { id } => {
@@ -282,7 +294,6 @@ impl Desktop {
                 };
                 self.remove_item(id);
                 // Close the gap without resizing the space under the user.
-                let layout = self.layout;
                 if let Some(space) = self.space_mut(source) {
                     position_items(space, layout);
                 }
@@ -294,11 +305,10 @@ impl Desktop {
                 }
                 let source = self.space_containing(id);
                 if self.move_item(id, target) {
-                    self.rearrange(target);
+                    self.rearrange(target, layout);
                     if let Some(source) = source {
                         // Close the gap the item left, without resizing the
                         // source space under the user.
-                        let layout = self.layout;
                         if let Some(space) = self.space_mut(source) {
                             position_items(space, layout);
                         }
@@ -309,7 +319,6 @@ impl Desktop {
                 }
             }
             Command::ReorderItem { id, index } => {
-                let layout = self.layout;
                 let Some(source) = self.space_containing(id) else {
                     return CommandOutcome::NotFound;
                 };
@@ -330,7 +339,6 @@ impl Desktop {
                 CommandOutcome::Applied
             }
             Command::ReorderItems { ids, index } => {
-                let layout = self.layout;
                 let Some(id) = ids.first() else {
                     return CommandOutcome::Rejected;
                 };
@@ -361,7 +369,7 @@ impl Desktop {
             }
             Command::AutoArrange { id } => {
                 if self.space(id).is_some() {
-                    self.rearrange(id);
+                    self.rearrange(id, layout);
                     CommandOutcome::Applied
                 } else {
                     CommandOutcome::NotFound
@@ -382,7 +390,6 @@ impl Desktop {
                 CommandOutcome::Applied
             }
             Command::SnapAll => {
-                let layout = self.layout;
                 let ids: Vec<SpaceId> = self.spaces.iter().map(|space| space.id).collect();
                 for id in ids {
                     if let Some(space) = self.space_mut(id) {
@@ -398,8 +405,7 @@ impl Desktop {
         }
     }
 
-    fn rearrange(&mut self, id: SpaceId) {
-        let layout = self.layout;
+    fn rearrange(&mut self, id: SpaceId, layout: GridSpec) {
         if let Some(space) = self.space_mut(id) {
             arrange_space(space, layout);
         }

@@ -30,6 +30,24 @@ impl Default for GridSpec {
 }
 
 impl GridSpec {
+    /// This grid scaled by `scale` for a display or icon-size factor. The
+    /// stored spec is the logical 96-DPI / 100 % base; the app scales it for
+    /// the monitor's DPI and the icon-size setting, so no persisted value has
+    /// to carry a scale.
+    pub fn scaled(&self, scale: f32) -> Self {
+        let scale = scale.max(0.1);
+        let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+        Self {
+            cell_width: scaled(self.cell_width),
+            cell_height: scaled(self.cell_height),
+            gap: scaled(self.gap),
+            padding: scaled(self.padding),
+            title_height: scaled(self.title_height),
+            columns: self.columns,
+            snap: scaled(self.snap),
+        }
+    }
+
     pub const fn cell(&self) -> Size {
         Size::new(self.cell_width, self.cell_height)
     }
@@ -112,11 +130,13 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     if space.locked {
         return;
     }
+    // The title height follows the grid even for user-sized spaces, so an icon
+    // or DPI change reaches every space.
+    space.title_height = spec.title_height;
     if space.user_sized {
         position_items(space, spec);
         return;
     }
-    space.title_height = spec.title_height;
     let columns = spec.columns.max(1) as usize;
     let rows = space.items.len().div_ceil(columns).max(1) as i32;
     let width = spec.padding * 2
@@ -231,6 +251,21 @@ mod tests {
         space.set_position(Point::new(500, 400));
         let after: Vec<Point> = space.items.iter().map(|item| item.position).collect();
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn scaling_grows_the_grid_but_keeps_columns() {
+        let base = GridSpec::default();
+        let doubled = base.scaled(2.0);
+        assert_eq!(doubled.cell_width, base.cell_width * 2);
+        assert_eq!(doubled.cell_height, base.cell_height * 2);
+        assert_eq!(doubled.gap, base.gap * 2);
+        assert_eq!(doubled.padding, base.padding * 2);
+        assert_eq!(doubled.title_height, base.title_height * 2);
+        assert_eq!(doubled.columns, base.columns);
+        // A scale never collapses a dimension to zero.
+        assert!(base.scaled(0.0).cell_width >= 1);
+        assert_eq!(base.scaled(1.0), base);
     }
 
     #[test]
