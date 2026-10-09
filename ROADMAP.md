@@ -2,7 +2,7 @@
 
 The plan for bringing DeskSpace to feature parity with comparable tools.
 `CONTEXT.md` describes the current architecture and `AGENTS.md` the engineering
-rules.
+rules. `TASKS.md` breaks the next steps into concrete, one-commit work items.
 
 How to read this file:
 
