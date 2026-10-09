@@ -30,7 +30,10 @@ use windows::Win32::System::Ole::{
     IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
 };
 use windows::Win32::System::SystemServices::{MK_SHIFT, MODIFIERKEYS_FLAGS};
-use windows::Win32::UI::Shell::{CLSID_DragDropHelper, DragQueryFileW, HDROP, IDropTargetHelper};
+use windows::Win32::UI::Shell::{
+    CLSID_DragDropHelper, DROPDESCRIPTION, DROPIMAGE_NOIMAGE, DROPIMAGETYPE, DragQueryFileW, HDROP,
+    IDropTargetHelper,
+};
 use windows::Win32::UI::WindowsAndMessaging::GetParent;
 use windows::core::{PCWSTR, Ref, Result as WinResult};
 
@@ -79,6 +82,12 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         };
         // SAFETY: as above.
         unsafe { *effect = chosen };
+        // A shell source (Explorer, the desktop) puts a default action hint
+        // like "Move" on the data object; clearing it here leaves the drag
+        // showing only the item image, matching a DeskSpace-originated drag.
+        if let Some(data) = data.as_ref().filter(|_| accepts) {
+            let _ = set_drop_description(data, DROPIMAGE_NOIMAGE);
+        }
         with_image_helper(|helper| {
             // SAFETY: forwarding this call's own arguments.
             unsafe { helper.DragEnter(self.window, data.as_ref(), &screen(point), chosen) }
@@ -250,15 +259,41 @@ pub(crate) fn revoke(window: HWND) {
 /// transferring a 4-byte `DROPEFFECT` to the object. Returns whether the object
 /// accepted it.
 pub(crate) fn set_drop_effect(data: &IDataObject, name: &str, effect: DROPEFFECT) -> bool {
+    write_format(data, name, &effect.0.to_le_bytes())
+}
+
+/// Clears the drag's action hint by storing an empty drop description with the
+/// given stock image. A shell source (Explorer, the desktop) sets a default
+/// "Move"/"Copy" label on the data object; overriding it here leaves only the
+/// item image, as DeskSpace's own drags show.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/ns-shlobj_core-dropdescription
+pub(crate) fn set_drop_description(data: &IDataObject, image: DROPIMAGETYPE) -> bool {
+    let description = DROPDESCRIPTION {
+        r#type: image,
+        ..Default::default()
+    };
+    // SAFETY: reading the plain-old-data struct's bytes for the copy below.
+    let bytes = unsafe {
+        std::slice::from_raw_parts(
+            (&description as *const DROPDESCRIPTION).cast::<u8>(),
+            size_of::<DROPDESCRIPTION>(),
+        )
+    };
+    write_format(data, "DropDescription", bytes)
+}
+
+/// Copies `bytes` into a movable global block and hands it to `data` under the
+/// registered clipboard format `name`. Returns whether the object accepted it.
+fn write_format(data: &IDataObject, name: &str, bytes: &[u8]) -> bool {
     let name = crate::win32::system::wide(name);
     // SAFETY: the name is NUL-terminated and outlives the call.
     let format = unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) };
     if format == 0 {
         return false;
     }
-    // SAFETY: allocating a movable block, writing the DWORD, then handing
+    // SAFETY: allocating a movable block, copying the bytes in, then handing
     // ownership to the data object (or freeing it on failure).
-    let Ok(block) = (unsafe { GlobalAlloc(GMEM_MOVEABLE, size_of::<u32>()) }) else {
+    let Ok(block) = (unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len().max(1)) }) else {
         return false;
     };
     let pointer = unsafe { GlobalLock(block) };
@@ -266,8 +301,8 @@ pub(crate) fn set_drop_effect(data: &IDataObject, name: &str, effect: DROPEFFECT
         let _ = unsafe { GlobalFree(Some(block)) };
         return false;
     }
-    // SAFETY: `block` is at least a DWORD.
-    unsafe { pointer.cast::<u32>().write(effect.0) };
+    // SAFETY: `block` holds at least `bytes.len()` bytes.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.cast::<u8>(), bytes.len()) };
     let _ = unsafe { GlobalUnlock(block) };
 
     let format_etc = FORMATETC {

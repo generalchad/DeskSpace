@@ -22,12 +22,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SHIFT, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, HHOOK, KBDLLHOOKSTRUCT, PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WM_APP, WM_KEYDOWN, WM_SYSKEYDOWN,
+    CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
+    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_APP, WM_KEYDOWN,
+    WM_SYSKEYDOWN,
 };
 
 use crate::edit::{EditKey, MoveDir};
 use crate::input::ClipboardAction;
+use crate::win32::desktop_shell;
 
 /// Posted to the controller with the decoded key: wParam is a kind code and
 /// lParam the character for `KIND_CHAR`.
@@ -146,6 +148,22 @@ pub(crate) fn stop() {
     WATCH_PASTE.set(false);
 }
 
+/// Whether the desktop shell (Progman or the wallpaper WorkerW), or the
+/// top-level window it belongs to, has the foreground. A space has the user's
+/// attention only while the desktop does, because spaces never activate and
+/// clicking one deliberately focuses the desktop.
+fn desktop_is_foreground() -> bool {
+    // SAFETY: plain window queries.
+    unsafe {
+        let foreground = GetForegroundWindow();
+        if foreground.is_invalid() {
+            return false;
+        }
+        desktop_shell::is_desktop_window(foreground)
+            || desktop_shell::is_desktop_window(GetAncestor(foreground, GA_ROOT))
+    }
+}
+
 /// Whether a modifier key is currently held.
 fn key_down(key: VIRTUAL_KEY) -> bool {
     // SAFETY: plain key-state query.
@@ -183,7 +201,13 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 
     // Selection watch: capture Delete and the clipboard keys that act on a
     // selection or a current space, and pass every other key through untouched.
+    // The selection is kept while another app is focused, as Explorer keeps a
+    // desktop selection, so these keys belong to a space only while the desktop
+    // shell has the foreground; otherwise an app's own Ctrl+C/V is stolen.
     if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
+        if !desktop_is_foreground() {
+            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        }
         if key_down(VK_CONTROL) {
             if event.vkCode == VK_A_CODE {
                 post_message(SELECT_ALL_KEY, 0, 0);

@@ -10,37 +10,71 @@ pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 use deskspace_core::geometry::Rect;
 
-/// Icon size and top inset within an item cell, shared by the painter and the
-/// app's check-box hit test.
-pub const ITEM_ICON_SIZE: i32 = 32;
-pub const ITEM_ICON_TOP: i32 = 10;
+/// Icon size and top inset within an item cell, at the 96-DPI / 100 % base.
+/// 48 px is Windows' default desktop icon size ("Medium icons" at 100 % DPI),
+/// so the default icon size setting is 1:1 with Explorer's desktop.
+pub const ITEM_ICON_SIZE: i32 = 48;
+pub const ITEM_ICON_TOP: i32 = 8;
+/// Gap between the icon and its label at the base size.
+const ITEM_LABEL_GAP: i32 = 6;
 /// Explorer-style item check box, anchored at the icon's top-left corner.
 pub const ITEM_CHECK_BOX_SIZE: i32 = 13;
 pub const ITEM_CHECK_BOX_MARGIN: i32 = 1;
 /// Slack around the drawn box that still counts as a click on it.
 const ITEM_CHECK_BOX_SLACK: i32 = 2;
 
+/// Item sizes scaled for DPI and the icon-size setting. The painter and the
+/// app's hit tests share these so they always agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemMetrics {
+    pub icon_size: i32,
+    pub icon_top: i32,
+    /// Gap between the icon and its label.
+    pub label_gap: i32,
+    pub check_box_size: i32,
+    pub check_box_margin: i32,
+}
+
+impl ItemMetrics {
+    /// The metrics for a display/icon factor (`1.0` is the 96-DPI base).
+    pub fn for_scale(scale: f32) -> Self {
+        let scale = scale.max(0.1);
+        let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+        Self {
+            icon_size: scaled(ITEM_ICON_SIZE),
+            icon_top: scaled(ITEM_ICON_TOP),
+            label_gap: scaled(ITEM_LABEL_GAP),
+            check_box_size: scaled(ITEM_CHECK_BOX_SIZE),
+            check_box_margin: scaled(ITEM_CHECK_BOX_MARGIN),
+        }
+    }
+}
+
 /// The check box's rectangle inside an item cell, in the same coordinate
 /// system as the cell. Matches where the painter draws it.
-pub fn item_check_box(cell: Rect) -> Rect {
-    let icon_left = cell.x + (cell.width - ITEM_ICON_SIZE) / 2;
+pub fn item_check_box(cell: Rect, metrics: ItemMetrics) -> Rect {
+    let icon_left = cell.x + (cell.width - metrics.icon_size) / 2;
     Rect::new(
-        icon_left + ITEM_CHECK_BOX_MARGIN,
-        cell.y + ITEM_ICON_TOP + ITEM_CHECK_BOX_MARGIN,
-        ITEM_CHECK_BOX_SIZE,
-        ITEM_CHECK_BOX_SIZE,
+        icon_left + metrics.check_box_margin,
+        cell.y + metrics.icon_top + metrics.check_box_margin,
+        metrics.check_box_size,
+        metrics.check_box_size,
     )
 }
 
 /// The region that counts as a click on the check box: the drawn box plus a
 /// little slack, so a near miss still toggles it.
-pub fn item_check_box_hit(cell: Rect) -> Rect {
-    let drawn = item_check_box(cell);
+pub fn item_check_box_hit(cell: Rect, metrics: ItemMetrics) -> Rect {
+    let drawn = item_check_box(cell, metrics);
+    let slack = (ITEM_CHECK_BOX_SLACK as f32
+        * (metrics.check_box_size as f32 / ITEM_CHECK_BOX_SIZE as f32))
+        .round() as i32;
+    let slack = slack.max(ITEM_CHECK_BOX_SLACK);
     Rect::new(
-        drawn.x - ITEM_CHECK_BOX_SLACK,
-        drawn.y - ITEM_CHECK_BOX_SLACK,
-        drawn.width + ITEM_CHECK_BOX_SLACK * 2,
-        drawn.height + ITEM_CHECK_BOX_SLACK * 2,
+        drawn.x - slack,
+        drawn.y - slack,
+        drawn.width + slack * 2,
+        drawn.height + slack * 2,
     )
 }
 
@@ -113,7 +147,8 @@ mod tests {
     #[test]
     fn check_box_sits_at_the_icon_corner() {
         let cell = Rect::new(100, 200, 96, 104);
-        let checkbox = item_check_box(cell);
+        let metrics = ItemMetrics::for_scale(1.0);
+        let checkbox = item_check_box(cell, metrics);
         assert_eq!(
             checkbox.x,
             100 + (96 - ITEM_ICON_SIZE) / 2 + ITEM_CHECK_BOX_MARGIN
@@ -121,5 +156,18 @@ mod tests {
         assert_eq!(checkbox.y, 200 + ITEM_ICON_TOP + ITEM_CHECK_BOX_MARGIN);
         assert_eq!(checkbox.width, ITEM_CHECK_BOX_SIZE);
         assert_eq!(checkbox.height, ITEM_CHECK_BOX_SIZE);
+    }
+
+    #[test]
+    fn metrics_and_check_box_scale_together() {
+        let cell = Rect::new(0, 0, 144, 156);
+        let metrics = ItemMetrics::for_scale(1.5);
+        assert_eq!(metrics.icon_size, ITEM_ICON_SIZE * 3 / 2);
+        assert_eq!(metrics.check_box_size, 20);
+        let checkbox = item_check_box(cell, metrics);
+        assert_eq!(checkbox.width, metrics.check_box_size);
+        // The hit region is always at least the drawn box.
+        let hit = item_check_box_hit(cell, metrics);
+        assert!(hit.width >= checkbox.width);
     }
 }

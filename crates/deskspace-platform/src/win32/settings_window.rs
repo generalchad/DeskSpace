@@ -40,12 +40,13 @@ use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindow
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
     CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW,
-    CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, ES_READONLY,
-    EnumChildWindows, GWLP_USERDATA, GetClassNameW, GetClientRect, GetCursorPos, GetParent,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL,
-    IsIconic, NONCLIENTMETRICSW, RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_RESTORE,
-    SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL,
+    ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GWLP_USERDATA, GetClassNameW,
+    GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
+    GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, NONCLIENTMETRICSW,
+    RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE,
+    SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
     WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
     WM_HSCROLL, WM_KILLFOCUS, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETFOCUS,
     WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
@@ -109,6 +110,8 @@ struct FieldControls {
     main: Option<HWND>,
     /// Slider value text, or the hex text beside a color swatch.
     value_text: Option<HWND>,
+    /// An editable slider value box, in place of `value_text`.
+    value_edit: Option<HWND>,
     swatch: Option<HWND>,
     swatch_brush: Option<HBRUSH>,
     /// Labels under a slider's tick marks.
@@ -590,6 +593,7 @@ impl Builder {
             label: None,
             main: None,
             value_text: None,
+            value_edit: None,
             swatch: None,
             swatch_brush: None,
             marks: Vec::new(),
@@ -675,10 +679,11 @@ impl Builder {
                     max,
                     value,
                     suffix,
+                    editable,
                     marks,
                 } => {
                     controls.label = self.label(page, &field.label, label_bounds);
-                    let value_width = self.s(48);
+                    let value_width = self.s(52);
                     let ticks = if marks.is_empty() { TBS_NOTICKS } else { 0 };
                     let slider_x = control_x - self.s(6);
                     let slider = self.control(
@@ -721,16 +726,26 @@ impl Builder {
                         );
                     }
                     controls.main = slider;
-                    controls.value_text = self.label(
-                        page,
-                        &format!("{value}{suffix}"),
-                        (
-                            control_x + control_width - value_width + self.s(4),
-                            y,
-                            value_width,
-                            row,
-                        ),
+                    let value_bounds = (
+                        control_x + control_width - value_width + self.s(4),
+                        y,
+                        value_width,
+                        row,
                     );
+                    if *editable {
+                        controls.value_edit = self.control(
+                            page,
+                            WC_EDITW,
+                            &value.to_string(),
+                            ES_RIGHT as u32 | ES_NUMBER as u32 | ES_AUTOHSCROLL as u32 | tab,
+                            WS_EX_CLIENTEDGE,
+                            (value_bounds.0, y + self.s(2), value_bounds.2, self.s(24)),
+                            id_secondary,
+                        );
+                    } else {
+                        controls.value_text =
+                            self.label(page, &format!("{value}{suffix}"), value_bounds);
+                    }
                     if marks.is_empty() {
                         self.s(38)
                     } else {
@@ -1017,6 +1032,9 @@ unsafe fn apply_enabled(controls: &FieldControls, enabled: bool) {
         if let Some(main) = controls.main {
             let _ = EnableWindow(main, enabled);
         }
+        if let Some(edit) = controls.value_edit {
+            let _ = EnableWindow(edit, enabled);
+        }
         for label in controls.labels() {
             let _ = InvalidateRect(Some(label), None, true);
         }
@@ -1027,8 +1045,9 @@ unsafe fn apply_enabled(controls: &FieldControls, enabled: bool) {
 /// borrow and applied after it, because control messages can re-enter
 /// `wndproc` (for example SetWindowText raises EN_CHANGE).
 enum Update {
-    /// The field's main control and labels (see `apply_enabled`).
-    Enable(Option<HWND>, Vec<HWND>, bool),
+    /// The field's main control, an optional value edit, and its labels (see
+    /// `apply_enabled`).
+    Enable(Option<HWND>, Option<HWND>, Vec<HWND>, bool),
     Text(HWND, String),
     Choice(HWND, usize),
     Check(HWND, bool),
@@ -1069,9 +1088,12 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     unsafe {
         for update in updates {
             match update {
-                Update::Enable(main, labels, enabled) => {
+                Update::Enable(main, edit, labels, enabled) => {
                     if let Some(main) = main {
                         let _ = EnableWindow(main, enabled);
+                    }
+                    if let Some(edit) = edit {
+                        let _ = EnableWindow(edit, enabled);
                     }
                     for label in labels {
                         let _ = InvalidateRect(Some(label), None, true);
@@ -1114,6 +1136,7 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
     if old.enabled != new.enabled {
         updates.push(Update::Enable(
             controls.main,
+            controls.value_edit,
             controls.labels(),
             new.enabled,
         ));
@@ -1146,7 +1169,9 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
             },
         ) if a != b => {
             updates.push(Update::Slider(main, *b));
-            if let Some(text) = controls.value_text {
+            if let Some(edit) = controls.value_edit {
+                updates.push(Update::Text(edit, b.to_string()));
+            } else if let Some(text) = controls.value_text {
                 updates.push(Update::Text(text, format!("{b}{suffix}")));
             }
         }
@@ -1242,6 +1267,44 @@ unsafe fn on_field_command(window: HWND, id: usize, code: u32, control: HWND) {
         }) else {
             return;
         };
+        // A slider's editable value box commits when it loses focus, so typing
+        // is not clamped or rewritten under the caret.
+        if part == PART_SECONDARY {
+            if let FieldKind::Slider {
+                min,
+                max,
+                value: stored,
+                editable: true,
+                ..
+            } = &field.kind
+            {
+                if code == EN_KILLFOCUS {
+                    let stored = *stored;
+                    let typed = window_text(control).trim().parse::<i32>().unwrap_or(stored);
+                    let value = typed.clamp(*min, *max);
+                    if value != stored {
+                        with_state(window, |state| {
+                            if let Some((field, _)) = state.fields.get_mut(index) {
+                                if let FieldKind::Slider { value: slot, .. } = &mut field.kind {
+                                    *slot = value;
+                                }
+                            }
+                        });
+                        settings_event(SettingsEvent::Changed {
+                            field: field.id,
+                            value: FieldValue::Slider(value),
+                        });
+                    } else {
+                        // Reject invalid or out-of-range text.
+                        with_state(window, |state| state.updating = true);
+                        let text = wide(&value.to_string());
+                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
+                        with_state(window, |state| state.updating = false);
+                    }
+                }
+            }
+            return;
+        }
         if part != PART_MAIN {
             return;
         }
@@ -1323,19 +1386,26 @@ pub(crate) unsafe fn pick_color(owner: HWND, initial: Color) -> Option<Color> {
 unsafe fn on_scroll(window: HWND, control: HWND) {
     // SAFETY (all calls): `control` is a trackbar child of this window.
     unsafe {
-        let Some(Some((index, field_id, suffix, last, value_text))) = with_state(window, |state| {
-            if state.updating {
-                return None;
-            }
-            let index = state.field_index_for(control)?;
-            let (field, controls) = &state.fields[index];
-            match &field.kind {
-                FieldKind::Slider { value, suffix, .. } => {
-                    Some((index, field.id, suffix.clone(), *value, controls.value_text))
+        let Some(Some((index, field_id, suffix, last, value_text, value_edit))) =
+            with_state(window, |state| {
+                if state.updating {
+                    return None;
                 }
-                _ => None,
-            }
-        }) else {
+                let index = state.field_index_for(control)?;
+                let (field, controls) = &state.fields[index];
+                match &field.kind {
+                    FieldKind::Slider { value, suffix, .. } => Some((
+                        index,
+                        field.id,
+                        suffix.clone(),
+                        *value,
+                        controls.value_text,
+                        controls.value_edit,
+                    )),
+                    _ => None,
+                }
+            })
+        else {
             return;
         };
         let value = SendMessageW(control, TBM_GETPOS, None, None).0 as i32;
@@ -1349,7 +1419,13 @@ unsafe fn on_scroll(window: HWND, control: HWND) {
                 }
             }
         });
-        if let Some(text) = value_text {
+        if let Some(edit) = value_edit {
+            // Setting the text raises EN_CHANGE; ignore it.
+            with_state(window, |state| state.updating = true);
+            let text_value = wide(&value.to_string());
+            let _ = SetWindowTextW(edit, PCWSTR(text_value.as_ptr()));
+            with_state(window, |state| state.updating = false);
+        } else if let Some(text) = value_text {
             let text_value = wide(&format!("{value}{suffix}"));
             let _ = SetWindowTextW(text, PCWSTR(text_value.as_ptr()));
         }

@@ -1,9 +1,9 @@
-//! The picture that follows the pointer while an item is dragged.
+//! The picture that follows the pointer while items are dragged.
 //!
-//! It is the item exactly as its space draws it (icon, label, selection
-//! highlight), rendered offscreen and made slightly translucent, like the
-//! item Explorer picks up. The translucency is baked into the pixels, so the
-//! same bitmap looks identical wherever it is shown.
+//! It is the selected items exactly as their space draws them (icons, labels)
+//! at their grid positions, rendered offscreen as one bitmap and made slightly
+//! translucent, like the group Explorer picks up. The translucency is baked
+//! into the pixels, so the same bitmap looks identical wherever it is shown.
 //!
 //! One `DragImage` serves both drag visuals: the shell's drag-image manager
 //! (`IDragSourceHelper`, for drags that leave a space) and the layered ghost
@@ -12,15 +12,20 @@
 //! `InitializeFromBitmap` premultiplies again itself, so it gets straight
 //! alpha.
 
-use deskspace_core::geometry::Point;
+use deskspace_core::geometry::{Point, Rect};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS, HBITMAP,
 };
 
-use crate::render::{Icon, ItemState, SpaceScene, d2d};
+use crate::render::{Icon, SpaceScene, d2d};
 
 /// Opacity of the drag image, as a fraction of 255.
 const DRAG_IMAGE_ALPHA: u8 = 200;
+
+/// Longest edge of a group drag image before it is scaled down, so a large
+/// selection becomes a compact picture as Explorer's does while ordinary
+/// selections stay at full size.
+const MAX_DRAG_IMAGE: f32 = 512.0;
 
 /// An item's drag picture and the point inside it that stays under the
 /// pointer.
@@ -31,25 +36,23 @@ pub struct DragImage {
 }
 
 impl DragImage {
-    /// Renders item `id` as `scene` draws it. `grab` is where the pointer
-    /// went down, in the scene's window coordinates; it stays under the
-    /// pointer. `None` if the item is not in the scene.
-    pub fn of_item(scene: &SpaceScene, id: u64, grab: Point) -> Option<Self> {
-        // The drag image is the item itself, without the hover highlight or a
-        // check box that only appears while pointing at it.
-        let mut scene = scene.clone();
-        let item = scene.items.iter_mut().find(|item| item.id == id)?;
-        let cell = item.rect;
-        item.state = ItemState::Normal;
-        item.hovered = false;
-        scene.show_check_boxes = false;
-        let rendered = d2d::render_item(&scene, id)?;
+    /// Renders the selected items `ids` of `scene` as one image, at their grid
+    /// positions and scaled down to `MAX_DRAG_IMAGE`, like Explorer's group
+    /// drag image. `ids` must include any item scrolled out of view so the
+    /// image keeps their place in the grid. `grab` is where the pointer went
+    /// down, in the scene's window coordinates; it stays under the pointer.
+    /// `None` when none of `ids` is in the scene.
+    pub fn of_selection(scene: &SpaceScene, ids: &[u64], grab: Point) -> Option<Self> {
+        let origin = selection_bounds(scene, ids)?;
+        let scale = group_scale(origin);
+        let rendered = d2d::render_items(scene, ids, origin, scale)?;
         let mut pixels = rendered.pixels().to_vec().into_boxed_slice();
         fade(&mut pixels, DRAG_IMAGE_ALPHA);
         let icon = Icon::new(rendered.width(), rendered.height(), pixels);
         let size = Point::new(icon.width() as i32, icon.height() as i32);
+        let offset = group_offset(grab, origin, scale);
         Some(Self {
-            hotspot: hotspot(Point::new(grab.x - cell.x, grab.y - cell.y), size),
+            hotspot: hotspot(offset, size),
             icon,
         })
     }
@@ -61,6 +64,35 @@ impl DragImage {
     pub fn height(&self) -> i32 {
         self.icon.height() as i32
     }
+}
+
+/// The bounding box of the selected items present in `scene`, in scene
+/// coordinates.
+fn selection_bounds(scene: &SpaceScene, ids: &[u64]) -> Option<Rect> {
+    scene
+        .items
+        .iter()
+        .filter(|item| ids.contains(&item.id))
+        .fold(None, |bounds: Option<Rect>, item| {
+            Some(match bounds {
+                Some(current) => current.union(item.rect),
+                None => item.rect,
+            })
+        })
+}
+
+/// How much a `bounds`-sized group is scaled down to fit `MAX_DRAG_IMAGE`.
+fn group_scale(bounds: Rect) -> f32 {
+    let longest = bounds.width.max(bounds.height).max(1) as f32;
+    (MAX_DRAG_IMAGE / longest).min(1.0)
+}
+
+/// Where the pointer sits inside the scaled group image.
+fn group_offset(grab: Point, bounds: Rect, scale: f32) -> Point {
+    Point::new(
+        ((grab.x - bounds.x) as f32 * scale).round() as i32,
+        ((grab.y - bounds.y) as f32 * scale).round() as i32,
+    )
 }
 
 /// The grab offset inside the image, kept within it.
@@ -138,6 +170,29 @@ mod tests {
         let size = Point::new(96, 104);
         assert_eq!(hotspot(Point::new(40, 20), size), Point::new(40, 20));
         assert_eq!(hotspot(Point::new(-3, 200), size), Point::new(0, 103));
+    }
+
+    #[test]
+    fn a_small_group_is_not_scaled_and_a_large_one_fits_the_cap() {
+        assert_eq!(group_scale(Rect::new(0, 0, 96, 104)), 1.0);
+        let scale = group_scale(Rect::new(0, 0, 1024, 128));
+        assert!(scale < 1.0);
+        assert!((1024.0 * scale - MAX_DRAG_IMAGE).abs() < 1.0);
+    }
+
+    #[test]
+    fn the_group_offset_tracks_the_scaled_grab_point() {
+        let bounds = Rect::new(100, 200, 400, 200);
+        // No scaling: the grab point is relative to the group's top-left.
+        assert_eq!(
+            group_offset(Point::new(150, 260), bounds, 1.0),
+            Point::new(50, 60)
+        );
+        // Half scale: the offset shrinks with the image.
+        assert_eq!(
+            group_offset(Point::new(150, 260), bounds, 0.5),
+            Point::new(25, 30)
+        );
     }
 
     #[test]

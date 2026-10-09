@@ -29,7 +29,9 @@ use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
 use crate::win32::{keyboard, outside_click, runtime, shell_items};
 
-const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
+pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
+/// Posted by a second launch to ask this instance to show its spaces.
+pub(crate) const SHOW_SPACES: u32 = WM_APP + 8;
 pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
 /// NIN_KEYSELECT is NIN_SELECT | NINF_KEY; defined here because it is a
 /// macro, not a constant, in the SDK headers.
@@ -109,6 +111,10 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::Hotkey {
                     id: wparam.0 as i32,
                 });
+                LRESULT(0)
+            }
+            SHOW_SPACES => {
+                runtime::dispatch(Event::ShowSpaces);
                 LRESULT(0)
             }
             TRAY_CALLBACK => {

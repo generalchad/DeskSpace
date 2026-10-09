@@ -40,6 +40,7 @@ use crate::win32::clipboard::ClipboardFiles;
 use crate::win32::drag_ghost::DragGhost;
 use crate::win32::drag_image::DragImage;
 use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
+use crate::win32::info_tip::{self, InfoTip};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
@@ -78,6 +79,8 @@ struct Runtime {
     close_dispatched: bool,
     /// Created on the first in-space item drag and kept for reuse.
     drag_ghost: Option<DragGhost>,
+    /// Created on the first item hover and reused for every info tip.
+    info_tip: Option<InfoTip>,
 }
 
 thread_local! {
@@ -135,6 +138,21 @@ pub(crate) fn is_space_window(window: HWND) -> bool {
     with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
 }
 
+/// The DPI scale factor of a space window (`1.0` at 96 DPI), for per-monitor
+/// layout. Falls back to `1.0` before the window exists or outside the UI
+/// thread.
+pub fn space_dpi(id: u64) -> f32 {
+    with_runtime(|runtime| {
+        runtime
+            .spaces
+            .get(&id)
+            .copied()
+            .map(|hwnd| crate::win32::dpi::scale_for(crate::win32::dpi::window_dpi(hwnd)))
+    })
+    .flatten()
+    .unwrap_or(1.0)
+}
+
 pub(crate) fn settings_closed(window: HWND) {
     with_runtime(|runtime| {
         if runtime.settings == Some(window) {
@@ -146,14 +164,15 @@ pub(crate) fn settings_closed(window: HWND) {
 /// Destroys every space window and the settings window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
-    let (windows, ghost) = with_runtime(|runtime| {
+    let (windows, ghost, info_tip) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.extend(runtime.settings.take());
-        (windows, runtime.drag_ghost.take())
+        (windows, runtime.drag_ghost.take(), runtime.info_tip.take())
     })
     .unwrap_or_default();
     // Dropped outside the borrow: destroying a window sends messages.
     drop(ghost);
+    drop(info_tip);
     for hwnd in windows {
         // SAFETY: each HWND was created by this runtime on this thread.
         unsafe {
@@ -458,6 +477,42 @@ impl Ui {
         self.with_ghost(DragGhost::hide);
     }
 
+    /// Shows Explorer's info tip for `path` near `at` (desktop coordinates).
+    /// Reused across hovers; call `hide_info_tip` when the pointer leaves.
+    pub fn show_info_tip(&mut self, path: &Path, at: Point) {
+        let Some(owner) = with_runtime(|runtime| runtime.controller) else {
+            return;
+        };
+        if with_runtime(|runtime| runtime.info_tip.is_none()).unwrap_or(false) {
+            match InfoTip::create(owner) {
+                Ok(tip) => {
+                    with_runtime(|runtime| runtime.info_tip = Some(tip));
+                }
+                Err(error) => {
+                    tracing::debug!(%error, "could not create the info tip window");
+                    return;
+                }
+            }
+        }
+        let text = info_tip::describe(path);
+        let at = desktop_to_screen(at);
+        let point = POINT { x: at.x, y: at.y };
+        with_runtime(|runtime| {
+            if let Some(tip) = runtime.info_tip.as_ref() {
+                tip.show(&text, point);
+            }
+        });
+    }
+
+    /// Hides the info tip, if one is shown.
+    pub fn hide_info_tip(&mut self) {
+        with_runtime(|runtime| {
+            if let Some(tip) = runtime.info_tip.as_ref() {
+                tip.hide();
+            }
+        });
+    }
+
     /// Makes a click on a space behave like a click on the desktop: the
     /// desktop becomes the active window (deactivating whatever was in front)
     /// and its icon selection clears. A selection inside an Explorer window is
@@ -637,6 +692,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             tray_tooltip: options.tray_tooltip.clone(),
             close_dispatched: false,
             drag_ghost: None,
+            info_tip: None,
         });
     });
     tray::add(controller, &options.tray_tooltip);

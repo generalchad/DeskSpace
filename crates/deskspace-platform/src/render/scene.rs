@@ -1,9 +1,9 @@
 use deskspace_core::geometry::Rect;
-use deskspace_core::theme::{Backdrop, Color};
+use deskspace_core::theme::{Backdrop, Color, EditColors};
 
 use crate::edit::TextEdit;
 
-use super::Icon;
+use super::{Icon, ItemMetrics};
 
 /// Window-level appearance of a space. DWM applies what it can (material,
 /// native 4 and 8 px corners, border); the painter draws the rest.
@@ -54,8 +54,14 @@ pub struct SpaceScene {
     /// While set, item `id`'s label is drawn as an editable buffer instead,
     /// with the selection highlight and a caret.
     pub editing_item: Option<(u64, TextEdit)>,
+    /// Colors of the rename field drawn while `editing` or `editing_item` is
+    /// set, matching Explorer's editable box.
+    pub edit: EditColors,
     /// Whether the caret is currently visible, so it can blink while editing.
     pub caret_visible: bool,
+    /// Scaled item sizes (icon, label gap, check box) the painter draws with;
+    /// the app's hit tests use the same metrics.
+    pub metrics: ItemMetrics,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use deskspace_core::geometry::Rect;
-use deskspace_core::theme::Color;
+use deskspace_core::theme::{Color, EditColors};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
@@ -30,30 +30,30 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_HIT_TEST_METRICS, DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_MEASURING_MODE_NATURAL,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_RANGE,
     DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
     DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
-    IDWriteTextFormat,
+    IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, HBITMAP, HPALETTE, PAINTSTRUCT};
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmap, IWICImagingFactory,
     WICBitmapCacheOnLoad, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+    WICBitmapUseAlpha,
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
-use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, HICON};
+use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 use windows::core::{BOOL, HRESULT, PCWSTR, w};
-use windows_numerics::Vector2;
+use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
 
-const ICON_SIZE: f32 = super::ITEM_ICON_SIZE as f32;
-const ICON_TOP: f32 = super::ITEM_ICON_TOP as f32;
 const TITLE_INSET: f32 = 12.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
@@ -61,9 +61,6 @@ const SCROLL_THUMB_ALPHA: u8 = 110;
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
 const CUT_ALPHA: u8 = 110;
-/// Explorer's item check box, anchored at the icon's top-left corner.
-const CHECK_BOX_SIZE: f32 = super::ITEM_CHECK_BOX_SIZE as f32;
-const CHECK_BOX_MARGIN: f32 = super::ITEM_CHECK_BOX_MARGIN as f32;
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
@@ -635,6 +632,9 @@ unsafe fn draw_item(
     edit: Option<&[u16]>,
 ) {
     let cell = to_rect_f(item.rect);
+    let metrics = scene.metrics;
+    let icon_size = metrics.icon_size as f32;
+    let icon_top = metrics.icon_top as f32;
     let highlight = match item.state {
         ItemState::Normal | ItemState::Dragged => None,
         ItemState::Hovered => Some(scene.hover_fill),
@@ -662,16 +662,16 @@ unsafe fn draw_item(
         }
 
         let center_x = (cell.left + cell.right) / 2.0;
-        let icon_left = (center_x - ICON_SIZE / 2.0).round();
+        let icon_left = (center_x - icon_size / 2.0).round();
         if let Some(bitmap) = icon {
-            let top = cell.top + ICON_TOP;
+            let top = cell.top + icon_top;
             target.DrawBitmap(
                 bitmap,
                 Some(&rect_f(
                     icon_left,
                     top,
-                    icon_left + ICON_SIZE,
-                    top + ICON_SIZE,
+                    icon_left + icon_size,
+                    top + icon_size,
                 )),
                 alpha as f32 / 255.0,
                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
@@ -679,13 +679,22 @@ unsafe fn draw_item(
             );
         }
         // Explorer shows a check box while pointing at the item, and keeps it
-        // while the item stays selected; independent item check boxes are
-        // shown always.
-        if scene.show_check_boxes && (scene.check_boxes_persistent || item.checked || item.hovered)
-        {
-            draw_check_box(target, brush, icon_left, cell.top + ICON_TOP, item.checked);
+        // while the item stays selected (independent item check boxes are
+        // shown always); a dragged slot is faded and shows no box.
+        let show_box = item.state != ItemState::Dragged
+            && (scene.check_boxes_persistent || item.checked || item.hovered);
+        if scene.show_check_boxes && show_box {
+            draw_check_box(
+                target,
+                brush,
+                icon_left,
+                cell.top + icon_top,
+                metrics.check_box_size as f32,
+                metrics.check_box_margin as f32,
+                item.checked,
+            );
         }
-        let label_top = cell.top + ICON_TOP + ICON_SIZE + 6.0;
+        let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
         let scale = scene.label_size.clamp(60, 160) as f32 / 100.0;
         let lines = scene.label_lines.clamp(1, 2) as f32;
         let line_height = LABEL_LINE_HEIGHT * scale;
@@ -702,8 +711,7 @@ unsafe fn draw_item(
                     buffer,
                     &format,
                     label_rect,
-                    scene.selected_fill,
-                    scene.item_text.fade(alpha),
+                    scene.edit,
                     scene.caret_visible,
                 );
             } else {
@@ -723,20 +731,24 @@ unsafe fn draw_item(
 
 /// Draws Explorer's item check box at the top-left of an icon. A light box
 /// with a dark border stays visible on any backdrop; `checked` adds the tick.
+#[allow(clippy::too_many_arguments)]
 unsafe fn draw_check_box(
     target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     icon_left: f32,
     icon_top: f32,
+    size: f32,
+    margin: f32,
     checked: bool,
 ) {
-    let left = icon_left + CHECK_BOX_MARGIN;
-    let top = icon_top + CHECK_BOX_MARGIN;
-    let rect = rect_f(left, top, left + CHECK_BOX_SIZE, top + CHECK_BOX_SIZE);
+    let left = icon_left + margin;
+    let top = icon_top + margin;
+    let rect = rect_f(left, top, left + size, top + size);
+    let radius = (size * 0.19).max(1.0);
     let rounded = D2D1_ROUNDED_RECT {
         rect,
-        radiusX: 2.5,
-        radiusY: 2.5,
+        radiusX: radius,
+        radiusY: radius,
     };
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
@@ -746,8 +758,8 @@ unsafe fn draw_check_box(
         target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
         if checked {
             brush.SetColor(&color_f(Color::rgba(0, 0, 0, 255)));
-            let s = CHECK_BOX_SIZE;
-            let stroke = 1.4;
+            let s = size;
+            let stroke = (size * 0.11).max(1.0);
             target.DrawLine(
                 Vector2::new(left + s * 0.22, top + s * 0.52),
                 Vector2::new(left + s * 0.43, top + s * 0.74),
@@ -766,16 +778,19 @@ unsafe fn draw_check_box(
     }
 }
 
-/// Renders item `id` of `scene` on its own, exactly as the space draws it
-/// (state, icon, label, colors), into premultiplied pixels the size of its
-/// cell. Used for drag images. Needs COM on this thread (for WIC).
-pub(crate) fn render_item(scene: &SpaceScene, id: u64) -> Option<Icon> {
-    let index = scene.items.iter().position(|item| item.id == id)?;
-    let mut item = scene.items[index].clone();
-    let width = item.rect.width.max(1) as u32;
-    let height = item.rect.height.max(1) as u32;
-    item.rect = Rect::new(0, 0, item.rect.width, item.rect.height);
-    let label: Vec<u16> = item.label.encode_utf16().collect();
+/// Renders the items `ids` of `scene` together into one premultiplied bitmap,
+/// keeping their relative positions and scaling the whole group by `scale`
+/// about `origin` (scene coordinates). Used for drag images, so a group drag
+/// shows every selected item laid out as Explorer shows it. Needs COM on this
+/// thread (for WIC).
+pub(crate) fn render_items(
+    scene: &SpaceScene,
+    ids: &[u64],
+    origin: Rect,
+    scale: f32,
+) -> Option<Icon> {
+    let width = ((origin.width as f32 * scale).ceil() as u32).max(1);
+    let height = ((origin.height as f32 * scale).ceil() as u32).max(1);
     let graphics = graphics().ok()?;
     let properties = D2D1_RENDER_TARGET_PROPERTIES {
         r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -811,47 +826,81 @@ pub(crate) fn render_item(scene: &SpaceScene, id: u64) -> Option<Icon> {
         let brush = target
             .CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)
             .ok()?;
-        let icon = item.icon.as_ref().and_then(|icon| {
-            target
-                .CreateBitmap(
-                    D2D_SIZE_U {
-                        width: icon.width(),
-                        height: icon.height(),
-                    },
-                    Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
-                    icon.width() * 4,
-                    &D2D1_BITMAP_PROPERTIES {
-                        pixelFormat: properties.pixelFormat,
-                        dpiX: 96.0,
-                        dpiY: 96.0,
-                    },
-                )
-                .ok()
-        });
+        let bitmap_properties = D2D1_BITMAP_PROPERTIES {
+            pixelFormat: properties.pixelFormat,
+            dpiX: 96.0,
+            dpiY: 96.0,
+        };
+
+        let mut scene = scene.clone();
+        scene.show_check_boxes = false;
+
         target.BeginDraw();
         target.Clear(Some(&color_f(Color::TRANSPARENT)));
-        draw_item(
-            &graphics,
-            &target,
-            &brush,
-            scene,
-            &item,
-            &label,
-            icon.as_ref(),
-            None,
-        );
+        // Map scene coordinates into the canvas: p' = (p - origin) * scale.
+        // https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-transforms-overview
+        target.SetTransform(&Matrix3x2 {
+            M11: scale,
+            M12: 0.0,
+            M21: 0.0,
+            M22: scale,
+            M31: -(origin.x as f32) * scale,
+            M32: -(origin.y as f32) * scale,
+        });
+        for id in ids {
+            let Some(index) = scene.items.iter().position(|item| item.id == *id) else {
+                continue;
+            };
+            let mut item = scene.items[index].clone();
+            // The drag image is the item itself, without the hover highlight,
+            // cut ghosting, or a check box that only appears while pointing.
+            item.state = ItemState::Normal;
+            item.hovered = false;
+            item.checked = false;
+            item.cut = false;
+            let label: Vec<u16> = item.label.encode_utf16().collect();
+            let icon = item.icon.as_ref().and_then(|icon| {
+                target
+                    .CreateBitmap(
+                        D2D_SIZE_U {
+                            width: icon.width(),
+                            height: icon.height(),
+                        },
+                        Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
+                        icon.width() * 4,
+                        &bitmap_properties,
+                    )
+                    .ok()
+            });
+            draw_item(
+                &graphics,
+                &target,
+                &brush,
+                &scene,
+                &item,
+                &label,
+                icon.as_ref(),
+                None,
+            );
+        }
         target.EndDraw(None, None).ok()?;
         drop(target);
         to_icon(&graphics, &pixels)
     }
 }
 
-/// Copies an `HICON` into an owned premultiplied-BGRA `Icon`. The caller
-/// keeps ownership of `hicon`. Needs COM on this thread (for WIC).
-pub(crate) fn decode_icon(hicon: HICON) -> Option<Icon> {
+/// Copies a 32-bit `HBITMAP` into an owned premultiplied-BGRA `Icon`. The
+/// image factory returns icons the shell renders at any size, which `HICON`
+/// cannot carry. The caller keeps ownership of `hbitmap`. Needs COM (for WIC).
+pub(crate) fn decode_bitmap(hbitmap: HBITMAP) -> Option<Icon> {
     let graphics = graphics().ok()?;
-    // SAFETY: `hicon` is a live icon owned by the caller for this call.
-    let source = unsafe { graphics.wic.CreateBitmapFromHICON(hicon).ok()? };
+    // SAFETY: `hbitmap` is a live bitmap owned by the caller for this call.
+    let source = unsafe {
+        graphics
+            .wic
+            .CreateBitmapFromHBITMAP(hbitmap, HPALETTE::default(), WICBitmapUseAlpha)
+            .ok()?
+    };
     to_icon(&graphics, &source)
 }
 
@@ -993,16 +1042,85 @@ unsafe fn draw_edit_title(
             buffer,
             &graphics.edit_format,
             rect_f(left, 0.0, right, title_height),
-            scene.selected_fill,
-            scene.title_text,
+            scene.edit,
             scene.caret_visible,
         );
     }
 }
 
-/// Draws an editable buffer with its selection highlight and caret. The text
-/// layout is reused to place the caret and selection, so they match
-/// DirectWrite's own shaping.
+/// Padding between the text and its rename box, matching Explorer's small,
+/// even margin.
+const EDIT_PAD_X: f32 = 3.0;
+const EDIT_PAD_Y: f32 = 2.0;
+
+/// One content line of a laid-out editable buffer, in layout coordinates.
+#[derive(Clone, Copy)]
+struct EditLine {
+    /// Text positions of the line's content, excluding trailing whitespace and
+    /// the newline, in UTF-16 code units.
+    start: u32,
+    end: u32,
+    top: f32,
+    bottom: f32,
+    /// Horizontal extent of the content.
+    left: f32,
+    right: f32,
+}
+
+/// Measures the content lines of `layout`. `DWRITE_TEXT_METRICS` returns the
+/// layout box for center-aligned text, so the lines are hit-tested to hug the
+/// text with `edit_field`.
+unsafe fn edit_lines(layout: &IDWriteTextLayout) -> Vec<EditLine> {
+    let mut count = 0u32;
+    // SAFETY: caller is inside BeginDraw/EndDraw; a null array asks only for
+    // the line count.
+    unsafe {
+        let _ = layout.GetLineMetrics(None, &mut count);
+    }
+    if count == 0 {
+        return Vec::new();
+    }
+    let mut metrics = vec![DWRITE_LINE_METRICS::default(); count as usize];
+    // SAFETY: the slice is sized to the count just reported.
+    unsafe {
+        let _ = layout.GetLineMetrics(Some(&mut metrics), &mut count);
+    }
+    let mut lines = Vec::with_capacity(count as usize);
+    let mut position = 0u32;
+    for line in &metrics[..count as usize] {
+        let content = line
+            .length
+            .saturating_sub(line.trailingWhitespaceLength)
+            .saturating_sub(line.newlineLength);
+        let (start, end) = (position, position + content);
+        let mut left = 0.0f32;
+        let mut right = 0.0f32;
+        let mut top = 0.0f32;
+        let mut other = 0.0f32;
+        let mut hit = DWRITE_HIT_TEST_METRICS::default();
+        // SAFETY: both positions lie within the layout's text. The hit-test
+        // y is the line top, which includes any vertical centering.
+        unsafe {
+            let _ = layout.HitTestTextPosition(start, false, &mut left, &mut top, &mut hit);
+            let _ = layout.HitTestTextPosition(end, false, &mut right, &mut other, &mut hit);
+        }
+        lines.push(EditLine {
+            start,
+            end,
+            top,
+            bottom: top + line.height,
+            left,
+            right,
+        });
+        position += line.length;
+    }
+    lines
+}
+
+/// Draws an editable buffer the way Explorer draws an inline rename field: an
+/// opaque box with an even margin, the selected text in the system highlight,
+/// and a blinking caret. The measured lines place the box, selection, and
+/// caret, so all three follow DirectWrite's own shaping.
 #[allow(clippy::too_many_arguments)]
 unsafe fn draw_edit_buffer(
     graphics: &Graphics,
@@ -1012,8 +1130,7 @@ unsafe fn draw_edit_buffer(
     buffer: &[u16],
     format: &IDWriteTextFormat,
     rect: D2D_RECT_F,
-    fill: Color,
-    text: Color,
+    colors: EditColors,
     caret_visible: bool,
 ) {
     let width = (rect.right - rect.left).max(1.0);
@@ -1024,80 +1141,156 @@ unsafe fn draw_edit_buffer(
             .dwrite
             .CreateTextLayout(buffer, format, width, height)
         else {
-            draw_text(target, brush, buffer, format, rect, text, None);
+            draw_text(target, brush, buffer, format, rect, colors.text, None);
             return;
         };
-        let mut metrics = DWRITE_HIT_TEST_METRICS::default();
+        let lines = edit_lines(&layout);
+        let field = edit_field(rect, &lines);
+
+        brush.SetColor(&color_f(colors.fill));
+        target.FillRectangle(&field, brush);
+        brush.SetColor(&color_f(colors.border));
+        target.DrawRectangle(&field, brush, 1.0, None);
+        target.PushAxisAlignedClip(&field, D2D1_ANTIALIAS_MODE_ALIASED);
+
         let (start, end) = edit.selection();
+        let start16 = utf16_index(edit.text(), start);
+        let end16 = utf16_index(edit.text(), end);
+        let mut hit = DWRITE_HIT_TEST_METRICS::default();
         if start != end {
-            let start16 = utf16_index(edit.text(), start);
-            let end16 = utf16_index(edit.text(), end);
-            let (mut x0, mut y0) = (0.0f32, 0.0f32);
-            let (mut x1, mut y1) = (0.0f32, 0.0f32);
-            let _ = layout.HitTestTextPosition(start16, false, &mut x0, &mut y0, &mut metrics);
-            let line_height = metrics.height.max(1.0);
-            let _ = layout.HitTestTextPosition(end16, false, &mut x1, &mut y1, &mut metrics);
-            brush.SetColor(&color_f(fill));
-            if y1 > y0 {
-                // Wrapped selection: cover the first line to the end, the last
-                // line from the start, and everything between.
-                target.FillRectangle(
-                    &rect_f(
-                        rect.left + x0,
-                        rect.top + y0,
-                        rect.right,
-                        rect.top + y0 + line_height,
-                    ),
-                    brush,
-                );
-                target.FillRectangle(
-                    &rect_f(
-                        rect.left,
-                        rect.top + y1,
-                        rect.left + x1,
-                        rect.top + y1 + metrics.height,
-                    ),
-                    brush,
-                );
-                if y1 - y0 > line_height {
-                    target.FillRectangle(
-                        &rect_f(
-                            rect.left,
-                            rect.top + y0 + line_height,
-                            rect.right,
-                            rect.top + y1,
-                        ),
-                        brush,
-                    );
+            brush.SetColor(&color_f(colors.selection));
+            for line in &lines {
+                let from = start16.max(line.start);
+                let to = end16.min(line.end);
+                if from >= to {
+                    continue;
                 }
-            } else {
+                let (mut x0, mut x1) = (0.0f32, 0.0f32);
+                let mut line_top = 0.0f32;
+                let _ = layout.HitTestTextPosition(from, false, &mut x0, &mut line_top, &mut hit);
+                let _ = layout.HitTestTextPosition(to, false, &mut x1, &mut line_top, &mut hit);
                 target.FillRectangle(
                     &rect_f(
                         rect.left + x0,
-                        rect.top + y0,
+                        rect.top + line.top,
                         rect.left + x1,
-                        rect.top + y0 + line_height,
+                        rect.top + line.bottom,
                     ),
                     brush,
                 );
             }
         }
-        draw_text(target, brush, buffer, format, rect, text, None);
+        draw_edit_text(
+            target,
+            &layout,
+            buffer,
+            rect,
+            brush,
+            colors,
+            (start16, end16),
+        );
         if caret_visible {
             let caret16 = utf16_index(edit.text(), edit.caret());
             let (mut cx, mut cy) = (0.0f32, 0.0f32);
-            let _ = layout.HitTestTextPosition(caret16, false, &mut cx, &mut cy, &mut metrics);
-            let line_height = metrics.height.max(1.0);
+            let _ = layout.HitTestTextPosition(caret16, false, &mut cx, &mut cy, &mut hit);
+            let caret_height = hit.height.max(1.0);
+            brush.SetColor(&color_f(colors.text));
             target.FillRectangle(
                 &rect_f(
                     rect.left + cx,
                     rect.top + cy,
                     rect.left + cx + 1.0,
-                    rect.top + cy + line_height,
+                    rect.top + cy + caret_height,
                 ),
                 brush,
             );
         }
+        target.PopAxisAlignedClip();
+    }
+}
+
+/// The rename box, hugging the measured text with an even margin and clamped
+/// to the label or title area it is drawn in. An empty buffer falls back to a
+/// small caret-sized box.
+fn edit_field(rect: D2D_RECT_F, lines: &[EditLine]) -> D2D_RECT_F {
+    let (left, right, top, bottom) = if lines.is_empty() {
+        (0.0, 0.0, 0.0, 0.0)
+    } else {
+        (
+            lines
+                .iter()
+                .map(|line| line.left)
+                .fold(f32::INFINITY, f32::min),
+            lines
+                .iter()
+                .map(|line| line.right)
+                .fold(f32::NEG_INFINITY, f32::max),
+            lines[0].top,
+            lines[lines.len() - 1].bottom,
+        )
+    };
+    let field_left = (rect.left + left - EDIT_PAD_X).max(rect.left);
+    let field_top = (rect.top + top - EDIT_PAD_Y).max(rect.top);
+    let field_right = (rect.left + right + EDIT_PAD_X).min(rect.right);
+    let field_bottom = (rect.top + bottom + EDIT_PAD_Y).min(rect.bottom);
+    rect_f(
+        field_left,
+        field_top,
+        field_right.max(field_left + 1.0),
+        field_bottom.max(field_top + 1.0),
+    )
+}
+
+/// Draws `buffer` in the field's text color, with the selected run in the
+/// highlight-text color, using drawing effects so the runs match the layout.
+fn draw_edit_text(
+    target: &ID2D1RenderTarget,
+    layout: &IDWriteTextLayout,
+    buffer: &[u16],
+    rect: D2D_RECT_F,
+    brush: &ID2D1SolidColorBrush,
+    colors: EditColors,
+    (start16, end16): (u32, u32),
+) {
+    let origin = Vector2::new(rect.left, rect.top);
+    // SAFETY: caller is inside BeginDraw/EndDraw, and the range endpoints are
+    // clamped to the buffer length.
+    unsafe {
+        brush.SetColor(&color_f(colors.text));
+        let len = buffer.len() as u32;
+        let start16 = start16.min(len);
+        let end16 = end16.min(len).max(start16);
+        if start16 == end16 {
+            target.DrawTextLayout(origin, layout, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            return;
+        }
+        let Ok(selected) = target.CreateSolidColorBrush(&color_f(colors.selection_text), None)
+        else {
+            target.DrawTextLayout(origin, layout, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            return;
+        };
+        let _ = layout.SetDrawingEffect(
+            brush,
+            DWRITE_TEXT_RANGE {
+                startPosition: 0,
+                length: start16,
+            },
+        );
+        let _ = layout.SetDrawingEffect(
+            &selected,
+            DWRITE_TEXT_RANGE {
+                startPosition: start16,
+                length: end16 - start16,
+            },
+        );
+        let _ = layout.SetDrawingEffect(
+            brush,
+            DWRITE_TEXT_RANGE {
+                startPosition: end16,
+                length: len - end16,
+            },
+        );
+        target.DrawTextLayout(origin, layout, brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
     }
 }
 

@@ -53,6 +53,11 @@ pub enum SpaceEvent {
     /// Another window took the mouse capture mid-gesture (for example on
     /// Alt+Tab), so no matching `MouseUp` will arrive. Cancel any drag.
     CaptureLost,
+    /// The space was moved to a monitor with a different DPI, so its grid and
+    /// icon sizes must be reflowed. `dpi` is the new value (96 is 100 %).
+    DpiChanged {
+        dpi: u32,
+    },
 }
 
 /// A clipboard shortcut pressed while an item is selected or a space is
@@ -128,6 +133,9 @@ pub enum Event {
         /// item selection. A press on another app keeps it, as Explorer does.
         on_desktop: bool,
     },
+    /// Another launch asked this instance to show its spaces (the desktop
+    /// right-click "Show spaces" entry, or a shortcut).
+    ShowSpaces,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Delivered once, before the runtime tears windows down: on quit, console

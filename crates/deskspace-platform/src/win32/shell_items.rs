@@ -17,7 +17,7 @@ use windows::Win32::System::Ole::{
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMINVOKECOMMANDINFO,
-    IContextMenu, IContextMenu2, IContextMenu3, IDragSourceHelper, IShellItem,
+    IContextMenu, IContextMenu2, IContextMenu3, IDragSourceHelper, IDragSourceHelper2, IShellItem,
     SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHCreateItemFromParsingName, SHDRAGIMAGE,
     SHDoDragDrop, SHELLEXECUTEINFOW, ShellExecuteExW,
 };
@@ -281,6 +281,13 @@ pub(crate) fn drag_out(
 /// Hands `image` to the shell's drag-image manager, which stores it in `data`
 /// so every drop target (Explorer, the desktop, other spaces) draws it.
 /// Without this the shell invents an opaque, oversized image.
+///
+/// `IDragSourceHelper2::SetFlags(0)` is used so the drag shows only the item
+/// image: a drop target (the desktop, above all) requests a drop description
+/// (`CFSTR_DROPDESCRIPTION`), which the shell otherwise draws as
+/// `DROPIMAGE_MOVE`'s movement arrow plus a "Move to ..." label. Explorer's own
+/// drags do not show that hint when the targets do not request it, so leaving it
+/// off keeps drags out of a space identical to drags within one.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idragsourcehelper
 fn attach_drag_image(data: &IDataObject, image: &DragImage) {
     // InitializeFromBitmap premultiplies itself, so it gets straight alpha.
@@ -301,16 +308,31 @@ fn attach_drag_image(data: &IDataObject, image: &DragImage) {
         // CLR_NONE: no color key; transparency comes from the alpha channel.
         crColorKey: COLORREF(0xFFFF_FFFF),
     };
-    // SAFETY: the helper is a fresh in-process object; on success it owns the
+    // SAFETY: the helpers are fresh in-process objects; on success one owns the
     // bitmap (the shell's own samples never free it afterwards), so it is
     // deleted here only when the hand-off fails.
     unsafe {
-        let attached = CoCreateInstance::<_, IDragSourceHelper>(
+        let attached = CoCreateInstance::<_, IDragSourceHelper2>(
             &CLSID_DragDropHelper,
             None,
             CLSCTX_INPROC_SERVER,
         )
-        .and_then(|helper| helper.InitializeFromBitmap(&drag, data));
+        .and_then(|helper| {
+            // A zero flag mask leaves the drop description off, so no movement
+            // arrow or "Move" label is drawn; the item image stands alone.
+            let _ = helper.SetFlags(0);
+            helper.InitializeFromBitmap(&drag, data)
+        })
+        .or_else(|_| {
+            // Pre-Vista shells have only the v1 helper, which cannot suppress
+            // the hint; the image still goes through.
+            CoCreateInstance::<_, IDragSourceHelper>(
+                &CLSID_DragDropHelper,
+                None,
+                CLSCTX_INPROC_SERVER,
+            )
+            .and_then(|helper| helper.InitializeFromBitmap(&drag, data))
+        });
         if let Err(error) = attached {
             tracing::debug!(%error, "drag image not set; the shell's default applies");
             let _ = DeleteObject(bitmap.into());

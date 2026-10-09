@@ -128,6 +128,9 @@ pub enum FieldKind {
         max: i32,
         value: i32,
         suffix: String,
+        /// When true the value on the right is an editable number box instead
+        /// of a static label, so a value can be typed directly.
+        editable: bool,
         /// Labeled tick marks under the slider.
         marks: Vec<SliderMark>,
     },
@@ -209,6 +212,7 @@ impl Field {
                 max: range.1,
                 value,
                 suffix: "%".to_string(),
+                editable: false,
                 marks: Vec::new(),
             },
         )
@@ -218,6 +222,14 @@ impl Field {
     pub fn suffix(mut self, text: impl Into<String>) -> Self {
         if let FieldKind::Slider { suffix, .. } = &mut self.kind {
             *suffix = text.into();
+        }
+        self
+    }
+
+    /// Makes a slider's value an editable number box, so it can be typed.
+    pub fn editable(mut self) -> Self {
+        if let FieldKind::Slider { editable, .. } = &mut self.kind {
+            *editable = true;
         }
         self
     }
