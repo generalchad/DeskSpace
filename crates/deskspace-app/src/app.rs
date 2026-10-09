@@ -4,21 +4,21 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
-use deskspace_core::layout::{arrange_space, position_items};
+use deskspace_core::layout::{GridSpec, arrange_space, position_items};
 use deskspace_core::{
     Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
-    Event, EventHandler, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton, Placement,
-    RunOptions, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui,
-    desktop_directory, desktop_display, drag_threshold, hotkey_id, item_check_box_hit,
-    notify_moved, parse_hotkey, system_uses_dark_mode, work_area_at,
+    Event, EventHandler, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice, ItemMetrics, MenuEntry,
+    MouseButton, Placement, RunOptions, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit,
+    TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
+    item_check_box_hit, notify_moved, parse_hotkey, space_dpi, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
-use crate::scene::{ViewState, item_label, space_scene, space_style};
+use crate::scene::{ViewState, drag_scene, item_label, space_scene, space_style};
 use crate::settings::{self, Effect, Session};
 use crate::storage::ItemStore;
 
@@ -36,6 +36,11 @@ const AUTOSAVE_DELAY_MS: u32 = 700;
 const CARET_TIMER: usize = 2;
 /// Caret blink half-period, matching Windows' default.
 const CARET_BLINK_MS: u32 = 530;
+/// Timer id for the delayed item info tip.
+const INFO_TIP_TIMER: usize = 3;
+/// How long the pointer must rest on an item before its info tip appears,
+/// matching Explorer's tooltip delay.
+const INFO_TIP_DELAY_MS: u32 = 600;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -163,8 +168,8 @@ pub struct App {
     checked_items: Vec<ItemId>,
     hovered: Option<(SpaceId, ItemId)>,
     drag: Drag,
-    /// The item whose slot is drawn faded while it is dragged.
-    dragged: Option<(SpaceId, ItemId)>,
+    /// The items whose slots are drawn faded while they are dragged.
+    dragged: Option<(SpaceId, Vec<ItemId>)>,
     /// The rubber-band selection rectangle in desktop coordinates and the
     /// space it belongs to, while the user drags over empty content.
     marquee: Option<(SpaceId, Rect)>,
@@ -195,7 +200,7 @@ impl App {
             config,
             storage: ItemStore::new(store.storage_dir()),
             store,
-            icons: IconCache::new(32),
+            icons: IconCache::new(),
             system_dark: system_uses_dark_mode(),
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
@@ -224,7 +229,17 @@ impl App {
 
     fn dispatch(&mut self, command: Command, near: Point) -> bool {
         let bounds = work_area_at(near);
-        self.config.desktop.apply(command, bounds).is_applied()
+        // Use the grid of the space under the action so a command that moves or
+        // arranges items lands on the same monitor's scale.
+        let layout = self
+            .config
+            .desktop
+            .space_at(near)
+            .map_or_else(|| self.effective_layout(), |id| self.layout_for(id));
+        self.config
+            .desktop
+            .apply_with_layout(command, layout, bounds)
+            .is_applied()
     }
 
     fn save(&self) {
@@ -290,8 +305,10 @@ impl App {
             },
             dragged: self
                 .dragged
+                .as_ref()
                 .filter(|(space, _)| *space == id)
-                .map(|(_, item)| item),
+                .map(|(_, items)| items.clone())
+                .unwrap_or_default(),
             scroll: self.scroll_of(id),
             show_check_boxes: self.check_box_mode() != CheckBoxMode::Hidden,
             check_boxes_persistent: self.check_box_mode() == CheckBoxMode::Independent,
@@ -329,22 +346,87 @@ impl App {
         }
     }
 
-    /// Re-reads Explorer's display options and repaints if they changed.
+    /// The item-icon scale as a factor, without per-monitor DPI. When mirroring
+    /// Explorer's display, the desktop's own icon size (in pixels) wins, so
+    /// spaces are 1:1 with the desktop; otherwise the DeskSpace icon-size
+    /// setting applies.
+    fn icon_scale(&self) -> f32 {
+        if self.match_explorer()
+            && let Some(pixels) = self.shell_display.icon_size
+        {
+            return (pixels as f32 / ITEM_ICON_SIZE as f32).max(0.25);
+        }
+        self.config.theme.icon_size.clamp(50, 200) as f32 / 100.0
+    }
+
+    /// The full icon factor for one space: the icon-size factor times the
+    /// monitor's DPI. Explorer's own icon size is already in physical pixels,
+    /// so mirroring does not multiply by DPI again.
+    fn space_scale(&self, id: SpaceId) -> f32 {
+        if self.match_explorer() && self.shell_display.icon_size.is_some() {
+            return self.icon_scale();
+        }
+        self.icon_scale() * space_dpi(id.0)
+    }
+
+    /// The layout grid for a given icon/DPI scale. When mirroring Explorer, its
+    /// item spacing (the full cell size in physical pixels) replaces the cell
+    /// and gap, so the grid step matches the desktop exactly. The stored
+    /// `config.desktop.layout` is never scaled, so the settings form keeps
+    /// editing the logical values.
+    fn base_layout(&self, scale: f32) -> GridSpec {
+        let mut layout = self.config.desktop.layout.scaled(scale);
+        if self.match_explorer()
+            && let Some(spacing) = self.shell_display.icon_spacing
+        {
+            layout.cell_width = spacing.width.max(1);
+            layout.cell_height = spacing.height.max(1);
+            layout.gap = 0;
+        }
+        layout
+    }
+
+    /// The scaled grid for one space, including its monitor's DPI.
+    fn layout_for(&self, id: SpaceId) -> GridSpec {
+        self.base_layout(self.space_scale(id))
+    }
+
+    /// The logical grid (icon size only, no per-monitor DPI), for callers that
+    /// have no space at hand.
+    fn effective_layout(&self) -> GridSpec {
+        self.base_layout(self.icon_scale())
+    }
+
+    /// Scaled icon, label, and check-box sizes for one space.
+    fn metrics_for(&self, id: SpaceId) -> ItemMetrics {
+        ItemMetrics::for_scale(self.space_scale(id))
+    }
+
+    /// Re-reads Explorer's display options and repaints if they changed. A
+    /// changed icon size or item spacing re-flows every space too.
     fn refresh_shell_display(&mut self, ui: &mut Ui) {
         let display = desktop_display();
-        if display != self.shell_display {
-            self.shell_display = display;
-            // Independent ticks do not survive a switch out of that mode.
-            if self.check_box_mode() != CheckBoxMode::Independent {
-                self.checked_items.clear();
-            }
+        if display == self.shell_display {
+            return;
+        }
+        let relayout = self.match_explorer()
+            && (display.icon_size != self.shell_display.icon_size
+                || display.icon_spacing != self.shell_display.icon_spacing);
+        self.shell_display = display;
+        // Independent ticks do not survive a switch out of that mode.
+        if self.check_box_mode() != CheckBoxMode::Independent {
+            self.checked_items.clear();
+        }
+        if relayout {
+            self.relayout_all(ui);
+        } else {
             self.restyle_all(ui);
         }
     }
 
     /// The space's scroll offset, clamped to its current content.
     fn scroll_of(&self, id: SpaceId) -> i32 {
-        let layout = self.config.desktop.layout;
+        let layout = self.layout_for(id);
         let max = self
             .config
             .desktop
@@ -362,7 +444,7 @@ impl App {
         let item = self.item_at(id, point)?;
         let space = self.config.desktop.space(id)?;
         let entry = space.items.iter().find(|entry| entry.id == item)?;
-        let layout = self.config.desktop.layout;
+        let layout = self.layout_for(id);
         let content = space.content_rect();
         let cell = Rect::new(
             content.x + entry.position.x,
@@ -370,11 +452,13 @@ impl App {
             layout.cell_width,
             layout.cell_height,
         );
-        item_check_box_hit(cell).contains(point).then_some(item)
+        item_check_box_hit(cell, self.metrics_for(id))
+            .contains(point)
+            .then_some(item)
     }
 
     fn item_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
-        let cell = self.config.desktop.layout.cell();
+        let cell = self.layout_for(id).cell();
         let scroll = self.scroll_of(id);
         self.config
             .desktop
@@ -406,7 +490,8 @@ impl App {
             space,
             &self.config.theme,
             &palette,
-            self.config.desktop.layout,
+            self.layout_for(id),
+            self.metrics_for(id),
             view,
             &mut self.icons,
         );
@@ -435,7 +520,6 @@ impl App {
     /// Re-flows every space for a changed grid: growing spaces resize to fit,
     /// user-sized spaces keep their size and reflow.
     fn relayout_all(&mut self, ui: &mut Ui) {
-        let layout = self.config.desktop.layout;
         let ids: Vec<SpaceId> = self
             .config
             .desktop
@@ -444,15 +528,34 @@ impl App {
             .map(|space| space.id)
             .collect();
         for id in ids {
-            if let Some(space) = self.config.desktop.space_mut(id) {
-                if space.user_sized {
-                    position_items(space, layout);
-                } else {
-                    arrange_space(space, layout);
-                }
-            }
-            self.refresh_space(ui, id);
+            self.reflow_space(ui, id);
         }
+    }
+
+    /// Re-flows one space for its current grid (icon size and monitor DPI) and
+    /// repaints it.
+    fn reflow_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        let layout = self.layout_for(id);
+        if let Some(space) = self.config.desktop.space_mut(id) {
+            if space.locked {
+                // Locked spaces keep their size, but the icon scale still
+                // reaches their title height and item positions.
+                space.title_height = layout.title_height;
+                position_items(space, layout);
+            } else {
+                // `arrange_space` resizes auto spaces, reflows user-sized ones,
+                // and applies the title height either way.
+                arrange_space(space, layout);
+            }
+        }
+        self.refresh_space(ui, id);
+    }
+
+    /// A space moved to a monitor with a different DPI: reflow it so icons and
+    /// spacing match that display.
+    fn on_dpi_changed(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.reflow_space(ui, id);
+        self.schedule_save(ui);
     }
 
     fn refresh_tray(&self, ui: &mut Ui) {
@@ -486,12 +589,61 @@ impl App {
     }
 
     fn set_visible(&mut self, ui: &mut Ui, visible: bool) {
+        self.dismiss_info_tip(ui);
         if !visible {
             self.clear_selection(ui);
         }
         self.visible = visible;
         ui.set_spaces_visible(visible);
+        self.sync_desktop_show_entry();
         tracing::info!(visible, "toggled space visibility");
+    }
+
+    /// Adds the desktop right-click "Show spaces" entry while the spaces are
+    /// hidden and removes it once they are shown, so the entry is there exactly
+    /// when it can do something.
+    fn sync_desktop_show_entry(&self) {
+        // Tests must not touch the real per-user registry.
+        if cfg!(test) {
+            return;
+        }
+        if self.visible {
+            if let Err(error) = deskspace_platform::set_desktop_show_entry(false, "", "", "") {
+                tracing::warn!(%error, "could not remove the desktop Show spaces entry");
+            }
+            return;
+        }
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
+        let exe = exe.to_string_lossy();
+        // A real .ico beside the storage folder, so the menu shows the app's
+        // icon instead of the executable's placeholder.
+        let icon_path = self.storage.root().with_file_name("deskspace.ico");
+        if let Err(error) = deskspace_platform::write_icon(&icon_path) {
+            tracing::warn!(%error, "could not write the app icon");
+        }
+        let command = format!("\"{exe}\" --show");
+        let icon = icon_path.to_string_lossy();
+        if let Err(error) = deskspace_platform::set_desktop_show_entry(
+            true,
+            "Show DeskSpace spaces",
+            &command,
+            &icon,
+        ) {
+            tracing::warn!(%error, "could not add the desktop Show spaces entry");
+        }
+    }
+
+    /// Removes the desktop "Show spaces" entry, so a clean exit does not leave
+    /// a menu item that can only start a fresh instance.
+    fn remove_desktop_show_entry(&self) {
+        if cfg!(test) {
+            return;
+        }
+        if let Err(error) = deskspace_platform::set_desktop_show_entry(false, "", "", "") {
+            tracing::warn!(%error, "could not remove the desktop Show spaces entry");
+        }
     }
 
     // ---- rename --------------------------------------------------------
@@ -788,6 +940,7 @@ impl App {
         // click here is made to behave like one on the desktop: focus it and
         // clear its icon selection.
         if matches!(&event, SpaceEvent::MouseDown { .. }) {
+            self.dismiss_info_tip(ui);
             self.refresh_shell_display(ui);
             ui.on_desktop_click();
         }
@@ -830,9 +983,12 @@ impl App {
                 }
             }
             SpaceEvent::DoubleClick { x, y } => self.double_click(ui, id, Point::new(x, y)),
-            SpaceEvent::MouseLeave if self.hovered.is_some_and(|(space, _)| space == id) => {
-                self.hovered = None;
-                self.refresh_space(ui, id);
+            SpaceEvent::MouseLeave => {
+                self.dismiss_info_tip(ui);
+                if self.hovered.is_some_and(|(space, _)| space == id) {
+                    self.hovered = None;
+                    self.refresh_space(ui, id);
+                }
             }
             SpaceEvent::FilesDropped {
                 x,
@@ -842,6 +998,7 @@ impl App {
             } => {
                 self.add_dropped(ui, id, Point::new(x, y), paths, keep_in_place);
             }
+            SpaceEvent::DpiChanged { .. } => self.on_dpi_changed(ui, id),
             _ => {}
         }
     }
@@ -1086,7 +1243,7 @@ impl App {
     }
 
     fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
-        let layout = self.config.desktop.layout;
+        let layout = self.layout_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -1133,9 +1290,10 @@ impl App {
         }
     }
 
-    /// Fades the item's slot and floats its drag image under the pointer, as
-    /// Explorer does once an icon drag starts. `origin` is where the button
-    /// went down, so the image keeps the spot that was grabbed.
+    /// Fades the dragged items' slots and floats their group drag image under
+    /// the pointer, as Explorer does once an icon drag starts. `origin` is
+    /// where the button went down, so the image keeps the spot that was
+    /// grabbed.
     fn begin_drag_visual(
         &mut self,
         ui: &mut Ui,
@@ -1144,23 +1302,29 @@ impl App {
         origin: Point,
         point: Point,
     ) {
-        // Rendered from the scene as it is now, before the slot fades, so the
-        // image is the item exactly as it was picked up.
+        // The whole active set drags, as in Explorer, so the image is that set
+        // rendered as it is now, before the slots fade.
+        let ids = self.drag_items(item);
+        let id_values: Vec<u64> = ids.iter().map(|id| id.0).collect();
         let view = self.view_for(space);
+        let layout = self.layout_for(space);
+        let metrics = self.metrics_for(space);
         self.drag_image = self.config.desktop.space(space).and_then(|entry| {
             let palette = self.config.theme.palette(self.system_dark);
-            let scene = space_scene(
+            let scene = drag_scene(
                 entry,
+                &ids,
                 &self.config.theme,
                 &palette,
-                self.config.desktop.layout,
+                layout,
+                metrics,
                 view,
                 &mut self.icons,
             );
             let grab = Point::new(origin.x - entry.rect.x, origin.y - entry.rect.y);
-            DragImage::of_item(&scene, item.0, grab)
+            DragImage::of_selection(&scene, &id_values, grab)
         });
-        self.dragged = Some((space, item));
+        self.dragged = Some((space, ids));
         self.pending_select = None;
         if let Some(image) = &self.drag_image {
             ui.show_drag_ghost(image, point);
@@ -1182,10 +1346,46 @@ impl App {
             return;
         }
         let previous = std::mem::replace(&mut self.hovered, hovered);
+        // A different item (or none) cancels any shown tip and its delay.
+        ui.hide_info_tip();
+        ui.clear_timer(INFO_TIP_TIMER);
+        if hovered.is_some() {
+            ui.set_timer(INFO_TIP_TIMER, INFO_TIP_DELAY_MS);
+        }
         if let Some((space, _)) = previous.filter(|(space, _)| *space != id) {
             self.refresh_space(ui, space);
         }
         self.refresh_space(ui, id);
+    }
+
+    /// Shows the info tip for the hovered item, once the pointer has rested on
+    /// it, as Explorer does.
+    fn show_info_tip(&mut self, ui: &mut Ui) {
+        ui.clear_timer(INFO_TIP_TIMER);
+        let Some((space_id, item)) = self.hovered else {
+            return;
+        };
+        let Some(entry) = self.config.desktop.item(item) else {
+            return;
+        };
+        let Some(space) = self.config.desktop.space(space_id) else {
+            return;
+        };
+        let content = space.content_rect();
+        let scroll = self.scroll_of(space_id);
+        let path = entry.path.clone();
+        let at = Point::new(
+            content.x + entry.position.x,
+            content.y + entry.position.y - scroll,
+        );
+        ui.show_info_tip(&path, at);
+    }
+
+    /// Hides any info tip and cancels its delay, for example when a click or
+    /// drag interrupts the hover.
+    fn dismiss_info_tip(&mut self, ui: &mut Ui) {
+        ui.hide_info_tip();
+        ui.clear_timer(INFO_TIP_TIMER);
     }
 
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
@@ -1585,7 +1785,7 @@ impl App {
     }
 
     fn double_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
-        let layout = self.config.desktop.layout;
+        let layout = self.layout_for(id);
         let scroll = self.scroll_of(id);
         let target = self
             .config
@@ -1609,7 +1809,7 @@ impl App {
     /// Places the dragged item in the grid slot under `point`, reflowing the
     /// space. Used while an item is dragged within its own space.
     fn reorder_item_at(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, point: Point) {
-        let layout = self.config.desktop.layout;
+        let layout = self.layout_for(space);
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
             let content = space.content_rect();
@@ -1713,7 +1913,7 @@ impl App {
         additive: bool,
         point: Point,
     ) {
-        let cell = self.config.desktop.layout.cell();
+        let cell = self.layout_for(id).cell();
         let Some(content) = self
             .config
             .desktop
@@ -2096,7 +2296,10 @@ impl App {
     fn cancel_settings(&mut self, ui: &mut Ui) {
         if let Some(session) = self.settings.take() {
             let restyle = session.saved_theme != self.config.theme;
-            let relayout = session.saved_layout != self.config.desktop.layout;
+            // Icon size lives in the theme but scales the grid, so a revert
+            // needs a re-flow as well as a restyle.
+            let relayout = session.saved_layout != self.config.desktop.layout
+                || session.saved_theme.icon_size != self.config.theme.icon_size;
             session.revert(&mut self.config);
             if restyle {
                 self.restyle_all(ui);
@@ -2120,9 +2323,13 @@ impl EventHandler for App {
                     tracing::warn!(message, "toggle hotkey unavailable");
                 }
                 ui.set_spaces_visible(self.visible);
+                self.sync_desktop_show_entry();
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
                 self.sync_windows(ui);
+                // Positions are derived from the grid; recompute them so a
+                // stored layout from another icon size or DPI is refreshed.
+                self.relayout_all(ui);
                 self.prune_all_missing(ui);
                 tracing::info!(
                     spaces = self.config.desktop.spaces.len(),
@@ -2143,12 +2350,14 @@ impl EventHandler for App {
             Event::RenameSelection => self.begin_selected_item_rename(ui),
             Event::SelectAll => self.select_all_in_space(ui),
             Event::PointerDownOutside { on_desktop } => {
+                self.dismiss_info_tip(ui);
                 if self.edit.is_some() {
                     self.finish_rename(ui, true);
                 } else if on_desktop {
                     self.clear_selection(ui);
                 }
             }
+            Event::ShowSpaces => self.set_visible(ui, true),
             Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
                 self.set_visible(ui, !self.visible);
             }
@@ -2160,11 +2369,14 @@ impl EventHandler for App {
             Event::Settings(event) => self.on_settings_event(ui, event),
             Event::Timer { id } if id == AUTOSAVE_TIMER => self.flush_save(ui),
             Event::Timer { id } if id == CARET_TIMER => self.blink_caret(ui),
+            Event::Timer { id } if id == INFO_TIP_TIMER => self.show_info_tip(ui),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 ui.set_ui_dark(self.system_dark);
-                self.shell_display = desktop_display();
+                // The desktop view can change its icon size with the theme;
+                // refresh its display options, then restyle for dark mode.
+                self.refresh_shell_display(ui);
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
@@ -2177,6 +2389,7 @@ impl EventHandler for App {
                 self.cancel_edit(ui);
                 self.cancel_settings(ui);
                 self.flush_save(ui);
+                self.remove_desktop_show_entry();
             }
         }
         // The keyboard hook is on only while it is needed: editing captures
@@ -2192,6 +2405,12 @@ impl EventHandler for App {
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     deskspace_platform::enable_per_monitor_awareness();
+
+    // `--show` from the desktop menu (or a shortcut): hand it to a running
+    // instance and exit, rather than starting a second copy.
+    if cli.show && deskspace_platform::signal_show_spaces() {
+        return Ok(());
+    }
 
     let store = match &cli.config {
         Some(path) => ConfigStore::with_path(PathBuf::from(path)),
@@ -2221,7 +2440,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         seed_default_desktop(&mut config.desktop, !cli.no_icons);
     }
 
-    let hidden = cli.hidden || config.window.start_hidden;
+    // `--show` also forces them shown when it started a fresh instance, so a
+    // stale desktop entry still works after an unclean exit.
+    let hidden = !cli.show && (cli.hidden || config.window.start_hidden);
     let placement = match cli.placement() {
         Some(placement) => placement,
         None if config.window.always_on_desktop => Placement::DesktopBackground,
@@ -2447,7 +2668,7 @@ mod tests {
         };
         let layout = app.config.desktop.layout;
         let cell = Rect::new(100, 100 + 28, layout.cell_width, layout.cell_height);
-        let checkbox = item_check_box_hit(cell);
+        let checkbox = item_check_box_hit(cell, app.metrics_for(id));
         assert_eq!(
             app.checkbox_at(id, Point::new(checkbox.x + 3, checkbox.y + 3)),
             Some(ItemId(1))

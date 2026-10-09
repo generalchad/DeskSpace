@@ -1,6 +1,6 @@
 use deskspace_core::item::ItemKind;
 use deskspace_core::{Color, GridSpec, Item, ItemId, LabelShadow, Palette, Rect, Space, Theme};
-use deskspace_platform::{IconCache, ItemState, ItemVisual, SpaceScene, SpaceStyle};
+use deskspace_platform::{IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -15,8 +15,9 @@ pub struct ViewState {
     pub hovered: Option<ItemId>,
     /// The selected items, which may be several (Ctrl/Shift click).
     pub selected: Vec<ItemId>,
-    /// Being dragged within the space; drawn faded, ahead of selection.
-    pub dragged: Option<ItemId>,
+    /// Being dragged within the space; their slots are drawn faded, ahead of
+    /// the selection highlight. A group drag fades every member.
+    pub dragged: Vec<ItemId>,
     /// Pixels the content is scrolled down; already clamped by the caller.
     pub scroll: i32,
     /// Draw a check box on each item, from Explorer's view options.
@@ -49,11 +50,13 @@ pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
 /// window, which starts at the space's top-left corner. Only items at least
 /// partly inside the content area are included, so icons of scrolled-away
 /// items are neither drawn nor loaded.
+#[allow(clippy::too_many_arguments)]
 pub fn space_scene(
     space: &Space,
     theme: &Theme,
     palette: &Palette,
     layout: GridSpec,
+    metrics: ItemMetrics,
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
@@ -80,8 +83,8 @@ pub fn space_scene(
                 id: item.id.0,
                 rect,
                 label: item_label(item, view.show_extensions),
-                icon: icons.icon_for(&item.path),
-                state: if view.dragged == Some(item.id) {
+                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                state: if view.dragged.contains(&item.id) {
                     ItemState::Dragged
                 } else if view.selected.contains(&item.id) {
                     ItemState::Selected
@@ -135,7 +138,9 @@ pub fn space_scene(
         rolled_up: space.rolled_up,
         editing: None,
         editing_item: None,
+        edit: palette.edit,
         caret_visible: true,
+        metrics,
         items,
         show_check_boxes: view.show_check_boxes,
         check_boxes_persistent: view.check_boxes_persistent,
@@ -147,6 +152,51 @@ pub fn space_scene(
             theme.effective_corner_radius() as i32,
         ),
     }
+}
+
+/// Builds the scene used to render a drag image: the space's draw list reduced
+/// to the dragged `ids`. A selected item scrolled out of view is included too,
+/// at the grid position it would occupy, so a group drag shows the whole
+/// selection exactly where Explorer would.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_scene(
+    space: &Space,
+    ids: &[ItemId],
+    theme: &Theme,
+    palette: &Palette,
+    layout: GridSpec,
+    metrics: ItemMetrics,
+    view: ViewState,
+    icons: &mut IconCache,
+) -> SpaceScene {
+    let scroll = view.scroll;
+    let show_extensions = view.show_extensions;
+    let mut scene = space_scene(space, theme, palette, layout, metrics, view, icons);
+    let cell = layout.cell();
+    let content_top = space.title_height;
+    scene.items = ids
+        .iter()
+        .filter_map(|id| {
+            let item = space.items.iter().find(|item| item.id == *id)?;
+            Some(ItemVisual {
+                id: item.id.0,
+                rect: Rect::new(
+                    item.position.x,
+                    content_top + item.position.y - scroll,
+                    cell.width,
+                    cell.height,
+                ),
+                label: item_label(item, show_extensions),
+                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                state: ItemState::Normal,
+                hovered: false,
+                checked: false,
+                cut: false,
+                label_color: None,
+            })
+        })
+        .collect();
+    scene
 }
 
 /// The item's display label. Explorer never shows a shortcut's extension, even
@@ -301,13 +351,14 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState {
                 show_check_boxes: true,
                 check_boxes_persistent: true,
                 checked: vec![ItemId(4)],
                 ..ViewState::default()
             },
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert!(scene.check_boxes_persistent);
         assert!(scene.items[0].checked);
@@ -322,11 +373,12 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState {
                 cut: vec![ItemId(4)],
                 ..ViewState::default()
             },
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert!(scene.items[0].cut);
     }
@@ -340,8 +392,9 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState::default(),
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(
             scene.items[0].rect,
@@ -359,8 +412,9 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState::default(),
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert!(scene.items.is_empty());
         assert!(scene.rolled_up);
@@ -377,12 +431,13 @@ mod tests {
             &theme,
             &palette,
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState {
                 hovered: Some(ItemId(4)),
                 selected: vec![ItemId(4)],
                 ..ViewState::default()
             },
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(scene.items[0].state, ItemState::Selected);
         assert_eq!(scene.tint.a, palette.tint.fade(128).a);
@@ -397,11 +452,12 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState {
                 selected: vec![ItemId(4)],
                 ..ViewState::default()
             },
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert!(scene.items[0].checked);
     }
@@ -415,12 +471,13 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState {
                 selected: vec![ItemId(4)],
-                dragged: Some(ItemId(4)),
+                dragged: vec![ItemId(4)],
                 ..ViewState::default()
             },
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(scene.items[0].state, ItemState::Dragged);
     }
@@ -437,8 +494,9 @@ mod tests {
             &theme,
             &palette,
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState::default(),
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(scene.tint.r, 10);
         assert_eq!(scene.tint.a, palette.tint.a);
@@ -460,8 +518,9 @@ mod tests {
             &theme,
             &theme.palette(true),
             GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
             ViewState::default(),
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(scene.label_lines, 1);
         assert_eq!(scene.label_size, 140);
@@ -490,11 +549,12 @@ mod tests {
                 &theme,
                 &theme.palette(true),
                 GridSpec::default(),
+                ItemMetrics::for_scale(1.0),
                 ViewState {
                     scroll,
                     ..ViewState::default()
                 },
-                &mut IconCache::new(32),
+                &mut IconCache::new(),
             )
         };
         let top = build(0);
@@ -510,6 +570,31 @@ mod tests {
     }
 
     #[test]
+    fn drag_scene_keeps_a_scrolled_out_member_at_its_grid_position() {
+        let space = tall_space();
+        let theme = Theme::default();
+        // Item 1 is in the first row; item 10 is several rows down, past the
+        // content area, so the space's own scene would not draw it.
+        let ids = vec![ItemId(1), ItemId(10)];
+        let scene = drag_scene(
+            &space,
+            &ids,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert_eq!(
+            scene.items.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [1, 10]
+        );
+        assert!(scene.items[1].rect.y > scene.items[0].rect.bottom());
+        assert_eq!(scene.items[0].state, ItemState::Normal);
+    }
+
+    #[test]
     fn scroll_thumb_tracks_position_and_hides_when_content_fits() {
         let theme = Theme::default();
         let layout = GridSpec::default();
@@ -521,11 +606,12 @@ mod tests {
                 &theme,
                 &theme.palette(true),
                 layout,
+                ItemMetrics::for_scale(1.0),
                 ViewState {
                     scroll,
                     ..ViewState::default()
                 },
-                &mut IconCache::new(32),
+                &mut IconCache::new(),
             )
             .scroll_thumb
             .unwrap()
@@ -544,8 +630,9 @@ mod tests {
             &theme,
             &theme.palette(true),
             layout,
+            ItemMetrics::for_scale(1.0),
             ViewState::default(),
-            &mut IconCache::new(32),
+            &mut IconCache::new(),
         );
         assert_eq!(scene.scroll_thumb, None);
     }

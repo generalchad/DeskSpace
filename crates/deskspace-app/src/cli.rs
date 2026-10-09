@@ -48,6 +48,12 @@ pub struct Cli {
     #[arg(long, help = "Start with spaces hidden")]
     pub hidden: bool,
 
+    #[arg(
+        long,
+        help = "Show spaces: signal a running DeskSpace, or start with them shown"
+    )]
+    pub show: bool,
+
     #[arg(long, help = "Open the settings window on start")]
     pub settings: bool,
 

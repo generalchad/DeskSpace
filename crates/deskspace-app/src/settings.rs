@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use deskspace_config::{Config, WindowSettings};
-use deskspace_core::theme::corner;
+use deskspace_core::theme::{OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner};
 use deskspace_core::{Backdrop, GridSpec, LabelShadow, Theme, ThemeMode};
 use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage, SliderMark};
 
@@ -30,6 +30,11 @@ pub mod field {
     pub const GRID_GAP: u32 = 19;
     pub const GRID_PADDING: u32 = 41;
     pub const MATCH_EXPLORER: u32 = 42;
+    pub const ICON_SIZE: u32 = 43;
+
+    pub const ADVANCED_HEADING: u32 = 44;
+    pub const OVERLAY_SIZE: u32 = 45;
+    pub const OVERLAY_NOTE: u32 = 46;
 
     pub const BEHAVIOR_HEADING: u32 = 20;
     pub const HOTKEY: u32 = 21;
@@ -137,6 +142,8 @@ pub fn build_form(
     let palette = theme.palette(system_dark);
     let solid = theme.backdrop == Backdrop::Solid;
 
+    // Appearance is split across several tabs so no page is tall enough to
+    // clip on a 1080-pixel display.
     let appearance = SettingsPage {
         title: "Appearance".into(),
         fields: vec![
@@ -180,6 +187,12 @@ pub fn build_form(
                 "Match Explorer's display (check boxes, file extensions)",
                 theme.match_explorer,
             ),
+        ],
+    };
+
+    let labels_page = SettingsPage {
+        title: "Labels".into(),
+        fields: vec![
             Field::heading(field::LABELS_HEADING, "Labels"),
             Field::choice(
                 field::LABEL_LINES,
@@ -199,7 +212,25 @@ pub fn build_form(
                 &labels(&LABEL_SHADOW_OPTIONS),
                 index_of(&LABEL_SHADOW_OPTIONS, theme.label_shadow),
             ),
+        ],
+    };
+
+    let layout_page = SettingsPage {
+        title: "Layout".into(),
+        fields: vec![
             Field::heading(field::LAYOUT_HEADING, "Layout"),
+            Field::slider(
+                field::ICON_SIZE,
+                "Icon size (%)",
+                (50, 200),
+                theme.icon_size.clamp(50, 200) as i32,
+            )
+            .editable()
+            .marks(vec![
+                SliderMark::new(50, "Small"),
+                SliderMark::new(100, "Default"),
+                SliderMark::new(200, "Large"),
+            ]),
             Field::slider(
                 field::GRID_GAP,
                 "Icon spacing",
@@ -214,6 +245,12 @@ pub fn build_form(
                 config.desktop.layout.padding.clamp(0, 24),
             )
             .suffix(" px"),
+        ],
+    };
+
+    let colors_page = SettingsPage {
+        title: "Colors".into(),
+        fields: vec![
             Field::heading(field::COLORS_HEADING, "Colors"),
             Field::toggle(
                 field::CUSTOM_COLORS,
@@ -230,6 +267,34 @@ pub fn build_form(
                  shows only the icons and labels. Acrylic and blur use Windows 11's \
                  own corners, up to 8 px; larger radii apply to clear glass and \
                  solid. Desktop-hosted spaces are drawn opaque.",
+            ),
+        ],
+    };
+
+    let advanced_page = SettingsPage {
+        title: "Advanced".into(),
+        fields: vec![
+            Field::heading(field::ADVANCED_HEADING, "Advanced"),
+            Field::slider(
+                field::OVERLAY_SIZE,
+                "Shortcut overlay size (%)",
+                (OVERLAY_SIZE_RANGE.0.into(), OVERLAY_SIZE_RANGE.1.into()),
+                theme
+                    .overlay_size
+                    .clamp(OVERLAY_SIZE_RANGE.0, OVERLAY_SIZE_RANGE.1)
+                    .into(),
+            )
+            .editable()
+            .marks(vec![
+                SliderMark::new(OVERLAY_SIZE_RANGE.0.into(), "Small"),
+                SliderMark::new(OVERLAY_SIZE_DEFAULT.into(), "Default"),
+                SliderMark::new(OVERLAY_SIZE_RANGE.1.into(), "Explorer"),
+            ]),
+            Field::note(
+                field::OVERLAY_NOTE,
+                "How large the shell's corner badge (the shortcut arrow, a sync \
+                 badge) is drawn relative to the icon. Explorer uses 100%; \
+                 smaller is often easier on the eye.",
             ),
         ],
     };
@@ -293,7 +358,15 @@ pub fn build_form(
 
     SettingsForm {
         title: "DeskSpace Settings".into(),
-        pages: vec![appearance, general, about],
+        pages: vec![
+            appearance,
+            labels_page,
+            layout_page,
+            colors_page,
+            advanced_page,
+            general,
+            about,
+        ],
         apply_enabled: session.dirty,
     }
 }
@@ -346,7 +419,9 @@ pub fn apply_field(
         }
         (field::MATCH_EXPLORER, FieldValue::Toggle(on)) => {
             config.theme.match_explorer = on;
-            Effect::Appearance
+            // Mirroring also imports Explorer's icon size and item spacing, so
+            // the grid has to re-flow, not just restyle.
+            Effect::Layout
         }
         (field::LABEL_LINES, FieldValue::Choice(index)) => {
             config.theme.label_lines = LABEL_LINES_OPTIONS
@@ -362,6 +437,15 @@ pub fn apply_field(
             config.theme.label_shadow = LABEL_SHADOW_OPTIONS
                 .get(index)
                 .map_or(config.theme.label_shadow, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::ICON_SIZE, FieldValue::Slider(value)) => {
+            config.theme.icon_size = value.clamp(50, 200) as u8;
+            Effect::Layout
+        }
+        (field::OVERLAY_SIZE, FieldValue::Slider(value)) => {
+            config.theme.overlay_size =
+                value.clamp(OVERLAY_SIZE_RANGE.0.into(), OVERLAY_SIZE_RANGE.1.into()) as u8;
             Effect::Appearance
         }
         (field::GRID_GAP, FieldValue::Slider(value)) => {
@@ -473,7 +557,7 @@ mod tests {
             FieldValue::Toggle(false),
             true,
         );
-        assert_eq!(effect, Effect::Appearance);
+        assert_eq!(effect, Effect::Layout);
         assert!(!config.theme.match_explorer);
     }
 
@@ -563,6 +647,90 @@ mod tests {
             true,
         );
         assert_eq!(config.desktop.layout.padding, 4);
+    }
+
+    #[test]
+    fn icon_size_reports_a_layout_effect_and_clamps() {
+        let (mut config, mut session) = setup();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::ICON_SIZE,
+                FieldValue::Slider(150),
+                true,
+            ),
+            Effect::Layout
+        );
+        assert_eq!(config.theme.icon_size, 150);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_SIZE,
+            FieldValue::Slider(10),
+            true,
+        );
+        assert_eq!(config.theme.icon_size, 50);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_SIZE,
+            FieldValue::Slider(500),
+            true,
+        );
+        assert_eq!(config.theme.icon_size, 200);
+    }
+
+    #[test]
+    fn overlay_slider_marks_the_default_and_explorer_sizes() {
+        let (config, session) = setup();
+        let form = build_form(&config, &session, true, Path::new("x"));
+        match &form.field(field::OVERLAY_SIZE).unwrap().kind {
+            FieldKind::Slider { value, marks, .. } => {
+                assert_eq!(*value, OVERLAY_SIZE_DEFAULT.into());
+                assert!(marks.iter().any(
+                    |mark| mark.value == OVERLAY_SIZE_DEFAULT.into() && mark.label == "Default"
+                ));
+                assert!(
+                    marks
+                        .iter()
+                        .any(|mark| mark.value == OVERLAY_SIZE_RANGE.1.into())
+                );
+            }
+            other => panic!("expected a slider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn overlay_size_reports_an_appearance_effect_and_clamps() {
+        let (mut config, mut session) = setup();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::OVERLAY_SIZE,
+                FieldValue::Slider(60),
+                true,
+            ),
+            Effect::Appearance
+        );
+        assert_eq!(config.theme.overlay_size, 60);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::OVERLAY_SIZE,
+            FieldValue::Slider(0),
+            true,
+        );
+        assert_eq!(config.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::OVERLAY_SIZE,
+            FieldValue::Slider(250),
+            true,
+        );
+        assert_eq!(config.theme.overlay_size, OVERLAY_SIZE_RANGE.1);
     }
 
     #[test]
