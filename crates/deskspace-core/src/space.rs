@@ -199,6 +199,16 @@ impl Space {
     pub fn set_position(&mut self, origin: Point) {
         self.rect = self.rect.with_position(origin);
     }
+
+    /// Whether any per-space appearance override is set: opacity, tint, text,
+    /// or icon size. Such a space is listed in the settings rail's Spaces
+    /// group.
+    pub fn has_appearance_overrides(&self) -> bool {
+        self.opacity != default_opacity()
+            || self.tint.is_some()
+            || self.text.is_some()
+            || self.icon_size.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -267,5 +277,22 @@ mod tests {
         let mut locked = space.clone();
         locked.locked = true;
         assert!(!locked.resize_edges_at(Point::new(101, 200), 6).any());
+    }
+
+    #[test]
+    fn appearance_overrides_are_opt_in() {
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 200, 200));
+        assert!(!space.has_appearance_overrides());
+        space.opacity = 200;
+        assert!(space.has_appearance_overrides());
+        space.opacity = 255;
+        space.icon_size = Some(150);
+        assert!(space.has_appearance_overrides());
+        space.icon_size = None;
+        space.tint = Some(Color::rgb(1, 2, 3));
+        assert!(space.has_appearance_overrides());
+        space.tint = None;
+        space.text = Some(Color::rgb(1, 2, 3));
+        assert!(space.has_appearance_overrides());
     }
 }

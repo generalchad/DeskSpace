@@ -88,14 +88,35 @@ const OPACITY_PRESETS: [(u32, &str, u8); 5] = [
     (menu::OPACITY_20, "Opacity 20%", 51),
 ];
 
-/// The icon-size choices the "Icon size" submenu offers: menu id, label, and
-/// the per-space percent. `None` follows the global setting.
+/// The icon-size choices the "Icon size" submenu offers: menu id plus the
+/// label and per-space percent from `settings::SPACE_ICON_SIZES`, so the menu
+/// and the Space settings page always offer the same sizes.
 const ICON_SIZE_PRESETS: [(u32, &str, Option<u8>); 5] = [
-    (menu::ICON_SIZE_DEFAULT, "Default", None),
-    (menu::ICON_SIZE_SMALL, "Small", Some(75)),
-    (menu::ICON_SIZE_MEDIUM, "Medium", Some(100)),
-    (menu::ICON_SIZE_LARGE, "Large", Some(150)),
-    (menu::ICON_SIZE_XLARGE, "Extra large", Some(200)),
+    (
+        menu::ICON_SIZE_DEFAULT,
+        settings::SPACE_ICON_SIZES[0].0,
+        settings::SPACE_ICON_SIZES[0].1,
+    ),
+    (
+        menu::ICON_SIZE_SMALL,
+        settings::SPACE_ICON_SIZES[1].0,
+        settings::SPACE_ICON_SIZES[1].1,
+    ),
+    (
+        menu::ICON_SIZE_MEDIUM,
+        settings::SPACE_ICON_SIZES[2].0,
+        settings::SPACE_ICON_SIZES[2].1,
+    ),
+    (
+        menu::ICON_SIZE_LARGE,
+        settings::SPACE_ICON_SIZES[3].0,
+        settings::SPACE_ICON_SIZES[3].1,
+    ),
+    (
+        menu::ICON_SIZE_XLARGE,
+        settings::SPACE_ICON_SIZES[4].0,
+        settings::SPACE_ICON_SIZES[4].1,
+    ),
 ];
 
 /// The sort choices the Sort by submenu offers: menu id, label, sort key, and

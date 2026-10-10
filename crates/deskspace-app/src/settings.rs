@@ -8,8 +8,13 @@ use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
 };
-use deskspace_core::{Backdrop, GridSpec, LabelShadow, Theme, ThemeMode};
-use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage, SliderMark};
+use deskspace_core::{
+    Backdrop, Color, GridSpec, LabelShadow, Palette, Space, SpaceId, Theme, ThemeMode,
+};
+use deskspace_platform::{
+    Field, FieldValue, SettingsForm, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage,
+    SliderMark,
+};
 
 pub mod field {
     pub const SPACES_HEADING: u32 = 1;
@@ -54,6 +59,17 @@ pub mod field {
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;
+
+    // The shared Space page (the rail's Spaces group). Fixed shape; the app
+    // fills it with the selected space's values.
+    pub const SPACE_NOTE: u32 = 50;
+    pub const SPACE_OPACITY: u32 = 51;
+    pub const SPACE_ICON_SIZE: u32 = 52;
+    pub const SPACE_TINT_TOGGLE: u32 = 53;
+    pub const SPACE_TINT: u32 = 54;
+    pub const SPACE_TEXT_TOGGLE: u32 = 55;
+    pub const SPACE_TEXT: u32 = 56;
+    pub const SPACE_RESET: u32 = 57;
 }
 
 const MODES: [(ThemeMode, &str); 3] = [
@@ -74,6 +90,16 @@ const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// The per-space icon-size choices: label and percent (`None` follows the
+/// global setting). Shared by the Space settings page and the space menu.
+pub const SPACE_ICON_SIZES: [(&str, Option<u8>); 5] = [
+    ("Default", None),
+    ("Small", Some(75)),
+    ("Medium", Some(100)),
+    ("Large", Some(150)),
+    ("Extra large", Some(200)),
+];
+
 fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),
@@ -86,6 +112,28 @@ fn corner_marks() -> Vec<SliderMark> {
 const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit, or F1-F24, \
      for example Ctrl+Alt+D.";
 
+/// A space's appearance values, snapshotted so Cancel can restore them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpaceAppearance {
+    pub id: SpaceId,
+    pub opacity: u8,
+    pub tint: Option<Color>,
+    pub text: Option<Color>,
+    pub icon_size: Option<u8>,
+}
+
+impl SpaceAppearance {
+    pub fn of(space: &Space) -> Self {
+        Self {
+            id: space.id,
+            opacity: space.opacity,
+            tint: space.tint,
+            text: space.text,
+            icon_size: space.icon_size,
+        }
+    }
+}
+
 /// Edits in progress while the settings window is open. Appearance edits are
 /// applied to the live config immediately for preview; `saved_*` is what
 /// Cancel restores.
@@ -97,6 +145,14 @@ pub struct Session {
     pub hotkey_text: String,
     pub hotkey_error: Option<String>,
     pub dirty: bool,
+    /// The spaces shown in the rail's Spaces group: those with overrides when
+    /// the window opened, plus any that gain one while it is open. Sticky for
+    /// the session, so resetting the last override does not drop the entry.
+    pub listed_spaces: Vec<SpaceId>,
+    /// The selected rail entry, an index into the flattened `SettingsNav`.
+    pub nav_selected: usize,
+    /// The per-space appearance snapshot Cancel restores.
+    pub saved_spaces: Vec<SpaceAppearance>,
 }
 
 impl Session {
@@ -108,6 +164,20 @@ impl Session {
             hotkey_text: config.window.toggle_hotkey.clone(),
             hotkey_error: None,
             dirty: false,
+            listed_spaces: config
+                .desktop
+                .spaces
+                .iter()
+                .filter(|space| space.has_appearance_overrides())
+                .map(|space| space.id)
+                .collect(),
+            nav_selected: 0,
+            saved_spaces: config
+                .desktop
+                .spaces
+                .iter()
+                .map(SpaceAppearance::of)
+                .collect(),
         }
     }
 
@@ -116,6 +186,12 @@ impl Session {
         self.saved_theme = config.theme.clone();
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
+        self.saved_spaces = config
+            .desktop
+            .spaces
+            .iter()
+            .map(SpaceAppearance::of)
+            .collect();
         self.hotkey_error = None;
         self.dirty = false;
     }
@@ -145,6 +221,20 @@ fn index_of<T: PartialEq + Copy>(table: &[(T, &str)], value: T) -> usize {
 
 fn labels<T>(table: &[(T, &'static str)]) -> Vec<&'static str> {
     table.iter().map(|(_, label)| *label).collect()
+}
+
+/// The Opacity slider's percent for a stored space opacity (`0..=255`), where
+/// 255 is the theme's 100 %.
+fn opacity_percent(opacity: u8) -> i32 {
+    ((opacity as u32 * 100 + 127) / 255) as i32
+}
+
+/// The index of `icon_size` in [`SPACE_ICON_SIZES`], or 0 (`Default`).
+fn icon_size_index(icon_size: Option<u8>) -> usize {
+    SPACE_ICON_SIZES
+        .iter()
+        .position(|(_, value)| *value == icon_size)
+        .unwrap_or(0)
 }
 
 pub fn build_form(
@@ -393,19 +483,112 @@ pub fn build_form(
         ],
     };
 
+    let settings_pages = vec![
+        appearance,
+        labels_page,
+        layout_page,
+        colors_page,
+        advanced_page,
+        general,
+        about,
+    ];
+    let space_page_index = settings_pages.len();
+
+    // Spaces deleted since the window opened drop out of the rail; the rest
+    // keep their entries for the session (the sticky rule).
+    let listed: Vec<SpaceId> = session
+        .listed_spaces
+        .iter()
+        .copied()
+        .filter(|id| config.desktop.space(*id).is_some())
+        .collect();
+    let selected_space = session
+        .nav_selected
+        .checked_sub(space_page_index)
+        .and_then(|index| listed.get(index))
+        .and_then(|id| config.desktop.space(*id));
+
+    let settings_group = SettingsNavGroup {
+        title: "Settings".into(),
+        entries: settings_pages
+            .iter()
+            .enumerate()
+            .map(|(page, entry)| SettingsNavEntry {
+                label: entry.title.clone(),
+                page,
+                marked: false,
+            })
+            .collect(),
+    };
+    let spaces_group = SettingsNavGroup {
+        title: "Spaces".into(),
+        entries: listed
+            .iter()
+            .filter_map(|id| config.desktop.space(*id))
+            .map(|space| SettingsNavEntry {
+                label: space.title.clone(),
+                page: space_page_index,
+                marked: space.has_appearance_overrides(),
+            })
+            .collect(),
+    };
+
+    let mut pages = settings_pages;
+    pages.push(space_page(selected_space, &palette));
+    let entry_count = space_page_index + spaces_group.entries.len();
+    let selected = session.nav_selected.min(entry_count.saturating_sub(1));
+
     SettingsForm {
         title: "DeskSpace Settings".into(),
-        pages: vec![
-            appearance,
-            labels_page,
-            layout_page,
-            colors_page,
-            advanced_page,
-            general,
-            about,
-        ],
+        pages,
         apply_enabled: session.dirty,
-        nav: None,
+        nav: Some(SettingsNav {
+            groups: vec![settings_group, spaces_group],
+            selected,
+        }),
+    }
+}
+
+/// The shared Space page for `space`, or the empty state when none is
+/// selected. Its shape is fixed so `same_shape` holds while the selection
+/// changes; the fields are disabled unless a space is shown.
+fn space_page(space: Option<&Space>, palette: &Palette) -> SettingsPage {
+    const EMPTY_NOTE: &str =
+        "No spaces are customized yet. Right-click a space and choose Appearance.";
+    let (note, opacity, icon, tint_on, tint, text_on, text) = match space {
+        Some(space) => (
+            format!("Editing \u{201c}{}\u{201d}.", space.title),
+            opacity_percent(space.opacity),
+            icon_size_index(space.icon_size),
+            space.tint.is_some(),
+            space.tint.unwrap_or_else(|| palette.tint.with_alpha(255)),
+            space.text.is_some(),
+            space.text.unwrap_or(palette.title_text),
+        ),
+        None => (
+            EMPTY_NOTE.to_string(),
+            100,
+            icon_size_index(None),
+            false,
+            palette.tint.with_alpha(255),
+            false,
+            palette.title_text,
+        ),
+    };
+    let enabled = space.is_some();
+    let icon_labels: Vec<&str> = SPACE_ICON_SIZES.iter().map(|(label, _)| *label).collect();
+    SettingsPage {
+        title: "Space".into(),
+        fields: vec![
+            Field::note(field::SPACE_NOTE, note),
+            Field::slider(field::SPACE_OPACITY, "Opacity", (20, 100), opacity).enabled(enabled),
+            Field::choice(field::SPACE_ICON_SIZE, "Icon size", &icon_labels, icon).enabled(enabled),
+            Field::toggle(field::SPACE_TINT_TOGGLE, "Custom tint", tint_on).enabled(enabled),
+            Field::color(field::SPACE_TINT, "Tint color", tint).enabled(enabled && tint_on),
+            Field::toggle(field::SPACE_TEXT_TOGGLE, "Custom text color", text_on).enabled(enabled),
+            Field::color(field::SPACE_TEXT, "Text color", text).enabled(enabled && text_on),
+            Field::button(field::SPACE_RESET, "", "Reset to global").enabled(enabled),
+        ],
     }
 }
 
@@ -899,5 +1082,125 @@ mod tests {
         session.hotkey_error = Some("bad".into());
         let form = build_form(&config, &session, true, Path::new("x"));
         assert_eq!(form.field(field::HOTKEY_NOTE).unwrap().label, "bad");
+    }
+
+    use deskspace_core::Rect;
+
+    fn config_with_space(title: &str, opacity: u8) -> (Config, SpaceId) {
+        let mut config = Config::new();
+        let id = config.desktop.add_space(title, Rect::new(0, 0, 200, 200));
+        config.desktop.space_mut(id).unwrap().opacity = opacity;
+        (config, id)
+    }
+
+    fn space_labels(form: &SettingsForm) -> Vec<String> {
+        form.nav.as_ref().unwrap().groups[1]
+            .entries
+            .iter()
+            .map(|entry| entry.label.clone())
+            .collect()
+    }
+
+    #[test]
+    fn rail_maps_entries_to_pages_and_marks_customized_spaces() {
+        let (config, _) = config_with_space("Work", 200);
+        let session = Session::new(&config);
+        let form = build_form(&config, &session, true, Path::new("x"));
+        let nav = form.nav.as_ref().expect("the rail is set");
+        assert_eq!(nav.groups[0].title, "Settings");
+        assert_eq!(nav.groups[0].entries.len(), 7);
+        assert_eq!(nav.groups[1].title, "Spaces");
+        let space_page = nav.groups[0].entries.len();
+        for (index, entry) in nav.groups[0].entries.iter().enumerate() {
+            assert_eq!(entry.page, index);
+        }
+        let space_entry = &nav.groups[1].entries[0];
+        assert_eq!(space_entry.label, "Work");
+        assert!(space_entry.marked);
+        assert_eq!(space_entry.page, space_page);
+        assert_eq!(form.pages.len(), space_page + 1);
+        assert_eq!(nav.selected, 0);
+
+        // Selecting the space entry fills and enables the Space page.
+        let mut selected = Session::new(&config);
+        selected.nav_selected = space_page;
+        let form = build_form(&config, &selected, true, Path::new("x"));
+        assert!(form.field(field::SPACE_OPACITY).unwrap().enabled);
+        assert_eq!(
+            form.field(field::SPACE_NOTE).unwrap().label,
+            "Editing \u{201c}Work\u{201d}."
+        );
+        match &form.field(field::SPACE_OPACITY).unwrap().kind {
+            FieldKind::Slider { value, .. } => assert_eq!(*value, 78),
+            other => panic!("expected a slider, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rail_lists_only_spaces_with_overrides() {
+        let mut config = Config::new();
+        let _plain = config.desktop.add_space("Plain", Rect::new(0, 0, 200, 200));
+        let tinted = config
+            .desktop
+            .add_space("Tinted", Rect::new(0, 0, 200, 200));
+        config.desktop.space_mut(tinted).unwrap().tint = Some(Color::rgb(1, 2, 3));
+        let session = Session::new(&config);
+        assert_eq!(session.listed_spaces, vec![tinted]);
+        let saved = session
+            .saved_spaces
+            .iter()
+            .find(|saved| saved.id == tinted)
+            .unwrap();
+        assert_eq!(saved.tint, Some(Color::rgb(1, 2, 3)));
+        assert_eq!(saved.opacity, 255);
+
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(space_labels(&form), ["Tinted"]);
+    }
+
+    #[test]
+    fn rail_drops_deleted_spaces_but_keeps_the_listing() {
+        let mut config = Config::new();
+        let kept = config.desktop.add_space("Kept", Rect::new(0, 0, 200, 200));
+        config.desktop.space_mut(kept).unwrap().icon_size = Some(150);
+        let removed = config
+            .desktop
+            .add_space("Removed", Rect::new(0, 0, 200, 200));
+        config.desktop.space_mut(removed).unwrap().opacity = 100;
+        let session = Session::new(&config);
+        assert_eq!(session.listed_spaces, vec![kept, removed]);
+        config.desktop.remove_space(removed);
+
+        // The deleted space is dropped from the rail.
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(space_labels(&form), ["Kept"]);
+
+        // Resetting the last override does not pull the entry out (sticky),
+        // but the entry is no longer marked.
+        config.desktop.space_mut(kept).unwrap().icon_size = None;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(space_labels(&form), ["Kept"]);
+        assert!(!form.nav.as_ref().unwrap().groups[1].entries[0].marked);
+    }
+
+    #[test]
+    fn space_page_is_disabled_with_no_selection() {
+        let (config, session) = setup();
+        let form = build_form(&config, &session, true, Path::new("x"));
+        for id in [
+            field::SPACE_OPACITY,
+            field::SPACE_ICON_SIZE,
+            field::SPACE_TINT_TOGGLE,
+            field::SPACE_TINT,
+            field::SPACE_TEXT_TOGGLE,
+            field::SPACE_TEXT,
+            field::SPACE_RESET,
+        ] {
+            assert!(!form.field(id).unwrap().enabled, "field {id} should be off");
+        }
+        assert_eq!(
+            form.field(field::SPACE_NOTE).unwrap().label,
+            "No spaces are customized yet. Right-click a space and choose Appearance."
+        );
     }
 }

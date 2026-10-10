@@ -773,7 +773,7 @@ Design rules (decided 2026-10-10; do not re-open without asking):
     `nav: Some` form (remove it before committing): light and dark mode;
     Tab moves into the rail and arrow keys switch pages; a long list scrolls.
 
-- [ ] **H2. App: the unified form and the Spaces group.** After H1.
+- [x] **H2. App: the unified form and the Spaces group.** After H1.
   - Core: `Space::has_appearance_overrides()`. True when `opacity != 255` or
     any of `tint`, `text`, or `icon_size` is set. Add a test.
   - Move the icon-size choices out of `app.rs` into `settings.rs` as
