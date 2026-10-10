@@ -615,6 +615,7 @@ pub fn build_form(
         nav: Some(SettingsNav {
             groups: vec![settings_group, spaces_group],
             selected,
+            ..Default::default()
         }),
     }
 }

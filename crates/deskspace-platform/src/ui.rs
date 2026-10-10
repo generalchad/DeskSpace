@@ -91,12 +91,46 @@ impl MenuEntry {
 /// The optional navigation rail of the settings window, in place of the top
 /// tabs. The platform renders the groups and reports which entry was picked;
 /// the app owns what each entry means. `None` keeps the tabs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsNav {
+    /// What the settings apply to, in a pane left of the categories (for
+    /// example "Global", then each space indented under it). Empty leaves the
+    /// pane out. Fixed when the window is built: a form that starts without
+    /// scopes never gains the pane.
+    pub scopes: Vec<SettingsScope>,
+    /// The selected scope, an index into `scopes`.
+    pub selected_scope: usize,
+    /// The categories pane.
     pub groups: Vec<SettingsNavGroup>,
     /// The selected entry, indexing the flattened [`SettingsNav::entries`]
     /// order. Group titles are not selectable.
     pub selected: usize,
+    /// A title and an optional switch shown above the page.
+    pub header: Option<SettingsHeader>,
+}
+
+/// One row of the scopes pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsScope {
+    pub label: String,
+    /// Indents the row under the one above it.
+    pub indent: bool,
+    /// Draws the row in disabled text, for a scope that only inherits.
+    pub dimmed: bool,
+}
+
+/// The line above the page: a title, and a switch the app can use to unlock
+/// the page (reported as `SettingsEvent::HeaderSwitch`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsHeader {
+    pub title: String,
+    pub switch: Option<SettingsSwitch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsSwitch {
+    pub label: String,
+    pub on: bool,
 }
 
 /// A titled group of rail entries.
@@ -397,6 +431,7 @@ mod tests {
                 },
             ],
             selected: 2,
+            ..Default::default()
         };
         let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
         assert_eq!(labels, ["Appearance", "Work", "Games"]);
@@ -416,10 +451,12 @@ mod tests {
                 entries: vec![nav_entry("Work", 0, true)],
             }],
             selected: 0,
+            ..Default::default()
         });
         b.nav = Some(SettingsNav {
             groups: vec![],
             selected: 0,
+            ..Default::default()
         });
         assert!(a.same_shape(&b));
     }

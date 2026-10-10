@@ -2562,6 +2562,8 @@ impl App {
                 field: settings::field::SPACE_RESET,
             } => self.reset_space_from_settings(ui),
             SettingsEvent::Button { .. } => {}
+            // Arrive with the per-space look settings.
+            SettingsEvent::ScopeChanged { .. } | SettingsEvent::HeaderSwitch { .. } => {}
             SettingsEvent::NavChanged { entry } => {
                 if let Some(session) = self.settings.as_mut() {
                     session.nav_selected = entry;

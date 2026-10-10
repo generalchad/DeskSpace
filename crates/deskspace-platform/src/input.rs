@@ -108,6 +108,14 @@ pub enum SettingsEvent {
     NavChanged {
         entry: usize,
     },
+    /// The scopes pane moved to `scope`, an index into `SettingsNav::scopes`.
+    ScopeChanged {
+        scope: usize,
+    },
+    /// The header switch (`SettingsHeader::switch`) was turned on or off.
+    HeaderSwitch {
+        on: bool,
+    },
     Ok,
     /// Cancel button, Escape, or the window's close button.
     Cancel,

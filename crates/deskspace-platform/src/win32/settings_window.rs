@@ -59,7 +59,10 @@ use windows::core::{BOOL, PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
-use crate::ui::{Field, FieldKind, FieldValue, SettingsForm, SettingsNav, SliderMark};
+use crate::ui::{
+    Field, FieldKind, FieldValue, SettingsForm, SettingsHeader, SettingsNav, SettingsScope,
+    SliderMark,
+};
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::{runtime, tray};
@@ -72,11 +75,21 @@ const ID_CANCEL: usize = 2;
 const ID_APPLY: usize = 3;
 const ID_TAB: usize = 4;
 const ID_LIST: usize = 5;
+const ID_SCOPES: usize = 6;
+const ID_HEADER_SWITCH: usize = 7;
 const TAB_SUBCLASS_ID: usize = 1;
 /// Height of one navigation-rail row, at 96 DPI.
 const NAV_ROW_HEIGHT: i32 = 30;
 /// Width of the navigation rail, at 96 DPI.
 const NAV_WIDTH: i32 = 168;
+/// Width of the scopes pane, at 96 DPI.
+const SCOPE_WIDTH: i32 = 176;
+/// How far an indented scope row is moved right, at 96 DPI.
+const SCOPE_INDENT: i32 = 16;
+/// Height of the header line above the page, at 96 DPI.
+const HEADER_HEIGHT: i32 = 44;
+/// Width of the header switch, at 96 DPI.
+const HEADER_SWITCH_WIDTH: i32 = 200;
 /// Field controls get `CONTROL_BASE + index * 4 + part`, so the field index
 /// and which of its controls fired can be recovered from the id alone.
 const CONTROL_BASE: usize = 1000;
@@ -134,6 +147,15 @@ struct SettingsState {
     list: Option<HWND>,
     /// The rail's rows, rebuilt when the nav changes.
     nav_rows: Vec<NavRow>,
+    /// The scopes pane, when the form had scopes at build time.
+    scopes_list: Option<HWND>,
+    /// The scopes pane's rows, rebuilt when they change.
+    scope_rows: Vec<SettingsScope>,
+    /// The header's title and switch, when the form has a rail.
+    header_title: Option<HWND>,
+    header_switch: Option<HWND>,
+    /// Vertical lines between the panes: x, top, bottom.
+    dividers: Vec<(i32, i32, i32)>,
     apply: Option<HWND>,
     font: HFONT,
     heading_font: HFONT,
@@ -207,11 +229,14 @@ impl NavRow {
     }
 }
 
-/// The rail's rows: each group's title, then its entries.
+/// The rail's rows: each group's title (untitled groups have none), then its
+/// entries.
 fn nav_rows(nav: &SettingsNav) -> Vec<NavRow> {
     let mut rows = Vec::new();
     for group in &nav.groups {
-        rows.push(NavRow::Title(group.title.clone()));
+        if !group.title.is_empty() {
+            rows.push(NavRow::Title(group.title.clone()));
+        }
         rows.extend(group.entries.iter().map(|entry| NavRow::Entry {
             label: entry.label.clone(),
             marked: entry.marked,
@@ -289,6 +314,11 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             tab: None,
             list: None,
             nav_rows: Vec::new(),
+            scopes_list: None,
+            scope_rows: Vec::new(),
+            header_title: None,
+            header_switch: None,
+            dividers: Vec::new(),
             apply: None,
             font: HFONT::default(),
             heading_font: HFONT::default(),
@@ -994,56 +1024,98 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
         // Lay the pages over the tab's display area (tabs) or beside the rail
         // (nav), and compute the client size.
         let (client_width, command_bar_top, list);
+        let mut scopes_list = None;
+        let (mut header_title, mut header_switch) = (None, None);
+        let mut dividers = Vec::new();
         if let Some(nav) = nav {
+            let header_height = s(HEADER_HEIGHT);
+            let panes_height = header_height + page_height;
             let rail = s(NAV_WIDTH);
-            let pages_x = margin + rail + s(12);
-            client_width = pages_x + page_width + margin;
-            command_bar_top = margin + page_height + margin;
-            let rows = nav_rows(nav);
-            let selected = entry_row(&rows, nav.selected);
-            let created = builder.control(
-                hwnd,
-                WC_LISTBOXW,
-                "",
-                (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32
-                    | WS_VSCROLL.0
-                    | WS_TABSTOP.0,
-                WINDOW_EX_STYLE(0),
-                (margin, margin, rail, page_height),
-                ID_LIST,
-            );
-            if let Some(created) = created {
-                SendMessageW(
-                    created,
-                    LB_SETITEMHEIGHT,
-                    Some(WPARAM(0)),
-                    Some(LPARAM(s(NAV_ROW_HEIGHT) as isize)),
-                );
-                for row in &rows {
-                    let text = wide(row.label());
+            let mut x = margin;
+            if !nav.scopes.is_empty() {
+                let width = s(SCOPE_WIDTH);
+                scopes_list =
+                    rail_list(&builder, hwnd, (x, margin, width, panes_height), ID_SCOPES);
+                if let Some(created) = scopes_list {
+                    fill_list(created, nav.scopes.iter().map(|scope| scope.label.as_str()));
                     SendMessageW(
                         created,
-                        LB_ADDSTRING,
+                        LB_SETCURSEL,
+                        Some(WPARAM(nav.selected_scope)),
                         None,
-                        Some(LPARAM(text.as_ptr() as isize)),
                     );
                 }
+                x += width + s(6);
+                dividers.push((x - s(3), margin, margin + panes_height));
+            }
+            let rows = nav_rows(nav);
+            list = rail_list(&builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
+            if let Some(created) = list {
+                fill_list(created, rows.iter().map(NavRow::label));
+                let selected = entry_row(&rows, nav.selected);
                 SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
             }
-            list = created;
+            x += rail + s(6);
+            dividers.push((x - s(3), margin, margin + panes_height));
+            let pages_x = x + s(6);
+            client_width = pages_x + page_width + margin;
+            command_bar_top = margin + panes_height + margin;
+
+            // The header lines up with the fields, which sit s(16) into a page.
+            let switch_width = s(HEADER_SWITCH_WIDTH);
+            let title_x = pages_x + s(16);
+            let header = nav.header.as_ref();
+            header_title = builder.label(
+                hwnd,
+                header.map_or("", |header| header.title.as_str()),
+                (
+                    title_x,
+                    margin,
+                    page_width - s(32) - switch_width,
+                    header_height,
+                ),
+            );
+            if let Some(title) = header_title {
+                SendMessageW(
+                    title,
+                    WM_SETFONT,
+                    Some(WPARAM(builder.heading_font.0 as usize)),
+                    Some(LPARAM(1)),
+                );
+            }
+            header_switch = builder.control(
+                hwnd,
+                WC_BUTTONW,
+                "",
+                BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+                WINDOW_EX_STYLE(0),
+                (
+                    pages_x + page_width - s(16) - switch_width,
+                    margin,
+                    switch_width,
+                    header_height,
+                ),
+                ID_HEADER_SWITCH,
+            );
+            apply_header(header_title, header_switch, header);
+
             for page in &pages {
                 let _ = SetWindowPos(
                     *page,
                     Some(HWND_TOP),
                     pages_x,
-                    margin,
+                    margin + header_height,
                     page_width,
                     page_height,
                     SWP_NOACTIVATE,
                 );
             }
             show_page(&pages, nav.page_of(nav.selected).unwrap_or(0));
-            with_state(hwnd, |state| state.nav_rows = rows);
+            let scope_rows = nav.scopes.clone();
+            with_state(hwnd, |state| {
+                state.nav_rows = rows;
+                state.scope_rows = scope_rows;
+            });
         } else {
             // Size the tab so its display area is exactly the page area; the
             // header height depends on the font, so ask the control.
@@ -1153,6 +1225,10 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.pages = pages;
             state.tab = tab;
             state.list = list;
+            state.scopes_list = scopes_list;
+            state.header_title = header_title;
+            state.header_switch = header_switch;
+            state.dividers = dividers;
             state.apply = apply;
             state.font = font;
             state.heading_font = heading_font;
@@ -1160,6 +1236,95 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.command_bar_top = command_bar_top;
             state.updating = false;
         });
+    }
+}
+
+/// Creates an owner-drawn list box for a rail pane (scopes or categories).
+unsafe fn rail_list(
+    builder: &Builder,
+    parent: HWND,
+    bounds: (i32, i32, i32, i32),
+    id: usize,
+) -> Option<HWND> {
+    // SAFETY: creating and configuring a child list box of our own window.
+    unsafe {
+        let list = builder.control(
+            parent,
+            WC_LISTBOXW,
+            "",
+            (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32 | WS_VSCROLL.0 | WS_TABSTOP.0,
+            WINDOW_EX_STYLE(0),
+            bounds,
+            id,
+        )?;
+        SendMessageW(
+            list,
+            LB_SETITEMHEIGHT,
+            Some(WPARAM(0)),
+            Some(LPARAM(builder.s(NAV_ROW_HEIGHT) as isize)),
+        );
+        Some(list)
+    }
+}
+
+/// Replaces a rail list's rows with `labels`.
+unsafe fn fill_list<'a>(list: HWND, labels: impl Iterator<Item = &'a str>) {
+    // SAFETY: `list` is a live list box; each string outlives its message.
+    unsafe {
+        SendMessageW(list, LB_RESETCONTENT, None, None);
+        for label in labels {
+            let text = wide(label);
+            SendMessageW(
+                list,
+                LB_ADDSTRING,
+                None,
+                Some(LPARAM(text.as_ptr() as isize)),
+            );
+        }
+    }
+}
+
+/// Selects `row` in a rail list. Edits arrive on every slider tick; touching
+/// the list only when it changed keeps it from repainting each time.
+unsafe fn sync_selection(list: HWND, rebuilt: bool, row: usize) {
+    // SAFETY: `list` is a live list box of the settings window.
+    unsafe {
+        let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
+        if rebuilt || current != row as isize {
+            SendMessageW(list, LB_SETCURSEL, Some(WPARAM(row)), None);
+            let _ = InvalidateRect(Some(list), None, false);
+        }
+    }
+}
+
+/// Shows `header` in the header controls: the title, and the switch only
+/// when the header has one.
+unsafe fn apply_header(title: Option<HWND>, switch: Option<HWND>, header: Option<&SettingsHeader>) {
+    // SAFETY: the handles are live controls of the settings window. Neither
+    // SetWindowText on a static/checkbox nor BM_SETCHECK reports an edit.
+    unsafe {
+        if let Some(title) = title {
+            let text = header.map_or("", |header| header.title.as_str());
+            if window_text(title) != text {
+                let text = wide(text);
+                let _ = SetWindowTextW(title, PCWSTR(text.as_ptr()));
+            }
+        }
+        if let Some(control) = switch {
+            match header.and_then(|header| header.switch.as_ref()) {
+                Some(state) => {
+                    if window_text(control) != state.label {
+                        let text = wide(&state.label);
+                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
+                    }
+                    SendMessageW(control, BM_SETCHECK, Some(WPARAM(state.on as usize)), None);
+                    let _ = ShowWindow(control, SW_SHOW);
+                }
+                None => {
+                    let _ = ShowWindow(control, SW_HIDE);
+                }
+            }
+        }
     }
 }
 
@@ -1229,17 +1394,43 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             // Re-showing the same page on every edit would hide and show the
             // pages for nothing.
             let page = page.filter(|page| rebuild || Some(*page) != old_page);
+            let new_scopes = form
+                .nav
+                .as_ref()
+                .map(|nav| nav.scopes.clone())
+                .unwrap_or_default();
+            let scopes = state.scopes_list.map(|list| {
+                let rebuild = state.scope_rows != new_scopes;
+                let selected = form.nav.as_ref().map_or(0, |nav| nav.selected_scope);
+                (list, new_scopes.clone(), rebuild, selected)
+            });
+            let new_header = form.nav.as_ref().and_then(|nav| nav.header.clone());
+            let old_header = state.form.nav.as_ref().and_then(|nav| nav.header.as_ref());
+            let header = (old_header != new_header.as_ref()).then_some((
+                state.header_title,
+                state.header_switch,
+                new_header,
+            ));
             state.nav_rows = new_rows.clone();
+            state.scope_rows = new_scopes;
             state.form = form.clone();
             state.updating = true;
             let rail = state
                 .list
                 .map(|list| (list, new_rows, rebuild, selected_row));
-            Some((updates, state.apply, rail, page, state.pages.clone()))
+            Some((
+                updates,
+                state.apply,
+                rail,
+                page,
+                state.pages.clone(),
+                scopes,
+                header,
+            ))
         })
         .flatten()
     };
-    let Some((updates, apply, rail, page, pages)) = plan else {
+    let Some((updates, apply, rail, page, pages, scopes, header)) = plan else {
         return false;
     };
 
@@ -1288,27 +1479,21 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
         }
         if let Some((list, rows, rebuild, selected_row)) = rail {
             if rebuild {
-                SendMessageW(list, LB_RESETCONTENT, None, None);
-                for row in &rows {
-                    let text = wide(row.label());
-                    SendMessageW(
-                        list,
-                        LB_ADDSTRING,
-                        None,
-                        Some(LPARAM(text.as_ptr() as isize)),
-                    );
-                }
+                fill_list(list, rows.iter().map(NavRow::label));
             }
-            // Edits arrive on every slider tick; touching the rail only when
-            // it changed keeps it from repainting each time.
-            let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
-            if rebuild || current != selected_row as isize {
-                SendMessageW(list, LB_SETCURSEL, Some(WPARAM(selected_row)), None);
-                let _ = InvalidateRect(Some(list), None, false);
-            }
+            sync_selection(list, rebuild, selected_row);
             if let Some(page) = page {
                 show_page(&pages, page);
             }
+        }
+        if let Some((list, scopes, rebuild, selected)) = scopes {
+            if rebuild {
+                fill_list(list, scopes.iter().map(|scope| scope.label.as_str()));
+            }
+            sync_selection(list, rebuild, selected);
+        }
+        if let Some((title, switch, header)) = header {
+            apply_header(title, switch, header.as_ref());
         }
         with_state(hwnd, |state| state.updating = false);
     }
@@ -1684,6 +1869,96 @@ unsafe fn on_nav_changed(window: HWND) {
     }
 }
 
+/// Handles a scopes-pane selection change. The app answers with a form for
+/// that scope, so this only reports it, as the last thing done.
+unsafe fn on_scope_changed(window: HWND) {
+    // SAFETY: the list is a live child of `window`; the borrow ends first.
+    unsafe {
+        let Some(Some(list)) = with_state(window, |state| state.scopes_list) else {
+            return;
+        };
+        let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
+        if current >= 0 {
+            settings_event(SettingsEvent::ScopeChanged {
+                scope: current as usize,
+            });
+        }
+    }
+}
+
+/// Reports the header switch's new state, unless the window set it itself.
+unsafe fn on_header_switch(window: HWND, control: HWND) {
+    // SAFETY: `control` is the live header checkbox of `window`.
+    unsafe {
+        if with_state(window, |state| state.updating) != Some(false) {
+            return;
+        }
+        let on = SendMessageW(control, BM_GETCHECK, None, None).0 == 1;
+        settings_event(SettingsEvent::HeaderSwitch { on });
+    }
+}
+
+/// Paints one row of the scopes pane like a rail entry: an accent bar when
+/// selected, indented rows moved right, and dimmed rows (scopes that only
+/// inherit) in disabled text unless selected.
+unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
+    // SAFETY: `item.hDC` is a live DC owned by the list box during
+    // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
+    unsafe {
+        let Some((colors, body, accent, font, dpi, row)) = with_state(window, |state| {
+            (
+                state.colors,
+                state.body_brush,
+                state.accent_brush,
+                state.font,
+                state.dpi,
+                state.scope_rows.get(item.itemID as usize).cloned(),
+            )
+        }) else {
+            return;
+        };
+        FillRect(item.hDC, &item.rcItem, body);
+        let Some(row) = row else {
+            return;
+        };
+        let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
+        let text = if selected {
+            colors.text
+        } else if row.dimmed {
+            colors.disabled_text
+        } else {
+            colors.secondary_text
+        };
+        if selected {
+            let bar = RECT {
+                left: item.rcItem.left,
+                right: item.rcItem.left + scaled(3, dpi),
+                ..item.rcItem
+            };
+            FillRect(item.hDC, &bar, accent);
+        }
+        SetBkMode(item.hDC, TRANSPARENT);
+        SetTextColor(item.hDC, colorref(text));
+        let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
+        let mut label: Vec<u16> = row.label.encode_utf16().collect();
+        let mut rect = item.rcItem;
+        rect.left += scaled(12, dpi)
+            + if row.indent {
+                scaled(SCOPE_INDENT, dpi)
+            } else {
+                0
+            };
+        rect.right -= scaled(12, dpi);
+        DrawTextW(
+            item.hDC,
+            &mut label,
+            &mut rect,
+            DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+        );
+        SelectObject(item.hDC, previous);
+    }
+}
+
 /// Paints one row of the navigation rail: group titles in secondary text,
 /// entries in normal text, an accent bar on the selected entry, and an accent
 /// dot on a marked one.
@@ -1752,8 +2027,13 @@ unsafe fn on_paint(window: HWND) {
     unsafe {
         let mut ps = PAINTSTRUCT::default();
         let dc = BeginPaint(window, &mut ps);
-        if let Some((top, brush)) = with_state(window, |state| {
-            (state.command_bar_top, state.command_bar_brush)
+        if let Some((top, brush, dividers, divider)) = with_state(window, |state| {
+            (
+                state.command_bar_top,
+                state.command_bar_brush,
+                state.dividers.clone(),
+                state.colors.divider,
+            )
         }) {
             let mut client = RECT::default();
             let _ = GetClientRect(window, &mut client);
@@ -1761,6 +2041,21 @@ unsafe fn on_paint(window: HWND) {
             // command bar.
             let bar = RECT { top, ..client };
             FillRect(dc, &bar, brush);
+            // Hairlines separate the rail panes from each other and from the
+            // page.
+            if !dividers.is_empty() {
+                let line_brush = CreateSolidBrush(colorref(divider));
+                for (x, top, bottom) in dividers {
+                    let line = RECT {
+                        left: x,
+                        top,
+                        right: x + 1,
+                        bottom,
+                    };
+                    FillRect(dc, &line, line_brush);
+                }
+                let _ = DeleteObject(HGDIOBJ(line_brush.0));
+            }
         }
         let _ = EndPaint(window, &ps);
     }
@@ -1925,6 +2220,8 @@ unsafe extern "system" fn wndproc(
                     ID_CANCEL => settings_event(SettingsEvent::Cancel),
                     ID_APPLY => settings_event(SettingsEvent::Apply),
                     ID_LIST if code == LBN_SELCHANGE => on_nav_changed(window),
+                    ID_SCOPES if code == LBN_SELCHANGE => on_scope_changed(window),
+                    ID_HEADER_SWITCH if code == BN_CLICKED => on_header_switch(window, control),
                     id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
                     _ => {}
                 }
@@ -1993,12 +2290,15 @@ unsafe extern "system" fn wndproc(
                 let item = lparam.0 as *const DRAWITEMSTRUCT;
                 // SAFETY: Windows passes a live DRAWITEMSTRUCT for an
                 // owner-draw control of this window.
-                if !item.is_null() && (*item).CtlID == ID_LIST as u32 {
-                    on_draw_item(window, &*item);
-                    LRESULT(1)
-                } else {
-                    DefWindowProcW(window, message, wparam, lparam)
+                if item.is_null() {
+                    return DefWindowProcW(window, message, wparam, lparam);
                 }
+                match (*item).CtlID as usize {
+                    ID_LIST => on_draw_item(window, &*item),
+                    ID_SCOPES => on_draw_scope(window, &*item),
+                    _ => return DefWindowProcW(window, message, wparam, lparam),
+                }
+                LRESULT(1)
             }
             WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
@@ -2109,6 +2409,7 @@ mod tests {
                 },
             ],
             selected: 1,
+            ..Default::default()
         }
     }
 
@@ -2122,6 +2423,17 @@ mod tests {
         );
         assert!(!rows[0].is_entry());
         assert!(rows[1].is_entry());
+    }
+
+    #[test]
+    fn untitled_groups_have_no_title_row() {
+        let mut nav = nav();
+        nav.groups[0].title.clear();
+        let rows = nav_rows(&nav);
+        let labels: Vec<&str> = rows.iter().map(NavRow::label).collect();
+        assert_eq!(labels, ["Appearance", "General", "Spaces", "Work"]);
+        assert_eq!(row_entry(&rows, 0), Some(0));
+        assert_eq!(entry_row(&rows, 2), 3);
     }
 
     #[test]
@@ -2145,6 +2457,7 @@ mod tests {
                 entries: vec![],
             }],
             selected: 0,
+            ..Default::default()
         });
         assert_eq!(rows.len(), 1);
         assert_eq!(row_entry(&rows, 0), None);
