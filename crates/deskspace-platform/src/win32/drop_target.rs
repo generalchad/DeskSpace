@@ -285,7 +285,7 @@ pub(crate) fn set_drop_description(data: &IDataObject, image: DROPIMAGETYPE) -> 
 
 /// Copies `bytes` into a movable global block and hands it to `data` under the
 /// registered clipboard format `name`. Returns whether the object accepted it.
-fn write_format(data: &IDataObject, name: &str, bytes: &[u8]) -> bool {
+pub(crate) fn write_format(data: &IDataObject, name: &str, bytes: &[u8]) -> bool {
     let name = wide(name);
     // SAFETY: the name is NUL-terminated and outlives the call.
     let format = unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) };

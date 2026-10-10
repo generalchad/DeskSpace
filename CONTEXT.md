@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (187 tests) are green.
+  `cargo test --workspace` (194 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -90,13 +90,14 @@ context menus, and a settings window in the first usable release (v0.2).
   but have not been exercised interactively; confirm them before building on
   them. On screen were checked: inline rename, in-space rearranging, the
   Delete key, per-space appearance, sort, grid/label settings, cross-space
-  moves (2026-10-03). Pending on-screen checks: the move/copy cursor, the
-  `- Copy` fix, the drag image over Explorer and over spaces, the in-space
-  ghost, the space-click focus/deselect, the check-box display and both
-  check-box modes, rubber-band/Ctrl+A selection and the whole-selection drag,
-  the clipboard cut/copy/paste with its ghosting and external sync, F2 item
-  rename, the compressed/encrypted label colors, the info tips, jumbo icons,
-  and per-monitor DPI on a mixed-DPI setup. The
+  moves (2026-10-03), and a multi-item drag out (the group image and the
+  desktop placement; 2026-10-10). Pending on-screen checks: the move/copy
+  cursor, the `- Copy` fix, the drag image over Explorer and over spaces, the
+  in-space ghost, the space-click focus/deselect, the check-box display and
+  both check-box modes, rubber-band/Ctrl+A selection, the clipboard
+  cut/copy/paste with its ghosting and external sync, F2 item rename, the
+  compressed/encrypted label colors, the info tips, jumbo icons, and
+  per-monitor DPI on a mixed-DPI setup. The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
@@ -648,9 +649,14 @@ WindowSettings {
   paths are given to the shell with backslashes. `Ui::item_menu` (the app's entries above the shell's
   `IContextMenu`; the controller forwards owner-draw and submenu messages to
   it while it is open), and `Ui::drag_out` (`SHDoDragDrop`; one item uses the
-  shell's own data object, several use `win32/data_object.rs`, a minimal
-  `IDataObject` serving a multi-file `CF_HDROP` and passing the drag image
-  through; reports the effect and whether it ended over the desktop). The
+  shell item's own data object, several use `SHCreateDataObject` over the
+  items' ID lists relative to their deepest common folder, or full IDs under
+  the desktop when they share none, so a multi-item drag carries the shell ID
+  list the desktop needs to drop at the pointer and accepts the drag image,
+  plus "Shell Object Offsets" (`CFSTR_SHELLIDLISTOFFSET`, from the items'
+  current cells) so the group keeps its arrangement instead of stacking in a
+  column; async mode is forced off so the transfer ends inside the drag loop;
+  reports the effect and whether it ended over the desktop). The
   runtime uses `OleInitialize`, which drag and drop needs.
 - `dpi.rs` sets per-monitor v2 awareness; `window_dpi`/`scale_for` back the
   runtime's `space_dpi(id)` (the space window's own monitor scale), which the app
@@ -866,7 +872,10 @@ WindowSettings {
   whole active set drawn as Explorer draws it (icons and labels at their grid
   positions, scaled to `MAX_DRAG_IMAGE` when large); drags that start in
   Explorer keep Explorer's own image. Explorer's Shift=move is deliberately
-  inverted on DeskSpace targets, where Shift preserves the original.
+  inverted on DeskSpace targets, where Shift preserves the original. Dropping
+  a group onto the desktop can still shuffle its layout: Windows 11 repacks
+  desktop icons when "Align icons to grid" is on, and an Explorer drag does
+  the same, so this is native desktop behavior rather than DeskSpace's.
 - **Clipboard and delete match Explorer for files only.** Copy and cut
   advertise `CF_HDROP` and "Preferred DropEffect"; the richer shell formats for
   virtual items are not provided. Paste and delete use `IFileOperation` with an

@@ -2051,25 +2051,45 @@ impl App {
         // Dragging an item that is part of the active set drags the whole set,
         // as Explorer does; otherwise just that one item.
         let ids = self.drag_items(item);
-        let paths: Vec<PathBuf> = ids
-            .iter()
-            .filter_map(|id| self.config.desktop.item(*id))
-            .map(|item| item.path.clone())
-            .filter(|path| path.exists())
-            .collect();
+        let (paths, positions): (Vec<PathBuf>, Vec<Point>) = self
+            .item_cells(space, &ids)
+            .into_iter()
+            .filter(|(path, _)| path.exists())
+            .unzip();
         // A stale item (its file moved or deleted since it was drawn) is
         // dropped instead of repeatedly failing to start a drag.
         if paths.is_empty() {
             self.prune_missing(ui, space);
             return;
         }
-        let Some(result) = ui.drag_out(&paths, self.drag_image.as_ref()) else {
+        let Some(result) = ui.drag_out(&paths, &positions, self.drag_image.as_ref()) else {
             return;
         };
         tracing::debug!(?result, files = paths.len(), "item drag ended");
         // The drop target may have moved some files out; drop any item whose
         // file is gone, wherever it lives.
         self.prune_all_missing(ui);
+    }
+
+    /// The path of each of `ids` in `space` and the top-left of its cell in
+    /// desktop coordinates, where it is drawn now (off the visible area when
+    /// scrolled out), in `ids` order.
+    fn item_cells(&self, space: SpaceId, ids: &[ItemId]) -> Vec<(PathBuf, Point)> {
+        let Some(entry) = self.config.desktop.space(space) else {
+            return Vec::new();
+        };
+        let content = entry.content_rect();
+        let scroll = self.scroll_of(space);
+        ids.iter()
+            .filter_map(|id| entry.items.iter().find(|item| item.id == *id))
+            .map(|item| {
+                let cell = Point::new(
+                    content.x + item.position.x,
+                    content.y + item.position.y - scroll,
+                );
+                (item.path.clone(), cell)
+            })
+            .collect()
     }
 
     /// The items an item operation acts on: the independent tick set when
@@ -2881,6 +2901,39 @@ mod tests {
         assert_eq!(
             app.checkbox_at(id, Point::new(cell.x + 60, cell.y + 60)),
             None
+        );
+    }
+
+    #[test]
+    fn item_cells_place_each_dragged_item_in_desktop_coordinates() {
+        use deskspace_core::Item;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app
+            .config
+            .desktop
+            .add_space("S", Rect::new(100, 100, 240, 200));
+        for (n, position) in [(1, Point::new(12, 12)), (2, Point::new(118, 126))] {
+            let mut item = Item::new(ItemId(n), format!("C:/missing/{n}.txt"));
+            item.position = position;
+            app.config.desktop.add_item(id, item);
+        }
+        let content = app.config.desktop.space(id).unwrap().content_rect();
+
+        // Drag order is kept, and an id not in the space is skipped.
+        let cells = app.item_cells(id, &[ItemId(2), ItemId(9), ItemId(1)]);
+        assert_eq!(
+            cells,
+            [
+                (
+                    PathBuf::from("C:/missing/2.txt"),
+                    Point::new(content.x + 118, content.y + 126)
+                ),
+                (
+                    PathBuf::from("C:/missing/1.txt"),
+                    Point::new(content.x + 12, content.y + 12)
+                ),
+            ]
         );
     }
 

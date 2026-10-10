@@ -381,10 +381,19 @@ impl Ui {
 
     /// Drags `paths` out like Explorer does and blocks until it is dropped,
     /// showing `image` under the pointer (the shell's default otherwise).
-    /// Drops on spaces arrive afterwards as `SpaceEvent::FilesDropped`.
-    pub fn drag_out(&mut self, paths: &[PathBuf], image: Option<&DragImage>) -> Option<DragResult> {
+    /// `positions` are the items' cells in desktop coordinates, in the same
+    /// order, so a group keeps its arrangement when dropped on the desktop;
+    /// pass none to let the target lay them out. Drops on spaces arrive
+    /// afterwards as `SpaceEvent::FilesDropped`.
+    pub fn drag_out(
+        &mut self,
+        paths: &[PathBuf],
+        positions: &[Point],
+        image: Option<&DragImage>,
+    ) -> Option<DragResult> {
         let owner = with_runtime(|runtime| runtime.controller);
-        match shell_items::drag_out(owner, paths, image) {
+        let screen: Vec<Point> = positions.iter().copied().map(desktop_to_screen).collect();
+        match shell_items::drag_out(owner, paths, &screen, image) {
             Ok(result) => Some(result),
             Err(error) => {
                 tracing::warn!(%error, "could not start drag");

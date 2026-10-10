@@ -15,11 +15,13 @@ use windows::Win32::System::Ole::{
     DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, IDropSource,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMINVOKECOMMANDINFO,
-    IContextMenu, IContextMenu2, IContextMenu3, IDragSourceHelper, IDragSourceHelper2, IShellItem,
-    SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHCreateItemFromParsingName, SHDRAGIMAGE,
-    SHDoDragDrop, SHELLEXECUTEINFOW, ShellExecuteExW,
+    IContextMenu, IContextMenu2, IContextMenu3, IDataObjectAsyncCapability, IDragSourceHelper,
+    IDragSourceHelper2, ILCreateFromPathW, ILFindChild, ILFree, IShellItem, SEE_MASK_INVOKEIDLIST,
+    SEE_MASK_NOASYNC, SHCreateDataObject, SHCreateItemFromParsingName, SHDRAGIMAGE, SHDoDragDrop,
+    SHELLEXECUTEINFOW, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, MF_SEPARATOR,
@@ -261,6 +263,7 @@ pub(crate) fn forward_menu_message(
 pub(crate) fn drag_out(
     owner: Option<HWND>,
     paths: &[PathBuf],
+    positions: &[Point],
     image: Option<&DragImage>,
 ) -> Result<DragResult, PlatformError> {
     if paths.is_empty() {
@@ -270,14 +273,18 @@ pub(crate) fn drag_out(
     }
     // SAFETY: binding a handler on a live shell item; SHDoDragDrop runs a
     // modal loop on this (OLE-initialised) thread and uses its default drop
-    // source. A single item uses the shell's own data object (richer formats);
-    // several use ours, which carries a multi-file `CF_HDROP` list.
+    // source. Both paths yield the shell's own data object.
     let effect = unsafe {
         let data: IDataObject = if paths.len() == 1 {
             shell_item(&paths[0])?.BindToHandler(None, &BHID_DataObject)?
         } else {
-            super::data_object::for_files(paths.to_vec())
+            shell_data_object(paths)?
         };
+        // The app prunes moved items as soon as the drag returns, so the drop
+        // target must finish the transfer inside the drag loop.
+        if let Ok(capability) = data.cast::<IDataObjectAsyncCapability>() {
+            let _ = capability.SetAsyncMode(false);
+        }
         if !super::drop_target::set_drop_effect(
             &data,
             super::drop_target::PREFERRED_DROP_EFFECT,
@@ -286,6 +293,15 @@ pub(crate) fn drag_out(
             tracing::debug!(
                 "could not set the preferred drop effect; the target's default applies"
             );
+        }
+        // Without the group's layout the desktop drops the first item at the
+        // pointer and stacks the rest in the next free cells, one column.
+        // A single item already lands at the pointer, so it is left alone.
+        if paths.len() > 1 && positions.len() == paths.len() {
+            let offsets = shell_object_offsets(positions);
+            if !super::drop_target::write_format(&data, SHELL_OBJECT_OFFSETS, &offsets) {
+                tracing::debug!("could not set the item offsets; the target lays the items out");
+            }
         }
         if let Some(image) = image {
             attach_drag_image(&data, image);
@@ -301,6 +317,119 @@ pub(crate) fn drag_out(
     Ok(DragResult {
         effect: drag_effect(effect),
     })
+}
+
+/// The shell's data object for several items, as Explorer builds for a
+/// selection. It carries the shell ID list (`CFSTR_SHELLIDLIST`), which the
+/// desktop needs to place dropped icons at the pointer, and accepts the drag
+/// image helper's private formats. A hand-written `CF_HDROP`-only object
+/// lost both: multi-item drags showed no image and landed in the desktop's
+/// top-left cell.
+///
+/// The items are passed relative to their deepest common folder. When they
+/// share no folder (different drives) the desktop is the parent and the IDs
+/// are full; the ID list format allows relative IDs of any depth.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/ns-shlobj_core-cida
+/// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shcreatedataobject
+fn shell_data_object(paths: &[PathBuf]) -> Result<IDataObject, PlatformError> {
+    let items = paths
+        .iter()
+        .map(|path| Pidl::from_path(path).ok_or(PlatformError::InvalidFormat("item path")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let parent = common_parent(paths).and_then(|folder| Pidl::from_path(&folder));
+    // SAFETY: every ID list is a live allocation owned by `items` / `parent`,
+    // which outlive the calls; ILFindChild returns a pointer into `item` (or
+    // null) and SHCreateDataObject copies the IDs it is given.
+    unsafe {
+        let children: Option<Vec<*const ITEMIDLIST>> = parent.as_ref().and_then(|parent| {
+            items
+                .iter()
+                .map(|item| {
+                    let child = ILFindChild(parent.as_ptr(), item.as_ptr());
+                    (!child.is_null()).then_some(child.cast_const())
+                })
+                .collect()
+        });
+        let object = match (&parent, children) {
+            (Some(parent), Some(children)) => {
+                SHCreateDataObject(Some(parent.as_ptr()), Some(&children), None::<&IDataObject>)
+            }
+            _ => {
+                let full: Vec<*const ITEMIDLIST> = items.iter().map(Pidl::as_ptr).collect();
+                SHCreateDataObject(None, Some(&full), None::<&IDataObject>)
+            }
+        };
+        Ok(object?)
+    }
+}
+
+/// `CFSTR_SHELLIDLISTOFFSET`: where a dropped group's items go relative to
+/// each other.
+/// https://learn.microsoft.com/en-us/windows/win32/shell/clipboard#cfstr_shellidlistoffset
+const SHELL_OBJECT_OFFSETS: &str = "Shell Object Offsets";
+
+/// The `CFSTR_SHELLIDLISTOFFSET` payload for items at screen `positions`: an
+/// array of `POINT`s, first the group's top-left corner in screen pixels, then
+/// each item relative to it, in item order.
+fn shell_object_offsets(positions: &[Point]) -> Vec<u8> {
+    let origin = Point::new(
+        positions.iter().map(|point| point.x).min().unwrap_or(0),
+        positions.iter().map(|point| point.y).min().unwrap_or(0),
+    );
+    std::iter::once(origin)
+        .chain(
+            positions
+                .iter()
+                .map(|point| Point::new(point.x - origin.x, point.y - origin.y)),
+        )
+        .flat_map(|point| {
+            let mut bytes = [0u8; 8];
+            bytes[..4].copy_from_slice(&point.x.to_le_bytes());
+            bytes[4..].copy_from_slice(&point.y.to_le_bytes());
+            bytes
+        })
+        .collect()
+}
+
+/// The deepest folder containing every path, or `None` when they share no
+/// rooted folder (for example, files on different drives).
+fn common_parent(paths: &[PathBuf]) -> Option<PathBuf> {
+    let mut parents = paths.iter().map(|path| path.parent());
+    let first: Vec<_> = parents.next()??.components().collect();
+    let mut shared = first.len();
+    for parent in parents {
+        shared = first
+            .iter()
+            .zip(parent?.components())
+            .take(shared)
+            .take_while(|(a, b)| **a == *b)
+            .count();
+    }
+    let folder: PathBuf = first[..shared].iter().collect();
+    folder.has_root().then_some(folder)
+}
+
+/// An absolute shell ID list, freed on drop.
+struct Pidl(*mut ITEMIDLIST);
+
+impl Pidl {
+    fn from_path(path: &Path) -> Option<Self> {
+        let wide = shell_path(path);
+        // SAFETY: `wide` is NUL-terminated and outlives the call.
+        let pidl = unsafe { ILCreateFromPathW(PCWSTR(wide.as_ptr())) };
+        (!pidl.is_null()).then_some(Self(pidl))
+    }
+
+    fn as_ptr(&self) -> *const ITEMIDLIST {
+        self.0
+    }
+}
+
+impl Drop for Pidl {
+    fn drop(&mut self) {
+        // SAFETY: allocated by ILCreateFromPathW and freed exactly once here.
+        unsafe { ILFree(Some(self.0)) };
+    }
 }
 
 /// Hands `image` to the shell's drag-image manager, which stores it in `data`
@@ -380,6 +509,73 @@ fn drag_effect(effect: DROPEFFECT) -> DragEffect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn points(bytes: &[u8]) -> Vec<(i32, i32)> {
+        bytes
+            .chunks_exact(8)
+            .map(|pair| {
+                (
+                    i32::from_le_bytes(pair[..4].try_into().unwrap()),
+                    i32::from_le_bytes(pair[4..].try_into().unwrap()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn shell_object_offsets_lead_with_the_group_corner() {
+        let positions = [
+            Point::new(300, 120),
+            Point::new(396, 120),
+            Point::new(300, 224),
+        ];
+        assert_eq!(
+            points(&shell_object_offsets(&positions)),
+            [(300, 120), (0, 0), (96, 0), (0, 104)]
+        );
+    }
+
+    #[test]
+    fn shell_object_offsets_keep_item_order_and_handle_negative_screens() {
+        // A monitor left of the primary has negative coordinates, and the
+        // first item need not be the top-left one.
+        let positions = [Point::new(-100, 50), Point::new(-196, 154)];
+        assert_eq!(
+            points(&shell_object_offsets(&positions)),
+            [(-196, 50), (96, 0), (0, 104)]
+        );
+    }
+
+    #[test]
+    fn common_parent_is_the_shared_folder() {
+        let paths = [
+            PathBuf::from(r"C:\store\a.txt"),
+            PathBuf::from(r"C:\store\b.txt"),
+        ];
+        assert_eq!(common_parent(&paths), Some(PathBuf::from(r"C:\store")));
+    }
+
+    #[test]
+    fn common_parent_walks_up_to_the_deepest_shared_ancestor() {
+        let paths = [
+            PathBuf::from(r"C:\Users\me\Desktop\a.txt"),
+            PathBuf::from(r"C:\Users\me\store\b.txt"),
+            PathBuf::from(r"C:\Users\me\c.txt"),
+        ];
+        assert_eq!(common_parent(&paths), Some(PathBuf::from(r"C:\Users\me")));
+    }
+
+    #[test]
+    fn common_parent_can_be_a_drive_root() {
+        let paths = [PathBuf::from(r"C:\a\x.txt"), PathBuf::from(r"C:\b\y.txt")];
+        assert_eq!(common_parent(&paths), Some(PathBuf::from(r"C:\")));
+    }
+
+    #[test]
+    fn different_drives_share_no_parent() {
+        let paths = [PathBuf::from(r"C:\a\x.txt"), PathBuf::from(r"D:\a\y.txt")];
+        assert_eq!(common_parent(&paths), None);
+    }
 
     #[test]
     fn shell_paths_use_backslashes() {
