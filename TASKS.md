@@ -662,6 +662,39 @@ Small requests, one commit each.
   focused item's Properties, or DeskSpace Settings when no item is selected.
   **[needs human]** check: with an item selected, Alt+Enter shows its
   Properties; with a space current and nothing selected, it opens Settings.
+- [x] **F3. Enter opens the focused item.** Added the `SELECTION_KEY` message
+  and `SelectionKey` event (with a `keyboard::set_menu_open` guard so an open
+  popup keeps its own keys). **[needs human]** check: select an item and press
+  Enter; it opens.
+- [x] **F4. Escape clears the selection.** **[needs human]** check: with items
+  selected, Escape clears them; Escape still closes an open menu.
+- [x] **F5. Shift+Delete deletes permanently.** `Ui::delete_files` and
+  `file_op::delete` take a `permanent` flag that drops `FOF_ALLOWUNDO`.
+  **[needs human]** check: Shift+Delete does not go to the Recycle Bin.
+- [x] **F6. F5 refreshes the spaces.** Re-reads Explorer's display options and
+  re-flows every space.
+- [x] **F7. The Menu key or Shift+F10 opens the context menu.** Anchored at the
+  focused item's cell center, or the space center with no item selected.
+
+## G. More Explorer-standard controls
+
+Remaining gaps from the controls review. Do them in order.
+
+- [ ] **G1. Type-to-select, and Home/End/Page scroll.** Typing a letter moves
+  the selection to the next item whose name starts with it (a short timeout
+  buffer, as Explorer uses); Home/End/PageUp/PageDown scroll the space. Extend
+  the selection-key watch and add a pure prefix-match helper with tests.
+- [ ] **G2. Ctrl+wheel changes the icon size.** Add `ctrl` to
+  `SpaceEvent::Wheel` and adjust the icon size the way Explorer's desktop does,
+  clamped to `ICON_SIZE_RANGE`.
+- [ ] **G3. Arrow-key selection navigation.** Grid-aware Left/Right/Up/Down with
+  Shift to extend and Ctrl to move focus, scroll the focused item into view, and
+  draw a focus rectangle. Needs its own movement model; the largest item here.
+- [ ] **G4. Slow double-click renames.** Clicking an already-selected item's
+  label again starts an inline rename, as Explorer does.
+- [ ] **G5. Right-button drag.** A right drag shows the copy/move/create-shortcut
+  menu on drop.
+- [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP D6.
 
 ## Found while working
 

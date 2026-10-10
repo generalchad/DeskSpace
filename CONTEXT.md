@@ -68,10 +68,12 @@ context menus, and a settings window in the first usable release (v0.2).
   defaults to a move and spaces are OLE drop targets, so the shell shows the
   move/copy cursor. Selected items can be cut, copied, and pasted with
   Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
-  pasted. Delete sends the selection to the Recycle Bin, F2 renames the
-  focused item, or the current space's title when no item is selected, inline,
-  and Alt+Enter opens the focused item's Properties, or DeskSpace Settings when
-  no item is selected.
+  pasted. Delete sends the selection to the Recycle Bin (Shift+Delete removes
+  it for good), F2 renames the focused item, or the current space's title when no
+  item is selected, inline, Alt+Enter opens the focused item's Properties, or
+  DeskSpace Settings when no item is selected, Enter opens the focused item, Esc
+  clears the selection, F5 refreshes the spaces, and the Menu key or Shift+F10
+  opens the context menu.
   Clicking a space also focuses the desktop and clears its
   icon selection, like a desktop click.
 - Spaces mirror the desktop's look: item check boxes (both Explorer modes),
@@ -508,11 +510,15 @@ WindowSettings {
   rename is committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
-  same hook watches Delete, F2, Alt+Enter, and Ctrl+C/X while an item is
-  selected and F2, Alt+Enter, Ctrl+A, and Ctrl+V while a space is current
+  same hook watches Delete, F2, Alt+Enter, Enter, Shift+Delete, Esc, F5, the
+  Menu key, and Ctrl+C/X while an item is selected and F2, Alt+Enter, F5, the
+  Menu key, Ctrl+A, and Ctrl+V while a space is current
   (`Ui::watch_selection_keys`) and passes every other key through. Alt+Enter
   shows the focused item's Properties (`Ui::show_properties`) or DeskSpace
-  Settings. The watch
+  Settings; Enter opens the focused item, Esc clears the selection, F5 refreshes
+  the spaces, and the Menu key or Shift+F10 opens the item's or space's context
+  menu. While a popup menu is open it owns every key, so the hook passes them
+  through (`keyboard::set_menu_open`). The watch
   only consumes those keys while the desktop shell has the foreground
   (`desktop_is_foreground`), because the selection is kept when another app is
   focused, as Explorer keeps a desktop selection; otherwise DeskSpace would
@@ -719,9 +725,9 @@ WindowSettings {
   space to move it there, or onto the desktop to take it out of the space. When
   the grabbed item is part of the selection, the whole selection drags.
 - Press Delete with items selected to send their files to the Recycle Bin
-  (undoable, no prompt), as Explorer does. The item menu's "Remove from space"
-  / "Move back to desktop" is separate and returns a stored file to the
-  desktop.
+  (undoable, no prompt), as Explorer does; Shift+Delete removes them for good.
+  The item menu's "Remove from space" / "Move back to desktop" is separate and
+  returns a stored file to the desktop.
 - Cut, copy, and paste items with Ctrl+X, Ctrl+C, and Ctrl+V. Cut items are
   ghosted until pasted; paste goes into the current space, moving (cut) or
   duplicating (copy) the files through the shell's file operation.
@@ -729,7 +735,9 @@ WindowSettings {
   Escape cancels, clicking away commits); the extension is kept when the label
   hides it. With no item selected, F2 renames the current space's title.
   Alt+Enter opens the selected item's Properties, or DeskSpace Settings when no
-  item is selected.
+  item is selected. With an item selected, Enter opens it, and the Menu key or
+  Shift+F10 opens its context menu (the space's menu with no item selected).
+  Escape clears the selection and F5 refreshes the spaces.
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
   spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
   right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once
