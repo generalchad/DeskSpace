@@ -7,14 +7,15 @@ use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{
-    Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
+    Color, Command, Desktop, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space, SpaceId,
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
     Event, EventHandler, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice, ItemMetrics, MenuEntry,
     MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent,
     TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
-    item_check_box_hit, notify_moved, parse_hotkey, space_dpi, system_uses_dark_mode, work_area_at,
+    item_check_box_hit, notify_moved, parse_hotkey, space_dpi, system_accent_color,
+    system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -216,6 +217,9 @@ pub struct App {
     storage: ItemStore,
     icons: IconCache,
     system_dark: bool,
+    /// Windows' accent color, refreshed on `SystemThemeChanged`; `None` when it
+    /// cannot be read.
+    system_accent: Option<Color>,
     /// Explorer's current display options, refreshed on change.
     shell_display: ShellDisplay,
     selected_space: Option<SpaceId>,
@@ -267,6 +271,7 @@ impl App {
             store,
             icons: IconCache::new(),
             system_dark: system_uses_dark_mode(),
+            system_accent: system_accent_color(),
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
             selected_space: None,
@@ -420,6 +425,17 @@ impl App {
             self.shell_display.check_boxes
         } else {
             CheckBoxMode::Hidden
+        }
+    }
+
+    /// The concrete colors for a space's scene: the theme's palette, with the
+    /// selection highlight and border replaced by Windows' accent when the
+    /// setting is on and an accent is known.
+    fn palette(&self) -> Palette {
+        let palette = self.config.theme.palette(self.system_dark);
+        match (self.config.theme.use_accent, self.system_accent) {
+            (true, Some(accent)) => palette.with_accent(accent),
+            _ => palette,
         }
     }
 
@@ -588,7 +604,7 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let palette = self.config.theme.palette(self.system_dark);
+        let palette = self.palette();
         let mut scene = space_scene(
             space,
             &self.config.theme,
@@ -1030,7 +1046,7 @@ impl App {
     }
 
     fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
-        let palette = self.config.theme.palette(self.system_dark);
+        let palette = self.palette();
         let Some(current) = self.config.desktop.space(id).map(|space| match which {
             SpaceColor::Tint => space.tint.unwrap_or(palette.tint).with_alpha(255),
             SpaceColor::Text => space.text.unwrap_or(palette.title_text),
@@ -1468,8 +1484,8 @@ impl App {
         let view = self.view_for(space);
         let layout = self.layout_for(space);
         let metrics = self.metrics_for(space);
+        let palette = self.palette();
         self.drag_image = self.config.desktop.space(space).and_then(|entry| {
-            let palette = self.config.theme.palette(self.system_dark);
             let scene = drag_scene(
                 entry,
                 &ids,
@@ -2532,6 +2548,7 @@ impl EventHandler for App {
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
+                self.system_accent = system_accent_color();
                 ui.set_ui_dark(self.system_dark);
                 // The desktop view can change its icon size with the theme;
                 // refresh its display options, then restyle for dark mode.

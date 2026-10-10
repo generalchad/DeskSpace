@@ -244,7 +244,7 @@ is large.
     crisp, hit-testing correct.
 
 - [ ] **C2. Windows accent color (F-29).** Follow "Recipe: a new global
-  setting".
+  setting". (awaiting check)
   - Platform: `pub fn system_accent_color() -> Option<Color>` in
     `win32/system.rs`, reading `HKCU\Software\Microsoft\Windows\DWM` value
     `AccentColor` (a DWORD laid out `0xAABBGGRR`). Return `None` on any
@@ -863,6 +863,12 @@ After H4: update `CONTEXT.md` (section 6, Native UI: the rail and
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
+- `deskspace-platform/src/win32/controller.rs` handles `WM_SETTINGCHANGE`
+  with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
+  refreshes the accent. Windows also broadcasts
+  `WM_DWMCOLORIZATIONCOLORCHANGED` when the accent changes; if
+  "ImmersiveColorSet" is not sent for every accent change, the palette is
+  stale until the next theme change. Watch for it during the F-29 check.
 - `deskspace-app/src/app.rs` `reset_space_appearance`: the four dispatches
   are combined with `&&`. Harmless today (all four succeed or the space is
   missing), but reads like a bug; B5's helper would make it clearer.

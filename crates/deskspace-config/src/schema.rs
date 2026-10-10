@@ -231,6 +231,14 @@ mod tests {
     }
 
     #[test]
+    fn use_accent_defaults_to_false_and_parses_when_set() {
+        let parsed: Config = toml::from_str("version = 2\n[theme]\n").unwrap();
+        assert!(!parsed.theme.use_accent);
+        let parsed: Config = toml::from_str("version = 2\n[theme]\nuse_accent = true\n").unwrap();
+        assert!(parsed.theme.use_accent);
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         config

@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (179 tests) are green.
+  `cargo test --workspace` (182 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -285,13 +285,19 @@ Theme {
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
     match_explorer: bool,     // default true; mirror Explorer's display
+    use_accent: bool,         // default false; accent for selection and border
 }
 ```
 
 `Theme::palette(system_dark) -> Palette` resolves concrete colors (tint with
 alpha, title fill, text, hover/selected fills, border) from the Windows 11
 dark (`#202020` / white) or light (`#F3F3F3` / `#1A1A1A`) base, or the custom
-colors. `Backdrop::Solid` forces an opaque tint; `Backdrop::Clear` has no
+colors. `Palette::with_accent(accent)` replaces only `selected_fill` and
+`border` with the accent at their current alphas; the app applies it in
+`App::palette` when `use_accent` is on and
+`deskspace_platform::system_accent_color()` (the DWM `AccentColor` registry
+value, `0xAABBGGRR`) is known.
+`Backdrop::Solid` forces an opaque tint; `Backdrop::Clear` has no
 blur and lets the tint reach 0 %. Enums serialize snake_case;
 `Backdrop::Blur` also accepts `"mica"` from early v2 files, and
 `corner_radius` also reads the old `corners = "round" | "small" | "square"`.
@@ -690,7 +696,8 @@ WindowSettings {
   global setting), or a custom tint or text color (with a reset); Sort by
   reorders items by name, type, size, or modified date.
 - Settings previews live across its Appearance, Labels, Layout, Colors, and
-  Advanced tabs: material, corners, tint, custom colors, label lines/size/shadow,
+  Advanced tabs: material, corners, tint, custom colors, the Windows accent for
+  the selection and border, label lines/size/shadow,
   icon size/spacing/edge padding (which re-flow every space; icon size scales
   the icon and the grid cell around it), and the shell overlay size (the shortcut
   arrow badge, as a percent of the icon; default 80 %, 100 % matches Explorer).

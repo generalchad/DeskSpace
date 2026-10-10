@@ -141,7 +141,7 @@ A native, lightweight, offline Windows desktop organizer that:
    icon layer, with a safe restore path. This is the remaining v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** F-29, F-30, and F-34 (`TASKS.md` C2-C4), the per-space
+4. **Finish M3:** F-30 and F-34 (`TASKS.md` C3-C4), the per-space
    settings rail (F-46, `TASKS.md` section H), and the New spaces and Hotkeys
    settings pages. Then cut v0.2.
 
@@ -290,12 +290,11 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. Windows accent color for the selection highlight and border (F-29).
-2. A theme override for the settings window and menus: follow Windows, always
+1. A theme override for the settings window and menus: follow Windows, always
    dark, or always light (F-30, through `Ui::set_ui_dark`).
-3. Start with Windows: a per-user `Run` key, toggled from General (F-34;
+2. Start with Windows: a per-user `Run` key, toggled from General (F-34;
    the installer also offers it in M8).
-4. A per-space settings surface (F-46, `TASKS.md` section H). The settings
+3. A per-space settings surface (F-46, `TASKS.md` section H). The settings
    window gets a navigation rail on the left in place of its top tabs:
    - a Settings group with the global pages;
    - a Spaces group listing every space that has an appearance override.
@@ -303,10 +302,10 @@ Remaining:
    Selecting a space shows its overrides in one shared page, previews edits
    live, and flashes that space on the desktop. Cancel reverts. Edits go
    through the `SetSpace*` commands.
-5. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
+4. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
    with more bindings (F-17, F-18). The page is not called "Spaces", so it
    does not clash with the rail group.
-6. Tray and menu entries that depend on later milestones:
+5. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
    - snapshots (M6);
@@ -545,7 +544,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
-| F-29 | Windows accent color | M3 | Open |
+| F-29 | Windows accent color | M3 | Done; check pending |
 | F-30 | Settings and menu theme override | M3 | Open; follows Windows today |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |

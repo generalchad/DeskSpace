@@ -1,3 +1,4 @@
+use deskspace_core::Color;
 use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT};
 use windows::Win32::Graphics::Gdi::{
@@ -59,6 +60,42 @@ pub fn system_uses_dark_mode() -> bool {
     status == ERROR_SUCCESS && value == 0
 }
 
+/// Windows' accent color, read from the DWM registry value. The value is a
+/// DWORD laid out `0xAABBGGRR`, and its alpha is often zero, so callers should
+/// treat only the RGB as meaningful (`Palette::with_accent` keeps its own
+/// alpha). Returns `None` when the value is missing or unreadable.
+pub fn system_accent_color() -> Option<Color> {
+    let mut value: u32 = 0;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: `value` and `size` are valid out-pointers sized for a DWORD.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\DWM"),
+            w!("AccentColor"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
+            Some(&mut size),
+        )
+    };
+    if status == ERROR_SUCCESS {
+        Some(color_from_abgr(value))
+    } else {
+        None
+    }
+}
+
+/// Splits a DWM accent DWORD (`0xAABBGGRR`) into a `Color`.
+fn color_from_abgr(value: u32) -> Color {
+    Color::rgba(
+        (value & 0xFF) as u8,
+        ((value >> 8) & 0xFF) as u8,
+        ((value >> 16) & 0xFF) as u8,
+        ((value >> 24) & 0xFF) as u8,
+    )
+}
+
 /// How far the mouse must move with a button down before it counts as a
 /// drag rather than a click (the user's SM_CXDRAG / SM_CYDRAG setting).
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics
@@ -99,5 +136,17 @@ mod tests {
     #[test]
     fn wide_strings_are_nul_terminated() {
         assert_eq!(wide("ab"), vec![b'a' as u16, b'b' as u16, 0]);
+    }
+
+    #[test]
+    fn accent_dword_is_abgr() {
+        assert_eq!(
+            color_from_abgr(0xFF_00_80_FF),
+            Color::rgba(0xFF, 0x80, 0x00, 0xFF)
+        );
+        assert_eq!(
+            color_from_abgr(0x00_11_22_33),
+            Color::rgba(0x33, 0x22, 0x11, 0x00)
+        );
     }
 }

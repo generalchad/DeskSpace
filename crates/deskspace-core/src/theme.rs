@@ -181,6 +181,8 @@ pub struct Theme {
     /// Mirror Explorer's display settings (item check boxes, filename
     /// extensions) instead of hiding them, so spaces match the desktop.
     pub match_explorer: bool,
+    /// Replace the selection highlight and border with Windows' accent color.
+    pub use_accent: bool,
 }
 
 impl Default for Theme {
@@ -201,6 +203,7 @@ impl Default for Theme {
             tint: DARK_TINT,
             text: DARK_TEXT,
             match_explorer: true,
+            use_accent: false,
         }
     }
 }
@@ -278,6 +281,16 @@ pub struct Palette {
     pub selected_fill: Color,
     pub border: Color,
     pub edit: EditColors,
+}
+
+impl Palette {
+    /// Replaces the selection highlight and border with `accent` at the alpha
+    /// each one already has, leaving every other color alone.
+    pub fn with_accent(mut self, accent: Color) -> Self {
+        self.selected_fill = accent.with_alpha(self.selected_fill.a);
+        self.border = accent.with_alpha(self.border.a);
+        self
+    }
 }
 
 impl Backdrop {
@@ -474,5 +487,19 @@ mod tests {
         assert_eq!(palette.tint.r, 10);
         assert_eq!(palette.title_text, Color::rgb(250, 240, 200));
         assert_eq!(palette.hover_fill.r, 255);
+    }
+
+    #[test]
+    fn accent_replaces_selection_and_border_keeping_alpha() {
+        let palette = Theme::default().palette(true);
+        let accent = Color::rgb(0x00, 0x78, 0xD4);
+        let accented = palette.with_accent(accent);
+        assert_eq!(
+            accented.selected_fill,
+            accent.with_alpha(palette.selected_fill.a)
+        );
+        assert_eq!(accented.border, accent.with_alpha(palette.border.a));
+        assert_eq!(accented.tint, palette.tint);
+        assert_eq!(accented.hover_fill, palette.hover_fill);
     }
 }

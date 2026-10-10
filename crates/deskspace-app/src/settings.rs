@@ -51,6 +51,7 @@ pub mod field {
     pub const ABOUT_SUMMARY: u32 = 31;
     pub const ABOUT_LICENSE: u32 = 32;
     pub const CONFIG_PATH: u32 = 33;
+    pub const USE_ACCENT: u32 = 47;
 }
 
 const MODES: [(ThemeMode, &str); 3] = [
@@ -278,6 +279,11 @@ pub fn build_form(
             Field::color(field::TINT, "Background tint", palette.tint.with_alpha(255))
                 .enabled(theme.custom_colors),
             Field::color(field::TEXT, "Text", palette.title_text).enabled(theme.custom_colors),
+            Field::toggle(
+                field::USE_ACCENT,
+                "Use Windows accent color for the selection and border",
+                theme.use_accent,
+            ),
             Field::button(field::RESET, "", "Restore default appearance"),
             Field::note(
                 field::COMPATIBILITY_NOTE,
@@ -492,6 +498,10 @@ pub fn apply_field(
         }
         (field::TEXT, FieldValue::Color(color)) => {
             config.theme.text = color.with_alpha(255);
+            Effect::Appearance
+        }
+        (field::USE_ACCENT, FieldValue::Toggle(on)) => {
+            config.theme.use_accent = on;
             Effect::Appearance
         }
         (field::HOTKEY, FieldValue::Text(text)) => {
