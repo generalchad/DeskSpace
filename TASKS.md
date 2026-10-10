@@ -207,7 +207,7 @@ Each is independent. None changes behavior.
     `crate::win32::system::wide(...)` calls with a `use` at the top of each
     file.
 
-- [ ] **B7. Simplify the keyboard hook's pass-through.**
+- [x] **B7. Simplify the keyboard hook's pass-through.**
   - `win32/keyboard.rs` `hook_proc` calls `CallNextHookEx` in seven places.
     Move the body into `fn handle(code, wparam, event) -> bool` (true =
     consumed) and have `hook_proc` call `CallNextHookEx` once when it returns

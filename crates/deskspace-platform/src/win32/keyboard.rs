@@ -185,18 +185,21 @@ fn is_system_key(vk: u32) -> bool {
 }
 
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code < 0 {
-        // SAFETY: every hook must pass the event on.
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
-    }
     let message = wparam.0 as u32;
-    if message != WM_KEYDOWN && message != WM_SYSKEYDOWN {
-        // SAFETY: not a key press; pass the event on unchanged.
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+    if code >= 0 && (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
+        // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
+        let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+        if handle(event) {
+            return LRESULT(1);
+        }
     }
-    // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
-    let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+    // SAFETY: every hook must pass the event on.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
 
+/// Handles one key press. Returns whether the event was consumed; when it
+/// returns `false`, the caller passes the event on unchanged.
+fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
     // Selection watch: capture Delete and the clipboard keys that act on a
     // selection or a current space, and pass every other key through untouched.
     // The selection is kept while another app is focused, as Explorer keeps a
@@ -204,13 +207,12 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // shell has the foreground; otherwise an app's own Ctrl+C/V is stolen.
     if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
         if !desktop_is_foreground() {
-            // SAFETY: the desktop shell is not foreground; pass the key on.
-            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+            return false;
         }
         if key_down(VK_CONTROL) {
             if is_key(event.vkCode, VK_A) {
                 post_message(SELECT_ALL_KEY, 0, 0);
-                return LRESULT(1);
+                return true;
             }
             let action = if WATCH_SELECTION.get() && is_key(event.vkCode, VK_C) {
                 Some(ACTION_COPY)
@@ -223,34 +225,31 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             };
             if let Some(action) = action {
                 post_message(CLIPBOARD_KEY, action, 0);
-                return LRESULT(1);
+                return true;
             }
-            // SAFETY: not one of the watched clipboard keys; pass it on.
-            return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+            return false;
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_F2) {
             post_message(RENAME_KEY, 0, 0);
-            return LRESULT(1);
+            return true;
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_DELETE) {
             post_message(DELETE_KEY, 0, 0);
-            return LRESULT(1);
+            return true;
         }
-        // SAFETY: not a watched selection key; pass it on unchanged.
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        return false;
     }
 
     // Alt and Windows combinations belong to the system (Alt+Tab, Win+D,
     // Start menu): cancel the rename and let them through.
     if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(event.vkCode) {
         post(KIND_CANCEL, 0);
-        // SAFETY: a system shortcut; cancel the rename and let it through.
-        return unsafe { CallNextHookEx(None, code, wparam, lparam) };
+        return false;
     }
     if key_down(VK_CONTROL) {
         if is_key(event.vkCode, VK_A) {
             post(KIND_SELECT_ALL, 0);
-            return LRESULT(1);
+            return true;
         }
         let shift = key_down(VK_SHIFT);
         let kind = if event.vkCode == VK_LEFT.0 as u32 {
@@ -275,20 +274,18 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         return match kind {
             Some(kind) => {
                 post(kind, 0);
-                LRESULT(1)
+                true
             }
-            // SAFETY: not a Ctrl+arrow edit key; pass it on.
-            None => unsafe { CallNextHookEx(None, code, wparam, lparam) },
+            None => false,
         };
     }
 
     match classify(event.vkCode, key_down(VK_SHIFT)) {
         Some((kind, ch)) => {
             post(kind, ch);
-            LRESULT(1)
+            true
         }
-        // SAFETY: not an editing key; pass it on unchanged.
-        None => unsafe { CallNextHookEx(None, code, wparam, lparam) },
+        None => false,
     }
 }
 
