@@ -75,6 +75,8 @@ struct Runtime {
     settings: Option<HWND>,
     /// Dark menus and settings window; set by the app (`Ui::set_ui_dark`).
     ui_dark: bool,
+    /// The menu theme last flushed, so an unchanged mode skips the flush.
+    menus_dark: Option<bool>,
     tray_tooltip: String,
     close_dispatched: bool,
     /// Created on the first in-space item drag and kept for reuse.
@@ -556,8 +558,15 @@ impl Ui {
     /// menus, and the settings window) between dark and light. The open
     /// settings window switches at once.
     pub fn set_ui_dark(&mut self, dark: bool) {
-        with_runtime(|runtime| runtime.ui_dark = dark);
-        dark_mode::set_menus_dark(dark);
+        let flush = with_runtime(|runtime| {
+            runtime.ui_dark = dark;
+            runtime.menus_dark.replace(dark) != Some(dark)
+        });
+        // Every appearance edit in the settings window re-asserts the mode;
+        // flushing the menu themes each time would be wasted work.
+        if flush == Some(true) {
+            dark_mode::set_menus_dark(dark);
+        }
         if let Some(settings) = settings_hwnd() {
             settings_window::set_dark(settings, dark);
         }
@@ -713,6 +722,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             spaces: HashMap::new(),
             settings: None,
             ui_dark: false,
+            menus_dark: None,
             tray_tooltip: options.tray_tooltip.clone(),
             close_dispatched: false,
             drag_ghost: None,
