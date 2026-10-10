@@ -15,7 +15,7 @@ use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use deskspace_core::geometry::Rect;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CreateRoundRectRgn, InvalidateRect, MapWindowPoints, SetWindowRgn, ValidateRect,
 };
@@ -27,14 +27,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetClientRect,
-    GetParent, GetWindowLongPtrW, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW,
-    IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, RegisterClassW,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor,
-    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
-    WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD,
+    GetParent, GetWindowLongPtrW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW,
+    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE,
+    RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SetCursor, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD,
     WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
     WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -75,6 +75,9 @@ struct SpaceState {
     hosted: bool,
     /// Development placement above other windows instead of at the bottom.
     on_top: bool,
+    /// The style last applied, so re-applying an unchanged one (every space
+    /// on every settings edit) skips the DWM calls and region rebuild.
+    style: SpaceStyle,
     frame: Frame,
     /// `None` while `WM_PAINT` has it checked out.
     painter: Option<Painter>,
@@ -89,6 +92,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         id: options.id,
         hosted,
         on_top: options.on_top,
+        style: options.style,
         frame: Frame::for_style(options.style, hosted),
         painter: Some(Painter::new()),
         scene: None,
@@ -168,6 +172,9 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
 }
 
 pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
+    if current_rect(hwnd) == Some(rect) {
+        return;
+    }
     // SAFETY: `hwnd` is a live space window. Messages sent synchronously by
     // SetWindowPos (WM_WINDOWPOSCHANGING, WM_SIZE) do not touch the runtime.
     unsafe {
@@ -183,7 +190,55 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
     }
 }
 
+/// The window's rect in the coordinates `set_rect` takes: the parent's client
+/// coordinates for a hosted child (Progman/WorkerW spans the desktop), screen
+/// coordinates otherwise.
+fn current_rect(hwnd: HWND) -> Option<Rect> {
+    let mut rect = RECT::default();
+    // SAFETY: `hwnd` is a live space window; neither call sends messages.
+    unsafe {
+        GetWindowRect(hwnd, &mut rect).ok()?;
+        if let Ok(parent) = GetParent(hwnd) {
+            let mut corners = [
+                POINT {
+                    x: rect.left,
+                    y: rect.top,
+                },
+                POINT {
+                    x: rect.right,
+                    y: rect.bottom,
+                },
+            ];
+            MapWindowPoints(None, Some(parent), &mut corners);
+            rect = RECT {
+                left: corners[0].x,
+                top: corners[0].y,
+                right: corners[1].x,
+                bottom: corners[1].y,
+            };
+        }
+    }
+    Some(Rect::new(
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    ))
+}
+
 pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let unchanged = unsafe {
+        with_state(hwnd, |state| {
+            state
+                .scene
+                .as_ref()
+                .is_some_and(|current| *current.scene() == scene)
+        })
+    };
+    if unchanged == Some(true) {
+        return;
+    }
     let prepared = PreparedScene::new(scene);
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
     unsafe {
@@ -231,13 +286,18 @@ fn apply_cursor(shape: CursorShape) {
 
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
-    let hosted = unsafe {
+    let Some(Some(hosted)) = (unsafe {
         with_state(hwnd, |state| {
+            if state.style == style {
+                return None;
+            }
+            state.style = style;
             state.frame = Frame::for_style(style, state.hosted);
-            state.hosted
+            Some(state.hosted)
         })
-    }
-    .unwrap_or(true);
+    }) else {
+        return;
+    };
     if !hosted {
         dwm::apply_style(hwnd, style);
     }
