@@ -807,6 +807,7 @@ Design rules (decided 2026-10-10; do not re-open without asking):
     dropped; the empty state disables the fields.
 
 - [ ] **H3. App: per-space edits, live preview, and Cancel.** After H2.
+  (awaiting check)
   - `settings.rs`: a pure `fn space_field_command(space: &Space, field: u32,
     value: FieldValue, palette: &Palette) -> Option<Command>` that maps:
     - opacity percent to `SetSpaceOpacity`, rounding to the nearest

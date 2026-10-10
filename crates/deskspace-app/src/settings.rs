@@ -9,7 +9,7 @@ use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, Color, GridSpec, LabelShadow, Palette, Space, SpaceId, Theme, ThemeMode,
+    Backdrop, Color, Command, GridSpec, LabelShadow, Palette, Space, SpaceId, Theme, ThemeMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsForm, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage,
@@ -99,6 +99,35 @@ pub const SPACE_ICON_SIZES: [(&str, Option<u8>); 5] = [
     ("Large", Some(150)),
     ("Extra large", Some(200)),
 ];
+
+/// The number of global pages in the Settings rail group; also the page index
+/// of the shared Space page.
+pub const GLOBAL_PAGE_COUNT: usize = 7;
+
+/// Whether `id` is a field on the shared Space page.
+pub fn is_space_field(id: u32) -> bool {
+    (field::SPACE_NOTE..=field::SPACE_RESET).contains(&id)
+}
+
+/// The spaces currently listed in the rail's Spaces group, in order: the
+/// session's listed spaces that still exist. Deleted spaces drop out.
+pub fn listed_spaces(config: &Config, session: &Session) -> Vec<SpaceId> {
+    session
+        .listed_spaces
+        .iter()
+        .copied()
+        .filter(|id| config.desktop.space(*id).is_some())
+        .collect()
+}
+
+/// The space shown on the shared Space page for this session, if its selected
+/// rail entry is one. `None` for a global page or an empty Spaces group.
+pub fn selected_space(config: &Config, session: &Session) -> Option<SpaceId> {
+    session
+        .nav_selected
+        .checked_sub(GLOBAL_PAGE_COUNT)
+        .and_then(|index| listed_spaces(config, session).get(index).copied())
+}
 
 fn corner_marks() -> Vec<SliderMark> {
     vec![
@@ -227,6 +256,51 @@ fn labels<T>(table: &[(T, &'static str)]) -> Vec<&'static str> {
 /// 255 is the theme's 100 %.
 fn opacity_percent(opacity: u8) -> i32 {
     ((opacity as u32 * 100 + 127) / 255) as i32
+}
+
+/// The stored opacity byte for an Opacity slider percent, where 100 % is 255.
+/// The inverse of [`opacity_percent`].
+fn opacity_byte(percent: i32) -> u8 {
+    ((percent.clamp(0, 100) as u32 * 255 + 50) / 100) as u8
+}
+
+/// Turns an edit on the shared Space page into the `Command` that applies it,
+/// or `None` when `field` is not one of its fields. Pure, so the rail's edits
+/// are testable without Win32.
+pub fn space_field_command(
+    space: &Space,
+    field: u32,
+    value: FieldValue,
+    palette: &Palette,
+) -> Option<Command> {
+    let id = space.id;
+    match (field, value) {
+        (field::SPACE_OPACITY, FieldValue::Slider(percent)) => Some(Command::SetSpaceOpacity {
+            id,
+            opacity: opacity_byte(percent),
+        }),
+        (field::SPACE_ICON_SIZE, FieldValue::Choice(index)) => Some(Command::SetSpaceIconSize {
+            id,
+            icon_size: SPACE_ICON_SIZES.get(index).and_then(|(_, value)| *value),
+        }),
+        (field::SPACE_TINT_TOGGLE, FieldValue::Toggle(on)) => Some(Command::SetSpaceTint {
+            id,
+            tint: on.then(|| palette.tint.with_alpha(255)),
+        }),
+        (field::SPACE_TINT, FieldValue::Color(color)) => Some(Command::SetSpaceTint {
+            id,
+            tint: Some(color),
+        }),
+        (field::SPACE_TEXT_TOGGLE, FieldValue::Toggle(on)) => Some(Command::SetSpaceText {
+            id,
+            text: on.then_some(palette.title_text),
+        }),
+        (field::SPACE_TEXT, FieldValue::Color(color)) => Some(Command::SetSpaceText {
+            id,
+            text: Some(color),
+        }),
+        _ => None,
+    }
 }
 
 /// The index of `icon_size` in [`SPACE_ICON_SIZES`], or 0 (`Default`).
@@ -493,16 +567,12 @@ pub fn build_form(
         about,
     ];
     let space_page_index = settings_pages.len();
+    debug_assert_eq!(space_page_index, GLOBAL_PAGE_COUNT);
 
     // Spaces deleted since the window opened drop out of the rail; the rest
     // keep their entries for the session (the sticky rule).
-    let listed: Vec<SpaceId> = session
-        .listed_spaces
-        .iter()
-        .copied()
-        .filter(|id| config.desktop.space(*id).is_some())
-        .collect();
-    let selected_space = session
+    let listed = listed_spaces(config, session);
+    let selected = session
         .nav_selected
         .checked_sub(space_page_index)
         .and_then(|index| listed.get(index))
@@ -534,7 +604,7 @@ pub fn build_form(
     };
 
     let mut pages = settings_pages;
-    pages.push(space_page(selected_space, &palette));
+    pages.push(space_page(selected, &palette));
     let entry_count = space_page_index + spaces_group.entries.len();
     let selected = session.nav_selected.min(entry_count.saturating_sub(1));
 
@@ -1201,6 +1271,157 @@ mod tests {
         assert_eq!(
             form.field(field::SPACE_NOTE).unwrap().label,
             "No spaces are customized yet. Right-click a space and choose Appearance."
+        );
+    }
+
+    #[test]
+    fn opacity_percent_round_trips_through_bytes() {
+        for percent in [20, 40, 60, 80, 100] {
+            assert_eq!(opacity_percent(opacity_byte(percent)), percent);
+        }
+        assert_eq!(opacity_byte(100), 255);
+        assert_eq!(opacity_byte(20), 51);
+    }
+
+    #[test]
+    fn space_page_ids_are_recognized() {
+        assert!(is_space_field(field::SPACE_OPACITY));
+        assert!(is_space_field(field::SPACE_RESET));
+        assert!(!is_space_field(field::ICON_SIZE));
+        assert!(!is_space_field(field::RESET));
+    }
+
+    #[test]
+    fn global_page_count_matches_the_settings_group() {
+        let (config, session) = setup();
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(
+            form.nav.as_ref().unwrap().groups[0].entries.len(),
+            GLOBAL_PAGE_COUNT
+        );
+    }
+
+    #[test]
+    fn selected_space_follows_the_rail_selection() {
+        let (config, id) = config_with_space("Work", 200);
+        let mut session = Session::new(&config);
+        assert_eq!(selected_space(&config, &session), None);
+        session.nav_selected = GLOBAL_PAGE_COUNT;
+        assert_eq!(selected_space(&config, &session), Some(id));
+        session.nav_selected = GLOBAL_PAGE_COUNT + 1;
+        assert_eq!(selected_space(&config, &session), None);
+    }
+
+    #[test]
+    fn space_field_command_maps_every_field() {
+        let mut config = Config::new();
+        let id = config.desktop.add_space("Work", Rect::new(0, 0, 200, 200));
+        let palette = Theme::default().palette(false);
+        let space = config.desktop.space(id).unwrap();
+
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_OPACITY,
+                FieldValue::Slider(100),
+                &palette
+            ),
+            Some(Command::SetSpaceOpacity { id, opacity: 255 })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_OPACITY,
+                FieldValue::Slider(20),
+                &palette
+            ),
+            Some(Command::SetSpaceOpacity { id, opacity: 51 })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_ICON_SIZE,
+                FieldValue::Choice(3),
+                &palette
+            ),
+            Some(Command::SetSpaceIconSize {
+                id,
+                icon_size: Some(150)
+            })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_ICON_SIZE,
+                FieldValue::Choice(0),
+                &palette
+            ),
+            Some(Command::SetSpaceIconSize {
+                id,
+                icon_size: None
+            })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_TINT_TOGGLE,
+                FieldValue::Toggle(true),
+                &palette
+            ),
+            Some(Command::SetSpaceTint {
+                id,
+                tint: Some(palette.tint.with_alpha(255))
+            })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_TINT_TOGGLE,
+                FieldValue::Toggle(false),
+                &palette
+            ),
+            Some(Command::SetSpaceTint { id, tint: None })
+        );
+        let tint = Color::rgb(1, 2, 3);
+        assert_eq!(
+            space_field_command(space, field::SPACE_TINT, FieldValue::Color(tint), &palette),
+            Some(Command::SetSpaceTint {
+                id,
+                tint: Some(tint)
+            })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_TEXT_TOGGLE,
+                FieldValue::Toggle(true),
+                &palette
+            ),
+            Some(Command::SetSpaceText {
+                id,
+                text: Some(palette.title_text)
+            })
+        );
+        assert_eq!(
+            space_field_command(
+                space,
+                field::SPACE_TEXT_TOGGLE,
+                FieldValue::Toggle(false),
+                &palette
+            ),
+            Some(Command::SetSpaceText { id, text: None })
+        );
+        let text = Color::rgb(4, 5, 6);
+        assert_eq!(
+            space_field_command(space, field::SPACE_TEXT, FieldValue::Color(text), &palette),
+            Some(Command::SetSpaceText {
+                id,
+                text: Some(text)
+            })
+        );
+        assert_eq!(
+            space_field_command(space, field::SPACE_NOTE, FieldValue::Slider(0), &palette),
+            None
         );
     }
 }

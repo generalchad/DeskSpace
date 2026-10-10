@@ -11,17 +11,17 @@ use deskspace_core::{
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
-    Event, EventHandler, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice, ItemMetrics, MenuEntry,
-    MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent,
-    TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
-    item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, space_dpi,
-    system_accent_color, system_uses_dark_mode, work_area_at,
+    Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice,
+    ItemMetrics, MenuEntry, MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent,
+    ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory, desktop_display,
+    drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
+    set_start_with_windows, space_dpi, system_accent_color, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
 use crate::scene::{ViewState, drag_scene, item_label, space_scene, space_style};
-use crate::settings::{self, Effect, Session};
+use crate::settings::{self, Effect, Session, SpaceAppearance};
 use crate::storage::ItemStore;
 
 const TOGGLE_HOTKEY: i32 = 0;
@@ -1074,13 +1074,16 @@ impl App {
     // ---- per-space appearance ------------------------------------------
 
     fn set_space_opacity(&mut self, ui: &mut Ui, id: SpaceId, opacity: u8, at: Point) {
-        self.apply_to_space(ui, id, Command::SetSpaceOpacity { id, opacity }, at);
+        if self.apply_to_space(ui, id, Command::SetSpaceOpacity { id, opacity }, at) {
+            self.note_space_appearance(ui, id);
+        }
     }
 
     fn set_space_icon_size(&mut self, ui: &mut Ui, id: SpaceId, icon_size: Option<u8>, at: Point) {
         if self.dispatch(Command::SetSpaceIconSize { id, icon_size }, at) {
             self.reflow_space(ui, id);
             self.schedule_save(ui);
+            self.note_space_appearance(ui, id);
         }
     }
 
@@ -1103,11 +1106,15 @@ impl App {
                     text: Some(color),
                 },
             };
-            self.apply_to_space(ui, id, command, at);
+            if self.apply_to_space(ui, id, command, at) {
+                self.note_space_appearance(ui, id);
+            }
         }
     }
 
-    fn reset_space_appearance(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+    /// Dispatches the four commands that return a space to the theme's
+    /// appearance. Returns whether all applied.
+    fn clear_space_appearance(&mut self, id: SpaceId, at: Point) -> bool {
         let opacity = self.dispatch(Command::SetSpaceOpacity { id, opacity: 255 }, at);
         let tint = self.dispatch(Command::SetSpaceTint { id, tint: None }, at);
         let text = self.dispatch(Command::SetSpaceText { id, text: None }, at);
@@ -1118,10 +1125,40 @@ impl App {
             },
             at,
         );
-        if opacity && tint && text && icon_size {
+        opacity && tint && text && icon_size
+    }
+
+    fn reset_space_appearance(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        if self.clear_space_appearance(id, at) {
             self.reflow_space(ui, id);
             self.schedule_save(ui);
+            self.note_space_appearance(ui, id);
         }
+    }
+
+    /// A context-menu appearance edit commits at once; when the settings window
+    /// is open, keep its session in step, so the rail lists the space and
+    /// Cancel does not undo the menu change.
+    fn note_space_appearance(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some((appearance, has_overrides)) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| (SpaceAppearance::of(space), space.has_appearance_overrides()))
+        else {
+            return;
+        };
+        let Some(session) = self.settings.as_mut() else {
+            return;
+        };
+        match session.saved_spaces.iter_mut().find(|saved| saved.id == id) {
+            Some(entry) => *entry = appearance,
+            None => session.saved_spaces.push(appearance),
+        }
+        if has_overrides && !session.listed_spaces.contains(&id) {
+            session.listed_spaces.push(id);
+        }
+        self.refresh_settings(ui);
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
@@ -2449,37 +2486,51 @@ impl App {
     }
 
     fn on_settings_event(&mut self, ui: &mut Ui, event: SettingsEvent) {
-        let Some(session) = self.settings.as_mut() else {
+        if self.settings.is_none() {
             return;
-        };
+        }
         match event {
             SettingsEvent::Changed { field, value } => {
-                let effect = settings::apply_field(
-                    &mut self.config,
-                    session,
-                    field,
-                    value,
-                    self.system_dark,
-                );
-                if effect == Effect::Appearance {
-                    ui.set_ui_dark(self.ui_dark());
-                    self.restyle_all(ui);
-                } else if effect == Effect::Layout {
-                    self.relayout_all(ui);
+                if settings::is_space_field(field) {
+                    self.on_space_field(ui, field, value);
+                } else {
+                    let effect = settings::apply_field(
+                        &mut self.config,
+                        self.settings.as_mut().expect("settings are open"),
+                        field,
+                        value,
+                        self.system_dark,
+                    );
+                    if effect == Effect::Appearance {
+                        ui.set_ui_dark(self.ui_dark());
+                        self.restyle_all(ui);
+                    } else if effect == Effect::Layout {
+                        self.relayout_all(ui);
+                    }
+                    self.refresh_settings(ui);
                 }
-                self.refresh_settings(ui);
             }
             SettingsEvent::Button {
                 field: settings::field::RESET,
             } => {
-                settings::reset_appearance(&mut self.config, session);
+                settings::reset_appearance(
+                    &mut self.config,
+                    self.settings.as_mut().expect("settings are open"),
+                );
                 ui.set_ui_dark(self.ui_dark());
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
+            SettingsEvent::Button {
+                field: settings::field::SPACE_RESET,
+            } => self.reset_space_from_settings(ui),
             SettingsEvent::Button { .. } => {}
-            // The navigation rail arrives with the per-space settings surface.
-            SettingsEvent::NavChanged { .. } => {}
+            SettingsEvent::NavChanged { entry } => {
+                if let Some(session) = self.settings.as_mut() {
+                    session.nav_selected = entry;
+                }
+                self.refresh_settings(ui);
+            }
             SettingsEvent::Apply => {
                 self.apply_settings(ui);
                 self.refresh_settings(ui);
@@ -2497,6 +2548,63 @@ impl App {
                 ui.close_settings();
             }
         }
+    }
+
+    /// The space shown on the settings window's shared Space page, if any.
+    fn selected_settings_space(&self) -> Option<SpaceId> {
+        let session = self.settings.as_ref()?;
+        settings::selected_space(&self.config, session)
+    }
+
+    /// Lists a space whose override changed through the rail and marks the
+    /// session dirty, so Apply saves it and the entry stays for the session.
+    fn mark_space_session_dirty(&mut self, id: SpaceId) {
+        if let Some(session) = self.settings.as_mut() {
+            if !session.listed_spaces.contains(&id) {
+                session.listed_spaces.push(id);
+            }
+            session.dirty = true;
+        }
+    }
+
+    /// An edit on the Space page: build the command from the selected space's
+    /// field, dispatch it for live preview, and refresh the rail.
+    fn on_space_field(&mut self, ui: &mut Ui, field: u32, value: FieldValue) {
+        let Some(id) = self.selected_settings_space() else {
+            return;
+        };
+        let palette = self.palette();
+        let command = self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| settings::space_field_command(space, field, value, &palette));
+        let Some(command) = command else {
+            return;
+        };
+        let at = self.space_center(id);
+        if self.dispatch(command, at) {
+            if field == settings::field::SPACE_ICON_SIZE {
+                self.reflow_space(ui, id);
+            } else {
+                self.refresh_space(ui, id);
+            }
+            self.mark_space_session_dirty(id);
+        }
+        self.refresh_settings(ui);
+    }
+
+    /// The Space page's "Reset to global": clear every override as a preview.
+    fn reset_space_from_settings(&mut self, ui: &mut Ui) {
+        let Some(id) = self.selected_settings_space() else {
+            return;
+        };
+        let at = self.space_center(id);
+        if self.clear_space_appearance(id, at) {
+            self.reflow_space(ui, id);
+            self.mark_space_session_dirty(id);
+        }
+        self.refresh_settings(ui);
     }
 
     /// Commits pending settings. Returns false (and keeps the window open)
@@ -2536,19 +2644,70 @@ impl App {
     }
 
     fn cancel_settings(&mut self, ui: &mut Ui) {
-        if let Some(session) = self.settings.take() {
-            let restyle = session.saved_theme != self.config.theme;
-            // A revert re-flows when the grid changed: the layout itself, the
-            // icon size that scales it, or a Match Explorer toggle, which
-            // imports Explorer's own icon size and spacing.
-            let relayout = settings::needs_relayout(&session, &self.config);
-            session.revert(&mut self.config);
-            ui.set_ui_dark(self.ui_dark());
-            if restyle {
-                self.restyle_all(ui);
+        let Some(session) = self.settings.take() else {
+            return;
+        };
+        let restyle = session.saved_theme != self.config.theme;
+        // A revert re-flows when the grid changed: the layout itself, the
+        // icon size that scales it, or a Match Explorer toggle, which
+        // imports Explorer's own icon size and spacing.
+        let relayout = settings::needs_relayout(&session, &self.config);
+        self.restore_space_appearances(ui, &session.saved_spaces);
+        session.revert(&mut self.config);
+        ui.set_ui_dark(self.ui_dark());
+        if restyle {
+            self.restyle_all(ui);
+        }
+        if relayout {
+            self.relayout_all(ui);
+        }
+    }
+
+    /// Cancel: restore the per-space appearance snapshots through the
+    /// `SetSpace*` commands. Spaces deleted meanwhile are skipped. A changed
+    /// icon size re-flows its space; anything else just repaints.
+    fn restore_space_appearances(&mut self, ui: &mut Ui, saved: &[SpaceAppearance]) {
+        for saved in saved {
+            let Some(space) = self.config.desktop.space(saved.id) else {
+                continue;
+            };
+            if SpaceAppearance::of(space) == *saved {
+                continue;
             }
-            if relayout {
-                self.relayout_all(ui);
+            let icon_changed = space.icon_size != saved.icon_size;
+            let at = space.rect.center();
+            self.dispatch(
+                Command::SetSpaceOpacity {
+                    id: saved.id,
+                    opacity: saved.opacity,
+                },
+                at,
+            );
+            self.dispatch(
+                Command::SetSpaceTint {
+                    id: saved.id,
+                    tint: saved.tint,
+                },
+                at,
+            );
+            self.dispatch(
+                Command::SetSpaceText {
+                    id: saved.id,
+                    text: saved.text,
+                },
+                at,
+            );
+            self.dispatch(
+                Command::SetSpaceIconSize {
+                    id: saved.id,
+                    icon_size: saved.icon_size,
+                },
+                at,
+            );
+            if icon_changed {
+                self.reflow_space(ui, saved.id);
+            } else {
+                self.refresh_space(ui, saved.id);
             }
         }
     }
