@@ -12,8 +12,8 @@ use std::mem::ManuallyDrop;
 use std::path::PathBuf;
 
 use windows::Win32::Foundation::{
-    DATA_S_SAMEFORMATETC, DV_E_FORMATETC, GlobalFree, HGLOBAL, OLE_E_ADVISENOTSUPPORTED, S_FALSE,
-    S_OK,
+    DATA_S_SAMEFORMATETC, DV_E_FORMATETC, E_OUTOFMEMORY, GlobalFree, HGLOBAL,
+    OLE_E_ADVISENOTSUPPORTED, S_FALSE, S_OK,
 };
 use windows::Win32::System::Com::{
     DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IAdviseSink, IDataObject, IDataObject_Impl,
@@ -189,7 +189,7 @@ fn hglobal(bytes: &[u8]) -> WinResult<HGLOBAL> {
         let pointer = GlobalLock(block);
         if pointer.is_null() {
             let _ = GlobalFree(Some(block));
-            return Err(HRESULT(0x8007_000E_u32 as i32).into());
+            return Err(E_OUTOFMEMORY.into());
         }
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.cast::<u8>(), bytes.len());
         let _ = GlobalUnlock(block);

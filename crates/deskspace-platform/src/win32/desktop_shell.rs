@@ -6,6 +6,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, PCWSTR, w};
 
+/// Undocumented `Progman` message that makes Explorer create the wallpaper
+/// `WorkerW` window, which hosted spaces use as a parent. Sent with a bounded
+/// timeout so a future Explorer that stops answering it cannot hang us.
 const SPAWN_WORKER_MESSAGE: u32 = 0x052C;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

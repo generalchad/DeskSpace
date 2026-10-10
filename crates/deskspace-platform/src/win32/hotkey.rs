@@ -1,10 +1,13 @@
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, RegisterHotKey, UnregisterHotKey,
+    VK_ESCAPE, VK_F1, VK_RETURN, VK_SPACE, VK_TAB,
 };
 
 use crate::error::PlatformError;
 
+/// Base of the ids reported for registered hotkeys: the Win32 hotkey id is
+/// this plus the registration `index`.
 const HOTKEY_BASE_ID: i32 = 0x100;
 
 /// The id `Event::Hotkey` reports for the hotkey registered at `index`.
@@ -76,15 +79,15 @@ fn key_code(token: &str) -> Option<u32> {
     if let Some(rest) = token.strip_prefix('F') {
         if let Ok(number) = rest.parse::<u32>() {
             if (1..=24).contains(&number) {
-                return Some(0x70 + number - 1);
+                return Some(VK_F1.0 as u32 + number - 1);
             }
         }
     }
     match token {
-        "SPACE" => Some(0x20),
-        "TAB" => Some(0x09),
-        "ENTER" | "RETURN" => Some(0x0D),
-        "ESC" | "ESCAPE" => Some(0x1B),
+        "SPACE" => Some(VK_SPACE.0 as u32),
+        "TAB" => Some(VK_TAB.0 as u32),
+        "ENTER" | "RETURN" => Some(VK_RETURN.0 as u32),
+        "ESC" | "ESCAPE" => Some(VK_ESCAPE.0 as u32),
         _ => None,
     }
 }

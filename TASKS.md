@@ -119,7 +119,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
   - `deskspace-app/src/app.rs` ~179: the `edit` field says "The space being
     renamed inline"; it is a space title or an item label.
 
-- [ ] **A4. Explain the magic constants AGENTS.md calls out.**
+- [x] **A4. Explain the magic constants AGENTS.md calls out.**
   - `win32/desktop_shell.rs` ~9 `SPAWN_WORKER_MESSAGE = 0x052C`: add a short
     comment that this undocumented Progman message makes Explorer create the
     wallpaper WorkerW, and why the timeout value is what it is.

@@ -16,7 +16,7 @@ use std::cell::Cell;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_APPS,
+    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_A, VK_APPS,
     VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_F2, VK_HOME, VK_LEFT,
     VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN,
     VK_SHIFT, VK_V, VK_X,
@@ -72,8 +72,6 @@ const KIND_WORD_LEFT: usize = 16;
 const KIND_WORD_RIGHT: usize = 17;
 const KIND_SELECT_WORD_LEFT: usize = 18;
 const KIND_SELECT_WORD_RIGHT: usize = 19;
-
-const VK_A_CODE: u32 = 0x41;
 
 thread_local! {
     static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
@@ -210,7 +208,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
         if key_down(VK_CONTROL) {
-            if event.vkCode == VK_A_CODE {
+            if is_key(event.vkCode, VK_A) {
                 post_message(SELECT_ALL_KEY, 0, 0);
                 return LRESULT(1);
             }
@@ -250,7 +248,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
     if key_down(VK_CONTROL) {
-        if event.vkCode == VK_A_CODE {
+        if is_key(event.vkCode, VK_A) {
             post(KIND_SELECT_ALL, 0);
             return LRESULT(1);
         }
@@ -502,7 +500,7 @@ mod tests {
                 "{key:?} should be a system key"
             );
         }
-        assert!(!is_system_key(VK_A_CODE));
+        assert!(!is_system_key(VK_A.0 as u32));
         assert!(!is_system_key(VK_BACK.0 as u32));
     }
 
