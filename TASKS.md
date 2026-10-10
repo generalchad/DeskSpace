@@ -71,6 +71,12 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
    `space_appearance_menu`, a handler like `set_space_opacity`, and include the
    field in `reset_space_appearance`.
 4. `deskspace-app/src/scene.rs`: apply the override where the scene is built.
+5. Once section H lands, also do the following:
+   - add the field to the shared Space page in `settings.rs`;
+   - add an arm to `space_field_command`;
+   - include the field in `Space::has_appearance_overrides` and in
+     `SpaceAppearance`, so the rail lists the space and Cancel restores the
+     field.
 
 ---
 
@@ -219,7 +225,7 @@ Do them in order. Each is one commit plus a `docs:` commit if the docs change
 is large.
 
 - [ ] **C1. Per-space icon size (rest of F-25).** Follow "Recipe: a new
-  per-space override".
+  per-space override". (awaiting check)
   - `Space.icon_size: Option<u8>`, a percent; `None` follows the global
     setting.
   - `Command::SetSpaceIconSize { id, icon_size: Option<u8> }`, clamped to
@@ -696,13 +702,181 @@ Remaining gaps from the controls review. Do them in order.
   menu on drop.
 - [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP D6.
 
+## H. Per-space settings rail (ROADMAP M3, F-46)
+
+The settings window gets a navigation rail on the left in place of the top
+tabs. The rail has two groups. **Settings** holds the existing global pages.
+**Spaces** has one entry for each space with an appearance override (opacity,
+tint, text, or icon size). Selecting a space shows its overrides on the right,
+previews edits live, and flashes that space on the desktop. Cancel reverts.
+Do the tasks in order. Each is one commit.
+
+Design rules (decided 2026-10-10; do not re-open without asking):
+
+- **The page shape never changes.** The form holds the seven global pages
+  plus **one** shared "Space" page. Every Spaces entry points at that page,
+  and the app fills it with the selected space's values. Switching entries
+  only shows a different page or changes values, so the existing
+  build-all-pages / `same_shape` / in-place update machinery keeps working.
+  Building one page per space would duplicate field ids, which must be unique
+  across the form (`Field::id`), and would force rebuilds.
+- **The platform knows nothing about spaces.** It renders a list of entries,
+  each mapped to a page index, and reports which entry was picked. The app
+  owns the mapping from an entry to a `SpaceId`.
+- **Entries are sticky for the session.** The Spaces group lists the spaces
+  that had overrides when the window opened, plus any that gain one while it
+  is open. An entry is not removed until the window closes, so resetting the
+  last override does not pull the entry out from under the pointer. Deleted
+  spaces are dropped.
+- **Per-space edits go through `Command`s.** `settings.rs` stays pure: it
+  turns a field edit into a `Command`, and the app dispatches it. The
+  existing direct `Config` writes for global settings are unchanged.
+- **Context-menu edits commit immediately, as today.** If one lands while the
+  window is open, it also updates that space's Cancel snapshot, so Cancel
+  never undoes a menu change.
+- The rail group is named "Spaces". ROADMAP M3's planned page of defaults for
+  new spaces must therefore be titled "New spaces" to avoid the clash.
+
+- [ ] **H1. Platform: a navigation rail for the settings window.**
+  - `ui.rs`: add
+    ```rust
+    pub struct SettingsNav { pub groups: Vec<SettingsNavGroup>, pub selected: usize }
+    pub struct SettingsNavGroup { pub title: String, pub entries: Vec<SettingsNavEntry> }
+    pub struct SettingsNavEntry { pub label: String, pub page: usize, pub marked: bool }
+    ```
+    and `SettingsForm.nav: Option<SettingsNav>`. `selected` indexes the
+    flattened entries. Document that several entries may share a page. Add
+    pure helpers, `SettingsNav::entries()` (flattened) and `page_of(entry)`,
+    with tests. `nav: None` keeps today's top tabs, so existing forms and
+    tests are unchanged. `same_shape` keeps comparing pages only: a change to
+    the entries is not a shape change.
+  - `input.rs`: `SettingsEvent::NavChanged { entry: usize }`.
+  - `settings_window.rs`, when `nav` is `Some`:
+    - Create an owner-drawn list box (`LBS_OWNERDRAWFIXED | LBS_NOTIFY |
+      WS_VSCROLL | WS_TABSTOP`) down the left in place of the tab control.
+      Group titles are non-selectable rows; when the selection lands on one,
+      move it to the next entry.
+    - Build all pages, as today, to the right of the rail, and show the page
+      of the selected entry.
+    - On `LBN_SELCHANGE`, show that entry's page, then dispatch `NavChanged`
+      as the last statement (the handler may rebuild the form).
+    - Paint it in `WM_DRAWITEM`, matching `paint_tab`: an accent bar on the
+      selected row, secondary text for group titles, and a small dot for
+      `marked` entries. Fill the background through the existing
+      `WM_CTLCOLORLISTBOX` arm.
+    - Layout: rail width `s(168)`; the client width becomes margin + rail +
+      gap + page width + margin. Extend `layout_scales_with_dpi`.
+  - `update()`: also bring the rail's rows (labels, marks, group titles) and
+    its selection up to date, without counting them as a shape change.
+  - Done when: the real form (still `nav: None`) looks unchanged, and the
+    nav helpers are tested. **[needs human]** check, with a temporary
+    `nav: Some` form (remove it before committing): light and dark mode;
+    Tab moves into the rail and arrow keys switch pages; a long list scrolls.
+
+- [ ] **H2. App: the unified form and the Spaces group.** After H1.
+  - Core: `Space::has_appearance_overrides()`. True when `opacity != 255` or
+    any of `tint`, `text`, or `icon_size` is set. Add a test.
+  - Move the icon-size choices out of `app.rs` into `settings.rs` as
+    `pub const SPACE_ICON_SIZES: [(&str, Option<u8>); 5]`. `app.rs`
+    `ICON_SIZE_PRESETS` keeps its menu ids and takes the labels and values
+    from it, so the menu and the page always offer the same sizes.
+  - `Session` gains:
+    - `listed_spaces: Vec<SpaceId>`, seeded in `Session::new` from spaces
+      with overrides (the sticky rule above);
+    - `nav_selected: usize`;
+    - `saved_spaces: Vec<SpaceAppearance>`, a private struct holding `id`,
+      `opacity`, `tint`, `text`, and `icon_size`, which is what Cancel
+      restores.
+  - `build_form` sets `nav`. The Settings group holds the seven pages, and
+    the Spaces group has one entry per listed space that still exists (label
+    = title, `marked` = has overrides), all pointing at a new "Space" page.
+  - The Space page has a fixed shape, with field ids from 50 up (the next
+    free block):
+    - a `Note` naming the space;
+    - "Opacity", a slider from 20 to 100 %, where 100 % is the theme's
+      (stored 255);
+    - "Icon size", a `Choice` over `SPACE_ICON_SIZES`;
+    - "Custom tint", a `Toggle`, plus a `Color` enabled only while it is on;
+    - "Custom text", a `Toggle` plus a `Color`, the same way;
+    - "Reset to global", a `Button`.
+
+    With no space selected, every field is disabled and the note reads "No
+    spaces are customized yet. Right-click a space and choose Appearance."
+    An empty Spaces group still shows its title.
+  - Tests: entry-to-page mapping; sticky listing; deleted spaces are
+    dropped; the empty state disables the fields.
+
+- [ ] **H3. App: per-space edits, live preview, and Cancel.** After H2.
+  - `settings.rs`: a pure `fn space_field_command(space: &Space, field: u32,
+    value: FieldValue, palette: &Palette) -> Option<Command>` that maps:
+    - opacity percent to `SetSpaceOpacity`, rounding to the nearest
+      byte (100 % → 255);
+    - an icon-size choice to `SetSpaceIconSize`;
+    - turning tint or text on to `Set*` with the current palette color, and
+      turning it off to `None`;
+    - a color edit to `Set*` with that color.
+
+    Test every arm.
+  - `app.rs`, in `on_settings_event`:
+    - A Space-page `Changed` looks up the selected `SpaceId`, builds the
+      command, and dispatches it. Then it calls `reflow_space` for icon size
+      or `refresh_space` for the rest. If the space is not yet in
+      `listed_spaces`, it appends it. It marks the session dirty and calls
+      `refresh_settings`.
+    - "Reset to global" dispatches the four clearing commands. Factor them
+      out of `reset_space_appearance` into one helper that both call.
+    - `NavChanged` sets `nav_selected`, calls `refresh_settings`, and, when
+      the entry is a space, starts the highlight (H4).
+  - `cancel_settings` restores `saved_spaces` through the `SetSpace*`
+    commands and re-flows the spaces it changed. Skip spaces deleted in the
+    meantime. On Apply/OK, `Session::commit` re-snapshots `saved_spaces`.
+  - Context-menu appearance changes made while the window is open update
+    that space's `saved_spaces` entry and call `refresh_settings`.
+  - Done when: an edit previews on the space at once, Cancel restores it,
+    and the rail gains a marked entry when the menu customizes a space.
+    **[needs human]** check, with two spaces: change icon size and tint for
+    one in the rail, Cancel, and check that both revert. Then customize a
+    space from its menu with the window open, and check that it appears in
+    the rail and survives Cancel.
+
+- [ ] **H4. Flash the selected space.** After H3.
+  - `render/scene.rs`: add `SpaceScene.highlight: bool` (default false).
+    When it is set, `d2d.rs` draws a 2 px outline just inside the frame,
+    following the corner radius.
+  - Color: `palette.selected_fill` at full alpha. Once C2 lands, this picks
+    up the Windows accent through `App::palette`.
+  - App: `highlighted: Option<SpaceId>`, and `HIGHLIGHT_TIMER = 5` (E10
+    reserves 4 for `UPDATE_TIMER`) at about 1200 ms. Starting a highlight
+    sets the flag and refreshes that space. The timer clears it and
+    refreshes again. Selecting another space moves the highlight. Cancel,
+    OK, and closing the window clear it.
+  - Done when: a scene test shows the flag reaching the scene. **[needs
+    human]** check: a space behind other windows is hard to see, so check
+    with `--on-top` that the outline is visible on Acrylic, Clear, and Solid
+    backdrops.
+
+After H4: update `CONTEXT.md` (section 6, Native UI: the rail and
+`NavChanged`; section 7, settings flow; section 8, Controls), and mark F-46
+"Done; check pending" in `ROADMAP.md`.
+
 ## Found while working
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
-- `deskspace-app/src/app.rs` `reset_space_appearance`: the three dispatches
-  are combined with `&&`. Harmless today (all three succeed or the space is
+- `deskspace-app/src/app.rs` `reset_space_appearance`: the four dispatches
+  are combined with `&&`. Harmless today (all four succeed or the space is
   missing), but reads like a bug; B5's helper would make it clearer.
+- `deskspace-core/src/space.rs` `Space.icon_size`: an out-of-range value in a
+  hand-edited config is clamped when the scene is built (`App::space_scale`)
+  but not normalized on load, so the Appearance menu shows no preset checked
+  and the stored value disagrees with what is drawn. Consider clamping on load
+  or in `Config::migrate` (a `fix:` task).
+- `deskspace-platform/src/win32/runtime.rs` `Ui::update_settings`:
+  `settings_window::update` returns `false` when the new form has a different
+  shape, but `update_settings` drops that result, and `App::refresh_settings`
+  cannot see it. A shape-changing form is silently not shown. No form changes
+  shape today, and H is designed to keep it that way. Still, either rebuild
+  the window on `false` or `debug_assert!` against it (a `fix:` task).
 - `ROADMAP.md` D3 says the store is `%LOCALAPPDATA%\DeskSpace\storage`, but
   `ConfigStore::discover` uses `ProjectDirs::from("", "DeskSpace",
   "DeskSpace")`. On Windows that should give

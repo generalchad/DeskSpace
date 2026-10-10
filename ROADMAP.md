@@ -141,8 +141,9 @@ A native, lightweight, offline Windows desktop organizer that:
    icon layer, with a safe restore path. This is the remaining v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** the Spaces and Hotkeys settings pages, plus F-29, F-30,
-   F-34, and the per-space half of F-25. Then cut v0.2.
+4. **Finish M3:** F-29, F-30, and F-34 (`TASKS.md` C2-C4), the per-space
+   settings rail (F-46, `TASKS.md` section H), and the New spaces and Hotkeys
+   settings pages. Then cut v0.2.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -289,15 +290,22 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. Per-space icon-size override (the rest of F-25), in the space
-   Appearance submenu.
-2. Windows accent color for the selection highlight and border (F-29).
-3. A theme override for the settings window and menus: follow Windows, always
+1. Windows accent color for the selection highlight and border (F-29).
+2. A theme override for the settings window and menus: follow Windows, always
    dark, or always light (F-30, through `Ui::set_ui_dark`).
-4. Start with Windows: a per-user `Run` key, toggled from General (F-34;
+3. Start with Windows: a per-user `Run` key, toggled from General (F-34;
    the installer also offers it in M8).
-5. A Spaces settings page (defaults for new spaces), and a Hotkeys page with
-   more bindings (F-17, F-18).
+4. A per-space settings surface (F-46, `TASKS.md` section H). The settings
+   window gets a navigation rail on the left in place of its top tabs:
+   - a Settings group with the global pages;
+   - a Spaces group listing every space that has an appearance override.
+
+   Selecting a space shows its overrides in one shared page, previews edits
+   live, and flashes that space on the desktop. Cancel reverts. Edits go
+   through the `SetSpace*` commands.
+5. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
+   with more bindings (F-17, F-18). The page is not called "Spaces", so it
+   does not clash with the rail group.
 6. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
@@ -406,6 +414,16 @@ Remaining:
 3. Pages: several named layouts per monitor, with a page switcher (F-12).
    A page is a stored layout, so it builds on the snapshot format.
 4. Snapping to other spaces, with alignment guides (F-35).
+5. A desktop overview map (F-47): a scaled picture of every monitor with
+   its wallpaper and miniature spaces.
+   - Clicking a miniature selects that space in the F-46 rail.
+   - Later, it hosts monitor assignment, the page switcher, and snapshot
+     previews.
+   - It needs monitor enumeration (today the platform only has
+     `work_area_at`) and its own draw-list contract, so the platform stays
+     data-driven.
+   - It comes after items 1 and 3, so it is built on the final monitor and
+     page model.
 
 Exit criteria: layouts survive monitor changes, pages switch instantly, and a
 snapshot restores both the layout and the store's contents.
@@ -515,7 +533,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu and Explorer item menu done; lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; takeover and snapshot entries wait for M2 and M6 |
-| F-17 | Settings window | M3, M4 | Partial: 7 tabs; Spaces, Hotkeys, and Lenses pages open |
+| F-17 | Settings window | M3, M4 | Partial: 7 tabs; New spaces, Hotkeys, and Lenses pages open; navigation rail with F-46 |
 | F-18 | Hotkeys | M3 | Toggle hotkey and its text editor done; more bindings open |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
@@ -523,7 +541,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space |
-| F-25 | Icon size | M3 | Partial: global 50-200 % slider, jumbo icons, per-monitor DPI; per-space override open |
+| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per-space override) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
@@ -544,6 +562,8 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
 | F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
+| F-46 | Per-space settings rail (customized spaces in the settings window) | M3 | Open; design decided (`TASKS.md` section H) |
+| F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the
