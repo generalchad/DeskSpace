@@ -10,7 +10,7 @@ use crate::layout::{
     snap_rect,
 };
 use crate::space::ResizeEdges;
-use crate::theme::Color;
+use crate::theme::{Color, ICON_SIZE_RANGE};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -70,6 +70,12 @@ pub enum Command {
     SetSpaceText {
         id: SpaceId,
         text: Option<Color>,
+    },
+    /// Per-space icon size as a percent, clamped to `ICON_SIZE_RANGE`; `None`
+    /// returns to the global setting.
+    SetSpaceIconSize {
+        id: SpaceId,
+        icon_size: Option<u8>,
     },
     ToggleLock {
         id: SpaceId,
@@ -283,6 +289,14 @@ impl Desktop {
             Command::SetSpaceText { id, text } => match self.space_mut(id) {
                 Some(space) => {
                     space.text = text;
+                    CommandOutcome::Applied
+                }
+                None => CommandOutcome::NotFound,
+            },
+            Command::SetSpaceIconSize { id, icon_size } => match self.space_mut(id) {
+                Some(space) => {
+                    space.icon_size = icon_size
+                        .map(|percent| percent.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1));
                     CommandOutcome::Applied
                 }
                 None => CommandOutcome::NotFound,
@@ -869,6 +883,61 @@ mod tests {
         let mut desktop = Desktop::new();
         assert_eq!(
             desktop.apply(Command::Reflow { id: SpaceId(999) }, bounds()),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn set_space_icon_size_clamps_and_clears() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIconSize {
+                    id,
+                    icon_size: Some(u8::MAX),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(
+            desktop.space(id).unwrap().icon_size,
+            Some(ICON_SIZE_RANGE.1)
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIconSize {
+                    id,
+                    icon_size: Some(1),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(
+            desktop.space(id).unwrap().icon_size,
+            Some(ICON_SIZE_RANGE.0)
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIconSize {
+                    id,
+                    icon_size: None,
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(desktop.space(id).unwrap().icon_size, None);
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIconSize {
+                    id: SpaceId(999),
+                    icon_size: Some(100),
+                },
+                bounds()
+            ),
             CommandOutcome::NotFound
         );
     }

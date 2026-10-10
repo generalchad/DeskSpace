@@ -210,6 +210,27 @@ mod tests {
     }
 
     #[test]
+    fn space_icon_size_defaults_to_none_and_parses_when_set() {
+        let text = r#"
+            version = 2
+
+            [[desktop.spaces]]
+            id = 1
+            title = "Work"
+            rect = { x = 0, y = 0, width = 100, height = 100 }
+
+            [[desktop.spaces]]
+            id = 2
+            title = "Big"
+            rect = { x = 0, y = 0, width = 100, height = 100 }
+            icon_size = 150
+        "#;
+        let parsed: Config = toml::from_str(text).unwrap();
+        assert_eq!(parsed.desktop.spaces[0].icon_size, None);
+        assert_eq!(parsed.desktop.spaces[1].icon_size, Some(150));
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         config

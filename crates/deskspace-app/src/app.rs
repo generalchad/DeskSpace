@@ -63,6 +63,11 @@ mod menu {
     pub const SPACE_TINT: u32 = 25;
     pub const SPACE_TEXT: u32 = 26;
     pub const RESET_APPEARANCE: u32 = 27;
+    pub const ICON_SIZE_DEFAULT: u32 = 40;
+    pub const ICON_SIZE_SMALL: u32 = 41;
+    pub const ICON_SIZE_MEDIUM: u32 = 42;
+    pub const ICON_SIZE_LARGE: u32 = 43;
+    pub const ICON_SIZE_XLARGE: u32 = 44;
     pub const SORT_NAME_ASC: u32 = 30;
     pub const SORT_NAME_DESC: u32 = 31;
     pub const SORT_KIND: u32 = 32;
@@ -80,6 +85,16 @@ const OPACITY_PRESETS: [(u32, &str, u8); 5] = [
     (menu::OPACITY_60, "Opacity 60%", 153),
     (menu::OPACITY_40, "Opacity 40%", 102),
     (menu::OPACITY_20, "Opacity 20%", 51),
+];
+
+/// The icon-size choices the "Icon size" submenu offers: menu id, label, and
+/// the per-space percent. `None` follows the global setting.
+const ICON_SIZE_PRESETS: [(u32, &str, Option<u8>); 5] = [
+    (menu::ICON_SIZE_DEFAULT, "Default", None),
+    (menu::ICON_SIZE_SMALL, "Small", Some(75)),
+    (menu::ICON_SIZE_MEDIUM, "Medium", Some(100)),
+    (menu::ICON_SIZE_LARGE, "Large", Some(150)),
+    (menu::ICON_SIZE_XLARGE, "Extra large", Some(200)),
 ];
 
 /// The sort choices the Sort by submenu offers: menu id, label, sort key, and
@@ -427,8 +442,18 @@ impl App {
 
     /// The full icon factor for one space: the icon-size factor times the
     /// monitor's DPI. Explorer's own icon size is already in physical pixels,
-    /// so mirroring does not multiply by DPI again.
+    /// so mirroring does not multiply by DPI again. A per-space override wins
+    /// over both Explorer and the global setting.
     fn space_scale(&self, id: SpaceId) -> f32 {
+        if let Some(percent) = self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| space.icon_size)
+        {
+            return percent.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32 / 100.0
+                * space_dpi(id.0);
+        }
         if self.match_explorer() && self.shell_display.icon_size.is_some() {
             return self.icon_scale();
         }
@@ -452,9 +477,21 @@ impl App {
         layout
     }
 
-    /// The scaled grid for one space, including its monitor's DPI.
+    /// The scaled grid for one space, including its monitor's DPI. A per-space
+    /// icon-size override ignores Explorer's item spacing too, so the whole
+    /// grid stays consistent with the overridden icon scale.
     fn layout_for(&self, id: SpaceId) -> GridSpec {
-        self.base_layout(self.space_scale(id))
+        let scale = self.space_scale(id);
+        if self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| space.icon_size)
+            .is_some()
+        {
+            return self.config.desktop.layout.scaled(scale);
+        }
+        self.base_layout(scale)
     }
 
     /// The logical grid (icon size only, no per-monitor DPI), for callers that
@@ -985,6 +1022,13 @@ impl App {
         self.apply_to_space(ui, id, Command::SetSpaceOpacity { id, opacity }, at);
     }
 
+    fn set_space_icon_size(&mut self, ui: &mut Ui, id: SpaceId, icon_size: Option<u8>, at: Point) {
+        if self.dispatch(Command::SetSpaceIconSize { id, icon_size }, at) {
+            self.reflow_space(ui, id);
+            self.schedule_save(ui);
+        }
+    }
+
     fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
         let palette = self.config.theme.palette(self.system_dark);
         let Some(current) = self.config.desktop.space(id).map(|space| match which {
@@ -1012,8 +1056,15 @@ impl App {
         let opacity = self.dispatch(Command::SetSpaceOpacity { id, opacity: 255 }, at);
         let tint = self.dispatch(Command::SetSpaceTint { id, tint: None }, at);
         let text = self.dispatch(Command::SetSpaceText { id, text: None }, at);
-        if opacity && tint && text {
-            self.refresh_space(ui, id);
+        let icon_size = self.dispatch(
+            Command::SetSpaceIconSize {
+                id,
+                icon_size: None,
+            },
+            at,
+        );
+        if opacity && tint && text && icon_size {
+            self.reflow_space(ui, id);
             self.schedule_save(ui);
         }
     }
@@ -2224,6 +2275,11 @@ impl App {
                     .find(|(preset, ..)| *preset == choice)
                 {
                     self.set_space_opacity(ui, id, *opacity, at);
+                } else if let Some((_, _, icon_size)) = ICON_SIZE_PRESETS
+                    .iter()
+                    .find(|(preset, ..)| *preset == choice)
+                {
+                    self.set_space_icon_size(ui, id, *icon_size, at);
                 } else if let Some((_, _, key, descending)) =
                     SORT_PRESETS.iter().find(|(preset, ..)| *preset == choice)
                 {
@@ -2588,13 +2644,23 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
     }
 }
 
-/// The "Appearance" submenu for a space: opacity presets, custom tint and
-/// text colors, and a reset to the theme.
+/// The "Appearance" submenu for a space: opacity presets, the icon size, custom
+/// tint and text colors, and a reset to the theme.
 fn space_appearance_menu(space: &Space) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = OPACITY_PRESETS
         .iter()
         .map(|(id, label, value)| MenuEntry::item(*id, *label).checked(space.opacity == *value))
         .collect();
+    entries.push(MenuEntry::Separator);
+    entries.push(MenuEntry::submenu(
+        "Icon size",
+        ICON_SIZE_PRESETS
+            .iter()
+            .map(|(id, label, value)| {
+                MenuEntry::item(*id, *label).checked(space.icon_size == *value)
+            })
+            .collect(),
+    ));
     entries.push(MenuEntry::Separator);
     entries.push(
         MenuEntry::item(menu::SPACE_TINT, "Custom tint\u{2026}").checked(space.tint.is_some()),
@@ -2835,6 +2901,7 @@ mod tests {
         ];
         let mut ids: Vec<u32> = other.to_vec();
         ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));
+        ids.extend(ICON_SIZE_PRESETS.iter().map(|(id, ..)| *id));
         ids.extend(SORT_PRESETS.iter().map(|(id, ..)| *id));
         let mut unique = ids.clone();
         unique.sort_unstable();

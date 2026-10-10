@@ -29,6 +29,9 @@ pub struct Space {
     /// theme's.
     #[serde(default)]
     pub text: Option<Color>,
+    /// Per-space icon size as a percent; `None` follows the global setting.
+    #[serde(default)]
+    pub icon_size: Option<u8>,
     #[serde(default = "default_title_height")]
     pub title_height: i32,
     /// Set once the user resizes the space. A user-sized space keeps its
@@ -80,6 +83,7 @@ impl Space {
             opacity: default_opacity(),
             tint: None,
             text: None,
+            icon_size: None,
             title_height: default_title_height(),
             user_sized: false,
         }

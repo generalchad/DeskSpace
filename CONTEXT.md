@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (174 tests) are green.
+  `cargo test --workspace` (179 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -103,8 +103,7 @@ context menus, and a settings window in the first usable release (v0.2).
   only build as a series; bisect across them as one step.
 - Not yet: real desktop icon layer takeover (Explorer still shows the desktop
   icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
-  for file moves, mapping Explorer's view mode (list/details), and a per-space
-  icon-size override.
+  for file moves, and mapping Explorer's view mode (list/details).
   See the parity matrix in section 9.
 
 ## 3. Architecture
@@ -192,6 +191,7 @@ Space {
     opacity: u8,          // multiplier on the theme's tint alpha, default 255
     tint: Option<Color>,  // body tint override; None uses the theme
     text: Option<Color>,  // title/label text override; None uses the theme
+    icon_size: Option<u8>, // icon-size percent override; None uses the global setting
     title_height: i32,    // default 28
     user_sized: bool,     // set by a resize; keeps size, reflows, scrolls
 }
@@ -239,7 +239,9 @@ GridSpec {
   delegating using the stored base. Scene geometry, hit tests, and scroll all
   read the same per-space grid, so the grid the painter uses always matches the
   grid the pointer uses. When `match_explorer` is on, Explorer's item spacing
-  replaces the cell and gap outright.
+  replaces the cell and gap outright; a per-space `icon_size` override wins over
+  both Explorer and the global setting and skips that spacing replacement, so
+  the whole grid follows the override.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
   the work area. `scroll_step()` is one row per wheel notch.
@@ -256,7 +258,8 @@ the stored base grid. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `Reflow`, `SetSpaceOpacity`, `SetSpaceTint`,
-`SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
+`SetSpaceText`, `SetSpaceIconSize`, `SortSpace`, `ToggleLock`, `ToggleRollup`,
+`AddItem`,
 `RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
 `AutoArrange`, `SnapAll`.
 
@@ -679,12 +682,13 @@ WindowSettings {
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
 - Right-click a space: Roll up/down, Rename, Lock position, Fit to contents
-  (resized spaces only), Appearance (opacity presets, custom tint or text,
-  reset), Delete space (asks first unless the space is empty), New space,
+  (resized spaces only), Appearance (opacity presets, icon size, custom tint or
+  text, reset), Delete space (asks first unless the space is empty), New space,
   Settings…, Hide/Show spaces, Exit DeskSpace.
-- The space menu's Appearance submenu sets an opacity preset or a custom tint
-  or text color (with a reset); Sort by reorders items by name, type, size, or
-  modified date.
+- The space menu's Appearance submenu sets an opacity preset, a per-space icon
+  size (Default/Small/Medium/Large/Extra large, where Default follows the
+  global setting), or a custom tint or text color (with a reset); Sort by
+  reorders items by name, type, size, or modified date.
 - Settings previews live across its Appearance, Labels, Layout, Colors, and
   Advanced tabs: material, corners, tint, custom colors, label lines/size/shadow,
   icon size/spacing/edge padding (which re-flow every space; icon size scales
@@ -828,8 +832,8 @@ WindowSettings {
   and icons are fetched at the effective pixel size with shell overlays, so
   large sizes are crisp; info tips match Explorer's. Explorer's view mode
   (list/details) is not mapped, only the desktop's own options are read (a
-  check-box setting enabled in one Explorer window is not reflected), and a
-  per-space icon-size override is still open (ROADMAP F-25/F-40).
+  check-box setting enabled in one Explorer window is not reflected). A per-space
+  icon size overrides both Explorer and the global setting (ROADMAP F-25).
 - **Selection is within one space.** Rubber-band (marquee) selection, Ctrl+A,
   and dragging the whole selection are implemented; a selection cannot span
   spaces, and Ctrl/Shift-dragging between spaces is not distinguished from a
