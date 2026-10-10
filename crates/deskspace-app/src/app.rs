@@ -43,6 +43,13 @@ const INFO_TIP_TIMER: usize = 3;
 /// How long the pointer must rest on an item before its info tip appears,
 /// matching Explorer's tooltip delay.
 const INFO_TIP_DELAY_MS: u32 = 600;
+/// Timer id for the deferred settings preview (ids 4 and 5 are reserved by
+/// TASKS.md E10 and H4).
+const PREVIEW_TIMER: usize = 6;
+/// How long a settings preview may lag the edit that caused it. `WM_TIMER`
+/// is only delivered once the queue is empty, so a burst of slider ticks
+/// collapses into one restyle or re-flow.
+const PREVIEW_DELAY_MS: u32 = 15;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -204,6 +211,20 @@ struct EditSession {
     text: TextEdit,
 }
 
+/// The space refresh a settings preview still owes. Both can be pending: a
+/// restyle re-applies the window style, a re-flow re-positions items.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Preview {
+    restyle: bool,
+    relayout: bool,
+}
+
+impl Preview {
+    fn is_pending(self) -> bool {
+        self.restyle || self.relayout
+    }
+}
+
 /// Coalesces configuration writes: every change marks it dirty, and one save
 /// pays for all of them once the user pauses.
 #[derive(Debug, Default)]
@@ -280,6 +301,9 @@ pub struct App {
     /// Whether the platform is reporting clicks outside spaces; kept on only
     /// while an item is selected.
     watching_outside: bool,
+    /// A settings edit is waiting for `PREVIEW_TIMER` to restyle or re-flow
+    /// every space.
+    pending_preview: Preview,
     settings: Option<Session>,
     open_settings_on_start: bool,
 }
@@ -313,6 +337,7 @@ impl App {
             visible: !hidden,
             hotkey: None,
             watching_outside: false,
+            pending_preview: Preview::default(),
             settings: None,
             open_settings_on_start: open_settings,
         }
@@ -2503,9 +2528,21 @@ impl App {
                     );
                     if effect == Effect::Appearance {
                         ui.set_ui_dark(self.ui_dark());
-                        self.restyle_all(ui);
+                        self.schedule_preview(
+                            ui,
+                            Preview {
+                                restyle: true,
+                                relayout: false,
+                            },
+                        );
                     } else if effect == Effect::Layout {
-                        self.relayout_all(ui);
+                        self.schedule_preview(
+                            ui,
+                            Preview {
+                                restyle: false,
+                                relayout: true,
+                            },
+                        );
                     }
                     self.refresh_settings(ui);
                 }
@@ -2547,6 +2584,29 @@ impl App {
                 self.cancel_settings(ui);
                 ui.close_settings();
             }
+        }
+    }
+
+    /// Defers the space refresh a settings edit needs. The timer is armed once
+    /// and not restarted, so the spaces keep following a slider drag while the
+    /// ticks in between collapse into one pass.
+    fn schedule_preview(&mut self, ui: &mut Ui, preview: Preview) {
+        if !self.pending_preview.is_pending() {
+            ui.set_timer(PREVIEW_TIMER, PREVIEW_DELAY_MS);
+        }
+        self.pending_preview.restyle |= preview.restyle;
+        self.pending_preview.relayout |= preview.relayout;
+    }
+
+    /// Runs the deferred settings preview.
+    fn flush_preview(&mut self, ui: &mut Ui) {
+        ui.clear_timer(PREVIEW_TIMER);
+        let preview = std::mem::take(&mut self.pending_preview);
+        if preview.restyle {
+            self.restyle_all(ui);
+        }
+        if preview.relayout {
+            self.relayout_all(ui);
         }
     }
 
@@ -2647,6 +2707,11 @@ impl App {
         let Some(session) = self.settings.take() else {
             return;
         };
+        // The revert below restyles and re-flows from the saved settings, which
+        // covers any preview still waiting for its timer.
+        if std::mem::take(&mut self.pending_preview).is_pending() {
+            ui.clear_timer(PREVIEW_TIMER);
+        }
         let restyle = session.saved_theme != self.config.theme;
         // A revert re-flows when the grid changed: the layout itself, the
         // icon size that scales it, or a Match Explorer toggle, which
@@ -2778,6 +2843,7 @@ impl EventHandler for App {
             Event::Timer { id } if id == AUTOSAVE_TIMER => self.flush_save(ui),
             Event::Timer { id } if id == CARET_TIMER => self.blink_caret(ui),
             Event::Timer { id } if id == INFO_TIP_TIMER => self.show_info_tip(ui),
+            Event::Timer { id } if id == PREVIEW_TIMER => self.flush_preview(ui),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
