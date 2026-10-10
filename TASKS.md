@@ -194,7 +194,7 @@ Each is independent. None changes behavior.
     a small private `enum SpaceColor { Tint, Text }` choosing the current
     value and the `Command`.
 
-- [ ] **B5. One helper for "dispatch, repaint, schedule a save".**
+- [x] **B5. One helper for "dispatch, repaint, schedule a save".**
   - `fn apply_to_space(&mut self, ui: &mut Ui, id: SpaceId, command: Command,
     at: Point) -> bool` in `app.rs`. Use it in `set_space_opacity`,
     `sort_space`, the `FIT` and `LOCK` arms, `toggle_rollup`, and wherever

@@ -316,6 +316,18 @@ impl App {
         self.save();
     }
 
+    /// Applies `command`, then repaints the space and schedules a save when the
+    /// domain changed. Returns whether the command applied.
+    fn apply_to_space(&mut self, ui: &mut Ui, id: SpaceId, command: Command, at: Point) -> bool {
+        if self.dispatch(command, at) {
+            self.refresh_space(ui, id);
+            self.schedule_save(ui);
+            true
+        } else {
+            false
+        }
+    }
+
     // ---- space windows -------------------------------------------------
 
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -894,10 +906,7 @@ impl App {
     // ---- per-space appearance ------------------------------------------
 
     fn set_space_opacity(&mut self, ui: &mut Ui, id: SpaceId, opacity: u8, at: Point) {
-        if self.dispatch(Command::SetSpaceOpacity { id, opacity }, at) {
-            self.refresh_space(ui, id);
-            self.schedule_save(ui);
-        }
+        self.apply_to_space(ui, id, Command::SetSpaceOpacity { id, opacity }, at);
     }
 
     fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
@@ -919,10 +928,7 @@ impl App {
                     text: Some(color),
                 },
             };
-            if self.dispatch(command, at) {
-                self.refresh_space(ui, id);
-                self.schedule_save(ui);
-            }
+            self.apply_to_space(ui, id, command, at);
         }
     }
 
@@ -937,17 +943,16 @@ impl App {
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
-        if self.dispatch(
+        self.apply_to_space(
+            ui,
+            id,
             Command::SortSpace {
                 id,
                 key,
                 descending,
             },
             at,
-        ) {
-            self.refresh_space(ui, id);
-            self.schedule_save(ui);
-        }
+        );
     }
 
     // ---- pointer -------------------------------------------------------
@@ -1417,15 +1422,11 @@ impl App {
 
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
-        if self.dispatch(Command::ToggleRollup { id }, near) {
-            // A rolled-up space hides its items, so it cannot keep one
-            // selected.
-            if self.selected_space == Some(id) {
-                self.take_selection();
-            }
-            self.refresh_space(ui, id);
-            self.schedule_save(ui);
+        // A rolled-up space hides its items, so it cannot keep one selected.
+        if self.selected_space == Some(id) {
+            self.take_selection();
         }
+        self.apply_to_space(ui, id, Command::ToggleRollup { id }, near);
     }
 
     /// Adds dropped files to `target`. New files are moved into the space
@@ -2130,17 +2131,12 @@ impl App {
             Some(menu::RENAME) => self.begin_rename(ui, id),
             Some(menu::DELETE) => self.delete_space(ui, id),
             Some(menu::FIT) => {
-                if self.dispatch(Command::FitToContents { id }, at) {
+                if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
                     self.scroll.remove(&id);
-                    self.refresh_space(ui, id);
-                    self.schedule_save(ui);
                 }
             }
             Some(menu::LOCK) => {
-                if self.dispatch(Command::ToggleLock { id }, at) {
-                    self.refresh_space(ui, id);
-                    self.schedule_save(ui);
-                }
+                self.apply_to_space(ui, id, Command::ToggleLock { id }, at);
             }
             Some(menu::SPACE_TINT) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
             Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
