@@ -109,6 +109,17 @@ nothing in the workspace. Do not introduce upward dependencies.
 - Avoid allocation in the per-frame paint path.
 - Keep public APIs documented with `///` only where behavior is non-obvious.
 
+## Commits
+
+Commit after every change; never leave finished work uncommitted. Keep each
+commit one logical unit of work, and split unrelated edits into separate
+commits - do not batch them. When working from `TASKS.md`, make one commit per
+task (see its "How to work a task", rule 7) and tick the task's box in that
+same commit. Follow the message style there: `feat: ...`, `fix: ...`,
+`refactor: ...`, `docs: ...`, imperative and lowercase. Run `cargo fmt --all`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo test --workspace` before committing.
+
 ## Comments
 
 Write code that reads on its own, and add a comment only when it supplies
