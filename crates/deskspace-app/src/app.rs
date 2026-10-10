@@ -439,6 +439,12 @@ impl App {
         }
     }
 
+    /// Whether DeskSpace's own chrome (the settings window and menus) is dark.
+    /// `Theme.mode` colors the spaces; this follows `Theme.ui_mode`.
+    fn ui_dark(&self) -> bool {
+        self.config.theme.ui_mode.resolve(self.system_dark)
+    }
+
     /// The item-icon scale as a factor, without per-monitor DPI. When mirroring
     /// Explorer's display, the desktop's own icon size (in pixels) wins, so
     /// spaces are 1:1 with the desktop; otherwise the DeskSpace icon-size
@@ -2403,6 +2409,7 @@ impl App {
                     self.system_dark,
                 );
                 if effect == Effect::Appearance {
+                    ui.set_ui_dark(self.ui_dark());
                     self.restyle_all(ui);
                 } else if effect == Effect::Layout {
                     self.relayout_all(ui);
@@ -2413,6 +2420,7 @@ impl App {
                 field: settings::field::RESET,
             } => {
                 settings::reset_appearance(&mut self.config, session);
+                ui.set_ui_dark(self.ui_dark());
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
@@ -2474,6 +2482,7 @@ impl App {
             // imports Explorer's own icon size and spacing.
             let relayout = settings::needs_relayout(&session, &self.config);
             session.revert(&mut self.config);
+            ui.set_ui_dark(self.ui_dark());
             if restyle {
                 self.restyle_all(ui);
             }
@@ -2488,9 +2497,9 @@ impl EventHandler for App {
     fn on_event(&mut self, event: Event, ui: &mut Ui) {
         match event {
             Event::Started => {
-                // DeskSpace's own menus and settings window follow Windows'
-                // app mode; the spaces follow their own Color mode setting.
-                ui.set_ui_dark(self.system_dark);
+                // DeskSpace's own menus and settings window follow the
+                // `ui_mode` setting; the spaces follow their own Color mode.
+                ui.set_ui_dark(self.ui_dark());
                 let hotkey = self.config.window.toggle_hotkey.clone();
                 if let Err(message) = self.register_hotkey(ui, &hotkey) {
                     tracing::warn!(message, "toggle hotkey unavailable");
@@ -2549,7 +2558,7 @@ impl EventHandler for App {
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 self.system_accent = system_accent_color();
-                ui.set_ui_dark(self.system_dark);
+                ui.set_ui_dark(self.ui_dark());
                 // The desktop view can change its icon size with the theme;
                 // refresh its display options, then restyle for dark mode.
                 self.refresh_shell_display(ui);

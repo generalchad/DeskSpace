@@ -239,6 +239,14 @@ mod tests {
     }
 
     #[test]
+    fn ui_mode_defaults_to_system_and_parses_when_set() {
+        let parsed: Config = toml::from_str("version = 2\n[theme]\n").unwrap();
+        assert_eq!(parsed.theme.ui_mode, deskspace_core::ThemeMode::System);
+        let parsed: Config = toml::from_str("version = 2\n[theme]\nui_mode = \"dark\"\n").unwrap();
+        assert_eq!(parsed.theme.ui_mode, deskspace_core::ThemeMode::Dark);
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         config

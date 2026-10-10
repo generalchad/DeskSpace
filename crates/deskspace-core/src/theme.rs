@@ -96,6 +96,18 @@ pub enum ThemeMode {
     Light,
 }
 
+impl ThemeMode {
+    /// Resolves the mode to "dark?" against the system's app theme, which
+    /// `System` follows.
+    pub fn resolve(self, system_dark: bool) -> bool {
+        match self {
+            ThemeMode::System => system_dark,
+            ThemeMode::Dark => true,
+            ThemeMode::Light => false,
+        }
+    }
+}
+
 /// The material behind a space body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -151,6 +163,9 @@ pub const LABEL_SIZE_RANGE: (u8, u8) = (60, 160);
 #[serde(default)]
 pub struct Theme {
     pub mode: ThemeMode,
+    /// The color mode of DeskSpace's own chrome (the settings window and popup
+    /// menus). Separate from `mode`, which only colors the spaces.
+    pub ui_mode: ThemeMode,
     pub backdrop: Backdrop,
     /// Corner radius in pixels, `0..=corner::MAX`. Also reads the older
     /// `corners = "round" | "small" | "square"` setting.
@@ -189,6 +204,7 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             mode: ThemeMode::System,
+            ui_mode: ThemeMode::System,
             backdrop: Backdrop::Acrylic,
             corner_radius: corner::WINDOWS,
             tint_opacity: 40,
@@ -319,11 +335,7 @@ impl Theme {
     }
 
     pub fn is_dark(&self, system_dark: bool) -> bool {
-        match self.mode {
-            ThemeMode::System => system_dark,
-            ThemeMode::Dark => true,
-            ThemeMode::Light => false,
-        }
+        self.mode.resolve(system_dark)
     }
 
     pub fn palette(&self, system_dark: bool) -> Palette {
@@ -501,5 +513,13 @@ mod tests {
         assert_eq!(accented.border, accent.with_alpha(palette.border.a));
         assert_eq!(accented.tint, palette.tint);
         assert_eq!(accented.hover_fill, palette.hover_fill);
+    }
+
+    #[test]
+    fn theme_mode_resolves_against_the_system() {
+        assert!(ThemeMode::System.resolve(true));
+        assert!(!ThemeMode::System.resolve(false));
+        assert!(ThemeMode::Dark.resolve(false));
+        assert!(!ThemeMode::Light.resolve(true));
     }
 }

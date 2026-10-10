@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (182 tests) are green.
+  `cargo test --workspace` (184 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -272,7 +272,8 @@ work area of the monitor nearest the action (`work_area_at`).
 
 ```
 Theme {
-    mode: ThemeMode,          // System (default) | Dark | Light
+    mode: ThemeMode,          // System (default) | Dark | Light; colors spaces
+    ui_mode: ThemeMode,       // dark/light for the settings window and menus
     backdrop: Backdrop,       // Acrylic (default) | Blur | Clear | Solid
     corner_radius: u8,        // px, 0..=24, default 8 (theme::corner presets)
     tint_opacity: u8,         // percent, default 40
@@ -292,7 +293,10 @@ Theme {
 `Theme::palette(system_dark) -> Palette` resolves concrete colors (tint with
 alpha, title fill, text, hover/selected fills, border) from the Windows 11
 dark (`#202020` / white) or light (`#F3F3F3` / `#1A1A1A`) base, or the custom
-colors. `Palette::with_accent(accent)` replaces only `selected_fill` and
+colors. `ThemeMode::resolve(system_dark)` decides dark/light for a mode.
+`ui_mode` drives `App::ui_dark` and `Ui::set_ui_dark` for DeskSpace's own
+chrome; `mode` (through `Theme::is_dark`) colors the spaces.
+`Palette::with_accent(accent)` replaces only `selected_fill` and
 `border` with the accent at their current alphas; the app applies it in
 `App::palette` when `use_accent` is on and
 `deskspace_platform::system_accent_color()` (the DWM `AccentColor` registry
@@ -600,14 +604,15 @@ WindowSettings {
   `Apply`, and opens `ChooseColorW` for color fields. `Ui::update_settings`
   diffs a new form of the same shape into the existing controls.
 - Dark mode (`win32/dark_mode.rs`): `Ui::set_ui_dark`, which the app calls
-  with Windows' app mode on start and on `SystemThemeChanged`, switches
+  with `Theme.ui_mode` resolved against Windows on start, on the
+  `SystemThemeChanged` event, and while the ui_mode choice is edited, switches
   popup menus (uxtheme ordinals 135/136, `SetPreferredAppMode` and
   `FlushMenuThemes`) and the settings window: dark caption, body and command
   bar colors (`UiColors`), `DarkMode_Explorer` / `DarkMode_CFD` control
   styles, and a tab strip painted by a subclass in both modes, because the
   tab control has no dark style. Static labels are never disabled (Windows
   embosses disabled static text); disabled fields grey them through
-  `WM_CTLCOLORSTATIC`. The spaces follow their own Color mode setting.
+  `WM_CTLCOLORSTATIC`. The spaces follow their own `mode` setting.
 - The app embeds the common-controls v6 manifest dependency via
   `crates/deskspace-app/build.rs`.
 

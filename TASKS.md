@@ -267,7 +267,7 @@ is large.
     change live when the accent changes in Windows Settings.
 
 - [ ] **C3. Theme override for settings and menus (F-30).** Follow "Recipe:
-  a new global setting".
+  a new global setting". (awaiting check)
   - Core: `Theme.ui_mode: ThemeMode` (default `System`). It is separate from
     `Theme.mode`, which only colors the spaces.
   - App: `fn ui_dark(&self) -> bool` returning `self.config.theme.ui_mode
@@ -863,6 +863,10 @@ After H4: update `CONTEXT.md` (section 6, Native UI: the rail and
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
+- `deskspace-app/src/app.rs` `cancel_settings` decides `restyle` with
+  `saved_theme != self.config.theme`, which now includes `ui_mode`. Cancelling
+  a change that only touched `ui_mode` repaints every space for nothing.
+  Harmless; compare the colors that matter, or exclude `ui_mode`.
 - `deskspace-platform/src/win32/controller.rs` handles `WM_SETTINGCHANGE`
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts

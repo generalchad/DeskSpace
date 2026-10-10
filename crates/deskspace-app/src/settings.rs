@@ -52,6 +52,7 @@ pub mod field {
     pub const ABOUT_LICENSE: u32 = 32;
     pub const CONFIG_PATH: u32 = 33;
     pub const USE_ACCENT: u32 = 47;
+    pub const UI_MODE: u32 = 48;
 }
 
 const MODES: [(ThemeMode, &str); 3] = [
@@ -354,6 +355,12 @@ pub fn build_form(
                 "Desktop-hosted spaces sit behind other windows and survive Show \
                  Desktop, but have no blur. Takes effect next launch.",
             ),
+            Field::choice(
+                field::UI_MODE,
+                "Settings and menus",
+                &labels(&MODES),
+                index_of(&MODES, theme.ui_mode),
+            ),
         ],
     };
 
@@ -504,6 +511,12 @@ pub fn apply_field(
             config.theme.use_accent = on;
             Effect::Appearance
         }
+        (field::UI_MODE, FieldValue::Choice(index)) => {
+            config.theme.ui_mode = MODES
+                .get(index)
+                .map_or(config.theme.ui_mode, |entry| entry.0);
+            Effect::Appearance
+        }
         (field::HOTKEY, FieldValue::Text(text)) => {
             session.hotkey_text = text;
             session.hotkey_error = None;
@@ -562,18 +575,17 @@ mod tests {
     }
 
     #[test]
-    fn appearance_edits_apply_live_and_mark_dirty() {
+    fn ui_mode_choice_applies_live() {
         let (mut config, mut session) = setup();
         let effect = apply_field(
             &mut config,
             &mut session,
-            field::BACKDROP,
+            field::UI_MODE,
             FieldValue::Choice(1),
             true,
         );
         assert_eq!(effect, Effect::Appearance);
-        assert_eq!(config.theme.backdrop, Backdrop::Blur);
-        assert!(session.dirty);
+        assert_eq!(config.theme.ui_mode, ThemeMode::Dark);
     }
 
     #[test]
