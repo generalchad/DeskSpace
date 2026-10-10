@@ -72,6 +72,48 @@ mod menu {
     pub const SORT_DATE_DESC: u32 = 36;
 }
 
+/// The opacity presets the Appearance submenu offers: menu id, label, and the
+/// stored opacity. Drives both the submenu and how a choice is handled.
+const OPACITY_PRESETS: [(u32, &str, u8); 5] = [
+    (menu::OPACITY_100, "Opacity 100%", 255),
+    (menu::OPACITY_80, "Opacity 80%", 204),
+    (menu::OPACITY_60, "Opacity 60%", 153),
+    (menu::OPACITY_40, "Opacity 40%", 102),
+    (menu::OPACITY_20, "Opacity 20%", 51),
+];
+
+/// The sort choices the Sort by submenu offers: menu id, label, sort key, and
+/// whether the order descends. Drives both the submenu and the choice handling.
+const SORT_PRESETS: [(u32, &str, SortKey, bool); 7] = [
+    (
+        menu::SORT_NAME_ASC,
+        "Name (A\u{2013}Z)",
+        SortKey::Name,
+        false,
+    ),
+    (
+        menu::SORT_NAME_DESC,
+        "Name (Z\u{2013}A)",
+        SortKey::Name,
+        true,
+    ),
+    (menu::SORT_KIND, "Type", SortKey::Kind, false),
+    (menu::SORT_SIZE_ASC, "Size (smallest)", SortKey::Size, false),
+    (menu::SORT_SIZE_DESC, "Size (largest)", SortKey::Size, true),
+    (
+        menu::SORT_DATE_ASC,
+        "Date (oldest)",
+        SortKey::Modified,
+        false,
+    ),
+    (
+        menu::SORT_DATE_DESC,
+        "Date (newest)",
+        SortKey::Modified,
+        true,
+    ),
+];
+
 enum Drag {
     None,
     Space {
@@ -2115,22 +2157,23 @@ impl App {
                     self.schedule_save(ui);
                 }
             }
-            Some(menu::OPACITY_100) => self.set_space_opacity(ui, id, 255, at),
-            Some(menu::OPACITY_80) => self.set_space_opacity(ui, id, 204, at),
-            Some(menu::OPACITY_60) => self.set_space_opacity(ui, id, 153, at),
-            Some(menu::OPACITY_40) => self.set_space_opacity(ui, id, 102, at),
-            Some(menu::OPACITY_20) => self.set_space_opacity(ui, id, 51, at),
             Some(menu::SPACE_TINT) => self.pick_space_tint(ui, id, at),
             Some(menu::SPACE_TEXT) => self.pick_space_text(ui, id, at),
             Some(menu::RESET_APPEARANCE) => self.reset_space_appearance(ui, id, at),
-            Some(menu::SORT_NAME_ASC) => self.sort_space(ui, id, SortKey::Name, false, at),
-            Some(menu::SORT_NAME_DESC) => self.sort_space(ui, id, SortKey::Name, true, at),
-            Some(menu::SORT_KIND) => self.sort_space(ui, id, SortKey::Kind, false, at),
-            Some(menu::SORT_SIZE_ASC) => self.sort_space(ui, id, SortKey::Size, false, at),
-            Some(menu::SORT_SIZE_DESC) => self.sort_space(ui, id, SortKey::Size, true, at),
-            Some(menu::SORT_DATE_ASC) => self.sort_space(ui, id, SortKey::Modified, false, at),
-            Some(menu::SORT_DATE_DESC) => self.sort_space(ui, id, SortKey::Modified, true, at),
-            Some(choice) => self.run_common_menu(ui, choice, at),
+            Some(choice) => {
+                if let Some((_, _, opacity)) = OPACITY_PRESETS
+                    .iter()
+                    .find(|(preset, ..)| *preset == choice)
+                {
+                    self.set_space_opacity(ui, id, *opacity, at);
+                } else if let Some((_, _, key, descending)) =
+                    SORT_PRESETS.iter().find(|(preset, ..)| *preset == choice)
+                {
+                    self.sort_space(ui, id, *key, *descending, at);
+                } else {
+                    self.run_common_menu(ui, choice, at);
+                }
+            }
             None => {}
         }
     }
@@ -2488,14 +2531,7 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
 /// The "Appearance" submenu for a space: opacity presets, custom tint and
 /// text colors, and a reset to the theme.
 fn space_appearance_menu(space: &Space) -> MenuEntry {
-    const OPACITIES: [(u32, &str, u8); 5] = [
-        (menu::OPACITY_100, "Opacity 100%", 255),
-        (menu::OPACITY_80, "Opacity 80%", 204),
-        (menu::OPACITY_60, "Opacity 60%", 153),
-        (menu::OPACITY_40, "Opacity 40%", 102),
-        (menu::OPACITY_20, "Opacity 20%", 51),
-    ];
-    let mut entries: Vec<MenuEntry> = OPACITIES
+    let mut entries: Vec<MenuEntry> = OPACITY_PRESETS
         .iter()
         .map(|(id, label, value)| MenuEntry::item(*id, *label).checked(space.opacity == *value))
         .collect();
@@ -2514,15 +2550,10 @@ fn space_appearance_menu(space: &Space) -> MenuEntry {
 fn space_sort_menu() -> MenuEntry {
     MenuEntry::submenu(
         "Sort by",
-        vec![
-            MenuEntry::item(menu::SORT_NAME_ASC, "Name (A\u{2013}Z)"),
-            MenuEntry::item(menu::SORT_NAME_DESC, "Name (Z\u{2013}A)"),
-            MenuEntry::item(menu::SORT_KIND, "Type"),
-            MenuEntry::item(menu::SORT_SIZE_ASC, "Size (smallest)"),
-            MenuEntry::item(menu::SORT_SIZE_DESC, "Size (largest)"),
-            MenuEntry::item(menu::SORT_DATE_ASC, "Date (oldest)"),
-            MenuEntry::item(menu::SORT_DATE_DESC, "Date (newest)"),
-        ],
+        SORT_PRESETS
+            .iter()
+            .map(|(id, label, ..)| MenuEntry::item(*id, *label))
+            .collect(),
     )
 }
 
@@ -2687,6 +2718,35 @@ mod tests {
         save.mark();
         assert!(save.take());
         assert!(!save.take());
+    }
+
+    #[test]
+    fn menu_ids_are_unique() {
+        // The ids the preset tables do not cover. Every other id lives here, so
+        // a table entry colliding with one fails the uniqueness check below.
+        let other = [
+            menu::ROLL,
+            menu::LOCK,
+            menu::NEW_SPACE,
+            menu::SETTINGS,
+            menu::TOGGLE_VISIBLE,
+            menu::EXIT,
+            menu::DELETE,
+            menu::FIT,
+            menu::REMOVE_ITEM,
+            menu::RENAME,
+            menu::RENAME_ITEM,
+            menu::SPACE_TINT,
+            menu::SPACE_TEXT,
+            menu::RESET_APPEARANCE,
+        ];
+        let mut ids: Vec<u32> = other.to_vec();
+        ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));
+        ids.extend(SORT_PRESETS.iter().map(|(id, ..)| *id));
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(ids.len(), unique.len(), "menu ids collide");
     }
 
     #[test]

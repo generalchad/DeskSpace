@@ -179,7 +179,7 @@ Each is independent. None changes behavior.
     `OVERLAY_SIZE_RANGE` in `theme.rs`, and `GAP_RANGE` / `SNAP_RANGE` in
     `layout.rs`. Use them everywhere.
 
-- [ ] **B3. Drive the opacity and sort menus from one table each.**
+- [x] **B3. Drive the opacity and sort menus from one table each.**
   - `deskspace-app/src/app.rs`: the opacity values appear both in
     `space_appearance_menu`'s `OPACITIES` and in `show_space_menu`'s match;
     the sort ids are mapped both in `space_sort_menu` and in the match.
