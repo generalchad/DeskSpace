@@ -8,8 +8,6 @@ pub enum PlatformError {
     Io(#[from] std::io::Error),
     #[error("a registry operation failed (error {0})")]
     Registry(u32),
-    #[error("no usable desktop host window was found")]
-    NoDesktopWindow,
     #[error("window class registration failed")]
     ClassRegistration,
     #[error("the format of {0} is not valid")]

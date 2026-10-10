@@ -197,7 +197,7 @@ Helpers: `title_bar()`, `visible_rect()` (the title bar when rolled up, else
 rolled up), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
 `resize_edges_at(point, border) -> ResizeEdges` (none when locked or rolled
 up; corners are twice as wide as edges), item lookup/insert/remove, and
-`required_size` / `resize_to_fit`.
+`set_position`.
 
 ### Desktop
 
@@ -208,8 +208,7 @@ Desktop { spaces: Vec<Space>, layout: GridSpec }
 `spaces` also reads the pre-rename key `spaces`, so older config files load.
 
 Operations: add/remove space, add/remove/move item, `item_count`,
-`item_with_path`, `space_at(point)` (topmost hit test on `visible_rect`),
-`sort_by_id`. `move_item` validates the target before removing the item, so a
+`space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`. `move_item` validates the target before removing the item, so a
 failed move never loses it.
 
 ### Layout engine (`layout.rs`)

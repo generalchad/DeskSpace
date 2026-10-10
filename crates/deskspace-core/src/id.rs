@@ -19,37 +19,3 @@ impl std::fmt::Display for ItemId {
         write!(f, "item#{}", self.0)
     }
 }
-
-#[derive(Debug, Clone, Default)]
-pub struct IdGenerator {
-    space: u64,
-    item: u64,
-}
-
-impl IdGenerator {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn next_space(&mut self) -> SpaceId {
-        self.space += 1;
-        SpaceId(self.space)
-    }
-
-    pub fn next_item(&mut self) -> ItemId {
-        self.item += 1;
-        ItemId(self.item)
-    }
-
-    pub fn observe_space(&mut self, id: SpaceId) {
-        self.space = self.space.max(id.0);
-    }
-
-    pub fn observe_item(&mut self, id: ItemId) {
-        self.item = self.item.max(id.0);
-    }
-
-    pub fn seed(space: u64, item: u64) -> Self {
-        Self { space, item }
-    }
-}

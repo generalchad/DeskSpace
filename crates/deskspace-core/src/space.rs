@@ -192,21 +192,6 @@ impl Space {
         self.items.len()
     }
 
-    pub fn required_size(&self, cell: Size, gap: i32, padding: i32, columns: i32) -> Size {
-        let columns = columns.max(1);
-        let rows = self.items.len().div_ceil(columns as usize).max(1) as i32;
-        Size::new(
-            padding * 2 + columns * cell.width + (columns - 1) * gap,
-            self.title_height + padding * 2 + rows * cell.height + (rows - 1) * gap,
-        )
-    }
-
-    pub fn resize_to_fit(&mut self, cell: Size, gap: i32, padding: i32, columns: i32) {
-        let size = self.required_size(cell, gap, padding, columns);
-        self.rect.width = size.width;
-        self.rect.height = size.height;
-    }
-
     pub fn set_position(&mut self, origin: Point) {
         self.rect = self.rect.with_position(origin);
     }

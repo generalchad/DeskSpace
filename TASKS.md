@@ -158,7 +158,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
 
 Each is independent. None changes behavior.
 
-- [ ] **B1. Remove clearly dead code.** For each item, `grep` the whole
+- [x] **B1. Remove clearly dead code.** For each item, `grep` the whole
   workspace first; delete only if nothing outside its own tests uses it.
   - `deskspace-core/src/id.rs` `IdGenerator` (and its tests).
   - `deskspace-core/src/space.rs` `Space::required_size` and
