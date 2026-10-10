@@ -58,6 +58,7 @@ pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
 
 pub(crate) const SEL_OPEN: usize = 0;
 pub(crate) const SEL_CLEAR: usize = 1;
+pub(crate) const SEL_PERMANENT_DELETE: usize = 2;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -266,6 +267,10 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             post_message(RENAME_KEY, 0, 0);
             return true;
         }
+        if WATCH_SELECTION.get() && key_down(VK_SHIFT) && is_key(event.vkCode, VK_DELETE) {
+            post_message(SELECTION_KEY, SEL_PERMANENT_DELETE, 0);
+            return true;
+        }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_DELETE) {
             post_message(DELETE_KEY, 0, 0);
             return true;
@@ -442,6 +447,7 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
     Some(match action {
         SEL_OPEN => SelectionKey::Open,
         SEL_CLEAR => SelectionKey::Clear,
+        SEL_PERMANENT_DELETE => SelectionKey::PermanentDelete,
         _ => return None,
     })
 }
@@ -539,6 +545,10 @@ mod tests {
     fn decodes_selection_keys() {
         assert_eq!(selection_key(SEL_OPEN), Some(SelectionKey::Open));
         assert_eq!(selection_key(SEL_CLEAR), Some(SelectionKey::Clear));
+        assert_eq!(
+            selection_key(SEL_PERMANENT_DELETE),
+            Some(SelectionKey::PermanentDelete)
+        );
         assert_eq!(selection_key(99), None);
     }
 

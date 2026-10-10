@@ -94,9 +94,15 @@ pub(crate) fn transfer(
         .map_err(|_| PlatformError::InvalidFormat("file operation result"))
 }
 
-/// Sends `paths` to the Recycle Bin, without a prompt, recording an undo.
-/// Explorer's Delete key does the same.
-pub(crate) fn delete(owner: Option<HWND>, paths: &[PathBuf]) -> Result<(), PlatformError> {
+/// Deletes `paths` with the shell's file operation, without a prompt. Unless
+/// `permanent` is set they go to the Recycle Bin and the operation records an
+/// undo, as Explorer's Delete key does; `permanent` deletes them for good, as
+/// Shift+Delete does.
+pub(crate) fn delete(
+    owner: Option<HWND>,
+    paths: &[PathBuf],
+    permanent: bool,
+) -> Result<(), PlatformError> {
     if paths.is_empty() {
         return Ok(());
     }
@@ -107,8 +113,14 @@ pub(crate) fn delete(owner: Option<HWND>, paths: &[PathBuf]) -> Result<(), Platf
         if let Some(owner) = owner {
             let _ = operation.SetOwnerWindow(owner);
         }
-        // ALLOWUNDO sends to the Recycle Bin; NOCONFIRMATION skips the prompt.
-        operation.SetOperationFlags(FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOCONFIRMMKDIR)?;
+        // ALLOWUNDO sends to the Recycle Bin; without it the files are removed
+        // for good. NOCONFIRMATION skips the prompt.
+        let flags = if permanent {
+            FOF_NOCONFIRMATION | FOF_NOCONFIRMMKDIR
+        } else {
+            FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOCONFIRMMKDIR
+        };
+        operation.SetOperationFlags(flags)?;
         let mut queued = false;
         for path in paths {
             let Ok(item) = shell_item(path) else {

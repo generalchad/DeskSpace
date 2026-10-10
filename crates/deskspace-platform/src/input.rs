@@ -77,6 +77,8 @@ pub enum SelectionKey {
     Open,
     /// Escape: clear the selection.
     Clear,
+    /// Shift+Delete: delete the focused items without the Recycle Bin.
+    PermanentDelete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

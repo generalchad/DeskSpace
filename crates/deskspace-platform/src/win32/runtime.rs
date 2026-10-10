@@ -437,11 +437,12 @@ impl Ui {
         }
     }
 
-    /// Sends `paths` to the Recycle Bin (undoable, no prompt) with the shell's
-    /// file operation. Blocks while the shell works; other events are queued.
-    pub fn delete_files(&mut self, paths: &[PathBuf]) -> bool {
+    /// Deletes `paths` with the shell's file operation. Unless `permanent` is
+    /// set they go to the Recycle Bin (undoable, no prompt). Blocks while the
+    /// shell works; other events are queued.
+    pub fn delete_files(&mut self, paths: &[PathBuf], permanent: bool) -> bool {
         let owner = with_runtime(|runtime| runtime.controller);
-        match file_op::delete(owner, paths) {
+        match file_op::delete(owner, paths, permanent) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "delete failed");

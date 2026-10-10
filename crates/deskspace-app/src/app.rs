@@ -759,6 +759,7 @@ impl App {
         match key {
             SelectionKey::Open => self.open_selected_item(ui),
             SelectionKey::Clear => self.clear_selection(ui),
+            SelectionKey::PermanentDelete => self.delete_selected_items(ui, true),
         }
     }
 
@@ -1573,13 +1574,14 @@ impl App {
         self.dispatch(Command::RemoveItem { id }, near)
     }
 
-    /// Sends every selected item's file to the Recycle Bin, as Explorer's
-    /// Delete key does, then drops the items whose files are gone. A file the
-    /// shell could not delete (for example one in use) stays listed. An item
+    /// Deletes every selected item's file with the shell, then drops the items
+    /// whose files are gone. Unless `permanent` is set they go to the Recycle
+    /// Bin, as Explorer's Delete key does; `permanent` is Shift+Delete. A file
+    /// the shell could not delete (for example one in use) stays listed. An item
     /// whose file is already missing is dropped without a shell operation. This
     /// is distinct from the item menu's "Remove from space", which returns a
     /// stored file to the desktop.
-    fn delete_selected_items(&mut self, ui: &mut Ui) {
+    fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
         let Some(space) = self.selected_space else {
             return;
         };
@@ -1597,7 +1599,7 @@ impl App {
             .map(|item| item.path.clone())
             .collect();
         if !paths.is_empty() {
-            ui.delete_files(&paths);
+            ui.delete_files(&paths, permanent);
         }
         // Drop every item whose file is gone, whether the shell removed it or
         // it was already stale, so no label without an icon is left behind.
@@ -2400,7 +2402,7 @@ impl EventHandler for App {
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
-            Event::DeleteSelection => self.delete_selected_items(ui),
+            Event::DeleteSelection => self.delete_selected_items(ui, false),
             Event::Clipboard(ClipboardAction::Copy) => self.copy_selection(ui, false),
             Event::Clipboard(ClipboardAction::Cut) => self.copy_selection(ui, true),
             Event::Clipboard(ClipboardAction::Paste) => self.paste_clipboard(ui),
