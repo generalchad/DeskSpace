@@ -41,18 +41,22 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (194 tests) are green.
+  `cargo test --workspace` (211 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
   selection highlights. Verified visually on Windows 11 build 26300.
-- A tray icon, a space right-click menu, and a native settings window
-  (Appearance, Labels, Layout, Colors, Advanced, General, About) with live
-  preview and OK/Cancel/Apply.
+- A tray icon, a space right-click menu, and a native settings window in three
+  panes: the scopes (Global, then every space indented under it), the pages
+  (Appearance, Labels, Layout, Colors, Advanced, plus General and About for
+  Global), and the page, with live preview and OK/Cancel/Apply.
+- Every space follows the global look until it is customized ("Customize
+  this space" in the settings window, or any Appearance edit in its menu);
+  it then has its own copy of every look setting (section 4, `SpaceLook`).
 - Spaces can be created, deleted (with confirmation), moved by the title bar,
   resized from any edge or corner, scrolled with the mouse wheel, rolled up
-  (double-click the title bar), renamed inline, restyled per space (opacity,
-  tint, text), sorted, and locked; their items can be rearranged by dragging.
+  (double-click the title bar), renamed inline, given their own look, sorted,
+  and locked; their items can be rearranged by dragging.
 - Items have Explorer-style multi-selection (plain click selects one, Ctrl+click
   toggles, Shift+click ranges, rubber-band over empty space with Ctrl/Shift to
   add, Ctrl+A for all, Delete removes all selected). Item check boxes follow
@@ -189,14 +193,28 @@ Space {
     items: Vec<Item>,
     locked: bool,
     rolled_up: bool,
-    opacity: u8,          // multiplier on the theme's tint alpha, default 255
-    tint: Option<Color>,  // body tint override; None uses the theme
-    text: Option<Color>,  // title/label text override; None uses the theme
-    icon_size: Option<u8>, // icon-size percent override; None uses the global setting
-    title_height: i32,    // default 28
-    user_sized: bool,     // set by a resize; keeps size, reflows, scrolls
+    custom: bool,              // uses `look` instead of the global settings
+    look: Option<SpaceLook>,   // kept while `custom` is off
+    title_height: i32,         // default 28
+    user_sized: bool,          // set by a resize; keeps size, reflows, scrolls
 }
+
+SpaceLook { theme: Theme, gap: i32, padding: i32 }
 ```
+
+A space follows the global `Theme` and grid spacing until it is customized.
+`SpaceLook` is its own copy of every look setting: the whole theme (its
+`ui_mode` is unused) plus the grid's icon spacing and edge padding. It is
+seeded from the global settings (`SpaceLook::from_global`) the first time,
+and kept when customization is turned off, so turning it back on restores it.
+`active_look()`, `theme(global)`, and `grid(global)` resolve what a space is
+drawn with.
+
+Files from before `look` stored per-space `opacity`, `tint`, `text`, and
+`icon_size`. They are still read (private, never written) and
+`fold_legacy_overrides` turns them into a customized look at startup:
+opacity becomes the tint opacity it produced, and a tint or text color turns
+on custom colors, taking the other color from the palette shown at the time.
 
 Helpers: `title_bar()`, `visible_rect()` (the title bar when rolled up, else
 `rect`; used for window size and hit-testing), `content_rect()` (empty when
@@ -233,16 +251,16 @@ GridSpec {
   a scale change reaches the title even for user-sized spaces.
 - `GridSpec` is the logical 96-DPI / 100 % base and is what the config stores.
   `GridSpec::scaled(scale)` produces the effective grid for a display. The app
-  derives a per-space scale (the `Theme.icon_size` setting or Explorer's icon
-  size, times the space's monitor DPI) and shares it through `layout_for(id)` /
-  `metrics_for(id)`; commands take the effective grid of the space under the
-  action: `Desktop::apply_with_layout(command, layout, bounds)`, with `apply`
-  delegating using the stored base. Scene geometry, hit tests, and scroll all
-  read the same per-space grid, so the grid the painter uses always matches the
-  grid the pointer uses. When `match_explorer` is on, Explorer's item spacing
-  replaces the cell and gap outright; a per-space `icon_size` override wins over
-  both Explorer and the global setting and skips that spacing replacement, so
-  the whole grid follows the override.
+  derives a per-space scale (the space's `Theme.icon_size` setting or
+  Explorer's icon size, times the space's monitor DPI) and shares it through
+  `layout_for(id)` / `metrics_for(id)`; commands take the effective grid of the
+  space under the action: `Desktop::apply_with_layout(command, layout, bounds)`,
+  with `apply` delegating using the stored base. Scene geometry, hit tests, and
+  scroll all read the same per-space grid, so the grid the painter uses always
+  matches the grid the pointer uses. The base grid and theme are the space's
+  own while it is customized (`Space::grid`, `Space::theme`). When the space's
+  theme has `match_explorer` on, Explorer's item spacing replaces the cell and
+  gap outright.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
   the work area. `scroll_step()` is one row per wheel notch.
@@ -258,9 +276,8 @@ effective (scaled) grid; `apply(command, bounds)` is a convenience that uses
 the stored base grid. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
-`ResizeSpace`, `FitToContents`, `Reflow`, `SetSpaceOpacity`, `SetSpaceTint`,
-`SetSpaceText`, `SetSpaceIconSize`, `SortSpace`, `ToggleLock`, `ToggleRollup`,
-`AddItem`,
+`ResizeSpace`, `FitToContents`, `Reflow`, `CustomizeSpace`, `SetSpaceLook`,
+`SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
 `RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
 `AutoArrange`, `SnapAll`.
 
@@ -268,6 +285,10 @@ Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and
 `FitToContents` clears that again. `bounds` is the
 work area of the monitor nearest the action (`work_area_at`).
+`CustomizeSpace { id, on, seed }` turns a space's own look on or off, seeding
+it from `seed` (the global settings) only when it has none. `SetSpaceLook {
+id, custom, look }` sets both exactly (clamped): settings edits pass `custom:
+true`, and Cancel uses it to restore a snapshot.
 
 ### Theme (`theme.rs`)
 
@@ -322,7 +343,7 @@ WindowSettings {
 
 - `CURRENT_VERSION = 2`. `Config::migrate` upgrades version 0/1 files: it
   resets the theme (v1 colors were opaque and tuned for the old color-keyed
-  overlay), sets every space's `opacity` to 255, and re-runs `position_items`
+  overlay), drops each space's v1 `opacity` (it was a fill alpha), and re-runs `position_items`
   because v1 stored absolute item positions. A missing `version` key
   deserializes as 0.
 - `WindowSettings`, `GridSpec`, and `Theme` use struct-level
@@ -402,6 +423,10 @@ WindowSettings {
 
 - One window per space, created by `Ui::create_space`. State is a
   `Box<SpaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
+  `set_style`, `set_rect`, and `set_scene` return early when the value is
+  unchanged (the style is kept in the state, the rect read back from the
+  window, the scene compared with the stored one), so restyling every space
+  on a settings edit only touches the ones that changed.
 - Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`,
   kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
   activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
@@ -604,15 +629,35 @@ WindowSettings {
 - `SettingsForm` → pages → `Field`s (`Heading`, `Note`, `Choice`, `Toggle`,
   `Slider` (optionally with labeled `SliderMark`s and, when `editable`, a
   number box that commits on focus loss instead of a static value), `Color`,
-  `Text`, `Button`). Each page is a
-  top-level tab; Appearance is split across Appearance, Labels, Layout, Colors,
-  and Advanced so no page clips on a 1080-pixel display. The settings window lays
-  them out with
-  common controls v6 under a tab control (pages are container windows that
-  forward notifications), uses Mica in the caption, reports edits as
-  `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
+  `Text`, `Button`). Appearance is split across Appearance, Labels, Layout,
+  Colors, and Advanced so no page clips on a 1080-pixel display. The settings
+  window lays the pages out with common controls v6 (pages are container
+  windows that forward notifications), uses Mica in the caption, reports edits
+  as `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
   `Apply`, and opens `ChooseColorW` for color fields. `Ui::update_settings`
-  diffs a new form of the same shape into the existing controls.
+  diffs a new form of the same shape into the existing controls, and touches
+  the panes and header only when they change, since a slider drag sends an
+  update per tick.
+- `SettingsForm.nav` (a `SettingsNav`) replaces the tab control with panes,
+  separated by hairlines: a scopes pane (`scopes`, each with an `indent` and a
+  `dimmed` flag; `ScopeChanged`), a categories pane (`groups` of entries, each
+  pointing at a page; untitled groups have no title row; `NavChanged`), and a
+  `header` above the page with a title and an optional switch
+  (`HeaderSwitch`). Both panes are owner-drawn list boxes painted like Windows
+  11 navigation (an accent bar on the selection). The platform knows nothing
+  about spaces: the app fills the panes, maps an index back to what it means,
+  and answers each event with a new form. The page shape never changes: every
+  page is always built, and the app picks which ones the categories pane
+  lists.
+- The app's form (`settings.rs`): the scopes are Global, then every space
+  indented, dimmed while it follows Global. Global lists all seven pages; a
+  space lists only the five look pages and shows its values (from Global
+  until customized) greyed unless the header's "Customize this space" switch
+  is on. Global edits write `Config` directly; a space's edits become
+  `SetSpaceLook` commands, the switch becomes `CustomizeSpace`, and the Colors
+  page's reset becomes "Match global appearance". Cancel restores each
+  space's `SpaceSnapshot`; a space menu edit made while the window is open is
+  taken into that snapshot, because the menu commits at once.
 - Dark mode (`win32/dark_mode.rs`): `Ui::set_ui_dark`, which the app calls
   with `Theme.ui_mode` resolved against Windows on start, on the
   `SystemThemeChanged` event, and while the ui_mode choice is edited, switches
@@ -693,9 +738,13 @@ WindowSettings {
    and space creation schedule a save that fires about 700 ms after the last
    change, while file-moving operations (drops, item removal, delete) and
    Apply/OK save at once, and closing flushes any pending write.
-5. Settings edits apply to the live config immediately (preview); Apply/OK
-   validate and re-register the hotkey and save; Cancel or closing the window
-   restores the saved theme and window settings.
+5. Settings edits apply at once as a preview: global edits to the live config,
+   a customized space's edits through `SetSpaceLook`. Repainting the spaces is
+   deferred to `PREVIEW_TIMER`, which only fires once the message queue is
+   idle, so a slider drag collapses into one restyle or re-flow per pause
+   (all spaces for a global edit, one for a space edit). Apply/OK validate and
+   re-register the hotkey and save; Cancel or closing the window restores the
+   saved theme and window settings and every space's snapshot.
 6. On `CloseRequested`, the app unregisters the hotkey, discards unapplied
    settings edits, and saves.
 
@@ -708,15 +757,20 @@ WindowSettings {
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
 - Right-click a space: Roll up/down, Rename, Lock position, Fit to contents
-  (resized spaces only), Appearance (opacity presets, icon size, custom tint or
-  text, reset), Delete space (asks first unless the space is empty), New space,
-  Settings…, Hide/Show spaces, Exit DeskSpace.
-- The space menu's Appearance submenu sets an opacity preset, a per-space icon
-  size (Default/Small/Medium/Large/Extra large, where Default follows the
-  global setting), or a custom tint or text color (with a reset); Sort by
-  reorders items by name, type, size, or modified date.
+  (resized spaces only), Appearance, Sort by, Delete space (asks first unless
+  the space is empty), New space, Settings…, Hide/Show spaces, Exit DeskSpace.
+- The space menu's Appearance submenu sets a tint-opacity preset, an icon size
+  (Small/Medium/Large/Extra large), or a custom tint or text color. Each of
+  these customizes the space, starting from what it shows now; "Use global
+  appearance" makes it follow Global again (keeping its look for later), and
+  "Space settings…" opens the settings window on that space. Sort by reorders
+  items by name, type, size, or modified date.
+- In Settings, pick Global or a space in the left pane. Global edits apply to
+  every space that is not customized. A space's pages are greyed, showing the
+  global values, until "Customize this space" is ticked; its edits then apply
+  to that space alone.
 - Settings previews live across its Appearance, Labels, Layout, Colors, and
-  Advanced tabs: material, corners, tint, custom colors, the Windows accent for
+  Advanced pages: material, corners, tint, custom colors, the Windows accent for
   the selection and border, label lines/size/shadow,
   icon size/spacing/edge padding (which re-flow every space; icon size scales
   the icon and the grid cell around it), and the shell overlay size (the shortcut
@@ -793,7 +847,7 @@ WindowSettings {
 | Lock space | Implemented (context menu, lock glyph) |
 | Snap to grid / auto-arrange | Implemented in core |
 | Per-lens sort rules | Not implemented |
-| Appearance (color, translucency, blur, corners) | Implemented globally in Settings and per space (menu: opacity, tint, text) |
+| Appearance (color, translucency, blur, corners) | Implemented globally and per space (a customized space has its own copy of every look setting) |
 | Multiple pages / virtual desktops | Not implemented |
 | Backup / restore / layout snapshots | Config file only |
 | Right-click context menu | Space menu; item menu is Explorer's |
@@ -859,8 +913,8 @@ WindowSettings {
   and icons are fetched at the effective pixel size with shell overlays, so
   large sizes are crisp; info tips match Explorer's. Explorer's view mode
   (list/details) is not mapped, only the desktop's own options are read (a
-  check-box setting enabled in one Explorer window is not reflected). A per-space
-  icon size overrides both Explorer and the global setting (ROADMAP F-25).
+  check-box setting enabled in one Explorer window is not reflected). Matching is
+  part of the look, so a customized space can turn it off for itself.
 - **Selection is within one space.** Rubber-band (marquee) selection, Ctrl+A,
   and dragging the whole selection are implemented; a selection cannot span
   spaces, and Ctrl/Shift-dragging between spaces is not distinguished from a

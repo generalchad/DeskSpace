@@ -141,8 +141,9 @@ A native, lightweight, offline Windows desktop organizer that:
    icon layer, with a safe restore path. This is the remaining v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** the per-space settings rail (F-46, `TASKS.md` section H),
-   and the New spaces and Hotkeys settings pages. Then cut v0.2.
+4. **Finish M3:** flash the space selected in the settings window (F-46,
+   `TASKS.md` H4), and the New spaces and Hotkeys settings pages. Then cut
+   v0.2.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -273,13 +274,21 @@ Done:
   brings them back.
 - **[done]** Space context menu (F-14):
   - create, delete, lock, roll up, and fit to contents;
-  - an Appearance submenu: per-space opacity, tint, and text color (F-24);
+  - an Appearance submenu: tint opacity, icon size, and custom tint and text
+    colors, each of which customizes the space (F-24), plus "Use global
+    appearance" and "Space settings…";
   - a one-off Sort by (F-31).
 - **[done]** Settings window (F-17). A data-driven form engine with live
-  preview, OK/Cancel/Apply, and the tabs Appearance, Labels, Layout, Colors,
+  preview, OK/Cancel/Apply, and the pages Appearance, Labels, Layout, Colors,
   Advanced, General, and About. It covers the material, corners, colors, label
-  style (F-27), grid density (F-26), icon size (F-25, global), and overlay
-  size.
+  style (F-27), grid density (F-26), icon size (F-25), and overlay size.
+- **[done]** Per-space looks (F-46). The settings window has three panes:
+  the scopes (Global, then every space indented, dimmed while it follows
+  Global), the pages of the selected scope, and the page. A space shows the
+  five look pages, greyed with the global values until "Customize this
+  space" is on; it then keeps its own copy of every look setting
+  (`SpaceLook`), kept while customization is off. Edits preview live through
+  `SetSpaceLook` / `CustomizeSpace`, and Cancel restores every space.
 - **[done]** Every `WindowSettings` field is wired to behavior:
   - `start_hidden`;
   - `toggle_hotkey`, editable as text, with validation and conflict reporting
@@ -289,17 +298,11 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. A per-space settings surface (F-46, `TASKS.md` section H). The settings
-   window gets a navigation rail on the left in place of its top tabs:
-   - a Settings group with the global pages;
-   - a Spaces group listing every space that has an appearance override.
-
-   Selecting a space shows its overrides in one shared page, previews edits
-   live, and flashes that space on the desktop. Cancel reverts. Edits go
-   through the `SetSpace*` commands.
+1. Flash the space selected in the settings window's scopes pane, so it can
+   be found on the desktop (F-46, `TASKS.md` H4).
 2. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
    with more bindings (F-17, F-18). The page is not called "Spaces", so it
-   does not clash with the rail group.
+   is not confused with the scopes pane.
 3. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
@@ -410,7 +413,7 @@ Remaining:
 4. Snapping to other spaces, with alignment guides (F-35).
 5. A desktop overview map (F-47): a scaled picture of every monitor with
    its wallpaper and miniature spaces.
-   - Clicking a miniature selects that space in the F-46 rail.
+   - Clicking a miniature selects that space in the F-46 scopes pane.
    - Later, it hosts monitor assignment, the page switcher, and snapshot
      previews.
    - It needs monitor enumeration (today the platform only has
@@ -506,7 +509,8 @@ machine.
 This is the single list of features, which also serves as the spaces parity
 checklist. "Check pending" means the feature is implemented and unit-tested
 or smoke-tested, but has not yet been confirmed on screen. Global settings
-belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
+belong in `Theme` / `WindowSettings` (a look setting in `Theme` is per space too,
+through `SpaceLook`), and other per-space state in `Space`, as
 `#[serde(default)]` fields changed through `Command`s.
 
 | Id | Feature | Milestone | Status |
@@ -527,15 +531,15 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu and Explorer item menu done; lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; takeover and snapshot entries wait for M2 and M6 |
-| F-17 | Settings window | M3, M4 | Partial: 7 tabs; New spaces, Hotkeys, and Lenses pages open; navigation rail with F-46 |
+| F-17 | Settings window | M3, M4 | Partial: 7 pages in a scopes/pages/page layout; New spaces, Hotkeys, and Lenses pages open |
 | F-18 | Hotkeys | M3 | Toggle hotkey and its text editor done; more bindings open |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Open |
-| F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space |
-| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per-space override) |
+| F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
+| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
@@ -556,7 +560,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
 | F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
-| F-46 | Per-space settings rail (customized spaces in the settings window) | M3 | Open; design decided (`TASKS.md` section H) |
+| F-46 | Per-space looks in the settings window (scopes pane, Customize switch) | M3 | Done; check pending; flashing the selected space open (`TASKS.md` H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
@@ -756,3 +760,23 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     page's overlay size.
   - Each space scales to its own monitor's DPI, and `WM_DPICHANGED` reflows
     it.
+
+### 2026-10-10
+
+- **Per-space looks (F-46).**
+  - A first design listed only spaces with one of four overrides (opacity,
+    tint, text, icon size) in a rail group beside the global pages. It read
+    as more global pages and was replaced the same day.
+  - Now the settings window has three panes: the scopes (Global, then every
+    space indented, dimmed while it follows Global), the pages of the
+    selected scope, and the page under a header with a "Customize this
+    space" switch.
+  - A customized space keeps its own copy of every look setting
+    (`SpaceLook`), kept when the switch is turned off. The context menu's
+    Appearance edits customize the space. The old four overrides are folded
+    into a look at startup.
+- **Settings performance.** A slider drag used to restyle and re-flow every
+  space, re-apply DWM attributes, flush the menu themes, and repaint the
+  rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail
+  selections are now skipped, and space previews wait for an idle message
+  queue (`PREVIEW_TIMER`), so a drag collapses into one pass per pause.
