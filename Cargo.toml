@@ -8,8 +8,8 @@ edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 authors = ["Timothy W. Brown"]
-repository = "https://github.com/deskspace/deskspace"
-homepage = "https://github.com/deskspace/deskspace"
+repository = "https://github.com/generalchad/DeskSpace"
+homepage = "https://github.com/generalchad/DeskSpace"
 description = "A free and open-source desktop space organizer for Windows"
 
 [workspace.dependencies]

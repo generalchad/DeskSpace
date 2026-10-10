@@ -837,8 +837,11 @@ WindowSettings {
   and signing (or Developer Mode) - deferred to M8 packaging. Its icon is a
   real `.ico` written beside the storage folder (`icon::write_icon`), since the
   executable has no icon resource yet.
-- **No installer and no code signing.** CI (GitHub Actions) runs fmt, clippy,
-  and tests, with `deny.toml` for licenses/advisories.
+- **No installer, no code signing, no auto-update.** CI (GitHub Actions) runs
+  fmt, clippy, and tests, with `deny.toml` for licenses/advisories. Pushing a
+  `v*` tag that matches the workspace version runs `release.yml`, which
+  publishes an unsigned zip and its SHA-256 to GitHub Releases. Auto-update is
+  planned in M8 (F-45).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 
