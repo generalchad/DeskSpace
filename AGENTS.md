@@ -27,6 +27,7 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 | Test   | `cargo test --workspace` |
 | Lint   | `cargo clippy --workspace --all-targets` |
 | Format | `cargo fmt --all` |
+| Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release` |
 | Dev loop | `./scripts/dev.ps1` (scratch config; `-Fresh`, `-OnTop`, `-Settings`, `-Check`, `-Release`; `Get-Help ./scripts/dev.ps1`) |
 
@@ -36,6 +37,33 @@ because the running executable is locked.
 Always run `cargo fmt --all`, `cargo clippy --workspace --all-targets`, and
 `cargo test --workspace` before considering a change complete. CI should treat
 clippy warnings as failures.
+
+## Tooling
+
+A bundled `rust` MCP server exposes the cargo workflow as tools. Prefer these
+over a raw shell, so the same flags (including `--locked`) are applied
+everywhere.
+
+| Tool | Covers |
+|------|--------|
+| `cargo-build`, `cargo-check` | build and fast compile check |
+| `cargo-test` | tests (`workspace: true` runs every package) |
+| `cargo-clippy` | lint (`all_targets: true`; CI adds `-D warnings`) |
+| `cargo-fmt` | format (`check: true` verifies without writing) |
+| `cargo-deny-check` | dependency policy from `deny.toml` |
+| `cargo-machete` | find unused dependencies |
+| `cargo-add`, `cargo-remove` | edit `Cargo.toml` and refresh `Cargo.lock` |
+| `cargo-metadata`, `cargo-tree`, `workspace-info` | inspect the dependency graph |
+| `cargo-doc` | build rustdoc |
+| `rustc-explain`, `rustup-show`, `rustup-update` | error codes and toolchains |
+
+The remaining cargo subcommands (`clean`, `update`, `package`, `expand`,
+`hack`, `insta`, ...) are exposed as their own tools when a task needs them.
+A missing subcommand can be installed first with the matching helper
+(`cargo-deny-install`, `cargo-hack-install`, `cargo-machete-install`). These
+tools pass `--locked`, so keep `Cargo.lock` current first (see Gotchas).
+Release work (`TASKS.md` section E) also uses `gh`, `actionlint`, `dotnet`,
+and `vpk`.
 
 ## Workspace layout
 
