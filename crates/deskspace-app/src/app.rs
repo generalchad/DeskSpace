@@ -761,6 +761,7 @@ impl App {
             SelectionKey::Clear => self.clear_selection(ui),
             SelectionKey::PermanentDelete => self.delete_selected_items(ui, true),
             SelectionKey::Refresh => self.refresh_spaces(ui),
+            SelectionKey::Menu => self.open_context_menu(ui),
         }
     }
 
@@ -769,6 +770,38 @@ impl App {
     fn refresh_spaces(&mut self, ui: &mut Ui) {
         self.refresh_shell_display(ui);
         self.relayout_all(ui);
+    }
+
+    /// Opens the context menu for the focused item, or for the current space
+    /// when no item is selected, as the Menu key or Shift+F10 does.
+    fn open_context_menu(&mut self, ui: &mut Ui) {
+        let Some(space) = self.selected_space else {
+            return;
+        };
+        let Some(at) = self.menu_anchor() else {
+            return;
+        };
+        match self.selected_items.last().copied() {
+            Some(item) => self.show_item_menu(ui, space, item, at),
+            None => self.show_space_menu(ui, space, at),
+        }
+    }
+
+    /// Where to anchor a keyboard-opened menu: the center of the focused item's
+    /// cell, or the current space's center when no item is selected.
+    fn menu_anchor(&self) -> Option<Point> {
+        let id = self.selected_space?;
+        let space = self.config.desktop.space(id)?;
+        let Some(item) = self.selected_items.last().copied() else {
+            return Some(space.rect.center());
+        };
+        let entry = space.items.iter().find(|entry| entry.id == item)?;
+        let layout = self.layout_for(id);
+        let content = space.content_rect();
+        Some(Point::new(
+            content.x + entry.position.x + layout.cell_width / 2,
+            content.y + entry.position.y - self.scroll_of(id) + layout.cell_height / 2,
+        ))
     }
 
     /// Opens the focused (last-selected) item, as Enter does in Explorer.
@@ -2745,6 +2778,39 @@ mod tests {
         save.mark();
         assert!(save.take());
         assert!(!save.take());
+    }
+
+    #[test]
+    fn keyboard_menu_anchor_follows_the_focus() {
+        use deskspace_core::Item;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app
+            .config
+            .desktop
+            .add_space("S", Rect::new(100, 100, 240, 200));
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        item.position = Point::new(12, 12);
+        app.config.desktop.add_item(id, item);
+        app.selected_space = Some(id);
+
+        let (rect, content) = {
+            let space = app.config.desktop.space(id).unwrap();
+            (space.rect, space.content_rect())
+        };
+        let layout = app.config.desktop.layout;
+
+        app.selected_items.clear();
+        assert_eq!(app.menu_anchor(), Some(rect.center()));
+
+        app.selected_items = vec![ItemId(1)];
+        assert_eq!(
+            app.menu_anchor(),
+            Some(Point::new(
+                content.x + 12 + layout.cell_width / 2,
+                content.y + 12 + layout.cell_height / 2,
+            ))
+        );
     }
 
     #[test]

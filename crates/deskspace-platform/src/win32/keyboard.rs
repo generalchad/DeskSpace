@@ -17,9 +17,9 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_A, VK_APPS,
-    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_HOME,
-    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT,
-    VK_RWIN, VK_SHIFT, VK_V, VK_X,
+    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_F10,
+    VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RMENU,
+    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -60,6 +60,7 @@ pub(crate) const SEL_OPEN: usize = 0;
 pub(crate) const SEL_CLEAR: usize = 1;
 pub(crate) const SEL_PERMANENT_DELETE: usize = 2;
 pub(crate) const SEL_REFRESH: usize = 3;
+pub(crate) const SEL_MENU: usize = 4;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -284,6 +285,11 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             post_message(SELECTION_KEY, SEL_REFRESH, 0);
             return true;
         }
+        // The Menu key and Shift+F10 open the context menu, as on the desktop.
+        if is_key(event.vkCode, VK_APPS) || (key_down(VK_SHIFT) && is_key(event.vkCode, VK_F10)) {
+            post_message(SELECTION_KEY, SEL_MENU, 0);
+            return true;
+        }
         return false;
     }
 
@@ -454,6 +460,7 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_CLEAR => SelectionKey::Clear,
         SEL_PERMANENT_DELETE => SelectionKey::PermanentDelete,
         SEL_REFRESH => SelectionKey::Refresh,
+        SEL_MENU => SelectionKey::Menu,
         _ => return None,
     })
 }
@@ -556,6 +563,7 @@ mod tests {
             Some(SelectionKey::PermanentDelete)
         );
         assert_eq!(selection_key(SEL_REFRESH), Some(SelectionKey::Refresh));
+        assert_eq!(selection_key(SEL_MENU), Some(SelectionKey::Menu));
         assert_eq!(selection_key(99), None);
     }
 

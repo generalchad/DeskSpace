@@ -81,6 +81,9 @@ pub enum SelectionKey {
     PermanentDelete,
     /// F5: re-read Explorer's display options and repaint the spaces.
     Refresh,
+    /// Menu key or Shift+F10: open the focused item's context menu, or the
+    /// space's when no item is selected.
+    Menu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
