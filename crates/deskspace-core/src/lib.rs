@@ -17,7 +17,7 @@ pub use geometry::{Point, Rect, Size};
 pub use id::{ItemId, SpaceId};
 pub use item::{Item, ItemKind};
 pub use layout::GridSpec;
-pub use space::{ResizeEdges, Space};
+pub use space::{ResizeEdges, Space, SpaceLook};
 pub use theme::{Backdrop, Color, LabelShadow, Palette, Theme, ThemeMode};
 
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;

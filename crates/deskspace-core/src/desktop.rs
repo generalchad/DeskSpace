@@ -5,6 +5,7 @@ use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::GridSpec;
 use crate::space::Space;
+use crate::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Desktop {
@@ -123,6 +124,18 @@ impl Desktop {
 
     pub fn sort_by_id(&mut self) {
         self.spaces.sort_by_key(|space| space.id.0);
+    }
+
+    /// Folds every space's per-space overrides from older files into a
+    /// customized look (`Space::fold_legacy_overrides`). Returns whether any
+    /// space changed, so the caller knows to save.
+    pub fn fold_legacy_overrides(&mut self, global: &Theme, system_dark: bool) -> bool {
+        let layout = self.layout;
+        let mut folded = false;
+        for space in &mut self.spaces {
+            folded |= space.fold_legacy_overrides(global, &layout, system_dark);
+        }
+        folded
     }
 }
 

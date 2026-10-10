@@ -3,9 +3,61 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
-use crate::theme::Color;
+use crate::layout::{GAP_RANGE, GridSpec};
+use crate::theme::{Color, ICON_SIZE_RANGE, Theme};
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
+
+/// A space's own look: every look-related setting (the theme, plus the grid's
+/// icon spacing and edge padding). It starts as a copy of the global settings
+/// when the space is first customized. `theme.ui_mode` is not used: the
+/// settings window and menus follow the global setting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpaceLook {
+    pub theme: Theme,
+    /// Icon spacing (`GridSpec::gap`).
+    pub gap: i32,
+    /// Edge padding (`GridSpec::padding`).
+    pub padding: i32,
+}
+
+impl Default for SpaceLook {
+    fn default() -> Self {
+        Self::from_global(&Theme::default(), &GridSpec::default())
+    }
+}
+
+impl SpaceLook {
+    /// A look that matches the global settings.
+    pub fn from_global(theme: &Theme, layout: &GridSpec) -> Self {
+        Self {
+            theme: theme.clone(),
+            gap: layout.gap,
+            padding: layout.padding,
+        }
+    }
+
+    /// `layout` with this look's spacing.
+    pub fn grid(&self, layout: GridSpec) -> GridSpec {
+        GridSpec {
+            gap: self.gap,
+            padding: self.padding,
+            ..layout
+        }
+    }
+
+    /// The look with every ranged value inside its bounds.
+    pub fn clamped(mut self) -> Self {
+        self.theme.icon_size = self
+            .theme
+            .icon_size
+            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1);
+        self.gap = self.gap.clamp(GAP_RANGE.0, GAP_RANGE.1);
+        self.padding = self.padding.clamp(GAP_RANGE.0, GAP_RANGE.1);
+        self
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Space {
@@ -18,20 +70,23 @@ pub struct Space {
     pub locked: bool,
     #[serde(default)]
     pub rolled_up: bool,
-    /// Per-space multiplier on the theme's tint alpha; 255 keeps the theme's.
-    #[serde(default = "default_opacity")]
-    pub opacity: u8,
-    /// Per-space override of the body tint color (its alpha comes from the
-    /// theme). `None` uses the theme's tint.
+    /// Whether the space uses its own `look` instead of the global settings.
     #[serde(default)]
-    pub tint: Option<Color>,
-    /// Per-space override of the title and label text color. `None` uses the
-    /// theme's.
-    #[serde(default)]
-    pub text: Option<Color>,
-    /// Per-space icon size as a percent; `None` follows the global setting.
-    #[serde(default)]
-    pub icon_size: Option<u8>,
+    pub custom: bool,
+    /// The space's own settings. Kept while `custom` is off, so turning it
+    /// back on restores them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<SpaceLook>,
+    // The per-space overrides that `look` replaced: read from older files,
+    // folded into `look` by `fold_legacy_overrides`, and never written.
+    #[serde(default = "default_opacity", rename = "opacity", skip_serializing)]
+    legacy_opacity: u8,
+    #[serde(default, rename = "tint", skip_serializing)]
+    legacy_tint: Option<Color>,
+    #[serde(default, rename = "text", skip_serializing)]
+    legacy_text: Option<Color>,
+    #[serde(default, rename = "icon_size", skip_serializing)]
+    legacy_icon_size: Option<u8>,
     #[serde(default = "default_title_height")]
     pub title_height: i32,
     /// Set once the user resizes the space. A user-sized space keeps its
@@ -80,10 +135,12 @@ impl Space {
             items: Vec::new(),
             locked: false,
             rolled_up: false,
-            opacity: default_opacity(),
-            tint: None,
-            text: None,
-            icon_size: None,
+            custom: false,
+            look: None,
+            legacy_opacity: default_opacity(),
+            legacy_tint: None,
+            legacy_text: None,
+            legacy_icon_size: None,
             title_height: default_title_height(),
             user_sized: false,
         }
@@ -200,14 +257,67 @@ impl Space {
         self.rect = self.rect.with_position(origin);
     }
 
-    /// Whether any per-space appearance override is set: opacity, tint, text,
-    /// or icon size. Such a space is listed in the settings rail's Spaces
-    /// group.
-    pub fn has_appearance_overrides(&self) -> bool {
-        self.opacity != default_opacity()
-            || self.tint.is_some()
-            || self.text.is_some()
-            || self.icon_size.is_some()
+    /// The space's own look while it is customized; `None` follows the global
+    /// settings.
+    pub fn active_look(&self) -> Option<&SpaceLook> {
+        self.look.as_ref().filter(|_| self.custom)
+    }
+
+    /// The theme the space is drawn with.
+    pub fn theme<'a>(&'a self, global: &'a Theme) -> &'a Theme {
+        self.active_look().map_or(global, |look| &look.theme)
+    }
+
+    /// The base grid the space lays out on: `global` with the space's own
+    /// spacing while it is customized.
+    pub fn grid(&self, global: GridSpec) -> GridSpec {
+        self.active_look().map_or(global, |look| look.grid(global))
+    }
+
+    /// Drops the per-space overrides read from an older file without applying
+    /// them, for files whose values meant something else (config v1).
+    pub fn clear_legacy_overrides(&mut self) {
+        self.legacy_opacity = default_opacity();
+        self.legacy_tint = None;
+        self.legacy_text = None;
+        self.legacy_icon_size = None;
+    }
+
+    /// Converts the per-space overrides of older files (opacity, tint, text,
+    /// icon size) into a customized `look` that starts from the global
+    /// settings. Opacity becomes the tint opacity it produced, and a tint or
+    /// text color turns on custom colors, taking the other color from the
+    /// palette shown at the time. Returns whether anything was folded.
+    pub fn fold_legacy_overrides(
+        &mut self,
+        global: &Theme,
+        layout: &GridSpec,
+        system_dark: bool,
+    ) -> bool {
+        let opacity = std::mem::replace(&mut self.legacy_opacity, default_opacity());
+        let tint = self.legacy_tint.take();
+        let text = self.legacy_text.take();
+        let icon_size = self.legacy_icon_size.take();
+        if opacity == default_opacity() && tint.is_none() && text.is_none() && icon_size.is_none() {
+            return false;
+        }
+        let mut look = SpaceLook::from_global(global, layout);
+        if let Some(icon_size) = icon_size {
+            look.theme.icon_size = icon_size;
+        }
+        if opacity != default_opacity() {
+            look.theme.tint_opacity =
+                ((global.tint_opacity as u32 * opacity as u32 + 127) / 255) as u8;
+        }
+        if tint.is_some() || text.is_some() {
+            let palette = global.palette(system_dark);
+            look.theme.custom_colors = true;
+            look.theme.tint = tint.unwrap_or(palette.tint).with_alpha(255);
+            look.theme.text = text.unwrap_or(palette.title_text);
+        }
+        self.look = Some(look.clamped());
+        self.custom = true;
+        true
     }
 }
 
@@ -280,19 +390,49 @@ mod tests {
     }
 
     #[test]
-    fn appearance_overrides_are_opt_in() {
+    fn a_look_applies_only_while_customized() {
+        let global = Theme::default();
+        let grid = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 200, 200));
-        assert!(!space.has_appearance_overrides());
-        space.opacity = 200;
-        assert!(space.has_appearance_overrides());
-        space.opacity = 255;
-        space.icon_size = Some(150);
-        assert!(space.has_appearance_overrides());
-        space.icon_size = None;
-        space.tint = Some(Color::rgb(1, 2, 3));
-        assert!(space.has_appearance_overrides());
-        space.tint = None;
-        space.text = Some(Color::rgb(1, 2, 3));
-        assert!(space.has_appearance_overrides());
+        assert!(space.active_look().is_none());
+        assert_eq!(space.theme(&global), &global);
+
+        let mut look = SpaceLook::from_global(&global, &grid);
+        look.theme.icon_size = 150;
+        look.gap = 2;
+        space.look = Some(look);
+        assert!(space.active_look().is_none(), "kept but inactive");
+        assert_eq!(space.grid(grid), grid);
+
+        space.custom = true;
+        assert_eq!(space.theme(&global).icon_size, 150);
+        assert_eq!(space.grid(grid).gap, 2);
+        assert_eq!(space.grid(grid).cell_width, grid.cell_width);
+    }
+
+    #[test]
+    fn legacy_overrides_fold_into_a_custom_look() {
+        let global = Theme::default();
+        let grid = GridSpec::default();
+        let mut space = Space::new(SpaceId(1), "Old", Rect::new(0, 0, 200, 200));
+        space.legacy_opacity = 51;
+        space.legacy_text = Some(Color::rgb(1, 2, 3));
+        space.legacy_icon_size = Some(150);
+        assert!(space.fold_legacy_overrides(&global, &grid, true));
+        assert!(space.custom);
+        let look = space.look.as_ref().unwrap();
+        assert_eq!(look.theme.icon_size, 150);
+        assert_eq!(look.theme.tint_opacity, 8, "40 % at a 51/255 multiplier");
+        assert!(look.theme.custom_colors);
+        assert_eq!(look.theme.text, Color::rgb(1, 2, 3));
+        assert_eq!(look.theme.tint, global.palette(true).tint.with_alpha(255));
+        assert!(!space.fold_legacy_overrides(&global, &grid, true), "once");
+    }
+
+    #[test]
+    fn a_plain_space_folds_nothing() {
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 200, 200));
+        assert!(!space.fold_legacy_overrides(&Theme::default(), &GridSpec::default(), false));
+        assert!(!space.custom && space.look.is_none());
     }
 }

@@ -71,9 +71,9 @@ impl Config {
             self.theme = Theme::default();
             let layout = self.desktop.layout;
             for space in &mut self.desktop.spaces {
-                // v1 defaulted to 210 as the fill alpha; it is now a
-                // multiplier on the theme's tint opacity.
-                space.opacity = 255;
+                // v1 stored 210 as the fill alpha, which no later setting
+                // means; drop it rather than fold it into a custom look.
+                space.clear_legacy_overrides();
                 // v1 stored absolute item positions that went stale when the
                 // space moved. Positions are now space-relative grid cells.
                 position_items(space, layout);
@@ -196,12 +196,14 @@ mod tests {
         assert_eq!(parsed.version, CURRENT_VERSION);
         assert_eq!(parsed.theme, Theme::default());
         let space = &parsed.desktop.spaces[0];
-        assert_eq!(space.opacity, 255);
+        assert!(!space.custom && space.look.is_none());
         assert_eq!(
             space.items[0].position,
             parsed.desktop.layout.grid_position(0)
         );
         assert_ne!(space.items[0].position, Point::new(412, 340));
+        let theme = parsed.theme.clone();
+        assert!(!parsed.desktop.fold_legacy_overrides(&theme, false));
     }
 
     #[test]
@@ -213,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn space_icon_size_defaults_to_none_and_parses_when_set() {
+    fn v2_space_overrides_fold_into_a_custom_look_that_round_trips() {
         let text = r#"
             version = 2
 
@@ -228,9 +230,17 @@ mod tests {
             rect = { x = 0, y = 0, width = 100, height = 100 }
             icon_size = 150
         "#;
-        let parsed: Config = toml::from_str(text).unwrap();
-        assert_eq!(parsed.desktop.spaces[0].icon_size, None);
-        assert_eq!(parsed.desktop.spaces[1].icon_size, Some(150));
+        let mut parsed: Config = toml::from_str(text).unwrap();
+        let theme = parsed.theme.clone();
+        assert!(parsed.desktop.fold_legacy_overrides(&theme, false));
+        assert!(!parsed.desktop.spaces[0].custom);
+        let big = &parsed.desktop.spaces[1];
+        assert!(big.custom);
+        assert_eq!(big.look.as_ref().unwrap().theme.icon_size, 150);
+
+        let written = toml::to_string(&parsed).unwrap();
+        let reread: Config = toml::from_str(&written).unwrap();
+        assert_eq!(reread, parsed);
     }
 
     #[test]

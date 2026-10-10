@@ -1,5 +1,11 @@
 //! The settings window's content and how edits map onto the configuration.
 //! Pure functions over `Config`, so the form logic is testable without Win32.
+//!
+//! The window has three panes: the scopes (Global, then each space indented
+//! under it), the pages of the selected scope, and the page itself. Global
+//! edits write the config directly, as a live preview. A space follows Global
+//! until its "Customize this space" switch is on; its edits then become
+//! `Command`s the app dispatches, so `Desktop` is only changed through them.
 
 use std::path::Path;
 
@@ -9,11 +15,11 @@ use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, Color, Command, GridSpec, LabelShadow, Palette, Space, SpaceId, Theme, ThemeMode,
+    Backdrop, Command, GridSpec, LabelShadow, Space, SpaceId, SpaceLook, Theme, ThemeMode,
 };
 use deskspace_platform::{
-    Field, FieldValue, SettingsForm, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage,
-    SliderMark,
+    Field, FieldValue, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
+    SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
 };
 
 pub mod field {
@@ -59,18 +65,17 @@ pub mod field {
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;
-
-    // The shared Space page (the rail's Spaces group). Fixed shape; the app
-    // fills it with the selected space's values.
-    pub const SPACE_NOTE: u32 = 50;
-    pub const SPACE_OPACITY: u32 = 51;
-    pub const SPACE_ICON_SIZE: u32 = 52;
-    pub const SPACE_TINT_TOGGLE: u32 = 53;
-    pub const SPACE_TINT: u32 = 54;
-    pub const SPACE_TEXT_TOGGLE: u32 = 55;
-    pub const SPACE_TEXT: u32 = 56;
-    pub const SPACE_RESET: u32 = 57;
 }
+
+/// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
+/// which a space can override; General and About are Global only.
+pub mod page {
+    pub const APPEARANCE: usize = 0;
+    pub const ABOUT: usize = 6;
+}
+
+/// How many pages hold look settings (Appearance through Advanced).
+pub const LOOK_PAGE_COUNT: usize = 5;
 
 const MODES: [(ThemeMode, &str); 3] = [
     (ThemeMode::System, "Use Windows setting"),
@@ -90,45 +95,6 @@ const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
-/// The per-space icon-size choices: label and percent (`None` follows the
-/// global setting). Shared by the Space settings page and the space menu.
-pub const SPACE_ICON_SIZES: [(&str, Option<u8>); 5] = [
-    ("Default", None),
-    ("Small", Some(75)),
-    ("Medium", Some(100)),
-    ("Large", Some(150)),
-    ("Extra large", Some(200)),
-];
-
-/// The number of global pages in the Settings rail group; also the page index
-/// of the shared Space page.
-pub const GLOBAL_PAGE_COUNT: usize = 7;
-
-/// Whether `id` is a field on the shared Space page.
-pub fn is_space_field(id: u32) -> bool {
-    (field::SPACE_NOTE..=field::SPACE_RESET).contains(&id)
-}
-
-/// The spaces currently listed in the rail's Spaces group, in order: the
-/// session's listed spaces that still exist. Deleted spaces drop out.
-pub fn listed_spaces(config: &Config, session: &Session) -> Vec<SpaceId> {
-    session
-        .listed_spaces
-        .iter()
-        .copied()
-        .filter(|id| config.desktop.space(*id).is_some())
-        .collect()
-}
-
-/// The space shown on the shared Space page for this session, if its selected
-/// rail entry is one. `None` for a global page or an empty Spaces group.
-pub fn selected_space(config: &Config, session: &Session) -> Option<SpaceId> {
-    session
-        .nav_selected
-        .checked_sub(GLOBAL_PAGE_COUNT)
-        .and_then(|index| listed_spaces(config, session).get(index).copied())
-}
-
 fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),
@@ -141,31 +107,36 @@ fn corner_marks() -> Vec<SliderMark> {
 const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit, or F1-F24, \
      for example Ctrl+Alt+D.";
 
-/// A space's appearance values, snapshotted so Cancel can restore them.
+/// A space's customization, snapshotted so Cancel can restore it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpaceAppearance {
+pub struct SpaceSnapshot {
     pub id: SpaceId,
-    pub opacity: u8,
-    pub tint: Option<Color>,
-    pub text: Option<Color>,
-    pub icon_size: Option<u8>,
+    pub custom: bool,
+    pub look: Option<SpaceLook>,
 }
 
-impl SpaceAppearance {
+impl SpaceSnapshot {
     pub fn of(space: &Space) -> Self {
         Self {
             id: space.id,
-            opacity: space.opacity,
-            tint: space.tint,
-            text: space.text,
-            icon_size: space.icon_size,
+            custom: space.custom,
+            look: space.look.clone(),
+        }
+    }
+
+    /// The command that puts the space back the way it was.
+    pub fn restore(&self) -> Command {
+        Command::SetSpaceLook {
+            id: self.id,
+            custom: self.custom,
+            look: self.look.clone(),
         }
     }
 }
 
-/// Edits in progress while the settings window is open. Appearance edits are
-/// applied to the live config immediately for preview; `saved_*` is what
-/// Cancel restores.
+/// Edits in progress while the settings window is open. Global edits are
+/// applied to the live config immediately for preview, and space edits are
+/// dispatched at once; `saved_*` is what Cancel restores.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     pub saved_theme: Theme,
@@ -174,14 +145,13 @@ pub struct Session {
     pub hotkey_text: String,
     pub hotkey_error: Option<String>,
     pub dirty: bool,
-    /// The spaces shown in the rail's Spaces group: those with overrides when
-    /// the window opened, plus any that gain one while it is open. Sticky for
-    /// the session, so resetting the last override does not drop the entry.
-    pub listed_spaces: Vec<SpaceId>,
-    /// The selected rail entry, an index into the flattened `SettingsNav`.
-    pub nav_selected: usize,
-    /// The per-space appearance snapshot Cancel restores.
-    pub saved_spaces: Vec<SpaceAppearance>,
+    /// The scope being edited: `None` for Global, or a space.
+    pub scope: Option<SpaceId>,
+    /// The selected page, an index into the form's pages.
+    pub page: usize,
+    /// Every space's customization when the window opened or was last
+    /// applied, which Cancel restores.
+    pub saved_spaces: Vec<SpaceSnapshot>,
 }
 
 impl Session {
@@ -193,20 +163,9 @@ impl Session {
             hotkey_text: config.window.toggle_hotkey.clone(),
             hotkey_error: None,
             dirty: false,
-            listed_spaces: config
-                .desktop
-                .spaces
-                .iter()
-                .filter(|space| space.has_appearance_overrides())
-                .map(|space| space.id)
-                .collect(),
-            nav_selected: 0,
-            saved_spaces: config
-                .desktop
-                .spaces
-                .iter()
-                .map(SpaceAppearance::of)
-                .collect(),
+            scope: None,
+            page: page::APPEARANCE,
+            saved_spaces: snapshot_spaces(config),
         }
     }
 
@@ -215,21 +174,51 @@ impl Session {
         self.saved_theme = config.theme.clone();
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
-        self.saved_spaces = config
-            .desktop
-            .spaces
-            .iter()
-            .map(SpaceAppearance::of)
-            .collect();
+        self.saved_spaces = snapshot_spaces(config);
         self.hotkey_error = None;
         self.dirty = false;
     }
 
+    /// Restores the global settings. Spaces are restored by the app, through
+    /// the commands from `SpaceSnapshot::restore`.
     pub fn revert(&self, config: &mut Config) {
         config.theme = self.saved_theme.clone();
         config.window = self.saved_window.clone();
         config.desktop.layout = self.saved_layout;
     }
+
+    /// Takes a change made outside the window (the space's context menu,
+    /// which commits at once) into the space's Cancel snapshot, so Cancel
+    /// does not undo it.
+    pub fn resnapshot(&mut self, space: &Space) {
+        let snapshot = SpaceSnapshot::of(space);
+        match self
+            .saved_spaces
+            .iter_mut()
+            .find(|saved| saved.id == space.id)
+        {
+            Some(saved) => *saved = snapshot,
+            None => self.saved_spaces.push(snapshot),
+        }
+    }
+
+    /// Switches to `scope`. A space has only the look pages, so a Global-only
+    /// page moves back to the first one.
+    pub fn select_scope(&mut self, scope: Option<SpaceId>) {
+        self.scope = scope;
+        if scope.is_some() && self.page >= LOOK_PAGE_COUNT {
+            self.page = page::APPEARANCE;
+        }
+    }
+}
+
+fn snapshot_spaces(config: &Config) -> Vec<SpaceSnapshot> {
+    config
+        .desktop
+        .spaces
+        .iter()
+        .map(SpaceSnapshot::of)
+        .collect()
 }
 
 /// Whether reverting to `saved` needs the spaces re-flowed rather than just
@@ -252,63 +241,32 @@ fn labels<T>(table: &[(T, &'static str)]) -> Vec<&'static str> {
     table.iter().map(|(_, label)| *label).collect()
 }
 
-/// The Opacity slider's percent for a stored space opacity (`0..=255`), where
-/// 255 is the theme's 100 %.
-fn opacity_percent(opacity: u8) -> i32 {
-    ((opacity as u32 * 100 + 127) / 255) as i32
+/// The space the session edits, if it still exists; `None` is Global.
+fn scope_space<'a>(config: &'a Config, session: &Session) -> Option<&'a Space> {
+    session.scope.and_then(|id| config.desktop.space(id))
 }
 
-/// The stored opacity byte for an Opacity slider percent, where 100 % is 255.
-/// The inverse of [`opacity_percent`].
-fn opacity_byte(percent: i32) -> u8 {
-    ((percent.clamp(0, 100) as u32 * 255 + 50) / 100) as u8
+/// The scope index (in the scopes pane) of the session's scope: 0 for
+/// Global, then the spaces in order.
+pub fn scope_index(config: &Config, session: &Session) -> usize {
+    scope_space(config, session)
+        .and_then(|space| {
+            config
+                .desktop
+                .spaces
+                .iter()
+                .position(|other| other.id == space.id)
+        })
+        .map_or(0, |index| index + 1)
 }
 
-/// Turns an edit on the shared Space page into the `Command` that applies it,
-/// or `None` when `field` is not one of its fields. Pure, so the rail's edits
-/// are testable without Win32.
-pub fn space_field_command(
-    space: &Space,
-    field: u32,
-    value: FieldValue,
-    palette: &Palette,
-) -> Option<Command> {
-    let id = space.id;
-    match (field, value) {
-        (field::SPACE_OPACITY, FieldValue::Slider(percent)) => Some(Command::SetSpaceOpacity {
-            id,
-            opacity: opacity_byte(percent),
-        }),
-        (field::SPACE_ICON_SIZE, FieldValue::Choice(index)) => Some(Command::SetSpaceIconSize {
-            id,
-            icon_size: SPACE_ICON_SIZES.get(index).and_then(|(_, value)| *value),
-        }),
-        (field::SPACE_TINT_TOGGLE, FieldValue::Toggle(on)) => Some(Command::SetSpaceTint {
-            id,
-            tint: on.then(|| palette.tint.with_alpha(255)),
-        }),
-        (field::SPACE_TINT, FieldValue::Color(color)) => Some(Command::SetSpaceTint {
-            id,
-            tint: Some(color),
-        }),
-        (field::SPACE_TEXT_TOGGLE, FieldValue::Toggle(on)) => Some(Command::SetSpaceText {
-            id,
-            text: on.then_some(palette.title_text),
-        }),
-        (field::SPACE_TEXT, FieldValue::Color(color)) => Some(Command::SetSpaceText {
-            id,
-            text: Some(color),
-        }),
-        _ => None,
-    }
-}
-
-/// The index of `icon_size` in [`SPACE_ICON_SIZES`], or 0 (`Default`).
-fn icon_size_index(icon_size: Option<u8>) -> usize {
-    SPACE_ICON_SIZES
-        .iter()
-        .position(|(_, value)| *value == icon_size)
-        .unwrap_or(0)
+/// The scope at `index` in the scopes pane: `None` for Global (0) or an index
+/// past the spaces.
+pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
+    index
+        .checked_sub(1)
+        .and_then(|index| config.desktop.spaces.get(index))
+        .map(|space| space.id)
 }
 
 pub fn build_form(
@@ -317,11 +275,94 @@ pub fn build_form(
     system_dark: bool,
     config_path: &Path,
 ) -> SettingsForm {
-    let theme = &config.theme;
+    let space = scope_space(config, session);
+    let global = &config.theme;
+    // A space shows what it is drawn with: its own look while customized,
+    // else the global values, greyed until the switch is turned on.
+    let theme = space.map_or(global, |space| space.theme(global));
+    let grid = space.map_or(config.desktop.layout, |space| {
+        space.grid(config.desktop.layout)
+    });
+    let editable = space.is_none_or(|space| space.custom);
+
+    let mut pages = look_pages(theme, &grid, system_dark, space.is_some());
+    if !editable {
+        for field in pages.iter_mut().flat_map(|page| page.fields.iter_mut()) {
+            field.enabled = false;
+        }
+    }
+    pages.push(general_page(config, session));
+    pages.push(about_page(config_path));
+    debug_assert_eq!(pages.len(), page::ABOUT + 1);
+
+    let page_count = if space.is_some() {
+        LOOK_PAGE_COUNT
+    } else {
+        pages.len()
+    };
+    let entries = pages[..page_count]
+        .iter()
+        .enumerate()
+        .map(|(index, page)| SettingsNavEntry {
+            label: page.title.clone(),
+            page: index,
+            marked: false,
+        })
+        .collect();
+
+    let mut scopes = vec![SettingsScope {
+        label: "Global".into(),
+        indent: false,
+        dimmed: false,
+    }];
+    scopes.extend(config.desktop.spaces.iter().map(|space| SettingsScope {
+        label: space.title.clone(),
+        indent: true,
+        dimmed: !space.custom,
+    }));
+    let header = match space {
+        None => SettingsHeader {
+            title: "Global settings".into(),
+            switch: None,
+        },
+        Some(space) => SettingsHeader {
+            title: space.title.clone(),
+            switch: Some(SettingsSwitch {
+                label: "Customize this space".into(),
+                on: space.custom,
+            }),
+        },
+    };
+
+    SettingsForm {
+        title: "DeskSpace Settings".into(),
+        pages,
+        apply_enabled: session.dirty,
+        nav: Some(SettingsNav {
+            scopes,
+            selected_scope: scope_index(config, session),
+            groups: vec![SettingsNavGroup {
+                title: String::new(),
+                entries,
+            }],
+            selected: session.page.min(page_count - 1),
+            header: Some(header),
+        }),
+    }
+}
+
+/// The pages a space can override: Appearance, Labels, Layout, Colors, and
+/// Advanced, showing `theme` and `grid`.
+fn look_pages(
+    theme: &Theme,
+    grid: &GridSpec,
+    system_dark: bool,
+    for_space: bool,
+) -> Vec<SettingsPage> {
     let palette = theme.palette(system_dark);
     let solid = theme.backdrop == Backdrop::Solid;
 
-    // Appearance is split across several tabs so no page is tall enough to
+    // Appearance is split across several pages so no page is tall enough to
     // clip on a 1080-pixel display.
     let appearance = SettingsPage {
         title: "Appearance".into(),
@@ -416,23 +457,24 @@ pub fn build_form(
                 field::GRID_GAP,
                 "Icon spacing",
                 (GAP_RANGE.0, GAP_RANGE.1),
-                config.desktop.layout.gap.clamp(GAP_RANGE.0, GAP_RANGE.1),
+                grid.gap.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px"),
             Field::slider(
                 field::GRID_PADDING,
                 "Edge padding",
                 (GAP_RANGE.0, GAP_RANGE.1),
-                config
-                    .desktop
-                    .layout
-                    .padding
-                    .clamp(GAP_RANGE.0, GAP_RANGE.1),
+                grid.padding.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px"),
         ],
     };
 
+    let reset = if for_space {
+        "Match global appearance"
+    } else {
+        "Restore default appearance"
+    };
     let colors_page = SettingsPage {
         title: "Colors".into(),
         fields: vec![
@@ -450,7 +492,7 @@ pub fn build_form(
                 "Use Windows accent color for the selection and border",
                 theme.use_accent,
             ),
-            Field::button(field::RESET, "", "Restore default appearance"),
+            Field::button(field::RESET, "", reset),
             Field::note(
                 field::COMPATIBILITY_NOTE,
                 "Clear glass at 0% tint and 0% title shading, without a border, \
@@ -489,7 +531,17 @@ pub fn build_form(
         ],
     };
 
-    let general = SettingsPage {
+    vec![
+        appearance,
+        labels_page,
+        layout_page,
+        colors_page,
+        advanced_page,
+    ]
+}
+
+fn general_page(config: &Config, session: &Session) -> SettingsPage {
+    SettingsPage {
         title: "General".into(),
         fields: vec![
             Field::heading(field::BEHAVIOR_HEADING, "Behavior"),
@@ -529,12 +581,14 @@ pub fn build_form(
                 field::UI_MODE,
                 "Settings and menus",
                 &labels(&MODES),
-                index_of(&MODES, theme.ui_mode),
+                index_of(&MODES, config.theme.ui_mode),
             ),
         ],
-    };
+    }
+}
 
-    let about = SettingsPage {
+fn about_page(config_path: &Path) -> SettingsPage {
+    SettingsPage {
         title: "About".into(),
         fields: vec![
             Field::heading(
@@ -555,111 +609,6 @@ pub fn build_form(
                 config_path.display().to_string(),
             ),
         ],
-    };
-
-    let settings_pages = vec![
-        appearance,
-        labels_page,
-        layout_page,
-        colors_page,
-        advanced_page,
-        general,
-        about,
-    ];
-    let space_page_index = settings_pages.len();
-    debug_assert_eq!(space_page_index, GLOBAL_PAGE_COUNT);
-
-    // Spaces deleted since the window opened drop out of the rail; the rest
-    // keep their entries for the session (the sticky rule).
-    let listed = listed_spaces(config, session);
-    let selected = session
-        .nav_selected
-        .checked_sub(space_page_index)
-        .and_then(|index| listed.get(index))
-        .and_then(|id| config.desktop.space(*id));
-
-    let settings_group = SettingsNavGroup {
-        title: "Settings".into(),
-        entries: settings_pages
-            .iter()
-            .enumerate()
-            .map(|(page, entry)| SettingsNavEntry {
-                label: entry.title.clone(),
-                page,
-                marked: false,
-            })
-            .collect(),
-    };
-    let spaces_group = SettingsNavGroup {
-        title: "Spaces".into(),
-        entries: listed
-            .iter()
-            .filter_map(|id| config.desktop.space(*id))
-            .map(|space| SettingsNavEntry {
-                label: space.title.clone(),
-                page: space_page_index,
-                marked: space.has_appearance_overrides(),
-            })
-            .collect(),
-    };
-
-    let mut pages = settings_pages;
-    pages.push(space_page(selected, &palette));
-    let entry_count = space_page_index + spaces_group.entries.len();
-    let selected = session.nav_selected.min(entry_count.saturating_sub(1));
-
-    SettingsForm {
-        title: "DeskSpace Settings".into(),
-        pages,
-        apply_enabled: session.dirty,
-        nav: Some(SettingsNav {
-            groups: vec![settings_group, spaces_group],
-            selected,
-            ..Default::default()
-        }),
-    }
-}
-
-/// The shared Space page for `space`, or the empty state when none is
-/// selected. Its shape is fixed so `same_shape` holds while the selection
-/// changes; the fields are disabled unless a space is shown.
-fn space_page(space: Option<&Space>, palette: &Palette) -> SettingsPage {
-    const EMPTY_NOTE: &str =
-        "No spaces are customized yet. Right-click a space and choose Appearance.";
-    let (note, opacity, icon, tint_on, tint, text_on, text) = match space {
-        Some(space) => (
-            format!("Editing \u{201c}{}\u{201d}.", space.title),
-            opacity_percent(space.opacity),
-            icon_size_index(space.icon_size),
-            space.tint.is_some(),
-            space.tint.unwrap_or_else(|| palette.tint.with_alpha(255)),
-            space.text.is_some(),
-            space.text.unwrap_or(palette.title_text),
-        ),
-        None => (
-            EMPTY_NOTE.to_string(),
-            100,
-            icon_size_index(None),
-            false,
-            palette.tint.with_alpha(255),
-            false,
-            palette.title_text,
-        ),
-    };
-    let enabled = space.is_some();
-    let icon_labels: Vec<&str> = SPACE_ICON_SIZES.iter().map(|(label, _)| *label).collect();
-    SettingsPage {
-        title: "Space".into(),
-        fields: vec![
-            Field::note(field::SPACE_NOTE, note),
-            Field::slider(field::SPACE_OPACITY, "Opacity", (20, 100), opacity).enabled(enabled),
-            Field::choice(field::SPACE_ICON_SIZE, "Icon size", &icon_labels, icon).enabled(enabled),
-            Field::toggle(field::SPACE_TINT_TOGGLE, "Custom tint", tint_on).enabled(enabled),
-            Field::color(field::SPACE_TINT, "Tint color", tint).enabled(enabled && tint_on),
-            Field::toggle(field::SPACE_TEXT_TOGGLE, "Custom text color", text_on).enabled(enabled),
-            Field::color(field::SPACE_TEXT, "Text color", text).enabled(enabled && text_on),
-            Field::button(field::SPACE_RESET, "", "Reset to global").enabled(enabled),
-        ],
     }
 }
 
@@ -667,14 +616,117 @@ fn space_page(space: Option<&Space>, palette: &Palette) -> SettingsPage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
     None,
-    /// The theme changed; restyle and repaint every space.
+    /// The look changed; restyle and repaint.
     Appearance,
-    /// The grid changed; re-flow every space and repaint.
+    /// The grid changed; re-flow and repaint.
     Layout,
     /// Only pending (unapplied) settings changed.
     Pending,
 }
 
+/// Applies a look-page edit to `look`. `None` when `id` is not a look field.
+fn apply_look_field(
+    look: &mut SpaceLook,
+    id: u32,
+    value: &FieldValue,
+    system_dark: bool,
+) -> Option<Effect> {
+    let theme = &mut look.theme;
+    Some(match (id, value) {
+        (field::MODE, FieldValue::Choice(index)) => {
+            theme.mode = MODES.get(*index).map_or(theme.mode, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::BACKDROP, FieldValue::Choice(index)) => {
+            theme.backdrop = BACKDROPS
+                .get(*index)
+                .map_or(theme.backdrop, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::CORNERS, FieldValue::Slider(radius)) => {
+            theme.corner_radius = (*radius).clamp(0, corner::MAX.into()) as u8;
+            Effect::Appearance
+        }
+        (field::TINT_OPACITY, FieldValue::Slider(value)) => {
+            theme.tint_opacity = (*value).clamp(0, 100) as u8;
+            Effect::Appearance
+        }
+        (field::TITLE_SHADING, FieldValue::Slider(value)) => {
+            theme.title_shading = (*value).clamp(0, 100) as u8;
+            Effect::Appearance
+        }
+        (field::BORDER, FieldValue::Toggle(on)) => {
+            theme.show_border = *on;
+            Effect::Appearance
+        }
+        (field::MATCH_EXPLORER, FieldValue::Toggle(on)) => {
+            theme.match_explorer = *on;
+            // Mirroring also imports Explorer's icon size and item spacing, so
+            // the grid has to re-flow, not just restyle.
+            Effect::Layout
+        }
+        (field::LABEL_LINES, FieldValue::Choice(index)) => {
+            theme.label_lines = LABEL_LINES_OPTIONS
+                .get(*index)
+                .map_or(theme.label_lines, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::LABEL_SIZE, FieldValue::Slider(value)) => {
+            theme.label_size =
+                (*value).clamp(LABEL_SIZE_RANGE.0.into(), LABEL_SIZE_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
+        (field::LABEL_SHADOW, FieldValue::Choice(index)) => {
+            theme.label_shadow = LABEL_SHADOW_OPTIONS
+                .get(*index)
+                .map_or(theme.label_shadow, |entry| entry.0);
+            Effect::Appearance
+        }
+        (field::ICON_SIZE, FieldValue::Slider(value)) => {
+            theme.icon_size =
+                (*value).clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into()) as u8;
+            Effect::Layout
+        }
+        (field::OVERLAY_SIZE, FieldValue::Slider(value)) => {
+            theme.overlay_size =
+                (*value).clamp(OVERLAY_SIZE_RANGE.0.into(), OVERLAY_SIZE_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
+        (field::GRID_GAP, FieldValue::Slider(value)) => {
+            look.gap = (*value).clamp(GAP_RANGE.0, GAP_RANGE.1);
+            Effect::Layout
+        }
+        (field::GRID_PADDING, FieldValue::Slider(value)) => {
+            look.padding = (*value).clamp(GAP_RANGE.0, GAP_RANGE.1);
+            Effect::Layout
+        }
+        (field::CUSTOM_COLORS, FieldValue::Toggle(on)) => {
+            if *on && !theme.custom_colors {
+                // Start from what is on screen rather than a stale color.
+                let palette = theme.palette(system_dark);
+                theme.tint = palette.tint.with_alpha(255);
+                theme.text = palette.title_text;
+            }
+            theme.custom_colors = *on;
+            Effect::Appearance
+        }
+        (field::TINT, FieldValue::Color(color)) => {
+            theme.tint = color.with_alpha(255);
+            Effect::Appearance
+        }
+        (field::TEXT, FieldValue::Color(color)) => {
+            theme.text = color.with_alpha(255);
+            Effect::Appearance
+        }
+        (field::USE_ACCENT, FieldValue::Toggle(on)) => {
+            theme.use_accent = *on;
+            Effect::Appearance
+        }
+        _ => return None,
+    })
+}
+
+/// Applies an edit to the global settings.
 pub fn apply_field(
     config: &mut Config,
     session: &mut Session,
@@ -682,129 +734,101 @@ pub fn apply_field(
     value: FieldValue,
     system_dark: bool,
 ) -> Effect {
-    let effect = match (id, value) {
-        (field::MODE, FieldValue::Choice(index)) => {
-            config.theme.mode = MODES.get(index).map_or(config.theme.mode, |entry| entry.0);
-            Effect::Appearance
+    let mut look = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+    let effect = match apply_look_field(&mut look, id, &value, system_dark) {
+        Some(effect) => {
+            config.theme = look.theme;
+            config.desktop.layout.gap = look.gap;
+            config.desktop.layout.padding = look.padding;
+            effect
         }
-        (field::BACKDROP, FieldValue::Choice(index)) => {
-            config.theme.backdrop = BACKDROPS
-                .get(index)
-                .map_or(config.theme.backdrop, |entry| entry.0);
-            Effect::Appearance
-        }
-        (field::CORNERS, FieldValue::Slider(radius)) => {
-            config.theme.corner_radius = radius.clamp(0, corner::MAX.into()) as u8;
-            Effect::Appearance
-        }
-        (field::TINT_OPACITY, FieldValue::Slider(value)) => {
-            config.theme.tint_opacity = value.clamp(0, 100) as u8;
-            Effect::Appearance
-        }
-        (field::TITLE_SHADING, FieldValue::Slider(value)) => {
-            config.theme.title_shading = value.clamp(0, 100) as u8;
-            Effect::Appearance
-        }
-        (field::BORDER, FieldValue::Toggle(on)) => {
-            config.theme.show_border = on;
-            Effect::Appearance
-        }
-        (field::MATCH_EXPLORER, FieldValue::Toggle(on)) => {
-            config.theme.match_explorer = on;
-            // Mirroring also imports Explorer's icon size and item spacing, so
-            // the grid has to re-flow, not just restyle.
-            Effect::Layout
-        }
-        (field::LABEL_LINES, FieldValue::Choice(index)) => {
-            config.theme.label_lines = LABEL_LINES_OPTIONS
-                .get(index)
-                .map_or(config.theme.label_lines, |entry| entry.0);
-            Effect::Appearance
-        }
-        (field::LABEL_SIZE, FieldValue::Slider(value)) => {
-            config.theme.label_size =
-                value.clamp(LABEL_SIZE_RANGE.0.into(), LABEL_SIZE_RANGE.1.into()) as u8;
-            Effect::Appearance
-        }
-        (field::LABEL_SHADOW, FieldValue::Choice(index)) => {
-            config.theme.label_shadow = LABEL_SHADOW_OPTIONS
-                .get(index)
-                .map_or(config.theme.label_shadow, |entry| entry.0);
-            Effect::Appearance
-        }
-        (field::ICON_SIZE, FieldValue::Slider(value)) => {
-            config.theme.icon_size =
-                value.clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into()) as u8;
-            Effect::Layout
-        }
-        (field::OVERLAY_SIZE, FieldValue::Slider(value)) => {
-            config.theme.overlay_size =
-                value.clamp(OVERLAY_SIZE_RANGE.0.into(), OVERLAY_SIZE_RANGE.1.into()) as u8;
-            Effect::Appearance
-        }
-        (field::GRID_GAP, FieldValue::Slider(value)) => {
-            config.desktop.layout.gap = value.clamp(GAP_RANGE.0, GAP_RANGE.1);
-            Effect::Layout
-        }
-        (field::GRID_PADDING, FieldValue::Slider(value)) => {
-            config.desktop.layout.padding = value.clamp(GAP_RANGE.0, GAP_RANGE.1);
-            Effect::Layout
-        }
-        (field::CUSTOM_COLORS, FieldValue::Toggle(on)) => {
-            if on && !config.theme.custom_colors {
-                // Start from what is on screen rather than a stale color.
-                let palette = config.theme.palette(system_dark);
-                config.theme.tint = palette.tint.with_alpha(255);
-                config.theme.text = palette.title_text;
+        None => match (id, value) {
+            (field::UI_MODE, FieldValue::Choice(index)) => {
+                config.theme.ui_mode = MODES
+                    .get(index)
+                    .map_or(config.theme.ui_mode, |entry| entry.0);
+                Effect::Appearance
             }
-            config.theme.custom_colors = on;
-            Effect::Appearance
-        }
-        (field::TINT, FieldValue::Color(color)) => {
-            config.theme.tint = color.with_alpha(255);
-            Effect::Appearance
-        }
-        (field::TEXT, FieldValue::Color(color)) => {
-            config.theme.text = color.with_alpha(255);
-            Effect::Appearance
-        }
-        (field::USE_ACCENT, FieldValue::Toggle(on)) => {
-            config.theme.use_accent = on;
-            Effect::Appearance
-        }
-        (field::UI_MODE, FieldValue::Choice(index)) => {
-            config.theme.ui_mode = MODES
-                .get(index)
-                .map_or(config.theme.ui_mode, |entry| entry.0);
-            Effect::Appearance
-        }
-        (field::START_WITH_WINDOWS, FieldValue::Toggle(on)) => {
-            config.window.start_with_windows = on;
-            Effect::Pending
-        }
-        (field::HOTKEY, FieldValue::Text(text)) => {
-            session.hotkey_text = text;
-            session.hotkey_error = None;
-            Effect::Pending
-        }
-        (field::START_HIDDEN, FieldValue::Toggle(on)) => {
-            config.window.start_hidden = on;
-            Effect::Pending
-        }
-        (field::SNAP, FieldValue::Slider(value)) => {
-            config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
-            Effect::Pending
-        }
-        (field::ALWAYS_ON_DESKTOP, FieldValue::Toggle(on)) => {
-            config.window.always_on_desktop = on;
-            Effect::Pending
-        }
-        _ => Effect::None,
+            (field::START_WITH_WINDOWS, FieldValue::Toggle(on)) => {
+                config.window.start_with_windows = on;
+                Effect::Pending
+            }
+            (field::HOTKEY, FieldValue::Text(text)) => {
+                session.hotkey_text = text;
+                session.hotkey_error = None;
+                Effect::Pending
+            }
+            (field::START_HIDDEN, FieldValue::Toggle(on)) => {
+                config.window.start_hidden = on;
+                Effect::Pending
+            }
+            (field::SNAP, FieldValue::Slider(value)) => {
+                config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
+                Effect::Pending
+            }
+            (field::ALWAYS_ON_DESKTOP, FieldValue::Toggle(on)) => {
+                config.window.always_on_desktop = on;
+                Effect::Pending
+            }
+            _ => Effect::None,
+        },
     };
     if effect != Effect::None {
         session.dirty = true;
     }
     effect
+}
+
+/// The command for an edit on a customized space's page, with what it changes.
+/// `None` when Global is selected, the space follows Global, or `id` is not
+/// a look field.
+pub fn space_edit(
+    config: &Config,
+    session: &mut Session,
+    id: u32,
+    value: FieldValue,
+    system_dark: bool,
+) -> Option<(SpaceId, Command, Effect)> {
+    let space = scope_space(config, session).filter(|space| space.custom)?;
+    let mut look = space
+        .look
+        .clone()
+        .unwrap_or_else(|| SpaceLook::from_global(&config.theme, &config.desktop.layout));
+    let effect = apply_look_field(&mut look, id, &value, system_dark)?;
+    session.dirty = true;
+    let command = Command::SetSpaceLook {
+        id: space.id,
+        custom: true,
+        look: Some(look),
+    };
+    Some((space.id, command, effect))
+}
+
+/// The command for the header switch: customize the selected space, or let
+/// it follow Global again (keeping its look for later).
+pub fn customize_space(config: &Config, session: &mut Session, on: bool) -> Option<Command> {
+    let space = scope_space(config, session)?;
+    session.dirty = true;
+    Some(Command::CustomizeSpace {
+        id: space.id,
+        on,
+        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+    })
+}
+
+/// The command for a customized space's "Match global appearance": a look
+/// copied from the global settings.
+pub fn match_global(config: &Config, session: &mut Session) -> Option<Command> {
+    let space = scope_space(config, session).filter(|space| space.custom)?;
+    session.dirty = true;
+    Some(Command::SetSpaceLook {
+        id: space.id,
+        custom: true,
+        look: Some(SpaceLook::from_global(
+            &config.theme,
+            &config.desktop.layout,
+        )),
+    })
 }
 
 pub fn reset_appearance(config: &mut Config, session: &mut Session) {
@@ -1157,272 +1181,205 @@ mod tests {
 
     use deskspace_core::Rect;
 
-    fn config_with_space(title: &str, opacity: u8) -> (Config, SpaceId) {
+    fn config_with_space(title: &str) -> (Config, SpaceId) {
         let mut config = Config::new();
         let id = config.desktop.add_space(title, Rect::new(0, 0, 200, 200));
-        config.desktop.space_mut(id).unwrap().opacity = opacity;
         (config, id)
     }
 
-    fn space_labels(form: &SettingsForm) -> Vec<String> {
-        form.nav.as_ref().unwrap().groups[1]
-            .entries
-            .iter()
-            .map(|entry| entry.label.clone())
-            .collect()
+    fn nav(form: &SettingsForm) -> &SettingsNav {
+        form.nav.as_ref().expect("the rail is set")
     }
 
-    #[test]
-    fn rail_maps_entries_to_pages_and_marks_customized_spaces() {
-        let (config, _) = config_with_space("Work", 200);
-        let session = Session::new(&config);
-        let form = build_form(&config, &session, true, Path::new("x"));
-        let nav = form.nav.as_ref().expect("the rail is set");
-        assert_eq!(nav.groups[0].title, "Settings");
-        assert_eq!(nav.groups[0].entries.len(), 7);
-        assert_eq!(nav.groups[1].title, "Spaces");
-        let space_page = nav.groups[0].entries.len();
-        for (index, entry) in nav.groups[0].entries.iter().enumerate() {
-            assert_eq!(entry.page, index);
-        }
-        let space_entry = &nav.groups[1].entries[0];
-        assert_eq!(space_entry.label, "Work");
-        assert!(space_entry.marked);
-        assert_eq!(space_entry.page, space_page);
-        assert_eq!(form.pages.len(), space_page + 1);
-        assert_eq!(nav.selected, 0);
-
-        // Selecting the space entry fills and enables the Space page.
-        let mut selected = Session::new(&config);
-        selected.nav_selected = space_page;
-        let form = build_form(&config, &selected, true, Path::new("x"));
-        assert!(form.field(field::SPACE_OPACITY).unwrap().enabled);
-        assert_eq!(
-            form.field(field::SPACE_NOTE).unwrap().label,
-            "Editing \u{201c}Work\u{201d}."
-        );
-        match &form.field(field::SPACE_OPACITY).unwrap().kind {
-            FieldKind::Slider { value, .. } => assert_eq!(*value, 78),
+    fn slider_value(form: &SettingsForm, id: u32) -> i32 {
+        match &form.field(id).unwrap().kind {
+            FieldKind::Slider { value, .. } => *value,
             other => panic!("expected a slider, got {other:?}"),
         }
     }
 
     #[test]
-    fn rail_lists_only_spaces_with_overrides() {
-        let mut config = Config::new();
-        let _plain = config.desktop.add_space("Plain", Rect::new(0, 0, 200, 200));
-        let tinted = config
-            .desktop
-            .add_space("Tinted", Rect::new(0, 0, 200, 200));
-        config.desktop.space_mut(tinted).unwrap().tint = Some(Color::rgb(1, 2, 3));
+    fn global_lists_every_space_dimmed_until_customized() {
+        let (mut config, _) = config_with_space("Work");
+        let games = config.desktop.add_space("Games", Rect::new(0, 0, 200, 200));
+        config.desktop.space_mut(games).unwrap().custom = true;
         let session = Session::new(&config);
-        assert_eq!(session.listed_spaces, vec![tinted]);
-        let saved = session
-            .saved_spaces
+        let form = build_form(&config, &session, true, Path::new("x"));
+        let nav = nav(&form);
+        let scopes: Vec<(&str, bool, bool)> = nav
+            .scopes
             .iter()
-            .find(|saved| saved.id == tinted)
-            .unwrap();
-        assert_eq!(saved.tint, Some(Color::rgb(1, 2, 3)));
-        assert_eq!(saved.opacity, 255);
-
-        let form = build_form(&config, &session, true, Path::new("x"));
-        assert_eq!(space_labels(&form), ["Tinted"]);
-    }
-
-    #[test]
-    fn rail_drops_deleted_spaces_but_keeps_the_listing() {
-        let mut config = Config::new();
-        let kept = config.desktop.add_space("Kept", Rect::new(0, 0, 200, 200));
-        config.desktop.space_mut(kept).unwrap().icon_size = Some(150);
-        let removed = config
-            .desktop
-            .add_space("Removed", Rect::new(0, 0, 200, 200));
-        config.desktop.space_mut(removed).unwrap().opacity = 100;
-        let session = Session::new(&config);
-        assert_eq!(session.listed_spaces, vec![kept, removed]);
-        config.desktop.remove_space(removed);
-
-        // The deleted space is dropped from the rail.
-        let form = build_form(&config, &session, true, Path::new("x"));
-        assert_eq!(space_labels(&form), ["Kept"]);
-
-        // Resetting the last override does not pull the entry out (sticky),
-        // but the entry is no longer marked.
-        config.desktop.space_mut(kept).unwrap().icon_size = None;
-        let form = build_form(&config, &session, true, Path::new("x"));
-        assert_eq!(space_labels(&form), ["Kept"]);
-        assert!(!form.nav.as_ref().unwrap().groups[1].entries[0].marked);
-    }
-
-    #[test]
-    fn space_page_is_disabled_with_no_selection() {
-        let (config, session) = setup();
-        let form = build_form(&config, &session, true, Path::new("x"));
-        for id in [
-            field::SPACE_OPACITY,
-            field::SPACE_ICON_SIZE,
-            field::SPACE_TINT_TOGGLE,
-            field::SPACE_TINT,
-            field::SPACE_TEXT_TOGGLE,
-            field::SPACE_TEXT,
-            field::SPACE_RESET,
-        ] {
-            assert!(!form.field(id).unwrap().enabled, "field {id} should be off");
-        }
+            .map(|scope| (scope.label.as_str(), scope.indent, scope.dimmed))
+            .collect();
         assert_eq!(
-            form.field(field::SPACE_NOTE).unwrap().label,
-            "No spaces are customized yet. Right-click a space and choose Appearance."
+            scopes,
+            [
+                ("Global", false, false),
+                ("Work", true, true),
+                ("Games", true, false)
+            ]
         );
+        assert_eq!(nav.selected_scope, 0);
+        assert_eq!(nav.entries().count(), page::ABOUT + 1);
+        let header = nav.header.as_ref().unwrap();
+        assert_eq!(header.title, "Global settings");
+        assert!(header.switch.is_none());
     }
 
     #[test]
-    fn opacity_percent_round_trips_through_bytes() {
-        for percent in [20, 40, 60, 80, 100] {
-            assert_eq!(opacity_percent(opacity_byte(percent)), percent);
-        }
-        assert_eq!(opacity_byte(100), 255);
-        assert_eq!(opacity_byte(20), 51);
-    }
-
-    #[test]
-    fn space_page_ids_are_recognized() {
-        assert!(is_space_field(field::SPACE_OPACITY));
-        assert!(is_space_field(field::SPACE_RESET));
-        assert!(!is_space_field(field::ICON_SIZE));
-        assert!(!is_space_field(field::RESET));
-    }
-
-    #[test]
-    fn global_page_count_matches_the_settings_group() {
-        let (config, session) = setup();
-        let form = build_form(&config, &session, true, Path::new("x"));
-        assert_eq!(
-            form.nav.as_ref().unwrap().groups[0].entries.len(),
-            GLOBAL_PAGE_COUNT
-        );
-    }
-
-    #[test]
-    fn selected_space_follows_the_rail_selection() {
-        let (config, id) = config_with_space("Work", 200);
+    fn a_space_shows_only_look_pages_and_a_customize_switch() {
+        let (config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
-        assert_eq!(selected_space(&config, &session), None);
-        session.nav_selected = GLOBAL_PAGE_COUNT;
-        assert_eq!(selected_space(&config, &session), Some(id));
-        session.nav_selected = GLOBAL_PAGE_COUNT + 1;
-        assert_eq!(selected_space(&config, &session), None);
+        session.page = page::ABOUT;
+        session.select_scope(Some(id));
+        assert_eq!(session.page, page::APPEARANCE, "About is Global only");
+        let form = build_form(&config, &session, true, Path::new("x"));
+        let nav = nav(&form);
+        assert_eq!(nav.selected_scope, 1);
+        let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Appearance", "Labels", "Layout", "Colors", "Advanced"]
+        );
+        let switch = nav.header.as_ref().unwrap().switch.as_ref().unwrap();
+        assert_eq!(switch.label, "Customize this space");
+        assert!(!switch.on);
+        // The page shape never changes: General and About are still built.
+        assert_eq!(form.pages.len(), page::ABOUT + 1);
     }
 
     #[test]
-    fn space_field_command_maps_every_field() {
-        let mut config = Config::new();
-        let id = config.desktop.add_space("Work", Rect::new(0, 0, 200, 200));
-        let palette = Theme::default().palette(false);
-        let space = config.desktop.space(id).unwrap();
+    fn a_space_that_follows_global_shows_global_values_greyed() {
+        let (mut config, id) = config_with_space("Work");
+        config.theme.tint_opacity = 70;
+        let mut kept = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        kept.theme.tint_opacity = 10;
+        config.desktop.space_mut(id).unwrap().look = Some(kept);
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
 
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_OPACITY,
-                FieldValue::Slider(100),
-                &palette
-            ),
-            Some(Command::SetSpaceOpacity { id, opacity: 255 })
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(slider_value(&form, field::TINT_OPACITY), 70);
+        assert!(!form.field(field::TINT_OPACITY).unwrap().enabled);
+        assert!(!form.field(field::MODE).unwrap().enabled);
+
+        config.desktop.space_mut(id).unwrap().custom = true;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(slider_value(&form, field::TINT_OPACITY), 10, "its own look");
+        assert!(form.field(field::TINT_OPACITY).unwrap().enabled);
+    }
+
+    #[test]
+    fn space_edits_become_commands_and_leave_the_global_theme_alone() {
+        let (mut config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
+        let edit = |config: &Config, session: &mut Session| {
+            space_edit(
+                config,
+                session,
+                field::ICON_SIZE,
+                FieldValue::Slider(150),
+                true,
+            )
+        };
+        assert!(edit(&config, &mut session).is_none(), "follows Global");
+
+        config.desktop.space_mut(id).unwrap().custom = true;
+        let (space, command, effect) = edit(&config, &mut session).unwrap();
+        assert_eq!(space, id);
+        assert_eq!(effect, Effect::Layout);
+        assert!(session.dirty);
+        match command {
+            Command::SetSpaceLook {
+                custom: true,
+                look: Some(look),
+                ..
+            } => {
+                assert_eq!(look.theme.icon_size, 150);
+                assert_eq!(look.theme.tint_opacity, config.theme.tint_opacity);
+            }
+            other => panic!("expected SetSpaceLook, got {other:?}"),
+        }
+        assert_eq!(config.theme.icon_size, 100);
+        assert!(
+            space_edit(
+                &config,
+                &mut session,
+                field::HOTKEY,
+                FieldValue::Text("x".into()),
+                true
+            )
+            .is_none(),
+            "General is Global only"
         );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_OPACITY,
-                FieldValue::Slider(20),
-                &palette
-            ),
-            Some(Command::SetSpaceOpacity { id, opacity: 51 })
+    }
+
+    #[test]
+    fn customizing_seeds_from_global_and_match_global_copies_it() {
+        let (mut config, id) = config_with_space("Work");
+        config.theme.corner_radius = 4;
+        let mut session = Session::new(&config);
+        assert!(
+            customize_space(&config, &mut session, true).is_none(),
+            "Global"
         );
+        session.select_scope(Some(id));
+        match customize_space(&config, &mut session, true) {
+            Some(Command::CustomizeSpace {
+                id: target,
+                on,
+                seed,
+            }) => {
+                assert_eq!(target, id);
+                assert!(on);
+                assert_eq!(seed.theme.corner_radius, 4);
+            }
+            other => panic!("expected CustomizeSpace, got {other:?}"),
+        }
+        assert!(
+            match_global(&config, &mut session).is_none(),
+            "not customized"
+        );
+        config.desktop.space_mut(id).unwrap().custom = true;
+        assert!(matches!(
+            match_global(&config, &mut session),
+            Some(Command::SetSpaceLook { custom: true, look: Some(look), .. })
+                if look.theme.corner_radius == 4
+        ));
+    }
+
+    #[test]
+    fn snapshots_restore_and_follow_menu_changes() {
+        let (mut config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
         assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_ICON_SIZE,
-                FieldValue::Choice(3),
-                &palette
-            ),
-            Some(Command::SetSpaceIconSize {
+            session.saved_spaces[0].restore(),
+            Command::SetSpaceLook {
                 id,
-                icon_size: Some(150)
-            })
+                custom: false,
+                look: None
+            }
         );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_ICON_SIZE,
-                FieldValue::Choice(0),
-                &palette
-            ),
-            Some(Command::SetSpaceIconSize {
-                id,
-                icon_size: None
-            })
-        );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_TINT_TOGGLE,
-                FieldValue::Toggle(true),
-                &palette
-            ),
-            Some(Command::SetSpaceTint {
-                id,
-                tint: Some(palette.tint.with_alpha(255))
-            })
-        );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_TINT_TOGGLE,
-                FieldValue::Toggle(false),
-                &palette
-            ),
-            Some(Command::SetSpaceTint { id, tint: None })
-        );
-        let tint = Color::rgb(1, 2, 3);
-        assert_eq!(
-            space_field_command(space, field::SPACE_TINT, FieldValue::Color(tint), &palette),
-            Some(Command::SetSpaceTint {
-                id,
-                tint: Some(tint)
-            })
-        );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_TEXT_TOGGLE,
-                FieldValue::Toggle(true),
-                &palette
-            ),
-            Some(Command::SetSpaceText {
-                id,
-                text: Some(palette.title_text)
-            })
-        );
-        assert_eq!(
-            space_field_command(
-                space,
-                field::SPACE_TEXT_TOGGLE,
-                FieldValue::Toggle(false),
-                &palette
-            ),
-            Some(Command::SetSpaceText { id, text: None })
-        );
-        let text = Color::rgb(4, 5, 6);
-        assert_eq!(
-            space_field_command(space, field::SPACE_TEXT, FieldValue::Color(text), &palette),
-            Some(Command::SetSpaceText {
-                id,
-                text: Some(text)
-            })
-        );
-        assert_eq!(
-            space_field_command(space, field::SPACE_NOTE, FieldValue::Slider(0), &palette),
-            None
-        );
+        let space = config.desktop.space_mut(id).unwrap();
+        space.custom = true;
+        space.look = Some(SpaceLook::default());
+        session.resnapshot(config.desktop.space(id).unwrap());
+        assert!(session.saved_spaces[0].custom);
+        assert_eq!(session.saved_spaces.len(), 1);
+    }
+
+    #[test]
+    fn scope_indices_map_to_spaces() {
+        let (config, id) = config_with_space("Work");
+        assert_eq!(scope_at(&config, 0), None);
+        assert_eq!(scope_at(&config, 1), Some(id));
+        assert_eq!(scope_at(&config, 2), None);
+        let mut session = Session::new(&config);
+        assert_eq!(scope_index(&config, &session), 0);
+        session.select_scope(Some(id));
+        assert_eq!(scope_index(&config, &session), 1);
+        session.select_scope(Some(SpaceId(999)));
+        assert_eq!(scope_index(&config, &session), 0, "a deleted space");
     }
 }

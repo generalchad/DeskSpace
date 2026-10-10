@@ -108,14 +108,9 @@ pub fn space_scene(
             .collect()
     };
 
-    // A per-space tint keeps the theme's alpha; text overrides the title and
-    // label color together.
-    let tint = space
-        .tint
-        .map_or(palette.tint, |color| color.with_alpha(palette.tint.a))
-        .fade(space.opacity);
-    let title_text = space.text.unwrap_or(palette.title_text);
-    let item_text = space.text.unwrap_or(palette.item_text);
+    let tint = palette.tint;
+    let title_text = palette.title_text;
+    let item_text = palette.item_text;
     let text_shadow = match theme.label_shadow {
         LabelShadow::Auto => auto_text_shadow(item_text, tint),
         LabelShadow::On => Some(contrast_shadow(item_text)),
@@ -293,7 +288,7 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::{Item, Point, SpaceId};
+    use deskspace_core::{Item, Point, SpaceId, SpaceLook};
 
     fn space() -> Space {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(500, 300, 240, 200));
@@ -424,9 +419,8 @@ mod tests {
     }
 
     #[test]
-    fn selection_wins_over_hover_and_opacity_scales_tint() {
-        let mut space = space();
-        space.opacity = 128;
+    fn selection_wins_over_hover() {
+        let space = space();
         let theme = Theme::default();
         let palette = theme.palette(true);
         let scene = space_scene(
@@ -443,7 +437,7 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(scene.items[0].state, ItemState::Selected);
-        assert_eq!(scene.tint.a, palette.tint.fade(128).a);
+        assert_eq!(scene.tint, palette.tint);
     }
 
     #[test]
@@ -486,15 +480,21 @@ mod tests {
     }
 
     #[test]
-    fn per_space_appearance_overrides_the_palette() {
+    fn a_customized_space_draws_with_its_own_theme() {
         let mut space = space();
-        space.tint = Some(Color::rgb(10, 20, 30));
-        space.text = Some(Color::rgb(1, 2, 3));
-        let theme = Theme::default();
+        let global = Theme::default();
+        let mut look = SpaceLook::from_global(&global, &GridSpec::default());
+        look.theme.custom_colors = true;
+        look.theme.tint = Color::rgb(10, 20, 30);
+        look.theme.text = Color::rgb(1, 2, 3);
+        look.theme.label_lines = 1;
+        space.look = Some(look);
+        space.custom = true;
+        let theme = space.theme(&global);
         let palette = theme.palette(true);
         let scene = space_scene(
             &space,
-            &theme,
+            theme,
             &palette,
             GridSpec::default(),
             ItemMetrics::for_scale(1.0),
@@ -502,9 +502,9 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(scene.tint.r, 10);
-        assert_eq!(scene.tint.a, palette.tint.a);
         assert_eq!(scene.title_text, Color::rgb(1, 2, 3));
         assert_eq!(scene.item_text, Color::rgb(1, 2, 3));
+        assert_eq!(scene.label_lines, 1);
     }
 
     #[test]

@@ -9,8 +9,7 @@ use crate::layout::{
     GridSpec, arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions,
     snap_rect,
 };
-use crate::space::ResizeEdges;
-use crate::theme::{Color, ICON_SIZE_RANGE};
+use crate::space::{ResizeEdges, SpaceLook};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -56,26 +55,21 @@ pub enum Command {
         key: SortKey,
         descending: bool,
     },
-    /// Per-space tint alpha multiplier (255 keeps the theme's).
-    SetSpaceOpacity {
+    /// Turns a space's own look on or off. Turning it on for the first time
+    /// starts from `seed` (the global settings); turning it off keeps the look,
+    /// so turning it back on restores it.
+    CustomizeSpace {
         id: SpaceId,
-        opacity: u8,
+        on: bool,
+        seed: SpaceLook,
     },
-    /// Per-space body tint override; `None` returns to the theme's tint.
-    SetSpaceTint {
+    /// Sets a space's customization exactly: whether it is on, and its own
+    /// look (clamped). Settings edits pass `custom: true`; Cancel restores a
+    /// snapshot, which may have no look yet.
+    SetSpaceLook {
         id: SpaceId,
-        tint: Option<Color>,
-    },
-    /// Per-space title and label text override; `None` returns to the theme's.
-    SetSpaceText {
-        id: SpaceId,
-        text: Option<Color>,
-    },
-    /// Per-space icon size as a percent, clamped to `ICON_SIZE_RANGE`; `None`
-    /// returns to the global setting.
-    SetSpaceIconSize {
-        id: SpaceId,
-        icon_size: Option<u8>,
+        custom: bool,
+        look: Option<SpaceLook>,
     },
     ToggleLock {
         id: SpaceId,
@@ -272,31 +266,20 @@ impl Desktop {
                 position_items(space, layout);
                 CommandOutcome::Applied
             }
-            Command::SetSpaceOpacity { id, opacity } => match self.space_mut(id) {
+            Command::CustomizeSpace { id, on, seed } => match self.space_mut(id) {
                 Some(space) => {
-                    space.opacity = opacity;
+                    if on && space.look.is_none() {
+                        space.look = Some(seed.clamped());
+                    }
+                    space.custom = on;
                     CommandOutcome::Applied
                 }
                 None => CommandOutcome::NotFound,
             },
-            Command::SetSpaceTint { id, tint } => match self.space_mut(id) {
+            Command::SetSpaceLook { id, custom, look } => match self.space_mut(id) {
                 Some(space) => {
-                    space.tint = tint;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::SetSpaceText { id, text } => match self.space_mut(id) {
-                Some(space) => {
-                    space.text = text;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::SetSpaceIconSize { id, icon_size } => match self.space_mut(id) {
-                Some(space) => {
-                    space.icon_size = icon_size
-                        .map(|percent| percent.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1));
+                    space.look = look.map(SpaceLook::clamped);
+                    space.custom = custom;
                     CommandOutcome::Applied
                 }
                 None => CommandOutcome::NotFound,
@@ -888,57 +871,75 @@ mod tests {
     }
 
     #[test]
-    fn set_space_icon_size_clamps_and_clears() {
+    fn customizing_seeds_once_and_keeps_the_look_when_off() {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let mut seed = SpaceLook::default();
+        seed.theme.icon_size = 150;
+        let customize = |on, seed: &SpaceLook| Command::CustomizeSpace {
+            id,
+            on,
+            seed: seed.clone(),
+        };
+
+        desktop.apply(customize(true, &seed), bounds());
+        let space = desktop.space(id).unwrap();
+        assert!(space.custom);
+        assert_eq!(space.look.as_ref().unwrap().theme.icon_size, 150);
+
+        desktop.apply(customize(false, &seed), bounds());
+        let space = desktop.space(id).unwrap();
+        assert!(!space.custom);
+        assert!(space.look.is_some(), "kept while off");
+
+        // Turning it back on restores the kept look, not a new seed.
+        seed.theme.icon_size = 75;
+        desktop.apply(customize(true, &seed), bounds());
+        assert_eq!(
+            desktop
+                .space(id)
+                .unwrap()
+                .look
+                .as_ref()
+                .unwrap()
+                .theme
+                .icon_size,
+            150
+        );
         assert_eq!(
             desktop.apply(
-                Command::SetSpaceIconSize {
-                    id,
-                    icon_size: Some(u8::MAX),
-                },
-                bounds()
-            ),
-            CommandOutcome::Applied
-        );
-        assert_eq!(
-            desktop.space(id).unwrap().icon_size,
-            Some(ICON_SIZE_RANGE.1)
-        );
-        assert_eq!(
-            desktop.apply(
-                Command::SetSpaceIconSize {
-                    id,
-                    icon_size: Some(1),
-                },
-                bounds()
-            ),
-            CommandOutcome::Applied
-        );
-        assert_eq!(
-            desktop.space(id).unwrap().icon_size,
-            Some(ICON_SIZE_RANGE.0)
-        );
-        assert_eq!(
-            desktop.apply(
-                Command::SetSpaceIconSize {
-                    id,
-                    icon_size: None,
-                },
-                bounds()
-            ),
-            CommandOutcome::Applied
-        );
-        assert_eq!(desktop.space(id).unwrap().icon_size, None);
-        assert_eq!(
-            desktop.apply(
-                Command::SetSpaceIconSize {
+                Command::CustomizeSpace {
                     id: SpaceId(999),
-                    icon_size: Some(100),
+                    on: true,
+                    seed,
                 },
                 bounds()
             ),
             CommandOutcome::NotFound
         );
+    }
+
+    #[test]
+    fn set_space_look_sets_both_exactly_and_clamps() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let mut look = SpaceLook::default();
+        look.theme.icon_size = u8::MAX;
+        look.gap = 1000;
+        let set = |custom, look| Command::SetSpaceLook { id, custom, look };
+        assert_eq!(
+            desktop.apply(set(true, Some(look)), bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert!(space.custom);
+        let look = space.look.as_ref().unwrap();
+        assert_eq!(look.theme.icon_size, crate::theme::ICON_SIZE_RANGE.1);
+        assert_eq!(look.gap, crate::layout::GAP_RANGE.1);
+
+        // Restoring a snapshot from before the space was customized.
+        desktop.apply(set(false, None), bounds());
+        let space = desktop.space(id).unwrap();
+        assert!(!space.custom && space.look.is_none());
     }
 }

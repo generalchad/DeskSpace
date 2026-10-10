@@ -8,20 +8,21 @@ use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{
     Color, Command, Desktop, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space, SpaceId,
+    SpaceLook, Theme,
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
     Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice,
     ItemMetrics, MenuEntry, MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent,
-    ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui, desktop_directory, desktop_display,
-    drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
+    ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui, desktop_directory,
+    desktop_display, drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
     set_start_with_windows, space_dpi, system_accent_color, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
 use crate::scene::{ViewState, drag_scene, item_label, space_scene, space_style};
-use crate::settings::{self, Effect, Session, SpaceAppearance};
+use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
 
 const TOGGLE_HOTKEY: i32 = 0;
@@ -71,7 +72,7 @@ mod menu {
     pub const SPACE_TINT: u32 = 25;
     pub const SPACE_TEXT: u32 = 26;
     pub const RESET_APPEARANCE: u32 = 27;
-    pub const ICON_SIZE_DEFAULT: u32 = 40;
+    pub const SPACE_SETTINGS: u32 = 28;
     pub const ICON_SIZE_SMALL: u32 = 41;
     pub const ICON_SIZE_MEDIUM: u32 = 42;
     pub const ICON_SIZE_LARGE: u32 = 43;
@@ -85,45 +86,24 @@ mod menu {
     pub const SORT_DATE_DESC: u32 = 36;
 }
 
-/// The opacity presets the Appearance submenu offers: menu id, label, and the
-/// stored opacity. Drives both the submenu and how a choice is handled.
+/// The tint-opacity presets the Appearance submenu offers: menu id, label, and
+/// the space's tint opacity in percent. Drives both the submenu and how a
+/// choice is handled.
 const OPACITY_PRESETS: [(u32, &str, u8); 5] = [
-    (menu::OPACITY_100, "Opacity 100%", 255),
-    (menu::OPACITY_80, "Opacity 80%", 204),
-    (menu::OPACITY_60, "Opacity 60%", 153),
-    (menu::OPACITY_40, "Opacity 40%", 102),
-    (menu::OPACITY_20, "Opacity 20%", 51),
+    (menu::OPACITY_100, "Opacity 100%", 100),
+    (menu::OPACITY_80, "Opacity 80%", 80),
+    (menu::OPACITY_60, "Opacity 60%", 60),
+    (menu::OPACITY_40, "Opacity 40%", 40),
+    (menu::OPACITY_20, "Opacity 20%", 20),
 ];
 
-/// The icon-size choices the "Icon size" submenu offers: menu id plus the
-/// label and per-space percent from `settings::SPACE_ICON_SIZES`, so the menu
-/// and the Space settings page always offer the same sizes.
-const ICON_SIZE_PRESETS: [(u32, &str, Option<u8>); 5] = [
-    (
-        menu::ICON_SIZE_DEFAULT,
-        settings::SPACE_ICON_SIZES[0].0,
-        settings::SPACE_ICON_SIZES[0].1,
-    ),
-    (
-        menu::ICON_SIZE_SMALL,
-        settings::SPACE_ICON_SIZES[1].0,
-        settings::SPACE_ICON_SIZES[1].1,
-    ),
-    (
-        menu::ICON_SIZE_MEDIUM,
-        settings::SPACE_ICON_SIZES[2].0,
-        settings::SPACE_ICON_SIZES[2].1,
-    ),
-    (
-        menu::ICON_SIZE_LARGE,
-        settings::SPACE_ICON_SIZES[3].0,
-        settings::SPACE_ICON_SIZES[3].1,
-    ),
-    (
-        menu::ICON_SIZE_XLARGE,
-        settings::SPACE_ICON_SIZES[4].0,
-        settings::SPACE_ICON_SIZES[4].1,
-    ),
+/// The icon-size choices the "Icon size" submenu offers: menu id, label, and
+/// the space's icon size in percent.
+const ICON_SIZE_PRESETS: [(u32, &str, u8); 4] = [
+    (menu::ICON_SIZE_SMALL, "Small", 75),
+    (menu::ICON_SIZE_MEDIUM, "Medium", 100),
+    (menu::ICON_SIZE_LARGE, "Large", 150),
+    (menu::ICON_SIZE_XLARGE, "Extra large", 200),
 ];
 
 /// The sort choices the Sort by submenu offers: menu id, label, sort key, and
@@ -211,17 +191,66 @@ struct EditSession {
     text: TextEdit,
 }
 
-/// The space refresh a settings preview still owes. Both can be pending: a
-/// restyle re-applies the window style, a re-flow re-positions items.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+/// The space refreshes a settings preview still owes: a restyle re-applies a
+/// window style and repaints, a re-flow re-positions items. Global edits owe
+/// them for every space, a space's own edits only for that space.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct Preview {
-    restyle: bool,
-    relayout: bool,
+    restyle_all: bool,
+    relayout_all: bool,
+    restyle: Vec<SpaceId>,
+    relayout: Vec<SpaceId>,
 }
 
 impl Preview {
-    fn is_pending(self) -> bool {
-        self.restyle || self.relayout
+    fn restyle_all() -> Self {
+        Self {
+            restyle_all: true,
+            ..Self::default()
+        }
+    }
+
+    fn relayout_all() -> Self {
+        Self {
+            relayout_all: true,
+            ..Self::default()
+        }
+    }
+
+    fn restyle(id: SpaceId) -> Self {
+        Self {
+            restyle: vec![id],
+            ..Self::default()
+        }
+    }
+
+    fn relayout(id: SpaceId) -> Self {
+        Self {
+            relayout: vec![id],
+            ..Self::default()
+        }
+    }
+
+    fn is_pending(&self) -> bool {
+        self.restyle_all
+            || self.relayout_all
+            || !self.restyle.is_empty()
+            || !self.relayout.is_empty()
+    }
+
+    fn merge(&mut self, other: Preview) {
+        self.restyle_all |= other.restyle_all;
+        self.relayout_all |= other.relayout_all;
+        for id in other.restyle {
+            if !self.restyle.contains(&id) {
+                self.restyle.push(id);
+            }
+        }
+        for id in other.relayout {
+            if !self.relayout.contains(&id) {
+                self.relayout.push(id);
+            }
+        }
     }
 }
 
@@ -399,7 +428,6 @@ impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
     fn sync_windows(&mut self, ui: &mut Ui) {
         let existing: HashSet<u64> = ui.space_ids().into_iter().collect();
-        let style = space_style(&self.config.theme, self.system_dark);
         let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in &ids {
             if existing.contains(&id.0) {
@@ -408,7 +436,7 @@ impl App {
             let Some(rect) = self.config.desktop.space(*id).map(|f| f.visible_rect()) else {
                 continue;
             };
-            if let Err(error) = ui.create_space(id.0, rect, style) {
+            if let Err(error) = ui.create_space(id.0, rect, self.style_for(*id)) {
                 tracing::error!(%error, space = id.0, "could not create space window");
                 continue;
             }
@@ -438,11 +466,11 @@ impl App {
                 .map(|(_, items)| items.clone())
                 .unwrap_or_default(),
             scroll: self.scroll_of(id),
-            show_check_boxes: self.check_box_mode() != CheckBoxMode::Hidden,
-            check_boxes_persistent: self.check_box_mode() == CheckBoxMode::Independent,
+            show_check_boxes: self.check_box_mode(id) != CheckBoxMode::Hidden,
+            check_boxes_persistent: self.check_box_mode(id) == CheckBoxMode::Independent,
             checked: self.checked_items.clone(),
-            show_extensions: self.match_explorer() && self.shell_display.show_extensions,
-            show_compressed_color: self.match_explorer()
+            show_extensions: self.match_explorer(id) && self.shell_display.show_extensions,
+            show_compressed_color: self.match_explorer(id)
                 && self.shell_display.show_compressed_color,
             cut: self.cut_items.iter().copied().collect(),
             marquee: self.marquee.and_then(|(owner, rect)| {
@@ -460,82 +488,95 @@ impl App {
         }
     }
 
-    /// Whether Explorer's display settings are mirrored.
-    fn match_explorer(&self) -> bool {
-        self.config.theme.match_explorer
+    /// The theme a space is drawn with: its own look while customized, else
+    /// the global theme. A missing space gets the global theme.
+    fn theme_for(&self, id: SpaceId) -> &Theme {
+        let global = &self.config.theme;
+        self.config
+            .desktop
+            .space(id)
+            .map_or(global, |space| space.theme(global))
     }
 
-    /// How the desktop shows item check boxes, honoring `match_explorer`.
-    fn check_box_mode(&self) -> CheckBoxMode {
-        if self.match_explorer() {
+    /// The unscaled grid a space lays out on, with its own spacing while
+    /// customized.
+    fn grid_for(&self, id: SpaceId) -> GridSpec {
+        let global = self.config.desktop.layout;
+        self.config
+            .desktop
+            .space(id)
+            .map_or(global, |space| space.grid(global))
+    }
+
+    /// Whether a space mirrors Explorer's display settings.
+    fn match_explorer(&self, id: SpaceId) -> bool {
+        self.theme_for(id).match_explorer
+    }
+
+    /// How a space shows item check boxes, honoring its `match_explorer`.
+    fn check_box_mode(&self, id: SpaceId) -> CheckBoxMode {
+        if self.match_explorer(id) {
             self.shell_display.check_boxes
         } else {
             CheckBoxMode::Hidden
         }
     }
 
-    /// The concrete colors for a space's scene: the theme's palette, with the
+    /// The concrete colors for a space's scene: its theme's palette, with the
     /// selection highlight and border replaced by Windows' accent when the
-    /// setting is on and an accent is known.
-    fn palette(&self) -> Palette {
-        let palette = self.config.theme.palette(self.system_dark);
-        match (self.config.theme.use_accent, self.system_accent) {
+    /// theme asks for it and an accent is known.
+    fn palette_for(&self, id: SpaceId) -> Palette {
+        let theme = self.theme_for(id);
+        let palette = theme.palette(self.system_dark);
+        match (theme.use_accent, self.system_accent) {
             (true, Some(accent)) => palette.with_accent(accent),
             _ => palette,
         }
     }
 
+    /// The window style for a space.
+    fn style_for(&self, id: SpaceId) -> SpaceStyle {
+        space_style(self.theme_for(id), self.system_dark)
+    }
+
     /// Whether DeskSpace's own chrome (the settings window and menus) is dark.
-    /// `Theme.mode` colors the spaces; this follows `Theme.ui_mode`.
+    /// `Theme.mode` colors the spaces; this follows the global `ui_mode`.
     fn ui_dark(&self) -> bool {
         self.config.theme.ui_mode.resolve(self.system_dark)
     }
 
-    /// The item-icon scale as a factor, without per-monitor DPI. When mirroring
-    /// Explorer's display, the desktop's own icon size (in pixels) wins, so
-    /// spaces are 1:1 with the desktop; otherwise the DeskSpace icon-size
-    /// setting applies.
-    fn icon_scale(&self) -> f32 {
-        if self.match_explorer()
+    /// The item-icon scale of `theme` as a factor, without per-monitor DPI.
+    /// When mirroring Explorer's display, the desktop's own icon size (in
+    /// pixels) wins, so spaces are 1:1 with the desktop; otherwise the theme's
+    /// icon-size setting applies.
+    fn icon_scale(&self, theme: &Theme) -> f32 {
+        if theme.match_explorer
             && let Some(pixels) = self.shell_display.icon_size
         {
             return (pixels as f32 / ITEM_ICON_SIZE as f32).max(0.25);
         }
-        self.config
-            .theme
-            .icon_size
-            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32
-            / 100.0
+        theme.icon_size.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32 / 100.0
     }
 
     /// The full icon factor for one space: the icon-size factor times the
     /// monitor's DPI. Explorer's own icon size is already in physical pixels,
-    /// so mirroring does not multiply by DPI again. A per-space override wins
-    /// over both Explorer and the global setting.
+    /// so mirroring does not multiply by DPI again.
     fn space_scale(&self, id: SpaceId) -> f32 {
-        if let Some(percent) = self
-            .config
-            .desktop
-            .space(id)
-            .and_then(|space| space.icon_size)
-        {
-            return percent.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32 / 100.0
-                * space_dpi(id.0);
+        let theme = self.theme_for(id);
+        let scale = self.icon_scale(theme);
+        if theme.match_explorer && self.shell_display.icon_size.is_some() {
+            return scale;
         }
-        if self.match_explorer() && self.shell_display.icon_size.is_some() {
-            return self.icon_scale();
-        }
-        self.icon_scale() * space_dpi(id.0)
+        scale * space_dpi(id.0)
     }
 
-    /// The layout grid for a given icon/DPI scale. When mirroring Explorer, its
+    /// `grid` scaled for an icon/DPI scale. When `theme` mirrors Explorer, its
     /// item spacing (the full cell size in physical pixels) replaces the cell
-    /// and gap, so the grid step matches the desktop exactly. The stored
-    /// `config.desktop.layout` is never scaled, so the settings form keeps
-    /// editing the logical values.
-    fn base_layout(&self, scale: f32) -> GridSpec {
-        let mut layout = self.config.desktop.layout.scaled(scale);
-        if self.match_explorer()
+    /// and gap, so the grid step matches the desktop exactly. The stored grids
+    /// are never scaled, so the settings form keeps editing logical values.
+    fn base_layout(&self, theme: &Theme, grid: GridSpec, scale: f32) -> GridSpec {
+        let mut layout = grid.scaled(scale);
+        if theme.match_explorer
             && let Some(spacing) = self.shell_display.icon_spacing
         {
             layout.cell_width = spacing.width.max(1);
@@ -545,27 +586,16 @@ impl App {
         layout
     }
 
-    /// The scaled grid for one space, including its monitor's DPI. A per-space
-    /// icon-size override ignores Explorer's item spacing too, so the whole
-    /// grid stays consistent with the overridden icon scale.
+    /// The scaled grid for one space, including its monitor's DPI.
     fn layout_for(&self, id: SpaceId) -> GridSpec {
-        let scale = self.space_scale(id);
-        if self
-            .config
-            .desktop
-            .space(id)
-            .and_then(|space| space.icon_size)
-            .is_some()
-        {
-            return self.config.desktop.layout.scaled(scale);
-        }
-        self.base_layout(scale)
+        self.base_layout(self.theme_for(id), self.grid_for(id), self.space_scale(id))
     }
 
-    /// The logical grid (icon size only, no per-monitor DPI), for callers that
-    /// have no space at hand.
+    /// The logical global grid (icon size only, no per-monitor DPI), for
+    /// callers that have no space at hand.
     fn effective_layout(&self) -> GridSpec {
-        self.base_layout(self.icon_scale())
+        let theme = &self.config.theme;
+        self.base_layout(theme, self.config.desktop.layout, self.icon_scale(theme))
     }
 
     /// Scaled icon, label, and check-box sizes for one space.
@@ -580,12 +610,18 @@ impl App {
         if display == self.shell_display {
             return;
         }
-        let relayout = self.match_explorer()
+        let any_matching = self
+            .config
+            .desktop
+            .spaces
+            .iter()
+            .any(|space| space.theme(&self.config.theme).match_explorer);
+        let relayout = any_matching
             && (display.icon_size != self.shell_display.icon_size
                 || display.icon_spacing != self.shell_display.icon_spacing);
         self.shell_display = display;
         // Independent ticks do not survive a switch out of that mode.
-        if self.check_box_mode() != CheckBoxMode::Independent {
+        if self.shell_display.check_boxes != CheckBoxMode::Independent {
             self.checked_items.clear();
         }
         if relayout {
@@ -609,7 +645,7 @@ impl App {
     /// The item whose Explorer-style check box contains `point`, when check
     /// boxes are shown. `point` is in desktop coordinates.
     fn checkbox_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
-        if self.check_box_mode() == CheckBoxMode::Hidden {
+        if self.check_box_mode(id) == CheckBoxMode::Hidden {
             return None;
         }
         let item = self.item_at(id, point)?;
@@ -656,10 +692,10 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let palette = self.palette();
+        let palette = self.palette_for(id);
         let mut scene = space_scene(
             space,
-            &self.config.theme,
+            space.theme(&self.config.theme),
             &palette,
             self.layout_for(id),
             self.metrics_for(id),
@@ -680,12 +716,16 @@ impl App {
     }
 
     fn restyle_all(&mut self, ui: &mut Ui) {
-        let style = space_style(&self.config.theme, self.system_dark);
         let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in ids {
-            ui.set_space_style(id.0, style);
-            self.refresh_space(ui, id);
+            self.restyle_space(ui, id);
         }
+    }
+
+    /// Re-applies one space's window style and repaints it.
+    fn restyle_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        ui.set_space_style(id.0, self.style_for(id));
+        self.refresh_space(ui, id);
     }
 
     /// Re-flows every space for a changed grid: growing spaces resize to fit,
@@ -934,7 +974,7 @@ impl App {
     }
 
     fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        let show_extensions = self.match_explorer() && self.shell_display.show_extensions;
+        let show_extensions = self.match_explorer(space) && self.shell_display.show_extensions;
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };
@@ -1098,92 +1138,94 @@ impl App {
 
     // ---- per-space appearance ------------------------------------------
 
-    fn set_space_opacity(&mut self, ui: &mut Ui, id: SpaceId, opacity: u8, at: Point) {
-        if self.apply_to_space(ui, id, Command::SetSpaceOpacity { id, opacity }, at) {
-            self.note_space_appearance(ui, id);
-        }
-    }
-
-    fn set_space_icon_size(&mut self, ui: &mut Ui, id: SpaceId, icon_size: Option<u8>, at: Point) {
-        if self.dispatch(Command::SetSpaceIconSize { id, icon_size }, at) {
-            self.reflow_space(ui, id);
-            self.schedule_save(ui);
-            self.note_space_appearance(ui, id);
-        }
-    }
-
-    fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
-        let palette = self.palette();
-        let Some(current) = self.config.desktop.space(id).map(|space| match which {
-            SpaceColor::Tint => space.tint.unwrap_or(palette.tint).with_alpha(255),
-            SpaceColor::Text => space.text.unwrap_or(palette.title_text),
-        }) else {
+    /// A context-menu appearance edit. It changes one value of the space's own
+    /// look, starting from what the space shows now (so a space that followed
+    /// Global changes only that value), and customizes the space. It commits
+    /// at once.
+    fn edit_space_look(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        at: Point,
+        edit: impl FnOnce(&mut SpaceLook, &Palette),
+    ) {
+        let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        if let Some(color) = ui.pick_color(current) {
-            let command = match which {
-                SpaceColor::Tint => Command::SetSpaceTint {
-                    id,
-                    tint: Some(color),
-                },
-                SpaceColor::Text => Command::SetSpaceText {
-                    id,
-                    text: Some(color),
-                },
-            };
-            if self.apply_to_space(ui, id, command, at) {
-                self.note_space_appearance(ui, id);
-            }
-        }
-    }
-
-    /// Dispatches the four commands that return a space to the theme's
-    /// appearance. Returns whether all applied.
-    fn clear_space_appearance(&mut self, id: SpaceId, at: Point) -> bool {
-        let opacity = self.dispatch(Command::SetSpaceOpacity { id, opacity: 255 }, at);
-        let tint = self.dispatch(Command::SetSpaceTint { id, tint: None }, at);
-        let text = self.dispatch(Command::SetSpaceText { id, text: None }, at);
-        let icon_size = self.dispatch(
-            Command::SetSpaceIconSize {
-                id,
-                icon_size: None,
-            },
-            at,
+        let mut look = SpaceLook::from_global(
+            space.theme(&self.config.theme),
+            &space.grid(self.config.desktop.layout),
         );
-        opacity && tint && text && icon_size
+        edit(&mut look, &self.palette_for(id));
+        let command = Command::SetSpaceLook {
+            id,
+            custom: true,
+            look: Some(look),
+        };
+        if self.dispatch(command, at) {
+            self.space_look_changed(ui, id);
+        }
     }
 
-    fn reset_space_appearance(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
-        if self.clear_space_appearance(id, at) {
-            self.reflow_space(ui, id);
-            self.schedule_save(ui);
-            self.note_space_appearance(ui, id);
+    fn set_space_tint_opacity(&mut self, ui: &mut Ui, id: SpaceId, percent: u8, at: Point) {
+        self.edit_space_look(ui, id, at, |look, _| look.theme.tint_opacity = percent);
+    }
+
+    fn set_space_icon_size(&mut self, ui: &mut Ui, id: SpaceId, percent: u8, at: Point) {
+        self.edit_space_look(ui, id, at, |look, _| look.theme.icon_size = percent);
+    }
+
+    /// Picks a custom tint or text color. Custom colors replace both, so
+    /// turning them on keeps the other color as it is shown now.
+    fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
+        let palette = self.palette_for(id);
+        let current = match which {
+            SpaceColor::Tint => palette.tint.with_alpha(255),
+            SpaceColor::Text => palette.title_text,
+        };
+        let Some(color) = ui.pick_color(current) else {
+            return;
+        };
+        self.edit_space_look(ui, id, at, |look, palette| {
+            let theme = &mut look.theme;
+            if !theme.custom_colors {
+                theme.custom_colors = true;
+                theme.tint = palette.tint.with_alpha(255);
+                theme.text = palette.title_text;
+            }
+            match which {
+                SpaceColor::Tint => theme.tint = color.with_alpha(255),
+                SpaceColor::Text => theme.text = color.with_alpha(255),
+            }
+        });
+    }
+
+    /// The menu's "Use global appearance": the space follows Global again.
+    /// Its look is kept, so customizing it later restores it.
+    fn use_global_appearance(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let command = Command::CustomizeSpace {
+            id,
+            on: false,
+            seed: SpaceLook::from_global(&self.config.theme, &self.config.desktop.layout),
+        };
+        if self.dispatch(command, at) {
+            self.space_look_changed(ui, id);
         }
     }
 
-    /// A context-menu appearance edit commits at once; when the settings window
-    /// is open, keep its session in step, so the rail lists the space and
-    /// Cancel does not undo the menu change.
-    fn note_space_appearance(&mut self, ui: &mut Ui, id: SpaceId) {
-        let Some((appearance, has_overrides)) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| (SpaceAppearance::of(space), space.has_appearance_overrides()))
-        else {
-            return;
-        };
-        let Some(session) = self.settings.as_mut() else {
-            return;
-        };
-        match session.saved_spaces.iter_mut().find(|saved| saved.id == id) {
-            Some(entry) => *entry = appearance,
-            None => session.saved_spaces.push(appearance),
+    /// Shows a space's changed look, saves it, and keeps an open settings
+    /// window in step: the change is taken into its Cancel snapshot (a menu
+    /// edit commits at once, so Cancel must not undo it) and shown.
+    fn space_look_changed(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.restyle_space(ui, id);
+        self.reflow_space(ui, id);
+        self.schedule_save(ui);
+        if let (Some(session), Some(space)) =
+            (self.settings.as_mut(), self.config.desktop.space(id))
+        {
+            session.resnapshot(space);
+            self.refresh_settings(ui);
         }
-        if has_overrides && !session.listed_spaces.contains(&id) {
-            session.listed_spaces.push(id);
-        }
-        self.refresh_settings(ui);
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
@@ -1292,7 +1334,7 @@ impl App {
         // the highlight to it.
         if let Some(item) = self.checkbox_at(id, point) {
             let previous = self.selected_space.replace(id);
-            if self.check_box_mode() == CheckBoxMode::Independent {
+            if self.check_box_mode(id) == CheckBoxMode::Independent {
                 if let Some(index) = self.checked_items.iter().position(|entry| *entry == item) {
                     self.checked_items.remove(index);
                 } else {
@@ -1585,12 +1627,12 @@ impl App {
         let view = self.view_for(space);
         let layout = self.layout_for(space);
         let metrics = self.metrics_for(space);
-        let palette = self.palette();
+        let palette = self.palette_for(space);
         self.drag_image = self.config.desktop.space(space).and_then(|entry| {
             let scene = drag_scene(
                 entry,
                 &ids,
-                &self.config.theme,
+                entry.theme(&self.config.theme),
                 &palette,
                 layout,
                 metrics,
@@ -2178,7 +2220,10 @@ impl App {
     /// The items an item operation acts on: the independent tick set when
     /// check boxes are separate and any are ticked, otherwise the selection.
     fn active_items(&self) -> Vec<ItemId> {
-        if self.check_box_mode() == CheckBoxMode::Independent && !self.checked_items.is_empty() {
+        // Ticks can only be made in a space that shows check boxes, so any
+        // left over in independent mode are the operand.
+        let independent = self.shell_display.check_boxes == CheckBoxMode::Independent;
+        if independent && !self.checked_items.is_empty() {
             self.checked_items.clone()
         } else {
             self.selected_items.clone()
@@ -2373,7 +2418,10 @@ impl App {
             entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);
-        entries.push(space_appearance_menu(space));
+        entries.push(space_appearance_menu(
+            space,
+            space.theme(&self.config.theme),
+        ));
         entries.push(space_sort_menu());
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
@@ -2405,13 +2453,14 @@ impl App {
             }
             Some(menu::SPACE_TINT) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
             Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
-            Some(menu::RESET_APPEARANCE) => self.reset_space_appearance(ui, id, at),
+            Some(menu::RESET_APPEARANCE) => self.use_global_appearance(ui, id, at),
+            Some(menu::SPACE_SETTINGS) => self.open_settings_with(ui, Some(id)),
             Some(choice) => {
-                if let Some((_, _, opacity)) = OPACITY_PRESETS
+                if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
                     .find(|(preset, ..)| *preset == choice)
                 {
-                    self.set_space_opacity(ui, id, *opacity, at);
+                    self.set_space_tint_opacity(ui, id, *percent, at);
                 } else if let Some((_, _, icon_size)) = ICON_SIZE_PRESETS
                     .iter()
                     .find(|(preset, ..)| *preset == choice)
@@ -2496,8 +2545,16 @@ impl App {
     }
 
     fn open_settings(&mut self, ui: &mut Ui) {
-        if self.settings.is_none() {
-            self.settings = Some(Session::new(&self.config));
+        self.open_settings_with(ui, None);
+    }
+
+    /// Opens the settings window, or brings it to the front, on `scope` when
+    /// one is given (a space's "Space settings…"); otherwise where it was.
+    fn open_settings_with(&mut self, ui: &mut Ui, scope: Option<SpaceId>) {
+        let config = &self.config;
+        let session = self.settings.get_or_insert_with(|| Session::new(config));
+        if scope.is_some() {
+            session.select_scope(scope);
         }
         if let Some(form) = self.settings_form() {
             ui.open_settings(&form);
@@ -2511,63 +2568,56 @@ impl App {
     }
 
     fn on_settings_event(&mut self, ui: &mut Ui, event: SettingsEvent) {
-        if self.settings.is_none() {
+        let Some(session) = self.settings.as_mut() else {
             return;
-        }
+        };
+        let editing_space = session.scope.is_some();
         match event {
+            SettingsEvent::Changed { field, value } if editing_space => {
+                self.on_space_field(ui, field, value);
+            }
             SettingsEvent::Changed { field, value } => {
-                if settings::is_space_field(field) {
-                    self.on_space_field(ui, field, value);
-                } else {
-                    let effect = settings::apply_field(
-                        &mut self.config,
-                        self.settings.as_mut().expect("settings are open"),
-                        field,
-                        value,
-                        self.system_dark,
-                    );
-                    if effect == Effect::Appearance {
-                        ui.set_ui_dark(self.ui_dark());
-                        self.schedule_preview(
-                            ui,
-                            Preview {
-                                restyle: true,
-                                relayout: false,
-                            },
-                        );
-                    } else if effect == Effect::Layout {
-                        self.schedule_preview(
-                            ui,
-                            Preview {
-                                restyle: false,
-                                relayout: true,
-                            },
-                        );
-                    }
-                    self.refresh_settings(ui);
+                let effect = settings::apply_field(
+                    &mut self.config,
+                    session,
+                    field,
+                    value,
+                    self.system_dark,
+                );
+                if effect == Effect::Appearance {
+                    ui.set_ui_dark(self.ui_dark());
+                    self.schedule_preview(ui, Preview::restyle_all());
+                } else if effect == Effect::Layout {
+                    self.schedule_preview(ui, Preview::relayout_all());
                 }
+                self.refresh_settings(ui);
+            }
+            SettingsEvent::Button {
+                field: settings::field::RESET,
+            } if editing_space => {
+                let command = settings::match_global(&self.config, session);
+                self.apply_space_setting(ui, command);
             }
             SettingsEvent::Button {
                 field: settings::field::RESET,
             } => {
-                settings::reset_appearance(
-                    &mut self.config,
-                    self.settings.as_mut().expect("settings are open"),
-                );
+                settings::reset_appearance(&mut self.config, session);
                 ui.set_ui_dark(self.ui_dark());
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
-            SettingsEvent::Button {
-                field: settings::field::SPACE_RESET,
-            } => self.reset_space_from_settings(ui),
             SettingsEvent::Button { .. } => {}
-            // Arrive with the per-space look settings.
-            SettingsEvent::ScopeChanged { .. } | SettingsEvent::HeaderSwitch { .. } => {}
+            SettingsEvent::HeaderSwitch { on } => {
+                let command = settings::customize_space(&self.config, session, on);
+                self.apply_space_setting(ui, command);
+            }
+            SettingsEvent::ScopeChanged { scope } => {
+                session.select_scope(settings::scope_at(&self.config, scope));
+                self.refresh_settings(ui);
+            }
             SettingsEvent::NavChanged { entry } => {
-                if let Some(session) = self.settings.as_mut() {
-                    session.nav_selected = entry;
-                }
+                // The categories pane lists the pages in order, one entry each.
+                session.page = entry;
                 self.refresh_settings(ui);
             }
             SettingsEvent::Apply => {
@@ -2596,75 +2646,60 @@ impl App {
         if !self.pending_preview.is_pending() {
             ui.set_timer(PREVIEW_TIMER, PREVIEW_DELAY_MS);
         }
-        self.pending_preview.restyle |= preview.restyle;
-        self.pending_preview.relayout |= preview.relayout;
+        self.pending_preview.merge(preview);
     }
 
     /// Runs the deferred settings preview.
     fn flush_preview(&mut self, ui: &mut Ui) {
         ui.clear_timer(PREVIEW_TIMER);
         let preview = std::mem::take(&mut self.pending_preview);
-        if preview.restyle {
+        if preview.restyle_all {
             self.restyle_all(ui);
+        } else {
+            for id in preview.restyle {
+                self.restyle_space(ui, id);
+            }
         }
-        if preview.relayout {
+        if preview.relayout_all {
             self.relayout_all(ui);
-        }
-    }
-
-    /// The space shown on the settings window's shared Space page, if any.
-    fn selected_settings_space(&self) -> Option<SpaceId> {
-        let session = self.settings.as_ref()?;
-        settings::selected_space(&self.config, session)
-    }
-
-    /// Lists a space whose override changed through the rail and marks the
-    /// session dirty, so Apply saves it and the entry stays for the session.
-    fn mark_space_session_dirty(&mut self, id: SpaceId) {
-        if let Some(session) = self.settings.as_mut() {
-            if !session.listed_spaces.contains(&id) {
-                session.listed_spaces.push(id);
-            }
-            session.dirty = true;
-        }
-    }
-
-    /// An edit on the Space page: build the command from the selected space's
-    /// field, dispatch it for live preview, and refresh the rail.
-    fn on_space_field(&mut self, ui: &mut Ui, field: u32, value: FieldValue) {
-        let Some(id) = self.selected_settings_space() else {
-            return;
-        };
-        let palette = self.palette();
-        let command = self
-            .config
-            .desktop
-            .space(id)
-            .and_then(|space| settings::space_field_command(space, field, value, &palette));
-        let Some(command) = command else {
-            return;
-        };
-        let at = self.space_center(id);
-        if self.dispatch(command, at) {
-            if field == settings::field::SPACE_ICON_SIZE {
+        } else {
+            for id in preview.relayout {
                 self.reflow_space(ui, id);
-            } else {
-                self.refresh_space(ui, id);
             }
-            self.mark_space_session_dirty(id);
+        }
+    }
+
+    /// An edit on a customized space's page: dispatch its `SetSpaceLook`
+    /// at once, and preview it on that space alone.
+    fn on_space_field(&mut self, ui: &mut Ui, field: u32, value: FieldValue) {
+        let Some(session) = self.settings.as_mut() else {
+            return;
+        };
+        let edit = settings::space_edit(&self.config, session, field, value, self.system_dark);
+        if let Some((id, command, effect)) = edit
+            && self.dispatch(command, self.space_center(id))
+        {
+            let preview = match effect {
+                Effect::Layout => Preview::relayout(id),
+                _ => Preview::restyle(id),
+            };
+            self.schedule_preview(ui, preview);
         }
         self.refresh_settings(ui);
     }
 
-    /// The Space page's "Reset to global": clear every override as a preview.
-    fn reset_space_from_settings(&mut self, ui: &mut Ui) {
-        let Some(id) = self.selected_settings_space() else {
-            return;
+    /// Dispatches a space command from the settings window (the Customize
+    /// switch, "Match global appearance") and shows its result.
+    fn apply_space_setting(&mut self, ui: &mut Ui, command: Option<Command>) {
+        let id = match &command {
+            Some(Command::CustomizeSpace { id, .. } | Command::SetSpaceLook { id, .. }) => *id,
+            _ => return self.refresh_settings(ui),
         };
-        let at = self.space_center(id);
-        if self.clear_space_appearance(id, at) {
+        if let Some(command) = command
+            && self.dispatch(command, self.space_center(id))
+        {
+            self.restyle_space(ui, id);
             self.reflow_space(ui, id);
-            self.mark_space_session_dirty(id);
         }
         self.refresh_settings(ui);
     }
@@ -2719,7 +2754,7 @@ impl App {
         // icon size that scales it, or a Match Explorer toggle, which
         // imports Explorer's own icon size and spacing.
         let relayout = settings::needs_relayout(&session, &self.config);
-        self.restore_space_appearances(ui, &session.saved_spaces);
+        self.restore_spaces(ui, &session.saved_spaces);
         session.revert(&mut self.config);
         ui.set_ui_dark(self.ui_dark());
         if restyle {
@@ -2730,51 +2765,20 @@ impl App {
         }
     }
 
-    /// Cancel: restore the per-space appearance snapshots through the
-    /// `SetSpace*` commands. Spaces deleted meanwhile are skipped. A changed
-    /// icon size re-flows its space; anything else just repaints.
-    fn restore_space_appearances(&mut self, ui: &mut Ui, saved: &[SpaceAppearance]) {
-        for saved in saved {
-            let Some(space) = self.config.desktop.space(saved.id) else {
+    /// Cancel: puts back every space whose customization changed while the
+    /// window was open. Spaces deleted meanwhile are skipped.
+    fn restore_spaces(&mut self, ui: &mut Ui, saved: &[SpaceSnapshot]) {
+        for snapshot in saved {
+            let Some(space) = self.config.desktop.space(snapshot.id) else {
                 continue;
             };
-            if SpaceAppearance::of(space) == *saved {
+            if SpaceSnapshot::of(space) == *snapshot {
                 continue;
             }
-            let icon_changed = space.icon_size != saved.icon_size;
             let at = space.rect.center();
-            self.dispatch(
-                Command::SetSpaceOpacity {
-                    id: saved.id,
-                    opacity: saved.opacity,
-                },
-                at,
-            );
-            self.dispatch(
-                Command::SetSpaceTint {
-                    id: saved.id,
-                    tint: saved.tint,
-                },
-                at,
-            );
-            self.dispatch(
-                Command::SetSpaceText {
-                    id: saved.id,
-                    text: saved.text,
-                },
-                at,
-            );
-            self.dispatch(
-                Command::SetSpaceIconSize {
-                    id: saved.id,
-                    icon_size: saved.icon_size,
-                },
-                at,
-            );
-            if icon_changed {
-                self.reflow_space(ui, saved.id);
-            } else {
-                self.refresh_space(ui, saved.id);
+            if self.dispatch(snapshot.restore(), at) {
+                self.restyle_space(ui, snapshot.id);
+                self.reflow_space(ui, snapshot.id);
             }
         }
     }
@@ -2916,6 +2920,17 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     if config.desktop.spaces.is_empty() {
         seed_default_desktop(&mut config.desktop, !cli.no_icons);
     }
+    // Per-space overrides from before customized looks become a look now.
+    // The palette they were shown with depends on the Windows color mode.
+    let theme = config.theme.clone();
+    if config
+        .desktop
+        .fold_legacy_overrides(&theme, system_uses_dark_mode())
+    {
+        if let Err(error) = store.save(&config) {
+            tracing::warn!(%error, "could not save the converted space appearance");
+        }
+    }
 
     // `--show` also forces them shown when it started a fresh instance, so a
     // stale desktop entry still works after an unclean exit.
@@ -2962,12 +2977,16 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
     }
 }
 
-/// The "Appearance" submenu for a space: opacity presets, the icon size, custom
-/// tint and text colors, and a reset to the theme.
-fn space_appearance_menu(space: &Space) -> MenuEntry {
+/// The "Appearance" submenu for a space drawn with `theme`: tint-opacity
+/// presets, the icon size, custom tint and text colors, a way back to the
+/// global appearance, and the space's settings page. Every edit customizes
+/// the space.
+fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = OPACITY_PRESETS
         .iter()
-        .map(|(id, label, value)| MenuEntry::item(*id, *label).checked(space.opacity == *value))
+        .map(|(id, label, value)| {
+            MenuEntry::item(*id, *label).checked(theme.tint_opacity == *value)
+        })
         .collect();
     entries.push(MenuEntry::Separator);
     entries.push(MenuEntry::submenu(
@@ -2975,18 +2994,25 @@ fn space_appearance_menu(space: &Space) -> MenuEntry {
         ICON_SIZE_PRESETS
             .iter()
             .map(|(id, label, value)| {
-                MenuEntry::item(*id, *label).checked(space.icon_size == *value)
+                MenuEntry::item(*id, *label).checked(theme.icon_size == *value)
             })
             .collect(),
     ));
     entries.push(MenuEntry::Separator);
     entries.push(
-        MenuEntry::item(menu::SPACE_TINT, "Custom tint\u{2026}").checked(space.tint.is_some()),
+        MenuEntry::item(menu::SPACE_TINT, "Custom tint\u{2026}").checked(theme.custom_colors),
     );
     entries.push(
-        MenuEntry::item(menu::SPACE_TEXT, "Custom text\u{2026}").checked(space.text.is_some()),
+        MenuEntry::item(menu::SPACE_TEXT, "Custom text\u{2026}").checked(theme.custom_colors),
     );
-    entries.push(MenuEntry::item(menu::RESET_APPEARANCE, "Reset appearance"));
+    entries.push(
+        MenuEntry::item(menu::RESET_APPEARANCE, "Use global appearance").enabled(space.custom),
+    );
+    entries.push(MenuEntry::Separator);
+    entries.push(MenuEntry::item(
+        menu::SPACE_SETTINGS,
+        "Space settings\u{2026}",
+    ));
     MenuEntry::submenu("Appearance", entries)
 }
 
