@@ -101,7 +101,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
     `pixels.len()`, which does not exist; reword it to the real variable.
   - Comments only. No code changes.
 
-- [ ] **A3. Fix stale and misleading comments.** Comments only.
+- [x] **A3. Fix stale and misleading comments.** Comments only.
   - `deskspace-app/src/scene.rs` ~238: the doc for the scroll thumb ("A thin
     bar along the right edge...") sits on `auto_text_shadow`. Move it to the
     scroll-thumb function it describes, or delete it if that one already has

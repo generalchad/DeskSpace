@@ -99,7 +99,8 @@ pub(crate) fn remove(window: HWND) {
     }
 }
 
-/// A copy of the tray icon for other windows (the settings window).
+/// The tray's icon handle, for other windows to reuse (the settings window).
+/// It is the same handle, not a copy, and the caller must not destroy it.
 pub(crate) fn shared_icon() -> HICON {
     tray_icon()
 }

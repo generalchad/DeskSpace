@@ -5,10 +5,10 @@
 //! a `WH_KEYBOARD_LL` hook, translates each key press into an `EditKey`, posts
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. The same hook can instead watch the keys that act on a
-//! selection (Delete, Ctrl+C, Ctrl+X) and on a current space (Ctrl+V). The
-//! hook runs for every key in the session and Windows drops it if this thread
-//! is slow to pump messages (`LowLevelHooksTimeout`), so it is installed only
-//! while one of those modes is active.
+//! selection (Delete, F2, Ctrl+A, Ctrl+C, Ctrl+X) and on a current space
+//! (Ctrl+V). The hook runs for every key in the session and Windows drops it if
+//! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
+//! installed only while one of those modes is active.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
 
 use std::cell::Cell;
@@ -134,7 +134,7 @@ fn refresh(controller: HWND) {
     }
 }
 
-/// Removes the hook and clears both modes.
+/// Removes the hook and clears every watch mode.
 pub(crate) fn stop() {
     if let Some(hook) = HOOK.take() {
         // SAFETY: `hook` was returned by SetWindowsHookExW on this thread.
@@ -170,7 +170,6 @@ fn key_down(key: VIRTUAL_KEY) -> bool {
     unsafe { GetAsyncKeyState(key.0 as i32) < 0 }
 }
 
-/// Whether `vk` is `key`.
 fn is_key(vk: u32, key: VIRTUAL_KEY) -> bool {
     vk == key.0 as u32
 }

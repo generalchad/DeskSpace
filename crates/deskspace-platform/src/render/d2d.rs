@@ -619,7 +619,7 @@ fn draw_marquee(
 }
 
 /// Draws one item cell: highlight, icon, and label. Shared by the space
-/// painter and `render_item`, so a drag image is exactly what the space shows.
+/// painter and `render_items`, so a drag image is exactly what the space shows.
 #[allow(clippy::too_many_arguments)]
 unsafe fn draw_item(
     graphics: &Graphics,

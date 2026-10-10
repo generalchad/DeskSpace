@@ -121,7 +121,7 @@ impl InfoTip {
     }
 }
 
-/// Posts a tooltip message with its arguments wrapped, since `SendMessageW`
+/// Sends a tooltip message with its arguments wrapped, since `SendMessageW`
 /// takes `Option`-wrapped words.
 unsafe fn send(hwnd: HWND, message: u32, wparam: usize, lparam: isize) {
     // SAFETY: the caller guarantees `hwnd` is a live window.

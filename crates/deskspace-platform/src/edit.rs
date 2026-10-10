@@ -1,4 +1,4 @@
-//! Inline text-editing state for renaming a space in its title bar.
+//! Inline text-editing state for renaming a space title or an item label.
 //!
 //! The app owns a `TextEdit` while a space is renamed and feeds it `EditKey`s
 //! decoded from the keyboard hook (`win32::keyboard`). `caret` and `anchor`

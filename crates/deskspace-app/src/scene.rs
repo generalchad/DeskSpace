@@ -236,8 +236,6 @@ fn compressed_label(item: &Item, enabled: bool) -> Option<Color> {
     }
 }
 
-/// A thin bar along the right edge whose length and position show which part
-/// of the content is visible. `None` when everything fits.
 /// A dark shadow under light text (or a light one under dark text) when the
 /// space is nearly transparent, like the labels of desktop icons. `text` and
 /// `tint` are the space's effective colors, after any per-space overrides.
@@ -259,6 +257,8 @@ fn thumb_bottom_margin(corner_radius: i32) -> i32 {
     SCROLL_THUMB_MARGIN + corner_radius / 2
 }
 
+/// A thin bar along the right edge whose length and position show which part
+/// of the content is visible. `None` when everything fits.
 fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32) -> Option<Rect> {
     if space.rolled_up {
         return None;

@@ -176,7 +176,7 @@ pub struct App {
     /// The picture under the pointer during an item drag, shown by the ghost
     /// window inside the space and by the shell once the drag leaves it.
     drag_image: Option<DragImage>,
-    /// The space being renamed inline, if any.
+    /// The in-progress inline rename, of a space title or an item label.
     edit: Option<EditSession>,
     /// Whether the edit caret is currently shown; toggled by `CARET_TIMER`.
     caret_visible: bool,
