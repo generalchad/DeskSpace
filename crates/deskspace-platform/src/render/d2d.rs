@@ -462,13 +462,12 @@ impl Painter {
         prepared: &PreparedScene,
     ) {
         let scene = &prepared.scene;
+        let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
         for (item, label) in scene.items.iter().zip(&prepared.labels) {
+            if Some(item.id) == editing {
+                continue;
+            }
             let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
-            let edit = prepared
-                .edit_item
-                .as_ref()
-                .filter(|(id, _)| *id == item.id)
-                .map(|(_, buffer)| buffer.as_slice());
             // SAFETY: caller is inside BeginDraw/EndDraw.
             unsafe {
                 draw_item(
@@ -479,10 +478,37 @@ impl Painter {
                     item,
                     label,
                     bitmap.as_ref(),
-                    edit,
+                    None,
                 )
             };
         }
+        // The rename box grows over the items below it, as Explorer's does, so
+        // draw the item being renamed last.
+        let Some((id, buffer)) = &prepared.edit_item else {
+            return;
+        };
+        let Some((item, label)) = scene
+            .items
+            .iter()
+            .zip(&prepared.labels)
+            .find(|(item, _)| item.id == *id)
+        else {
+            return;
+        };
+        let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
+        // SAFETY: caller is inside BeginDraw/EndDraw.
+        unsafe {
+            draw_item(
+                graphics,
+                target,
+                brush,
+                scene,
+                item,
+                label,
+                bitmap.as_ref(),
+                Some(buffer.as_slice()),
+            )
+        };
     }
 
     fn ensure_target(
@@ -695,14 +721,19 @@ unsafe fn draw_item(
             );
         }
         let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
-        let scale = scene.label_size.clamp(60, 160) as f32 / 100.0;
+        let scale = scene
+            .label_size
+            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32
+            / 100.0;
         let lines = scene.label_lines.clamp(1, 2) as f32;
         let line_height = LABEL_LINE_HEIGHT * scale;
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
             let format = graphics.label_format_for(scene.label_size);
             if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
+                // Explorer's rename box wraps the whole name and grows downward
+                // over the items below it, so lay it out in the label's width
+                // but a tall box; `draw_edit_buffer` hugs the measured lines.
                 draw_edit_buffer(
                     graphics,
                     target,
@@ -710,11 +741,17 @@ unsafe fn draw_item(
                     text_edit,
                     buffer,
                     &format,
-                    label_rect,
+                    rect_f(
+                        cell.left + 4.0,
+                        label_top,
+                        cell.right - 4.0,
+                        label_top + EDIT_MAX_HEIGHT,
+                    ),
                     scene.edit,
                     scene.caret_visible,
                 );
             } else {
+                let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
                 draw_text(
                     target,
                     brush,
@@ -1053,6 +1090,11 @@ unsafe fn draw_edit_title(
 const EDIT_PAD_X: f32 = 3.0;
 const EDIT_PAD_Y: f32 = 2.0;
 
+/// How tall the rename box's layout is allowed to grow. A name that wraps to
+/// more lines than this is clipped by the space's own content clip; the value
+/// only needs to exceed any plausible number of wrapped label lines.
+const EDIT_MAX_HEIGHT: f32 = 1024.0;
+
 /// One content line of a laid-out editable buffer, in layout coordinates.
 #[derive(Clone, Copy)]
 struct EditLine {
@@ -1355,6 +1397,28 @@ mod tests {
         assert_eq!(
             (shrunk.left, shrunk.top, shrunk.right, shrunk.bottom),
             (2.0, 2.0, 8.0, 8.0)
+        );
+    }
+
+    #[test]
+    fn edit_field_hugs_all_wrapped_lines() {
+        let line = |start, top, left, right| EditLine {
+            start,
+            end: start + 3,
+            top,
+            bottom: top + 12.0,
+            left,
+            right,
+        };
+        let lines = [
+            line(0, 0.0, 10.0, 40.0),
+            line(3, 12.0, 5.0, 45.0),
+            line(6, 24.0, 8.0, 30.0),
+        ];
+        let field = edit_field(rect_f(0.0, 0.0, 100.0, 1000.0), &lines);
+        assert_eq!(
+            (field.left, field.top, field.right, field.bottom),
+            (2.0, 0.0, 48.0, 38.0)
         );
     }
 }

@@ -499,7 +499,9 @@ WindowSettings {
   `TextEdit` buffer and pushes it in the scene's `editing` (a space title) or
   `editing_item` (an item's label) field; the painter draws Explorer's rename
   field, an opaque box with a border around the laid-out text, the selection in
-  the system highlight, and a blinking caret. A `WH_KEYBOARD_LL` hook, installed only while editing,
+  the system highlight, and a blinking caret. An item's box wraps the whole
+  name in the label's width and grows downward, drawn over the items below it,
+  as Explorer's does; a title's box stays on one line. A `WH_KEYBOARD_LL` hook, installed only while editing,
   translates key presses into `Event::EditKey` and consumes them, because
   spaces are never activated and cannot receive `WM_CHAR`. F2 renames the
   focused item, or the current space's title when no item is selected; an item
