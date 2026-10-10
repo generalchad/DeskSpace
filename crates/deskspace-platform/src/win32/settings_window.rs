@@ -1221,6 +1221,14 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
                 .map(|nav| entry_row(&new_rows, nav.selected))
                 .unwrap_or(0);
             let page = form.nav.as_ref().and_then(|nav| nav.page_of(nav.selected));
+            let old_page = state
+                .form
+                .nav
+                .as_ref()
+                .and_then(|nav| nav.page_of(nav.selected));
+            // Re-showing the same page on every edit would hide and show the
+            // pages for nothing.
+            let page = page.filter(|page| rebuild || Some(*page) != old_page);
             state.nav_rows = new_rows.clone();
             state.form = form.clone();
             state.updating = true;
@@ -1291,8 +1299,13 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
                     );
                 }
             }
-            SendMessageW(list, LB_SETCURSEL, Some(WPARAM(selected_row)), None);
-            let _ = InvalidateRect(Some(list), None, true);
+            // Edits arrive on every slider tick; touching the rail only when
+            // it changed keeps it from repainting each time.
+            let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
+            if rebuild || current != selected_row as isize {
+                SendMessageW(list, LB_SETCURSEL, Some(WPARAM(selected_row)), None);
+                let _ = InvalidateRect(Some(list), None, false);
+            }
             if let Some(page) = page {
                 show_page(&pages, page);
             }
