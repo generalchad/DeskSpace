@@ -131,7 +131,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
   - `win32/data_object.rs` ~192 `0x8007000E`: use `E_OUTOFMEMORY`.
   - Done when: existing hotkey parsing tests still pass unchanged.
 
-- [ ] **A5. Route space re-flow through a `Command`.**
+- [x] **A5. Route space re-flow through a `Command`.**
   - Add `Command::Reflow { id }` in `deskspace-core/src/command.rs`. Its arm
     does exactly what `App::reflow_space` does today: for a locked space set
     `title_height` from the layout and call `position_items`; otherwise call

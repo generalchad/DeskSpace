@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
-use deskspace_core::layout::{GridSpec, arrange_space, position_items};
+use deskspace_core::layout::GridSpec;
 use deskspace_core::{
     Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
 };
@@ -535,19 +535,14 @@ impl App {
     /// Re-flows one space for its current grid (icon size and monitor DPI) and
     /// repaints it.
     fn reflow_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let bounds = work_area_at(space.rect.center());
         let layout = self.layout_for(id);
-        if let Some(space) = self.config.desktop.space_mut(id) {
-            if space.locked {
-                // Locked spaces keep their size, but the icon scale still
-                // reaches their title height and item positions.
-                space.title_height = layout.title_height;
-                position_items(space, layout);
-            } else {
-                // `arrange_space` resizes auto spaces, reflows user-sized ones,
-                // and applies the title height either way.
-                arrange_space(space, layout);
-            }
-        }
+        self.config
+            .desktop
+            .apply_with_layout(Command::Reflow { id }, layout, bounds);
         self.refresh_space(ui, id);
     }
 

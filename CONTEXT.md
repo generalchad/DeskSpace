@@ -251,7 +251,7 @@ effective (scaled) grid; `apply(command, bounds)` is a convenience that uses
 the stored base grid. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
-`ResizeSpace`, `FitToContents`, `SetSpaceOpacity`, `SetSpaceTint`,
+`ResizeSpace`, `FitToContents`, `Reflow`, `SetSpaceOpacity`, `SetSpaceTint`,
 `SetSpaceText`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
 `RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
 `AutoArrange`, `SnapAll`.

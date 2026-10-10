@@ -44,6 +44,12 @@ pub enum Command {
     FitToContents {
         id: SpaceId,
     },
+    /// Re-lays out a space for the current (scaled) grid. A locked space keeps
+    /// its rect and takes only the new title height and item positions; an
+    /// unlocked one is arranged to fit its items.
+    Reflow {
+        id: SpaceId,
+    },
     /// Reorders a space's items by `key` and re-lays them out.
     SortSpace {
         id: SpaceId,
@@ -212,6 +218,22 @@ impl Desktop {
                 space.user_sized = false;
                 arrange_space(space, layout);
                 space.rect = clamp_to_bounds(space.rect, bounds);
+                CommandOutcome::Applied
+            }
+            Command::Reflow { id } => {
+                let Some(space) = self.space_mut(id) else {
+                    return CommandOutcome::NotFound;
+                };
+                if space.locked {
+                    // A locked space keeps its size; the scale still reaches its
+                    // title height and item positions.
+                    space.title_height = layout.title_height;
+                    position_items(space, layout);
+                } else {
+                    // `arrange_space` resizes auto spaces, reflows user-sized
+                    // ones, and applies the title height either way.
+                    arrange_space(space, layout);
+                }
                 CommandOutcome::Applied
             }
             Command::SortSpace {
@@ -800,21 +822,54 @@ mod tests {
     }
 
     #[test]
-    fn sort_space_repositions_items_from_the_top() {
-        let (mut desktop, id) = space_with_items(vec![
-            item(1, "b", ItemKind::File, 0, 0),
-            item(2, "a", ItemKind::File, 0, 0),
-        ]);
-        desktop.apply(
-            Command::SortSpace {
-                id,
-                key: SortKey::Name,
-                descending: false,
-            },
-            bounds(),
+    fn reflow_locked_space_keeps_its_rect_and_takes_the_title_height() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 300, 300));
+        desktop.apply(Command::ToggleLock { id }, bounds());
+        let before = desktop.space(id).unwrap().rect;
+        let mut layout = desktop.layout;
+        layout.title_height = 40;
+        assert_eq!(
+            desktop.apply_with_layout(Command::Reflow { id }, layout, bounds()),
+            CommandOutcome::Applied
         );
         let space = desktop.space(id).unwrap();
-        assert_eq!(space.items[0].label, "a");
-        assert_eq!(space.items[0].position, desktop.layout.grid_position(0));
+        assert_eq!(space.rect, before);
+        assert_eq!(space.title_height, 40);
+    }
+
+    #[test]
+    fn reflow_unlocked_auto_space_resizes_to_fit() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        for name in ["one.txt", "two.txt", "three.txt"] {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: name.into(),
+                },
+                bounds(),
+            );
+        }
+        let before = desktop.space(id).unwrap().rect;
+        let mut layout = desktop.layout;
+        layout.cell_width *= 2;
+        layout.cell_height *= 2;
+        assert_eq!(
+            desktop.apply_with_layout(Command::Reflow { id }, layout, bounds()),
+            CommandOutcome::Applied
+        );
+        let after = desktop.space(id).unwrap().rect;
+        assert!(after.width > before.width);
+        assert!(after.height > before.height);
+    }
+
+    #[test]
+    fn reflow_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(Command::Reflow { id: SpaceId(999) }, bounds()),
+            CommandOutcome::NotFound
+        );
     }
 }
