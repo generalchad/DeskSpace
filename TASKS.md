@@ -319,6 +319,332 @@ Listed so they are not attempted piecemeal. Each needs design work first.
 - **D6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **D7. On-screen verification pass** (maintainer). The list is in
   `CONTEXT.md` section 2, "Pending on-screen checks".
+- **D8. Auto-update design.** Resolved: ROADMAP D6. The work is E5 and
+  E8-E11.
+- **D9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7.
+- **D10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
+  SignPath Foundation (the project must meet their OSS terms: an OSI
+  license, which Apache-2.0 is, and a public repository and build). Then add
+  their GitHub Actions integration to `release.yml`: sign `deskspace.exe`
+  before both the zip and `vpk pack`, and sign the Velopack `Setup.exe`
+  (see `vpk pack -h` for the signing options). Store the credentials as
+  Actions secrets. This must land before or with the first release that has
+  E9 (auto-update), because unsigned updates trigger SmartScreen on every
+  version.
+- **D11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs D10,
+  and M2 may make it unnecessary.
+- **D12. First release dry run (maintainer).** After E1-E6. Follow
+  `RELEASING.md` with a pre-release version (for example `0.2.0-alpha.1`).
+  Check:
+  - the workflow publishes a pre-release with the zip, the `.sha256`, and
+    the Velopack assets (`DeskSpace.App-win-Setup.exe`, the full `.nupkg`,
+    `releases.win.json`);
+  - on a clean Windows 10 VM and a clean Windows 11 VM: the extracted exe
+    runs, shows its icon, and lists the version under Properties > Details;
+    `Setup.exe` installs into `%LocalAppData%\DeskSpace.App` with no admin
+    prompt and creates a Start menu shortcut;
+  - after E7: uninstalling removes the install root, the Run value, and the
+    desktop verb, and leaves the storage folder and the config untouched;
+  - after E9: install `alpha.1`, publish `alpha.2`, and confirm that the
+    manual tray check offers it and the update restarts into `alpha.2` with
+    the same spaces;
+  - what SmartScreen shows.
+
+  Record the findings in `CONTEXT.md` section 10.
+- **D13. winget (maintainer, ROADMAP M8 item 8).** After the first stable
+  (non-pre-release) version that has the installer.
+  - Submit the first manifest to `microsoft/winget-pkgs` by hand (`wingetcreate
+    new` with the `Setup.exe` URL), with package identifier
+    `generalchad.DeskSpace`.
+  - Then add a `release.yml` job that runs only for non-pre-release tags and
+    updates the manifest (`wingetcreate update --submit`, or the
+    `winget-releaser` action), using a fine-grained PAT stored as an Actions
+    secret.
+
+## E. Release engineering (ROADMAP M8)
+
+Do E1-E4 in order. E5-E11 have their own dependencies, stated in each task.
+Code signing (D10), the first dry run (D12), and winget (D13) are maintainer
+work. `.github/workflows/release.yml` already publishes a zip on a `v*` tag;
+read it before starting.
+
+- [ ] **E1. Commit an `.ico` asset and embed it, with version info, in the
+  executable (ROADMAP M8 item 2).**
+  - Asset: `assets/deskspace.ico` at the repository root. Generate it once
+    from the existing drawing in `win32/icon.rs`, using `write_icon`'s ICO
+    layout at sizes 16, 20, 24, 32, 40, 48, 64, and 256. Use a throwaway
+    local change (for example a temporarily widened `FILE_SIZES` and a
+    scratch test). Commit only the `.ico`, not the scratch code. From now on
+    the `.ico` is the source of truth.
+  - Build: add `winresource` as a build-dependency of `deskspace-app`
+    (`rust_cargo-add` with `dependency_type = "build"`, so `Cargo.lock` stays
+    current). In `crates/deskspace-app/build.rs`, inside the existing
+    `windows` + `msvc` branch, compile a resource with
+    `set_icon_with_id("../../assets/deskspace.ico", "1")`. `winresource`
+    fills `FileVersion`, `ProductVersion`, and `ProductName` from Cargo
+    metadata. Set `FileDescription` to "DeskSpace" and `LegalCopyright` to the
+    line in the About page (`settings.rs`, `field::ABOUT_LICENSE`). Keep the
+    manifest link args as they are. Add
+    `cargo:rerun-if-changed=../../assets/deskspace.ico`.
+  - If `rc.exe` is not found locally, or `cargo deny check` rejects
+    `winresource` or its dependencies, **stop and ask**.
+  - Do not change any runtime code; E2 does that.
+  - Done when: `cargo build --release` produces a `deskspace.exe` that shows
+    the icon in Explorer, and Properties > Details shows the workspace
+    version. `cargo deny check` passes. **[needs human]** check: the icon at
+    Explorer's small, medium, and extra-large views.
+
+- [ ] **E2. Use the embedded icon at runtime and delete the drawn one.**
+  After E1.
+  - `win32/tray.rs`: build `tray_icon` / `shared_icon` from the resource
+    with `LoadImageW(GetModuleHandleW(None), MAKEINTRESOURCE(1), IMAGE_ICON,
+    cx, cy, LR_DEFAULTCOLOR)`. Use `GetSystemMetrics(SM_CXSMICON)` for the
+    tray size. Keep the existing destroy-once rule (see `tray.rs` ~94).
+    `settings_window.rs` ~247 already uses `shared_icon`; leave it unchanged.
+  - `deskspace-app/src/app.rs` (the desktop "Show spaces" entry, ~620): drop
+    the `write_icon` call and pass `"{exe}",0` as the icon. Delete a
+    `deskspace.ico` left over beside the storage folder by older versions,
+    ignoring errors.
+  - Delete `win32/icon.rs`, the `write_icon` re-exports in `win32/mod.rs` and
+    `lib.rs`, and the `TODO(deskspace)` there.
+  - Update `CONTEXT.md` section 6 (icon) and section 10 (the "Show spaces"
+    verb note that mentions `icon::write_icon`).
+  - Done when: `grep -r write_icon crates` finds nothing. **[needs human]**
+    check: the tray, the settings title bar, and the Shift+right-click desktop
+    menu entry show the icon at 100 % and 150 % scaling.
+
+- [ ] **E3. Reproducible release build (ROADMAP M8 item 5).**
+  - `.github/workflows/release.yml`: on the Build step, set
+    `RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo`.
+    Then confirm with `strings`/`Select-String` that no runner path is left
+    in the exe.
+  - Make the linker deterministic: in `crates/deskspace-app/build.rs`, inside
+    the msvc branch, add `cargo:rustc-link-arg-bins=/Brepro`. It zeroes the
+    PE timestamp and replaces it with a content hash.
+  - Check locally: build twice, from two clones in different directories,
+    with the same `--remap-path-prefix` (relative to each clone), and compare
+    `Get-FileHash` of both `deskspace.exe`. If they differ, compare the two
+    `dumpbin /headers` outputs, record what differs under **Found while
+    working**, and **stop and ask**.
+  - Done when: the two hashes match. Add one line on how to reproduce a
+    release build to the "No installer, no code signing, no auto-update" note
+    in `CONTEXT.md` section 10.
+
+- [ ] **E4. Release checklist and versioning policy (ROADMAP M8 item 5).**
+  - New `RELEASING.md` at the repository root. Link it from `AGENTS.md`
+    (extend the existing "Release" row of the Commands table) and from
+    `ROADMAP.md` M8 item 5. Add `release:` to the commit types in rule 7
+    above. Contents:
+    - Versioning: SemVer on `workspace.package.version`. While below 1.0, the
+      minor version follows ROADMAP section 6 (v0.2, v0.3, ...) and patch
+      versions are fixes. Pre-releases use `-alpha.N` / `-beta.N` / `-rc.N`,
+      which `release.yml` marks as pre-releases. The config schema version
+      (`CURRENT_VERSION`) is independent of the app version.
+    - Checklist: `main` is green in CI; bump the version in `Cargo.toml`
+      and refresh `Cargo.lock` (`cargo check --workspace`); move the
+      finished items in `ROADMAP.md` / `CONTEXT.md`; commit as
+      `release: vX.Y.Z`; `git tag vX.Y.Z && git push origin vX.Y.Z`; watch
+      the run with `gh run watch`; download the zip, check the `.sha256`, and
+      smoke-test it with a scratch `--config`; edit the generated notes on
+      the release page.
+    - Recovering from a bad release: delete the release and the tag
+      (`gh release delete vX.Y.Z --cleanup-tag`), fix, and publish the next
+      patch version. Never re-use a published version number.
+  - Done when: the checklist matches `release.yml` step for step (the tag
+    check, `--locked`, the asset names).
+
+### Installer and auto-update (ROADMAP D6, F-45)
+
+Read ROADMAP D6 before any of E5-E11; it is the spec, and these tasks only
+say where things go. The Velopack Rust docs are thin. Confirm every API
+named below on docs.rs for the pinned crate version and at
+https://docs.velopack.io; if one differs, **stop and ask**.
+
+- [ ] **E5. Add the `deskspace-update` crate and the Velopack startup hook.**
+  - New library crate `crates/deskspace-update` with
+    `#![forbid(unsafe_code)]`, `thiserror` errors, and `tracing`. It depends
+    on `velopack` (`rust_cargo-add`) and on nothing in the workspace. Add it
+    to `[workspace.dependencies]`, and make `deskspace-app` depend on it.
+  - `pub const PACK_ID: &str = "DeskSpace.App";`, documented as "must match
+    `--packId` in `release.yml`; never `DeskSpace`, see ROADMAP D6".
+  - `pub fn startup()` wraps `velopack::VelopackApp::build().run()`. Call it
+    as the **first** statement of `main` in
+    `crates/deskspace-app/src/main.rs`, before `Cli::parse()`. Velopack
+    starts the exe with its own arguments during install, update, and
+    uninstall, and may exit the process; clap would reject those arguments.
+    Add a comment saying so.
+  - `pub enum InstallKind { Installed, Portable }` and `pub fn
+    install_kind() -> InstallKind`: `Installed` when
+    `velopack::UpdateManager::new(...)` succeeds for this process, else
+    `Portable`. `cargo run` and the zip build are `Portable`. Log the kind at
+    `debug` on startup.
+  - Update `AGENTS.md` (workspace layout, dependency direction
+    `app -> {config, platform, update} -> core`; `update` depends on no
+    workspace crate) and `CONTEXT.md` section 3.
+  - If `cargo deny check` rejects `velopack` or anything it pulls in,
+    **stop and ask**; do not edit `deny.toml` on your own.
+  - Done when: `cargo run -p deskspace-app -- --no-icons` still starts
+    normally, and a test asserts `install_kind()` is `Portable` under
+    `cargo test`.
+
+- [ ] **E6. Package with Velopack in `release.yml`.** After E1 and E5.
+  - After the Build step: `actions/setup-dotnet` (8.x), then `dotnet tool
+    install -g vpk --version <the velopack crate version in Cargo.lock>`.
+    The tool and the crate versions must match; read the crate version from
+    `cargo metadata` in the step instead of hard-coding it.
+  - `vpk download github --repoUrl <repo> --token ${{ github.token }}
+    --outputDir releases`, so `vpk pack` can build deltas. It must not fail
+    the job when there is no previous Velopack release (the first one).
+  - Stage `deskspace.exe`, `LICENSE`, and `NOTICE` into a directory and run
+    `vpk pack --packId DeskSpace.App --packVersion <version> --packDir
+    <stage> --mainExe deskspace.exe --packTitle DeskSpace --packAuthors
+    "Timothy W. Brown" --icon assets/deskspace.ico --noPortable --outputDir
+    releases`. `--noPortable` is required: D6 says the portable build is our
+    own zip, which only notifies and never self-updates.
+  - Keep the existing `gh release create` (zip and `.sha256`), then add the
+    Velopack assets to that same release with `vpk upload github --repoUrl
+    <repo> --token ${{ github.token }} --tag <tag> --merge`, plus `--pre` for
+    pre-release tags.
+  - Check every flag against `vpk pack -h` / `vpk upload github -h` for the
+    pinned version, and **stop and ask** if one is missing or renamed.
+  - Update `RELEASING.md` (the asset list and the pack id warning) and the
+    `CONTEXT.md` section 10 note.
+  - Done when: the workflow passes `actionlint` (or a careful read if it is
+    not installed). The real check is D12. **[needs human]**
+
+- [ ] **E7. Uninstall cleanup and an install-root safety test.** After E5;
+  the Run-key part needs C4.
+  - Find the argument Velopack passes the main exe on uninstall (the
+    "hooks" / fast-callback docs and the crate's `app.rs`; the C# SDK calls
+    it `--veloapp-uninstall`). In `main.rs`, before `startup()`, if that
+    argument is present: call `deskspace_platform::set_desktop_show_entry(
+    false, "", "", "")` and (if C4 is done) `set_start_with_windows(false)`,
+    log any failures at `warn`, and return. Do not touch the config or the
+    storage folder (D6). If the SDK exposes a proper uninstall hook instead,
+    use that. If neither exists, **stop and ask**.
+  - Put the argument check in a pure, tested function (`fn
+    is_uninstall_hook(args: &[String]) -> bool`).
+  - Safety test in `deskspace-app` (it sees both `config` and `update`):
+    using `ConfigStore::discover()`, assert that neither the config path nor
+    the storage path is inside `%LOCALAPPDATA%\<PACK_ID>`. Add a pure helper
+    `fn is_inside(path, root) -> bool` with its own tests (case-insensitive,
+    and `DeskSpace.App` is not inside `DeskSpace`).
+  - Done when: both tests pass. **[needs human]** check during D12: uninstall
+    removes the Run value and the verb and leaves `%LOCALAPPDATA%\DeskSpace`
+    intact.
+
+- [ ] **E8. Cross-thread wake-up for the app (platform).** Independent of
+  E5-E7.
+  - The update check (E10) runs on a worker thread and has to hand its
+    result to the UI thread. Add a generic mechanism that knows nothing
+    about updates:
+    - `#[derive(Clone)] pub struct Waker` (`Send + Sync`), obtained from
+      `Ui::waker()`. `Waker::wake(&self, id: usize)` posts
+      `WM_APP + 9` (next free; the ids are in `controller.rs`,
+      `keyboard.rs`, and `outside_click.rs`) to the controller window with
+      `id` in `wparam`.
+    - The controller's window procedure dispatches it as a new
+      `Event::Wake { id: usize }`, documented like `Event::Timer`.
+  - Copy the cross-thread `PostMessageW` pattern and its `// SAFETY:`
+    wording from `win32/console.rs`. A wake after the window is gone must
+    just fail silently.
+  - The app pairs it with a `std::sync::mpsc` channel it owns; the platform
+    carries only the id.
+  - Done when: `Event::Wake` is in `CONTEXT.md` section 6 next to the timer
+    events. No behavior change.
+
+- [ ] **E9. A three-button question dialog (platform).** Independent.
+  - `Ui::choose(&mut self, title: &str, text: &str, buttons: &[&str],
+    default: usize) -> Option<usize>`: a modal `TaskDialogIndirect` owned by
+    the controller window, with custom buttons (`TDF_USE_COMMAND_LINKS` off).
+    It returns the index of the button pressed, or `None` if the dialog was
+    closed. The Common Controls v6 manifest in `build.rs` makes
+    `TaskDialogIndirect` available.
+  - Follow `Ui::confirm` (`runtime.rs` ~574) for ownership, foreground
+    handling, and not holding a runtime borrow across the modal call.
+  - Link the `TaskDialogIndirect` page on Microsoft Learn beside the call.
+  - Done when: it compiles and clippy is clean. **[needs human]** check: a
+    temporary call shows three buttons and returns the right index (remove
+    the temporary call before committing).
+
+- [ ] **E10. Update settings, schedule, check, and prompt (F-45).** After
+  E5, E8, and E9.
+  - Config, following "Recipe: a new global setting", all in
+    `WindowSettings` with `#[serde(default)]`:
+    `check_for_updates: bool` (false), `update_prereleases: bool` (false),
+    `last_update_check: Option<u64>` (Unix seconds),
+    `skipped_version: Option<String>`. Serde default tests for each.
+  - Settings: on the General page, a "Check for updates automatically" toggle
+    and an "Include pre-releases" toggle, both `Effect::Pending`. Under them,
+    a note saying the check contacts GitHub, and only when enabled or when
+    started from the tray.
+  - `deskspace-update`:
+    - `pub struct Available { version: String, notes: String, page_url:
+      String }`.
+    - `pub fn check(prerelease: bool) -> Result<Option<Available>,
+      UpdateError>`. Installed: `UpdateManager` with
+      `sources::GithubSource::new(env!("CARGO_PKG_REPOSITORY"), None,
+      prerelease)`, then `check_for_updates()`. Portable: query
+      `https://api.github.com/repos/<owner>/<repo>/releases` with the HTTP
+      client Velopack already pulls in (`ureq`, same major version, so there
+      is no second copy in `Cargo.lock`), and pick the newest release
+      newer than `CARGO_PKG_VERSION`.
+    - Keep the choice in pure, tested functions: `fn newest(releases:
+      &[Release], current: &Version, prerelease: bool) -> Option<&Release>`,
+      parsed from fixture JSON in the test.
+    - Blocking is fine here; the app calls it on a worker thread.
+  - App (`app.rs`):
+    - `UPDATE_TIMER = 4`. On `Started`, when `check_for_updates` is on, arm
+      it for 60 s, then hourly. When it fires and `fn check_due(last:
+      Option<u64>, now: u64) -> bool` (24 h, tested) is true, start a check.
+    - A check runs on `std::thread::spawn`, sends the result over the
+      channel, and calls `waker.wake(UPDATE_WAKE)`. On
+      `Event::Wake { id: UPDATE_WAKE }`, take the result, set
+      `last_update_check`, and `schedule_save`. Keep one check in flight at
+      a time (an `update_in_flight` flag).
+    - Tray: a "Check for updates…" entry (new `menu::CHECK_UPDATES`, next
+      free id) above the separator in `show_tray_menu`, always shown. A
+      manual check ignores `check_for_updates` and `skipped_version`, and
+      reports "DeskSpace is up to date" or the error through `ui.choose`
+      with one "OK" button.
+    - On an available version (automatic checks skip `skipped_version`),
+      show `ui.choose` with the version and the first ~600 characters of the
+      notes:
+      - Installed: "Update and restart" / "Later" / "Skip this version".
+      - Portable: "Open release page" / "Later" / "Skip this version".
+      - "Skip" stores `skipped_version`. "Later" does nothing. "Open release
+        page" opens `page_url` (check whether `ui.open_path` handles a URL;
+        if not, add `Ui::open_url` with `ShellExecuteW`).
+      - "Update and restart" calls the E11 entry point. Until E11 lands,
+        open the release page there and leave a `// TODO(deskspace): E11`.
+  - Done when: the tests above pass and nothing contacts the network with
+    the default config (check by reading the code path, then note it in the
+    commit body). **[needs human]** check: a manual tray check on a portable
+    build against a repo with a newer pre-release, with "Include
+    pre-releases" on.
+
+- [ ] **E11. Download, apply, and restart (installed builds).** After E10.
+  - `deskspace-update`: `pub fn download(&Pending) -> Result<(), _>` (call
+    it on a worker thread) and `pub fn apply_and_restart(&Pending) -> !`
+    (or a `Result`, if the SDK returns one), wrapping `download_updates` and
+    `apply_updates_and_restart`. `Pending` holds the Velopack `UpdateInfo`
+    from the E10 check, so the app does not check twice.
+  - App: "Update and restart" starts the download on a worker thread (same
+    channel and `Waker` as E10, with a new wake id), and sets the tray
+    tooltip to "Downloading update…" with `ui.set_tray_tooltip`. When the
+    download finishes:
+    - flush the configuration synchronously, the same way the app does on
+      `CloseRequested` (a pending autosave must not be lost);
+    - unregister the hotkey;
+    - call `apply_and_restart`.
+    On failure, restore the tooltip and report the error with `ui.choose`.
+  - Keep Velopack's default `set_auto_apply_on_startup(true)`: an update that
+    finished downloading but did not restart is applied on the next launch,
+    which matches D6 ("apply on restart").
+  - Remove the E10 `TODO`. Mark F-45 "Done; check pending" in the ROADMAP
+    feature index, and update `CONTEXT.md` (sections 6, 7, and 10).
+  - **[needs human]** check during D12: an `alpha.1` install updates to
+    `alpha.2` and comes back with the same spaces and settings.
 
 ## Found while working
 
@@ -327,3 +653,10 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
 - `deskspace-app/src/app.rs` `reset_space_appearance`: the three dispatches
   are combined with `&&`. Harmless today (all three succeed or the space is
   missing), but reads like a bug; B5's helper would make it clearer.
+- `ROADMAP.md` D3 says the store is `%LOCALAPPDATA%\DeskSpace\storage`, but
+  `ConfigStore::discover` uses `ProjectDirs::from("", "DeskSpace",
+  "DeskSpace")`. On Windows that should give
+  `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, and the config under
+  `%APPDATA%\DeskSpace\DeskSpace\config\`. Confirm by running it, then fix
+  the docs (a `docs:` task). This matters for E7's safety test and the
+  uninstall docs.

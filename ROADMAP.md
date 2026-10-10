@@ -73,6 +73,38 @@ A native, lightweight, offline Windows desktop organizer that:
   called a *lens* in the UI and docs. In code it is a space whose source is a
   folder (`SpaceSource::Folder`), which keeps the user-facing name out of the
   model.
+- **D6. Distribution and updates (2026-10-10).**
+  - *Channels:* GitHub Releases is the source of truth. Each release ships
+    a Velopack installer (the default), with its update feed, and a portable
+    zip. winget is added after the first stable release.
+  - *Installer and updater:* Velopack. It gives a per-user install with no
+    admin, shortcuts, an uninstaller, and delta updates fed from the release
+    assets.
+  - *Install root vs user data:* the Velopack pack id is `DeskSpace.App`, so
+    the install root is `%LocalAppData%\DeskSpace.App`. Velopack deletes the
+    whole install root on uninstall. The config and the item storage (under
+    `%LocalAppData%\DeskSpace\` and `%AppData%\DeskSpace\`, via
+    `ProjectDirs`) must never be inside it, or uninstalling would delete the
+    user's stored files.
+  - *Uninstall:* removes the Run value (F-34) and the desktop "Show spaces"
+    verb by handling Velopack's uninstall callback. It never touches stored
+    files: the storage folder stays where it is, and a reinstall picks it up
+    again.
+  - *Check policy:* opt-in. "Check for updates automatically" on the General
+    page is off by default, with no first-run prompt. When it is on, the app
+    checks about a minute after start and then every 24 h while running. A
+    manual "Check for updates" tray entry is always available. No network
+    traffic happens unless the user starts it or opts in.
+  - *Apply:* prompt, then restart. The prompt shows the version and notes
+    and offers Update / Later / Skip this version. Update downloads,
+    applies, and restarts DeskSpace with the same config. Later asks again
+    at the next check. A skipped version is stored and not offered again.
+  - *Channels within the updater:* stable by default. An opt-in setting
+    receives pre-releases (`-alpha.N`, `-beta.N`, `-rc.N`).
+  - *Portable zip:* the same opt-in check, but notify only. It offers to open
+    the release page and never replaces its own files.
+  - *Signing:* SignPath Foundation (free for open source), wired into
+    `release.yml`. Signing ships before or together with auto-update.
 
 ## 3. Guiding principles
 
@@ -401,14 +433,19 @@ workflow is possible without a mouse.
 
 Goal: a signed installer that works on a fresh machine.
 
+Decisions: D6. Work items: `TASKS.md` section E (ready to do) and D10-D13
+(maintainer work).
+
 Remaining:
-1. An installer (MSI or WiX):
-   - a per-user install;
+1. A Velopack installer (D6):
+   - a per-user install in `%LocalAppData%\DeskSpace.App`, separate from the
+     user data;
    - an option to start with Windows (F-34);
-   - an uninstaller that restores the desktop.
+   - an uninstaller that removes the Run value and the desktop verb, restores
+     the desktop (after M2), and leaves stored files in place.
 2. An `.ico` resource for the executable, replacing the icon drawn in code
    (`win32/icon.rs`).
-3. Code signing and update notes.
+3. Code signing through SignPath Foundation (D6), and release notes.
 4. A Windows 11 top-level context menu entry. Move "Show spaces" out of
    "Show more options" with an `IExplorerCommand` handler.
    - The handler ships in a signed MSIX sparse package with the
@@ -419,11 +456,28 @@ Remaining:
    - M2 takeover may make it unnecessary by giving DeskSpace its own desktop
      menu.
 5. A release checklist, a versioning policy, and a reproducible build.
+   `.github/workflows/release.yml` already publishes a zip (exe, `LICENSE`,
+   `NOTICE`, `README.md`) and its SHA-256 to GitHub Releases on a `v*` tag
+   that matches the workspace version.
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
+7. Auto-update from GitHub Releases (F-45), following the policy in D6.
+   - The Velopack SDK and the network IO live in a new `deskspace-update`
+     crate, driven by the app; never in `core` or `config`.
+   - Settings live in `WindowSettings` as `#[serde(default)]` fields: the
+     automatic check, the pre-release channel, the last check time, and the
+     skipped version. The General page gets check boxes, and the tray gets a
+     "Check for updates" entry.
+   - A portable build (not installed by Velopack) only notifies.
+   - New dependencies must pass `deny.toml`.
+   - Ship it together with item 3: unsigned updates trigger SmartScreen on
+     every version.
+8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
+   per stable release by a workflow step, after the first stable release.
 
-Exit criteria: a signed installer installs, runs, and uninstalls cleanly on a
-fresh Windows 10 machine and a fresh Windows 11 machine.
+Exit criteria: a signed installer installs, runs, updates to a newer release,
+and uninstalls cleanly on a fresh Windows 10 machine and a fresh Windows 11
+machine.
 
 ## 6. Release mapping
 
@@ -489,6 +543,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
+| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the
@@ -516,6 +571,8 @@ Resolved:
 - **Blur fallback (M1).** See D2.
 - **Store layout (M2).** One shared folder, and deleting a space moves its
   stored files back to the desktop. See D3.
+- **Update policy (M8).** Velopack, opt-in, prompt then restart, and skip a
+  version. See D6.
 
 ## 9. Risks
 
@@ -525,6 +582,9 @@ Resolved:
 - **Data loss on relocation.** Moving real files is destructive. Mitigations:
   move into the store with undo, never overwrite, and snapshot the manifest
   before bulk operations.
+- **Uninstall deleting user data.** Velopack deletes its install root on
+  uninstall. Mitigation (D6): a distinct pack id (`DeskSpace.App`), and a test
+  that the storage and config paths are never inside the install root.
 - **Composition complexity.** DirectComposition plus per-monitor DPI plus
   animation is the largest single technical investment.
 - **Undocumented blur API.** `SetWindowCompositionAttribute` could change in a
