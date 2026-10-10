@@ -43,6 +43,8 @@ pub(crate) fn is_desktop_window(window: HWND) -> bool {
 }
 
 fn progman() -> Option<HWND> {
+    // SAFETY: the found window is checked for validity before use, and the
+    // message is sent with a bounded timeout so a hung Explorer cannot block us.
     unsafe {
         let hwnd = FindWindowW(w!("Progman"), PCWSTR::null()).ok()?;
         if hwnd.is_invalid() {
@@ -65,6 +67,8 @@ fn progman() -> Option<HWND> {
 fn wallpaper_worker() -> Option<HWND> {
     let _ = progman()?;
     FOUND_WORKER.store(0, Ordering::SeqCst);
+    // SAFETY: `find_worker` matches the callback signature and only reads the
+    // window handles EnumWindows passes it.
     unsafe {
         let _ = EnumWindows(Some(find_worker), LPARAM(0));
     }
@@ -77,6 +81,8 @@ fn wallpaper_worker() -> Option<HWND> {
 }
 
 unsafe extern "system" fn find_worker(window: HWND, _param: LPARAM) -> BOOL {
+    // SAFETY: `window` is a live handle supplied by EnumWindows; the child
+    // lookups only read it and store the result atomically.
     unsafe {
         let def_view = FindWindowExW(Some(window), None, w!("SHELLDLL_DefView"), PCWSTR::null());
         if let Ok(def_view) = def_view {

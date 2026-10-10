@@ -87,7 +87,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
   - Done when: no `with_runtime` closure in `runtime.rs` calls a method that
     sends messages. Behavior unchanged.
 
-- [ ] **A2. Add the missing `// SAFETY:` comments.**
+- [x] **A2. Add the missing `// SAFETY:` comments.**
   - Locations (from a heuristic scan; re-scan, there may be a few more or
     fewer): `win32/clipboard.rs` 132, 133, 135, 143, 146, 198;
     `win32/desktop_shell.rs` 46, 68, 80; `win32/dpi.rs` 8, 16;

@@ -129,9 +129,13 @@ pub(crate) fn dropfiles_buffer(paths: &[PathBuf]) -> Vec<u8> {
 /// under `format`. On success the clipboard owns the block; on failure it is
 /// freed here.
 unsafe fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), PlatformError> {
+    // SAFETY: `bytes.len()` is the requested size; a movable block is what the
+    // clipboard accepts, and the caller owns it until it is handed over.
     let block = unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len()) }?;
+    // SAFETY: `block` is a live global block allocated just above.
     let pointer = unsafe { GlobalLock(block) };
     if pointer.is_null() {
+        // SAFETY: the clipboard never received `block`, so it is still ours.
         let _ = unsafe { GlobalFree(Some(block)) };
         return Err(PlatformError::InvalidFormat("clipboard memory"));
     }
@@ -139,10 +143,13 @@ unsafe fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), PlatformError> {
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.cast::<u8>(), bytes.len());
     }
+    // SAFETY: `block` is locked and was fully written above.
     let _ = unsafe { GlobalUnlock(block) };
+    // SAFETY: on success the clipboard owns `block`; on failure we still do.
     match unsafe { SetClipboardData(format, Some(HANDLE(block.0))) } {
         Ok(_) => Ok(()),
         Err(error) => {
+            // SAFETY: `SetClipboardData` failed, so `block` is still ours.
             let _ = unsafe { GlobalFree(Some(block)) };
             Err(error.into())
         }
@@ -195,12 +202,14 @@ unsafe fn read_preferred_effect() -> Option<DROPEFFECT> {
         return None;
     }
     let block = HGLOBAL(handle.0);
+    // SAFETY: the handle wraps a live global block while the clipboard is open.
     let pointer = unsafe { GlobalLock(block) };
     if pointer.is_null() {
         return None;
     }
     // SAFETY: the format holds a single DROPEFFECT (a u32).
     let effect = DROPEFFECT(unsafe { std::ptr::read_unaligned(pointer.cast::<u32>()) });
+    // SAFETY: `block` is locked and the read above is complete.
     let _ = unsafe { GlobalUnlock(block) };
     Some(effect)
 }

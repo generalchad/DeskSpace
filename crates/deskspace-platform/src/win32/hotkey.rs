@@ -24,6 +24,8 @@ pub struct HotkeySpec {
 }
 
 pub fn register(hwnd: HWND, id: i32, spec: HotkeySpec) -> Result<Hotkey, PlatformError> {
+    // SAFETY: `hwnd` is a live window owned by this thread; registration is
+    // paired with `unregister` on the same window.
     unsafe {
         RegisterHotKey(Some(hwnd), id, spec.modifiers, spec.virtual_key)?;
     }
@@ -31,6 +33,7 @@ pub fn register(hwnd: HWND, id: i32, spec: HotkeySpec) -> Result<Hotkey, Platfor
 }
 
 pub fn unregister(hwnd: HWND, hotkey: Hotkey) {
+    // SAFETY: releases the registration made by `register` on the same window.
     unsafe {
         let _ = UnregisterHotKey(Some(hwnd), hotkey.id);
     }

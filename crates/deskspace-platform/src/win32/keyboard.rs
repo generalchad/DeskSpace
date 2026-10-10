@@ -194,6 +194,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     }
     let message = wparam.0 as u32;
     if message != WM_KEYDOWN && message != WM_SYSKEYDOWN {
+        // SAFETY: not a key press; pass the event on unchanged.
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
     // SAFETY: for a keyboard hook, lParam points at a KBDLLHOOKSTRUCT.
@@ -206,6 +207,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // shell has the foreground; otherwise an app's own Ctrl+C/V is stolen.
     if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
         if !desktop_is_foreground() {
+            // SAFETY: the desktop shell is not foreground; pass the key on.
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
         if key_down(VK_CONTROL) {
@@ -226,6 +228,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
                 post_message(CLIPBOARD_KEY, action, 0);
                 return LRESULT(1);
             }
+            // SAFETY: not one of the watched clipboard keys; pass it on.
             return unsafe { CallNextHookEx(None, code, wparam, lparam) };
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_F2) {
@@ -236,6 +239,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             post_message(DELETE_KEY, 0, 0);
             return LRESULT(1);
         }
+        // SAFETY: not a watched selection key; pass it on unchanged.
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
 
@@ -243,6 +247,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     // Start menu): cancel the rename and let them through.
     if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(event.vkCode) {
         post(KIND_CANCEL, 0);
+        // SAFETY: a system shortcut; cancel the rename and let it through.
         return unsafe { CallNextHookEx(None, code, wparam, lparam) };
     }
     if key_down(VK_CONTROL) {
@@ -275,6 +280,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
                 post(kind, 0);
                 LRESULT(1)
             }
+            // SAFETY: not a Ctrl+arrow edit key; pass it on.
             None => unsafe { CallNextHookEx(None, code, wparam, lparam) },
         };
     }

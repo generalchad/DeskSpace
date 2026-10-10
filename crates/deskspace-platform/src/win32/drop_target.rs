@@ -296,13 +296,16 @@ fn write_format(data: &IDataObject, name: &str, bytes: &[u8]) -> bool {
     let Ok(block) = (unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes.len().max(1)) }) else {
         return false;
     };
+    // SAFETY: `block` is a live movable block allocated just above.
     let pointer = unsafe { GlobalLock(block) };
     if pointer.is_null() {
+        // SAFETY: the data object never received `block`; it is ours to free.
         let _ = unsafe { GlobalFree(Some(block)) };
         return false;
     }
     // SAFETY: `block` holds at least `bytes.len()` bytes.
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.cast::<u8>(), bytes.len()) };
+    // SAFETY: `block` is locked and was fully written above.
     let _ = unsafe { GlobalUnlock(block) };
 
     let format_etc = FORMATETC {
@@ -369,6 +372,7 @@ fn file_paths(data: &IDataObject) -> Option<Vec<PathBuf>> {
     // SAFETY: `GetData` returns a medium owned by us; it is released exactly
     // once at the end.
     let mut medium = unsafe { data.GetData(&drop_files_format()).ok()? };
+    // SAFETY: the tymed and handle are checked before the list is read.
     let paths = unsafe {
         if medium.tymed != TYMED_HGLOBAL.0 as u32 || medium.u.hGlobal.0.is_null() {
             None
@@ -381,7 +385,8 @@ fn file_paths(data: &IDataObject) -> Option<Vec<PathBuf>> {
     paths
 }
 
-/// SAFETY: `drop` must be a live `HDROP`.
+/// # Safety
+/// `drop` must be a live `HDROP`.
 unsafe fn read_drop(drop: HDROP) -> Vec<PathBuf> {
     // SAFETY: buffers are sized from DragQueryFileW's reported length plus NUL.
     unsafe {

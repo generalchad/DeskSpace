@@ -145,8 +145,8 @@ pub(crate) fn dib(icon: &Icon, premultiplied: bool) -> Option<HBITMAP> {
     };
     let mut bits = std::ptr::null_mut();
     // SAFETY: `info` describes a width x height 32 bpp DIB; CreateDIBSection
-    // allocates exactly `pixels.len()` bytes behind `bits`, which are written
-    // once before the bitmap is handed out.
+    // allocates exactly `icon.pixels().len()` bytes behind `bits`, which are
+    // written once before the bitmap is handed out.
     unsafe {
         let bitmap = CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
         if bits.is_null() {
