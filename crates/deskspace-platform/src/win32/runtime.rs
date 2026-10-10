@@ -497,20 +497,12 @@ impl Ui {
         let text = info_tip::describe(path);
         let at = desktop_to_screen(at);
         let point = POINT { x: at.x, y: at.y };
-        with_runtime(|runtime| {
-            if let Some(tip) = runtime.info_tip.as_ref() {
-                tip.show(&text, point);
-            }
-        });
+        self.with_info_tip(|tip| tip.show(&text, point));
     }
 
     /// Hides the info tip, if one is shown.
     pub fn hide_info_tip(&mut self) {
-        with_runtime(|runtime| {
-            if let Some(tip) = runtime.info_tip.as_ref() {
-                tip.hide();
-            }
-        });
+        self.with_info_tip(InfoTip::hide);
     }
 
     /// Makes a click on a space behave like a click on the desktop: the
@@ -525,6 +517,15 @@ impl Ui {
         if let Some(ghost) = with_runtime(|runtime| runtime.drag_ghost.take()).flatten() {
             f(&ghost);
             with_runtime(|runtime| runtime.drag_ghost = Some(ghost));
+        }
+    }
+
+    /// Runs `f` with the info tip checked out of the runtime, so the calls it
+    /// makes (which send window messages) do not run under the borrow.
+    fn with_info_tip(&mut self, f: impl FnOnce(&InfoTip)) {
+        if let Some(tip) = with_runtime(|runtime| runtime.info_tip.take()).flatten() {
+            f(&tip);
+            with_runtime(|runtime| runtime.info_tip = Some(tip));
         }
     }
 

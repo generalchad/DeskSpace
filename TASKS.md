@@ -76,7 +76,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
 
 ## A. Fix the bad examples (do these first)
 
-- [ ] **A1. Do not hold the runtime borrow across info-tip calls.**
+- [x] **A1. Do not hold the runtime borrow across info-tip calls.**
   - File: `crates/deskspace-platform/src/win32/runtime.rs`,
     `Ui::show_info_tip` and `Ui::hide_info_tip` (~line 482-514).
   - Problem: `tip.show(...)` / `tip.hide()` send window messages while
