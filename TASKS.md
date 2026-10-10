@@ -189,7 +189,7 @@ Each is independent. None changes behavior.
   - Test: every table id is unique and does not collide with other `menu::`
     ids.
 
-- [ ] **B4. Merge `pick_space_tint` and `pick_space_text`.**
+- [x] **B4. Merge `pick_space_tint` and `pick_space_text`.**
   - One `fn pick_space_color(&mut self, ui, id, at, which: SpaceColor)` with
     a small private `enum SpaceColor { Tint, Text }` choosing the current
     value and the `Command`.

@@ -152,6 +152,13 @@ enum EditTarget {
     Item { id: ItemId, shows_extension: bool },
 }
 
+/// Which per-space color an inline color picker edits.
+#[derive(Debug, Clone, Copy)]
+enum SpaceColor {
+    Tint,
+    Text,
+}
+
 /// An in-progress inline rename. The platform captures keys while it lives.
 struct EditSession {
     space: SpaceId,
@@ -893,48 +900,26 @@ impl App {
         }
     }
 
-    fn pick_space_tint(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+    fn pick_space_color(&mut self, ui: &mut Ui, id: SpaceId, at: Point, which: SpaceColor) {
         let palette = self.config.theme.palette(self.system_dark);
-        let Some(current) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| space.tint.unwrap_or(palette.tint).with_alpha(255))
-        else {
+        let Some(current) = self.config.desktop.space(id).map(|space| match which {
+            SpaceColor::Tint => space.tint.unwrap_or(palette.tint).with_alpha(255),
+            SpaceColor::Text => space.text.unwrap_or(palette.title_text),
+        }) else {
             return;
         };
         if let Some(color) = ui.pick_color(current) {
-            if self.dispatch(
-                Command::SetSpaceTint {
+            let command = match which {
+                SpaceColor::Tint => Command::SetSpaceTint {
                     id,
                     tint: Some(color),
                 },
-                at,
-            ) {
-                self.refresh_space(ui, id);
-                self.schedule_save(ui);
-            }
-        }
-    }
-
-    fn pick_space_text(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
-        let palette = self.config.theme.palette(self.system_dark);
-        let Some(current) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| space.text.unwrap_or(palette.title_text))
-        else {
-            return;
-        };
-        if let Some(color) = ui.pick_color(current) {
-            if self.dispatch(
-                Command::SetSpaceText {
+                SpaceColor::Text => Command::SetSpaceText {
                     id,
                     text: Some(color),
                 },
-                at,
-            ) {
+            };
+            if self.dispatch(command, at) {
                 self.refresh_space(ui, id);
                 self.schedule_save(ui);
             }
@@ -2157,8 +2142,8 @@ impl App {
                     self.schedule_save(ui);
                 }
             }
-            Some(menu::SPACE_TINT) => self.pick_space_tint(ui, id, at),
-            Some(menu::SPACE_TEXT) => self.pick_space_text(ui, id, at),
+            Some(menu::SPACE_TINT) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
+            Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
             Some(menu::RESET_APPEARANCE) => self.reset_space_appearance(ui, id, at),
             Some(choice) => {
                 if let Some((_, _, opacity)) = OPACITY_PRESETS
