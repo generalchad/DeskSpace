@@ -69,7 +69,8 @@ context menus, and a settings window in the first usable release (v0.2).
   move/copy cursor. Selected items can be cut, copied, and pasted with
   Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
   pasted. Delete sends the selection to the Recycle Bin, and F2 renames the
-  focused item inline. Clicking a space also focuses the desktop and clears its
+  focused item, or the current space's title when no item is selected, inline.
+  Clicking a space also focuses the desktop and clears its
   icon selection, like a desktop click.
 - Spaces mirror the desktop's look: item check boxes (both Explorer modes),
   filename extensions, hidden/protected files, and compressed/encrypted label
@@ -498,11 +499,13 @@ WindowSettings {
   field, an opaque box with a border around the laid-out text, the selection in
   the system highlight, and a blinking caret. A `WH_KEYBOARD_LL` hook, installed only while editing,
   translates key presses into `Event::EditKey` and consumes them, because
-  spaces are never activated and cannot receive `WM_CHAR`. F2 on a selected
-  item starts an item rename, committed with `IFileOperation::RenameItem`
+  spaces are never activated and cannot receive `WM_CHAR`. F2 renames the
+  focused item, or the current space's title when no item is selected; an item
+  rename is committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
-  same hook watches Delete, Ctrl+C/X/V, and F2 while an item is selected
+  same hook watches Delete, F2, and Ctrl+C/X while an item is selected and F2,
+  Ctrl+A, and Ctrl+V while a space is current
   (`Ui::watch_selection_keys`) and passes every other key through. The watch
   only consumes those keys while the desktop shell has the foreground
   (`desktop_is_foreground`), because the selection is kept when another app is
@@ -718,7 +721,7 @@ WindowSettings {
   duplicating (copy) the files through the shell's file operation.
 - Press F2 with an item selected to rename its file inline (Enter commits,
   Escape cancels, clicking away commits); the extension is kept when the label
-  hides it.
+  hides it. With no item selected, F2 renames the current space's title.
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
   spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
   right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once

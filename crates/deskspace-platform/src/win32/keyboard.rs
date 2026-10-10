@@ -6,7 +6,7 @@
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. The same hook can instead watch the keys that act on a
 //! selection (Delete, F2, Ctrl+A, Ctrl+C, Ctrl+X) and on a current space
-//! (Ctrl+V). The hook runs for every key in the session and Windows drops it if
+//! (F2, Ctrl+A, Ctrl+V). The hook runs for every key in the session and Windows drops it if
 //! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
 //! installed only while one of those modes is active.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
@@ -229,7 +229,7 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             }
             return false;
         }
-        if WATCH_SELECTION.get() && is_key(event.vkCode, VK_F2) {
+        if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && is_key(event.vkCode, VK_F2) {
             post_message(RENAME_KEY, 0, 0);
             return true;
         }

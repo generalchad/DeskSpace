@@ -728,16 +728,16 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    /// Starts inline editing of the focused (last-selected) item's file name,
-    /// as F2 does in Explorer.
-    fn begin_selected_item_rename(&mut self, ui: &mut Ui) {
+    /// Handles F2: renames the focused (last-selected) item, or the current
+    /// space's title when no item is selected, as F2 does in Explorer.
+    fn begin_f2_rename(&mut self, ui: &mut Ui) {
         let Some(space) = self.selected_space else {
             return;
         };
-        let Some(item) = self.selected_items.last().copied() else {
-            return;
-        };
-        self.begin_item_rename(ui, space, item);
+        match self.selected_items.last().copied() {
+            Some(item) => self.begin_item_rename(ui, space, item),
+            None => self.begin_rename(ui, space),
+        }
     }
 
     fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
@@ -2371,7 +2371,7 @@ impl EventHandler for App {
             Event::Clipboard(ClipboardAction::Cut) => self.copy_selection(ui, true),
             Event::Clipboard(ClipboardAction::Paste) => self.paste_clipboard(ui),
             Event::ClipboardChanged => self.sync_cut_with_clipboard(ui),
-            Event::RenameSelection => self.begin_selected_item_rename(ui),
+            Event::RenameSelection => self.begin_f2_rename(ui),
             Event::SelectAll => self.select_all_in_space(ui),
             Event::PointerDownOutside { on_desktop } => {
                 self.dismiss_info_tip(ui);

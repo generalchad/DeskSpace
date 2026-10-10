@@ -158,8 +158,9 @@ Rust specifics:
   window.
 - The keyboard hook (`win32/keyboard.rs`) has two modes: inline-edit capture
   (consumes all editing keys) and a selection-key watch (`Ui::watch_selection_keys`):
-  Delete, F2, Ctrl+C, and Ctrl+X while an item is selected, and Ctrl+V and
-  Ctrl+A while a space is current. The watch only consumes those keys while the
+  Delete, F2, Ctrl+C, and Ctrl+X while an item is selected, and F2, Ctrl+V, and
+  Ctrl+A while a space is current (F2 renames the focused item, or the space
+  title when no item is selected). The watch only consumes those keys while the
   desktop shell has the foreground, so other apps keep their own shortcuts. The
   hook is installed only while a mode is active; every other key passes
   through. New global key handling goes here, not in a window procedure,

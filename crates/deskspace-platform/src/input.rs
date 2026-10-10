@@ -116,7 +116,8 @@ pub enum Event {
     Clipboard(ClipboardAction),
     /// The clipboard changed, so any cut ghosting may no longer apply.
     ClipboardChanged,
-    /// F2 was pressed while an item was selected.
+    /// F2 was pressed while an item is selected or a space is current: rename
+    /// the focused item, or the space's title when no item is selected.
     RenameSelection,
     /// Ctrl+A was pressed while a space is current: select all its items.
     SelectAll,
