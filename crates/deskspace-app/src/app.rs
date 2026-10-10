@@ -760,7 +760,15 @@ impl App {
             SelectionKey::Open => self.open_selected_item(ui),
             SelectionKey::Clear => self.clear_selection(ui),
             SelectionKey::PermanentDelete => self.delete_selected_items(ui, true),
+            SelectionKey::Refresh => self.refresh_spaces(ui),
         }
+    }
+
+    /// Re-reads Explorer's display options and re-flows every space, as F5
+    /// refreshes the desktop.
+    fn refresh_spaces(&mut self, ui: &mut Ui) {
+        self.refresh_shell_display(ui);
+        self.relayout_all(ui);
     }
 
     /// Opens the focused (last-selected) item, as Enter does in Explorer.

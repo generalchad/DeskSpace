@@ -79,6 +79,8 @@ pub enum SelectionKey {
     Clear,
     /// Shift+Delete: delete the focused items without the Recycle Bin.
     PermanentDelete,
+    /// F5: re-read Explorer's display options and repaint the spaces.
+    Refresh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
