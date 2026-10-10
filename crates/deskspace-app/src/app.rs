@@ -2291,10 +2291,10 @@ impl App {
     fn cancel_settings(&mut self, ui: &mut Ui) {
         if let Some(session) = self.settings.take() {
             let restyle = session.saved_theme != self.config.theme;
-            // Icon size lives in the theme but scales the grid, so a revert
-            // needs a re-flow as well as a restyle.
-            let relayout = session.saved_layout != self.config.desktop.layout
-                || session.saved_theme.icon_size != self.config.theme.icon_size;
+            // A revert re-flows when the grid changed: the layout itself, the
+            // icon size that scales it, or a Match Explorer toggle, which
+            // imports Explorer's own icon size and spacing.
+            let relayout = settings::needs_relayout(&session, &self.config);
             session.revert(&mut self.config);
             if restyle {
                 self.restyle_all(ui);

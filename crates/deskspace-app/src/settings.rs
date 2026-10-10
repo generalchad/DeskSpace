@@ -121,6 +121,15 @@ impl Session {
     }
 }
 
+/// Whether reverting to `saved` needs the spaces re-flowed rather than just
+/// restyled: the grid, the icon size that scales it, or Explorer matching,
+/// which imports the desktop's own icon size and item spacing.
+pub fn needs_relayout(saved: &Session, config: &Config) -> bool {
+    saved.saved_layout != config.desktop.layout
+        || saved.saved_theme.icon_size != config.theme.icon_size
+        || saved.saved_theme.match_explorer != config.theme.match_explorer
+}
+
 fn index_of<T: PartialEq + Copy>(table: &[(T, &str)], value: T) -> usize {
     table
         .iter()
@@ -580,6 +589,28 @@ mod tests {
         );
         session.revert(&mut config);
         assert_eq!(config, Config::new());
+    }
+
+    #[test]
+    fn needs_relayout_tracks_grid_affecting_settings() {
+        let (config, session) = setup();
+        assert!(!needs_relayout(&session, &config));
+
+        let mut match_explorer = config.clone();
+        match_explorer.theme.match_explorer = !config.theme.match_explorer;
+        assert!(needs_relayout(&session, &match_explorer));
+
+        let mut icon_size = config.clone();
+        icon_size.theme.icon_size = icon_size.theme.icon_size.wrapping_add(10);
+        assert!(needs_relayout(&session, &icon_size));
+
+        let mut gap = config.clone();
+        gap.desktop.layout.gap = gap.desktop.layout.gap.wrapping_add(1);
+        assert!(needs_relayout(&session, &gap));
+
+        let mut restyled = config.clone();
+        restyled.theme.tint_opacity = restyled.theme.tint_opacity.wrapping_add(1);
+        assert!(!needs_relayout(&session, &restyled));
     }
 
     #[test]

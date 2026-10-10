@@ -145,7 +145,7 @@ The pattern used by `Space.opacity` / `Space.tint` (F-24):
   - Done when: `reflow_space` contains no `space_mut`. Update the Commands
     list in `CONTEXT.md` section 4.
 
-- [ ] **A6. Cancel after toggling "Match Explorer" must re-flow.**
+- [x] **A6. Cancel after toggling "Match Explorer" must re-flow.**
   - Bug: `field::MATCH_EXPLORER` returns `Effect::Layout`, but
     `App::cancel_settings` only re-flows when `layout` or `icon_size`
     changed, so cancelling a match toggle leaves spaces on the wrong grid.
