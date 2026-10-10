@@ -75,6 +75,8 @@ pub enum ClipboardAction {
 pub enum SelectionKey {
     /// Enter: open the focused item.
     Open,
+    /// Escape: clear the selection.
+    Clear,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

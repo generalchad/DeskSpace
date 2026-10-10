@@ -758,6 +758,7 @@ impl App {
     fn on_selection_key(&mut self, ui: &mut Ui, key: SelectionKey) {
         match key {
             SelectionKey::Open => self.open_selected_item(ui),
+            SelectionKey::Clear => self.clear_selection(ui),
         }
     }
 

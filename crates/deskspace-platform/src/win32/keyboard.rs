@@ -57,6 +57,7 @@ pub(crate) const PROPERTIES_KEY: u32 = WM_APP + 9;
 pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
 
 pub(crate) const SEL_OPEN: usize = 0;
+pub(crate) const SEL_CLEAR: usize = 1;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -269,6 +270,10 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             post_message(DELETE_KEY, 0, 0);
             return true;
         }
+        if is_key(event.vkCode, VK_ESCAPE) {
+            post_message(SELECTION_KEY, SEL_CLEAR, 0);
+            return true;
+        }
         return false;
     }
 
@@ -436,6 +441,7 @@ pub(crate) fn clipboard_action(action: usize) -> Option<ClipboardAction> {
 pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
     Some(match action {
         SEL_OPEN => SelectionKey::Open,
+        SEL_CLEAR => SelectionKey::Clear,
         _ => return None,
     })
 }
@@ -532,6 +538,7 @@ mod tests {
     #[test]
     fn decodes_selection_keys() {
         assert_eq!(selection_key(SEL_OPEN), Some(SelectionKey::Open));
+        assert_eq!(selection_key(SEL_CLEAR), Some(SelectionKey::Clear));
         assert_eq!(selection_key(99), None);
     }
 
