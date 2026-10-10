@@ -1,3 +1,4 @@
+pub mod autostart;
 mod clipboard;
 mod console;
 mod controller;

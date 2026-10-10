@@ -22,6 +22,7 @@ pub use ui::{
     CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsPage, SliderMark,
 };
 pub use win32::Placement;
+pub use win32::autostart::set_start_with_windows;
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::display_settings::{CheckBoxMode, ShellDisplay, desktop_display};
 pub use win32::dpi::enable_per_monitor_awareness;

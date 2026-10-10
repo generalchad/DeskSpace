@@ -141,9 +141,8 @@ A native, lightweight, offline Windows desktop organizer that:
    icon layer, with a safe restore path. This is the remaining v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** F-34 (`TASKS.md` C4), the per-space settings rail (F-46,
-   `TASKS.md` section H), and the New spaces and Hotkeys settings pages.
-   Then cut v0.2.
+4. **Finish M3:** the per-space settings rail (F-46, `TASKS.md` section H),
+   and the New spaces and Hotkeys settings pages. Then cut v0.2.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -290,9 +289,7 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. Start with Windows: a per-user `Run` key, toggled from General (F-34;
-   the installer also offers it in M8).
-2. A per-space settings surface (F-46, `TASKS.md` section H). The settings
+1. A per-space settings surface (F-46, `TASKS.md` section H). The settings
    window gets a navigation rail on the left in place of its top tabs:
    - a Settings group with the global pages;
    - a Spaces group listing every space that has an appearance override.
@@ -300,10 +297,10 @@ Remaining:
    Selecting a space shows its overrides in one shared page, previews edits
    live, and flashes that space on the desktop. Cancel reverts. Edits go
    through the `SetSpace*` commands.
-3. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
+2. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
    with more bindings (F-17, F-18). The page is not called "Spaces", so it
    does not clash with the rail group.
-4. Tray and menu entries that depend on later milestones:
+3. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
    - snapshots (M6);
@@ -547,7 +544,7 @@ belong in `Theme` / `WindowSettings`, and per-space overrides in `Space`, as
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
 | F-33 | Animations toggle | M5 | Open |
-| F-34 | Start with Windows | M3, M8 | Open |
+| F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending |
 | F-37 | Drag image | M2 | Done; check pending |

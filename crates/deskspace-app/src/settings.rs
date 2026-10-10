@@ -53,6 +53,7 @@ pub mod field {
     pub const CONFIG_PATH: u32 = 33;
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
+    pub const START_WITH_WINDOWS: u32 = 49;
 }
 
 const MODES: [(ThemeMode, &str); 3] = [
@@ -355,6 +356,11 @@ pub fn build_form(
                 "Desktop-hosted spaces sit behind other windows and survive Show \
                  Desktop, but have no blur. Takes effect next launch.",
             ),
+            Field::toggle(
+                field::START_WITH_WINDOWS,
+                "Start DeskSpace when you sign in",
+                config.window.start_with_windows,
+            ),
             Field::choice(
                 field::UI_MODE,
                 "Settings and menus",
@@ -517,6 +523,10 @@ pub fn apply_field(
                 .map_or(config.theme.ui_mode, |entry| entry.0);
             Effect::Appearance
         }
+        (field::START_WITH_WINDOWS, FieldValue::Toggle(on)) => {
+            config.window.start_with_windows = on;
+            Effect::Pending
+        }
         (field::HOTKEY, FieldValue::Text(text)) => {
             session.hotkey_text = text;
             session.hotkey_error = None;
@@ -586,6 +596,20 @@ mod tests {
         );
         assert_eq!(effect, Effect::Appearance);
         assert_eq!(config.theme.ui_mode, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn start_with_windows_is_pending() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::START_WITH_WINDOWS,
+            FieldValue::Toggle(true),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(config.window.start_with_windows);
     }
 
     #[test]

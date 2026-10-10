@@ -283,7 +283,7 @@ is large.
     settings window and the next popup menu.
 
 - [ ] **C4. Start with Windows (F-34).** Follow "Recipe: a new global
-  setting".
+  setting". (awaiting check)
   - Config: `WindowSettings.start_with_windows: bool` (default false).
   - Platform: `pub fn set_start_with_windows(enabled: bool) -> Result<()>`
     in a new `win32/autostart.rs`, writing or deleting value `DeskSpace`
@@ -894,3 +894,13 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   `%APPDATA%\DeskSpace\DeskSpace\config\`. Confirm by running it, then fix
   the docs (a `docs:` task). This matters for E7's safety test and the
   uninstall docs.
+- Multi-selection drag out of a space onto the desktop: after a rubber-band or
+  Ctrl selection, dragging the selection out loses the drag silhouette (the
+  drag image) and the items land in the desktop's top-left grid cell instead
+  of at the pointer. Single-item and in-space drags are fine.
+  - Suspects: `deskspace-platform/src/win32/drag_image.rs`
+    (`DragImage::of_selection`, the ghost hand-off on leaving the space) and
+    `deskspace-platform/src/win32/shell_items.rs` (`drag_out` set-up, since
+    the drop position on the desktop comes from the shell's data object).
+    Compare the multi-selection path with the single-item path, which still
+    shows the image. A `fix:` task once the cause is pinned down.

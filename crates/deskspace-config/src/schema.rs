@@ -27,6 +27,8 @@ pub struct WindowSettings {
     pub always_on_desktop: bool,
     pub toggle_hotkey: String,
     pub start_hidden: bool,
+    /// Run DeskSpace at sign-in through the per-user `Run` key.
+    pub start_with_windows: bool,
 }
 
 impl Default for WindowSettings {
@@ -35,6 +37,7 @@ impl Default for WindowSettings {
             always_on_desktop: false,
             toggle_hotkey: "Ctrl+Alt+D".to_string(),
             start_hidden: false,
+            start_with_windows: false,
         }
     }
 }
@@ -244,6 +247,12 @@ mod tests {
         assert_eq!(parsed.theme.ui_mode, deskspace_core::ThemeMode::System);
         let parsed: Config = toml::from_str("version = 2\n[theme]\nui_mode = \"dark\"\n").unwrap();
         assert_eq!(parsed.theme.ui_mode, deskspace_core::ThemeMode::Dark);
+    }
+
+    #[test]
+    fn start_with_windows_defaults_to_false() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert!(!parsed.window.start_with_windows);
     }
 
     #[test]

@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (184 tests) are green.
+  `cargo test --workspace` (187 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -315,6 +315,7 @@ WindowSettings {
     always_on_desktop: bool,    // default false; hosted placement at startup
     toggle_hotkey: String,      // default "Ctrl+Alt+D"
     start_hidden: bool,         // default false
+    start_with_windows: bool,   // default false; per-user Run key at sign-in
 }
 ```
 
@@ -334,6 +335,14 @@ WindowSettings {
   so scratch configs never touch real storage.
 - `save` writes to a sibling `*.toml.tmp` then renames, so a crash never
   truncates the config.
+- `window.start_with_windows` is applied through
+  `deskspace_platform::set_start_with_windows` (a new `win32/autostart.rs`),
+  which writes or deletes the value `DeskSpace` under
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (the quoted
+  `current_exe()` path). The app writes it on Apply when the value changed and
+  once at startup when enabled, so the stored path follows a moved install; a
+  failure is logged at `warn` and never blocks Apply. The uninstaller (E7)
+  removes it.
 - `load_or_default` returns defaults when no file exists. If the file cannot be
   parsed, it copies it to `deskspace.toml.unreadable-<millis>.bak` before
   falling back to defaults; a file from a newer version is loaded but copied to

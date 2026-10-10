@@ -14,8 +14,8 @@ use deskspace_platform::{
     Event, EventHandler, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice, ItemMetrics, MenuEntry,
     MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent,
     TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
-    item_check_box_hit, notify_moved, parse_hotkey, space_dpi, system_accent_color,
-    system_uses_dark_mode, work_area_at,
+    item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, space_dpi,
+    system_accent_color, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -763,6 +763,18 @@ impl App {
         }
         if let Err(error) = deskspace_platform::set_desktop_show_entry(false, "", "", "") {
             tracing::warn!(%error, "could not remove the desktop Show spaces entry");
+        }
+    }
+
+    /// Writes or clears the per-user `Run` value that starts DeskSpace at
+    /// sign-in. Rewriting it on every start keeps the stored path current.
+    fn sync_start_with_windows(&self, enabled: bool) {
+        // Tests must not touch the real per-user registry.
+        if cfg!(test) {
+            return;
+        }
+        if let Err(error) = set_start_with_windows(enabled) {
+            tracing::warn!(%error, "could not update the start-with-Windows entry");
         }
     }
 
@@ -2466,6 +2478,12 @@ impl App {
             }
             self.config.window.toggle_hotkey = text;
         }
+        let start_changed = self.settings.as_ref().is_some_and(|session| {
+            session.saved_window.start_with_windows != self.config.window.start_with_windows
+        });
+        if start_changed {
+            self.sync_start_with_windows(self.config.window.start_with_windows);
+        }
         self.save();
         if let Some(session) = self.settings.as_mut() {
             session.hotkey_text = self.config.window.toggle_hotkey.clone();
@@ -2506,6 +2524,10 @@ impl EventHandler for App {
                 }
                 ui.set_spaces_visible(self.visible);
                 self.sync_desktop_show_entry();
+                // Keep the stored Run path current after an install moves.
+                if self.config.window.start_with_windows {
+                    self.sync_start_with_windows(true);
+                }
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
                 self.sync_windows(ui);
