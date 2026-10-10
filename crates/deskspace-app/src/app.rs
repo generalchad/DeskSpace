@@ -5,6 +5,7 @@ use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::GridSpec;
+use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{
     Command, Desktop, ItemId, ItemKind, Rect, ResizeEdges, SortKey, Space, SpaceId,
 };
@@ -356,7 +357,11 @@ impl App {
         {
             return (pixels as f32 / ITEM_ICON_SIZE as f32).max(0.25);
         }
-        self.config.theme.icon_size.clamp(50, 200) as f32 / 100.0
+        self.config
+            .theme
+            .icon_size
+            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as f32
+            / 100.0
     }
 
     /// The full icon factor for one space: the icon-size factor times the

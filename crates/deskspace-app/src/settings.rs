@@ -4,7 +4,10 @@
 use std::path::Path;
 
 use deskspace_config::{Config, WindowSettings};
-use deskspace_core::theme::{OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner};
+use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
+use deskspace_core::theme::{
+    ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
+};
 use deskspace_core::{Backdrop, GridSpec, LabelShadow, Theme, ThemeMode};
 use deskspace_platform::{Field, FieldValue, SettingsForm, SettingsPage, SliderMark};
 
@@ -212,8 +215,10 @@ pub fn build_form(
             Field::slider(
                 field::LABEL_SIZE,
                 "Label size",
-                (60, 160),
-                theme.label_size.clamp(60, 160) as i32,
+                (LABEL_SIZE_RANGE.0.into(), LABEL_SIZE_RANGE.1.into()),
+                theme
+                    .label_size
+                    .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as i32,
             ),
             Field::choice(
                 field::LABEL_SHADOW,
@@ -231,27 +236,31 @@ pub fn build_form(
             Field::slider(
                 field::ICON_SIZE,
                 "Icon size (%)",
-                (50, 200),
-                theme.icon_size.clamp(50, 200) as i32,
+                (ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into()),
+                theme.icon_size.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as i32,
             )
             .editable()
             .marks(vec![
-                SliderMark::new(50, "Small"),
+                SliderMark::new(ICON_SIZE_RANGE.0.into(), "Small"),
                 SliderMark::new(100, "Default"),
-                SliderMark::new(200, "Large"),
+                SliderMark::new(ICON_SIZE_RANGE.1.into(), "Large"),
             ]),
             Field::slider(
                 field::GRID_GAP,
                 "Icon spacing",
-                (0, 24),
-                config.desktop.layout.gap.clamp(0, 24),
+                (GAP_RANGE.0, GAP_RANGE.1),
+                config.desktop.layout.gap.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px"),
             Field::slider(
                 field::GRID_PADDING,
                 "Edge padding",
-                (0, 24),
-                config.desktop.layout.padding.clamp(0, 24),
+                (GAP_RANGE.0, GAP_RANGE.1),
+                config
+                    .desktop
+                    .layout
+                    .padding
+                    .clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px"),
         ],
@@ -325,8 +334,8 @@ pub fn build_form(
             Field::slider(
                 field::SNAP,
                 "Snap to grid",
-                (0, 64),
-                config.desktop.layout.snap.clamp(0, 64),
+                (SNAP_RANGE.0, SNAP_RANGE.1),
+                config.desktop.layout.snap.clamp(SNAP_RANGE.0, SNAP_RANGE.1),
             )
             .suffix(" px"),
             Field::toggle(
@@ -439,7 +448,8 @@ pub fn apply_field(
             Effect::Appearance
         }
         (field::LABEL_SIZE, FieldValue::Slider(value)) => {
-            config.theme.label_size = value.clamp(60, 160) as u8;
+            config.theme.label_size =
+                value.clamp(LABEL_SIZE_RANGE.0.into(), LABEL_SIZE_RANGE.1.into()) as u8;
             Effect::Appearance
         }
         (field::LABEL_SHADOW, FieldValue::Choice(index)) => {
@@ -449,7 +459,8 @@ pub fn apply_field(
             Effect::Appearance
         }
         (field::ICON_SIZE, FieldValue::Slider(value)) => {
-            config.theme.icon_size = value.clamp(50, 200) as u8;
+            config.theme.icon_size =
+                value.clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into()) as u8;
             Effect::Layout
         }
         (field::OVERLAY_SIZE, FieldValue::Slider(value)) => {
@@ -458,11 +469,11 @@ pub fn apply_field(
             Effect::Appearance
         }
         (field::GRID_GAP, FieldValue::Slider(value)) => {
-            config.desktop.layout.gap = value.clamp(0, 24);
+            config.desktop.layout.gap = value.clamp(GAP_RANGE.0, GAP_RANGE.1);
             Effect::Layout
         }
         (field::GRID_PADDING, FieldValue::Slider(value)) => {
-            config.desktop.layout.padding = value.clamp(0, 24);
+            config.desktop.layout.padding = value.clamp(GAP_RANGE.0, GAP_RANGE.1);
             Effect::Layout
         }
         (field::CUSTOM_COLORS, FieldValue::Toggle(on)) => {
@@ -493,7 +504,7 @@ pub fn apply_field(
             Effect::Pending
         }
         (field::SNAP, FieldValue::Slider(value)) => {
-            config.desktop.layout.snap = value.clamp(0, 64);
+            config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
             Effect::Pending
         }
         (field::ALWAYS_ON_DESKTOP, FieldValue::Toggle(on)) => {

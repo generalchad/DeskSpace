@@ -3,6 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{Point, Rect, Size};
 use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, Space};
 
+/// The bounds grid `gap` and `padding` are clamped to, in logical pixels.
+pub const GAP_RANGE: (i32, i32) = (0, 24);
+/// The bounds grid `snap` is clamped to, in logical pixels.
+pub const SNAP_RANGE: (i32, i32) = (0, 64);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GridSpec {

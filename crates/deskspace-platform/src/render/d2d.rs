@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use deskspace_core::geometry::Rect;
-use deskspace_core::theme::{Color, EditColors};
+use deskspace_core::theme::{Color, EditColors, LABEL_SIZE_RANGE};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
@@ -152,7 +152,7 @@ impl Graphics {
             // One label format per size step; the painter rounds a configured
             // percent to the nearest step so it never formats during a paint.
             let mut label_formats = HashMap::new();
-            for scale in (60..=160).step_by(10) {
+            for scale in (LABEL_SIZE_RANGE.0..=LABEL_SIZE_RANGE.1).step_by(10) {
                 let format = make_format(
                     &dwrite,
                     text_family,
@@ -191,9 +191,9 @@ impl Graphics {
     }
 
     /// The label format for a size percent, rounded to the nearest cached
-    /// step (60..=160 by 10), falling back to the default size.
+    /// step, falling back to the default size.
     fn label_format_for(&self, scale: u8) -> IDWriteTextFormat {
-        let rounded = (scale.clamp(60, 160) + 5) / 10 * 10;
+        let rounded = (scale.clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) + 5) / 10 * 10;
         self.label_formats
             .get(&rounded)
             .unwrap_or(&self.label_format)

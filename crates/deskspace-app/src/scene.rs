@@ -1,4 +1,5 @@
 use deskspace_core::item::ItemKind;
+use deskspace_core::theme::LABEL_SIZE_RANGE;
 use deskspace_core::{Color, GridSpec, Item, ItemId, LabelShadow, Palette, Rect, Space, Theme};
 use deskspace_platform::{IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
@@ -133,7 +134,9 @@ pub fn space_scene(
         border: palette.border,
         text_shadow,
         label_lines: theme.label_lines.clamp(1, 2),
-        label_size: theme.label_size.clamp(60, 160),
+        label_size: theme
+            .label_size
+            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
         locked: space.locked,
         rolled_up: space.rolled_up,
         editing: None,

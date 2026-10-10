@@ -169,7 +169,7 @@ Each is independent. None changes behavior.
   - Keep `Command::{MoveSpace, AutoArrange, SnapAll}`: the M3 Arrange
     submenu will use them.
 
-- [ ] **B2. Name the repeated clamp ranges.**
+- [x] **B2. Name the repeated clamp ranges.**
   - The ranges `50..=200` (icon size), `60..=160` (label size), `0..=24`
     (grid gap/padding), and `0..=64` (snap) are repeated in
     `deskspace-app/src/settings.rs` (`build_form`, `apply_field`),

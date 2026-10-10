@@ -142,6 +142,10 @@ pub mod corner {
 pub const OVERLAY_SIZE_DEFAULT: u8 = 80;
 /// The bounds an overlay size is clamped to. 100% matches Explorer exactly.
 pub const OVERLAY_SIZE_RANGE: (u8, u8) = (40, 100);
+/// The bounds an item icon size is clamped to, as a percent of the default.
+pub const ICON_SIZE_RANGE: (u8, u8) = (50, 200);
+/// The bounds an item label size is clamped to, as a percent of the default.
+pub const LABEL_SIZE_RANGE: (u8, u8) = (60, 160);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
