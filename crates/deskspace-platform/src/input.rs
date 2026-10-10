@@ -119,6 +119,10 @@ pub enum Event {
     /// F2 was pressed while an item is selected or a space is current: rename
     /// the focused item, or the space's title when no item is selected.
     RenameSelection,
+    /// Alt+Enter was pressed while an item is selected or a space is current:
+    /// show the focused item's Properties, or DeskSpace Settings when no item
+    /// is selected.
+    ShowProperties,
     /// Ctrl+A was pressed while a space is current: select all its items.
     SelectAll,
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own

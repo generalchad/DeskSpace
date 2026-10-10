@@ -160,6 +160,10 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::RenameSelection);
                 LRESULT(0)
             }
+            keyboard::PROPERTIES_KEY => {
+                runtime::dispatch(Event::ShowProperties);
+                LRESULT(0)
+            }
             keyboard::SELECT_ALL_KEY => {
                 runtime::dispatch(Event::SelectAll);
                 LRESULT(0)

@@ -50,7 +50,8 @@ Options:
 - Double-click an item to open it; right-click for Explorer's context menu.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items; `Delete` sends the
   selection to the Recycle Bin; `F2` renames the focused item, or the current
-  space's title when no item is selected.
+  space's title when no item is selected; `Alt+Enter` opens the focused item's
+  Properties, or DeskSpace Settings when no item is selected.
 - Drag files from Explorer or the desktop onto a space to move them into it
   (hold Shift to leave them where they are).
 - Tray icon: left-click opens Settings; right-click for more.

@@ -5,8 +5,8 @@
 //! a `WH_KEYBOARD_LL` hook, translates each key press into an `EditKey`, posts
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. The same hook can instead watch the keys that act on a
-//! selection (Delete, F2, Ctrl+A, Ctrl+C, Ctrl+X) and on a current space
-//! (F2, Ctrl+A, Ctrl+V). The hook runs for every key in the session and Windows drops it if
+//! selection (Delete, F2, Alt+Enter, Ctrl+A, Ctrl+C, Ctrl+X) and on a current
+//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V). The hook runs for every key in the session and Windows drops it if
 //! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
 //! installed only while one of those modes is active.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
@@ -47,6 +47,10 @@ pub(crate) const RENAME_KEY: u32 = WM_APP + 6;
 
 /// Posted to the controller when Ctrl+A is pressed while a space is current.
 pub(crate) const SELECT_ALL_KEY: u32 = WM_APP + 7;
+
+/// Posted to the controller when Alt+Enter is pressed while an item is
+/// selected or a space is current.
+pub(crate) const PROPERTIES_KEY: u32 = WM_APP + 9;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -208,6 +212,10 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
     if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
         if !desktop_is_foreground() {
             return false;
+        }
+        if key_down(VK_MENU) && is_key(event.vkCode, VK_RETURN) {
+            post_message(PROPERTIES_KEY, 0, 0);
+            return true;
         }
         if key_down(VK_CONTROL) {
             if is_key(event.vkCode, VK_A) {

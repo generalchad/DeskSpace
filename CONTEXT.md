@@ -68,8 +68,10 @@ context menus, and a settings window in the first usable release (v0.2).
   defaults to a move and spaces are OLE drop targets, so the shell shows the
   move/copy cursor. Selected items can be cut, copied, and pasted with
   Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
-  pasted. Delete sends the selection to the Recycle Bin, and F2 renames the
-  focused item, or the current space's title when no item is selected, inline.
+  pasted. Delete sends the selection to the Recycle Bin, F2 renames the
+  focused item, or the current space's title when no item is selected, inline,
+  and Alt+Enter opens the focused item's Properties, or DeskSpace Settings when
+  no item is selected.
   Clicking a space also focuses the desktop and clears its
   icon selection, like a desktop click.
 - Spaces mirror the desktop's look: item check boxes (both Explorer modes),
@@ -504,9 +506,11 @@ WindowSettings {
   rename is committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
-  same hook watches Delete, F2, and Ctrl+C/X while an item is selected and F2,
-  Ctrl+A, and Ctrl+V while a space is current
-  (`Ui::watch_selection_keys`) and passes every other key through. The watch
+  same hook watches Delete, F2, Alt+Enter, and Ctrl+C/X while an item is
+  selected and F2, Alt+Enter, Ctrl+A, and Ctrl+V while a space is current
+  (`Ui::watch_selection_keys`) and passes every other key through. Alt+Enter
+  shows the focused item's Properties (`Ui::show_properties`) or DeskSpace
+  Settings. The watch
   only consumes those keys while the desktop shell has the foreground
   (`desktop_is_foreground`), because the selection is kept when another app is
   focused, as Explorer keeps a desktop selection; otherwise DeskSpace would
@@ -722,6 +726,8 @@ WindowSettings {
 - Press F2 with an item selected to rename its file inline (Enter commits,
   Escape cancels, clicking away commits); the extension is kept when the label
   hides it. With no item selected, F2 renames the current space's title.
+  Alt+Enter opens the selected item's Properties, or DeskSpace Settings when no
+  item is selected.
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
   spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
   right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once

@@ -540,7 +540,7 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     about updates:
     - `#[derive(Clone)] pub struct Waker` (`Send + Sync`), obtained from
       `Ui::waker()`. `Waker::wake(&self, id: usize)` posts
-      `WM_APP + 9` (next free; the ids are in `controller.rs`,
+      `WM_APP + 10` (next free; the ids are in `controller.rs`,
       `keyboard.rs`, and `outside_click.rs`) to the controller window with
       `id` in `wparam`.
     - The controller's window procedure dispatches it as a new
@@ -645,6 +645,23 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     feature index, and update `CONTEXT.md` (sections 6, 7, and 10).
   - **[needs human]** check during D12: an `alpha.1` install updates to
     `alpha.2` and comes back with the same spaces and settings.
+
+## F. Ad-hoc features
+
+Small requests, one commit each.
+
+- [x] **F1. F2 renames the space title when no item is selected.** The
+  selection-key watch (`win32/keyboard.rs`) now watches F2 whenever a space is
+  current, and `App::begin_f2_rename` renames the focused item, or the current
+  space's title (`begin_rename`) when the selection is empty. **[needs human]**
+  check: click a space with no item selected and press F2 (title rename); with
+  an item selected, F2 still renames the file.
+- [x] **F2. Alt+Enter opens item Properties or DeskSpace Settings.** Added
+  `Event::ShowProperties`, `Ui::show_properties` (the shell `properties` verb
+  through `ShellExecuteExW`), and the `Alt+Enter` watch. Alt+Enter opens the
+  focused item's Properties, or DeskSpace Settings when no item is selected.
+  **[needs human]** check: with an item selected, Alt+Enter shows its
+  Properties; with a space current and nothing selected, it opens Settings.
 
 ## Found while working
 

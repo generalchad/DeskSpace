@@ -354,6 +354,18 @@ impl Ui {
         }
     }
 
+    /// Shows the shell's Properties dialog for `path`, as Alt+Enter does in
+    /// Explorer.
+    pub fn show_properties(&mut self, path: &Path) {
+        let owner = with_runtime(|runtime| runtime.controller);
+        match shell_items::properties(owner, path) {
+            Ok(()) => tracing::debug!(path = %path.display(), "showing item properties"),
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not show item properties")
+            }
+        }
+    }
+
     /// Shows `entries` followed by the shell's context menu for `path`.
     /// Blocks in a modal loop like `popup_menu`. Entry ids must be below
     /// 0x8000.

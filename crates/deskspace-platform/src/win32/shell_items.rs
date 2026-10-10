@@ -121,6 +121,27 @@ pub(crate) fn open(owner: Option<HWND>, path: &Path) -> Result<(), PlatformError
     Ok(())
 }
 
+/// Shows the shell's Properties dialog for `path`, as Alt+Enter does in
+/// Explorer. `owner` parents the dialog.
+pub(crate) fn properties(owner: Option<HWND>, path: &Path) -> Result<(), PlatformError> {
+    let file = shell_path(path);
+    let verb = wide("properties");
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC | SEE_MASK_INVOKEIDLIST,
+        hwnd: owner.unwrap_or_default(),
+        lpVerb: PCWSTR(verb.as_ptr()),
+        lpFile: PCWSTR(file.as_ptr()),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
+    };
+    // SAFETY: `info` is fully initialised and `file`/`verb` outlive the call.
+    unsafe {
+        ShellExecuteExW(&mut info)?;
+    }
+    Ok(())
+}
+
 /// Shows the app's `entries`, a separator, and then the shell's context menu
 /// for `path` at `at` (screen coordinates). App entry ids must be non-zero
 /// and below 0x8000.
