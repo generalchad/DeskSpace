@@ -22,6 +22,7 @@ use windows::Win32::UI::Shell::{
 use windows::core::{GUID, HRESULT, PCWSTR, Ref, Result as WinResult};
 
 use crate::error::PlatformError;
+use crate::win32::system::wide;
 
 /// `CLSID_FileOperation`; windows-rs does not export it, so the documented GUID
 /// is spelled out.
@@ -139,7 +140,7 @@ pub(crate) fn rename(
     path: &Path,
     new_name: &str,
 ) -> Result<(), PlatformError> {
-    let wide_name = crate::win32::system::wide(new_name);
+    let wide_name = wide(new_name);
     // SAFETY: COM is initialized on this UI thread; `PerformOperations` pumps
     // messages, so no runtime or handler borrow is held across it.
     unsafe {
@@ -159,7 +160,7 @@ pub(crate) fn rename(
 }
 
 fn shell_item(path: &Path) -> Result<IShellItem, PlatformError> {
-    let wide = crate::win32::system::wide(&path.to_string_lossy().replace('/', "\\"));
+    let wide = wide(&path.to_string_lossy().replace('/', "\\"));
     // SAFETY: `wide` is NUL-terminated and outlives the parse.
     Ok(unsafe { SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None)? })
 }

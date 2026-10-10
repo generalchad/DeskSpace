@@ -40,6 +40,7 @@ use windows::core::{PCWSTR, Ref, Result as WinResult};
 use crate::error::PlatformError;
 use crate::input::{Event, SpaceEvent};
 use crate::win32::runtime;
+use crate::win32::system::wide;
 
 /// Clipboard format naming the effect a drag source would like the target to
 /// use. Setting it to `DROPEFFECT_MOVE` makes dragging an item out of a space
@@ -285,7 +286,7 @@ pub(crate) fn set_drop_description(data: &IDataObject, image: DROPIMAGETYPE) -> 
 /// Copies `bytes` into a movable global block and hands it to `data` under the
 /// registered clipboard format `name`. Returns whether the object accepted it.
 fn write_format(data: &IDataObject, name: &str, bytes: &[u8]) -> bool {
-    let name = crate::win32::system::wide(name);
+    let name = wide(name);
     // SAFETY: the name is NUL-terminated and outlives the call.
     let format = unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) };
     if format == 0 {

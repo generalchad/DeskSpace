@@ -201,7 +201,7 @@ Each is independent. None changes behavior.
     else the three-line pattern appears. Keep any extra step (like
     `self.scroll.remove(&id)` for `FIT`) at the call site.
 
-- [ ] **B6. Use the shared `wide` helper.**
+- [x] **B6. Use the shared `wide` helper.**
   - `win32/info_tip.rs` ~69 re-implements UTF-16 conversion; use
     `crate::win32::system::wide`. Replace fully qualified
     `crate::win32::system::wide(...)` calls with a `use` at the top of each

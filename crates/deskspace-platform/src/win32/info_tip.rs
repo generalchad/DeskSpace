@@ -66,8 +66,7 @@ impl InfoTip {
 
     /// Shows `text` with its top-left near `at` (screen coordinates).
     pub(crate) fn show(&self, text: &str, at: windows::Win32::Foundation::POINT) {
-        let mut text: Vec<u16> = text.encode_utf16().collect();
-        text.push(0);
+        let mut text = wide(text);
         // SAFETY: the tool window is live; `text` outlives each call, and the
         // tooltip copies it before returning.
         unsafe {

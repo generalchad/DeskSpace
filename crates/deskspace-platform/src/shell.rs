@@ -27,6 +27,7 @@ use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::d2d::decode_bitmap;
 use crate::win32::display_settings::{ShellDisplay, desktop_display};
+use crate::win32::system::wide;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopEntry {
@@ -79,7 +80,7 @@ fn listed_by_explorer(path: &Path, display: &ShellDisplay) -> bool {
 /// The label Explorer shows for a path, honoring its "hide extensions" setting
 /// (and stripping `.lnk`, using friendly folder names, and so on).
 fn display_name(path: &Path) -> Option<String> {
-    let wide = crate::win32::system::wide(&path.to_string_lossy().replace('/', "\\"));
+    let wide = wide(&path.to_string_lossy().replace('/', "\\"));
     // SAFETY: `wide` is NUL-terminated and outlives the parse; the returned
     // string is copied then freed with the shell's allocator.
     unsafe {
@@ -118,8 +119,8 @@ pub fn desktop_directory() -> Result<PathBuf, PlatformError> {
 /// path that no longer exists.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shchangenotify
 pub fn notify_moved(from: &Path, to: &Path) {
-    let from = crate::win32::system::wide(&from.to_string_lossy());
-    let to = crate::win32::system::wide(&to.to_string_lossy());
+    let from = wide(&from.to_string_lossy());
+    let to = wide(&to.to_string_lossy());
     // A delete in the old folder plus a create in the new one is understood
     // by every folder view, whether or not it watches both folders.
     // FLUSHNOWAIT: never block. During a drop Explorer waits inside
@@ -256,7 +257,7 @@ fn is_shortcut(path: &Path) -> bool {
 /// The classic 32 px `SHGetFileInfoW` icon, without overlays, for paths the
 /// image factory rejects (some virtual and shortcut targets).
 fn load_classic_icon(path: &Path) -> Option<Icon> {
-    let wide = crate::win32::system::wide(&path.to_string_lossy());
+    let wide = wide(&path.to_string_lossy());
     let mut info = SHFILEINFOW::default();
     let flags = SHGFI_ICON | SHGFI_LARGEICON;
     // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure. The
@@ -279,7 +280,7 @@ fn load_classic_icon(path: &Path) -> Option<Icon> {
 }
 
 fn load_base_icon(path: &Path, size: u32) -> Option<Icon> {
-    let wide = crate::win32::system::wide(&path.to_string_lossy());
+    let wide = wide(&path.to_string_lossy());
     // SAFETY: `wide` is NUL-terminated and outlives the parse; the image
     // factory and its bitmap are released below, after the pixels are copied.
     unsafe {
@@ -406,7 +407,7 @@ fn decode_icon_masked(hicon: HICON) -> Option<Icon> {
 /// shortcuts because it arrows any file it is given.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
 fn overlay_index(path: &Path) -> Option<i32> {
-    let wide = crate::win32::system::wide(&path.to_string_lossy());
+    let wide = wide(&path.to_string_lossy());
     let mut flags = SHGFI_ICON | SHGFI_OVERLAYINDEX | SHGFI_ADDOVERLAYS;
     if is_shortcut(path) {
         flags |= SHGFI_LINKOVERLAY;

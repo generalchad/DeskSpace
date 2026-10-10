@@ -27,6 +27,7 @@ use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT, DROPEFFECT_MOVE, Release
 use windows::core::{BOOL, HRESULT, PCWSTR, Result as WinResult};
 
 use super::clipboard::dropfiles_buffer;
+use crate::win32::system::wide;
 
 /// A data object carrying `paths` as a `CF_HDROP` file list.
 pub(crate) fn for_files(paths: Vec<PathBuf>) -> IDataObject {
@@ -165,7 +166,7 @@ impl IDataObject_Impl for FileDataObject_Impl {
 
 /// The registered "Preferred DropEffect" clipboard format.
 fn preferred_format() -> u16 {
-    let name = crate::win32::system::wide(super::drop_target::PREFERRED_DROP_EFFECT);
+    let name = wide(super::drop_target::PREFERRED_DROP_EFFECT);
     // SAFETY: `name` is NUL-terminated and outlives the call.
     unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) as u16 }
 }

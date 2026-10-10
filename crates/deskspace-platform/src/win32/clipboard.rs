@@ -22,6 +22,7 @@ use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
 use windows::core::{BOOL, PCWSTR};
 
 use crate::error::PlatformError;
+use crate::win32::system::wide;
 
 /// Files on the clipboard and whether they were cut (to be moved) or copied.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,7 +158,7 @@ unsafe fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), PlatformError> {
 }
 
 fn preferred_effect_format() -> u32 {
-    let name = crate::win32::system::wide(super::drop_target::PREFERRED_DROP_EFFECT);
+    let name = wide(super::drop_target::PREFERRED_DROP_EFFECT);
     // SAFETY: `name` is NUL-terminated and outlives the call.
     unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) }
 }
