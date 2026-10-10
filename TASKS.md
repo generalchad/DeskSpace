@@ -737,7 +737,7 @@ Design rules (decided 2026-10-10; do not re-open without asking):
 - The rail group is named "Spaces". ROADMAP M3's planned page of defaults for
   new spaces must therefore be titled "New spaces" to avoid the clash.
 
-- [ ] **H1. Platform: a navigation rail for the settings window.**
+- [ ] **H1. Platform: a navigation rail for the settings window.** (awaiting check)
   - `ui.rs`: add
     ```rust
     pub struct SettingsNav { pub groups: Vec<SettingsNavGroup>, pub selected: usize }

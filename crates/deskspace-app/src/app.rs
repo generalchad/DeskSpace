@@ -2457,6 +2457,8 @@ impl App {
                 self.refresh_settings(ui);
             }
             SettingsEvent::Button { .. } => {}
+            // The navigation rail arrives with the per-space settings surface.
+            SettingsEvent::NavChanged { .. } => {}
             SettingsEvent::Apply => {
                 self.apply_settings(ui);
                 self.refresh_settings(ui);

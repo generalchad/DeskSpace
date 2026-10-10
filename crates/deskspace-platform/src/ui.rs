@@ -88,11 +88,41 @@ impl MenuEntry {
     }
 }
 
+/// The optional navigation rail of the settings window, in place of the top
+/// tabs. The platform renders the groups and reports which entry was picked;
+/// the app owns what each entry means. `None` keeps the tabs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsNav {
+    pub groups: Vec<SettingsNavGroup>,
+    /// The selected entry, indexing the flattened [`SettingsNav::entries`]
+    /// order. Group titles are not selectable.
+    pub selected: usize,
+}
+
+/// A titled group of rail entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsNavGroup {
+    pub title: String,
+    pub entries: Vec<SettingsNavEntry>,
+}
+
+/// One selectable row of the rail. Several entries may point at the same page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsNavEntry {
+    pub label: String,
+    /// Index into [`SettingsForm::pages`].
+    pub page: usize,
+    /// Draws a marker dot (for example, a space with appearance overrides).
+    pub marked: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsForm {
     pub title: String,
     pub pages: Vec<SettingsPage>,
     pub apply_enabled: bool,
+    /// Replaces the top tabs with a navigation rail when set.
+    pub nav: Option<SettingsNav>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,6 +314,18 @@ impl Field {
     }
 }
 
+impl SettingsNav {
+    /// Every selectable entry, flattened across groups in list order.
+    pub fn entries(&self) -> impl Iterator<Item = &SettingsNavEntry> {
+        self.groups.iter().flat_map(|group| group.entries.iter())
+    }
+
+    /// The page that the `entry`-th flattened entry points at.
+    pub fn page_of(&self, entry: usize) -> Option<usize> {
+        self.entries().nth(entry).map(|entry| entry.page)
+    }
+}
+
 impl SettingsForm {
     pub fn field(&self, id: u32) -> Option<&Field> {
         self.pages
@@ -293,7 +335,9 @@ impl SettingsForm {
     }
 
     /// Whether `other` has the same pages and fields in the same order, so the
-    /// existing controls can be updated in place instead of rebuilt.
+    /// existing controls can be updated in place instead of rebuilt. The
+    /// navigation rail is not part of the shape: its entries change as spaces
+    /// are added or reset while the window is open.
     pub fn same_shape(&self, other: &Self) -> bool {
         self.pages.len() == other.pages.len()
             && self.pages.iter().zip(&other.pages).all(|(a, b)| {
@@ -318,6 +362,15 @@ mod tests {
                 fields,
             }],
             apply_enabled: false,
+            nav: None,
+        }
+    }
+
+    fn nav_entry(label: &str, page: usize, marked: bool) -> SettingsNavEntry {
+        SettingsNavEntry {
+            label: label.into(),
+            page,
+            marked,
         }
     }
 
@@ -328,6 +381,47 @@ mod tests {
         let c = form(vec![Field::text(1, "A", "x")]);
         assert!(a.same_shape(&b));
         assert!(!a.same_shape(&c));
+    }
+
+    #[test]
+    fn nav_flattens_entries_across_groups() {
+        let nav = SettingsNav {
+            groups: vec![
+                SettingsNavGroup {
+                    title: "Settings".into(),
+                    entries: vec![nav_entry("Appearance", 0, false)],
+                },
+                SettingsNavGroup {
+                    title: "Spaces".into(),
+                    entries: vec![nav_entry("Work", 7, true), nav_entry("Games", 7, false)],
+                },
+            ],
+            selected: 2,
+        };
+        let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
+        assert_eq!(labels, ["Appearance", "Work", "Games"]);
+        // Several entries may share a page.
+        assert_eq!(nav.page_of(1), Some(7));
+        assert_eq!(nav.page_of(2), Some(7));
+        assert_eq!(nav.page_of(3), None);
+    }
+
+    #[test]
+    fn nav_is_not_part_of_the_form_shape() {
+        let mut a = form(vec![Field::toggle(1, "A", true)]);
+        let mut b = form(vec![Field::toggle(1, "A", true)]);
+        a.nav = Some(SettingsNav {
+            groups: vec![SettingsNavGroup {
+                title: "Spaces".into(),
+                entries: vec![nav_entry("Work", 0, true)],
+            }],
+            selected: 0,
+        });
+        b.nav = Some(SettingsNav {
+            groups: vec![],
+            selected: 0,
+        });
+        assert!(a.same_shape(&b));
     }
 
     #[test]

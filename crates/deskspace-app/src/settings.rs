@@ -405,6 +405,7 @@ pub fn build_form(
             about,
         ],
         apply_enabled: session.dirty,
+        nav: None,
     }
 }
 

@@ -18,18 +18,19 @@ use windows::Win32::Graphics::Dwm::{
     DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX,
-    DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW, EndPaint,
-    FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT, RDW_ALLCHILDREN,
-    RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, SelectObject, SetBkColor,
-    SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS,
+    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW,
+    Ellipse, EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT,
+    RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, SelectObject,
+    SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
-    NMHDR, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ, TBS_NOTICKS, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT,
-    TCM_GETCURSEL, TCM_GETITEMRECT, TCM_INSERTITEMW, TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW,
-    WC_COMBOBOXW, WC_EDITW, WC_STATICW, WC_TABCONTROLW,
+    DRAWITEMSTRUCT, NMHDR, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ, TBS_NOTICKS,
+    TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_GETITEMRECT, TCM_INSERTITEMW,
+    TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW, WC_LISTBOXW, WC_STATICW,
+    WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForWindow, SystemParametersInfoForDpi,
@@ -43,21 +44,22 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL,
     ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GWLP_USERDATA, GetClassNameW,
     GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
-    GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, NONCLIENTMETRICSW,
-    RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE,
-    SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
-    WM_HSCROLL, WM_KILLFOCUS, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_PAINT, WM_SETFOCUS,
-    WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
-    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
-    WS_VISIBLE,
+    GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL,
+    LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
+    LBS_OWNERDRAWFIXED, NONCLIENTMETRICSW, RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE,
+    SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
+    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_KILLFOCUS, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY,
+    WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
+    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, SettingsEvent};
-use crate::ui::{Field, FieldKind, FieldValue, SettingsForm, SliderMark};
+use crate::ui::{Field, FieldKind, FieldValue, SettingsForm, SettingsNav, SliderMark};
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::{runtime, tray};
@@ -69,7 +71,12 @@ const ID_OK: usize = 1;
 const ID_CANCEL: usize = 2;
 const ID_APPLY: usize = 3;
 const ID_TAB: usize = 4;
+const ID_LIST: usize = 5;
 const TAB_SUBCLASS_ID: usize = 1;
+/// Height of one navigation-rail row, at 96 DPI.
+const NAV_ROW_HEIGHT: i32 = 30;
+/// Width of the navigation rail, at 96 DPI.
+const NAV_WIDTH: i32 = 168;
 /// Field controls get `CONTROL_BASE + index * 4 + part`, so the field index
 /// and which of its controls fired can be recovered from the id alone.
 const CONTROL_BASE: usize = 1000;
@@ -123,9 +130,15 @@ struct SettingsState {
     fields: Vec<(Field, FieldControls)>,
     pages: Vec<HWND>,
     tab: Option<HWND>,
+    /// The navigation rail, when the form supplies one (`SettingsForm::nav`).
+    list: Option<HWND>,
+    /// The rail's rows, rebuilt when the nav changes.
+    nav_rows: Vec<NavRow>,
     apply: Option<HWND>,
     font: HFONT,
     heading_font: HFONT,
+    /// The layout DPI, for scaling the rail's paint metrics.
+    dpi: u32,
     command_bar_top: i32,
     /// Set while the window itself is changing control values, so the
     /// resulting notifications are not reported as user edits.
@@ -133,6 +146,8 @@ struct SettingsState {
     colors: UiColors,
     body_brush: HBRUSH,
     command_bar_brush: HBRUSH,
+    /// The accent fill for the rail's selected bar and the marked dot.
+    accent_brush: HBRUSH,
 }
 
 impl SettingsState {
@@ -141,13 +156,14 @@ impl SettingsState {
         // SAFETY: the old brushes are only selected while painting, which is
         // not happening during this short borrow.
         unsafe {
-            for old in [self.body_brush, self.command_bar_brush] {
+            for old in [self.body_brush, self.command_bar_brush, self.accent_brush] {
                 if !old.is_invalid() {
                     let _ = DeleteObject(HGDIOBJ(old.0));
                 }
             }
             self.body_brush = CreateSolidBrush(colorref(colors.body));
             self.command_bar_brush = CreateSolidBrush(colorref(colors.command_bar));
+            self.accent_brush = CreateSolidBrush(colorref(colors.accent));
         }
         self.colors = colors;
     }
@@ -169,6 +185,61 @@ impl FieldControls {
     fn owns_label(&self, control: HWND) -> bool {
         [self.label, self.value_text].contains(&Some(control)) || self.marks.contains(&control)
     }
+}
+
+/// One row of the navigation rail. Group titles are non-selectable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NavRow {
+    Title(String),
+    Entry { label: String, marked: bool },
+}
+
+impl NavRow {
+    fn label(&self) -> &str {
+        match self {
+            Self::Title(title) => title,
+            Self::Entry { label, .. } => label,
+        }
+    }
+
+    fn is_entry(&self) -> bool {
+        matches!(self, Self::Entry { .. })
+    }
+}
+
+/// The rail's rows: each group's title, then its entries.
+fn nav_rows(nav: &SettingsNav) -> Vec<NavRow> {
+    let mut rows = Vec::new();
+    for group in &nav.groups {
+        rows.push(NavRow::Title(group.title.clone()));
+        rows.extend(group.entries.iter().map(|entry| NavRow::Entry {
+            label: entry.label.clone(),
+            marked: entry.marked,
+        }));
+    }
+    rows
+}
+
+/// The flattened entry index of rail row `row`, or `None` for a title.
+fn row_entry(rows: &[NavRow], row: usize) -> Option<usize> {
+    if !rows.get(row)?.is_entry() {
+        return None;
+    }
+    Some(rows[..row].iter().filter(|row| row.is_entry()).count())
+}
+
+/// The rail row showing flattened entry `entry`, or the first entry row.
+fn entry_row(rows: &[NavRow], entry: usize) -> usize {
+    let mut seen = 0;
+    for (index, row) in rows.iter().enumerate() {
+        if row.is_entry() {
+            if seen == entry {
+                return index;
+            }
+            seen += 1;
+        }
+    }
+    rows.iter().position(NavRow::is_entry).unwrap_or(0)
 }
 
 impl SettingsState {
@@ -200,6 +271,7 @@ impl Drop for SettingsState {
             let _ = DeleteObject(HGDIOBJ(self.heading_font.0));
             let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.command_bar_brush.0));
+            let _ = DeleteObject(HGDIOBJ(self.accent_brush.0));
         }
     }
 }
@@ -215,14 +287,18 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             fields: Vec::new(),
             pages: Vec::new(),
             tab: None,
+            list: None,
+            nav_rows: Vec::new(),
             apply: None,
             font: HFONT::default(),
             heading_font: HFONT::default(),
+            dpi: 0,
             command_bar_top: 0,
             updating: true,
             colors: UiColors::new(dark),
             body_brush: HBRUSH::default(),
             command_bar_brush: HBRUSH::default(),
+            accent_brush: HBRUSH::default(),
         };
         state.set_colors(UiColors::new(dark));
         let state = Box::into_raw(Box::new(state));
@@ -843,32 +919,38 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
         let margin = s(12);
         let page_width = s(540);
 
-        let tab = builder.control(
-            hwnd,
-            WC_TABCONTROLW,
-            "",
-            (WS_CLIPSIBLINGS | WS_TABSTOP).0,
-            WINDOW_EX_STYLE(0),
-            (margin, margin, page_width, s(100)),
-            ID_TAB,
-        );
-        if let Some(tab) = tab {
-            let _ = SetWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID, 0);
-            for (index, page) in form.pages.iter().enumerate() {
-                let mut text = wide(&page.title);
-                let item = TCITEMW {
-                    mask: TCIF_TEXT,
-                    pszText: windows::core::PWSTR(text.as_mut_ptr()),
-                    ..Default::default()
-                };
-                SendMessageW(
-                    tab,
-                    TCM_INSERTITEMW,
-                    Some(WPARAM(index)),
-                    Some(LPARAM(&item as *const _ as isize)),
-                );
+        let nav = form.nav.as_ref();
+        let tab = if nav.is_none() {
+            let tab = builder.control(
+                hwnd,
+                WC_TABCONTROLW,
+                "",
+                (WS_CLIPSIBLINGS | WS_TABSTOP).0,
+                WINDOW_EX_STYLE(0),
+                (margin, margin, page_width, s(100)),
+                ID_TAB,
+            );
+            if let Some(tab) = tab {
+                let _ = SetWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID, 0);
+                for (index, page) in form.pages.iter().enumerate() {
+                    let mut text = wide(&page.title);
+                    let item = TCITEMW {
+                        mask: TCIF_TEXT,
+                        pszText: windows::core::PWSTR(text.as_mut_ptr()),
+                        ..Default::default()
+                    };
+                    SendMessageW(
+                        tab,
+                        TCM_INSERTITEMW,
+                        Some(WPARAM(index)),
+                        Some(LPARAM(&item as *const _ as isize)),
+                    );
+                }
             }
-        }
+            tab
+        } else {
+            None
+        };
 
         let mut pages = Vec::new();
         let mut fields = Vec::new();
@@ -880,7 +962,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
                 w!(""),
                 WS_CHILD
                     | WS_CLIPCHILDREN
-                    | if page_index == 0 {
+                    | if nav.is_none() && page_index == 0 {
                         WS_VISIBLE
                     } else {
                         WINDOW_STYLE(0)
@@ -909,51 +991,106 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             pages.push(container);
         }
 
-        // Size the tab so its display area is exactly the page area; the
-        // header height depends on the font, so ask the control.
-        let mut tab_rect = RECT {
-            left: margin,
-            top: margin,
-            right: margin + page_width,
-            bottom: margin + page_height,
-        };
-        if let Some(tab) = tab {
-            SendMessageW(
-                tab,
-                TCM_ADJUSTRECT,
-                Some(WPARAM(1)),
-                Some(LPARAM(&mut tab_rect as *mut _ as isize)),
+        // Lay the pages over the tab's display area (tabs) or beside the rail
+        // (nav), and compute the client size.
+        let (client_width, command_bar_top, list);
+        if let Some(nav) = nav {
+            let rail = s(NAV_WIDTH);
+            let pages_x = margin + rail + s(12);
+            client_width = pages_x + page_width + margin;
+            command_bar_top = margin + page_height + margin;
+            let rows = nav_rows(nav);
+            let selected = entry_row(&rows, nav.selected);
+            let created = builder.control(
+                hwnd,
+                WC_LISTBOXW,
+                "",
+                (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32
+                    | WS_VSCROLL.0
+                    | WS_TABSTOP.0,
+                WINDOW_EX_STYLE(0),
+                (margin, margin, rail, page_height),
+                ID_LIST,
             );
+            if let Some(created) = created {
+                SendMessageW(
+                    created,
+                    LB_SETITEMHEIGHT,
+                    Some(WPARAM(0)),
+                    Some(LPARAM(s(NAV_ROW_HEIGHT) as isize)),
+                );
+                for row in &rows {
+                    let text = wide(row.label());
+                    SendMessageW(
+                        created,
+                        LB_ADDSTRING,
+                        None,
+                        Some(LPARAM(text.as_ptr() as isize)),
+                    );
+                }
+                SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+            }
+            list = created;
+            for page in &pages {
+                let _ = SetWindowPos(
+                    *page,
+                    Some(HWND_TOP),
+                    pages_x,
+                    margin,
+                    page_width,
+                    page_height,
+                    SWP_NOACTIVATE,
+                );
+            }
+            show_page(&pages, nav.page_of(nav.selected).unwrap_or(0));
+            with_state(hwnd, |state| state.nav_rows = rows);
+        } else {
+            // Size the tab so its display area is exactly the page area; the
+            // header height depends on the font, so ask the control.
+            let mut tab_rect = RECT {
+                left: margin,
+                top: margin,
+                right: margin + page_width,
+                bottom: margin + page_height,
+            };
+            if let Some(tab) = tab {
+                SendMessageW(
+                    tab,
+                    TCM_ADJUSTRECT,
+                    Some(WPARAM(1)),
+                    Some(LPARAM(&mut tab_rect as *mut _ as isize)),
+                );
+            }
+            let dx = margin - tab_rect.left;
+            let dy = margin - tab_rect.top;
+            if let Some(tab) = tab {
+                let _ = SetWindowPos(
+                    tab,
+                    None,
+                    tab_rect.left + dx,
+                    tab_rect.top + dy,
+                    tab_rect.right - tab_rect.left,
+                    tab_rect.bottom - tab_rect.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+            for page in &pages {
+                // Pages sit over the tab control's display area, so they must
+                // be above it in z-order (children are created at the bottom).
+                let _ = SetWindowPos(
+                    *page,
+                    Some(HWND_TOP),
+                    margin + dx,
+                    margin + dy,
+                    page_width,
+                    page_height,
+                    SWP_NOACTIVATE,
+                );
+            }
+            client_width = (tab_rect.right - tab_rect.left) + 2 * margin;
+            command_bar_top = tab_rect.bottom + dy + margin;
+            list = None;
         }
-        let dx = margin - tab_rect.left;
-        let dy = margin - tab_rect.top;
-        if let Some(tab) = tab {
-            let _ = SetWindowPos(
-                tab,
-                None,
-                tab_rect.left + dx,
-                tab_rect.top + dy,
-                tab_rect.right - tab_rect.left,
-                tab_rect.bottom - tab_rect.top,
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-        }
-        for page in &pages {
-            // Pages sit over the tab control's display area, so they must be
-            // above it in z-order (children are created at the bottom).
-            let _ = SetWindowPos(
-                *page,
-                Some(HWND_TOP),
-                margin + dx,
-                margin + dy,
-                page_width,
-                page_height,
-                SWP_NOACTIVATE,
-            );
-        }
-
-        let client_width = (tab_rect.right - tab_rect.left) + 2 * margin;
-        let command_bar_top = tab_rect.bottom + dy + margin;
         let button_height = s(30);
         let command_bar_height = button_height + 2 * s(14);
         let client_height = command_bar_top + command_bar_height;
@@ -1015,9 +1152,11 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.fields = fields;
             state.pages = pages;
             state.tab = tab;
+            state.list = list;
             state.apply = apply;
             state.font = font;
             state.heading_font = heading_font;
+            state.dpi = dpi;
             state.command_bar_top = command_bar_top;
             state.updating = false;
         });
@@ -1074,13 +1213,25 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
                 plan_field(old, controls, new, &mut updates);
                 *old = new.clone();
             }
+            let new_rows = form.nav.as_ref().map(nav_rows).unwrap_or_default();
+            let rebuild = state.nav_rows != new_rows;
+            let selected_row = form
+                .nav
+                .as_ref()
+                .map(|nav| entry_row(&new_rows, nav.selected))
+                .unwrap_or(0);
+            let page = form.nav.as_ref().and_then(|nav| nav.page_of(nav.selected));
+            state.nav_rows = new_rows.clone();
             state.form = form.clone();
             state.updating = true;
-            Some((updates, state.apply))
+            let rail = state
+                .list
+                .map(|list| (list, new_rows, rebuild, selected_row));
+            Some((updates, state.apply, rail, page, state.pages.clone()))
         })
         .flatten()
     };
-    let Some((updates, apply)) = plan else {
+    let Some((updates, apply, rail, page, pages)) = plan else {
         return false;
     };
 
@@ -1126,6 +1277,25 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
         }
         if let Some(apply) = apply {
             let _ = EnableWindow(apply, form.apply_enabled);
+        }
+        if let Some((list, rows, rebuild, selected_row)) = rail {
+            if rebuild {
+                SendMessageW(list, LB_RESETCONTENT, None, None);
+                for row in &rows {
+                    let text = wide(row.label());
+                    SendMessageW(
+                        list,
+                        LB_ADDSTRING,
+                        None,
+                        Some(LPARAM(text.as_ptr() as isize)),
+                    );
+                }
+            }
+            SendMessageW(list, LB_SETCURSEL, Some(WPARAM(selected_row)), None);
+            let _ = InvalidateRect(Some(list), None, true);
+            if let Some(page) = page {
+                show_page(&pages, page);
+            }
         }
         with_state(hwnd, |state| state.updating = false);
     }
@@ -1436,6 +1606,16 @@ unsafe fn on_scroll(window: HWND, control: HWND) {
     }
 }
 
+/// Shows the page at `index` and hides the rest.
+unsafe fn show_page(pages: &[HWND], index: usize) {
+    // SAFETY: the handles are live page windows of the settings window.
+    unsafe {
+        for (i, page) in pages.iter().enumerate() {
+            let _ = ShowWindow(*page, if i == index { SW_SHOW } else { SW_HIDE });
+        }
+    }
+}
+
 unsafe fn on_tab_changed(window: HWND) {
     // SAFETY: tab and pages are live children of this window.
     unsafe {
@@ -1444,14 +1624,113 @@ unsafe fn on_tab_changed(window: HWND) {
             return;
         };
         let selected = SendMessageW(tab, TCM_GETCURSEL, None, None).0;
-        for (index, page) in pages.iter().enumerate() {
-            let command = if index as isize == selected {
-                SW_SHOW
-            } else {
-                SW_HIDE
-            };
-            let _ = ShowWindow(*page, command);
+        if selected >= 0 {
+            show_page(&pages, selected as usize);
         }
+    }
+}
+
+/// Handles a rail selection change. Group titles are not selectable: landing
+/// on one moves the selection to the nearest entry. Shows that entry's page,
+/// then tells the app last, because the handler may rebuild the form.
+unsafe fn on_nav_changed(window: HWND) {
+    // SAFETY: the list and pages are live children of `window`; the state
+    // borrow ends before the list messages and the dispatch.
+    unsafe {
+        let Some((Some(list), rows, pages, nav)) = with_state(window, |state| {
+            (
+                state.list,
+                state.nav_rows.clone(),
+                state.pages.clone(),
+                state.form.nav.clone(),
+            )
+        }) else {
+            return;
+        };
+        let current = SendMessageW(list, LB_GETCURSEL, None, None).0;
+        if current < 0 {
+            return;
+        }
+        let mut selected = current as usize;
+        if row_entry(&rows, selected).is_none() {
+            let Some(target) = (selected + 1..rows.len())
+                .chain((0..selected).rev())
+                .find(|row| rows[*row].is_entry())
+            else {
+                return;
+            };
+            SendMessageW(list, LB_SETCURSEL, Some(WPARAM(target)), None);
+            let _ = InvalidateRect(Some(list), None, true);
+            selected = target;
+        }
+        let entry = row_entry(&rows, selected).expect("moved to an entry row");
+        if let Some(page) = nav.and_then(|nav| nav.page_of(entry)) {
+            show_page(&pages, page);
+        }
+        settings_event(SettingsEvent::NavChanged { entry });
+    }
+}
+
+/// Paints one row of the navigation rail: group titles in secondary text,
+/// entries in normal text, an accent bar on the selected entry, and an accent
+/// dot on a marked one.
+unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
+    // SAFETY: `item.hDC` is a live DC owned by the list box during
+    // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
+    unsafe {
+        let Some((colors, body, accent, font, dpi, row)) = with_state(window, |state| {
+            Some((
+                state.colors,
+                state.body_brush,
+                state.accent_brush,
+                state.font,
+                state.dpi,
+                state.nav_rows.get(item.itemID as usize).cloned(),
+            ))
+        })
+        .flatten() else {
+            return;
+        };
+        FillRect(item.hDC, &item.rcItem, body);
+        let Some(row) = row else {
+            return;
+        };
+        let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
+        let text = match &row {
+            NavRow::Title(_) => colors.secondary_text,
+            NavRow::Entry { .. } if selected => colors.text,
+            NavRow::Entry { .. } => colors.secondary_text,
+        };
+        let inset = scaled(12, dpi);
+        if selected && row.is_entry() {
+            let bar = RECT {
+                left: item.rcItem.left,
+                right: item.rcItem.left + scaled(3, dpi),
+                ..item.rcItem
+            };
+            FillRect(item.hDC, &bar, accent);
+        }
+        SetBkMode(item.hDC, TRANSPARENT);
+        SetTextColor(item.hDC, colorref(text));
+        let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
+        let mut label: Vec<u16> = row.label().encode_utf16().collect();
+        let mut rect = item.rcItem;
+        rect.left += inset;
+        rect.right -= inset;
+        DrawTextW(
+            item.hDC,
+            &mut label,
+            &mut rect,
+            DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+        );
+        if matches!(row, NavRow::Entry { marked: true, .. }) {
+            let radius = scaled(3, dpi);
+            let (cx, cy) = (rect.right, (rect.top + rect.bottom) / 2);
+            let previous_brush = SelectObject(item.hDC, HGDIOBJ(accent.0));
+            let _ = Ellipse(item.hDC, cx - radius, cy - radius, cx + radius, cy + radius);
+            SelectObject(item.hDC, previous_brush);
+        }
+        SelectObject(item.hDC, previous);
     }
 }
 
@@ -1632,6 +1911,7 @@ unsafe extern "system" fn wndproc(
                     ID_OK => settings_event(SettingsEvent::Ok),
                     ID_CANCEL => settings_event(SettingsEvent::Cancel),
                     ID_APPLY => settings_event(SettingsEvent::Apply),
+                    ID_LIST if code == LBN_SELCHANGE => on_nav_changed(window),
                     id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
                     _ => {}
                 }
@@ -1696,6 +1976,17 @@ unsafe extern "system" fn wndproc(
                 SetBkColor(dc, colorref(background));
                 LRESULT(brush.0 as isize)
             }
+            WM_DRAWITEM => {
+                let item = lparam.0 as *const DRAWITEMSTRUCT;
+                // SAFETY: Windows passes a live DRAWITEMSTRUCT for an
+                // owner-draw control of this window.
+                if !item.is_null() && (*item).CtlID == ID_LIST as u32 {
+                    on_draw_item(window, &*item);
+                    LRESULT(1)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
+                }
+            }
             WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
                 if erase_body(window, window, dc) {
@@ -1758,6 +2049,7 @@ unsafe extern "system" fn page_wndproc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::{SettingsNavEntry, SettingsNavGroup};
 
     #[test]
     fn colorref_round_trips() {
@@ -1770,5 +2062,80 @@ mod tests {
     fn layout_scales_with_dpi() {
         assert_eq!(scaled(100, 96), 100);
         assert_eq!(scaled(100, 144), 150);
+        // The rail width and row height scale like every other layout unit.
+        assert_eq!(scaled(NAV_WIDTH, 96), NAV_WIDTH);
+        assert_eq!(scaled(NAV_WIDTH, 144), NAV_WIDTH * 3 / 2);
+        assert_eq!(scaled(NAV_ROW_HEIGHT, 192), NAV_ROW_HEIGHT * 2);
+    }
+
+    fn nav() -> SettingsNav {
+        SettingsNav {
+            groups: vec![
+                SettingsNavGroup {
+                    title: "Settings".into(),
+                    entries: vec![
+                        SettingsNavEntry {
+                            label: "Appearance".into(),
+                            page: 0,
+                            marked: false,
+                        },
+                        SettingsNavEntry {
+                            label: "General".into(),
+                            page: 5,
+                            marked: false,
+                        },
+                    ],
+                },
+                SettingsNavGroup {
+                    title: "Spaces".into(),
+                    entries: vec![SettingsNavEntry {
+                        label: "Work".into(),
+                        page: 7,
+                        marked: true,
+                    }],
+                },
+            ],
+            selected: 1,
+        }
+    }
+
+    #[test]
+    fn nav_rows_put_a_title_before_each_group() {
+        let rows = nav_rows(&nav());
+        let labels: Vec<&str> = rows.iter().map(NavRow::label).collect();
+        assert_eq!(
+            labels,
+            ["Settings", "Appearance", "General", "Spaces", "Work"]
+        );
+        assert!(!rows[0].is_entry());
+        assert!(rows[1].is_entry());
+    }
+
+    #[test]
+    fn nav_row_entries_map_to_flattened_indices() {
+        let rows = nav_rows(&nav());
+        assert_eq!(row_entry(&rows, 0), None);
+        assert_eq!(row_entry(&rows, 1), Some(0));
+        assert_eq!(row_entry(&rows, 2), Some(1));
+        assert_eq!(row_entry(&rows, 3), None);
+        assert_eq!(row_entry(&rows, 4), Some(2));
+        // The row showing a flattened entry, and the fallback past the end.
+        assert_eq!(entry_row(&rows, 2), 4);
+        assert_eq!(entry_row(&rows, 9), 1);
+    }
+
+    #[test]
+    fn nav_row_helpers_tolerate_empty_groups() {
+        let rows = nav_rows(&SettingsNav {
+            groups: vec![SettingsNavGroup {
+                title: "Spaces".into(),
+                entries: vec![],
+            }],
+            selected: 0,
+        });
+        assert_eq!(rows.len(), 1);
+        assert_eq!(row_entry(&rows, 0), None);
+        assert_eq!(entry_row(&rows, 0), 0);
+        assert_eq!(row_entry(&rows, 1), None);
     }
 }

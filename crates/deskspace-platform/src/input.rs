@@ -103,6 +103,11 @@ pub enum SettingsEvent {
     Button {
         field: u32,
     },
+    /// The navigation rail moved to `entry`, an index into the flattened
+    /// `SettingsNav` entries (`SettingsNav::page_of` gives its page).
+    NavChanged {
+        entry: usize,
+    },
     Ok,
     /// Cancel button, Escape, or the window's close button.
     Cancel,
