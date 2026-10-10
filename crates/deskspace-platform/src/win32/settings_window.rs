@@ -2245,26 +2245,35 @@ unsafe extern "system" fn wndproc(
             }
             WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
                 let control = HWND(lparam.0 as *mut core::ffi::c_void);
-                let Some((swatch, colors, body, field, disabled)) = with_state(window, |state| {
-                    let swatch = state
-                        .fields
-                        .iter()
-                        .find(|(_, controls)| controls.swatch == Some(control))
-                        .and_then(|(_, controls)| controls.swatch_brush);
-                    (
-                        swatch,
-                        state.colors,
-                        state.body_brush,
-                        state.command_bar_brush,
-                        state.is_disabled_label(control),
-                    )
-                }) else {
+                let Some((swatch, colors, body, field, disabled, rail)) =
+                    with_state(window, |state| {
+                        let swatch = state
+                            .fields
+                            .iter()
+                            .find(|(_, controls)| controls.swatch == Some(control))
+                            .and_then(|(_, controls)| controls.swatch_brush);
+                        (
+                            swatch,
+                            state.colors,
+                            state.body_brush,
+                            state.command_bar_brush,
+                            state.is_disabled_label(control),
+                            [state.list, state.scopes_list].contains(&Some(control)),
+                        )
+                    })
+                else {
                     return DefWindowProcW(window, message, wparam, lparam);
                 };
                 if let Some(brush) = swatch {
                     return LRESULT(brush.0 as isize);
                 }
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
+                // The rail panes are part of the window body, not input
+                // fields: below their rows they show the body color too.
+                if rail {
+                    SetBkColor(dc, colorref(colors.body));
+                    return LRESULT(body.0 as isize);
+                }
                 let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
                 if editable && !colors.dark {
                     return DefWindowProcW(window, message, wparam, lparam);
