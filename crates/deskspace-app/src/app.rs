@@ -44,13 +44,17 @@ const INFO_TIP_TIMER: usize = 3;
 /// How long the pointer must rest on an item before its info tip appears,
 /// matching Explorer's tooltip delay.
 const INFO_TIP_DELAY_MS: u32 = 600;
-/// Timer id for the deferred settings preview (ids 4 and 5 are reserved by
-/// TASKS.md E10 and H4).
+/// Timer id for the deferred settings preview (id 4 is reserved by TASKS.md
+/// E10).
 const PREVIEW_TIMER: usize = 6;
 /// How long a settings preview may lag the edit that caused it. `WM_TIMER`
 /// is only delivered once the queue is empty, so a burst of slider ticks
 /// collapses into one restyle or re-flow.
 const PREVIEW_DELAY_MS: u32 = 15;
+/// Timer id for the settings-window highlight on a space.
+const HIGHLIGHT_TIMER: usize = 5;
+/// How long the space selected in the settings window stays highlighted.
+const HIGHLIGHT_MS: u32 = 1200;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -334,6 +338,8 @@ pub struct App {
     /// every space.
     pending_preview: Preview,
     settings: Option<Session>,
+    /// The space highlighted for the settings window, until `HIGHLIGHT_TIMER`.
+    highlighted: Option<SpaceId>,
     open_settings_on_start: bool,
 }
 
@@ -368,6 +374,7 @@ impl App {
             watching_outside: false,
             pending_preview: Preview::default(),
             settings: None,
+            highlighted: None,
             open_settings_on_start: open_settings,
         }
     }
@@ -485,6 +492,7 @@ impl App {
                     rect.height,
                 ))
             }),
+            highlight: self.highlighted == Some(id),
         }
     }
 
@@ -2559,6 +2567,30 @@ impl App {
         if let Some(form) = self.settings_form() {
             ui.open_settings(&form);
         }
+        if let Some(id) = scope {
+            self.watch_highlight(ui, id);
+        }
+    }
+
+    /// Highlights a space so it can be found on the desktop, and arms the
+    /// timer that clears it. Selecting another space moves the highlight.
+    fn watch_highlight(&mut self, ui: &mut Ui, id: SpaceId) {
+        if self.highlighted != Some(id) {
+            self.clear_highlight(ui);
+            self.highlighted = Some(id);
+            self.refresh_space(ui, id);
+        }
+        ui.set_timer(HIGHLIGHT_TIMER, HIGHLIGHT_MS);
+    }
+
+    /// Removes the settings-window highlight, if any.
+    fn clear_highlight(&mut self, ui: &mut Ui) {
+        if let Some(id) = self.highlighted.take() {
+            ui.clear_timer(HIGHLIGHT_TIMER);
+            if self.config.desktop.space(id).is_some() {
+                self.refresh_space(ui, id);
+            }
+        }
     }
 
     fn refresh_settings(&self, ui: &mut Ui) {
@@ -2612,8 +2644,13 @@ impl App {
                 self.apply_space_setting(ui, command);
             }
             SettingsEvent::ScopeChanged { scope } => {
-                session.select_scope(settings::scope_at(&self.config, scope));
+                let id = settings::scope_at(&self.config, scope);
+                session.select_scope(id);
                 self.refresh_settings(ui);
+                match id {
+                    Some(id) => self.watch_highlight(ui, id),
+                    None => self.clear_highlight(ui),
+                }
             }
             SettingsEvent::NavChanged { entry } => {
                 // The categories pane lists the pages in order, one entry each.
@@ -2627,6 +2664,7 @@ impl App {
             SettingsEvent::Ok => {
                 if self.apply_settings(ui) {
                     self.settings = None;
+                    self.clear_highlight(ui);
                     ui.close_settings();
                 } else {
                     self.refresh_settings(ui);
@@ -2749,6 +2787,7 @@ impl App {
         if std::mem::take(&mut self.pending_preview).is_pending() {
             ui.clear_timer(PREVIEW_TIMER);
         }
+        self.clear_highlight(ui);
         let restyle = session.saved_theme != self.config.theme;
         // A revert re-flows when the grid changed: the layout itself, the
         // icon size that scales it, or a Match Explorer toggle, which
@@ -2850,6 +2889,7 @@ impl EventHandler for App {
             Event::Timer { id } if id == CARET_TIMER => self.blink_caret(ui),
             Event::Timer { id } if id == INFO_TIP_TIMER => self.show_info_tip(ui),
             Event::Timer { id } if id == PREVIEW_TIMER => self.flush_preview(ui),
+            Event::Timer { id } if id == HIGHLIGHT_TIMER => self.clear_highlight(ui),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();

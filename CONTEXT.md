@@ -649,6 +649,12 @@ WindowSettings {
   and answers each event with a new form. The page shape never changes: every
   page is always built, and the app picks which ones the categories pane
   lists.
+- Selecting a space in the scopes pane, or opening the window on one,
+  highlights it on the desktop for about 1.2 s so it can be found: the
+  space's scene sets `SpaceScene::highlight`, and the painter draws a 2 px
+  outline just inside the frame in the space's `selected_fill` at full alpha.
+  `HIGHLIGHT_TIMER` clears it; selecting another space moves it, and Cancel,
+  OK, and closing the window clear it too.
 - The app's form (`settings.rs`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Global lists all seven pages; a
   space lists only the five look pages and shows its values (from Global
@@ -768,7 +774,8 @@ WindowSettings {
 - In Settings, pick Global or a space in the left pane. Global edits apply to
   every space that is not customized. A space's pages are greyed, showing the
   global values, until "Customize this space" is ticked; its edits then apply
-  to that space alone.
+  to that space alone. Selecting a space flashes it on the desktop, so it can
+  be found.
 - Settings previews live across its Appearance, Labels, Layout, Colors, and
   Advanced pages: material, corners, tint, custom colors, the Windows accent for
   the selection and border, label lines/size/shadow,

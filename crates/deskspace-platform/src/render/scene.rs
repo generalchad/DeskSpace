@@ -48,6 +48,9 @@ pub struct SpaceScene {
     pub label_size: u8,
     pub locked: bool,
     pub rolled_up: bool,
+    /// Draws a highlight outline just inside the frame, following the corner
+    /// radius, to point out the space selected in the settings window.
+    pub highlight: bool,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,

@@ -392,6 +392,23 @@ impl Painter {
                     None,
                 );
             }
+
+            // A 2 px outline just inside the frame marks the space selected in
+            // the settings window; drawn last so it sits over the border.
+            if scene.highlight {
+                let gap = 1.5;
+                brush.SetColor(&color_f(scene.selected_fill.with_alpha(255)));
+                target.DrawRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: inset(whole, gap),
+                        radiusX: (radius - gap).max(0.0),
+                        radiusY: (radius - gap).max(0.0),
+                    },
+                    &brush,
+                    2.0,
+                    None,
+                );
+            }
             target.EndDraw(None, None)
         };
         if let Err(error) = end {

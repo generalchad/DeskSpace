@@ -747,7 +747,7 @@ day; do not re-open without asking):
   - an older config with per-space `icon_size`/`tint` opens with that space
     customized and looking the same.
 
-- [ ] **H4. Flash the selected space.** After H5.
+- [ ] **H4. Flash the selected space.** After H5. (awaiting check)
   - `render/scene.rs`: add `SpaceScene.highlight: bool` (default false).
     When it is set, `d2d.rs` draws a 2 px outline just inside the frame,
     following the corner radius.
@@ -759,13 +759,11 @@ day; do not re-open without asking):
     space, start it: set the flag and refresh that space. The timer clears it
     and refreshes again. Selecting another space moves the highlight. Cancel,
     OK, and closing the window clear it.
-  - Done when: a scene test shows the flag reaching the scene. **[needs
-    human]** check: a space behind other windows is hard to see, so check
-    with `--on-top` that the outline is visible on Acrylic, Clear, and Solid
+  - Done when: a scene test shows the flag reaching the scene (it does,
+    `the_settings_highlight_reaches_the_scene`). **[needs human]** check: a
+    space behind other windows is hard to see, so check with `--on-top` that
+    the outline is visible on Acrylic (checked, visible), Clear, and Solid
     backdrops.
-
-After H4: describe the highlight in `CONTEXT.md` (section 6, Native UI) and
-drop "flashing the selected space open" from F-46 in `ROADMAP.md`.
 
 ## Found while working
 

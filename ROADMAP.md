@@ -141,9 +141,9 @@ A native, lightweight, offline Windows desktop organizer that:
    icon layer, with a safe restore path. This is the remaining v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** flash the space selected in the settings window (F-46,
-   `TASKS.md` H4), and the New spaces and Hotkeys settings pages. Then cut
-   v0.2.
+4. **Finish M3:** the New spaces and Hotkeys settings pages, then cut v0.2.
+   F-46 is implemented (the highlight included); only its on-screen check
+   (`TASKS.md` H4-H5) remains.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -289,6 +289,7 @@ Done:
   space" is on; it then keeps its own copy of every look setting
   (`SpaceLook`), kept while customization is off. Edits preview live through
   `SetSpaceLook` / `CustomizeSpace`, and Cancel restores every space.
+  Selecting a space highlights it on the desktop.
 - **[done]** Every `WindowSettings` field is wired to behavior:
   - `start_hidden`;
   - `toggle_hotkey`, editable as text, with validation and conflict reporting
@@ -298,12 +299,10 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. Flash the space selected in the settings window's scopes pane, so it can
-   be found on the desktop (F-46, `TASKS.md` H4).
-2. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
+1. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
    with more bindings (F-17, F-18). The page is not called "Spaces", so it
    is not confused with the scopes pane.
-3. Tray and menu entries that depend on later milestones:
+2. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
    - snapshots (M6);
@@ -560,7 +559,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
 | F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
-| F-46 | Per-space looks in the settings window (scopes pane, Customize switch) | M3 | Done; check pending; flashing the selected space open (`TASKS.md` H4) |
+| F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
@@ -775,6 +774,8 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     (`SpaceLook`), kept when the switch is turned off. The context menu's
     Appearance edits customize the space. The old four overrides are folded
     into a look at startup.
+  - Selecting a space in the scopes pane (or opening the window on one)
+    highlights it on the desktop for about 1.2 s, so it can be found.
 - **Settings performance.** A slider drag used to restyle and re-flow every
   space, re-apply DWM attributes, flush the menu themes, and repaint the
   rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail

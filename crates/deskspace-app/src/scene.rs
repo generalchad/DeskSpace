@@ -36,6 +36,9 @@ pub struct ViewState {
     pub show_compressed_color: bool,
     /// The rubber-band selection rectangle, in window-local coordinates.
     pub marquee: Option<Rect>,
+    /// Draw a highlight outline, marking the space selected in the settings
+    /// window.
+    pub highlight: bool,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -134,6 +137,7 @@ pub fn space_scene(
             .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
         locked: space.locked,
         rolled_up: space.rolled_up,
+        highlight: view.highlight,
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -477,6 +481,26 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(scene.items[0].state, ItemState::Dragged);
+    }
+
+    #[test]
+    fn the_settings_highlight_reaches_the_scene() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState {
+                highlight: true,
+                ..ViewState::default()
+            },
+            &mut IconCache::new(),
+        );
+        assert!(scene.highlight);
+        assert!(!ViewState::default().highlight);
     }
 
     #[test]
