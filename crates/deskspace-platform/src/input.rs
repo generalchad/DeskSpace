@@ -69,6 +69,14 @@ pub enum ClipboardAction {
     Paste,
 }
 
+/// A key that acts on the selection or the current space, watched by the
+/// low-level keyboard hook (see `Ui::watch_selection_keys`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKey {
+    /// Enter: open the focused item.
+    Open,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left click or keyboard selection of the tray icon.
@@ -119,6 +127,8 @@ pub enum Event {
     /// F2 was pressed while an item is selected or a space is current: rename
     /// the focused item, or the space's title when no item is selected.
     RenameSelection,
+    /// A `SelectionKey` was pressed (Enter to open the focused item, and so on).
+    SelectionKey(SelectionKey),
     /// Alt+Enter was pressed while an item is selected or a space is current:
     /// show the focused item's Properties, or DeskSpace Settings when no item
     /// is selected.

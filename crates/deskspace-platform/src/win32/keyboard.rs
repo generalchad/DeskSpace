@@ -28,7 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::edit::{EditKey, MoveDir};
-use crate::input::ClipboardAction;
+use crate::input::{ClipboardAction, SelectionKey};
 use crate::win32::desktop_shell;
 
 /// Posted to the controller with the decoded key: wParam is a kind code and
@@ -51,6 +51,12 @@ pub(crate) const SELECT_ALL_KEY: u32 = WM_APP + 7;
 /// Posted to the controller when Alt+Enter is pressed while an item is
 /// selected or a space is current.
 pub(crate) const PROPERTIES_KEY: u32 = WM_APP + 9;
+
+/// Posted to the controller for a watched selection key; wParam is one of the
+/// `SEL_*` codes.
+pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
+
+pub(crate) const SEL_OPEN: usize = 0;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -86,6 +92,15 @@ thread_local! {
     static WATCH_SELECTION: Cell<bool> = const { Cell::new(false) };
     /// Watching Ctrl+V while a space is current.
     static WATCH_PASTE: Cell<bool> = const { Cell::new(false) };
+    /// A popup menu is being tracked, so every key belongs to it; the hook
+    /// passes everything through until it closes.
+    static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Marks a popup menu as open, so the hook stops consuming keys (Esc, Enter,
+/// arrows) that belong to the menu while it is tracked.
+pub(crate) fn set_menu_open(open: bool) {
+    MENU_OPEN.set(open);
 }
 
 /// Starts or stops capturing keys for `controller` for inline editing.
@@ -204,6 +219,11 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 /// Handles one key press. Returns whether the event was consumed; when it
 /// returns `false`, the caller passes the event on unchanged.
 fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
+    // An open menu owns every key (Esc to close, Enter to activate, arrows to
+    // navigate), so pass them all through while one is tracked.
+    if MENU_OPEN.get() {
+        return false;
+    }
     // Selection watch: capture Delete and the clipboard keys that act on a
     // selection or a current space, and pass every other key through untouched.
     // The selection is kept while another app is focused, as Explorer keeps a
@@ -236,6 +256,10 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
                 return true;
             }
             return false;
+        }
+        if WATCH_SELECTION.get() && is_key(event.vkCode, VK_RETURN) {
+            post_message(SELECTION_KEY, SEL_OPEN, 0);
+            return true;
         }
         if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && is_key(event.vkCode, VK_F2) {
             post_message(RENAME_KEY, 0, 0);
@@ -408,6 +432,14 @@ pub(crate) fn clipboard_action(action: usize) -> Option<ClipboardAction> {
     })
 }
 
+/// Decodes a posted `SELECTION_KEY` wParam into a selection key.
+pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
+    Some(match action {
+        SEL_OPEN => SelectionKey::Open,
+        _ => return None,
+    })
+}
+
 /// The character a key produces under the current layout and modifiers, or
 /// `None`. The thread's keyboard state can lag behind the hook (which runs
 /// before the key is queued), so pressed modifiers and Caps Lock are overlaid
@@ -495,6 +527,12 @@ mod tests {
         assert_eq!(clipboard_action(ACTION_CUT), Some(ClipboardAction::Cut));
         assert_eq!(clipboard_action(ACTION_PASTE), Some(ClipboardAction::Paste));
         assert_eq!(clipboard_action(99), None);
+    }
+
+    #[test]
+    fn decodes_selection_keys() {
+        assert_eq!(selection_key(SEL_OPEN), Some(SelectionKey::Open));
+        assert_eq!(selection_key(99), None);
     }
 
     #[test]

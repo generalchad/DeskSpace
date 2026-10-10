@@ -12,8 +12,8 @@ use deskspace_core::{
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
     Event, EventHandler, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice, ItemMetrics, MenuEntry,
-    MouseButton, Placement, RunOptions, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit,
-    TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
+    MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent,
+    TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
     item_check_box_hit, notify_moved, parse_hotkey, space_dpi, system_uses_dark_mode, work_area_at,
 };
 
@@ -752,6 +752,25 @@ impl App {
             return;
         }
         self.open_settings(ui);
+    }
+
+    /// Handles a watched selection key (see `SelectionKey`).
+    fn on_selection_key(&mut self, ui: &mut Ui, key: SelectionKey) {
+        match key {
+            SelectionKey::Open => self.open_selected_item(ui),
+        }
+    }
+
+    /// Opens the focused (last-selected) item, as Enter does in Explorer.
+    fn open_selected_item(&mut self, ui: &mut Ui) {
+        if let Some(path) = self
+            .selected_items
+            .last()
+            .and_then(|item| self.config.desktop.item(*item))
+            .map(|item| item.path.clone())
+        {
+            ui.open_path(&path);
+        }
     }
 
     fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
@@ -2387,6 +2406,7 @@ impl EventHandler for App {
             Event::ClipboardChanged => self.sync_cut_with_clipboard(ui),
             Event::RenameSelection => self.begin_f2_rename(ui),
             Event::ShowProperties => self.show_properties(ui),
+            Event::SelectionKey(key) => self.on_selection_key(ui, key),
             Event::SelectAll => self.select_all_in_space(ui),
             Event::PointerDownOutside { on_desktop } => {
                 self.dismiss_info_tip(ui);

@@ -164,6 +164,12 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::ShowProperties);
                 LRESULT(0)
             }
+            keyboard::SELECTION_KEY => {
+                if let Some(key) = keyboard::selection_key(wparam.0) {
+                    runtime::dispatch(Event::SelectionKey(key));
+                }
+                LRESULT(0)
+            }
             keyboard::SELECT_ALL_KEY => {
                 runtime::dispatch(Event::SelectAll);
                 LRESULT(0)

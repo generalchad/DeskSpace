@@ -24,6 +24,9 @@ pub(crate) fn track(owner: HWND, entries: &[MenuEntry], at: Point) -> Option<u32
         // trailing WM_NULL makes the next click work.
         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu#remarks
         let _ = SetForegroundWindow(owner);
+        // The menu owns every key while it is open (Esc closes it, arrows move,
+        // Enter activates); the keyboard hook passes keys through meanwhile.
+        crate::win32::keyboard::set_menu_open(true);
         let chosen = TrackPopupMenuEx(
             menu,
             (TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY).0,
@@ -32,6 +35,7 @@ pub(crate) fn track(owner: HWND, entries: &[MenuEntry], at: Point) -> Option<u32
             owner,
             None,
         );
+        crate::win32::keyboard::set_menu_open(false);
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
         // Destroying the parent also destroys its submenus.
         let _ = DestroyMenu(menu);

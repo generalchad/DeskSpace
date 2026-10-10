@@ -8,7 +8,9 @@ pub mod win32;
 
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
-pub use input::{ClipboardAction, Event, MouseButton, SettingsEvent, SpaceEvent, TrayEvent};
+pub use input::{
+    ClipboardAction, Event, MouseButton, SelectionKey, SettingsEvent, SpaceEvent, TrayEvent,
+};
 pub use render::{
     ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
     item_check_box, item_check_box_hit,

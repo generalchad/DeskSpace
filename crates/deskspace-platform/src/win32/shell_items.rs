@@ -180,6 +180,9 @@ pub(crate) fn track_item_menu(
         // trailing WM_NULL is posted. TPM_NONOTIFY is deliberately not used:
         // the shell needs WM_INITMENUPOPUP to fill its submenus.
         let _ = SetForegroundWindow(owner);
+        // The menu owns every key while it is open; the keyboard hook passes
+        // keys through meanwhile.
+        crate::win32::keyboard::set_menu_open(true);
         let chosen = TrackPopupMenuEx(
             menu,
             (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
@@ -189,6 +192,7 @@ pub(crate) fn track_item_menu(
             None,
         )
         .0 as u32;
+        crate::win32::keyboard::set_menu_open(false);
         let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
         ACTIVE_MENU.with(|cell| cell.borrow_mut().take());
 
