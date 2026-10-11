@@ -457,10 +457,13 @@ WindowSettings {
   window with a `chrome: false` style and no OLE drop target. It spans the
   virtual desktop (`system::virtual_desktop_rect`), is a `WS_CHILD` of the
   host when one is in use and top-level (kept at the bottom) otherwise, so it
-  sits behind the spaces. With the hidden `--takeover-layer` flag the app
-  draws the loose desktop items on it (`scene::desktop_layer_scene`), from the
-  model's `DesktopLayer`. This is additive groundwork for M2: Explorer still
-  draws its own icons, so the layer is only for an on-screen look.
+  sits behind the spaces. A top-level layer and a top-level space both pin to
+  `HWND_BOTTOM`, so `Ui::create_space` lowers the layer again after each space
+  (`space_window::lower`); otherwise the full-screen layer would end up above
+  the spaces and swallow their clicks. With the hidden `--takeover-layer` flag
+  the app draws the loose desktop items on it (`scene::desktop_layer_scene`),
+  from the model's `DesktopLayer`. This is additive groundwork for M2: Explorer
+  still draws its own icons, so the layer is only for an on-screen look.
   - Item interaction is shared, not duplicated (ROADMAP D7): the app routes
     hit-testing, selection, hover, rubber-band, drag, drop, info tips, and the
     scene build through a `Surface` (`Space(id)` or `Desktop`) instead of a

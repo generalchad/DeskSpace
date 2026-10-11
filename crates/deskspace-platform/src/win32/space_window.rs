@@ -196,6 +196,25 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
     }
 }
 
+/// Sends a window to the bottom of the z-order without moving or resizing it.
+/// The desktop layer uses this after a top-level space is created so the
+/// full-screen layer stays behind the spaces (both pin to the bottom).
+pub(crate) fn lower(hwnd: HWND) {
+    // SAFETY: `hwnd` is a live window. SWP_NOZORDER is not set, so the z-order
+    // change applies; the window procedure then pins it to the bottom.
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_BOTTOM),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
 /// The window's rect in the coordinates `set_rect` takes: the parent's client
 /// coordinates for a hosted child (Progman/WorkerW spans the desktop), screen
 /// coordinates otherwise.
