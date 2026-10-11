@@ -2,6 +2,7 @@
 
 pub mod command;
 pub mod desktop;
+pub mod desktop_layer;
 pub mod error;
 pub mod geometry;
 pub mod id;
@@ -12,6 +13,7 @@ pub mod theme;
 
 pub use command::{Command, CommandOutcome, SortKey};
 pub use desktop::Desktop;
+pub use desktop_layer::DesktopLayer;
 pub use error::CoreError;
 pub use geometry::{Point, Rect, Size};
 pub use id::{ItemId, SpaceId};

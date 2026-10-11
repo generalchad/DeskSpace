@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (211 tests) are green.
+  `cargo test --workspace` (227 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -226,14 +226,26 @@ up; corners are twice as wide as edges), item lookup/insert/remove, and
 ### Desktop
 
 ```
-Desktop { spaces: Vec<Space>, layout: GridSpec }
+Desktop { spaces: Vec<Space>, layer: DesktopLayer, layout: GridSpec }
 ```
 
 `spaces` also reads the pre-rename key `spaces`, so older config files load.
 
 Operations: add/remove space, add/remove/move item, `item_count`,
 `space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`. `move_item` validates the target before removing the item, so a
-failed move never loses it.
+failed move never loses it. `next_item_id` spans the spaces and the layer,
+and `item` finds an item in either.
+
+### Desktop layer
+
+`DesktopLayer { items: Vec<Item> }` is the desktop's loose items: the
+Desktop-folder files no space holds (ROADMAP D7). The shell is the source of
+truth, so it is a refreshed cache (`Command::SyncDesktop` reconciles by path,
+keeping `ItemId`s) with no chrome of its own. Unlike a space item's
+content-relative `position`, a layer item's `position` is absolute, in
+virtual-desktop coordinates. `layer()` / `layer_mut()` reach it; the layer has
+`items()`, `item`/`item_mut`, `item_at(point, cell)`, `push_item`,
+`remove_item`, `replace_items`, and `item_count`.
 
 ### Layout engine (`layout.rs`)
 
@@ -279,7 +291,8 @@ the stored base grid. Variants:
 `ResizeSpace`, `FitToContents`, `Reflow`, `CustomizeSpace`, `SetSpaceLook`,
 `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
 `RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
-`AutoArrange`, `SnapAll`.
+`AutoArrange`, `SnapAll`, `SyncDesktop`, `MoveToDesktop`,
+`SetDesktopItemPosition`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
 also rejects rolled-up spaces and marks the space user-sized, and

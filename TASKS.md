@@ -814,7 +814,7 @@ until I5-I7 all land, so no partial build hides the desktop.
     a normal config behaves as before apart from item order. Landed in
     `feat: read desktop items and positions through the shell (I1)`.
 
-- [ ] **I2. Add `DesktopLayer` to the model (core).**
+- [x] **I2. Add `DesktopLayer` to the model (core).**
   - New `crates/deskspace-core/src/desktop_layer.rs`:
     `DesktopLayer { items: Vec<Item> }`, `#[serde(default)]`, `Default`, with
     `item`, `item_at(position, cell)`, `push_item`, `remove_item`,

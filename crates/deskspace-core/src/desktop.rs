@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::desktop_layer::DesktopLayer;
 use crate::geometry::Rect;
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
@@ -12,6 +13,9 @@ pub struct Desktop {
     /// Files written before spaces were renamed from "spaces" use `spaces`.
     #[serde(default, alias = "spaces")]
     pub spaces: Vec<Space>,
+    /// The desktop's loose items, outside any space (ROADMAP D7).
+    #[serde(default)]
+    pub layer: DesktopLayer,
     #[serde(default)]
     pub layout: GridSpec,
 }
@@ -33,15 +37,21 @@ impl Desktop {
     }
 
     pub fn next_item_id(&self) -> ItemId {
-        ItemId(
-            self.spaces
-                .iter()
-                .flat_map(|space| space.items.iter())
-                .map(|item| item.id.0)
-                .max()
-                .unwrap_or(0)
-                + 1,
-        )
+        let space_max = self
+            .spaces
+            .iter()
+            .flat_map(|space| space.items.iter())
+            .map(|item| item.id.0)
+            .max()
+            .unwrap_or(0);
+        let layer_max = self
+            .layer
+            .items()
+            .iter()
+            .map(|item| item.id.0)
+            .max()
+            .unwrap_or(0);
+        ItemId(space_max.max(layer_max) + 1)
     }
 
     pub fn space(&self, id: SpaceId) -> Option<&Space> {
@@ -59,8 +69,20 @@ impl Desktop {
             .map(|space| space.id)
     }
 
+    /// The loose desktop layer: the items outside any space.
+    pub fn layer(&self) -> &DesktopLayer {
+        &self.layer
+    }
+
+    pub fn layer_mut(&mut self) -> &mut DesktopLayer {
+        &mut self.layer
+    }
+
     pub fn item(&self, id: ItemId) -> Option<&Item> {
-        self.spaces.iter().find_map(|space| space.item(id))
+        self.spaces
+            .iter()
+            .find_map(|space| space.item(id))
+            .or_else(|| self.layer.item(id))
     }
 
     pub fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> SpaceId {
@@ -151,6 +173,19 @@ mod tests {
         let b = desktop.add_space("B", Rect::new(200, 0, 100, 100));
         assert_ne!(a, b);
         assert_eq!(desktop.spaces.len(), 2);
+    }
+
+    #[test]
+    fn next_item_id_spans_spaces_and_the_layer() {
+        let mut desktop = Desktop::new();
+        let space = desktop.add_space("A", Rect::ZERO);
+        desktop.add_item(space, Item::new(ItemId(5), "C:/missing/a.txt"));
+        desktop
+            .layer_mut()
+            .push_item(Item::new(ItemId(9), "C:/missing/loose.txt"));
+        assert_eq!(desktop.next_item_id(), ItemId(10));
+        assert!(desktop.item(ItemId(5)).is_some(), "space item is found");
+        assert!(desktop.item(ItemId(9)).is_some(), "layer item is found");
     }
 
     #[test]

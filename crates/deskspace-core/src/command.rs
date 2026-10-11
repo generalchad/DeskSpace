@@ -109,6 +109,23 @@ pub enum Command {
         id: SpaceId,
     },
     SnapAll,
+    /// Replaces the loose desktop layer from a shell snapshot, reconciling by
+    /// path so `ItemId`s survive refreshes: an existing path keeps its id, a
+    /// new one is allocated, and a path that is gone is dropped. Order follows
+    /// `items`.
+    SyncDesktop {
+        items: Vec<Item>,
+    },
+    /// Moves a space's item out to the loose desktop layer. The app positions
+    /// it with `SetDesktopItemPosition` once the shell reports where it landed.
+    MoveToDesktop {
+        item: ItemId,
+    },
+    /// Sets a loose item's absolute position (virtual-desktop coordinates).
+    SetDesktopItemPosition {
+        item: ItemId,
+        position: Point,
+    },
 }
 
 /// How `Command::SortSpace` orders a space's items.
@@ -421,6 +438,45 @@ impl Desktop {
                 resolve_collisions(&mut self.spaces, layout.gap, bounds);
                 CommandOutcome::Applied
             }
+            Command::SyncDesktop { items } => {
+                let mut next = self.next_item_id().0;
+                let mut reconciled = Vec::with_capacity(items.len());
+                for mut entry in items {
+                    match self.layer.items().iter().find(|old| old.path == entry.path) {
+                        Some(old) => entry.id = old.id,
+                        None => {
+                            entry.id = ItemId(next);
+                            next += 1;
+                        }
+                    }
+                    reconciled.push(entry);
+                }
+                self.layer.replace_items(reconciled);
+                CommandOutcome::Applied
+            }
+            Command::MoveToDesktop { item } => {
+                let Some(source) = self.space_containing(item) else {
+                    return CommandOutcome::NotFound;
+                };
+                let Some(mut moved) = self.remove_item(item) else {
+                    return CommandOutcome::NotFound;
+                };
+                moved.position = Point::ZERO;
+                self.layer.push_item(moved);
+                // Close the gap the item left, without resizing the source
+                // space under the user.
+                if let Some(space) = self.space_mut(source) {
+                    position_items(space, layout);
+                }
+                CommandOutcome::Applied
+            }
+            Command::SetDesktopItemPosition { item, position } => match self.layer.item_mut(item) {
+                Some(entry) => {
+                    entry.position = position;
+                    CommandOutcome::Applied
+                }
+                None => CommandOutcome::NotFound,
+            },
         }
     }
 
@@ -941,5 +997,93 @@ mod tests {
         desktop.apply(set(false, None), bounds());
         let space = desktop.space(id).unwrap();
         assert!(!space.custom && space.look.is_none());
+    }
+
+    #[test]
+    fn sync_desktop_reuses_ids_by_path_across_a_reorder() {
+        let enter = |name: &str, x: i32| {
+            let mut item = Item::new(ItemId(0), format!("C:/missing/{name}"));
+            item.position = Point::new(x, 0);
+            item
+        };
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::SyncDesktop {
+                items: vec![enter("a.txt", 10), enter("b.txt", 20)],
+            },
+            bounds(),
+        );
+        let a = desktop.layer().items()[0].id;
+        let b = desktop.layer().items()[1].id;
+        assert_ne!(a, b);
+
+        // Reorder, drop b, and add c.
+        desktop.apply(
+            Command::SyncDesktop {
+                items: vec![enter("a.txt", 30), enter("c.txt", 40)],
+            },
+            bounds(),
+        );
+        let items = desktop.layer().items();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, a, "same path keeps its id");
+        assert_eq!(items[0].position, Point::new(30, 0));
+        assert!(
+            items.iter().all(|item| item.id != b),
+            "gone path is dropped"
+        );
+        assert_ne!(items[1].id, a, "new path gets a fresh id");
+    }
+
+    #[test]
+    fn move_to_desktop_moves_a_space_item_to_the_layer() {
+        let mut desktop = Desktop::new();
+        let space = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let item = Item::new(ItemId(1), "C:/missing/a.txt");
+        let item_id = item.id;
+        desktop.add_item(space, item);
+        assert_eq!(
+            desktop.apply(Command::MoveToDesktop { item: item_id }, bounds()),
+            CommandOutcome::Applied
+        );
+        assert!(desktop.space(space).unwrap().items.is_empty());
+        assert!(desktop.layer().item(item_id).is_some());
+        assert_eq!(desktop.layer().item_count(), 1);
+        assert_eq!(
+            desktop.apply(Command::MoveToDesktop { item: ItemId(999) }, bounds()),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn set_desktop_item_position_moves_and_reports_missing() {
+        let mut desktop = Desktop::new();
+        desktop
+            .layer_mut()
+            .push_item(Item::new(ItemId(1), "C:/missing/a.txt"));
+        assert_eq!(
+            desktop.apply(
+                Command::SetDesktopItemPosition {
+                    item: ItemId(1),
+                    position: Point::new(50, 60),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(
+            desktop.layer().item(ItemId(1)).unwrap().position,
+            Point::new(50, 60)
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::SetDesktopItemPosition {
+                    item: ItemId(999),
+                    position: Point::ZERO,
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
     }
 }

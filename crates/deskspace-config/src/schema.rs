@@ -266,6 +266,12 @@ mod tests {
     }
 
     #[test]
+    fn desktop_layer_defaults_to_empty() {
+        let parsed: Config = toml::from_str("version = 2\n").unwrap();
+        assert!(parsed.desktop.layer().items().is_empty());
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         config
