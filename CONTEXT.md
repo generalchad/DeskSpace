@@ -692,7 +692,11 @@ WindowSettings {
 
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
   `0x052C` spawn trick) for hosted placements.
-- `shell.rs`: `enumerate_desktop_items` and `IconCache`. Icons are rendered by
+- `shell.rs`: `enumerate_desktop_items` and `IconCache`.
+  `enumerate_desktop_items` reads the desktop view's items and their positions
+  (`IFolderView::ItemCount`/`Item`/`GetItemPosition`) once OLE is up, and
+  falls back to a name-sorted walk of the user's Desktop folder, without
+  positions, when the view cannot be reached. Icons are rendered by
   `IShellItemImageFactory` at the requested pixel size, and a path the factory
   rejects falls back to the classic 32 px icon (scaled). The overlay (shortcut
   arrow, sync badges) is drawn the way Explorer draws it: `SHGetFileInfoW` with

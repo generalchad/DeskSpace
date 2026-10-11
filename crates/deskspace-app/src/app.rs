@@ -11,13 +11,13 @@ use deskspace_core::{
     SpaceLook, Theme,
 };
 use deskspace_platform::{
-    CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
-    Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice,
-    ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions, SelectionKey,
-    SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
-    desktop_directory, desktop_display, drag_threshold, hotkey_id, item_check_box_hit,
-    notify_moved, parse_hotkey, set_start_with_windows, space_dpi, system_accent_color,
-    system_uses_dark_mode, work_area_at,
+    CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DesktopEntry, DragImage, EditKey,
+    EditOutcome, Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache,
+    ItemMenuChoice, ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions,
+    SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
+    desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items, hotkey_id,
+    item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, space_dpi,
+    system_accent_color, system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -359,6 +359,9 @@ pub struct App {
     system_accent: Option<Color>,
     /// Explorer's current display options, refreshed on change.
     shell_display: ShellDisplay,
+    /// The desktop's loose items read from the shell on `Started`. The M2
+    /// desktop layer consumes them; until then they are only diagnostics.
+    desktop_entries: Vec<DesktopEntry>,
     selected_space: Option<SpaceId>,
     /// Items selected in `selected_space`, in the order they were selected.
     selected_items: Vec<ItemId>,
@@ -420,6 +423,7 @@ impl App {
             system_accent: system_accent_color(),
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
+            desktop_entries: Vec::new(),
             selected_space: None,
             selected_items: Vec::new(),
             selection_anchor: None,
@@ -708,6 +712,27 @@ impl App {
         } else {
             self.restyle_all(ui);
         }
+    }
+
+    /// Reads the desktop's loose items from the shell, with their positions,
+    /// now that OLE is initialized. The M2 desktop layer will draw them.
+    fn refresh_desktop_entries(&mut self) {
+        self.desktop_entries = match enumerate_desktop_items() {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(%error, "could not enumerate desktop items");
+                Vec::new()
+            }
+        };
+        tracing::debug!(
+            items = self.desktop_entries.len(),
+            positioned = self
+                .desktop_entries
+                .iter()
+                .filter(|entry| entry.position.is_some())
+                .count(),
+            "read desktop items from the shell"
+        );
     }
 
     /// The space's scroll offset, clamped to its current content.
@@ -3103,6 +3128,7 @@ impl EventHandler for App {
                 }
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
+                self.refresh_desktop_entries();
                 self.sync_windows(ui);
                 // Positions are derived from the grid; recompute them so a
                 // stored layout from another icon size or DPI is refreshed.

@@ -22,7 +22,7 @@ pub mod runtime;
 mod settings_window;
 pub mod shell_items;
 mod shell_selection;
-mod shell_view;
+pub(crate) mod shell_view;
 mod space_window;
 pub mod system;
 mod tray;

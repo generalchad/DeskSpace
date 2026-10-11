@@ -791,24 +791,28 @@ tasks only say where things go. Do them in order. Hiding Explorer's icons
 (I5) stays behind an off-by-default setting and the hidden `--takeover` flag
 until I5-I7 all land, so no partial build hides the desktop.
 
-- [ ] **I1. Read the desktop's items and positions through the shell.**
-  - `crates/deskspace-platform/src/shell.rs`: extend `DesktopEntry` with
-    `position: Option<Point>` (from `deskspace_core::geometry::Point`).
-    Rewrite `enumerate_desktop_items` to prefer the desktop view:
-    `crate::win32::shell_view::desktop_shell_view()`, cast to `IFolderView`,
-    walk `ItemCount` items with `IFolderView::Item(i, IID_IShellItem)` for the
-    `SIGDN_NORMALDISPLAY` label and `ItemKind`, and read each position with
-    `IFolderView::ItemPosition` (via `SHGetIDListFromObject` on the item's
-    PIDL), in the view's logical coordinates. Keep `listed_by_explorer` and
-    the current folder walk as the fallback when the view is unavailable
-    (positions `None`). Keep the name-sorted order in the fallback only.
-  - `crates/deskspace-app/src/bootstrap.rs`: `seed_default_desktop` still
-    seeds the initial space; positions are not used until I3.
-  - Tests: a pure helper that maps a raw entry (path, name, attributes, and a
-    `POINT`) into a `DesktopEntry` gets a unit test. The COM path is
-    smoke-tested.
+- [x] **I1. Read the desktop's items and positions through the shell.**
+  - `crates/deskspace-platform/src/shell.rs`: `DesktopEntry` gained
+    `position: Option<Point>`. `enumerate_desktop_items` now prefers the
+    desktop view (`crate::win32::shell_view::desktop_shell_view()` cast to
+    `IFolderView`): `ItemCount(SVGIO_ALLVIEW)`, then per index
+    `IFolderView::Item(index)` for the child PIDL and
+    `IFolderView::GetItemPosition(pidl)` for the point (`Item`, not
+    `ItemPosition`; the PIDL comes from `Item`, so no
+    `SHGetIDListFromObject`). The `IShellItem` for the label and kind is built
+    with `SHCreateItemWithParent`, its path read with `SIGDN_FILESYSPATH`
+    (virtual items such as This PC are skipped, per D1). Falls back to the
+    existing name-sorted folder walk with `position: None` when the view is
+    unavailable (for example before OLE is up). The fallback filter is the
+    pure `keep_attributes`.
+  - `crates/deskspace-app/src/app.rs`: `App` caches the entries in
+    `desktop_entries`, refreshed on `Started` (after OLE) with a `debug` line;
+    the M2 layer consumes them in I3.
+  - Tests: `keep_attributes_filters_hidden_protected_and_desktop_ini`. The COM
+    path is exercised at runtime (the `debug` line), since CI has no desktop.
   - Done when: every entry carries a position when the view is readable, and
-    a normal config behaves as before apart from item order.
+    a normal config behaves as before apart from item order. Landed in
+    `feat: read desktop items and positions through the shell (I1)`.
 
 - [ ] **I2. Add `DesktopLayer` to the model (core).**
   - New `crates/deskspace-core/src/desktop_layer.rs`:
