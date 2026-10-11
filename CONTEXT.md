@@ -440,6 +440,15 @@ WindowSettings {
   unchanged (the style is kept in the state, the rect read back from the
   window, the scene compared with the stored one), so restyling every space
   on a settings edit only touches the ones that changed.
+- The chrome-less desktop layer (`Ui::create_desktop_layer`,
+  `set_desktop_layer_rect`/`_scene`, `destroy_desktop_layer`) reuses this
+  window with a `chrome: false` style and no OLE drop target. It spans the
+  virtual desktop (`system::virtual_desktop_rect`), is a `WS_CHILD` of the
+  host when one is in use and top-level (kept at the bottom) otherwise, so it
+  sits behind the spaces. With the hidden `--takeover-layer` flag the app
+  draws the loose desktop items on it (`scene::desktop_layer_scene`), from the
+  model's `DesktopLayer`. This is additive groundwork for M2: Explorer still
+  draws its own icons, so the layer is only for an on-screen look.
 - Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`,
   kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
   activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
@@ -627,12 +636,14 @@ WindowSettings {
 - `SpaceScene` (title, colors, optional `text_shadow`, label lines/size,
   flags, `ItemVisual`s in window-local coordinates, optional `scroll_thumb`
   rect, optional rubber-band `marquee`) and `SpaceStyle`
-  (backdrop, corner radius, dark, border) are the contract between app and
-  renderer. The app scrolls by offsetting item rects and includes only items
-  that intersect the content area; the renderer clips items below the title
-  bar. Scenes are pushed only when something changes; the window stores a
-  `PreparedScene` with strings pre-encoded to UTF-16, so painting does not
-  allocate.
+  (backdrop, corner radius, dark, border, `chrome`) are the contract between
+  app and renderer. The app scrolls by offsetting item rects and includes only
+  items that intersect the content area; the renderer clips items below the
+  title bar. Scenes are pushed only when something changes; the window stores
+  a `PreparedScene` with strings pre-encoded to UTF-16, so painting does not
+  allocate. `chrome: false` (the desktop layer) draws no title bar or border
+  and fills the whole window with items; `SpaceStyle::dwm_draws_frame` is then
+  false, so DWM draws no frame either.
 - `Icon` is an `Arc` of owned premultiplied-BGRA pixels with a never-reused
   id, decoded from the shell's HICON (which is destroyed right away). Scenes
   therefore never point at freed handles.
@@ -872,7 +883,8 @@ WindowSettings {
   running instance through its controller window instead of starting a second
   copy.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--show`,
-  `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`.
+  `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`
+  and `--takeover-layer`.
 
 ## 9. spaces feature parity matrix
 

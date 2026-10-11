@@ -5,7 +5,10 @@ use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXDRAG, SM_CYDRAG};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+};
 use windows::core::w;
 
 /// The work area (screen minus taskbar and docked bars) of the monitor
@@ -103,6 +106,22 @@ pub fn drag_threshold() -> Size {
     // SAFETY: plain metric queries.
     let (x, y) = unsafe { (GetSystemMetrics(SM_CXDRAG), GetSystemMetrics(SM_CYDRAG)) };
     Size::new(x.max(1), y.max(1))
+}
+
+/// The bounding rectangle of every monitor in virtual-desktop coordinates,
+/// whose origin can be negative when a monitor is left of or above the
+/// primary. The desktop layer spans it.
+pub fn virtual_desktop_rect() -> Rect {
+    // SAFETY: plain metric queries.
+    let (x, y, width, height) = unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    };
+    Rect::new(x, y, width.max(1), height.max(1))
 }
 
 pub(crate) fn wide(text: &str) -> Vec<u16> {

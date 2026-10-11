@@ -7,8 +7,8 @@ use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{
-    Color, Command, Desktop, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space, SpaceId,
-    SpaceLook, Theme,
+    Color, Command, Desktop, Item, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space,
+    SpaceId, SpaceLook, Theme,
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DesktopEntry, DragImage, EditKey,
@@ -17,12 +17,14 @@ use deskspace_platform::{
     SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
     desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items, hotkey_id,
     item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, space_dpi,
-    system_accent_color, system_uses_dark_mode, work_area_at,
+    system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
-use crate::scene::{ViewState, drag_scene, item_label, space_scene, space_style};
+use crate::scene::{
+    ViewState, desktop_layer_scene, drag_scene, item_label, layer_style, space_scene, space_style,
+};
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
 
@@ -410,6 +412,10 @@ pub struct App {
     /// The keys typed so far for type-to-select, cleared by `TYPE_TIMER`.
     type_buffer: String,
     open_settings_on_start: bool,
+    /// Draw the loose desktop items on a chrome-less layer window (hidden
+    /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
+    /// own icons.
+    takeover_layer: bool,
 }
 
 impl App {
@@ -448,6 +454,7 @@ impl App {
             highlighted: None,
             type_buffer: String::new(),
             open_settings_on_start: open_settings,
+            takeover_layer: false,
         }
     }
 
@@ -735,6 +742,86 @@ impl App {
         );
     }
 
+    /// The window style for the desktop layer (chrome-less, transparent).
+    fn layer_style(&self) -> SpaceStyle {
+        layer_style(&self.config.theme, self.system_dark)
+    }
+
+    /// The loose desktop items for the layer: the desktop entries that carry a
+    /// position and are not already held by a space. The `ItemId`s are
+    /// placeholders; `SyncDesktop` reconciles them by path.
+    fn desktop_layer_items(&self) -> Vec<Item> {
+        self.desktop_entries
+            .iter()
+            .filter_map(|entry| {
+                let position = entry.position?;
+                let in_space = self
+                    .config
+                    .desktop
+                    .spaces
+                    .iter()
+                    .flat_map(|space| space.items.iter())
+                    .any(|item| crate::storage::same_path(&item.path, &entry.path));
+                if in_space {
+                    return None;
+                }
+                let mut item = Item::new(ItemId(0), &entry.path)
+                    .with_label(entry.label.clone())
+                    .with_kind(entry.kind);
+                item.position = position;
+                Some(item)
+            })
+            .collect()
+    }
+
+    /// Creates the layer window if needed, refreshes the model's loose items
+    /// from the shell snapshot, and repaints. A no-op unless the hidden
+    /// `--takeover-layer` flag is set.
+    fn sync_desktop_layer(&mut self, ui: &mut Ui) {
+        if !self.takeover_layer {
+            return;
+        }
+        let rect = virtual_desktop_rect();
+        if let Err(error) = ui.create_desktop_layer(rect, self.layer_style()) {
+            tracing::warn!(%error, "could not create the desktop layer window");
+            return;
+        }
+        let items = self.desktop_layer_items();
+        self.config.desktop.apply_with_layout(
+            Command::SyncDesktop { items },
+            self.effective_layout(),
+            rect,
+        );
+        self.refresh_desktop_layer(ui);
+    }
+
+    /// Pushes the desktop layer's rect and draw list to its window.
+    fn refresh_desktop_layer(&mut self, ui: &mut Ui) {
+        if !self.takeover_layer {
+            return;
+        }
+        let rect = virtual_desktop_rect();
+        let theme = &self.config.theme;
+        let palette = theme.palette(self.system_dark);
+        let view = ViewState {
+            show_extensions: self.shell_display.show_extensions,
+            show_compressed_color: self.shell_display.show_compressed_color,
+            ..ViewState::default()
+        };
+        let scene = desktop_layer_scene(
+            self.config.desktop.layer(),
+            rect.origin(),
+            theme,
+            &palette,
+            self.effective_layout(),
+            ItemMetrics::for_scale(self.icon_scale(theme)),
+            view,
+            &mut self.icons,
+        );
+        ui.set_desktop_layer_rect(rect);
+        ui.set_desktop_layer_scene(scene);
+    }
+
     /// The space's scroll offset, clamped to its current content.
     fn scroll_of(&self, id: SpaceId) -> i32 {
         let layout = self.layout_for(id);
@@ -865,6 +952,7 @@ impl App {
     /// spacing match that display.
     fn on_dpi_changed(&mut self, ui: &mut Ui, id: SpaceId) {
         self.reflow_space(ui, id);
+        self.refresh_desktop_layer(ui);
         self.schedule_save(ui);
     }
 
@@ -1173,6 +1261,7 @@ impl App {
     fn refresh_spaces(&mut self, ui: &mut Ui) {
         self.refresh_shell_display(ui);
         self.relayout_all(ui);
+        self.refresh_desktop_layer(ui);
     }
 
     /// Opens the context menu for the focused item, or for the current space
@@ -1491,6 +1580,12 @@ impl App {
     // ---- pointer -------------------------------------------------------
 
     fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
+        // The chrome-less desktop layer reuses the space window but has no
+        // model space, and a space window can outlive its space by one queued
+        // event; ignore anything they report.
+        if self.config.desktop.space(id).is_none() {
+            return;
+        }
         // Clicking anywhere commits a rename in progress before the click is
         // handled, as clicking away from a title does elsewhere.
         if self.edit.is_some()
@@ -3129,6 +3224,7 @@ impl EventHandler for App {
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
                 self.refresh_desktop_entries();
+                self.sync_desktop_layer(ui);
                 self.sync_windows(ui);
                 // Positions are derived from the grid; recompute them so a
                 // stored layout from another icon size or DPI is refreshed.
@@ -3190,6 +3286,7 @@ impl EventHandler for App {
                 // refresh its display options, then restyle for dark mode.
                 self.refresh_shell_display(ui);
                 self.restyle_all(ui);
+                self.refresh_desktop_layer(ui);
                 self.refresh_settings(ui);
             }
             Event::CloseRequested => {
@@ -3278,7 +3375,8 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         tray_tooltip: tray_tooltip(&config.desktop),
     };
 
-    let app = App::new(config, store, hidden, cli.settings);
+    let mut app = App::new(config, store, hidden, cli.settings);
+    app.takeover_layer = cli.takeover_layer;
     tracing::info!(
         path = %app.store.path().display(),
         storage = %app.storage.root().display(),

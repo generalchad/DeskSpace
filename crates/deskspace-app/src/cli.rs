@@ -71,6 +71,11 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub on_top: bool,
 
+    /// Development aid: draw the loose desktop items on a chrome-less layer
+    /// window (M2 takeover). Additive: Explorer still draws its own icons.
+    #[arg(long, hide = true)]
+    pub takeover_layer: bool,
+
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 }

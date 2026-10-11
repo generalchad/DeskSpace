@@ -835,7 +835,7 @@ until I5-I7 all land, so no partial build hides the desktop.
     from a space to the layer and returns `NotFound` for a missing id.
   - Update the Commands list in `CONTEXT.md` section 4.
 
-- [ ] **I3. Draw the desktop layer on a chrome-less hosted window.**
+- [ ] **I3. Draw the desktop layer on a chrome-less hosted window.** (awaiting check)
   - `render/scene.rs`: give `SpaceScene` / `SpaceStyle` a `chrome: bool`
     (title bar and border on or off) so the painter needs no new path; the
     desktop layer's scene has no title, no border, and no scroll.

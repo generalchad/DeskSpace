@@ -360,17 +360,22 @@ impl Painter {
             // The title fill is the body's rounded shape cut at the title's
             // bottom edge, so its top corners follow the space's corners.
             let title_height = scene.title_height as f32;
-            target.PushAxisAlignedClip(
-                &rect_f(0.0, 0.0, width, title_height.min(height)),
-                D2D1_ANTIALIAS_MODE_ALIASED,
-            );
-            fill_rounded(&target, &brush, whole, radius, scene.title_fill);
-            target.PopAxisAlignedClip();
-            self.draw_title(&graphics, &target, &brush, prepared, width, title_height);
-
-            if !scene.rolled_up && height > title_height {
+            if scene.chrome {
                 target.PushAxisAlignedClip(
-                    &rect_f(0.0, title_height, width, height),
+                    &rect_f(0.0, 0.0, width, title_height.min(height)),
+                    D2D1_ANTIALIAS_MODE_ALIASED,
+                );
+                fill_rounded(&target, &brush, whole, radius, scene.title_fill);
+                target.PopAxisAlignedClip();
+                self.draw_title(&graphics, &target, &brush, prepared, width, title_height);
+            }
+
+            // A chrome-less layer (the desktop layer) draws its items from the
+            // top; a space leaves room for the title bar.
+            let content_top = if scene.chrome { title_height } else { 0.0 };
+            if !scene.rolled_up && height > content_top {
+                target.PushAxisAlignedClip(
+                    &rect_f(0.0, content_top, width, height),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(&graphics, &target, &brush, prepared);
@@ -378,7 +383,9 @@ impl Painter {
                     draw_marquee(&target, &brush, marquee, scene.selected_fill);
                 }
                 target.PopAxisAlignedClip();
-                if let Some(thumb) = scene.scroll_thumb {
+                if scene.chrome
+                    && let Some(thumb) = scene.scroll_thumb
+                {
                     let thumb = to_rect_f(thumb);
                     let thumb_radius = (thumb.right - thumb.left) / 2.0;
                     fill_rounded(

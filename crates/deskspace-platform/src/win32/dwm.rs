@@ -206,6 +206,7 @@ mod tests {
             corner_radius,
             dark: true,
             border: true,
+            chrome: true,
         };
         assert_eq!(corner_preference(style(Backdrop::Acrylic, 8)), DWMWCP_ROUND);
         assert_eq!(

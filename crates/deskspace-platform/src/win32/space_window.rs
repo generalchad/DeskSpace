@@ -68,6 +68,10 @@ pub(crate) struct SpaceWindowOptions {
     pub click_through: bool,
     pub on_top: bool,
     pub visible: bool,
+    /// Whether to register an OLE drop target. The desktop layer skips it: it
+    /// is display-only, and a drop target that does not move the files would
+    /// still tell a shell source the drop was performed.
+    pub register_drop: bool,
 }
 
 struct SpaceState {
@@ -164,7 +168,9 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         if options.visible {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         }
-        if let Err(error) = drop_target::register(hwnd, options.id, hosted) {
+        if options.register_drop
+            && let Err(error) = drop_target::register(hwnd, options.id, hosted)
+        {
             tracing::warn!(%error, "space will not accept dropped files");
         }
         Ok(hwnd)
@@ -323,7 +329,13 @@ struct Frame {
 
 impl Frame {
     fn for_style(style: SpaceStyle, hosted: bool) -> Self {
-        let radius = style.corner_radius.max(0);
+        // A chrome-less window (the desktop layer) has no rounded corners or
+        // border; it fills its whole rectangle.
+        let radius = if style.chrome {
+            style.corner_radius.max(0)
+        } else {
+            0
+        };
         if !hosted && style.dwm_draws_frame() {
             return Self {
                 paint: PaintFrame {
@@ -338,7 +350,7 @@ impl Frame {
             paint: PaintFrame {
                 opaque: hosted,
                 radius,
-                border: style.border,
+                border: style.chrome && style.border,
             },
             region_radius: (radius > 0 && hosted).then_some(radius),
         }

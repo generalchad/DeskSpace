@@ -13,14 +13,19 @@ pub struct SpaceStyle {
     pub corner_radius: i32,
     pub dark: bool,
     pub border: bool,
+    /// Whether the window has space chrome: a title bar and a border. The
+    /// desktop layer sets it false, so it reuses the space window and painter
+    /// with neither.
+    pub chrome: bool,
 }
 
 impl SpaceStyle {
     /// Whether DWM can draw these corners and the border itself. It only has
     /// square, 4 px, and 8 px corners, and its corners and border come with
-    /// window chrome that would show on clear (invisible) spaces.
+    /// window chrome that would show on clear (invisible) spaces. A chrome-less
+    /// window has no frame for DWM to draw.
     pub fn dwm_draws_frame(&self) -> bool {
-        self.backdrop != Backdrop::Clear && matches!(self.corner_radius, 0 | 4 | 8)
+        self.chrome && self.backdrop != Backdrop::Clear && matches!(self.corner_radius, 0 | 4 | 8)
     }
 }
 
@@ -28,6 +33,9 @@ impl SpaceStyle {
 /// window's client area.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpaceScene {
+    /// Whether to draw space chrome: the title bar and the border. The desktop
+    /// layer sets it false, so its items fill the whole window.
+    pub chrome: bool,
     pub title: String,
     pub title_height: i32,
     pub tint: Color,

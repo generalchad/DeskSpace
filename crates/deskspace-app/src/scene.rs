@@ -1,6 +1,9 @@
 use deskspace_core::item::ItemKind;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
-use deskspace_core::{Color, GridSpec, Item, ItemId, LabelShadow, Palette, Rect, Space, Theme};
+use deskspace_core::{
+    Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
+    Space, Theme,
+};
 use deskspace_platform::{IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
@@ -49,6 +52,19 @@ pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
         corner_radius: theme.effective_corner_radius() as i32,
         dark: theme.is_dark(system_dark),
         border: theme.show_border,
+        chrome: true,
+    }
+}
+
+/// The window style for the chrome-less desktop layer: no border or rounded
+/// corners, and a clear backdrop so only the loose items are drawn.
+pub fn layer_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
+    SpaceStyle {
+        backdrop: Backdrop::Clear,
+        corner_radius: 0,
+        dark: theme.is_dark(system_dark),
+        border: false,
+        chrome: false,
     }
 }
 
@@ -123,6 +139,7 @@ pub fn space_scene(
     };
 
     SpaceScene {
+        chrome: true,
         title: space.title.clone(),
         title_height: space.title_height,
         tint,
@@ -156,6 +173,91 @@ pub fn space_scene(
             view.scroll,
             theme.effective_corner_radius() as i32,
         ),
+    }
+}
+
+/// Builds the draw list for the chrome-less desktop layer (ROADMAP D7). A
+/// layer item's position is absolute, in virtual-desktop coordinates, so
+/// `origin` (the layer window's top-left) is subtracted for window-local
+/// rects. It has no title, border, or scroll.
+#[allow(clippy::too_many_arguments)]
+pub fn desktop_layer_scene(
+    layer: &DesktopLayer,
+    origin: Point,
+    theme: &Theme,
+    palette: &Palette,
+    layout: GridSpec,
+    metrics: ItemMetrics,
+    view: ViewState,
+    icons: &mut IconCache,
+) -> SpaceScene {
+    let cell = layout.cell();
+    let items = layer
+        .items()
+        .iter()
+        .map(|item| ItemVisual {
+            id: item.id.0,
+            rect: Rect::new(
+                item.position.x - origin.x,
+                item.position.y - origin.y,
+                cell.width,
+                cell.height,
+            ),
+            label: item_label(item, view.show_extensions),
+            icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+            state: if view.dragged.contains(&item.id) {
+                ItemState::Dragged
+            } else if view.selected.contains(&item.id) {
+                ItemState::Selected
+            } else if view.hovered == Some(item.id) {
+                ItemState::Hovered
+            } else {
+                ItemState::Normal
+            },
+            hovered: view.hovered == Some(item.id),
+            checked: view.checked.contains(&item.id),
+            cut: view.cut.contains(&item.id),
+            label_color: compressed_label(item, view.show_compressed_color),
+        })
+        .collect();
+
+    // The layer is transparent, so its labels always carry Explorer's desktop
+    // shadow to stay readable over the wallpaper, unless shadows are off.
+    let text_shadow = match theme.label_shadow {
+        LabelShadow::Off => None,
+        LabelShadow::Auto | LabelShadow::On => Some(contrast_shadow(palette.item_text)),
+    };
+
+    SpaceScene {
+        chrome: false,
+        title: String::new(),
+        title_height: 0,
+        tint: Color::TRANSPARENT,
+        title_fill: Color::TRANSPARENT,
+        title_text: palette.title_text,
+        item_text: palette.item_text,
+        hover_fill: palette.hover_fill,
+        selected_fill: palette.selected_fill,
+        border: Color::TRANSPARENT,
+        text_shadow,
+        label_lines: theme.label_lines.clamp(1, 2),
+        label_size: theme
+            .label_size
+            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
+        locked: false,
+        rolled_up: false,
+        highlight: false,
+        focused_item: view.focused.map(|id| id.0),
+        editing: None,
+        editing_item: None,
+        edit: palette.edit,
+        caret_visible: true,
+        metrics,
+        items,
+        show_check_boxes: view.show_check_boxes,
+        check_boxes_persistent: view.check_boxes_persistent,
+        marquee: view.marquee,
+        scroll_thumb: None,
     }
 }
 
@@ -523,6 +625,31 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(scene.focused_item, Some(4));
+    }
+
+    #[test]
+    fn desktop_layer_scene_maps_absolute_positions() {
+        let mut layer = DesktopLayer::default();
+        let mut item = Item::new(ItemId(4), "C:/missing/report.txt");
+        item.position = Point::new(500, 300);
+        layer.push_item(item);
+        let theme = Theme::default();
+        let scene = desktop_layer_scene(
+            &layer,
+            Point::new(100, 100),
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(!scene.chrome);
+        assert!(scene.scroll_thumb.is_none());
+        assert_eq!(scene.items.len(), 1);
+        assert_eq!(scene.items[0].rect.x, 400);
+        assert_eq!(scene.items[0].rect.y, 200);
+        assert!(scene.text_shadow.is_some());
     }
 
     #[test]

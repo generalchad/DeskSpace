@@ -73,6 +73,9 @@ struct Runtime {
     spaces_visible: bool,
     spaces: HashMap<u64, HWND>,
     settings: Option<HWND>,
+    /// The desktop layer window (ROADMAP D7), chrome-less and behind the
+    /// spaces. Created only when the app asks for it (`--takeover-layer`).
+    layer: Option<HWND>,
     /// Dark menus and settings window; set by the app (`Ui::set_ui_dark`).
     ui_dark: bool,
     /// The menu theme last flushed, so an unchanged mode skips the flush.
@@ -169,6 +172,7 @@ pub(crate) fn destroy_ui_windows() {
     let (windows, ghost, info_tip) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.extend(runtime.settings.take());
+        windows.extend(runtime.layer.take());
         (windows, runtime.drag_ghost.take(), runtime.info_tip.take())
     })
     .unwrap_or_default();
@@ -217,6 +221,7 @@ impl Ui {
             click_through,
             on_top,
             visible,
+            register_drop: true,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.spaces.insert(id, hwnd));
@@ -273,6 +278,64 @@ impl Ui {
             // SAFETY: space windows are owned by this runtime.
             unsafe {
                 let _ = ShowWindow(hwnd, command);
+            }
+        }
+    }
+
+    /// Creates the chrome-less desktop layer window spanning `rect`, reusing
+    /// the space window and painter. Idempotent: calling it again does nothing.
+    /// It is a `WS_CHILD` of the desktop host when one is in use and top-level
+    /// otherwise, kept at the bottom of the z-order.
+    pub fn create_desktop_layer(
+        &mut self,
+        rect: Rect,
+        style: SpaceStyle,
+    ) -> Result<(), PlatformError> {
+        let Some((host, click_through, on_top, exists)) = with_runtime(|runtime| {
+            (
+                runtime.host,
+                runtime.click_through,
+                runtime.on_top,
+                runtime.layer.is_some(),
+            )
+        }) else {
+            return Err(PlatformError::NotRunning);
+        };
+        if exists {
+            return Ok(());
+        }
+        let options = space_window::SpaceWindowOptions {
+            id: 0,
+            rect,
+            style,
+            host,
+            click_through,
+            on_top,
+            visible: true,
+            register_drop: false,
+        };
+        let hwnd = space_window::create(options)?;
+        with_runtime(|runtime| runtime.layer = Some(hwnd));
+        Ok(())
+    }
+
+    pub fn set_desktop_layer_rect(&mut self, rect: Rect) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.layer).flatten() {
+            space_window::set_rect(hwnd, rect);
+        }
+    }
+
+    pub fn set_desktop_layer_scene(&mut self, scene: SpaceScene) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.layer).flatten() {
+            space_window::set_scene(hwnd, scene);
+        }
+    }
+
+    pub fn destroy_desktop_layer(&mut self) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.layer.take()).flatten() {
+            // SAFETY: the layer window was created by this runtime.
+            unsafe {
+                let _ = DestroyWindow(hwnd);
             }
         }
     }
@@ -722,6 +785,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             spaces_visible: true,
             spaces: HashMap::new(),
             settings: None,
+            layer: None,
             ui_dark: false,
             menus_dark: None,
             tray_tooltip: options.tray_tooltip.clone(),
