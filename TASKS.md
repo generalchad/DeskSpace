@@ -287,32 +287,34 @@ is large.
 ## D. Reserved (strong model or maintainer; do not start)
 
 Listed so they are not attempted piecemeal. Each needs design work first.
+Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
+(`D1`-`D8`).
 
-- **D1. Split `deskspace-app/src/app.rs`** (~2,900 lines) into `app/`
+- **R1. Split `deskspace-app/src/app.rs`** (~2,900 lines) into `app/`
   submodules, each with its own `impl App` block: `persist`, `view`, `hit`,
   `selection`, `visibility`, `rename`, `pointer` (drag), `info_tip`,
   `files`, `clipboard`, `menus`, `settings_session`. Move `app::run` into
   `bootstrap.rs`. Pure moves, one commit, no behavior change.
-- **D2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
-  After D1. Collapses the five copies of "select only this item" and the
+- **R2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
+  After R1. Collapses the five copies of "select only this item" and the
   three copies of "forget this item everywhere".
-- **D3. Platform module layout.** Move `shell.rs` under `win32/` and split it
+- **R3. Platform module layout.** Move `shell.rs` under `win32/` and split it
   (desktop items, icon loading, pixel helpers); one icon decoder instead of
   two; a `win32/messages.rs` owning every `WM_APP + n`; generic helpers for
   `GWLP_USERDATA` window state and window-class registration; split
   `settings_window.rs` and `render/d2d.rs`; make internal modules private.
-- **D4. Keep IO out of core.** `deskspace-core/src/item.rs` reads file
+- **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads file
   metadata; move it to the app/platform and pass the values into
   `Command::AddItem`.
-- **D5. M2 desktop takeover design.** Needs answers to ROADMAP open questions
-  1 and 2.
-- **D6. Undo design.** Needs an answer to ROADMAP open question 3.
-- **D7. On-screen verification pass** (maintainer). The list is in
+- **R5. M2 desktop takeover design.** Resolved: ROADMAP D7 (model) and D8
+  (placement and safety). The work is I1-I8.
+- **R6. Undo design.** Needs an answer to ROADMAP open question 3.
+- **R7. On-screen verification pass** (maintainer). The list is in
   `CONTEXT.md` section 2, "Pending on-screen checks".
-- **D8. Auto-update design.** Resolved: ROADMAP D6. The work is E5 and
+- **R8. Auto-update design.** Resolved: ROADMAP D6. The work is E5 and
   E8-E11.
-- **D9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7.
-- **D10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
+- **R9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7.
+- **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
   SignPath Foundation (the project must meet their OSS terms: an OSI
   license, which Apache-2.0 is, and a public repository and build). Then add
   their GitHub Actions integration to `release.yml`: sign `deskspace.exe`
@@ -321,9 +323,9 @@ Listed so they are not attempted piecemeal. Each needs design work first.
   Actions secrets. This must land before or with the first release that has
   E9 (auto-update), because unsigned updates trigger SmartScreen on every
   version.
-- **D11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs D10,
+- **R11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs R10,
   and M2 may make it unnecessary.
-- **D12. First release dry run (maintainer).** After E1-E6. Follow
+- **R12. First release dry run (maintainer).** After E1-E6. Follow
   `RELEASING.md` with a pre-release version (for example `0.2.0-alpha.1`).
   Check:
   - the workflow publishes a pre-release with the zip, the `.sha256`, and
@@ -341,7 +343,7 @@ Listed so they are not attempted piecemeal. Each needs design work first.
   - what SmartScreen shows.
 
   Record the findings in `CONTEXT.md` section 10.
-- **D13. winget (maintainer, ROADMAP M8 item 8).** After the first stable
+- **R13. winget (maintainer, ROADMAP M8 item 8).** After the first stable
   (non-pre-release) version that has the installer.
   - Submit the first manifest to `microsoft/winget-pkgs` by hand (`wingetcreate
     new` with the `Setup.exe` URL), with package identifier
@@ -354,7 +356,7 @@ Listed so they are not attempted piecemeal. Each needs design work first.
 ## E. Release engineering (ROADMAP M8)
 
 Do E1-E4 in order. E5-E11 have their own dependencies, stated in each task.
-Code signing (D10), the first dry run (D12), and winget (D13) are maintainer
+Code signing (R10), the first dry run (R12), and winget (R13) are maintainer
 work. `.github/workflows/release.yml` already publishes a zip on a `v*` tag;
 read it before starting.
 
@@ -500,7 +502,7 @@ https://docs.velopack.io; if one differs, **stop and ask**.
   - Update `RELEASING.md` (the asset list and the pack id warning) and the
     `CONTEXT.md` section 10 note.
   - Done when: the workflow passes `actionlint` (or a careful read if it is
-    not installed). The real check is D12. **[needs human]**
+    not installed). The real check is R12. **[needs human]**
 
 - [ ] **E7. Uninstall cleanup and an install-root safety test.** After E5;
   the Run-key part needs C4.
@@ -519,7 +521,7 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     the storage path is inside `%LOCALAPPDATA%\<PACK_ID>`. Add a pure helper
     `fn is_inside(path, root) -> bool` with its own tests (case-insensitive,
     and `DeskSpace.App` is not inside `DeskSpace`).
-  - Done when: both tests pass. **[needs human]** check during D12: uninstall
+  - Done when: both tests pass. **[needs human]** check during R12: uninstall
     removes the Run value and the verb and leaves `%LOCALAPPDATA%\DeskSpace`
     intact.
 
@@ -633,7 +635,7 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     which matches D6 ("apply on restart").
   - Remove the E10 `TODO`. Mark F-45 "Done; check pending" in the ROADMAP
     feature index, and update `CONTEXT.md` (sections 6, 7, and 10).
-  - **[needs human]** check during D12: an `alpha.1` install updates to
+  - **[needs human]** check during R12: an `alpha.1` install updates to
     `alpha.2` and comes back with the same spaces and settings.
 
 ## F. Ad-hoc features
@@ -703,7 +705,8 @@ Remaining gaps from the controls review. Do them in order.
   label again starts an inline rename, as Explorer does.
 - [ ] **G5. Right-button drag.** A right drag shows the copy/move/create-shortcut
   menu on drop.
-- [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP D6.
+- [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP.md section 8, open
+  question 3.
 
 ## H. Per-space looks in the settings window (ROADMAP M3, F-46)
 
@@ -851,7 +854,7 @@ until I5-I7 all land, so no partial build hides the desktop.
     build through `Surface`. Resolve each surface's items, rect, layout, and
     scene through one accessor rather than `config.desktop.space(id)`
     directly.
-  - Keep spaces behavior identical; this is the D2-style refactor, done as
+  - Keep spaces behavior identical; this is the R2-style refactor, done as
     pure moves where possible.
   - Done when: all existing tests pass unchanged and the desktop layer
     responds to click, rubber-band, drag, drop, and open.

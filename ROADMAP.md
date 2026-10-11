@@ -491,7 +491,7 @@ workflow is possible without a mouse.
 
 Goal: a signed installer that works on a fresh machine.
 
-Decisions: D6. Work items: `TASKS.md` section E (ready to do) and D10-D13
+Decisions: D6. Work items: `TASKS.md` section E (ready to do) and R10-R13
 (maintainer work).
 
 Remaining:
