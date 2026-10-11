@@ -9,12 +9,12 @@ use deskspace_core::{Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog, desktop_directory,
     desktop_display, enumerate_desktop_items, hide_desktop_icons, rehide_desktop_icons,
-    restore_desktop_icons, space_dpi, virtual_desktop_rect,
+    restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
 };
 
-use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_style};
+use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_scene, space_style};
 
-use super::{App, HEALTH_MS, HEALTH_TIMER, Surface};
+use super::{App, EditTarget, HEALTH_MS, HEALTH_TIMER, Surface, tray_tooltip};
 
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -376,5 +376,108 @@ impl App {
         );
         ui.set_desktop_layer_rect(rect);
         ui.set_desktop_layer_scene(scene);
+    }
+
+    /// Repaints a surface; the layer repaints through its own window.
+    pub(super) fn refresh_surface(&mut self, ui: &mut Ui, surface: Surface) {
+        match surface {
+            Surface::Space(id) => self.refresh_space(ui, id),
+            Surface::Desktop => self.refresh_desktop_layer(ui),
+        }
+    }
+
+    /// Pushes the space's current geometry and draw list to its window.
+    pub(super) fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        let view = self.view_for(Surface::Space(id));
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let palette = self.palette_for(id);
+        let mut scene = space_scene(
+            space,
+            space.theme(&self.config.theme),
+            &palette,
+            self.layout_for(id),
+            self.metrics_for(id),
+            view,
+            &mut self.icons,
+        );
+        if let Some(session) = self
+            .edit
+            .as_ref()
+            .filter(|session| session.surface == Surface::Space(id))
+        {
+            match session.target {
+                EditTarget::Title => scene.editing = Some(session.text.clone()),
+                EditTarget::Item { id: item, .. } => {
+                    scene.editing_item = Some((item.0, session.text.clone()));
+                }
+            }
+        }
+        scene.caret_visible = self.caret_visible;
+        ui.set_space_rect(id.0, space.visible_rect());
+        ui.set_space_scene(id.0, scene);
+    }
+
+    pub(super) fn restyle_all(&mut self, ui: &mut Ui) {
+        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
+        for id in ids {
+            self.restyle_space(ui, id);
+        }
+    }
+
+    /// Re-applies one space's window style and repaints it.
+    pub(super) fn restyle_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        ui.set_space_style(id.0, self.style_for(id));
+        self.refresh_space(ui, id);
+    }
+
+    /// Re-flows every space for a changed grid: growing spaces resize to fit,
+    /// user-sized spaces keep their size and reflow.
+    pub(super) fn relayout_all(&mut self, ui: &mut Ui) {
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        for id in ids {
+            self.reflow_space(ui, id);
+        }
+    }
+
+    /// Re-flows one space for its current grid (icon size and monitor DPI) and
+    /// repaints it.
+    pub(super) fn reflow_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let bounds = work_area_at(space.rect.center());
+        let layout = self.layout_for(id);
+        self.config
+            .desktop
+            .apply_with_layout(Command::Reflow { id }, layout, bounds);
+        self.refresh_space(ui, id);
+    }
+
+    /// A space moved to a monitor with a different DPI: reflow it so icons and
+    /// spacing match that display.
+    pub(super) fn on_dpi_changed(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.reflow_space(ui, id);
+        self.refresh_desktop_layer(ui);
+        self.schedule_save(ui);
+    }
+
+    pub(super) fn refresh_tray(&self, ui: &mut Ui) {
+        ui.set_tray_tooltip(&tray_tooltip(&self.config.desktop));
+    }
+
+    /// Re-reads Explorer's display options and re-flows every space, as F5
+    /// refreshes the desktop.
+    pub(super) fn refresh_spaces(&mut self, ui: &mut Ui) {
+        self.refresh_shell_display(ui);
+        self.relayout_all(ui);
+        self.refresh_desktop_layer(ui);
     }
 }

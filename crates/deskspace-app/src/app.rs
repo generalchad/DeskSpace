@@ -18,7 +18,7 @@ use deskspace_platform::{
     system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
-use crate::scene::{desktop_layer_drag_scene, drag_scene, item_label, space_scene};
+use crate::scene::{desktop_layer_drag_scene, drag_scene, item_label};
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
 
@@ -671,14 +671,6 @@ impl App {
         }
     }
 
-    /// Repaints a surface; the layer repaints through its own window.
-    fn refresh_surface(&mut self, ui: &mut Ui, surface: Surface) {
-        match surface {
-            Surface::Space(id) => self.refresh_space(ui, id),
-            Surface::Desktop => self.refresh_desktop_layer(ui),
-        }
-    }
-
     /// The item whose Explorer-style check box contains `point`, when check
     /// boxes are shown. `point` is in desktop coordinates.
     fn checkbox_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
@@ -704,93 +696,6 @@ impl App {
             .flat_map(|space| space.items.iter())
             .find(|item| crate::storage::same_path(&item.path, path))
             .map(|item| item.id)
-    }
-
-    /// Pushes the space's current geometry and draw list to its window.
-    fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
-        let view = self.view_for(Surface::Space(id));
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let palette = self.palette_for(id);
-        let mut scene = space_scene(
-            space,
-            space.theme(&self.config.theme),
-            &palette,
-            self.layout_for(id),
-            self.metrics_for(id),
-            view,
-            &mut self.icons,
-        );
-        if let Some(session) = self
-            .edit
-            .as_ref()
-            .filter(|session| session.surface == Surface::Space(id))
-        {
-            match session.target {
-                EditTarget::Title => scene.editing = Some(session.text.clone()),
-                EditTarget::Item { id: item, .. } => {
-                    scene.editing_item = Some((item.0, session.text.clone()));
-                }
-            }
-        }
-        scene.caret_visible = self.caret_visible;
-        ui.set_space_rect(id.0, space.visible_rect());
-        ui.set_space_scene(id.0, scene);
-    }
-
-    fn restyle_all(&mut self, ui: &mut Ui) {
-        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
-        for id in ids {
-            self.restyle_space(ui, id);
-        }
-    }
-
-    /// Re-applies one space's window style and repaints it.
-    fn restyle_space(&mut self, ui: &mut Ui, id: SpaceId) {
-        ui.set_space_style(id.0, self.style_for(id));
-        self.refresh_space(ui, id);
-    }
-
-    /// Re-flows every space for a changed grid: growing spaces resize to fit,
-    /// user-sized spaces keep their size and reflow.
-    fn relayout_all(&mut self, ui: &mut Ui) {
-        let ids: Vec<SpaceId> = self
-            .config
-            .desktop
-            .spaces
-            .iter()
-            .map(|space| space.id)
-            .collect();
-        for id in ids {
-            self.reflow_space(ui, id);
-        }
-    }
-
-    /// Re-flows one space for its current grid (icon size and monitor DPI) and
-    /// repaints it.
-    fn reflow_space(&mut self, ui: &mut Ui, id: SpaceId) {
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let bounds = work_area_at(space.rect.center());
-        let layout = self.layout_for(id);
-        self.config
-            .desktop
-            .apply_with_layout(Command::Reflow { id }, layout, bounds);
-        self.refresh_space(ui, id);
-    }
-
-    /// A space moved to a monitor with a different DPI: reflow it so icons and
-    /// spacing match that display.
-    fn on_dpi_changed(&mut self, ui: &mut Ui, id: SpaceId) {
-        self.reflow_space(ui, id);
-        self.refresh_desktop_layer(ui);
-        self.schedule_save(ui);
-    }
-
-    fn refresh_tray(&self, ui: &mut Ui) {
-        ui.set_tray_tooltip(&tray_tooltip(&self.config.desktop));
     }
 
     /// Clears the item selection, as clicking elsewhere does in Explorer.
@@ -1103,14 +1008,6 @@ impl App {
             return;
         };
         self.scroll.insert(id, offset.clamp(0, max));
-    }
-
-    /// Re-reads Explorer's display options and re-flows every space, as F5
-    /// refreshes the desktop.
-    fn refresh_spaces(&mut self, ui: &mut Ui) {
-        self.refresh_shell_display(ui);
-        self.relayout_all(ui);
-        self.refresh_desktop_layer(ui);
     }
 
     /// Opens the context menu for the focused item, or for the current space
