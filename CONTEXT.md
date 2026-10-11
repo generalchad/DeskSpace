@@ -108,8 +108,9 @@ context menus, and a settings window in the first usable release (v0.2).
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Not yet: real desktop icon layer takeover (Explorer still shows the desktop
-  icons), lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
+- Not yet: crash-safe takeover restore and Win+D handling (the takeover itself
+  is opt-in), lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
+  undo
   for file moves, and mapping Explorer's view mode (list/details).
   See the parity matrix in section 9.
 
@@ -353,6 +354,7 @@ WindowSettings {
     toggle_hotkey: String,      // default "Ctrl+Alt+D"
     start_hidden: bool,         // default false
     start_with_windows: bool,   // default false; per-user Run key at sign-in
+    take_over_desktop: bool,    // default false; hide Explorer's icons (M2)
 }
 ```
 
@@ -380,6 +382,11 @@ WindowSettings {
   once at startup when enabled, so the stored path follows a moved install; a
   failure is logged at `warn` and never blocks Apply. The uninstaller (E7)
   removes it.
+- `window.take_over_desktop` (M2 takeover, opt-in) hides Explorer's desktop
+  icons and draws the loose items on DeskSpace's own layer. Turning it on (or
+  the hidden `--takeover` flag) also draws the layer; a clean exit and every
+  startup restore the icons, and `TaskbarCreated` plus a 5-second health timer
+  re-hide them after Explorer restarts.
 - `load_or_default` returns defaults when no file exists. If the file cannot be
   parsed, it copies it to `deskspace.toml.unreadable-<millis>.bak` before
   falling back to defaults; a file from a newer version is loaded but copied to
@@ -730,6 +737,14 @@ WindowSettings {
 
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
   `0x052C` spawn trick) for hosted placements.
+- `desktop_icons.rs` hides and restores Explorer's icon layer for the takeover
+  (M2): `hide`/`restore` hide or show the `SysListView32` of every
+  `SHELLDLL_DefView` (one per monitor), re-enumerating each time so a listview
+  Explorer recreates is found, and `rehide_if_active` re-hides only while
+  takeover is on. Only the listview is hidden, never the `SHELLDLL_DefView`, so
+  `find_host` and the shell-view COM reads keep working. `restore` runs in the
+  `run` teardown before `OleUninitialize`; `rehide_if_active` runs on
+  `TaskbarCreated` (Explorer restart) and from the app's health timer.
 - `shell.rs`: `enumerate_desktop_items` and `IconCache`.
   `enumerate_desktop_items` reads the desktop view's items and their positions
   (`IFolderView::ItemCount`/`Item`/`GetItemPosition`) once OLE is up, and
@@ -897,14 +912,14 @@ WindowSettings {
   running instance through its controller window instead of starting a second
   copy.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--show`,
-  `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`
-  and `--takeover-layer`.
+  `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`,
+  `--takeover-layer`, and `--takeover`.
 
 ## 9. spaces feature parity matrix
 
 | spaces feature | Status |
 |---|---|
-| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer is not taken over |
+| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in, no watchdog yet) |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
@@ -931,8 +946,13 @@ WindowSettings {
 
 ## 10. Known limitations and technical debt
 
-- **No desktop icon integration.** Explorer still owns the desktop icon
-  layer. Dropping a file moves it into storage, so it leaves the desktop.
+- **Desktop takeover is opt-in and new.** Explorer owns the desktop icon layer
+  by default. With "Take over the desktop" on (or the hidden `--takeover`
+  flag), DeskSpace hides every desktop `SysListView32` and draws the loose
+  items on its own layer; a clean exit and every startup restore the icons, and
+  `TaskbarCreated` and a 5-second health timer re-hide them after Explorer
+  restarts. Crash-safe restore (a watchdog helper) is not built yet (I6), and
+  spaces can still be hidden by Show Desktop (I7).
 - **File moves have no undo yet.** "Move back to desktop" and deleting a space
   return stored files; files from another drive stay in place (a move there
   would copy). There is no filesystem watcher: a stored file deleted outside

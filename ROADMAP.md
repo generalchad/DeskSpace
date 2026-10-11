@@ -168,7 +168,8 @@ A native, lightweight, offline Windows desktop organizer that:
 
 **In progress:**
 - *M2:* spaces and their items are complete and behave like Explorer.
-  Desktop takeover and undo have not started.
+  Desktop takeover is opt-in (hide, restore, and Explorer-restart re-hide are
+  in); the crash watchdog, Win+D watcher, and undo have not started.
 - *M3:* the tray, menus, and settings window work. A few pages and settings
   are still missing.
 
@@ -557,7 +558,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
-| F-01 | Spaces / icon groups | M2 | Partial: spaces work; desktop takeover open |
+| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in (watchdog and Win+D watcher open) |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |

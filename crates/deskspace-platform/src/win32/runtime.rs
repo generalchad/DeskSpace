@@ -44,8 +44,8 @@ use crate::win32::info_tip::{self, InfoTip};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    clipboard, console, controller, dark_mode, desktop_shell, drop_target, file_op, menu,
-    outside_click, settings_window, shell_selection, shell_view, space_window, tray,
+    clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
+    menu, outside_click, settings_window, shell_selection, shell_view, space_window, tray,
 };
 
 pub trait EventHandler {
@@ -813,6 +813,9 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     d2d::release_graphics();
     drop_target::release_image_helper();
     shell_view::release();
+    // Takeover: show Explorer's icons again so a clean exit never leaves the
+    // desktop blank. Idempotent, so this is harmless when takeover was off.
+    desktop_icons::restore();
     if com.is_ok() {
         // SAFETY: balances the successful OleInitialize above, after every
         // COM object owned by this thread has been released.

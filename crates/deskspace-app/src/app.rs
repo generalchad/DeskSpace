@@ -15,8 +15,9 @@ use deskspace_platform::{
     EditOutcome, Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache,
     ItemMenuChoice, ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions,
     SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
-    desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items, hotkey_id,
-    item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, space_dpi,
+    desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items,
+    hide_desktop_icons, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
+    rehide_desktop_icons, restore_desktop_icons, set_start_with_windows, space_dpi,
     system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
@@ -65,6 +66,11 @@ const HIGHLIGHT_MS: u32 = 1200;
 const TYPE_TIMER: usize = 7;
 /// How long a type-to-select prefix lasts without another keystroke.
 const TYPE_DELAY_MS: u32 = 900;
+/// Timer id for the desktop-takeover health check.
+const HEALTH_TIMER: usize = 8;
+/// How often, while takeover is on, to re-hide Explorer's icon layer in case
+/// it recreated it without broadcasting `TaskbarCreated`.
+const HEALTH_MS: u32 = 5_000;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -443,6 +449,9 @@ pub struct App {
     /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
     /// own icons.
     takeover_layer: bool,
+    /// Hide Explorer's icons and draw the loose items on the layer (hidden
+    /// `--takeover`, M2 takeover). Implies the layer.
+    takeover: bool,
 }
 
 impl App {
@@ -482,6 +491,7 @@ impl App {
             type_buffer: String::new(),
             open_settings_on_start: open_settings,
             takeover_layer: false,
+            takeover: false,
         }
     }
 
@@ -764,6 +774,18 @@ impl App {
         layer_style(&self.config.theme, self.system_dark)
     }
 
+    /// Whether the desktop layer window is drawn: the additive
+    /// `--takeover-layer`, or the full takeover (`--takeover` or the setting).
+    fn layer_active(&self) -> bool {
+        self.takeover_layer || self.desktop_takeover()
+    }
+
+    /// Whether DeskSpace takes over the desktop by hiding Explorer's icons:
+    /// the hidden `--takeover` flag or the saved setting.
+    fn desktop_takeover(&self) -> bool {
+        self.takeover || self.config.window.take_over_desktop
+    }
+
     /// The loose desktop items for the layer: the desktop entries that carry a
     /// position and are not already held by a space. The `ItemId`s are
     /// placeholders; `SyncDesktop` reconciles them by path.
@@ -792,16 +814,16 @@ impl App {
     }
 
     /// Creates the layer window if needed, refreshes the model's loose items
-    /// from the shell snapshot, and repaints. A no-op unless the hidden
-    /// `--takeover-layer` flag is set.
-    fn sync_desktop_layer(&mut self, ui: &mut Ui) {
-        if !self.takeover_layer {
-            return;
+    /// from the shell snapshot, and repaints. Returns whether the layer window
+    /// is up; a no-op returning false unless `layer_active`.
+    fn sync_desktop_layer(&mut self, ui: &mut Ui) -> bool {
+        if !self.layer_active() {
+            return false;
         }
         let rect = virtual_desktop_rect();
         if let Err(error) = ui.create_desktop_layer(rect, self.layer_style()) {
             tracing::warn!(%error, "could not create the desktop layer window");
-            return;
+            return false;
         }
         let items = self.desktop_layer_items();
         self.config.desktop.apply_with_layout(
@@ -810,11 +832,43 @@ impl App {
             rect,
         );
         self.refresh_desktop_layer(ui);
+        true
+    }
+
+    /// Brings the layer and Explorer-icon hiding in line with the settings:
+    /// draw the layer, then hide or restore Explorer's icons. Hiding waits
+    /// until the layer is up, so a failure never leaves the desktop blank.
+    fn apply_takeover(&mut self, ui: &mut Ui) {
+        let takeover = self.desktop_takeover();
+        let layer_up = self.sync_desktop_layer(ui);
+        if takeover && layer_up {
+            // Tests must not hide the developer's real desktop.
+            if !cfg!(test) {
+                hide_desktop_icons();
+            }
+            ui.set_timer(HEALTH_TIMER, HEALTH_MS);
+        } else {
+            if !cfg!(test) {
+                restore_desktop_icons();
+            }
+            ui.clear_timer(HEALTH_TIMER);
+        }
+        if !self.layer_active() {
+            ui.destroy_desktop_layer();
+        }
+    }
+
+    /// The health timer: re-hide Explorer's icons if it recreated its layer
+    /// without broadcasting `TaskbarCreated`.
+    fn health_tick(&self) {
+        if !cfg!(test) {
+            rehide_desktop_icons();
+        }
     }
 
     /// Pushes the desktop layer's rect and draw list to its window.
     fn refresh_desktop_layer(&mut self, ui: &mut Ui) {
-        if !self.takeover_layer {
+        if !self.layer_active() {
             return;
         }
         let rect = virtual_desktop_rect();
@@ -1774,7 +1828,7 @@ impl App {
         let surface = Surface::of(id);
         let exists = match surface {
             Surface::Space(id) => self.config.desktop.space(id).is_some(),
-            Surface::Desktop => self.takeover_layer,
+            Surface::Desktop => self.layer_active(),
         };
         if !exists {
             return;
@@ -2422,7 +2476,7 @@ impl App {
         }
         // A loose desktop item that was dropped in has moved off the desktop,
         // so reconcile the layer now instead of at the next shell refresh.
-        if self.takeover_layer {
+        if self.layer_active() {
             self.resync_desktop_layer(ui);
         }
         self.refresh_tray(ui);
@@ -2433,7 +2487,7 @@ impl App {
     /// after an operation that moved or renamed a loose file, so the layer
     /// follows without waiting for the next shell change.
     fn resync_desktop_layer(&mut self, ui: &mut Ui) {
-        if !self.takeover_layer {
+        if !self.layer_active() {
             return;
         }
         self.refresh_desktop_entries();
@@ -2632,7 +2686,7 @@ impl App {
             self.refresh_space(ui, id);
         }
         // A cut loose item drawn ghosted on the layer needs its ghost cleared.
-        if self.takeover_layer {
+        if self.layer_active() {
             self.refresh_desktop_layer(ui);
         }
     }
@@ -3450,6 +3504,12 @@ impl App {
         if start_changed {
             self.sync_start_with_windows(self.config.window.start_with_windows);
         }
+        let takeover_changed = self.settings.as_ref().is_some_and(|session| {
+            session.saved_window.take_over_desktop != self.config.window.take_over_desktop
+        });
+        if takeover_changed {
+            self.apply_takeover(ui);
+        }
         self.save();
         if let Some(session) = self.settings.as_mut() {
             session.hotkey_text = self.config.window.toggle_hotkey.clone();
@@ -3523,7 +3583,7 @@ impl EventHandler for App {
                 // OLE is up by now, so the desktop view can be queried.
                 self.shell_display = desktop_display();
                 self.refresh_desktop_entries();
-                self.sync_desktop_layer(ui);
+                self.apply_takeover(ui);
                 self.sync_windows(ui);
                 // Positions are derived from the grid; recompute them so a
                 // stored layout from another icon size or DPI is refreshed.
@@ -3576,6 +3636,7 @@ impl EventHandler for App {
             Event::Timer { id } if id == HIGHLIGHT_TIMER => self.clear_highlight(ui),
             // The type-to-select prefix expired; the next key starts fresh.
             Event::Timer { id } if id == TYPE_TIMER => self.type_buffer.clear(),
+            Event::Timer { id } if id == HEALTH_TIMER => self.health_tick(),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
@@ -3676,6 +3737,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 
     let mut app = App::new(config, store, hidden, cli.settings);
     app.takeover_layer = cli.takeover_layer;
+    app.takeover = cli.takeover;
     tracing::info!(
         path = %app.store.path().display(),
         storage = %app.storage.root().display(),
@@ -4264,6 +4326,31 @@ mod tests {
     fn the_layer_id_is_the_desktop_surface() {
         assert_eq!(Surface::of(SpaceId(0)), Surface::Desktop);
         assert_eq!(Surface::of(SpaceId(7)), Surface::Space(SpaceId(7)));
+    }
+
+    #[test]
+    fn takeover_activates_the_layer_and_icon_hiding() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        assert!(!app.layer_active());
+        assert!(!app.desktop_takeover());
+
+        // The additive dev flag draws the layer but does not hide icons.
+        app.takeover_layer = true;
+        assert!(app.layer_active());
+        assert!(!app.desktop_takeover());
+
+        // The full takeover flag hides icons and implies the layer.
+        app.takeover_layer = false;
+        app.takeover = true;
+        assert!(app.layer_active());
+        assert!(app.desktop_takeover());
+
+        // The saved setting alone does the same.
+        app.takeover = false;
+        app.config.window.take_over_desktop = true;
+        assert!(app.layer_active());
+        assert!(app.desktop_takeover());
     }
 
     #[test]

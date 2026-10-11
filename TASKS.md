@@ -869,7 +869,8 @@ until I5-I7 all land, so no partial build hides the desktop.
   - **[needs human]** check: on the layer, select and drag an icon; drop a
     loose item onto a space and confirm the file moves.
 
-- [ ] **I5. Hide and restore Explorer's icon layer (platform).**
+- [ ] **I5. Hide and restore Explorer's icon layer (platform).** (awaiting
+  check)
   - New `crates/deskspace-platform/src/win32/desktop_icons.rs`: `hide()`
     finds every `SHELLDLL_DefView` (enumerate `Progman` and the wallpaper
     `WorkerW` children, plus top-level windows) and hides its `SysListView32`
@@ -891,6 +892,11 @@ until I5-I7 all land, so no partial build hides the desktop.
   - **[needs human]** check: enable takeover, confirm the strip; exit and
     confirm the icons return; kill and restart Explorer and confirm the strip
     re-hides.
+  - Implemented as decided during the work: `hide`/`restore` re-enumerate on
+    every call instead of tracking handles, so a listview Explorer recreates is
+    restored rather than a stale handle being shown; enabling takeover also
+    draws the layer (no blank desktop); the health timer is the app's id 8,
+    armed only while takeover is on.
 
 - [ ] **I6. Crash-safe restore (watchdog helper).** After I5.
   - A helper process started before the icons are hidden. Either

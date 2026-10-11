@@ -27,7 +27,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
-use crate::win32::{keyboard, outside_click, runtime, shell_items};
+use crate::win32::{desktop_icons, keyboard, outside_click, runtime, shell_items};
 
 pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 /// Posted by a second launch to ask this instance to show its spaces.
@@ -234,6 +234,9 @@ unsafe extern "system" fn wndproc(
             }
             _ if message != 0 && message == TASKBAR_CREATED.load(Ordering::SeqCst) => {
                 tray::add(window, &runtime::tray_tooltip());
+                // Explorer restarted and recreated its desktop listview; hide
+                // it again if takeover is on.
+                desktop_icons::rehide_if_active();
                 LRESULT(0)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),

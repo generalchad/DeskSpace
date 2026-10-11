@@ -65,6 +65,7 @@ pub mod field {
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;
+    pub const TAKE_OVER_DESKTOP: u32 = 50;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
@@ -577,6 +578,11 @@ fn general_page(config: &Config, session: &Session) -> SettingsPage {
                 "Start DeskSpace when you sign in",
                 config.window.start_with_windows,
             ),
+            Field::toggle(
+                field::TAKE_OVER_DESKTOP,
+                "Take over the desktop (hide Explorer's icons)",
+                config.window.take_over_desktop,
+            ),
             Field::choice(
                 field::UI_MODE,
                 "Settings and menus",
@@ -753,6 +759,10 @@ pub fn apply_field(
                 config.window.start_with_windows = on;
                 Effect::Pending
             }
+            (field::TAKE_OVER_DESKTOP, FieldValue::Toggle(on)) => {
+                config.window.take_over_desktop = on;
+                Effect::Pending
+            }
             (field::HOTKEY, FieldValue::Text(text)) => {
                 session.hotkey_text = text;
                 session.hotkey_error = None;
@@ -889,6 +899,20 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.start_with_windows);
+    }
+
+    #[test]
+    fn take_over_desktop_is_pending() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::TAKE_OVER_DESKTOP,
+            FieldValue::Toggle(true),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(config.window.take_over_desktop);
     }
 
     #[test]

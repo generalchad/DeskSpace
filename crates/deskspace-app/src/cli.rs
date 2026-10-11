@@ -76,6 +76,12 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub takeover_layer: bool,
 
+    /// Development aid: take over the desktop icon layer, hiding Explorer's
+    /// icons and drawing the loose items on DeskSpace's own layer (M2
+    /// takeover).
+    #[arg(long, hide = true)]
+    pub takeover: bool,
+
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 }

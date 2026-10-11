@@ -4,6 +4,7 @@ mod console;
 mod controller;
 mod dark_mode;
 pub mod desktop_entry;
+pub mod desktop_icons;
 pub mod desktop_shell;
 pub mod display_settings;
 pub mod dpi;

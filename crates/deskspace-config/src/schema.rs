@@ -29,6 +29,9 @@ pub struct WindowSettings {
     pub start_hidden: bool,
     /// Run DeskSpace at sign-in through the per-user `Run` key.
     pub start_with_windows: bool,
+    /// Hide Explorer's desktop icons and draw the loose items on DeskSpace's
+    /// own desktop layer (M2 takeover). Off by default.
+    pub take_over_desktop: bool,
 }
 
 impl Default for WindowSettings {
@@ -38,6 +41,7 @@ impl Default for WindowSettings {
             toggle_hotkey: "Ctrl+Alt+D".to_string(),
             start_hidden: false,
             start_with_windows: false,
+            take_over_desktop: false,
         }
     }
 }
@@ -263,6 +267,15 @@ mod tests {
     fn start_with_windows_defaults_to_false() {
         let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
         assert!(!parsed.window.start_with_windows);
+    }
+
+    #[test]
+    fn take_over_desktop_defaults_to_false_and_parses_when_set() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert!(!parsed.window.take_over_desktop);
+        let parsed: Config =
+            toml::from_str("version = 2\n[window]\ntake_over_desktop = true\n").unwrap();
+        assert!(parsed.window.take_over_desktop);
     }
 
     #[test]
