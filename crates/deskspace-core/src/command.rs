@@ -6,8 +6,8 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemKind};
 use crate::layout::{
-    GridSpec, arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions,
-    snap_rect,
+    GridSpec, arrange_space, clamp_to_bounds, fit_rect_width, position_items, resize_rect,
+    resolve_collisions, snap_rect,
 };
 use crate::space::{ResizeEdges, SpaceLook};
 
@@ -232,7 +232,14 @@ impl Desktop {
                     return CommandOutcome::Rejected;
                 }
                 let min = layout.min_space_size();
-                space.rect = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
+                let resized = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
+                // A width drag lands on whole columns, so the padding is equal
+                // on both sides instead of the remainder sitting on the right.
+                space.rect = if edges.left || edges.right {
+                    fit_rect_width(resized, edges, &layout)
+                } else {
+                    resized
+                };
                 space.user_sized = true;
                 position_items(space, layout);
                 CommandOutcome::Applied
@@ -663,7 +670,9 @@ mod tests {
         );
         assert_eq!(outcome, CommandOutcome::Applied);
         let sized = desktop.space(id).unwrap().rect;
-        assert_eq!(sized, Rect::new(0, 0, 480, 320));
+        // Width 480 fits four columns of 106; it rounds down to 438 so the
+        // padding is equal, while the height is left as dragged.
+        assert_eq!(sized, Rect::new(0, 0, 438, 320));
         for index in 0..20 {
             desktop.apply(
                 Command::AddItem {
@@ -680,6 +689,49 @@ mod tests {
         desktop.apply(Command::FitToContents { id }, bounds());
         assert!(!desktop.space(id).unwrap().user_sized);
         assert_ne!(desktop.space(id).unwrap().rect.size(), sized.size());
+    }
+
+    #[test]
+    fn a_resized_space_has_equal_side_padding() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(100, 0, 300, 300));
+        let layout = desktop.layout;
+        for name in ["one", "two", "three", "four", "five", "six"] {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("{name}.txt").into(),
+                },
+                bounds(),
+            );
+        }
+        let edges = ResizeEdges {
+            right: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            desktop.apply(
+                Command::ResizeSpace {
+                    id,
+                    edges,
+                    to: Point::new(100 + 560, 60),
+                },
+                bounds(),
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        // The width is exactly a whole number of columns, so the padding is
+        // equal on both sides instead of the remainder landing on the right.
+        assert_eq!(space.rect.width, layout.fit_width(space.rect.width));
+        let columns = layout.columns_for(space.rect.width);
+        let last_column_x = layout.padding + (columns - 1) * (layout.cell_width + layout.gap);
+        assert_eq!(space.items.first().unwrap().position.x, layout.padding);
+        assert_eq!(
+            space.rect.width - (last_column_x + layout.cell_width),
+            layout.padding,
+            "left and right padding match"
+        );
     }
 
     #[test]

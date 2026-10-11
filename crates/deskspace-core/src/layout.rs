@@ -77,6 +77,18 @@ impl GridSpec {
         ((width - self.padding * 2 + self.gap) / step).max(1)
     }
 
+    /// The width that holds `columns` whole columns with equal edge padding.
+    pub fn width_for_columns(&self, columns: i32) -> i32 {
+        let columns = columns.max(1);
+        self.padding * 2 + columns * (self.cell_width + self.gap) - self.gap
+    }
+
+    /// `width` rounded down to whole columns, so a user-sized space has the
+    /// same padding on both sides instead of the remainder on the right.
+    pub fn fit_width(&self, width: i32) -> i32 {
+        self.width_for_columns(self.columns_for(width))
+    }
+
     /// The smallest space a user can resize to: one cell plus padding.
     pub fn min_space_size(&self) -> Size {
         Size::new(
@@ -127,6 +139,18 @@ pub fn resize_rect(
             .max(top + min.height);
     }
     Rect::new(left, top, right - left, bottom - top)
+}
+
+/// Rounds `rect`'s width down to whole columns, keeping equal edge padding.
+/// The grabbed edge stays put, so a left resize moves the left edge and any
+/// other resize moves the right one.
+pub fn fit_rect_width(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect {
+    let width = spec.fit_width(rect.width);
+    if edges.left {
+        Rect::new(rect.right() - width, rect.y, width, rect.height)
+    } else {
+        Rect::new(rect.x, rect.y, width, rect.height)
+    }
 }
 
 /// Sizes the space to fit its items (unless the user sized it) and lays the
@@ -296,6 +320,43 @@ mod tests {
         assert_eq!(spec.columns_for(225), 1);
         assert_eq!(spec.columns_for(226), 2);
         assert_eq!(spec.columns_for(0), 1);
+    }
+
+    #[test]
+    fn width_fits_whole_columns() {
+        let spec = GridSpec::default();
+        // One column is padding + cell + padding; each further column adds 106.
+        assert_eq!(spec.width_for_columns(1), 120);
+        assert_eq!(spec.width_for_columns(4), 438);
+        assert_eq!(spec.fit_width(480), 438);
+        assert_eq!(spec.fit_width(438), 438, "already exact");
+        assert_eq!(spec.fit_width(437), 332, "rounds down to three columns");
+        assert_eq!(spec.fit_width(0), spec.min_space_size().width);
+    }
+
+    #[test]
+    fn fit_rect_width_keeps_the_grabbed_edge() {
+        let spec = GridSpec::default();
+        let rect = Rect::new(100, 20, 480, 200);
+        let right = fit_rect_width(
+            rect,
+            ResizeEdges {
+                right: true,
+                ..ResizeEdges::NONE
+            },
+            &spec,
+        );
+        assert_eq!(right, Rect::new(100, 20, 438, 200));
+        let left = fit_rect_width(
+            rect,
+            ResizeEdges {
+                left: true,
+                ..ResizeEdges::NONE
+            },
+            &spec,
+        );
+        assert_eq!(left.right(), rect.right(), "the far edge stays put");
+        assert_eq!(left.width, 438);
     }
 
     #[test]

@@ -284,7 +284,10 @@ GridSpec {
   cell and gap outright.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
-  the work area. `scroll_step()` is one row per wheel notch.
+  the work area. A left/right resize then rounds the width to whole columns
+  (`fit_rect_width` / `GridSpec::fit_width`), so a user-sized space keeps equal
+  padding on both sides instead of the remainder landing on the right; the
+  grabbed edge stays put. `scroll_step()` is one row per wheel notch.
 - `snap_to_grid` / `snap_rect` snap positions to the grid.
 - `clamp_to_bounds` keeps rects inside the work area.
 - `resolve_collisions` pushes overlapping spaces down.
@@ -304,8 +307,9 @@ the stored base grid. Variants:
 `SetDesktopItemPosition`.
 
 Move/resize commands reject locked spaces and snap to the grid; `ResizeSpace`
-also rejects rolled-up spaces and marks the space user-sized, and
-`FitToContents` clears that again. `bounds` is the
+also rejects rolled-up spaces, marks the space user-sized, and fits the dragged
+width to whole columns, and `FitToContents` clears the user size again (so the
+space grows to fit its items). `bounds` is the
 work area of the monitor nearest the action (`work_area_at`).
 `CustomizeSpace { id, on, seed }` turns a space's own look on or off, seeding
 it from `seed` (the global settings) only when it has none. `SetSpaceLook {

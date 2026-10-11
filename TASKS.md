@@ -743,6 +743,14 @@ Small requests, one commit each.
   type with Shift, Caps Lock on, Caps Lock off, Caps+Shift, and toggling Caps
   mid-name; Shift+digit gives the symbol; no case gets stuck.
 
+- [ ] **F9. Fit a resized space to whole columns.** (awaiting check) A
+  user-sized space kept its dragged width, so `position_items` left-aligned the
+  grid and the remainder landed on the right (the "Email" space: left padding
+  12, right 24). `ResizeSpace` now rounds a horizontal resize down to whole
+  columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
+  put), so both side paddings match. **[needs human]** check: drag a space's
+  right edge and see it settle on whole columns with even left/right padding.
+
 ## G. More Explorer-standard controls
 
 Remaining gaps from the controls review. Do them in order.
