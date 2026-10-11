@@ -406,15 +406,15 @@ pub fn build_form(
             field.enabled = false;
         }
     }
-    if let Some(space) = space {
-        // Fitting is geometry, not a look setting, so it stays available while
-        // the space follows Global; it only applies to a resized, unlocked
-        // space, matching the space menu's "Fit to contents".
-        pages[page::LAYOUT].fields.push(
-            Field::button(field::FIT_CONTENTS, "", "Fit to contents")
-                .enabled(space.user_sized && !space.locked),
-        );
-    }
+    // Always built, so the form keeps its shape when the scope changes; it
+    // applies only to a resized, unlocked space and is grey for Global. Fitting
+    // is geometry, not a look setting, so it is not caught by the `editable`
+    // disable above and stays available while a space follows Global, matching
+    // the space menu's "Fit to contents".
+    pages[page::LAYOUT].fields.push(
+        Field::button(field::FIT_CONTENTS, "", "Fit to contents")
+            .enabled(space.is_some_and(|space| space.user_sized && !space.locked)),
+    );
     pages.push(general_page(config));
     pages.push(new_spaces_page(config));
     pages.push(hotkeys_page(session));
@@ -1686,11 +1686,27 @@ mod tests {
     }
 
     #[test]
-    fn global_has_no_fit_to_contents_button() {
+    fn global_fit_to_contents_is_present_but_disabled() {
         let (config, _) = config_with_space("Work");
         let session = Session::new(&config);
         let form = build_form(&config, &session, true, Path::new("x"));
-        assert!(form.field(field::FIT_CONTENTS).is_none());
+        // Present for Global too, so the page shape does not change with the
+        // scope, but greyed because no space is being edited.
+        let field = form.field(field::FIT_CONTENTS).expect("present");
+        assert!(!field.enabled);
+    }
+
+    #[test]
+    fn the_form_shape_is_stable_across_scopes() {
+        // The settings window diffs a new form onto the live controls and
+        // panics if the page shape changes, so Global and a space must build
+        // the same pages and fields (selecting a space must not add a field).
+        let (config, id) = config_with_space("Work");
+        let global = build_form(&config, &Session::new(&config), true, Path::new("x"));
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
+        let space = build_form(&config, &session, true, Path::new("x"));
+        assert!(global.same_shape(&space));
     }
 
     #[test]

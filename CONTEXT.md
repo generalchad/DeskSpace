@@ -763,8 +763,9 @@ WindowSettings {
   page's reset becomes "Match global appearance". A space's header also carries
   a "Delete space" button, which runs the same delete (with its confirmation)
   and then falls back to Global; deletion is immediate, so Cancel does not
-  bring the space back. The Layout page carries a "Fit to contents" button for a
-  space (grey unless it is resized and unlocked), which runs the same
+  bring the space back. The Layout page carries a "Fit to contents" button
+  (built for every scope so the page shape stays constant, grey unless a
+  resized, unlocked space is being edited), which runs the same
   `FitToContents` as the space menu; like a menu edit it commits at once, so
   Cancel does not resize the space back. Cancel restores each
   space's `SpaceSnapshot`; a space menu edit made while the window is open is
