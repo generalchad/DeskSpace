@@ -859,9 +859,11 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   - The takeover is opt-in (`take_over_desktop`, and the hidden `--takeover`
     flag); the Win+D watcher (I7) is still open.
 - **M2 crash-safe restore (`TASKS.md` I6).**
-  - Before the icons are hidden the app launches a watchdog of the same
-    executable (`deskspace --watchdog <pid>`), which waits on the main process
-    and re-shows every listview unless a clean-exit event was signaled.
+  - Before the icons are hidden the app launches a dedicated watchdog
+    (`deskspace-watchdog.exe`, a second binary of `deskspace-app`) detached,
+    and the watchdog re-parents itself so killing the app by name or by process
+    tree leaves it running. It waits on the main process and re-shows every
+    listview unless a clean-exit event was signaled.
   - The runtime teardown signals that event right after it restores the icons,
     so the watchdog acts only on a crash; a named mutex keeps a stray watchdog
     a no-op.

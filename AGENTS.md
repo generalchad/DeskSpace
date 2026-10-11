@@ -73,7 +73,8 @@ crates/deskspace-config    Serde/TOML configuration schema and persistence.
 crates/deskspace-platform  UI runtime, space windows, DWM, Direct2D painter,
                            tray, menus, settings window, shell, hotkeys.
 crates/deskspace-app       Application binary, CLI, event handler, scene and
-                           settings-form builders.
+                           settings-form builders, and the `deskspace-watchdog`
+                           helper binary.
 ```
 
 Dependency direction: `app -> {config, platform} -> core`. `core` depends on

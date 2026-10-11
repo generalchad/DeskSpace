@@ -487,7 +487,8 @@ https://docs.velopack.io; if one differs, **stop and ask**.
   - `vpk download github --repoUrl <repo> --token ${{ github.token }}
     --outputDir releases`, so `vpk pack` can build deltas. It must not fail
     the job when there is no previous Velopack release (the first one).
-  - Stage `deskspace.exe`, `LICENSE`, and `NOTICE` into a directory and run
+  - Stage `deskspace.exe`, `deskspace-watchdog.exe` (the I6 takeover
+    helper), `LICENSE`, and `NOTICE` into a directory and run
     `vpk pack --packId DeskSpace.App --packVersion <version> --packDir
     <stage> --mainExe deskspace.exe --packTitle DeskSpace --packAuthors
     "Timothy W. Brown" --icon assets/deskspace.ico --noPortable --outputDir
@@ -906,15 +907,21 @@ until I5-I7 all land, so no partial build hides the desktop.
   - Update `CONTEXT.md` section 6.
   - **[needs human]** check: enable takeover, kill `deskspace.exe` from Task
     Manager, and confirm the desktop icons come back.
-  - Landed in `crates/deskspace-platform/src/win32/watchdog.rs`: the app calls
-    `arm_watchdog` (per-pid clean-exit event + `deskspace --watchdog <pid>`,
-    created with `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`) just before
-    hiding the icons, and the runtime teardown signals the event right after
-    `desktop_icons::restore`. The watchdog polls the event once the parent
-    exits and restores the icons only when it was never signaled; a per-pid
-    named mutex keeps a stray watchdog a no-op. `main` handles the flag before
-    `Cli::parse`. Pure `watchdog_pid` / `is_watchdog` / `should_restore` are
-    tested; the process wait and restore need the on-screen check.
+  - Landed in `crates/deskspace-platform/src/win32/watchdog.rs` and the
+    `deskspace-watchdog` binary (`crates/deskspace-app/src/watchdog_main.rs`):
+    a separate executable with a distinct name, launched detached, so a bulk
+    kill of `deskspace.exe` by image name or a closed console leaves it
+    running. It re-parents itself once (`respawn_reparented`) so ending the
+    app's process tree cannot reach it either. The app calls `arm_watchdog`
+    (per-pid clean-exit event) just before hiding the icons, and the runtime
+    teardown signals the event right after `desktop_icons::restore`. The
+    watchdog polls the event once the parent exits and restores the icons only
+    when it was never signaled; a per-pid named mutex keeps a stray watchdog a
+    no-op. Pure `watchdog_pid` / `is_watchdog` / `should_restore` are tested;
+    the process wait and restore need the on-screen check.
+    - Packaging note: the release must ship `deskspace-watchdog.exe` beside
+      `deskspace.exe` in both the Velopack installer and the portable zip (see
+      E6); without it the takeover silently loses crash safety.
 
 - [ ] **I7. Win+D watcher.** After I5.
   - Spike first: find the reliable signal, on Windows 11 build 26300, that

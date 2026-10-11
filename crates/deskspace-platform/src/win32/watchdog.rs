@@ -3,16 +3,19 @@
 //!
 //! Hiding Explorer's `SysListView32` icon layer is only safe if a crash cannot
 //! leave the desktop blank. Before the icons are hidden the app launches a
-//! watchdog of the same executable (`deskspace --watchdog <pid>`), which waits
-//! on the main process and re-shows every listview unless the main process
-//! signaled a clean exit. The clean-exit event is created before the icons are
-//! hidden and set in the runtime teardown, right after the icons are restored,
-//! so the watchdog acts only when the main process died without reaching its
+//! small dedicated watchdog (`deskspace-watchdog.exe <pid>`), which waits on the
+//! main process and re-shows every listview unless the main process signaled a
+//! clean exit. The clean-exit event is created before the icons are hidden and
+//! set in the runtime teardown, right after the icons are restored, so the
+//! watchdog acts only when the main process died without reaching its
 //! teardown.
 //!
-//! The watchdog is best-effort: if it cannot be launched, the takeover still
-//! runs as it did before the watchdog existed. A named mutex makes a stray
-//! watchdog a no-op, so two of them never fight over one parent.
+//! The watchdog is a separate executable with a distinct name, launched
+//! detached, so killing DeskSpace by image name, closing its console, or
+//! ending its process tree leaves the watchdog running. It is best-effort: if
+//! it cannot be launched, the takeover still runs as it did before the
+//! watchdog existed. A named mutex makes a stray watchdog a no-op, so two of
+//! them never fight over one parent.
 
 use std::ffi::c_void;
 use std::os::windows::process::CommandExt;
@@ -24,7 +27,7 @@ use windows::Win32::Foundation::{
     WAIT_OBJECT_0,
 };
 use windows::Win32::System::Threading::{
-    CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CreateEventW, CreateMutexW, INFINITE, OpenEventW,
+    CREATE_BREAKAWAY_FROM_JOB, CreateEventW, CreateMutexW, DETACHED_PROCESS, INFINITE, OpenEventW,
     OpenProcess, PROCESS_SYNCHRONIZE, SYNCHRONIZATION_SYNCHRONIZE, SetEvent, WaitForSingleObject,
 };
 use windows::core::PCWSTR;
@@ -32,19 +35,19 @@ use windows::core::PCWSTR;
 use crate::win32::desktop_icons;
 use crate::win32::system::wide;
 
-/// The flag `main` recognizes before it parses the CLI.
-const WATCHDOG_FLAG: &str = "--watchdog";
+/// Set on the watchdog copy that waits, so it does not re-parent again.
+const REPARENT_ENV: &str = "DESKSPACE_WATCHDOG_REPARENTED";
 
 /// The main process's clean-exit event handle, or 0 while none is armed.
 static CLEAN_EXIT: AtomicIsize = AtomicIsize::new(0);
 /// Whether a watchdog has been launched for this process.
 static ARMED: AtomicBool = AtomicBool::new(false);
 
-/// The pid from `--watchdog <pid>`, if the arguments ask this process to run as
-/// a watchdog. Pure, so `main` can call it before parsing the CLI.
+/// The parent pid this process was launched to watch, from the dedicated
+/// watchdog's single argument. Pure, so the watchdog's `main` parses its
+/// arguments before doing anything.
 pub fn watchdog_pid(args: &[String]) -> Option<u32> {
-    let index = args.iter().position(|arg| arg == WATCHDOG_FLAG)?;
-    args.get(index + 1)?.parse().ok()
+    args.first()?.parse().ok()
 }
 
 /// Whether `args` ask this process to run as the takeover watchdog.
@@ -99,7 +102,35 @@ pub fn signal_clean_exit() {
 
 /// Runs the watchdog for `pid` until that process exits, then re-shows
 /// Explorer's icons unless it signaled the clean-exit event.
+///
+/// Re-parents itself once: the process the app launches spawns a detached copy
+/// and exits, so the copy's recorded parent is gone and ending the app's
+/// process tree (`taskkill /T`) cannot reach it. If the copy cannot be
+/// launched, this process waits directly instead.
 pub fn run_watchdog(pid: u32) {
+    if std::env::var_os(REPARENT_ENV).is_none() {
+        match respawn_reparented(pid) {
+            Ok(()) => return,
+            Err(error) => {
+                tracing::debug!(%error, "watchdog: could not re-parent; waiting directly");
+            }
+        }
+    }
+    run_watchdog_loop(pid);
+}
+
+/// Spawns a detached copy of this watchdog that re-parents away from the app.
+fn respawn_reparented(pid: u32) -> std::io::Result<()> {
+    let exe = std::env::current_exe()?;
+    Command::new(exe)
+        .arg(pid.to_string())
+        .env(REPARENT_ENV, "1")
+        .creation_flags((DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB).0)
+        .spawn()?;
+    Ok(())
+}
+
+fn run_watchdog_loop(pid: u32) {
     if !claim_single_instance(pid) {
         return;
     }
@@ -180,15 +211,26 @@ fn claim_single_instance(pid: u32) -> bool {
     }
 }
 
-/// Spawns `deskspace --watchdog <pid>` with no console window and its own
-/// process group, so a console Ctrl+C aimed at the app does not also kill the
-/// watchdog.
+/// The watchdog executable beside the running one: `deskspace-watchdog.exe`
+/// next to `deskspace.exe`. Derived from the current executable's name so a
+/// renamed build still finds its watchdog.
+fn watchdog_exe() -> std::io::Result<std::path::PathBuf> {
+    let current = std::env::current_exe()?;
+    let directory = current.parent().unwrap_or(std::path::Path::new("."));
+    let stem = current
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("deskspace");
+    Ok(directory.join(format!("{stem}-watchdog{}", std::env::consts::EXE_SUFFIX)))
+}
+
+/// Spawns the watchdog detached, so closing DeskSpace's console or ending it
+/// by image name leaves the watchdog running.
 fn launch(pid: u32) -> std::io::Result<()> {
-    let exe = std::env::current_exe()?;
+    let exe = watchdog_exe()?;
     Command::new(exe)
-        .arg(WATCHDOG_FLAG)
         .arg(pid.to_string())
-        .creation_flags((CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP).0)
+        .creation_flags(DETACHED_PROCESS.0)
         .spawn()?;
     Ok(())
 }
@@ -202,23 +244,17 @@ mod tests {
     }
 
     #[test]
-    fn watchdog_pid_reads_the_child_arguments() {
-        assert_eq!(watchdog_pid(&args(&["--watchdog", "4321"])), Some(4321));
-        // The flag can be preceded by other arguments.
-        assert_eq!(
-            watchdog_pid(&args(&["--config", "x", "--watchdog", "7"])),
-            Some(7)
-        );
+    fn watchdog_pid_reads_the_single_argument() {
+        assert_eq!(watchdog_pid(&args(&["4321"])), Some(4321));
+        assert!(is_watchdog(&args(&["1"])));
     }
 
     #[test]
     fn watchdog_pid_rejects_missing_or_bad_pids() {
         assert_eq!(watchdog_pid(&args(&[])), None);
-        assert_eq!(watchdog_pid(&args(&["--show"])), None);
+        assert_eq!(watchdog_pid(&args(&["abc"])), None);
         assert_eq!(watchdog_pid(&args(&["--watchdog"])), None);
-        assert_eq!(watchdog_pid(&args(&["--watchdog", "abc"])), None);
-        assert!(!is_watchdog(&args(&["--watchdog", "abc"])));
-        assert!(is_watchdog(&args(&["--watchdog", "1"])));
+        assert!(!is_watchdog(&args(&["abc"])));
     }
 
     #[test]

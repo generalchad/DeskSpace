@@ -64,7 +64,8 @@ crates/deskspace-core      Domain model: spaces, items, geometry, layout, theme,
 crates/deskspace-config    Configuration schema, migration, and persistence
 crates/deskspace-platform  Space windows, Direct2D rendering, DWM blur, tray, menus,
                            settings window, shell integration
-crates/deskspace-app       Application binary, CLI, and event handling
+crates/deskspace-app       Application binary, CLI, and event handling (plus the
+                           deskspace-watchdog crash helper)
 ```
 
 Configuration is saved to a TOML file under the per-user config directory.

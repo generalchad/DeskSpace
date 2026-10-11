@@ -12,6 +12,10 @@ repository.workspace = true
 name = "deskspace"
 path = "src/main.rs"
 
+[[bin]]
+name = "deskspace-watchdog"
+path = "src/watchdog_main.rs"
+
 [dependencies]
 deskspace-core.workspace = true
 deskspace-config.workspace = true

@@ -750,14 +750,16 @@ WindowSettings {
   `TaskbarCreated` (Explorer restart) and from the app's health timer.
 - `watchdog.rs` is the crash-safety half of the takeover (D8). Before the icons
   are hidden the app calls `arm_watchdog`, which creates a per-pid clean-exit
-  event and launches the same executable as `deskspace --watchdog <pid>` (no
-  console window, its own process group). The watchdog waits on the main
-  process and re-shows every listview unless the event was signaled; `main`
-  handles the flag before `Cli::parse`, and the runtime teardown calls
+  event and launches the dedicated `deskspace-watchdog.exe` (a second binary of
+  `deskspace-app`, `<pid>` as its only argument) detached, so a bulk kill of
+  `deskspace.exe` by name or a closed console leaves it running. The watchdog
+  re-parents itself once (`respawn_reparented`) so ending the app's process
+  tree cannot reach it either, then waits on the main process and re-shows every
+  listview unless the event was signaled; the runtime teardown calls
   `signal_watchdog_clean_exit` right after `desktop_icons::restore`, so the
   watchdog acts only on a crash. A named mutex keeps a stray watchdog a no-op,
   and the pure `watchdog_pid` / `is_watchdog` and `should_restore` decide the
-  arguments and the restore.
+  argument and the restore.
 - `shell.rs`: `enumerate_desktop_items` and `IconCache`.
   `enumerate_desktop_items` reads the desktop view's items and their positions
   (`IFolderView::ItemCount`/`Item`/`GetItemPosition`) once OLE is up, and
