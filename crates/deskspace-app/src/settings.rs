@@ -231,6 +231,16 @@ pub fn needs_relayout(saved: &Session, config: &Config) -> bool {
         || saved.saved_theme.match_explorer != config.theme.match_explorer
 }
 
+/// Whether reverting to `saved` needs the spaces restyled. `ui_mode` is
+/// excluded: it only affects DeskSpace's own chrome (the settings window and
+/// menus), which the app updates separately, so a change to it alone must not
+/// repaint the spaces.
+pub fn needs_restyle(saved: &Session, config: &Config) -> bool {
+    let mut saved_theme = saved.saved_theme.clone();
+    saved_theme.ui_mode = config.theme.ui_mode;
+    saved_theme != config.theme
+}
+
 fn index_of<T: PartialEq + Copy>(table: &[(T, &str)], value: T) -> usize {
     table
         .iter()
@@ -971,6 +981,22 @@ mod tests {
         let mut restyled = config.clone();
         restyled.theme.tint_opacity = restyled.theme.tint_opacity.wrapping_add(1);
         assert!(!needs_relayout(&session, &restyled));
+    }
+
+    #[test]
+    fn needs_restyle_ignores_ui_mode() {
+        let (config, session) = setup();
+
+        let mut ui_mode = config.clone();
+        ui_mode.theme.ui_mode = ThemeMode::Dark;
+        assert!(
+            !needs_restyle(&session, &ui_mode),
+            "a chrome-only change must not repaint the spaces"
+        );
+
+        let mut restyled = config.clone();
+        restyled.theme.tint_opacity = restyled.theme.tint_opacity.wrapping_add(1);
+        assert!(needs_restyle(&session, &restyled));
     }
 
     #[test]

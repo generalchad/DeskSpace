@@ -937,10 +937,6 @@ until I5-I7 all land, so no partial build hides the desktop.
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
-- `deskspace-app/src/app.rs` `cancel_settings` decides `restyle` with
-  `saved_theme != self.config.theme`, which now includes `ui_mode`. Cancelling
-  a change that only touched `ui_mode` repaints every space for nothing.
-  Harmless; compare the colors that matter, or exclude `ui_mode`.
 - `deskspace-platform/src/win32/controller.rs` handles `WM_SETTINGCHANGE`
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts

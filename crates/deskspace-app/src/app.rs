@@ -3528,7 +3528,7 @@ impl App {
             ui.clear_timer(PREVIEW_TIMER);
         }
         self.clear_highlight(ui);
-        let restyle = session.saved_theme != self.config.theme;
+        let restyle = settings::needs_restyle(&session, &self.config);
         // A revert re-flows when the grid changed: the layout itself, the
         // icon size that scales it, or a Match Explorer toggle, which
         // imports Explorer's own icon size and spacing.
