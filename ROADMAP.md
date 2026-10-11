@@ -359,6 +359,9 @@ Remaining:
    - new lens (M4);
    - snapshots (M6);
    - an Arrange submenu.
+3. More item presets and preset import/export (F-48). The "Item preset"
+   dropdown now seeds the system with `Match Explorer's display` and
+   `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -472,6 +475,15 @@ Remaining:
      data-driven.
    - It comes after items 1 and 3, so it is built on the final monitor and
      page model.
+6. Tabs in spaces (F-49). Off by default. When on, a space is paginated: its
+   items split across pages, one page shown at a time, so a space holds more
+   icons without scrolling. A tab strip drawn on a chosen edge (top, bottom,
+   left, right) switches pages, and its size is set per space. A per-space
+   "Tabs" settings section carries the basic options now (enable, orientation,
+   size), with room for advanced visual and placement settings later.
+   - Distinct from F-12: pages are whole-desktop layouts per monitor; tabs
+     paginate a single space. They share the idea of a page switcher but not
+     the model.
 
 Exit criteria: layouts survive monitor changes, pages switch instantly, and a
 snapshot restores both the layout and the store's contents.
@@ -613,6 +625,8 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
+| F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
+| F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the

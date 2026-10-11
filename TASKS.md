@@ -284,6 +284,34 @@ is large.
   - **[needs human]** check: the value appears/disappears in the Run key and
     DeskSpace starts at sign-in.
 
+- [ ] **C5. The item preset dropdown (F-48).** (awaiting check)
+  - Core: `Theme.match_explorer: bool` became `Theme.preset: Preset`
+    (`Custom | MatchExplorer`), with `Theme::match_explorer()` and a
+    `match_explorer` serde alias so older files load. `preset` is a look
+    setting, so it is per space through `SpaceLook` too.
+  - Settings: the Appearance page's "Match Explorer's display" toggle became
+    the "Item preset" choice (`field::PRESET`, options `PRESETS`); a chosen
+    preset returns `Effect::Layout`. The Layout page's icon-size,
+    icon-spacing, and edge-padding fields are greyed under `MatchExplorer`.
+  - Tests: core `match_explorer()`; config default, snake_case, and the legacy
+    bool; `app::view` resolution parity; the settings choice and the disabled
+    fields.
+  - **[needs human]** check: the dropdown shows "Match Explorer's display" /
+    "Custom"; "Custom" enables the Layout fields and the icon size takes
+    effect; "Match Explorer's display" greys them.
+
+- [ ] **C6. More item presets, and preset import/export (F-48).** Later; needs
+  design first.
+  - The "Item preset" dropdown is the seed of a preset system: add named
+    presets (compact and spacious variants, for example) that set several item
+    settings at once, and import/export (save/open) a preset as a file so it
+    can be shared. "Match Explorer's display" and "Custom" are the first two.
+  - Decide whether a preset snapshots a whole `Theme`/`SpaceLook` or only the
+    item fields, how it interacts with per-space looks, and the file format.
+    Keep `Preset` forward-compatible (`#[serde(default)]`).
+  - The preset grows to cover the remaining Explorer-equivalent item settings
+    as they land (hidden/protected files once F-22 exists).
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Listed so they are not attempted piecemeal. Each needs design work first.
@@ -957,6 +985,36 @@ until I5-I6 all land, so no partial build hides the desktop.
     layer is drawn (`App::watch_desktop_folder`) and re-runs
     `resync_desktop_layer` on the event. `Win32_System_IO` joined the
     `windows` features.
+
+## J. Tabs in spaces (ROADMAP F-49)
+
+Off by default. When a space's tabs are on, its items are paginated: split
+across pages, one shown at a time, so the space holds more icons without
+scrolling. A tab strip on a chosen edge switches pages, and its size is set per
+space. The settings are basic now (enable, orientation, size), with room for
+advanced visual and placement settings later. Each task below still needs
+design work; the split is a starting point, not a spec. Do them in order.
+
+- [ ] **J1. Model and command (core).** `Space.tabs: TabSettings`
+  (`#[serde(default)]`, disabled): `enabled: bool`, `size: u8`, and
+  `orientation: TabOrientation { Top (default) | Bottom | Left | Right }`.
+  `Command::SetSpaceTabs { id, tabs }` (size clamped). Tabs are space chrome,
+  so they live in `Space`, not `SpaceLook`. A disabled space lays out exactly
+  as today. Tests: serde defaults, clamped size, the command.
+- [ ] **J2. Pagination (core).** Derive the page count from the content area
+  and grid; add `page_count` and `page_items(page)`. Decide whether the current
+  page is session state (like scroll) or persisted per space. Pages are a view
+  over the same `items` Vec, so `ItemId`s and drag semantics are unchanged.
+  Tests.
+- [ ] **J3. Render the strip (scene and platform).** `SpaceScene`/`SpaceStyle`
+  carry the strip (edge, size, page count, current page, labels); the painter
+  draws it and the window hit-tests a click to a page. Only the current page's
+  cells are drawn and hit-tested.
+- [ ] **J4. Per-space Tabs settings section (app).** Enable, orientation, and
+  size, using the app's per-space look/space settings path. Basic now;
+  advanced visual and placement settings later.
+- [ ] **J5. Space menu.** Enable/disable tabs, previous/next page, and a page
+  list.
 
 ## Found while working
 
