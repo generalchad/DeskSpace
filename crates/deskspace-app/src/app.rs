@@ -11,7 +11,7 @@ use deskspace_core::{
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, CursorShape, DesktopEntry, DragImage, EditKey, EditOutcome,
     Event, EventHandler, FieldValue, Hotkey, IconCache, ItemMenuChoice, MenuEntry, MouseButton,
-    NavDir, NavKey, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui,
+    SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit, TrayEvent, Ui,
     desktop_directory, desktop_display, drag_threshold, hotkey_id, notify_moved, parse_hotkey,
     system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
@@ -19,6 +19,8 @@ use deskspace_platform::{
 use crate::scene::{desktop_layer_drag_scene, drag_scene, item_label};
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
+
+use self::selection::marquee_selection;
 
 mod clipboard;
 mod files;
@@ -498,34 +500,6 @@ impl App {
         }
     }
 
-    /// Clears the item selection, as clicking elsewhere does in Explorer.
-    /// Returns the space that showed it, which needs a new scene.
-    fn take_selection(&mut self) -> Option<Surface> {
-        let surface = self.selected_surface.take();
-        let had = !std::mem::take(&mut self.selected_items).is_empty();
-        self.selection_anchor = None;
-        self.focused = None;
-        had.then_some(surface).flatten()
-    }
-
-    fn clear_selection(&mut self, ui: &mut Ui) {
-        if let Some(surface) = self.take_selection() {
-            self.refresh_surface(ui, surface);
-        }
-    }
-
-    /// Asks for outside clicks only while there is something for them to
-    /// clear, because watching them hooks every mouse event in the session.
-    fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted = !self.selected_items.is_empty()
-            || self.edit.is_some()
-            || self.selected_surface.is_some();
-        if wanted != self.watching_outside {
-            ui.watch_outside_clicks(wanted);
-            self.watching_outside = wanted;
-        }
-    }
-
     // ---- rename --------------------------------------------------------
 
     /// Starts inline editing of a space's title, capturing keys until commit
@@ -589,155 +563,6 @@ impl App {
             SelectionKey::PageUp => self.scroll_current_space(ui, ScrollKey::PageUp),
             SelectionKey::PageDown => self.scroll_current_space(ui, ScrollKey::PageDown),
         }
-    }
-
-    /// Scrolls the current space as Home, End, PageUp, or PageDown does.
-    fn scroll_current_space(&mut self, ui: &mut Ui, key: ScrollKey) {
-        let Some(Surface::Space(id)) = self.selected_surface else {
-            return;
-        };
-        let layout = self.layout_for(id);
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let max = space.max_scroll(layout.cell(), layout.padding);
-        let page = space.content_rect().height.max(1);
-        let current = self.scroll_of(id);
-        let offset = match key {
-            ScrollKey::Home => 0,
-            ScrollKey::End => max,
-            ScrollKey::PageUp => current - page,
-            ScrollKey::PageDown => current + page,
-        };
-        let offset = offset.clamp(0, max);
-        if offset == current {
-            return;
-        }
-        self.scroll.insert(id, offset);
-        // The items moved under a still cursor, so the hovered one changed.
-        self.hovered = self
-            .hovered
-            .filter(|(space, _)| *space != Surface::Space(id));
-        self.refresh_space(ui, id);
-    }
-
-    /// Type-to-select: appends `ch` to the prefix buffer and selects the next
-    /// item whose label starts with it, wrapping around. The buffer clears
-    /// after a pause (`TYPE_TIMER`), so a new search starts fresh.
-    fn on_typed(&mut self, ui: &mut Ui, ch: char) {
-        let Some(surface) = self.selected_surface else {
-            return;
-        };
-        self.type_buffer.push(ch);
-        ui.set_timer(TYPE_TIMER, TYPE_DELAY_MS);
-        let show_extensions =
-            self.surface_match_explorer(surface) && self.shell_display.show_extensions;
-        let labels: Vec<String> = self
-            .surface_items(surface)
-            .iter()
-            .map(|item| item_label(item, show_extensions))
-            .collect();
-        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        let current = self.selected_items.last().and_then(|item| {
-            self.surface_items(surface)
-                .iter()
-                .position(|entry| entry.id == *item)
-        });
-        let start = current.map_or(0, |index| index + 1);
-        let Some(index) = next_prefix_match(&labels, &self.type_buffer, start) else {
-            return;
-        };
-        let Some(item) = self.surface_items(surface).get(index).map(|entry| entry.id) else {
-            return;
-        };
-        self.selected_items = vec![item];
-        self.selection_anchor = Some(item);
-        self.focused = Some(item);
-        if let Surface::Space(id) = surface {
-            self.scroll_item_into_view(id, index);
-        }
-        self.refresh_surface(ui, surface);
-    }
-
-    /// Arrow-key navigation: move the selection the nearest item in that
-    /// direction, extend it (Shift), or move the focus only (Ctrl), then bring
-    /// the item into view.
-    fn on_navigate(&mut self, ui: &mut Ui, key: NavKey) {
-        let Some(surface) = self.selected_surface else {
-            return;
-        };
-        let layout = self.surface_layout(surface);
-        let cells: Vec<Point> = self
-            .surface_items(surface)
-            .iter()
-            .map(|item| {
-                Point::new(
-                    item.position.x + layout.cell_width / 2,
-                    item.position.y + layout.cell_height / 2,
-                )
-            })
-            .collect();
-        let current = self
-            .focused
-            .or_else(|| self.selected_items.last().copied())
-            .and_then(|item| {
-                self.surface_items(surface)
-                    .iter()
-                    .position(|entry| entry.id == item)
-            });
-        // A first arrow with nothing focused picks the first item.
-        let target = match current {
-            Some(index) => match next_in_direction(&cells, index, key.dir) {
-                Some(index) => index,
-                None => return,
-            },
-            None => 0,
-        };
-        let Some(item) = self
-            .surface_items(surface)
-            .get(target)
-            .map(|entry| entry.id)
-        else {
-            return;
-        };
-        self.focused = Some(item);
-        if key.focus {
-            // Move the focus rectangle only; the selection stays.
-        } else if key.extend {
-            self.extend_selection(surface, item);
-        } else {
-            self.selected_items = vec![item];
-            self.selection_anchor = Some(item);
-        }
-        if let Surface::Space(id) = surface {
-            self.scroll_item_into_view(id, target);
-        }
-        self.refresh_surface(ui, surface);
-    }
-
-    /// Brings the item at `index` (in the space's order) into the content area
-    /// by adjusting the scroll offset.
-    fn scroll_item_into_view(&mut self, id: SpaceId, index: usize) {
-        let layout = self.layout_for(id);
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let Some(item) = space.items.get(index) else {
-            return;
-        };
-        let content_height = space.content_rect().height;
-        let max = space.max_scroll(layout.cell(), layout.padding);
-        let scroll = self.scroll.get(&id).copied().unwrap_or(0);
-        let top = item.position.y;
-        let bottom = top + layout.cell_height;
-        let offset = if top - scroll < 0 {
-            top
-        } else if bottom - scroll > content_height {
-            bottom - content_height
-        } else {
-            return;
-        };
-        self.scroll.insert(id, offset.clamp(0, max));
     }
 
     /// Opens the context menu for the focused item, or for the current space
@@ -921,25 +746,6 @@ impl App {
         if self.edit.is_some() {
             self.finish_rename(ui, false);
         }
-    }
-
-    /// Selects every item in the current surface, as Ctrl+A does.
-    fn select_all_in_space(&mut self, ui: &mut Ui) {
-        let Some(surface) = self.selected_surface else {
-            return;
-        };
-        let ids: Vec<ItemId> = self
-            .surface_items(surface)
-            .iter()
-            .map(|item| item.id)
-            .collect();
-        if ids.is_empty() {
-            return;
-        }
-        self.selected_items = ids;
-        self.selection_anchor = self.selected_items.first().copied();
-        self.focused = self.selection_anchor;
-        self.refresh_surface(ui, surface);
     }
 
     /// Toggles the edit caret so it blinks, as Windows does.
@@ -1275,43 +1081,6 @@ impl App {
             self.refresh_surface(ui, previous);
         }
         self.refresh_surface(ui, surface);
-    }
-
-    fn is_selected(&self, item: ItemId) -> bool {
-        self.selected_items.contains(&item)
-    }
-
-    /// Adds `item` to the selection, or removes it if it was already selected.
-    fn toggle_selected(&mut self, item: ItemId) {
-        if let Some(index) = self.selected_items.iter().position(|entry| *entry == item) {
-            self.selected_items.remove(index);
-        } else {
-            self.selected_items.push(item);
-        }
-    }
-
-    /// Selects every item between the anchor and `item` in the space's order,
-    /// as a Shift+click does.
-    fn extend_selection(&mut self, surface: Surface, item: ItemId) {
-        let Some(anchor) = self.selection_anchor else {
-            self.selected_items = vec![item];
-            return;
-        };
-        let index = |target| {
-            self.surface_items(surface)
-                .iter()
-                .position(|entry| entry.id == target)
-        };
-        let (Some(a), Some(b)) = (index(anchor), index(item)) else {
-            self.selected_items = vec![item];
-            return;
-        };
-        let (start, end) = if a <= b { (a, b) } else { (b, a) };
-        let selected: Vec<ItemId> = self.surface_items(surface)[start..=end]
-            .iter()
-            .map(|entry| entry.id)
-            .collect();
-        self.selected_items = selected;
     }
 
     /// Selects the item under `point` (or nothing) without starting a drag,
@@ -1973,30 +1742,6 @@ impl App {
         // file is gone, wherever it lives, and reconcile the loose layer.
         self.prune_all_missing(ui);
         self.resync_desktop_layer(ui);
-    }
-
-    /// The items an item operation acts on: the independent tick set when
-    /// check boxes are separate and any are ticked, otherwise the selection.
-    fn active_items(&self) -> Vec<ItemId> {
-        // Ticks can only be made in a space that shows check boxes, so any
-        // left over in independent mode are the operand.
-        let independent = self.shell_display.check_boxes == CheckBoxMode::Independent;
-        if independent && !self.checked_items.is_empty() {
-            self.checked_items.clone()
-        } else {
-            self.selected_items.clone()
-        }
-    }
-
-    /// The items a drag started on `item` moves: the active set when it
-    /// includes `item`, otherwise just `item`.
-    fn drag_items(&self, item: ItemId) -> Vec<ItemId> {
-        let active = self.active_items();
-        if active.contains(&item) {
-            active
-        } else {
-            vec![item]
-        }
     }
 
     /// Updates the rubber-band rectangle and the live selection as the pointer
@@ -2784,23 +2529,6 @@ fn delete_consequence(count: usize, stored: usize) -> String {
     }
 }
 
-/// The selection a rubber-band rectangle produces: `base` when additive, plus
-/// every item whose cell intersects `rect`.
-fn marquee_selection(
-    cells: &[(ItemId, Rect)],
-    rect: Rect,
-    additive: bool,
-    base: &[ItemId],
-) -> Vec<ItemId> {
-    let mut selection = if additive { base.to_vec() } else { Vec::new() };
-    for (item, cell) in cells {
-        if cell.intersects(rect) && !selection.contains(item) {
-            selection.push(*item);
-        }
-    }
-    selection
-}
-
 /// The file name to rename to, preserving the original extension when the
 /// edited label did not show it, as Explorer does.
 fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> String {
@@ -2818,48 +2546,6 @@ fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> Str
     }
 }
 
-/// The index of the item nearest `current` in `dir`, from cell centers.
-/// Candidates must lie strictly in that direction; the smallest primary-axis
-/// distance wins, breaking ties by the cross-axis distance. `None` at the edge
-/// of the grid.
-fn next_in_direction(cells: &[Point], current: usize, dir: NavDir) -> Option<usize> {
-    let origin = cells.get(current)?;
-    let mut best: Option<(i32, i32, usize)> = None;
-    for (index, cell) in cells.iter().enumerate() {
-        if index == current {
-            continue;
-        }
-        let (dx, dy) = (cell.x - origin.x, cell.y - origin.y);
-        let (primary, cross) = match dir {
-            NavDir::Left if dx < 0 => (-dx, dy.abs()),
-            NavDir::Right if dx > 0 => (dx, dy.abs()),
-            NavDir::Up if dy < 0 => (-dy, dx.abs()),
-            NavDir::Down if dy > 0 => (dy, dx.abs()),
-            _ => continue,
-        };
-        if best.is_none_or(|(best_primary, best_cross, _)| {
-            (primary, cross) < (best_primary, best_cross)
-        }) {
-            best = Some((primary, cross, index));
-        }
-    }
-    best.map(|(_, _, index)| index)
-}
-
-/// The index of the next label that starts with `prefix`, searching from
-/// `start` and wrapping to the beginning, case-insensitively. `None` when
-/// nothing matches. Drives type-to-select.
-fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usize> {
-    if prefix.is_empty() || labels.is_empty() {
-        return None;
-    }
-    let prefix = prefix.to_lowercase();
-    let count = labels.len();
-    (0..count)
-        .map(|offset| (start + offset) % count)
-        .find(|index| labels[*index].to_lowercase().starts_with(&prefix))
-}
-
 pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
     let spaces = desktop.spaces.len();
     let items = desktop.space_item_count();
@@ -2872,28 +2558,6 @@ pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
 mod tests {
     use super::*;
     use deskspace_platform::item_check_box_hit;
-
-    #[test]
-    fn type_to_select_matches_a_prefix_and_wraps() {
-        let labels = ["Apple", "Banana", "Berry", "Cherry"];
-        assert_eq!(next_prefix_match(&labels, "b", 0), Some(1));
-        assert_eq!(next_prefix_match(&labels, "be", 0), Some(2));
-        // Searching from the current item finds it again; from after the last
-        // match it wraps to the first.
-        assert_eq!(next_prefix_match(&labels, "b", 2), Some(2));
-        assert_eq!(next_prefix_match(&labels, "b", 3), Some(1), "wraps");
-        assert_eq!(next_prefix_match(&labels, "c", 0), Some(3));
-        assert_eq!(
-            next_prefix_match(&labels, "C", 0),
-            Some(3),
-            "case-insensitive"
-        );
-        assert_eq!(next_prefix_match(&labels, "z", 0), None);
-        assert_eq!(next_prefix_match(&labels, "", 0), None);
-        assert_eq!(next_prefix_match(&[], "a", 0), None);
-        // Repeated typing of the same letter cycles through the matches.
-        assert_eq!(next_prefix_match(&labels, "b", 1), Some(1));
-    }
 
     #[test]
     fn a_second_click_on_the_only_selected_item_renames() {
@@ -2936,56 +2600,6 @@ mod tests {
             resolve_pending_click(None, ItemId(1), true),
             PendingClickOutcome::Nothing
         );
-    }
-
-    #[test]
-    fn navigation_picks_the_nearest_aligned_item() {
-        // A 2x2 grid of cell centers: 0 1 / 2 3.
-        let cells = [
-            Point::new(0, 0),
-            Point::new(100, 0),
-            Point::new(0, 100),
-            Point::new(100, 100),
-        ];
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(1));
-        assert_eq!(next_in_direction(&cells, 1, NavDir::Left), Some(0));
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(2));
-        assert_eq!(next_in_direction(&cells, 3, NavDir::Up), Some(1));
-        assert_eq!(next_in_direction(&cells, 2, NavDir::Right), Some(3));
-        // The edges of the grid go nowhere.
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Left), None);
-        assert_eq!(next_in_direction(&cells, 1, NavDir::Right), None);
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Up), None);
-        assert_eq!(next_in_direction(&cells, 3, NavDir::Down), None);
-        assert_eq!(next_in_direction(&[], 0, NavDir::Right), None);
-    }
-
-    #[test]
-    fn navigation_prefers_the_aligned_neighbor() {
-        let cells = [
-            Point::new(0, 0),    // 0
-            Point::new(100, 40), // 1: diagonal to the right
-            Point::new(100, 0),  // 2: aligned to the right
-        ];
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(2));
-        // Both are below, but 1 is nearer vertically than 2.
-        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(1));
-    }
-
-    #[test]
-    fn independent_checks_are_the_operand() {
-        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
-        let mut app = App::new(Config::new(), store, false, false);
-        app.shell_display = ShellDisplay {
-            check_boxes: CheckBoxMode::Independent,
-            ..ShellDisplay::default()
-        };
-        app.selected_items = vec![ItemId(1)];
-        app.checked_items = vec![ItemId(2), ItemId(3)];
-        assert_eq!(app.active_items(), vec![ItemId(2), ItemId(3)]);
-        // With nothing ticked the selection is used.
-        app.checked_items.clear();
-        assert_eq!(app.active_items(), vec![ItemId(1)]);
     }
 
     #[test]
@@ -3177,57 +2791,6 @@ mod tests {
         );
     }
 
-    fn app_with_selection(space: Option<SpaceId>, item: Option<ItemId>) -> App {
-        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
-        let mut app = App::new(Config::new(), store, false, false);
-        app.selected_surface = space.map(Surface::Space);
-        app.selected_items = item.into_iter().collect();
-        app
-    }
-
-    #[test]
-    fn ctrl_click_toggles_and_shift_click_selects_a_range() {
-        use deskspace_core::Item;
-        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
-        let mut app = App::new(Config::new(), store, false, false);
-        let id = app.config.desktop.add_space("S", Rect::new(0, 0, 400, 400));
-        for n in 1..=4u64 {
-            app.config
-                .desktop
-                .add_item(id, Item::new(ItemId(n), format!("C:/missing/{n}.txt")));
-        }
-        app.selected_surface = Some(Surface::Space(id));
-        // Ctrl+click builds a selection and toggles items off again.
-        app.toggle_selected(ItemId(1));
-        app.toggle_selected(ItemId(3));
-        assert_eq!(app.selected_items, vec![ItemId(1), ItemId(3)]);
-        app.toggle_selected(ItemId(1));
-        assert_eq!(app.selected_items, vec![ItemId(3)]);
-        // Shift+click extends from the anchor across the space's order.
-        app.selection_anchor = Some(ItemId(1));
-        app.extend_selection(Surface::Space(id), ItemId(4));
-        assert_eq!(
-            app.selected_items,
-            vec![ItemId(1), ItemId(2), ItemId(3), ItemId(4)]
-        );
-    }
-
-    #[test]
-    fn taking_a_selection_reports_the_space_to_repaint() {
-        let mut app = app_with_selection(Some(SpaceId(2)), Some(ItemId(5)));
-        assert_eq!(app.take_selection(), Some(Surface::Space(SpaceId(2))));
-        assert_eq!((app.selected_surface, app.selected_items.len()), (None, 0));
-        // Nothing is left to clear, so nothing needs repainting.
-        assert_eq!(app.take_selection(), None);
-    }
-
-    #[test]
-    fn a_space_without_a_selected_item_needs_no_repaint() {
-        let mut app = app_with_selection(Some(SpaceId(2)), None);
-        assert_eq!(app.take_selection(), None);
-        assert_eq!(app.selected_surface, None);
-    }
-
     #[test]
     fn the_layer_id_is_the_desktop_surface() {
         assert_eq!(Surface::of(SpaceId(0)), Surface::Desktop);
@@ -3299,26 +2862,6 @@ mod tests {
         let mixed = delete_consequence(3, 2);
         assert!(mixed.contains("3 items"));
         assert!(mixed.contains("2 files moved into the space will be moved back"));
-    }
-
-    #[test]
-    fn marquee_selects_intersecting_cells() {
-        let cells = [
-            (ItemId(1), Rect::new(0, 0, 10, 10)),
-            (ItemId(2), Rect::new(20, 0, 10, 10)),
-            (ItemId(3), Rect::new(0, 20, 10, 10)),
-        ];
-        assert_eq!(
-            marquee_selection(&cells, Rect::new(5, 5, 20, 20), false, &[]),
-            vec![ItemId(1), ItemId(2), ItemId(3)]
-        );
-        // A rectangle away from every cell selects nothing.
-        assert!(marquee_selection(&cells, Rect::new(100, 100, 5, 5), false, &[]).is_empty());
-        // Additive keeps the base selection and appends new hits.
-        assert_eq!(
-            marquee_selection(&cells, Rect::new(0, 0, 6, 6), true, &[ItemId(2)]),
-            vec![ItemId(2), ItemId(1)]
-        );
     }
 
     #[test]
