@@ -750,6 +750,14 @@ Small requests, one commit each.
   columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
   put), so both side paddings match. **[needs human]** check: drag a space's
   right edge and see it settle on whole columns with even left/right padding.
+- [ ] **F10. "Fit to contents" in the space settings.** (awaiting check) The
+  space menu already offered "Fit to contents" (user-sized, unlocked spaces);
+  the settings window now offers the same as a button on a space's Layout page.
+  It is grey unless the space is resized and unlocked, and runs
+  `Command::FitToContents` (immediate, like the menu; Cancel does not undo it).
+  **[needs human]** check: select a resized space in Settings, open Layout,
+  press "Fit to contents", and confirm the space grows to fit its items with
+  even padding.
 
 ## G. More Explorer-standard controls
 

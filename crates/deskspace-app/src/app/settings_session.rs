@@ -119,6 +119,18 @@ impl App {
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
+            SettingsEvent::Button {
+                field: settings::field::FIT_CONTENTS,
+            } if editing_space => {
+                let id = session.scope;
+                if let Some(id) = id {
+                    let at = self.space_center(id);
+                    if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
+                        self.scroll.remove(&id);
+                    }
+                }
+                self.refresh_settings(ui);
+            }
             SettingsEvent::Button { .. } => {}
             SettingsEvent::HeaderSwitch { on } => {
                 let command = settings::customize_space(&self.config, session, on);

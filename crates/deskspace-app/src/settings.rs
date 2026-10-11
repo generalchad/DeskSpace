@@ -79,6 +79,7 @@ pub mod field {
     pub const NEW_SPACE_HEIGHT: u32 = 59;
     pub const NEW_SPACE_LOCKED: u32 = 60;
     pub const NEW_SPACES_NOTE: u32 = 61;
+    pub const FIT_CONTENTS: u32 = 62;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
@@ -86,6 +87,7 @@ pub mod field {
 /// Global only.
 pub mod page {
     pub const APPEARANCE: usize = 0;
+    pub const LAYOUT: usize = 2;
     pub const ABOUT: usize = 8;
 }
 
@@ -403,6 +405,15 @@ pub fn build_form(
         for field in pages.iter_mut().flat_map(|page| page.fields.iter_mut()) {
             field.enabled = false;
         }
+    }
+    if let Some(space) = space {
+        // Fitting is geometry, not a look setting, so it stays available while
+        // the space follows Global; it only applies to a resized, unlocked
+        // space, matching the space menu's "Fit to contents".
+        pages[page::LAYOUT].fields.push(
+            Field::button(field::FIT_CONTENTS, "", "Fit to contents")
+                .enabled(space.user_sized && !space.locked),
+        );
     }
     pages.push(general_page(config));
     pages.push(new_spaces_page(config));
@@ -1646,6 +1657,40 @@ mod tests {
         let form = build_form(&config, &session, true, Path::new("x"));
         assert_eq!(slider_value(&form, field::TINT_OPACITY), 10, "its own look");
         assert!(form.field(field::TINT_OPACITY).unwrap().enabled);
+    }
+
+    #[test]
+    fn a_space_offers_fit_to_contents_on_the_layout_page() {
+        let (mut config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
+
+        // An auto-sized space already fits, so the button is present but grey.
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(
+            form.pages[page::LAYOUT]
+                .fields
+                .iter()
+                .any(|field| field.id == field::FIT_CONTENTS)
+        );
+        assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
+
+        config.desktop.space_mut(id).unwrap().user_sized = true;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(form.field(field::FIT_CONTENTS).unwrap().enabled);
+
+        // A locked space cannot be fit, matching the space menu.
+        config.desktop.space_mut(id).unwrap().locked = true;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
+    }
+
+    #[test]
+    fn global_has_no_fit_to_contents_button() {
+        let (config, _) = config_with_space("Work");
+        let session = Session::new(&config);
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(form.field(field::FIT_CONTENTS).is_none());
     }
 
     #[test]
