@@ -15,7 +15,6 @@ mod dwm;
 mod file_op;
 mod folder_watch;
 pub mod hotkey;
-mod icon;
 mod info_tip;
 mod keyboard;
 mod menu;
@@ -32,5 +31,4 @@ pub mod watchdog;
 
 pub use clipboard::ClipboardFiles;
 pub use desktop_shell::Placement;
-pub use icon::write_icon;
 pub use runtime::{EventHandler, RunOptions, Ui, run, space_dpi};

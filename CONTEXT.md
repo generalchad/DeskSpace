@@ -465,8 +465,9 @@ WindowSettings {
   `--show` posts `SHOW_SPACES` to the running instance's controller window
   (found by class) and exits, or starts with the spaces shown when none is
   running. The verb is removed when spaces are shown and on a clean exit.
-- The tray and settings-window icon is drawn in code (`icon.rs`) until release
-  packaging adds an `.ico` resource.
+- The tray and settings-window icon is the `.ico` embedded in the executable
+  by `deskspace-app`'s build script (`winresource`). The tray loads resource 1
+  at the small-icon size; the settings window reuses that handle.
 
 ### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
@@ -1115,9 +1116,9 @@ WindowSettings {
   options" (Shift+right-click), not the new top-level menu. Reaching the new
   menu needs an `IExplorerCommand` handler inside an MSIX package with the
   `windows.fileExplorerContextMenus` extension, an associated stub executable,
-  and signing (or Developer Mode) - deferred to M8 packaging. Its icon is a
-  real `.ico` written beside the storage folder (`icon::write_icon`), since the
-  executable has no icon resource yet.
+  and signing (or Developer Mode) - deferred to M8 packaging. Its icon is the
+  executable's embedded icon resource (`"{exe}",0`), not a file written beside
+  the storage folder.
 - **No installer, no code signing, no auto-update.** CI (GitHub Actions) runs
   fmt, clippy, and tests, with `deny.toml` for licenses/advisories. Pushing a
   `v*` tag that matches the workspace version runs `release.yml`, which

@@ -35,14 +35,13 @@ impl App {
             return;
         };
         let exe = exe.to_string_lossy();
-        // A real .ico beside the storage folder, so the menu shows the app's
-        // icon instead of the executable's placeholder.
-        let icon_path = self.storage.root().with_file_name("deskspace.ico");
-        if let Err(error) = deskspace_platform::write_icon(&icon_path) {
-            tracing::warn!(%error, "could not write the app icon");
-        }
+        // Older versions wrote a .ico beside the storage folder for this entry;
+        // the executable carries its own icon resource now, so clean it up.
+        let leftover = self.storage.root().with_file_name("deskspace.ico");
+        let _ = std::fs::remove_file(&leftover);
+        // The verb's icon is the executable's first embedded icon.
         let command = format!("\"{exe}\" --show");
-        let icon = icon_path.to_string_lossy();
+        let icon = format!("\"{exe}\",0");
         if let Err(error) = deskspace_platform::set_desktop_show_entry(
             true,
             "Show DeskSpace spaces",

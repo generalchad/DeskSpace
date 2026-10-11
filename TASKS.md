@@ -452,7 +452,10 @@ read it before starting.
     Explorer's small, medium, and extra-large views.
 
 - [ ] **E2. Use the embedded icon at runtime and delete the drawn one.**
-  After E1.
+  (awaiting check) After E1. Landed as
+  `refactor: use the embedded icon at runtime and delete the drawn one (E2)`;
+  the desktop verb's icon and one leftover cleanup moved into
+  `app/visibility.rs` (the entry is no longer in `app.rs`).
   - `win32/tray.rs`: build `tray_icon` / `shared_icon` from the resource
     with `LoadImageW(GetModuleHandleW(None), MAKEINTRESOURCE(1), IMAGE_ICON,
     cx, cy, LR_DEFAULTCOLOR)`. Use `GetSystemMetrics(SM_CXSMICON)` for the
