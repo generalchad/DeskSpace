@@ -290,11 +290,13 @@ Listed so they are not attempted piecemeal. Each needs design work first.
 Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 (`D1`-`D8`).
 
-- **R1. Split `deskspace-app/src/app.rs`** (~2,900 lines) into `app/`
-  submodules, each with its own `impl App` block: `persist`, `view`, `hit`,
-  `selection`, `visibility`, `rename`, `pointer` (drag), `info_tip`,
+- **R1. Split `deskspace-app/src/app.rs`** (4,483 lines as of 2026-10-11) into
+  `app/` submodules, each with its own `impl App` block: `persist`, `view`,
+  `hit`, `selection`, `visibility`, `rename`, `pointer` (drag), `info_tip`,
   `files`, `clipboard`, `menus`, `settings_session`. Move `app::run` into
-  `bootstrap.rs`. Pure moves, one commit, no behavior change.
+  `bootstrap.rs`. Pure moves, no behavior change. The scaffold (the `app/`
+  module tree plus the `run` move) landed first; each group then moves into
+  place in its own commit.
 - **R2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
   After R1. Collapses the five copies of "select only this item" and the
   three copies of "forget this item everywhere".

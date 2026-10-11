@@ -16,7 +16,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
 
-    match app::run(cli) {
+    match bootstrap::run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "DeskSpace exited with an error");

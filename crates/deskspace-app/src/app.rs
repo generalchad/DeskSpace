@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::layout::GridSpec;
@@ -13,22 +12,33 @@ use deskspace_core::{
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DesktopEntry, DragImage, EditKey,
     EditOutcome, Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache,
-    ItemMenuChoice, ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions,
-    SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
-    arm_watchdog, desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items,
+    ItemMenuChoice, ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, SelectionKey,
+    SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui, arm_watchdog,
+    desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items,
     hide_desktop_icons, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
     rehide_desktop_icons, restore_desktop_icons, set_start_with_windows, space_dpi,
     system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
-use crate::bootstrap::seed_default_desktop;
-use crate::cli::Cli;
 use crate::scene::{
     ViewState, desktop_layer_drag_scene, desktop_layer_scene, drag_scene, item_label, layer_style,
     space_scene, space_style,
 };
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
+
+mod clipboard;
+mod files;
+mod hit;
+mod info_tip;
+mod menus;
+mod persist;
+mod pointer;
+mod rename;
+mod selection;
+mod settings_session;
+mod view;
+mod visibility;
 
 const TOGGLE_HOTKEY: i32 = 0;
 /// Width of the band along a space's edges that starts a resize.
@@ -385,8 +395,8 @@ fn cursor_for(edges: ResizeEdges) -> CursorShape {
 
 pub struct App {
     config: Config,
-    store: ConfigStore,
-    storage: ItemStore,
+    pub(crate) store: ConfigStore,
+    pub(crate) storage: ItemStore,
     icons: IconCache,
     system_dark: bool,
     /// Windows' accent color, refreshed on `SystemThemeChanged`; `None` when it
@@ -448,10 +458,10 @@ pub struct App {
     /// Draw the loose desktop items on a chrome-less layer window (hidden
     /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
     /// own icons.
-    takeover_layer: bool,
+    pub(crate) takeover_layer: bool,
     /// Hide Explorer's icons and draw the loose items on the layer (hidden
     /// `--takeover`, M2 takeover). Implies the layer.
-    takeover: bool,
+    pub(crate) takeover: bool,
 }
 
 impl App {
@@ -3719,81 +3729,6 @@ impl EventHandler for App {
     }
 }
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
-    deskspace_platform::enable_per_monitor_awareness();
-
-    // `--show` from the desktop menu (or a shortcut): hand it to a running
-    // instance and exit, rather than starting a second copy.
-    if cli.show && deskspace_platform::signal_show_spaces() {
-        return Ok(());
-    }
-
-    let store = match &cli.config {
-        Some(path) => ConfigStore::with_path(PathBuf::from(path)),
-        None => ConfigStore::discover()
-            .context("could not find the per-user configuration directory")?,
-    };
-
-    let mut config = if cli.reset {
-        if store.exists() {
-            match store.backup("reset") {
-                Ok(path) => {
-                    tracing::info!(backup = %path.display(), "previous configuration backed up")
-                }
-                Err(error) => {
-                    return Err(error).context(
-                        "refusing to reset: could not back up the existing configuration",
-                    );
-                }
-            }
-        }
-        Config::new()
-    } else {
-        store.load_or_default()
-    };
-
-    if config.desktop.spaces.is_empty() {
-        seed_default_desktop(&mut config.desktop, !cli.no_icons);
-    }
-    // Per-space overrides from before customized looks become a look now.
-    // The palette they were shown with depends on the Windows color mode.
-    let theme = config.theme.clone();
-    if config
-        .desktop
-        .fold_legacy_overrides(&theme, system_uses_dark_mode())
-    {
-        if let Err(error) = store.save(&config) {
-            tracing::warn!(%error, "could not save the converted space appearance");
-        }
-    }
-
-    // `--show` also forces them shown when it started a fresh instance, so a
-    // stale desktop entry still works after an unclean exit.
-    let hidden = !cli.show && (cli.hidden || config.window.start_hidden);
-    let placement = match cli.placement() {
-        Some(placement) => placement,
-        None if config.window.always_on_desktop => Placement::DesktopBackground,
-        None => Placement::TopLevel,
-    };
-    let options = RunOptions {
-        placement,
-        click_through: cli.click_through,
-        on_top: cli.on_top,
-        tray_tooltip: tray_tooltip(&config.desktop),
-    };
-
-    let mut app = App::new(config, store, hidden, cli.settings);
-    app.takeover_layer = cli.takeover_layer;
-    app.takeover = cli.takeover;
-    tracing::info!(
-        path = %app.store.path().display(),
-        storage = %app.storage.root().display(),
-        "starting DeskSpace"
-    );
-    deskspace_platform::run(options, Box::new(app)).context("the DeskSpace UI runtime failed")?;
-    Ok(())
-}
-
 /// What a double-click at `point` (desktop coordinates) acts on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DoubleClickTarget {
@@ -4002,7 +3937,7 @@ fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usiz
         .find(|index| labels[*index].to_lowercase().starts_with(&prefix))
 }
 
-fn tray_tooltip(desktop: &Desktop) -> String {
+pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
     let spaces = desktop.spaces.len();
     let items = desktop.space_item_count();
     let space_word = if spaces == 1 { "space" } else { "spaces" };
