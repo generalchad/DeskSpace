@@ -562,7 +562,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces; loose desktop items wait for takeover |
+| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces; loose items interactive on the takeover layer, which Explorer still draws |
 | F-07 | Lenses (spaces: Folder Portals) | M4 | Open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |

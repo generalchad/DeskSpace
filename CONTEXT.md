@@ -101,7 +101,9 @@ context menus, and a settings window in the first usable release (v0.2).
   both check-box modes, rubber-band/Ctrl+A selection, the clipboard
   cut/copy/paste with its ghosting and external sync, F2 item rename, the
   compressed/encrypted label colors, the info tips, jumbo icons, and
-  per-monitor DPI on a mixed-DPI setup. The
+  per-monitor DPI on a mixed-DPI setup, plus the desktop layer's item
+  interaction (`--takeover-layer`: select, drag, and drop a loose item onto a
+  space). The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
@@ -449,6 +451,18 @@ WindowSettings {
   draws the loose desktop items on it (`scene::desktop_layer_scene`), from the
   model's `DesktopLayer`. This is additive groundwork for M2: Explorer still
   draws its own icons, so the layer is only for an on-screen look.
+  - Item interaction is shared, not duplicated (ROADMAP D7): the app routes
+    hit-testing, selection, hover, rubber-band, drag, drop, info tips, and the
+    scene build through a `Surface` (`Space(id)` or `Desktop`) instead of a
+    bare `SpaceId`, so one item path serves both. The layer window's event id
+    is 0 (`App::DESKTOP_LAYER_ID`); real spaces start at 1. A click on the
+    layer selects and opens its loose items, the wheel is ignored (there is
+    nothing to scroll), and dragging a loose item repositions it
+    (`Command::SetDesktopItemPosition`); dragging it over a space leaves the
+    layer and starts the normal shell drag, so dropping it on a space moves
+    the file into that space (the layer then reconciles from the shell).
+    Space-only gestures (resize, move, roll up, scroll, inline rename, delete,
+    clipboard paste) stay keyed on a space.
 - Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`,
   kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
   activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the

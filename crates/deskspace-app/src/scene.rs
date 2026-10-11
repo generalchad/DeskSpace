@@ -261,6 +261,50 @@ pub fn desktop_layer_scene(
     }
 }
 
+/// Builds the scene used to render a drag image from the loose desktop layer:
+/// the layer's draw list reduced to the dragged `ids`, at their absolute
+/// positions. Mirrors `drag_scene` for spaces.
+#[allow(clippy::too_many_arguments)]
+pub fn desktop_layer_drag_scene(
+    layer: &DesktopLayer,
+    origin: Point,
+    ids: &[ItemId],
+    theme: &Theme,
+    palette: &Palette,
+    layout: GridSpec,
+    metrics: ItemMetrics,
+    view: ViewState,
+    icons: &mut IconCache,
+) -> SpaceScene {
+    let show_extensions = view.show_extensions;
+    let cell = layout.cell();
+    let mut scene =
+        desktop_layer_scene(layer, origin, theme, palette, layout, metrics, view, icons);
+    scene.items = ids
+        .iter()
+        .filter_map(|id| {
+            let item = layer.items().iter().find(|item| item.id == *id)?;
+            Some(ItemVisual {
+                id: item.id.0,
+                rect: Rect::new(
+                    item.position.x - origin.x,
+                    item.position.y - origin.y,
+                    cell.width,
+                    cell.height,
+                ),
+                label: item_label(item, show_extensions),
+                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                state: ItemState::Normal,
+                hovered: false,
+                checked: false,
+                cut: false,
+                label_color: None,
+            })
+        })
+        .collect();
+    scene
+}
+
 /// Builds the scene used to render a drag image: the space's draw list reduced
 /// to the dragged `ids`. A selected item scrolled out of view is included too,
 /// at the grid position it would occupy, so a group drag shows the whole
@@ -650,6 +694,32 @@ mod tests {
         assert_eq!(scene.items[0].rect.x, 400);
         assert_eq!(scene.items[0].rect.y, 200);
         assert!(scene.text_shadow.is_some());
+    }
+
+    #[test]
+    fn desktop_layer_drag_scene_keeps_only_the_dragged_ids() {
+        let mut layer = DesktopLayer::default();
+        for (n, position) in [(1u64, Point::new(500, 300)), (2, Point::new(700, 300))] {
+            let mut item = Item::new(ItemId(n), format!("C:/missing/{n}.txt"));
+            item.position = position;
+            layer.push_item(item);
+        }
+        let theme = Theme::default();
+        let scene = desktop_layer_drag_scene(
+            &layer,
+            Point::new(100, 100),
+            &[ItemId(2)],
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert_eq!(scene.items.len(), 1);
+        assert_eq!(scene.items[0].id, 2);
+        assert_eq!(scene.items[0].rect.x, 600);
+        assert_eq!(scene.items[0].rect.y, 200);
     }
 
     #[test]

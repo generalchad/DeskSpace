@@ -23,7 +23,8 @@ use deskspace_platform::{
 use crate::bootstrap::seed_default_desktop;
 use crate::cli::Cli;
 use crate::scene::{
-    ViewState, desktop_layer_scene, drag_scene, item_label, layer_style, space_scene, space_style,
+    ViewState, desktop_layer_drag_scene, desktop_layer_scene, drag_scene, item_label, layer_style,
+    space_scene, space_style,
 };
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 use crate::storage::ItemStore;
@@ -151,6 +152,32 @@ const SORT_PRESETS: [(u32, &str, SortKey, bool); 7] = [
     ),
 ];
 
+/// The event id the platform gives the chrome-less desktop layer window
+/// (`Ui::create_desktop_layer`). Real spaces get ids from `Desktop::add_space`
+/// starting at 1, so 0 is free to mean the loose-desktop surface.
+const DESKTOP_LAYER_ID: SpaceId = SpaceId(0);
+
+/// Where item interaction happens: a space's window, or the desktop layer that
+/// holds the loose desktop items (ROADMAP D7). Hit-testing, selection, hover,
+/// drag, and drop go through this so one item path serves both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Surface {
+    Space(SpaceId),
+    Desktop,
+}
+
+impl Surface {
+    /// The surface an event id belongs to: 0 is the desktop layer, anything
+    /// else a real space.
+    fn of(id: SpaceId) -> Self {
+        if id == DESKTOP_LAYER_ID {
+            Self::Desktop
+        } else {
+            Self::Space(id)
+        }
+    }
+}
+
 enum Drag {
     None,
     Space {
@@ -162,17 +189,17 @@ enum Drag {
         edges: ResizeEdges,
     },
     /// The left button went down on an item. Past the drag threshold it
-    /// rearranges the item within its space; once the pointer leaves the
-    /// space it becomes a shell drag, as dragging an icon out of a folder.
+    /// rearranges the item within its surface; once the pointer leaves it the
+    /// drag becomes a shell drag, as dragging an icon out of a folder.
     Item {
-        space: SpaceId,
+        surface: Surface,
         item: ItemId,
         origin: Point,
         active: bool,
     },
     /// Rubber-band selection over empty content.
     Marquee {
-        space: SpaceId,
+        surface: Surface,
         origin: Point,
         /// Ctrl/Shift: add to the selection instead of replacing it.
         additive: bool,
@@ -253,7 +280,7 @@ enum ScrollKey {
 
 /// An in-progress inline rename. The platform captures keys while it lives.
 struct EditSession {
-    space: SpaceId,
+    surface: Surface,
     target: EditTarget,
     original: String,
     text: TextEdit,
@@ -364,8 +391,8 @@ pub struct App {
     /// The desktop's loose items read from the shell on `Started`. The M2
     /// desktop layer consumes them; until then they are only diagnostics.
     desktop_entries: Vec<DesktopEntry>,
-    selected_space: Option<SpaceId>,
-    /// Items selected in `selected_space`, in the order they were selected.
+    selected_surface: Option<Surface>,
+    /// Items selected in `selected_surface`, in the order they were selected.
     selected_items: Vec<ItemId>,
     /// The item a Shift+click or Shift+arrow extends the selection from.
     selection_anchor: Option<ItemId>,
@@ -379,13 +406,13 @@ pub struct App {
     cut_items: HashSet<ItemId>,
     /// Ticked items in independent item-check-box mode. Session-only.
     checked_items: Vec<ItemId>,
-    hovered: Option<(SpaceId, ItemId)>,
+    hovered: Option<(Surface, ItemId)>,
     drag: Drag,
     /// The items whose slots are drawn faded while they are dragged.
-    dragged: Option<(SpaceId, Vec<ItemId>)>,
+    dragged: Option<(Surface, Vec<ItemId>)>,
     /// The rubber-band selection rectangle in desktop coordinates and the
-    /// space it belongs to, while the user drags over empty content.
-    marquee: Option<(SpaceId, Rect)>,
+    /// surface it belongs to, while the user drags over empty content.
+    marquee: Option<(Surface, Rect)>,
     /// The picture under the pointer during an item drag, shown by the ghost
     /// window inside the space and by the shell once the drag leaves it.
     drag_image: Option<DragImage>,
@@ -430,7 +457,7 @@ impl App {
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
             desktop_entries: Vec::new(),
-            selected_space: None,
+            selected_surface: None,
             selected_items: Vec::new(),
             selection_anchor: None,
             focused: None,
@@ -534,13 +561,14 @@ impl App {
         self.refresh_tray(ui);
     }
 
-    fn view_for(&self, id: SpaceId) -> ViewState {
+    fn view_for(&self, surface: Surface) -> ViewState {
+        let check_boxes = self.surface_check_box_mode(surface);
         ViewState {
             hovered: self
                 .hovered
-                .filter(|(space, _)| *space == id)
+                .filter(|(owner, _)| *owner == surface)
                 .map(|(_, item)| item),
-            selected: if self.selected_space == Some(id) {
+            selected: if self.selected_surface == Some(surface) {
                 self.selected_items.clone()
             } else {
                 Vec::new()
@@ -548,22 +576,23 @@ impl App {
             dragged: self
                 .dragged
                 .as_ref()
-                .filter(|(space, _)| *space == id)
+                .filter(|(owner, _)| *owner == surface)
                 .map(|(_, items)| items.clone())
                 .unwrap_or_default(),
-            scroll: self.scroll_of(id),
-            show_check_boxes: self.check_box_mode(id) != CheckBoxMode::Hidden,
-            check_boxes_persistent: self.check_box_mode(id) == CheckBoxMode::Independent,
+            scroll: self.surface_scroll(surface),
+            show_check_boxes: check_boxes != CheckBoxMode::Hidden,
+            check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
             checked: self.checked_items.clone(),
-            show_extensions: self.match_explorer(id) && self.shell_display.show_extensions,
-            show_compressed_color: self.match_explorer(id)
+            show_extensions: self.surface_match_explorer(surface)
+                && self.shell_display.show_extensions,
+            show_compressed_color: self.surface_match_explorer(surface)
                 && self.shell_display.show_compressed_color,
             cut: self.cut_items.iter().copied().collect(),
             marquee: self.marquee.and_then(|(owner, rect)| {
-                if owner != id {
+                if owner != surface {
                     return None;
                 }
-                let origin = self.config.desktop.space(id)?.rect;
+                let origin = self.surface_window_rect(surface)?.origin();
                 Some(Rect::new(
                     rect.x - origin.x,
                     rect.y - origin.y,
@@ -571,8 +600,10 @@ impl App {
                     rect.height,
                 ))
             }),
-            highlight: self.highlighted == Some(id),
-            focused: (self.selected_space == Some(id))
+            highlight: self
+                .highlighted
+                .is_some_and(|id| surface == Surface::Space(id)),
+            focused: (self.selected_surface == Some(surface))
                 .then_some(self.focused)
                 .flatten(),
         }
@@ -603,25 +634,11 @@ impl App {
         self.theme_for(id).match_explorer
     }
 
-    /// How a space shows item check boxes, honoring its `match_explorer`.
-    fn check_box_mode(&self, id: SpaceId) -> CheckBoxMode {
-        if self.match_explorer(id) {
-            self.shell_display.check_boxes
-        } else {
-            CheckBoxMode::Hidden
-        }
-    }
-
     /// The concrete colors for a space's scene: its theme's palette, with the
     /// selection highlight and border replaced by Windows' accent when the
     /// theme asks for it and an accent is known.
     fn palette_for(&self, id: SpaceId) -> Palette {
-        let theme = self.theme_for(id);
-        let palette = theme.palette(self.system_dark);
-        match (theme.use_accent, self.system_accent) {
-            (true, Some(accent)) => palette.with_accent(accent),
-            _ => palette,
-        }
+        self.surface_palette(Surface::Space(id))
     }
 
     /// The window style for a space.
@@ -801,20 +818,16 @@ impl App {
             return;
         }
         let rect = virtual_desktop_rect();
+        let view = self.view_for(Surface::Desktop);
         let theme = &self.config.theme;
-        let palette = theme.palette(self.system_dark);
-        let view = ViewState {
-            show_extensions: self.shell_display.show_extensions,
-            show_compressed_color: self.shell_display.show_compressed_color,
-            ..ViewState::default()
-        };
+        let palette = self.surface_palette(Surface::Desktop);
         let scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
             theme,
             &palette,
-            self.effective_layout(),
-            ItemMetrics::for_scale(self.icon_scale(theme)),
+            self.surface_layout(Surface::Desktop),
+            self.surface_metrics(Surface::Desktop),
             view,
             &mut self.icons,
         );
@@ -833,35 +846,186 @@ impl App {
         self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
     }
 
-    /// The item whose Explorer-style check box contains `point`, when check
-    /// boxes are shown. `point` is in desktop coordinates.
-    fn checkbox_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
-        if self.check_box_mode(id) == CheckBoxMode::Hidden {
-            return None;
+    /// A surface's items, in model order.
+    fn surface_items(&self, surface: Surface) -> &[Item] {
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .map_or(&[][..], |space| &space.items),
+            Surface::Desktop => self.config.desktop.layer().items(),
         }
-        let item = self.item_at(id, point)?;
-        let space = self.config.desktop.space(id)?;
-        let entry = space.items.iter().find(|entry| entry.id == item)?;
-        let layout = self.layout_for(id);
-        let content = space.content_rect();
-        let cell = Rect::new(
-            content.x + entry.position.x,
-            content.y + entry.position.y - self.scroll_of(id),
-            layout.cell_width,
-            layout.cell_height,
-        );
-        item_check_box_hit(cell, self.metrics_for(id))
-            .contains(point)
-            .then_some(item)
     }
 
-    fn item_at(&self, id: SpaceId, point: Point) -> Option<ItemId> {
-        let cell = self.layout_for(id).cell();
-        let scroll = self.scroll_of(id);
-        self.config
-            .desktop
-            .space(id)
-            .and_then(|space| space.item_at(point, cell, scroll))
+    /// The item with `id` on `surface`, when it is there.
+    fn surface_item(&self, surface: Surface, id: ItemId) -> Option<&Item> {
+        self.surface_items(surface)
+            .iter()
+            .find(|item| item.id == id)
+    }
+
+    /// The content-area origin of a surface in desktop coordinates: a space's
+    /// content area, or the virtual-desktop origin for the layer, whose item
+    /// positions are already absolute.
+    fn surface_content_origin(&self, surface: Surface) -> Point {
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .map_or(Point::ZERO, |space| space.content_rect().origin()),
+            Surface::Desktop => Point::ZERO,
+        }
+    }
+
+    /// The rect a surface's window occupies on screen.
+    fn surface_window_rect(&self, surface: Surface) -> Option<Rect> {
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .map(|space| space.visible_rect()),
+            Surface::Desktop => Some(virtual_desktop_rect()),
+        }
+    }
+
+    /// The area a rubber-band selection clamps to, in desktop coordinates.
+    fn surface_content(&self, surface: Surface) -> Option<Rect> {
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .map(|space| space.content_rect()),
+            Surface::Desktop => Some(virtual_desktop_rect()),
+        }
+    }
+
+    /// A surface's scroll offset; the layer never scrolls.
+    fn surface_scroll(&self, surface: Surface) -> i32 {
+        match surface {
+            Surface::Space(id) => self.scroll_of(id),
+            Surface::Desktop => 0,
+        }
+    }
+
+    /// The scaled grid a surface lays out on.
+    fn surface_layout(&self, surface: Surface) -> GridSpec {
+        match surface {
+            Surface::Space(id) => self.layout_for(id),
+            Surface::Desktop => self.effective_layout(),
+        }
+    }
+
+    /// Scaled icon, label, and check-box sizes for a surface.
+    fn surface_metrics(&self, surface: Surface) -> ItemMetrics {
+        match surface {
+            Surface::Space(id) => self.metrics_for(id),
+            Surface::Desktop => ItemMetrics::for_scale(self.icon_scale(&self.config.theme)),
+        }
+    }
+
+    /// The theme a surface is drawn with: a space's own look while customized,
+    /// else the global theme.
+    fn surface_theme(&self, surface: Surface) -> &Theme {
+        match surface {
+            Surface::Space(id) => self.theme_for(id),
+            Surface::Desktop => &self.config.theme,
+        }
+    }
+
+    /// The concrete colors for a surface, with the Windows accent when asked.
+    fn surface_palette(&self, surface: Surface) -> Palette {
+        let theme = self.surface_theme(surface);
+        let palette = theme.palette(self.system_dark);
+        match (theme.use_accent, self.system_accent) {
+            (true, Some(accent)) => palette.with_accent(accent),
+            _ => palette,
+        }
+    }
+
+    /// Whether a surface mirrors Explorer's display settings.
+    fn surface_match_explorer(&self, surface: Surface) -> bool {
+        self.surface_theme(surface).match_explorer
+    }
+
+    /// How a surface shows item check boxes, honoring its `match_explorer`.
+    fn surface_check_box_mode(&self, surface: Surface) -> CheckBoxMode {
+        if self.surface_match_explorer(surface) {
+            self.shell_display.check_boxes
+        } else {
+            CheckBoxMode::Hidden
+        }
+    }
+
+    /// The rect of an item's cell on `surface`, in desktop coordinates.
+    fn surface_cell(&self, surface: Surface, item: &Item) -> Rect {
+        let origin = self.surface_content_origin(surface);
+        let cell = self.surface_layout(surface).cell();
+        Rect::new(
+            origin.x + item.position.x,
+            origin.y + item.position.y - self.surface_scroll(surface),
+            cell.width,
+            cell.height,
+        )
+    }
+
+    /// Every item's cell on `surface`, in desktop coordinates.
+    fn surface_cells(&self, surface: Surface) -> Vec<(ItemId, Rect)> {
+        let origin = self.surface_content_origin(surface);
+        let scroll = self.surface_scroll(surface);
+        let cell = self.surface_layout(surface).cell();
+        self.surface_items(surface)
+            .iter()
+            .map(|item| {
+                (
+                    item.id,
+                    Rect::new(
+                        origin.x + item.position.x,
+                        origin.y + item.position.y - scroll,
+                        cell.width,
+                        cell.height,
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    /// The item whose cell contains `point` (desktop coordinates).
+    fn surface_item_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
+        let cell = self.surface_layout(surface).cell();
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .and_then(|space| space.item_at(point, cell, self.surface_scroll(surface))),
+            Surface::Desktop => self.config.desktop.layer().item_at(point, cell),
+        }
+    }
+
+    /// Repaints a surface; the layer repaints through its own window.
+    fn refresh_surface(&mut self, ui: &mut Ui, surface: Surface) {
+        match surface {
+            Surface::Space(id) => self.refresh_space(ui, id),
+            Surface::Desktop => self.refresh_desktop_layer(ui),
+        }
+    }
+
+    /// The item whose Explorer-style check box contains `point`, when check
+    /// boxes are shown. `point` is in desktop coordinates.
+    fn checkbox_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
+        if self.surface_check_box_mode(surface) == CheckBoxMode::Hidden {
+            return None;
+        }
+        let item = self.surface_item_at(surface, point)?;
+        let entry = self.surface_item(surface, item)?;
+        let cell = self.surface_cell(surface, entry);
+        item_check_box_hit(cell, self.surface_metrics(surface))
+            .contains(point)
+            .then_some(item)
     }
 
     /// The item holding the file at `path`, comparing identity rather than the
@@ -879,7 +1043,7 @@ impl App {
 
     /// Pushes the space's current geometry and draw list to its window.
     fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
-        let view = self.view_for(id);
+        let view = self.view_for(Surface::Space(id));
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -893,7 +1057,11 @@ impl App {
             view,
             &mut self.icons,
         );
-        if let Some(session) = self.edit.as_ref().filter(|session| session.space == id) {
+        if let Some(session) = self
+            .edit
+            .as_ref()
+            .filter(|session| session.surface == Surface::Space(id))
+        {
             match session.target {
                 EditTarget::Title => scene.editing = Some(session.text.clone()),
                 EditTarget::Item { id: item, .. } => {
@@ -962,25 +1130,26 @@ impl App {
 
     /// Clears the item selection, as clicking elsewhere does in Explorer.
     /// Returns the space that showed it, which needs a new scene.
-    fn take_selection(&mut self) -> Option<SpaceId> {
-        let space = self.selected_space.take();
+    fn take_selection(&mut self) -> Option<Surface> {
+        let surface = self.selected_surface.take();
         let had = !std::mem::take(&mut self.selected_items).is_empty();
         self.selection_anchor = None;
         self.focused = None;
-        had.then_some(space).flatten()
+        had.then_some(surface).flatten()
     }
 
     fn clear_selection(&mut self, ui: &mut Ui) {
-        if let Some(space) = self.take_selection() {
-            self.refresh_space(ui, space);
+        if let Some(surface) = self.take_selection() {
+            self.refresh_surface(ui, surface);
         }
     }
 
     /// Asks for outside clicks only while there is something for them to
     /// clear, because watching them hooks every mouse event in the session.
     fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted =
-            !self.selected_items.is_empty() || self.edit.is_some() || self.selected_space.is_some();
+        let wanted = !self.selected_items.is_empty()
+            || self.edit.is_some()
+            || self.selected_surface.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
@@ -1067,7 +1236,7 @@ impl App {
         };
         let original = space.title.clone();
         self.edit = Some(EditSession {
-            space: id,
+            surface: Surface::Space(id),
             target: EditTarget::Title,
             original: original.clone(),
             text: TextEdit::new(original),
@@ -1081,7 +1250,10 @@ impl App {
     /// Handles F2: renames the focused (last-selected) item, or the current
     /// space's title when no item is selected, as F2 does in Explorer.
     fn begin_f2_rename(&mut self, ui: &mut Ui) {
-        let Some(space) = self.selected_space else {
+        // Only a space renames: its title, or an item's file. A loose desktop
+        // item's file rename would need `Command::RenameItem` to reach the
+        // layer.
+        let Some(Surface::Space(space)) = self.selected_surface else {
             return;
         };
         match self.selected_items.last().copied() {
@@ -1121,7 +1293,7 @@ impl App {
 
     /// Scrolls the current space as Home, End, PageUp, or PageDown does.
     fn scroll_current_space(&mut self, ui: &mut Ui, key: ScrollKey) {
-        let Some(id) = self.selected_space else {
+        let Some(Surface::Space(id)) = self.selected_surface else {
             return;
         };
         let layout = self.layout_for(id);
@@ -1143,7 +1315,9 @@ impl App {
         }
         self.scroll.insert(id, offset);
         // The items moved under a still cursor, so the hovered one changed.
-        self.hovered = self.hovered.filter(|(space, _)| *space != id);
+        self.hovered = self
+            .hovered
+            .filter(|(space, _)| *space != Surface::Space(id));
         self.refresh_space(ui, id);
     }
 
@@ -1151,50 +1325,50 @@ impl App {
     /// item whose label starts with it, wrapping around. The buffer clears
     /// after a pause (`TYPE_TIMER`), so a new search starts fresh.
     fn on_typed(&mut self, ui: &mut Ui, ch: char) {
-        let Some(id) = self.selected_space else {
+        let Some(surface) = self.selected_surface else {
             return;
         };
         self.type_buffer.push(ch);
         ui.set_timer(TYPE_TIMER, TYPE_DELAY_MS);
-        let show_extensions = self.match_explorer(id) && self.shell_display.show_extensions;
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let labels: Vec<String> = space
-            .items
+        let show_extensions =
+            self.surface_match_explorer(surface) && self.shell_display.show_extensions;
+        let labels: Vec<String> = self
+            .surface_items(surface)
             .iter()
             .map(|item| item_label(item, show_extensions))
             .collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        let current = self
-            .selected_items
-            .last()
-            .and_then(|item| space.items.iter().position(|entry| entry.id == *item));
+        let current = self.selected_items.last().and_then(|item| {
+            self.surface_items(surface)
+                .iter()
+                .position(|entry| entry.id == *item)
+        });
         let start = current.map_or(0, |index| index + 1);
         let Some(index) = next_prefix_match(&labels, &self.type_buffer, start) else {
             return;
         };
-        let item = space.items[index].id;
+        let Some(item) = self.surface_items(surface).get(index).map(|entry| entry.id) else {
+            return;
+        };
         self.selected_items = vec![item];
         self.selection_anchor = Some(item);
         self.focused = Some(item);
-        self.scroll_item_into_view(id, index);
-        self.refresh_space(ui, id);
+        if let Surface::Space(id) = surface {
+            self.scroll_item_into_view(id, index);
+        }
+        self.refresh_surface(ui, surface);
     }
 
     /// Arrow-key navigation: move the selection the nearest item in that
     /// direction, extend it (Shift), or move the focus only (Ctrl), then bring
     /// the item into view.
     fn on_navigate(&mut self, ui: &mut Ui, key: NavKey) {
-        let Some(id) = self.selected_space else {
+        let Some(surface) = self.selected_surface else {
             return;
         };
-        let layout = self.layout_for(id);
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let cells: Vec<Point> = space
-            .items
+        let layout = self.surface_layout(surface);
+        let cells: Vec<Point> = self
+            .surface_items(surface)
             .iter()
             .map(|item| {
                 Point::new(
@@ -1206,7 +1380,11 @@ impl App {
         let current = self
             .focused
             .or_else(|| self.selected_items.last().copied())
-            .and_then(|item| space.items.iter().position(|entry| entry.id == item));
+            .and_then(|item| {
+                self.surface_items(surface)
+                    .iter()
+                    .position(|entry| entry.id == item)
+            });
         // A first arrow with nothing focused picks the first item.
         let target = match current {
             Some(index) => match next_in_direction(&cells, index, key.dir) {
@@ -1215,20 +1393,26 @@ impl App {
             },
             None => 0,
         };
-        let Some(item) = space.items.get(target).map(|entry| entry.id) else {
+        let Some(item) = self
+            .surface_items(surface)
+            .get(target)
+            .map(|entry| entry.id)
+        else {
             return;
         };
         self.focused = Some(item);
         if key.focus {
             // Move the focus rectangle only; the selection stays.
         } else if key.extend {
-            self.extend_selection(id, item);
+            self.extend_selection(surface, item);
         } else {
             self.selected_items = vec![item];
             self.selection_anchor = Some(item);
         }
-        self.scroll_item_into_view(id, target);
-        self.refresh_space(ui, id);
+        if let Surface::Space(id) = surface {
+            self.scroll_item_into_view(id, target);
+        }
+        self.refresh_surface(ui, surface);
     }
 
     /// Brings the item at `index` (in the space's order) into the content area
@@ -1267,32 +1451,34 @@ impl App {
     /// Opens the context menu for the focused item, or for the current space
     /// when no item is selected, as the Menu key or Shift+F10 does.
     fn open_context_menu(&mut self, ui: &mut Ui) {
-        let Some(space) = self.selected_space else {
+        let Some(surface) = self.selected_surface else {
             return;
         };
         let Some(at) = self.menu_anchor() else {
             return;
         };
         match self.selected_items.last().copied() {
-            Some(item) => self.show_item_menu(ui, space, item, at),
-            None => self.show_space_menu(ui, space, at),
+            Some(item) => self.show_item_menu(ui, surface, item, at),
+            None => {
+                if let Surface::Space(id) = surface {
+                    self.show_space_menu(ui, id, at);
+                }
+            }
         }
     }
 
     /// Where to anchor a keyboard-opened menu: the center of the focused item's
-    /// cell, or the current space's center when no item is selected.
+    /// cell, or the current surface's center when no item is selected.
     fn menu_anchor(&self) -> Option<Point> {
-        let id = self.selected_space?;
-        let space = self.config.desktop.space(id)?;
+        let surface = self.selected_surface?;
         let Some(item) = self.selected_items.last().copied() else {
-            return Some(space.rect.center());
+            return Some(self.surface_window_rect(surface)?.center());
         };
-        let entry = space.items.iter().find(|entry| entry.id == item)?;
-        let layout = self.layout_for(id);
-        let content = space.content_rect();
+        let entry = self.surface_item(surface, item)?;
+        let cell = self.surface_cell(surface, entry);
         Some(Point::new(
-            content.x + entry.position.x + layout.cell_width / 2,
-            content.y + entry.position.y - self.scroll_of(id) + layout.cell_height / 2,
+            cell.x + cell.width / 2,
+            cell.y + cell.height / 2,
         ))
     }
 
@@ -1324,7 +1510,7 @@ impl App {
             }
         }
         self.edit = Some(EditSession {
-            space,
+            surface: Surface::Space(space),
             target: EditTarget::Item {
                 id: item,
                 shows_extension,
@@ -1342,13 +1528,13 @@ impl App {
         let Some(session) = self.edit.as_mut() else {
             return;
         };
-        let space = session.space;
+        let space = session.surface;
         let outcome = session.text.apply(key);
         match outcome {
             EditOutcome::Changed => {
                 // Typing restarts the blink with the caret shown.
                 self.caret_visible = true;
-                self.refresh_space(ui, space);
+                self.refresh_surface(ui, space);
             }
             EditOutcome::Commit => self.finish_rename(ui, true),
             EditOutcome::Cancel => self.finish_rename(ui, false),
@@ -1364,9 +1550,12 @@ impl App {
         };
         ui.capture_text_input(false);
         ui.clear_timer(CARET_TIMER);
-        let id = session.space;
+        let surface = session.surface;
         match session.target {
             EditTarget::Title => {
+                let Surface::Space(id) = surface else {
+                    return;
+                };
                 if commit {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
@@ -1386,7 +1575,7 @@ impl App {
                 }
             }
         }
-        self.refresh_space(ui, id);
+        self.refresh_surface(ui, surface);
     }
 
     /// Renames an item's file to the edited text and updates the model. The
@@ -1442,34 +1631,33 @@ impl App {
         }
     }
 
-    /// Selects every item in the current space, as Ctrl+A does.
+    /// Selects every item in the current surface, as Ctrl+A does.
     fn select_all_in_space(&mut self, ui: &mut Ui) {
-        let Some(space) = self.selected_space else {
+        let Some(surface) = self.selected_surface else {
             return;
         };
         let ids: Vec<ItemId> = self
-            .config
-            .desktop
-            .space(space)
-            .map(|space| space.items.iter().map(|item| item.id).collect())
-            .unwrap_or_default();
+            .surface_items(surface)
+            .iter()
+            .map(|item| item.id)
+            .collect();
         if ids.is_empty() {
             return;
         }
         self.selected_items = ids;
         self.selection_anchor = self.selected_items.first().copied();
         self.focused = self.selection_anchor;
-        self.refresh_space(ui, space);
+        self.refresh_surface(ui, surface);
     }
 
     /// Toggles the edit caret so it blinks, as Windows does.
     fn blink_caret(&mut self, ui: &mut Ui) {
-        let Some(space) = self.edit.as_ref().map(|session| session.space) else {
+        let Some(surface) = self.edit.as_ref().map(|session| session.surface) else {
             ui.clear_timer(CARET_TIMER);
             return;
         };
         self.caret_visible = !self.caret_visible;
-        self.refresh_space(ui, space);
+        self.refresh_surface(ui, surface);
     }
 
     // ---- per-space appearance ------------------------------------------
@@ -1580,10 +1768,15 @@ impl App {
     // ---- pointer -------------------------------------------------------
 
     fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
-        // The chrome-less desktop layer reuses the space window but has no
-        // model space, and a space window can outlive its space by one queued
-        // event; ignore anything they report.
-        if self.config.desktop.space(id).is_none() {
+        // The chrome-less desktop layer reuses the space window: id 0 is it,
+        // any other id a real space. A space window can outlive its space by
+        // one queued event, so ignore anything they report.
+        let surface = Surface::of(id);
+        let exists = match surface {
+            Surface::Space(id) => self.config.desktop.space(id).is_some(),
+            Surface::Desktop => self.takeover_layer,
+        };
+        if !exists {
             return;
         }
         // Clicking anywhere commits a rename in progress before the click is
@@ -1611,24 +1804,26 @@ impl App {
                 button: MouseButton::Left,
                 ctrl,
                 shift,
-            } => self.begin_interaction(ui, id, Point::new(x, y), ctrl, shift),
+            } => self.begin_interaction(ui, surface, Point::new(x, y), ctrl, shift),
             SpaceEvent::MouseDown {
                 x,
                 y,
                 button: MouseButton::Right,
                 ..
-            } => self.select_at(ui, id, Point::new(x, y)),
+            } => self.select_at(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
                 if !self.drag_to(ui, point) {
-                    self.update_cursor(ui, id, point);
-                    self.update_hover(ui, id, point);
+                    if let Surface::Space(id) = surface {
+                        self.update_cursor(ui, id, point);
+                    }
+                    self.update_hover(ui, surface, point);
                 }
             }
             SpaceEvent::Wheel { x, y, delta, ctrl } => {
                 if ctrl {
                     self.adjust_icon_size(ui, delta);
-                } else {
+                } else if let Surface::Space(id) = surface {
                     self.scroll_by(ui, id, Point::new(x, y), delta);
                 }
             }
@@ -1643,17 +1838,21 @@ impl App {
                 button: MouseButton::Right,
             } => {
                 let point = Point::new(x, y);
-                match self.item_at(id, point) {
-                    Some(item) => self.show_item_menu(ui, id, item, point),
-                    None => self.show_space_menu(ui, id, point),
+                match self.surface_item_at(surface, point) {
+                    Some(item) => self.show_item_menu(ui, surface, item, point),
+                    None => {
+                        if let Surface::Space(id) = surface {
+                            self.show_space_menu(ui, id, point);
+                        }
+                    }
                 }
             }
-            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, id, Point::new(x, y)),
+            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
-                if self.hovered.is_some_and(|(space, _)| space == id) {
+                if self.hovered.is_some_and(|(owner, _)| owner == surface) {
                     self.hovered = None;
-                    self.refresh_space(ui, id);
+                    self.refresh_surface(ui, surface);
                 }
             }
             SpaceEvent::FilesDropped {
@@ -1662,9 +1861,17 @@ impl App {
                 paths,
                 keep_in_place,
             } => {
-                self.add_dropped(ui, id, Point::new(x, y), paths, keep_in_place);
+                // Only a space registers an OLE drop target, so `id` is a
+                // space here.
+                if let Surface::Space(space) = surface {
+                    self.add_dropped(ui, space, Point::new(x, y), paths, keep_in_place);
+                }
             }
-            SpaceEvent::DpiChanged { .. } => self.on_dpi_changed(ui, id),
+            SpaceEvent::DpiChanged { .. } => {
+                if let Surface::Space(id) = surface {
+                    self.on_dpi_changed(ui, id);
+                }
+            }
             _ => {}
         }
     }
@@ -1672,7 +1879,7 @@ impl App {
     fn begin_interaction(
         &mut self,
         ui: &mut Ui,
-        id: SpaceId,
+        surface: Surface,
         point: Point,
         ctrl: bool,
         shift: bool,
@@ -1680,9 +1887,9 @@ impl App {
         // A click on an item's check box either toggles that item in the
         // selection (auto-check-select) or the independent tick set, and moves
         // the highlight to it.
-        if let Some(item) = self.checkbox_at(id, point) {
-            let previous = self.selected_space.replace(id);
-            if self.check_box_mode(id) == CheckBoxMode::Independent {
+        if let Some(item) = self.checkbox_at(surface, point) {
+            let previous = self.selected_surface.replace(surface);
+            if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
                 if let Some(index) = self.checked_items.iter().position(|entry| *entry == item) {
                     self.checked_items.remove(index);
                 } else {
@@ -1694,19 +1901,19 @@ impl App {
             }
             self.selection_anchor = Some(item);
             self.focused = Some(item);
-            if let Some(previous) = previous.filter(|previous| *previous != id) {
-                self.refresh_space(ui, previous);
+            if let Some(previous) = previous.filter(|previous| *previous != surface) {
+                self.refresh_surface(ui, previous);
             }
-            self.refresh_space(ui, id);
+            self.refresh_surface(ui, surface);
             return;
         }
-        let previous = self.selected_space.replace(id);
+        let previous = self.selected_surface.replace(surface);
         self.pending_click = None;
-        let item = self.item_at(id, point);
+        let item = self.surface_item_at(surface, point);
         match item {
             Some(item) => {
                 if shift {
-                    self.extend_selection(id, item);
+                    self.extend_selection(surface, item);
                 } else if ctrl {
                     self.toggle_selected(item);
                 } else if self.is_selected(item) {
@@ -1726,37 +1933,56 @@ impl App {
                 }
             }
         }
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let edges = space.resize_edges_at(point, RESIZE_BORDER);
-        if edges.any() {
-            self.drag = Drag::Resize { id, edges };
-            self.selected_items.clear();
-        } else if let Some(item) = item {
-            self.drag = Drag::Item {
-                space: id,
-                item,
-                origin: point,
-                active: false,
-            };
-        } else if !space.locked && space.title_bar().contains(point) {
-            self.drag = Drag::Space {
-                id,
-                grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
-            };
-        } else if space.content_rect().contains(point) {
-            // Empty content: start a rubber-band selection.
-            self.drag = Drag::Marquee {
-                space: id,
-                origin: point,
-                additive: ctrl || shift,
-            };
+        match surface {
+            Surface::Space(id) => {
+                let Some(space) = self.config.desktop.space(id) else {
+                    return;
+                };
+                let edges = space.resize_edges_at(point, RESIZE_BORDER);
+                if edges.any() {
+                    self.drag = Drag::Resize { id, edges };
+                    self.selected_items.clear();
+                } else if let Some(item) = item {
+                    self.drag = Drag::Item {
+                        surface,
+                        item,
+                        origin: point,
+                        active: false,
+                    };
+                } else if !space.locked && space.title_bar().contains(point) {
+                    self.drag = Drag::Space {
+                        id,
+                        grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
+                    };
+                } else if space.content_rect().contains(point) {
+                    // Empty content: start a rubber-band selection.
+                    self.drag = Drag::Marquee {
+                        surface,
+                        origin: point,
+                        additive: ctrl || shift,
+                    };
+                }
+            }
+            Surface::Desktop => {
+                self.drag = match item {
+                    Some(item) => Drag::Item {
+                        surface,
+                        item,
+                        origin: point,
+                        active: false,
+                    },
+                    None => Drag::Marquee {
+                        surface,
+                        origin: point,
+                        additive: ctrl || shift,
+                    },
+                };
+            }
         }
-        if let Some(previous) = previous.filter(|previous| *previous != id) {
-            self.refresh_space(ui, previous);
+        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+            self.refresh_surface(ui, previous);
         }
-        self.refresh_space(ui, id);
+        self.refresh_surface(ui, surface);
     }
 
     fn is_selected(&self, item: ItemId) -> bool {
@@ -1774,32 +2000,34 @@ impl App {
 
     /// Selects every item between the anchor and `item` in the space's order,
     /// as a Shift+click does.
-    fn extend_selection(&mut self, space: SpaceId, item: ItemId) {
+    fn extend_selection(&mut self, surface: Surface, item: ItemId) {
         let Some(anchor) = self.selection_anchor else {
             self.selected_items = vec![item];
             return;
         };
-        let Some(space) = self.config.desktop.space(space) else {
-            return;
+        let index = |target| {
+            self.surface_items(surface)
+                .iter()
+                .position(|entry| entry.id == target)
         };
-        let index = |target| space.items.iter().position(|entry| entry.id == target);
         let (Some(a), Some(b)) = (index(anchor), index(item)) else {
             self.selected_items = vec![item];
             return;
         };
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
-        self.selected_items = space.items[start..=end]
+        let selected: Vec<ItemId> = self.surface_items(surface)[start..=end]
             .iter()
             .map(|entry| entry.id)
             .collect();
+        self.selected_items = selected;
     }
 
     /// Selects the item under `point` (or nothing) without starting a drag,
     /// as a right-click does before its menu opens. Right-clicking an item
     /// that is already part of a multi-selection keeps the selection.
-    fn select_at(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
-        let previous = self.selected_space.replace(id);
-        let item = self.item_at(id, point);
+    fn select_at(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        let previous = self.selected_surface.replace(surface);
+        let item = self.surface_item_at(surface, point);
         match item {
             Some(item) if !self.is_selected(item) => {
                 self.selected_items = vec![item];
@@ -1812,17 +2040,17 @@ impl App {
                 self.focused = None;
             }
         }
-        if let Some(previous) = previous.filter(|previous| *previous != id) {
-            self.refresh_space(ui, previous);
+        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+            self.refresh_surface(ui, previous);
         }
-        self.refresh_space(ui, id);
+        self.refresh_surface(ui, surface);
     }
 
     fn drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
         match self.drag {
             Drag::None => false,
             Drag::Item {
-                space,
+                surface,
                 item,
                 origin,
                 active,
@@ -1835,38 +2063,37 @@ impl App {
                         return true;
                     }
                     self.drag = Drag::Item {
-                        space,
+                        surface,
                         item,
                         origin,
                         active: true,
                     };
-                    self.begin_drag_visual(ui, space, item, origin, point);
+                    self.begin_drag_visual(ui, surface, item, origin, point);
                 }
-                // Still over the space: rearrange. Left it: hand off to the
-                // shell, which moves the file to another space or app.
-                let inside = self
-                    .config
-                    .desktop
-                    .space(space)
-                    .is_some_and(|space| space.visible_rect().contains(point));
-                if inside {
+                // Still over the surface: rearrange (a space) or reposition (a
+                // loose item). Left it: hand off to the shell, which moves the
+                // file to another space or app.
+                if self.surface_contains(surface, point) {
                     ui.move_drag_ghost(point);
-                    self.reorder_item_at(ui, space, item, point);
+                    match surface {
+                        Surface::Space(id) => self.reorder_item_at(ui, id, item, point),
+                        Surface::Desktop => self.move_desktop_item(ui, item, origin, point),
+                    }
                 } else {
                     self.drag = Drag::None;
                     // The shell draws the same image from here on.
                     ui.hide_drag_ghost();
-                    self.drag_item_out(ui, space, item);
+                    self.drag_item_out(ui, surface, item);
                     self.end_drag_visual(ui);
                 }
                 true
             }
             Drag::Marquee {
-                space: id,
+                surface,
                 origin,
                 additive,
             } => {
-                self.update_marquee(ui, id, origin, additive, point);
+                self.update_marquee(ui, surface, origin, additive, point);
                 true
             }
             Drag::Space { id, grab } => {
@@ -1901,6 +2128,33 @@ impl App {
                 }
                 true
             }
+        }
+    }
+
+    /// Whether `point` (desktop coordinates) is still over the surface's own
+    /// content, as opposed to another window such as a space on top of the
+    /// desktop layer.
+    fn surface_contains(&self, surface: Surface, point: Point) -> bool {
+        match surface {
+            Surface::Space(id) => self
+                .config
+                .desktop
+                .space(id)
+                .is_some_and(|space| space.visible_rect().contains(point)),
+            Surface::Desktop => self.config.desktop.space_at(point).is_none(),
+        }
+    }
+
+    /// Repositions a loose desktop item as it is dragged, so it follows the
+    /// pointer at its absolute virtual-desktop position.
+    fn move_desktop_item(&mut self, ui: &mut Ui, item: ItemId, origin: Point, point: Point) {
+        let Some(entry) = self.config.desktop.layer().item(item) else {
+            return;
+        };
+        let start = entry.position;
+        let position = Point::new(start.x + point.x - origin.x, start.y + point.y - origin.y);
+        if self.dispatch(Command::SetDesktopItemPosition { item, position }, point) {
+            self.refresh_desktop_layer(ui);
         }
     }
 
@@ -1952,7 +2206,10 @@ impl App {
         }
         self.scroll.insert(id, next);
         // Items moved under a still cursor, so the hovered one changed too.
-        self.hovered = self.item_at(id, point).map(|item| (id, item));
+        let surface = Surface::Space(id);
+        self.hovered = self
+            .surface_item_at(surface, point)
+            .map(|item| (surface, item));
         self.refresh_space(ui, id);
     }
 
@@ -1961,21 +2218,26 @@ impl App {
         match std::mem::replace(&mut self.drag, Drag::None) {
             Drag::None => {}
             Drag::Item {
-                space,
+                surface,
                 item,
                 active: false,
                 ..
             } => {
                 // A press on an already-selected item that never became a drag
                 // is a plain click: collapse the selection, or start a rename
-                // when it was already the only selected item.
+                // when it was already the only selected item. Only a space
+                // renames inline.
                 match resolve_pending_click(pending, item, self.is_selected(item)) {
-                    PendingClickOutcome::Rename => self.begin_item_rename(ui, space, item),
+                    PendingClickOutcome::Rename => {
+                        if let Surface::Space(id) = surface {
+                            self.begin_item_rename(ui, id, item);
+                        }
+                    }
                     PendingClickOutcome::Collapse => {
                         self.selected_items = vec![item];
                         self.selection_anchor = Some(item);
                         self.focused = Some(item);
-                        self.refresh_space(ui, space);
+                        self.refresh_surface(ui, surface);
                     }
                     PendingClickOutcome::Nothing => {}
                 }
@@ -1984,10 +2246,10 @@ impl App {
                 self.end_drag_visual(ui);
                 self.schedule_save(ui);
             }
-            Drag::Marquee { space, .. } => {
+            Drag::Marquee { surface, .. } => {
                 // The selection already updated live; just drop the rectangle.
                 self.marquee = None;
-                self.refresh_space(ui, space);
+                self.refresh_surface(ui, surface);
             }
             Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
         }
@@ -2000,7 +2262,7 @@ impl App {
     fn begin_drag_visual(
         &mut self,
         ui: &mut Ui,
-        space: SpaceId,
+        surface: Surface,
         item: ItemId,
         origin: Point,
         point: Point,
@@ -2009,42 +2271,62 @@ impl App {
         // rendered as it is now, before the slots fade.
         let ids = self.drag_items(item);
         let id_values: Vec<u64> = ids.iter().map(|id| id.0).collect();
-        let view = self.view_for(space);
-        let layout = self.layout_for(space);
-        let metrics = self.metrics_for(space);
-        let palette = self.palette_for(space);
-        self.drag_image = self.config.desktop.space(space).and_then(|entry| {
-            let scene = drag_scene(
-                entry,
-                &ids,
-                entry.theme(&self.config.theme),
-                &palette,
-                layout,
-                metrics,
-                view,
-                &mut self.icons,
-            );
-            let grab = Point::new(origin.x - entry.rect.x, origin.y - entry.rect.y);
-            DragImage::of_selection(&scene, &id_values, grab)
-        });
-        self.dragged = Some((space, ids));
+        let view = self.view_for(surface);
+        let layout = self.surface_layout(surface);
+        let metrics = self.surface_metrics(surface);
+        let palette = self.surface_palette(surface);
+        let grab = self
+            .surface_window_rect(surface)
+            .map(|rect| Point::new(origin.x - rect.x, origin.y - rect.y));
+        self.drag_image = match surface {
+            Surface::Space(id) => self.config.desktop.space(id).and_then(|entry| {
+                let scene = drag_scene(
+                    entry,
+                    &ids,
+                    entry.theme(&self.config.theme),
+                    &palette,
+                    layout,
+                    metrics,
+                    view,
+                    &mut self.icons,
+                );
+                DragImage::of_selection(&scene, &id_values, grab?)
+            }),
+            Surface::Desktop => {
+                let scene = desktop_layer_drag_scene(
+                    self.config.desktop.layer(),
+                    virtual_desktop_rect().origin(),
+                    &ids,
+                    &self.config.theme,
+                    &palette,
+                    layout,
+                    metrics,
+                    view,
+                    &mut self.icons,
+                );
+                grab.and_then(|grab| DragImage::of_selection(&scene, &id_values, grab))
+            }
+        };
+        self.dragged = Some((surface, ids));
         self.pending_click = None;
         if let Some(image) = &self.drag_image {
             ui.show_drag_ghost(image, point);
         }
-        self.refresh_space(ui, space);
+        self.refresh_surface(ui, surface);
     }
 
     fn end_drag_visual(&mut self, ui: &mut Ui) {
         ui.hide_drag_ghost();
         self.drag_image = None;
-        if let Some((space, _)) = self.dragged.take() {
-            self.refresh_space(ui, space);
+        if let Some((surface, _)) = self.dragged.take() {
+            self.refresh_surface(ui, surface);
         }
     }
 
-    fn update_hover(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
-        let hovered = self.item_at(id, point).map(|item| (id, item));
+    fn update_hover(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        let hovered = self
+            .surface_item_at(surface, point)
+            .map(|item| (surface, item));
         if hovered == self.hovered {
             return;
         }
@@ -2055,33 +2337,25 @@ impl App {
         if hovered.is_some() {
             ui.set_timer(INFO_TIP_TIMER, INFO_TIP_DELAY_MS);
         }
-        if let Some((space, _)) = previous.filter(|(space, _)| *space != id) {
-            self.refresh_space(ui, space);
+        if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
+            self.refresh_surface(ui, owner);
         }
-        self.refresh_space(ui, id);
+        self.refresh_surface(ui, surface);
     }
 
     /// Shows the info tip for the hovered item, once the pointer has rested on
     /// it, as Explorer does.
     fn show_info_tip(&mut self, ui: &mut Ui) {
         ui.clear_timer(INFO_TIP_TIMER);
-        let Some((space_id, item)) = self.hovered else {
+        let Some((surface, item)) = self.hovered else {
             return;
         };
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };
-        let Some(space) = self.config.desktop.space(space_id) else {
-            return;
-        };
-        let content = space.content_rect();
-        let scroll = self.scroll_of(space_id);
         let path = entry.path.clone();
-        let at = Point::new(
-            content.x + entry.position.x,
-            content.y + entry.position.y - scroll,
-        );
-        ui.show_info_tip(&path, at);
+        let cell = self.surface_cell(surface, entry);
+        ui.show_info_tip(&path, Point::new(cell.x, cell.y));
     }
 
     /// Hides any info tip and cancels its delay, for example when a click or
@@ -2094,7 +2368,7 @@ impl App {
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
         // A rolled-up space hides its items, so it cannot keep one selected.
-        if self.selected_space == Some(id) {
+        if self.selected_surface == Some(Surface::Space(id)) {
             self.take_selection();
         }
         self.apply_to_space(ui, id, Command::ToggleRollup { id }, near);
@@ -2146,8 +2420,24 @@ impl App {
         for id in &touched {
             self.refresh_space(ui, *id);
         }
+        // A loose desktop item that was dropped in has moved off the desktop,
+        // so reconcile the layer now instead of at the next shell refresh.
+        if self.takeover_layer {
+            self.resync_desktop_layer(ui);
+        }
         self.refresh_tray(ui);
         self.save();
+    }
+
+    /// Re-reads the shell's loose desktop items and reconciles the layer. Used
+    /// after an operation that moved or renamed a loose file, so the layer
+    /// follows without waiting for the next shell change.
+    fn resync_desktop_layer(&mut self, ui: &mut Ui) {
+        if !self.takeover_layer {
+            return;
+        }
+        self.refresh_desktop_entries();
+        self.sync_desktop_layer(ui);
     }
 
     /// Where a newly dropped file will live: in the storage folder, or where
@@ -2218,7 +2508,9 @@ impl App {
     /// is distinct from the item menu's "Remove from space", which returns a
     /// stored file to the desktop.
     fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
-        let Some(space) = self.selected_space else {
+        // Deleting a loose desktop item would need a way to drop it from the
+        // layer, so only a space's items are deleted here.
+        let Some(Surface::Space(space)) = self.selected_surface else {
             return;
         };
         let items = self.active_items();
@@ -2297,11 +2589,14 @@ impl App {
                 .iter()
                 .filter_map(|item| self.config.desktop.space_containing(*item)),
         );
-        if let Some(space) = self.selected_space {
+        if let Some(Surface::Space(space)) = self.selected_surface {
             touched.insert(space);
         }
         for id in touched {
             self.refresh_space(ui, id);
+        }
+        if self.selected_surface == Some(Surface::Desktop) {
+            self.refresh_desktop_layer(ui);
         }
     }
 
@@ -2336,6 +2631,10 @@ impl App {
             self.prune_missing(ui, id);
             self.refresh_space(ui, id);
         }
+        // A cut loose item drawn ghosted on the layer needs its ghost cleared.
+        if self.takeover_layer {
+            self.refresh_desktop_layer(ui);
+        }
     }
 
     /// Adds the clipboard's files to the current space, as a drop would: a cut
@@ -2344,7 +2643,8 @@ impl App {
     /// go through the shell's file operation so Explorer's progress UI and undo
     /// apply.
     fn paste_clipboard(&mut self, ui: &mut Ui) {
-        let Some(target) = self.selected_space else {
+        // Pasting lands in a space, never on the loose desktop layer.
+        let Some(Surface::Space(target)) = self.selected_surface else {
             return;
         };
         let Some(clipboard) = ui.clipboard_files() else {
@@ -2415,7 +2715,7 @@ impl App {
                 .filter_map(|path| self.find_item_by_file(path)),
         );
         if !pasted.is_empty() {
-            self.selected_space = Some(target);
+            self.selected_surface = Some(Surface::Space(target));
             self.selection_anchor = pasted.first().copied();
             self.focused = pasted.first().copied();
             self.selected_items = pasted;
@@ -2486,19 +2786,33 @@ impl App {
         self.save();
     }
 
-    fn double_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) {
-        let layout = self.layout_for(id);
-        let scroll = self.scroll_of(id);
-        let target = self
-            .config
-            .desktop
-            .space(id)
-            .map_or(DoubleClickTarget::Nothing, |space| {
-                double_click_target(space, layout.cell(), scroll, point)
-            });
-        tracing::debug!(space = id.0, ?point, ?target, "double-click");
+    fn double_click(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
+        let layout = self.surface_layout(surface);
+        let target = match surface {
+            Surface::Space(id) => {
+                self.config
+                    .desktop
+                    .space(id)
+                    .map_or(DoubleClickTarget::Nothing, |space| {
+                        double_click_target(
+                            space,
+                            layout.cell(),
+                            self.surface_scroll(surface),
+                            point,
+                        )
+                    })
+            }
+            Surface::Desktop => self
+                .surface_item_at(surface, point)
+                .map_or(DoubleClickTarget::Nothing, DoubleClickTarget::Item),
+        };
+        tracing::debug!(?surface, ?point, ?target, "double-click");
         match target {
-            DoubleClickTarget::TitleBar => self.toggle_rollup(ui, id),
+            DoubleClickTarget::TitleBar => {
+                if let Surface::Space(id) = surface {
+                    self.toggle_rollup(ui, id);
+                }
+            }
             DoubleClickTarget::Item(item) => {
                 if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
                     ui.open_path(&path);
@@ -2559,19 +2873,22 @@ impl App {
     /// DeskSpace must never move the file itself here. It used to move a
     /// file dropped on the desktop back out of storage even when the desktop
     /// had copied it, which left `- Copy` and ` (2)` duplicates behind.
-    fn drag_item_out(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
+    fn drag_item_out(&mut self, ui: &mut Ui, surface: Surface, item: ItemId) {
         // Dragging an item that is part of the active set drags the whole set,
         // as Explorer does; otherwise just that one item.
         let ids = self.drag_items(item);
         let (paths, positions): (Vec<PathBuf>, Vec<Point>) = self
-            .item_cells(space, &ids)
+            .item_cells(surface, &ids)
             .into_iter()
             .filter(|(path, _)| path.exists())
             .unzip();
         // A stale item (its file moved or deleted since it was drawn) is
         // dropped instead of repeatedly failing to start a drag.
         if paths.is_empty() {
-            self.prune_missing(ui, space);
+            match surface {
+                Surface::Space(id) => self.prune_missing(ui, id),
+                Surface::Desktop => self.resync_desktop_layer(ui),
+            }
             return;
         }
         let Some(result) = ui.drag_out(&paths, &positions, self.drag_image.as_ref()) else {
@@ -2579,27 +2896,20 @@ impl App {
         };
         tracing::debug!(?result, files = paths.len(), "item drag ended");
         // The drop target may have moved some files out; drop any item whose
-        // file is gone, wherever it lives.
+        // file is gone, wherever it lives, and reconcile the loose layer.
         self.prune_all_missing(ui);
+        self.resync_desktop_layer(ui);
     }
 
-    /// The path of each of `ids` in `space` and the top-left of its cell in
+    /// The path of each of `ids` on `surface` and the top-left of its cell in
     /// desktop coordinates, where it is drawn now (off the visible area when
     /// scrolled out), in `ids` order.
-    fn item_cells(&self, space: SpaceId, ids: &[ItemId]) -> Vec<(PathBuf, Point)> {
-        let Some(entry) = self.config.desktop.space(space) else {
-            return Vec::new();
-        };
-        let content = entry.content_rect();
-        let scroll = self.scroll_of(space);
+    fn item_cells(&self, surface: Surface, ids: &[ItemId]) -> Vec<(PathBuf, Point)> {
         ids.iter()
-            .filter_map(|id| entry.items.iter().find(|item| item.id == *id))
-            .map(|item| {
-                let cell = Point::new(
-                    content.x + item.position.x,
-                    content.y + item.position.y - scroll,
-                );
-                (item.path.clone(), cell)
+            .filter_map(|id| {
+                let item = self.surface_item(surface, *id)?;
+                let cell = self.surface_cell(surface, item);
+                Some((item.path.clone(), Point::new(cell.x, cell.y)))
             })
             .collect()
     }
@@ -2633,88 +2943,74 @@ impl App {
     fn update_marquee(
         &mut self,
         ui: &mut Ui,
-        id: SpaceId,
+        surface: Surface,
         origin: Point,
         additive: bool,
         point: Point,
     ) {
-        let cell = self.layout_for(id).cell();
-        let Some(content) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| space.content_rect())
-        else {
+        let Some(content) = self.surface_content(surface) else {
             return;
         };
-        let scroll = self.scroll_of(id);
-        let cells: Vec<(ItemId, Rect)> = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| {
-                space
-                    .items
-                    .iter()
-                    .map(|item| {
-                        (
-                            item.id,
-                            Rect::new(
-                                content.x + item.position.x,
-                                content.y + item.position.y - scroll,
-                                cell.width,
-                                cell.height,
-                            ),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let cells = self.surface_cells(surface);
         let left = origin.x.min(point.x).max(content.x);
         let top = origin.y.min(point.y).max(content.y);
         let right = origin.x.max(point.x).min(content.right());
         let bottom = origin.y.max(point.y).min(content.bottom());
         let rect = Rect::new(left, top, (right - left).max(0), (bottom - top).max(0));
-        self.marquee = Some((id, rect));
+        self.marquee = Some((surface, rect));
 
-        self.selected_space = Some(id);
+        self.selected_surface = Some(surface);
         self.selected_items = marquee_selection(&cells, rect, additive, &self.selected_items);
         self.selection_anchor = None;
         self.focused = self.selected_items.last().copied();
-        self.refresh_space(ui, id);
+        self.refresh_surface(ui, surface);
     }
 
-    fn show_item_menu(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId, at: Point) {
+    fn show_item_menu(&mut self, ui: &mut Ui, surface: Surface, item: ItemId, at: Point) {
         let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
             return;
         };
-        let remove_label = if self.storage.contains(&path) {
-            "Move back to desktop"
-        } else {
-            "Remove from space"
+        // A loose desktop item has no space to remove it from, so only
+        // Explorer's own menu is offered for it.
+        let entries = match surface {
+            Surface::Space(_) => {
+                let remove_label = if self.storage.contains(&path) {
+                    "Move back to desktop"
+                } else {
+                    "Remove from space"
+                };
+                vec![
+                    MenuEntry::item(menu::RENAME_ITEM, "Rename"),
+                    MenuEntry::item(menu::REMOVE_ITEM, remove_label),
+                ]
+            }
+            Surface::Desktop => Vec::new(),
         };
-        let entries = [
-            MenuEntry::item(menu::RENAME_ITEM, "Rename"),
-            MenuEntry::item(menu::REMOVE_ITEM, remove_label),
-        ];
         match ui.item_menu(&path, &entries, at) {
             Some(ItemMenuChoice::App(menu::RENAME_ITEM)) => {
-                self.begin_item_rename(ui, space, item);
+                if let Surface::Space(id) = surface {
+                    self.begin_item_rename(ui, id, item);
+                }
             }
             Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
                 if self.release_item(item) {
                     self.selected_items.retain(|selected| *selected != item);
                     self.forget_item(item);
                     self.hovered = None;
-                    self.refresh_space(ui, space);
+                    self.refresh_surface(ui, surface);
                     self.refresh_tray(ui);
                     self.save();
                 }
             }
             Some(ItemMenuChoice::Shell) => {
                 self.icons.invalidate(&path);
-                self.prune_missing(ui, space);
-                self.refresh_space(ui, space);
+                match surface {
+                    Surface::Space(id) => {
+                        self.prune_missing(ui, id);
+                        self.refresh_space(ui, id);
+                    }
+                    Surface::Desktop => self.resync_desktop_layer(ui),
+                }
             }
             _ => {}
         }
@@ -2757,13 +3053,16 @@ impl App {
         }
         let near = self.space_center(id);
         if self.dispatch(Command::DeleteSpace { id }, near) {
-            if self.selected_space == Some(id) {
-                self.selected_space = None;
+            if self.selected_surface == Some(Surface::Space(id)) {
+                self.selected_surface = None;
                 self.selected_items.clear();
                 self.selection_anchor = None;
                 self.focused = None;
             }
-            if self.hovered.is_some_and(|(space, _)| space == id) {
+            if self
+                .hovered
+                .is_some_and(|(owner, _)| owner == Surface::Space(id))
+            {
                 self.hovered = None;
             }
             self.scroll.remove(&id);
@@ -3306,7 +3605,7 @@ impl EventHandler for App {
         ui.capture_text_input(self.edit.is_some());
         ui.watch_selection_keys(
             self.edit.is_none() && !self.selected_items.is_empty(),
-            self.edit.is_none() && self.selected_space.is_some(),
+            self.edit.is_none() && self.selected_surface.is_some(),
         );
         self.sync_outside_watch(ui);
     }
@@ -3741,11 +4040,14 @@ mod tests {
         let cell = Rect::new(100, 100 + 28, layout.cell_width, layout.cell_height);
         let checkbox = item_check_box_hit(cell, app.metrics_for(id));
         assert_eq!(
-            app.checkbox_at(id, Point::new(checkbox.x + 3, checkbox.y + 3)),
+            app.checkbox_at(
+                Surface::Space(id),
+                Point::new(checkbox.x + 3, checkbox.y + 3)
+            ),
             Some(ItemId(1))
         );
         assert_eq!(
-            app.checkbox_at(id, Point::new(cell.x + 60, cell.y + 60)),
+            app.checkbox_at(Surface::Space(id), Point::new(cell.x + 60, cell.y + 60)),
             None
         );
     }
@@ -3767,7 +4069,7 @@ mod tests {
         let content = app.config.desktop.space(id).unwrap().content_rect();
 
         // Drag order is kept, and an id not in the space is skipped.
-        let cells = app.item_cells(id, &[ItemId(2), ItemId(9), ItemId(1)]);
+        let cells = app.item_cells(Surface::Space(id), &[ItemId(2), ItemId(9), ItemId(1)]);
         assert_eq!(
             cells,
             [
@@ -3805,7 +4107,7 @@ mod tests {
         let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
         item.position = Point::new(12, 12);
         app.config.desktop.add_item(id, item);
-        app.selected_space = Some(id);
+        app.selected_surface = Some(Surface::Space(id));
 
         let (rect, content) = {
             let space = app.config.desktop.space(id).unwrap();
@@ -3910,7 +4212,7 @@ mod tests {
     fn app_with_selection(space: Option<SpaceId>, item: Option<ItemId>) -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        app.selected_space = space;
+        app.selected_surface = space.map(Surface::Space);
         app.selected_items = item.into_iter().collect();
         app
     }
@@ -3926,7 +4228,7 @@ mod tests {
                 .desktop
                 .add_item(id, Item::new(ItemId(n), format!("C:/missing/{n}.txt")));
         }
-        app.selected_space = Some(id);
+        app.selected_surface = Some(Surface::Space(id));
         // Ctrl+click builds a selection and toggles items off again.
         app.toggle_selected(ItemId(1));
         app.toggle_selected(ItemId(3));
@@ -3935,7 +4237,7 @@ mod tests {
         assert_eq!(app.selected_items, vec![ItemId(3)]);
         // Shift+click extends from the anchor across the space's order.
         app.selection_anchor = Some(ItemId(1));
-        app.extend_selection(id, ItemId(4));
+        app.extend_selection(Surface::Space(id), ItemId(4));
         assert_eq!(
             app.selected_items,
             vec![ItemId(1), ItemId(2), ItemId(3), ItemId(4)]
@@ -3945,8 +4247,8 @@ mod tests {
     #[test]
     fn taking_a_selection_reports_the_space_to_repaint() {
         let mut app = app_with_selection(Some(SpaceId(2)), Some(ItemId(5)));
-        assert_eq!(app.take_selection(), Some(SpaceId(2)));
-        assert_eq!((app.selected_space, app.selected_items.len()), (None, 0));
+        assert_eq!(app.take_selection(), Some(Surface::Space(SpaceId(2))));
+        assert_eq!((app.selected_surface, app.selected_items.len()), (None, 0));
         // Nothing is left to clear, so nothing needs repainting.
         assert_eq!(app.take_selection(), None);
     }
@@ -3955,7 +4257,38 @@ mod tests {
     fn a_space_without_a_selected_item_needs_no_repaint() {
         let mut app = app_with_selection(Some(SpaceId(2)), None);
         assert_eq!(app.take_selection(), None);
-        assert_eq!(app.selected_space, None);
+        assert_eq!(app.selected_surface, None);
+    }
+
+    #[test]
+    fn the_layer_id_is_the_desktop_surface() {
+        assert_eq!(Surface::of(SpaceId(0)), Surface::Desktop);
+        assert_eq!(Surface::of(SpaceId(7)), Surface::Space(SpaceId(7)));
+    }
+
+    #[test]
+    fn a_loose_item_is_hit_on_the_desktop_surface() {
+        use deskspace_core::Item;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let mut item = Item::new(ItemId(9), "C:/missing/loose.txt");
+        item.position = Point::new(40, 60);
+        app.config.desktop.layer_mut().push_item(item);
+
+        assert_eq!(
+            app.surface_item_at(Surface::Desktop, Point::new(50, 70)),
+            Some(ItemId(9))
+        );
+        assert_eq!(
+            app.surface_item_at(Surface::Desktop, Point::new(500, 500)),
+            None
+        );
+        let cell = app.surface_layout(Surface::Desktop).cell();
+        let entry = app.config.desktop.layer().item(ItemId(9)).unwrap();
+        assert_eq!(
+            app.surface_cell(Surface::Desktop, entry),
+            Rect::new(40, 60, cell.width, cell.height)
+        );
     }
 
     #[test]
