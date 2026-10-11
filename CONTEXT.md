@@ -94,16 +94,16 @@ context menus, and a settings window in the first usable release (v0.2).
   but have not been exercised interactively; confirm them before building on
   them. On screen were checked: inline rename, in-space rearranging, the
   Delete key, per-space appearance, sort, grid/label settings, cross-space
-  moves (2026-10-03), and a multi-item drag out (the group image and the
-  desktop placement; 2026-10-10). Pending on-screen checks: the move/copy
+  moves (2026-10-03), a multi-item drag out (the group image and the
+  desktop placement; 2026-10-10), and the desktop layer's item interaction
+  (`--takeover-layer`: select, drag, drop a loose item onto a space, and
+  double-click to open; 2026-10-11). Pending on-screen checks: the move/copy
   cursor, the `- Copy` fix, the drag image over Explorer and over spaces, the
   in-space ghost, the space-click focus/deselect, the check-box display and
   both check-box modes, rubber-band/Ctrl+A selection, the clipboard
   cut/copy/paste with its ghosting and external sync, F2 item rename, the
   compressed/encrypted label colors, the info tips, jumbo icons, and
-  per-monitor DPI on a mixed-DPI setup, plus the desktop layer's item
-  interaction (`--takeover-layer`: select, drag, and drop a loose item onto a
-  space). The
+  per-monitor DPI on a mixed-DPI setup. The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and

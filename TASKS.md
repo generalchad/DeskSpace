@@ -853,7 +853,7 @@ until I5-I7 all land, so no partial build hides the desktop.
     window shows the loose icons at the right positions.
     Clean up the scratch config afterwards.
 
-- [ ] **I4. Generalize item interaction to a `Surface` (app refactor).** (awaiting check)
+- [x] **I4. Generalize item interaction to a `Surface` (app refactor).**
   - `crates/deskspace-app/src/app.rs`: add
     `enum Surface { Space(SpaceId), Desktop }`; replace `selected_space:
     Option<SpaceId>` with `selected_surface: Option<Surface>`; route
