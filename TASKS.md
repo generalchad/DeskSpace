@@ -943,12 +943,6 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   `WM_DWMCOLORIZATIONCOLORCHANGED` when the accent changes; if
    "ImmersiveColorSet" is not sent for every accent change, the palette is
    stale until the next theme change. Watch for it during the F-29 check.
-- `deskspace-platform/src/win32/runtime.rs` `Ui::update_settings`:
-  `settings_window::update` returns `false` when the new form has a different
-  shape, but `update_settings` drops that result, and `App::refresh_settings`
-  cannot see it. A shape-changing form is silently not shown. No form changes
-  shape today, and H is designed to keep it that way. Still, either rebuild
-  the window on `false` or `debug_assert!` against it (a `fix:` task).
 - `deskspace-core/src/desktop.rs` `Desktop::item_count` counts space items
   only, so it will miss the loose desktop layer once I3 populates it (the tray
   tooltip's item count). Decide whether it should span the layer, or whether

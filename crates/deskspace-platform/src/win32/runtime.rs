@@ -639,7 +639,7 @@ impl Ui {
     /// Opens the settings window, or brings it to the front and refreshes it.
     pub fn open_settings(&mut self, form: &SettingsForm) {
         if let Some(existing) = settings_hwnd() {
-            settings_window::update(existing, form);
+            warn_on_shape_change(existing, form);
             settings_window::bring_to_front(existing);
             return;
         }
@@ -654,7 +654,7 @@ impl Ui {
 
     pub fn update_settings(&mut self, form: &SettingsForm) {
         if let Some(hwnd) = settings_hwnd() {
-            settings_window::update(hwnd, form);
+            warn_on_shape_change(hwnd, form);
         }
     }
 
@@ -754,6 +754,19 @@ fn space_hwnd(id: u64) -> Option<HWND> {
 
 fn settings_hwnd() -> Option<HWND> {
     with_runtime(|runtime| runtime.settings).flatten()
+}
+
+/// Refreshes the settings window in place. A form whose page shape differs
+/// cannot be diffed onto the existing controls, so the update is skipped. That
+/// would leave the window showing stale values, so the invariant is asserted
+/// in debug builds and logged in release (every page is always built, so a
+/// shape change is a bug).
+fn warn_on_shape_change(hwnd: HWND, form: &SettingsForm) {
+    let updated = settings_window::update(hwnd, form);
+    debug_assert!(updated, "the settings form must not change shape");
+    if !updated {
+        tracing::warn!("the settings form changed shape; the update was skipped");
+    }
 }
 
 /// Creates the controller window, delivers `Event::Started`, and pumps
