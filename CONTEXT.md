@@ -571,7 +571,9 @@ WindowSettings {
   `CheckBoxMode`: `FWF_CHECKSELECT` gives `Independent`, `FWF_AUTOCHECKSELECT`
   gives `Selection`, neither `Hidden`. When `Theme::match_explorer()` is
   on (the default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
-  draws an Explorer-style check box at each icon's corner. In `Selection` mode
+  draws an Explorer-style check box at each icon's corner, and a checked box is
+  filled with `SpaceScene.check_fill` (the Windows accent, or Windows blue when
+  it is unknown) under a white tick. In `Selection` mode
   the box is revealed on hover and while selected and its tick mirrors the
   selection; in `Independent` mode it is always shown and its tick is a
   session-only set separate from the selection (a failed view read leaves the
@@ -950,7 +952,11 @@ WindowSettings {
   place) on top; right-clicking an item already in a multi-selection keeps it.
   Rest the pointer on an item for a moment to see Explorer's info tip.
 - Item check boxes follow Explorer's mode (when the desktop shows them and the
-  `MatchExplorer` preset is on). With auto-check-select, hovering reveals the box and
+  `MatchExplorer` preset is on). A checked box is filled with the Windows accent
+  and shows a white tick, as Explorer draws it (`Palette::check_fill`, the
+  system accent or Windows blue when it is unknown), independent of the space's
+  own selection colors; an unchecked box is a bordered light box. With
+  auto-check-select, hovering reveals the box and
   it mirrors the selection; clicking an item ticks it and unticks the others,
   Ctrl+click ticks several, and clicking the box toggles one. With independent
   item check boxes, the boxes are always shown, clicking a box toggles a

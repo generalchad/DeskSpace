@@ -114,11 +114,17 @@ impl App {
     /// The concrete colors for a surface, with the Windows accent when asked.
     pub(super) fn surface_palette(&self, surface: Surface) -> Palette {
         let theme = self.surface_theme(surface);
-        let palette = theme.palette(self.system_dark);
-        match (theme.use_accent, self.system_accent) {
-            (true, Some(accent)) => palette.with_accent(accent),
-            _ => palette,
+        let mut palette = theme.palette(self.system_dark);
+        if let Some(accent) = self.system_accent {
+            // Explorer always fills a checked item check box with the accent,
+            // whatever the space's own selection colors are. The registry
+            // accent's alpha is unreliable, so force it opaque.
+            palette.check_fill = accent.with_alpha(255);
+            if theme.use_accent {
+                palette = palette.with_accent(accent);
+            }
         }
+        palette
     }
 
     /// Whether a surface mirrors Explorer's display settings.
@@ -279,6 +285,32 @@ mod tests {
         assert_eq!(
             app.checkbox_at(Surface::Space(id), Point::new(cell.x + 60, cell.y + 60)),
             None
+        );
+    }
+
+    #[test]
+    fn checked_boxes_use_the_windows_accent() {
+        use deskspace_core::Color;
+
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app
+            .config
+            .desktop
+            .add_space("S", Rect::new(100, 100, 240, 200));
+        // A registry accent often carries alpha 0; the box forces it opaque.
+        app.system_accent = Some(Color::rgba(0x00, 0x78, 0xD4, 0x00));
+        assert!(
+            !app.config.theme.use_accent,
+            "the default selection is not the accent"
+        );
+        let palette = app.surface_palette(Surface::Space(id));
+        assert_eq!(palette.check_fill, Color::rgb(0x00, 0x78, 0xD4));
+        // Without a known accent, the Windows-blue fallback stands.
+        app.system_accent = None;
+        assert_eq!(
+            app.surface_palette(Surface::Space(id)).check_fill,
+            deskspace_core::theme::CHECK_ACCENT
         );
     }
 }

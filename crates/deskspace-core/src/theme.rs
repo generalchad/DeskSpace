@@ -278,6 +278,11 @@ const DARK_TEXT: Color = Color::rgb(255, 255, 255);
 const LIGHT_TINT: Color = Color::rgb(243, 243, 243);
 const LIGHT_TEXT: Color = Color::rgb(26, 26, 26);
 
+/// The accent a checked item check box is filled with when the system accent is
+/// unknown. Explorer always fills a checked box with the accent; Windows blue
+/// is the fallback.
+pub const CHECK_ACCENT: Color = Color::rgb(0x00, 0x78, 0xD4);
+
 /// Colors of an inline rename field, matching the box Explorer puts over the
 /// name it is editing: an opaque system-window fill, a border, and the system
 /// highlight for the selected text.
@@ -326,6 +331,9 @@ pub struct Palette {
     pub hover_fill: Color,
     pub selected_fill: Color,
     pub border: Color,
+    /// The fill of a checked item check box, the way Explorer fills it with the
+    /// Windows accent regardless of the space's colors.
+    pub check_fill: Color,
     pub edit: EditColors,
 }
 
@@ -425,6 +433,7 @@ impl Theme {
             hover_fill: highlight.with_alpha(0x18),
             selected_fill: highlight.with_alpha(0x2C),
             border: highlight.with_alpha(0x30),
+            check_fill: CHECK_ACCENT,
             // The rename field follows Windows' app theme, as Explorer's does,
             // rather than the space's own Color mode override.
             edit: EditColors::new(system_dark),
@@ -576,6 +585,14 @@ mod tests {
         assert_eq!(accented.border, accent.with_alpha(palette.border.a));
         assert_eq!(accented.tint, palette.tint);
         assert_eq!(accented.hover_fill, palette.hover_fill);
+        // The check box always uses its own accent, not `with_accent`.
+        assert_eq!(accented.check_fill, palette.check_fill);
+    }
+
+    #[test]
+    fn a_checked_check_box_defaults_to_windows_blue() {
+        assert_eq!(Theme::default().palette(false).check_fill, CHECK_ACCENT);
+        assert_eq!(CHECK_ACCENT.a, 255, "opaque");
     }
 
     #[test]

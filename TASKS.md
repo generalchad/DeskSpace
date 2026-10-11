@@ -766,6 +766,14 @@ Small requests, one commit each.
   horizontal move on a corner resizes only the width. **[needs human]** check:
   click a border without moving (no resize); drag a side past half a cell (only
   that axis resizes); drag a corner horizontally (only the width changes).
+- [ ] **F12. Check box coloring matches Windows.** (awaiting check) A checked
+  item check box was a white box with a black tick. It is now filled with the
+  Windows accent and shows a white tick, like Explorer: `Palette.check_fill`
+  (default `theme::CHECK_ACCENT`, Windows blue) is set to the system accent in
+  `surface_palette` and carried on `SpaceScene.check_fill`; the unchecked box
+  keeps its light fill and border. **[needs human]** check: tick a desktop item
+  in a space and compare the box to Explorer's; change the Windows accent and
+  confirm the box follows it.
 
 ## G. More Explorer-standard controls
 

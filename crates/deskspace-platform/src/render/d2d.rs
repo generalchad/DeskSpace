@@ -754,6 +754,7 @@ unsafe fn draw_item(
                 metrics.check_box_size as f32,
                 metrics.check_box_margin as f32,
                 item.checked,
+                scene.check_fill,
             );
         }
         let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
@@ -809,8 +810,10 @@ unsafe fn draw_item(
     }
 }
 
-/// Draws Explorer's item check box at the top-left of an icon. A light box
-/// with a dark border stays visible on any backdrop; `checked` adds the tick.
+/// Draws Explorer's item check box at the top-left of an icon. Checked, it is
+/// filled with the accent (`check_fill`) and shows a white tick, as Windows
+/// draws a checked box; unchecked, it is a light box with a dark border that
+/// stays visible on any backdrop.
 #[allow(clippy::too_many_arguments)]
 unsafe fn draw_check_box(
     target: &ID2D1RenderTarget,
@@ -820,6 +823,7 @@ unsafe fn draw_check_box(
     size: f32,
     margin: f32,
     checked: bool,
+    check_fill: Color,
 ) {
     let left = icon_left + margin;
     let top = icon_top + margin;
@@ -832,14 +836,13 @@ unsafe fn draw_check_box(
     };
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
-        brush.SetColor(&color_f(Color::rgba(255, 255, 255, 210)));
-        target.FillRoundedRectangle(&rounded, brush);
-        brush.SetColor(&color_f(Color::rgba(0, 0, 0, 150)));
-        target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
         if checked {
-            brush.SetColor(&color_f(Color::rgba(0, 0, 0, 255)));
+            // Explorer fills a checked box with the accent and no border.
+            brush.SetColor(&color_f(check_fill.with_alpha(255)));
+            target.FillRoundedRectangle(&rounded, brush);
+            brush.SetColor(&color_f(Color::rgb(255, 255, 255)));
             let s = size;
-            let stroke = (size * 0.11).max(1.0);
+            let stroke = (size * 0.12).max(1.0);
             target.DrawLine(
                 Vector2::new(left + s * 0.22, top + s * 0.52),
                 Vector2::new(left + s * 0.43, top + s * 0.74),
@@ -854,6 +857,11 @@ unsafe fn draw_check_box(
                 stroke,
                 None,
             );
+        } else {
+            brush.SetColor(&color_f(Color::rgba(255, 255, 255, 210)));
+            target.FillRoundedRectangle(&rounded, brush);
+            brush.SetColor(&color_f(Color::rgba(0, 0, 0, 150)));
+            target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
         }
     }
 }

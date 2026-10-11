@@ -44,6 +44,8 @@ pub struct SpaceScene {
     pub item_text: Color,
     pub hover_fill: Color,
     pub selected_fill: Color,
+    /// The fill of a checked item check box, the Windows accent.
+    pub check_fill: Color,
     /// Drawn only where DWM does not draw the border (desktop-hosted spaces
     /// and radii DWM cannot draw); transparent for no border.
     pub border: Color,
