@@ -424,7 +424,9 @@ work. `.github/workflows/release.yml` already publishes a zip on a `v*` tag;
 read it before starting.
 
 - [ ] **E1. Commit an `.ico` asset and embed it, with version info, in the
-  executable (ROADMAP M8 item 2).**
+  executable (ROADMAP M8 item 2).** (awaiting check) Landed as
+  `feat: embed the app icon and version info (E1)`; `winresource` passed
+  `cargo deny check`.
   - Asset: `assets/deskspace.ico` at the repository root. Generate it once
     from the existing drawing in `win32/icon.rs`, using `write_icon`'s ICO
     layout at sizes 16, 20, 24, 32, 40, 48, 64, and 256. Use a throwaway
