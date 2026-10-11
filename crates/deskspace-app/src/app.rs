@@ -3,19 +3,18 @@ use std::path::{Path, PathBuf};
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::{Point, Size};
-use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{
-    Color, Command, Desktop, Item, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space,
-    SpaceId, SpaceLook, Theme,
+    Color, Command, Desktop, ItemId, ItemKind, Palette, Rect, ResizeEdges, SortKey, Space, SpaceId,
+    SpaceLook, Theme,
 };
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DesktopEntry, DragImage, EditKey,
-    EditOutcome, Event, EventHandler, FieldValue, Hotkey, IconCache, ItemMenuChoice, ItemMetrics,
-    MenuEntry, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent,
-    TextEdit, TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id,
-    item_check_box_hit, notify_moved, parse_hotkey, set_start_with_windows, system_accent_color,
-    system_uses_dark_mode, virtual_desktop_rect, work_area_at,
+    EditOutcome, Event, EventHandler, FieldValue, Hotkey, IconCache, ItemMenuChoice, MenuEntry,
+    MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit,
+    TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id, notify_moved,
+    parse_hotkey, set_start_with_windows, system_accent_color, system_uses_dark_mode,
+    virtual_desktop_rect, work_area_at,
 };
 
 use crate::scene::{desktop_layer_drag_scene, drag_scene, item_label};
@@ -498,204 +497,6 @@ impl App {
             takeover_layer: false,
             takeover: false,
         }
-    }
-
-    /// The space's scroll offset, clamped to its current content.
-    fn scroll_of(&self, id: SpaceId) -> i32 {
-        let layout = self.layout_for(id);
-        let max = self
-            .config
-            .desktop
-            .space(id)
-            .map_or(0, |space| space.max_scroll(layout.cell(), layout.padding));
-        self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
-    }
-
-    /// A surface's items, in model order.
-    fn surface_items(&self, surface: Surface) -> &[Item] {
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map_or(&[][..], |space| &space.items),
-            Surface::Desktop => self.config.desktop.layer().items(),
-        }
-    }
-
-    /// The item with `id` on `surface`, when it is there.
-    fn surface_item(&self, surface: Surface, id: ItemId) -> Option<&Item> {
-        self.surface_items(surface)
-            .iter()
-            .find(|item| item.id == id)
-    }
-
-    /// The content-area origin of a surface in desktop coordinates: a space's
-    /// content area, or the virtual-desktop origin for the layer, whose item
-    /// positions are already absolute.
-    fn surface_content_origin(&self, surface: Surface) -> Point {
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map_or(Point::ZERO, |space| space.content_rect().origin()),
-            Surface::Desktop => Point::ZERO,
-        }
-    }
-
-    /// The rect a surface's window occupies on screen.
-    fn surface_window_rect(&self, surface: Surface) -> Option<Rect> {
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map(|space| space.visible_rect()),
-            Surface::Desktop => Some(virtual_desktop_rect()),
-        }
-    }
-
-    /// The area a rubber-band selection clamps to, in desktop coordinates.
-    fn surface_content(&self, surface: Surface) -> Option<Rect> {
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .map(|space| space.content_rect()),
-            Surface::Desktop => Some(virtual_desktop_rect()),
-        }
-    }
-
-    /// A surface's scroll offset; the layer never scrolls.
-    fn surface_scroll(&self, surface: Surface) -> i32 {
-        match surface {
-            Surface::Space(id) => self.scroll_of(id),
-            Surface::Desktop => 0,
-        }
-    }
-
-    /// The scaled grid a surface lays out on.
-    fn surface_layout(&self, surface: Surface) -> GridSpec {
-        match surface {
-            Surface::Space(id) => self.layout_for(id),
-            Surface::Desktop => self.effective_layout(),
-        }
-    }
-
-    /// Scaled icon, label, and check-box sizes for a surface.
-    fn surface_metrics(&self, surface: Surface) -> ItemMetrics {
-        match surface {
-            Surface::Space(id) => self.metrics_for(id),
-            Surface::Desktop => ItemMetrics::for_scale(self.icon_scale(&self.config.theme)),
-        }
-    }
-
-    /// The theme a surface is drawn with: a space's own look while customized,
-    /// else the global theme.
-    fn surface_theme(&self, surface: Surface) -> &Theme {
-        match surface {
-            Surface::Space(id) => self.theme_for(id),
-            Surface::Desktop => &self.config.theme,
-        }
-    }
-
-    /// The concrete colors for a surface, with the Windows accent when asked.
-    fn surface_palette(&self, surface: Surface) -> Palette {
-        let theme = self.surface_theme(surface);
-        let palette = theme.palette(self.system_dark);
-        match (theme.use_accent, self.system_accent) {
-            (true, Some(accent)) => palette.with_accent(accent),
-            _ => palette,
-        }
-    }
-
-    /// Whether a surface mirrors Explorer's display settings.
-    fn surface_match_explorer(&self, surface: Surface) -> bool {
-        self.surface_theme(surface).match_explorer
-    }
-
-    /// How a surface shows item check boxes, honoring its `match_explorer`.
-    fn surface_check_box_mode(&self, surface: Surface) -> CheckBoxMode {
-        if self.surface_match_explorer(surface) {
-            self.shell_display.check_boxes
-        } else {
-            CheckBoxMode::Hidden
-        }
-    }
-
-    /// The rect of an item's cell on `surface`, in desktop coordinates.
-    fn surface_cell(&self, surface: Surface, item: &Item) -> Rect {
-        let origin = self.surface_content_origin(surface);
-        let cell = self.surface_layout(surface).cell();
-        Rect::new(
-            origin.x + item.position.x,
-            origin.y + item.position.y - self.surface_scroll(surface),
-            cell.width,
-            cell.height,
-        )
-    }
-
-    /// Every item's cell on `surface`, in desktop coordinates.
-    fn surface_cells(&self, surface: Surface) -> Vec<(ItemId, Rect)> {
-        let origin = self.surface_content_origin(surface);
-        let scroll = self.surface_scroll(surface);
-        let cell = self.surface_layout(surface).cell();
-        self.surface_items(surface)
-            .iter()
-            .map(|item| {
-                (
-                    item.id,
-                    Rect::new(
-                        origin.x + item.position.x,
-                        origin.y + item.position.y - scroll,
-                        cell.width,
-                        cell.height,
-                    ),
-                )
-            })
-            .collect()
-    }
-
-    /// The item whose cell contains `point` (desktop coordinates).
-    fn surface_item_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
-        let cell = self.surface_layout(surface).cell();
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .and_then(|space| space.item_at(point, cell, self.surface_scroll(surface))),
-            Surface::Desktop => self.config.desktop.layer().item_at(point, cell),
-        }
-    }
-
-    /// The item whose Explorer-style check box contains `point`, when check
-    /// boxes are shown. `point` is in desktop coordinates.
-    fn checkbox_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
-        if self.surface_check_box_mode(surface) == CheckBoxMode::Hidden {
-            return None;
-        }
-        let item = self.surface_item_at(surface, point)?;
-        let entry = self.surface_item(surface, item)?;
-        let cell = self.surface_cell(surface, entry);
-        item_check_box_hit(cell, self.surface_metrics(surface))
-            .contains(point)
-            .then_some(item)
-    }
-
-    /// The item holding the file at `path`, comparing identity rather than the
-    /// literal string so a shell-reported short name or case difference still
-    /// matches. A path in a space must be moved, not added again.
-    fn find_item_by_file(&self, path: &Path) -> Option<ItemId> {
-        self.config
-            .desktop
-            .spaces
-            .iter()
-            .flat_map(|space| space.items.iter())
-            .find(|item| crate::storage::same_path(&item.path, path))
-            .map(|item| item.id)
     }
 
     /// Clears the item selection, as clicking elsewhere does in Explorer.
@@ -1693,20 +1494,6 @@ impl App {
         }
     }
 
-    /// Whether `point` (desktop coordinates) is still over the surface's own
-    /// content, as opposed to another window such as a space on top of the
-    /// desktop layer.
-    fn surface_contains(&self, surface: Surface, point: Point) -> bool {
-        match surface {
-            Surface::Space(id) => self
-                .config
-                .desktop
-                .space(id)
-                .is_some_and(|space| space.visible_rect().contains(point)),
-            Surface::Desktop => self.config.desktop.space_at(point).is_none(),
-        }
-    }
-
     /// Repositions a loose desktop item as it is dragged, so it follows the
     /// pointer at its absolute virtual-desktop position.
     fn move_desktop_item(&mut self, ui: &mut Ui, item: ItemId, origin: Point, point: Point) {
@@ -2463,19 +2250,6 @@ impl App {
         self.resync_desktop_layer(ui);
     }
 
-    /// The path of each of `ids` on `surface` and the top-left of its cell in
-    /// desktop coordinates, where it is drawn now (off the visible area when
-    /// scrolled out), in `ids` order.
-    fn item_cells(&self, surface: Surface, ids: &[ItemId]) -> Vec<(PathBuf, Point)> {
-        ids.iter()
-            .filter_map(|id| {
-                let item = self.surface_item(surface, *id)?;
-                let cell = self.surface_cell(surface, item);
-                Some((item.path.clone(), Point::new(cell.x, cell.y)))
-            })
-            .collect()
-    }
-
     /// The items an item operation acts on: the independent tick set when
     /// check boxes are separate and any are ticked, otherwise the selection.
     fn active_items(&self) -> Vec<ItemId> {
@@ -2632,13 +2406,6 @@ impl App {
             self.save();
         }
     }
-    fn space_center(&self, id: SpaceId) -> Point {
-        self.config
-            .desktop
-            .space(id)
-            .map_or(Point::ZERO, |space| space.rect.center())
-    }
-
     /// Deletes the space shown in the settings window, from the header's
     /// "Delete space" button. Deletion is immediate and Cancel does not bring
     /// the space back, matching the space menu. The window falls back to
@@ -3426,6 +3193,7 @@ pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_platform::item_check_box_hit;
 
     #[test]
     fn type_to_select_matches_a_prefix_and_wraps() {
