@@ -369,11 +369,11 @@ WindowSettings {
   `#[serde(default)]`, and `Item.kind` / `Item.position` default, so partial
   tables fill in defaults instead of failing the whole file. Unknown keys (for
   example the removed `background_alpha`) are ignored.
-- `ConfigStore` resolves its path via `directories::ProjectDirs` (Roaming
-  AppData on Windows) with file name `deskspace.toml`, or accepts an explicit
-  path. `storage_dir()` is where dropped files are moved: local AppData
-  `DeskSpace\storage`, or a `storage` folder beside an explicit config file,
-  so scratch configs never touch real storage.
+- `ConfigStore` resolves its paths via `directories::ProjectDirs` (on Windows
+  `%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`), or accepts an
+  explicit path. `storage_dir()` is where dropped files are moved
+  (`%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`), or a `storage` folder
+  beside an explicit config file, so scratch configs never touch real storage.
 - `save` writes to a sibling `*.toml.tmp` then renames, so a crash never
   truncates the config.
 - `window.start_with_windows` is applied through

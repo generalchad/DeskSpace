@@ -57,9 +57,9 @@ A native, lightweight, offline Windows desktop organizer that:
     space moves that one item into a managed store. It is an atomic rename on
     the same volume, so nothing is duplicated and no extra disk space is used.
     - The store is one folder shared by all spaces:
-      `%LOCALAPPDATA%\DeskSpace\storage`, or a `storage` folder beside an
-      explicit `--config` file. Moving an item between spaces therefore never
-      touches the file.
+      `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, or a `storage` folder
+      beside an explicit `--config` file. Moving an item between spaces
+      therefore never touches the file.
     - Two kinds of file stay in place: one dropped with Shift held, and one on
       another drive, where a move would be a copy.
     - Name clashes get " (2)" as in Explorer, and nothing is overwritten.
@@ -83,9 +83,9 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Install root vs user data:* the Velopack pack id is `DeskSpace.App`, so
     the install root is `%LocalAppData%\DeskSpace.App`. Velopack deletes the
     whole install root on uninstall. The config and the item storage (under
-    `%LocalAppData%\DeskSpace\` and `%AppData%\DeskSpace\`, via
-    `ProjectDirs`) must never be inside it, or uninstalling would delete the
-    user's stored files.
+    `%AppData%\DeskSpace\DeskSpace\config` and
+    `%LocalAppData%\DeskSpace\DeskSpace\data`, via `ProjectDirs`) must never be
+    inside it, or uninstalling would delete the user's stored files.
   - *Uninstall:* removes the Run value (F-34) and the desktop "Show spaces"
     verb by handling Velopack's uninstall callback. It never touches stored
     files: the storage folder stays where it is, and a reinstall picks it up

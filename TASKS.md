@@ -958,13 +958,6 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   cannot see it. A shape-changing form is silently not shown. No form changes
   shape today, and H is designed to keep it that way. Still, either rebuild
   the window on `false` or `debug_assert!` against it (a `fix:` task).
-- `ROADMAP.md` D3 says the store is `%LOCALAPPDATA%\DeskSpace\storage`, but
-  `ConfigStore::discover` uses `ProjectDirs::from("", "DeskSpace",
-  "DeskSpace")`. On Windows that should give
-  `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, and the config under
-  `%APPDATA%\DeskSpace\DeskSpace\config\`. Confirm by running it, then fix
-  the docs (a `docs:` task). This matters for E7's safety test and the
-  uninstall docs.
 - `deskspace-core/src/desktop.rs` `Desktop::item_count` counts space items
   only, so it will miss the loose desktop layer once I3 populates it (the tray
   tooltip's item count). Decide whether it should span the layer, or whether
