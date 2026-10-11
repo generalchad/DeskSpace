@@ -1,50 +1,47 @@
 # DeskSpace
 
-DeskSpace is a free and open-source desktop organizer for Windows: a FOSS
-alternative to comparable tools. It groups desktop items into movable, resizable
-containers called *spaces*, and draws them itself with a native Windows 11 look:
-per-pixel-alpha Direct2D content over a DWM blur material, with rounded corners.
-It is deliberately lightweight and offline: native Win32, no webview, no
-runtime, no telemetry.
+DeskSpace is a free, open-source desktop organizer for Windows, an alternative
+to comparable tools. It groups your desktop icons into movable boxes called
+*spaces* that you can arrange, resize, and style. Spaces fit right in on
+Windows 11, with translucent, softly blurred backgrounds and rounded corners.
+DeskSpace is a native app that works offline: no browser engine, no background
+service, no tracking.
 
-The long-term goal is to match spaces feature-for-feature while staying native.
-Planned next are *lenses* (live folder views, spaces' "Folder Portals"), roll-up
-and auto-hide policies, multiple pages, and layout snapshots. See
-[`ROADMAP.md`](ROADMAP.md) for the plan and the full feature index.
+The goal is to match spaces feature for feature. Coming later are *lenses*
+(spaces that show the live contents of a folder), auto-hiding, multiple pages,
+and saved layouts. See [`ROADMAP.md`](ROADMAP.md).
 
-Status: early but usable. The renderer, the opt-in desktop takeover, and the
-control center (tray, context menus, settings) are in place; some behavior is
-still being verified on screen. This is not yet a finished product.
+Status: early but usable. Spaces, desktop items, and the tray, menus, and
+settings window are in place; some behaviors are still being checked. This is
+not a finished product yet.
 
 ## Features
 
-- **Spaces.** Movable, resizable, lockable, rollable containers for desktop
-  items, each its own window with a Windows 11 look.
-- **Real desktop items.** Items are real filesystem entries. Dropping an item
-  into a space moves the file into a managed store, and moving it between spaces
-  never duplicates it.
-- **Explorer-like item behavior.** Multi-selection (click, Ctrl+click,
-  Shift+click, rubber-band, Ctrl+A), OLE drag and drop with a drag image,
-  cut/copy/paste, Recycle-Bin delete, inline rename, info tips, shell icons with
-  overlays, and both of Explorer's check-box modes.
-- **Desktop takeover (opt-in).** DeskSpace can hide Explorer's icon layer and
-  draw the loose desktop items itself, with a crash watchdog that restores the
-  icons if the process dies.
-- **Per-space looks.** A space follows the global theme until it is customized,
-  then keeps its own copy of every look setting.
-- **A control center.** A tray icon, space and item context menus, global
-  hotkeys, and a data-driven settings window with live preview, OK/Cancel/Apply,
-  and Windows accent-color support.
+- **Spaces.** Movable, resizable, lockable boxes for your desktop icons, each
+  with its own title bar. Roll a space up to just its title when you need room.
+- **Real files.** Everything in a space is a real file. Dropping something into
+  a space moves the file into a private store (nothing is copied), so items can
+  move between spaces without being duplicated.
+- **Familiar item controls.** Click, Ctrl+click, Shift+click, and drag a box to
+  select; drag items in, out, and between spaces with a picture of what you are
+  moving; cut, copy, and paste; delete to the Recycle Bin; rename in place; and
+  hover for details. Icons keep their shortcut arrows and badges.
+- **Optional desktop takeover.** DeskSpace can hide Explorer's own desktop icons
+  and draw them itself for a consistent look. A small helper restores them if
+  DeskSpace is closed or crashes.
+- **Themes.** All spaces share one look by default, and you can customize a
+  single space without changing the rest.
+- **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
+  settings window where every option can be changed and previewed live.
 
 ## Requirements
 
-- Windows 10 or 11 (x64).
+- Windows 10 or 11.
 - The stable Rust toolchain with the MSVC target (pinned in
   `rust-toolchain.toml`). There are no other system dependencies.
 
-The workspace is Windows-only: the platform crate links the `windows` crate
-under `cfg(windows)`, so it does not build on other platforms. Blur needs
-Windows 10 1803+ or Windows 11; rounded corners need Windows 11.
+DeskSpace is Windows-only. Blur needs Windows 10 1803 or newer; rounded corners
+need Windows 11.
 
 ## Build and run
 
@@ -58,21 +55,21 @@ cargo run -p deskspace-app -- --no-icons
 ```
 --config <FILE>          Path to an explicit configuration file
 --placement <PLACEMENT>  top-level | desktop-background | desktop-foreground
-                         (desktop-hosted spaces are opaque, no blur; defaults
-                         to top-level, or desktop-hosted when the
+                         (desktop-hosted spaces are opaque, with no blur;
+                         defaults to top-level, or desktop-hosted when the
                          always_on_desktop setting is on)
 --reset                  Ignore the saved configuration and start fresh
 --hidden                 Start with spaces hidden
---show                   Signal the running instance to show its spaces, or
-                         start with the spaces shown when none is running
+--show                   Ask the running instance to show its spaces, or start
+                         with the spaces shown when none is running
 --settings               Open the settings window on start
 --no-icons               Do not populate spaces from the desktop folder
 --click-through          Make spaces click-through (display only)
 -v, --verbose            Increase log verbosity
 ```
 
-Hidden development flags `--on-top`, `--takeover`, and `--takeover-layer` help
-inspect the look and the desktop layer.
+The hidden development flags `--on-top`, `--takeover`, and `--takeover-layer`
+help inspect the look and the desktop layer.
 
 ### Development commands
 
@@ -94,20 +91,20 @@ and `-Release` switches.
 ## Controls
 
 - Drag a space title bar to move it; drag an edge or corner to resize it. The
-  wheel scrolls a resized space, and Ctrl+wheel changes the global icon size.
+  wheel scrolls a resized space, and Ctrl+wheel changes the icon size.
 - Double-click a space title bar to roll it up or down. Right-click a space for
   roll up, rename, lock, fit to contents, appearance, sort, delete, new space,
   settings, and exit.
-- Click an item to select it (Ctrl+click toggles, Shift+click ranges, drag empty
-  space for a rubber-band selection, Ctrl+A selects all). Drag a selection to
+- Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
+  drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the
   desktop.
 - Double-click an item to open it; right-click for Explorer's context menu.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
-- `F2` renames the focused item, or the current space's title when no item is
-  selected. `Alt+Enter` opens the focused item's Properties, or DeskSpace
-  Settings when no item is selected. `Enter` opens the focused item, `Escape`
+- `F2` renames the selected item, or the current space's title when no item is
+  selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
+  Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, and `F5` refreshes the spaces.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are.
@@ -118,40 +115,38 @@ and `-Release` switches.
 
 ## Configuration
 
-Settings are saved to a TOML file under the per-user configuration directory
+Settings are saved to a TOML file in your user profile
 (`%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`). Files dropped into
 spaces are moved into a shared store
 (`%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`). Passing an explicit
-`--config <FILE>` puts both the configuration and a `storage` folder beside that
-file, so a scratch profile never touches real data.
+`--config <FILE>` puts both the settings and a `storage` folder next to that
+file, so a scratch profile never touches your real data.
 
-Every runtime setting can also be edited from the settings window; the TOML file
-is optional. Older configuration files are migrated on load, and an unreadable
-file is backed up before defaults are used.
+Every setting can also be changed in the settings window, so you never have to
+edit the file by hand. Older settings files are upgraded on load, and an
+unreadable file is backed up before defaults are used.
 
-## Architecture
+## Project layout
 
 ```
-crates/deskspace-core      Domain model: geometry, items, spaces, layout, theme, commands
-crates/deskspace-config    Configuration schema, migration, and atomic persistence
-crates/deskspace-platform  UI runtime: space windows, Direct2D painter, DWM blur,
-                           tray, menus, settings window, shell integration
-crates/deskspace-app       Application binary, CLI, event handler, and the
-                           deskspace-watchdog crash helper
+crates/deskspace-core      The data model and layout logic (no Windows code)
+crates/deskspace-config    Reading, writing, and upgrading the settings file
+crates/deskspace-platform  The Windows layer: windows, drawing, tray, menus,
+                           and the settings window
+crates/deskspace-app       The program itself: the command line, event
+                           handling, and the crash helper
 ```
 
-Dependencies point downward only: `app -> {config, platform} -> core`. The
-`core` crate has no OS or IO dependencies and forbids `unsafe`; all Win32 code
-lives in `platform`. Behavior is data-driven: the app describes what to show as
-scenes, menus, and settings forms, and the platform turns that data into windows
-and pixels.
+The platform is the only crate that talks to Windows, and the parts that do not
+(the model, layout, and settings) stay free of it. The app describes what to
+show and the platform turns that into windows and pixels.
 
 ## Documentation
 
 | File | Contents |
 |------|----------|
 | [`CONTEXT.md`](CONTEXT.md) | Architecture and current behavior (authoritative) |
-| [`ROADMAP.md`](ROADMAP.md) | The plan, milestones, and the feature/parity index |
+| [`ROADMAP.md`](ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](TASKS.md) | Concrete, one-commit work items |
 | [`AGENTS.md`](AGENTS.md) | Engineering rules and the build/test workflow |
 
