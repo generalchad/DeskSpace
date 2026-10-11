@@ -77,6 +77,7 @@ const ID_TAB: usize = 4;
 const ID_LIST: usize = 5;
 const ID_SCOPES: usize = 6;
 const ID_HEADER_SWITCH: usize = 7;
+const ID_HEADER_BUTTON: usize = 8;
 const TAB_SUBCLASS_ID: usize = 1;
 /// Height of one navigation-rail row, at 96 DPI.
 const NAV_ROW_HEIGHT: i32 = 30;
@@ -90,6 +91,8 @@ const SCOPE_INDENT: i32 = 16;
 const HEADER_HEIGHT: i32 = 44;
 /// Width of the header switch, at 96 DPI.
 const HEADER_SWITCH_WIDTH: i32 = 200;
+/// Width of the header action button (for example "Delete space"), at 96 DPI.
+const HEADER_BUTTON_WIDTH: i32 = 132;
 /// Field controls get `CONTROL_BASE + index * 4 + part`, so the field index
 /// and which of its controls fired can be recovered from the id alone.
 const CONTROL_BASE: usize = 1000;
@@ -151,9 +154,10 @@ struct SettingsState {
     scopes_list: Option<HWND>,
     /// The scopes pane's rows, rebuilt when they change.
     scope_rows: Vec<SettingsScope>,
-    /// The header's title and switch, when the form has a rail.
+    /// The header's title, switch, and action button, when the form has a rail.
     header_title: Option<HWND>,
     header_switch: Option<HWND>,
+    header_button: Option<HWND>,
     /// Vertical lines between the panes: x, top, bottom.
     dividers: Vec<(i32, i32, i32)>,
     apply: Option<HWND>,
@@ -318,6 +322,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             scope_rows: Vec::new(),
             header_title: None,
             header_switch: None,
+            header_button: None,
             dividers: Vec::new(),
             apply: None,
             font: HFONT::default(),
@@ -1025,7 +1030,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
         // (nav), and compute the client size.
         let (client_width, command_bar_top, list);
         let mut scopes_list = None;
-        let (mut header_title, mut header_switch) = (None, None);
+        let (mut header_title, mut header_switch, mut header_button) = (None, None, None);
         let mut dividers = Vec::new();
         if let Some(nav) = nav {
             let header_height = s(HEADER_HEIGHT);
@@ -1063,6 +1068,10 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
 
             // The header lines up with the fields, which sit s(16) into a page.
             let switch_width = s(HEADER_SWITCH_WIDTH);
+            let button_width = s(HEADER_BUTTON_WIDTH);
+            let gap = s(8);
+            let switch_x = pages_x + page_width - s(16) - switch_width;
+            let button_x = switch_x - gap - button_width;
             let title_x = pages_x + s(16);
             let header = nav.header.as_ref();
             header_title = builder.label(
@@ -1071,7 +1080,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
                 (
                     title_x,
                     margin,
-                    page_width - s(32) - switch_width,
+                    (button_x - gap - title_x).max(s(40)),
                     header_height,
                 ),
             );
@@ -1083,21 +1092,25 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
                     Some(LPARAM(1)),
                 );
             }
+            header_button = builder.control(
+                hwnd,
+                WC_BUTTONW,
+                "",
+                BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+                WINDOW_EX_STYLE(0),
+                (button_x, margin, button_width, header_height),
+                ID_HEADER_BUTTON,
+            );
             header_switch = builder.control(
                 hwnd,
                 WC_BUTTONW,
                 "",
                 BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
                 WINDOW_EX_STYLE(0),
-                (
-                    pages_x + page_width - s(16) - switch_width,
-                    margin,
-                    switch_width,
-                    header_height,
-                ),
+                (switch_x, margin, switch_width, header_height),
                 ID_HEADER_SWITCH,
             );
-            apply_header(header_title, header_switch, header);
+            apply_header(header_title, header_switch, header_button, header);
 
             for page in &pages {
                 let _ = SetWindowPos(
@@ -1228,6 +1241,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.scopes_list = scopes_list;
             state.header_title = header_title;
             state.header_switch = header_switch;
+            state.header_button = header_button;
             state.dividers = dividers;
             state.apply = apply;
             state.font = font;
@@ -1297,17 +1311,36 @@ unsafe fn sync_selection(list: HWND, rebuilt: bool, row: usize) {
     }
 }
 
-/// Shows `header` in the header controls: the title, and the switch only
-/// when the header has one.
-unsafe fn apply_header(title: Option<HWND>, switch: Option<HWND>, header: Option<&SettingsHeader>) {
+/// Shows `header` in the header controls: the title, the button, and the
+/// switch, each only when the header supplies one.
+unsafe fn apply_header(
+    title: Option<HWND>,
+    switch: Option<HWND>,
+    button: Option<HWND>,
+    header: Option<&SettingsHeader>,
+) {
     // SAFETY: the handles are live controls of the settings window. Neither
-    // SetWindowText on a static/checkbox nor BM_SETCHECK reports an edit.
+    // SetWindowText on a static/checkbox/button nor BM_SETCHECK reports an edit.
     unsafe {
         if let Some(title) = title {
             let text = header.map_or("", |header| header.title.as_str());
             if window_text(title) != text {
                 let text = wide(text);
                 let _ = SetWindowTextW(title, PCWSTR(text.as_ptr()));
+            }
+        }
+        if let Some(control) = button {
+            match header.and_then(|header| header.button.as_ref()) {
+                Some(state) => {
+                    if window_text(control) != state.label {
+                        let text = wide(&state.label);
+                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
+                    }
+                    let _ = ShowWindow(control, SW_SHOW);
+                }
+                None => {
+                    let _ = ShowWindow(control, SW_HIDE);
+                }
             }
         }
         if let Some(control) = switch {
@@ -1409,6 +1442,7 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             let header = (old_header != new_header.as_ref()).then_some((
                 state.header_title,
                 state.header_switch,
+                state.header_button,
                 new_header,
             ));
             state.nav_rows = new_rows.clone();
@@ -1492,8 +1526,8 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
             }
             sync_selection(list, rebuild, selected);
         }
-        if let Some((title, switch, header)) = header {
-            apply_header(title, switch, header.as_ref());
+        if let Some((title, switch, button, header)) = header {
+            apply_header(title, switch, button, header.as_ref());
         }
         with_state(hwnd, |state| state.updating = false);
     }
@@ -2222,6 +2256,9 @@ unsafe extern "system" fn wndproc(
                     ID_LIST if code == LBN_SELCHANGE => on_nav_changed(window),
                     ID_SCOPES if code == LBN_SELCHANGE => on_scope_changed(window),
                     ID_HEADER_SWITCH if code == BN_CLICKED => on_header_switch(window, control),
+                    ID_HEADER_BUTTON if code == BN_CLICKED => {
+                        settings_event(SettingsEvent::HeaderButton)
+                    }
                     id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
                     _ => {}
                 }

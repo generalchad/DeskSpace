@@ -3134,6 +3134,25 @@ impl App {
             .map_or(Point::ZERO, |space| space.rect.center())
     }
 
+    /// Deletes the space shown in the settings window, from the header's
+    /// "Delete space" button. Deletion is immediate and Cancel does not bring
+    /// the space back, matching the space menu. The window falls back to
+    /// Global when the scoped space is gone.
+    fn delete_space_from_settings(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.delete_space(ui, id);
+        if self.config.desktop.space(id).is_some() {
+            // Not confirmed, or kept because a stored file could not be moved
+            // back to the desktop.
+            self.refresh_settings(ui);
+            return;
+        }
+        if let Some(session) = self.settings.as_mut() {
+            session.forget_space(id);
+        }
+        self.clear_highlight(ui);
+        self.refresh_settings(ui);
+    }
+
     // ---- menus ---------------------------------------------------------
 
     fn visibility_entry(&self) -> MenuEntry {
@@ -3379,6 +3398,11 @@ impl App {
             SettingsEvent::HeaderSwitch { on } => {
                 let command = settings::customize_space(&self.config, session, on);
                 self.apply_space_setting(ui, command);
+            }
+            SettingsEvent::HeaderButton => {
+                if let Some(id) = session.scope {
+                    self.delete_space_from_settings(ui, id);
+                }
             }
             SettingsEvent::ScopeChanged { scope } => {
                 let id = settings::scope_at(&self.config, scope);

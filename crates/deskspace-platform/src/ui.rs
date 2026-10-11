@@ -119,18 +119,30 @@ pub struct SettingsScope {
     pub dimmed: bool,
 }
 
-/// The line above the page: a title, and a switch the app can use to unlock
-/// the page (reported as `SettingsEvent::HeaderSwitch`).
+/// The line above the page: a title, a switch the app can use to unlock the
+/// page (reported as `SettingsEvent::HeaderSwitch`), and an optional action
+/// button (reported as `SettingsEvent::HeaderButton`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsHeader {
     pub title: String,
     pub switch: Option<SettingsSwitch>,
+    /// Shown to the left of the switch only when the header has one. Absent
+    /// hides it, so the same header space can hold a button for one scope and
+    /// not another (the page shape is unaffected).
+    pub button: Option<SettingsButton>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsSwitch {
     pub label: String,
     pub on: bool,
+}
+
+/// An action button in the header. The platform reports a press; the app owns
+/// what it does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsButton {
+    pub label: String,
 }
 
 /// A titled group of rail entries.

@@ -18,7 +18,7 @@ use deskspace_core::{
     Backdrop, Command, GridSpec, LabelShadow, Space, SpaceId, SpaceLook, Theme, ThemeMode,
 };
 use deskspace_platform::{
-    Field, FieldValue, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
+    Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
     SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
 };
 
@@ -211,6 +211,16 @@ impl Session {
             self.page = page::APPEARANCE;
         }
     }
+
+    /// Forgets a space that no longer exists: its Cancel snapshot is dropped,
+    /// and if it was the selected scope, selection returns to Global. Called
+    /// after a space is deleted from the window, so Cancel cannot resurrect it.
+    pub fn forget_space(&mut self, id: SpaceId) {
+        if self.scope == Some(id) {
+            self.scope = None;
+        }
+        self.saved_spaces.retain(|snapshot| snapshot.id != id);
+    }
 }
 
 fn snapshot_spaces(config: &Config) -> Vec<SpaceSnapshot> {
@@ -335,12 +345,22 @@ pub fn build_form(
         None => SettingsHeader {
             title: "Global settings".into(),
             switch: None,
+            button: None,
         },
         Some(space) => SettingsHeader {
             title: space.title.clone(),
             switch: Some(SettingsSwitch {
                 label: "Customize this space".into(),
                 on: space.custom,
+            }),
+            button: Some(SettingsButton {
+                // The ellipsis promises a confirmation dialog, which only a
+                // non-empty space shows (matching the space menu).
+                label: if space.items.is_empty() {
+                    "Delete space".into()
+                } else {
+                    "Delete space\u{2026}".into()
+                },
             }),
         },
     };
@@ -1274,6 +1294,7 @@ mod tests {
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
         assert!(header.switch.is_none());
+        assert!(header.button.is_none(), "Global cannot be deleted");
     }
 
     #[test]
@@ -1294,6 +1315,8 @@ mod tests {
         let switch = nav.header.as_ref().unwrap().switch.as_ref().unwrap();
         assert_eq!(switch.label, "Customize this space");
         assert!(!switch.on);
+        let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
+        assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
         assert_eq!(form.pages.len(), page::ABOUT + 1);
     }
@@ -1417,6 +1440,17 @@ mod tests {
         session.resnapshot(config.desktop.space(id).unwrap());
         assert!(session.saved_spaces[0].custom);
         assert_eq!(session.saved_spaces.len(), 1);
+    }
+
+    #[test]
+    fn forgetting_a_deleted_space_returns_to_global() {
+        let (config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
+        assert_eq!(session.saved_spaces.len(), 1);
+        session.forget_space(id);
+        assert_eq!(session.scope, None);
+        assert!(session.saved_spaces.is_empty());
     }
 
     #[test]

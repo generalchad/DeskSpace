@@ -146,6 +146,8 @@ pub enum SettingsEvent {
     HeaderSwitch {
         on: bool,
     },
+    /// The header button (`SettingsHeader::button`) was pressed.
+    HeaderButton,
     Ok,
     /// Cancel button, Escape, or the window's close button.
     Cancel,

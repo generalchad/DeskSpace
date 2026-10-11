@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (244 tests) are green.
+  `cargo test --workspace` (245 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -704,8 +704,9 @@ WindowSettings {
   separated by hairlines: a scopes pane (`scopes`, each with an `indent` and a
   `dimmed` flag; `ScopeChanged`), a categories pane (`groups` of entries, each
   pointing at a page; untitled groups have no title row; `NavChanged`), and a
-  `header` above the page with a title and an optional switch
-  (`HeaderSwitch`). Both panes are owner-drawn list boxes painted like Windows
+  `header` above the page with a title, an optional switch (`HeaderSwitch`),
+  and an optional action button (`HeaderButton`; the app uses it for a space's
+  "Delete space"). Both panes are owner-drawn list boxes painted like Windows
   11 navigation (an accent bar on the selection). The platform knows nothing
   about spaces: the app fills the panes, maps an index back to what it means,
   and answers each event with a new form. The page shape never changes: every
@@ -723,7 +724,10 @@ WindowSettings {
   until customized) greyed unless the header's "Customize this space" switch
   is on. Global edits write `Config` directly; a space's edits become
   `SetSpaceLook` commands, the switch becomes `CustomizeSpace`, and the Colors
-  page's reset becomes "Match global appearance". Cancel restores each
+  page's reset becomes "Match global appearance". A space's header also carries
+  a "Delete space" button, which runs the same delete (with its confirmation)
+  and then falls back to Global; deletion is immediate, so Cancel does not
+  bring the space back. Cancel restores each
   space's `SpaceSnapshot`; a space menu edit made while the window is open is
   taken into that snapshot, because the menu commits at once.
 - Dark mode (`win32/dark_mode.rs`): `Ui::set_ui_dark`, which the app calls

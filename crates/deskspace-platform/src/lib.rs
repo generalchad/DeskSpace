@@ -20,9 +20,9 @@ pub use shell::{
     DesktopEntry, IconCache, desktop_directory, enumerate_desktop_items, notify_moved,
 };
 pub use ui::{
-    CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsForm, SettingsHeader,
-    SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch,
-    SliderMark,
+    CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsButton, SettingsForm,
+    SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope,
+    SettingsSwitch, SliderMark,
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;

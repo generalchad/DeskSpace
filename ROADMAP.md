@@ -867,3 +867,8 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   - The runtime teardown signals that event right after it restores the icons,
     so the watchdog acts only on a crash; a named mutex keeps a stray watchdog
     a no-op.
+- **A space's Delete button in the settings window (F-02).** A space's scope
+  header now carries a "Delete space" button beside the "Customize this space"
+  switch. It runs the same delete (with its confirmation for a non-empty
+  space) as the context menu, then the window falls back to Global; deletion is
+  immediate, so Cancel does not bring the space back.
