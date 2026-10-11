@@ -304,6 +304,32 @@ mod tests {
     }
 
     #[test]
+    fn preset_defaults_to_match_explorer_and_reads_the_legacy_flag() {
+        let parsed: Config = toml::from_str("version = 2\n[theme]\n").unwrap();
+        assert_eq!(parsed.theme.preset, deskspace_core::Preset::MatchExplorer);
+        assert!(parsed.theme.match_explorer());
+        let parsed: Config = toml::from_str("version = 2\n[theme]\npreset = \"custom\"\n").unwrap();
+        assert_eq!(parsed.theme.preset, deskspace_core::Preset::Custom);
+        // The older boolean setting maps onto the preset.
+        let parsed: Config =
+            toml::from_str("version = 2\n[theme]\nmatch_explorer = false\n").unwrap();
+        assert_eq!(parsed.theme.preset, deskspace_core::Preset::Custom);
+        assert!(!parsed.theme.match_explorer());
+        let parsed: Config =
+            toml::from_str("version = 2\n[theme]\nmatch_explorer = true\n").unwrap();
+        assert_eq!(parsed.theme.preset, deskspace_core::Preset::MatchExplorer);
+    }
+
+    #[test]
+    fn preset_serializes_as_snake_case_without_the_legacy_flag() {
+        let mut config = Config::new();
+        config.theme.preset = deskspace_core::Preset::Custom;
+        let text = toml::to_string(&config).unwrap();
+        assert!(text.contains("preset = \"custom\""), "{text}");
+        assert!(!text.contains("match_explorer"), "{text}");
+    }
+
+    #[test]
     fn start_with_windows_defaults_to_false() {
         let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
         assert!(!parsed.window.start_with_windows);

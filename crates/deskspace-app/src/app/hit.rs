@@ -123,7 +123,7 @@ impl App {
 
     /// Whether a surface mirrors Explorer's display settings.
     pub(super) fn surface_match_explorer(&self, surface: Surface) -> bool {
-        self.surface_theme(surface).match_explorer
+        self.surface_theme(surface).match_explorer()
     }
 
     /// How a surface shows item check boxes, honoring its `match_explorer`.

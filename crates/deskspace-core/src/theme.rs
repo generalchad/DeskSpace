@@ -137,6 +137,20 @@ pub enum LabelShadow {
     Off,
 }
 
+/// A bundle of item-display choices. `MatchExplorer` mirrors Explorer's own
+/// item rendering (icon size, spacing, check boxes, extensions); `Custom` uses
+/// DeskSpace's own item settings. More presets and import/export are planned;
+/// this is the seed of that system (ROADMAP F-48).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Preset {
+    /// Use DeskSpace's item settings.
+    Custom,
+    /// Mirror Explorer's item rendering.
+    #[default]
+    MatchExplorer,
+}
+
 /// Corner radii in pixels at 96 DPI. `SMALL` and `WINDOWS` match the Windows
 /// 11 design guidance (4 px for small surfaces, 8 px for windows), and DWM
 /// draws them natively; other radii are drawn by DeskSpace.
@@ -193,9 +207,11 @@ pub struct Theme {
     pub custom_colors: bool,
     pub tint: Color,
     pub text: Color,
-    /// Mirror Explorer's display settings (item check boxes, filename
-    /// extensions) instead of hiding them, so spaces match the desktop.
-    pub match_explorer: bool,
+    /// The item-display preset. `MatchExplorer` mirrors Explorer's icon size,
+    /// spacing, check boxes, and extensions; `Custom` uses the settings above.
+    /// Also reads the older `match_explorer = true|false` setting.
+    #[serde(alias = "match_explorer", deserialize_with = "preset_or_legacy")]
+    pub preset: Preset,
     /// Replace the selection highlight and border with Windows' accent color.
     pub use_accent: bool,
 }
@@ -218,10 +234,24 @@ impl Default for Theme {
             custom_colors: false,
             tint: DARK_TINT,
             text: DARK_TEXT,
-            match_explorer: true,
+            preset: Preset::MatchExplorer,
             use_accent: false,
         }
     }
+}
+
+fn preset_or_legacy<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Preset, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PresetOrLegacy {
+        Legacy(bool),
+        Named(Preset),
+    }
+    Ok(match PresetOrLegacy::deserialize(deserializer)? {
+        PresetOrLegacy::Legacy(true) => Preset::MatchExplorer,
+        PresetOrLegacy::Legacy(false) => Preset::Custom,
+        PresetOrLegacy::Named(preset) => preset,
+    })
 }
 
 fn radius_or_style<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u8, D::Error> {
@@ -338,6 +368,11 @@ impl Theme {
         self.mode.resolve(system_dark)
     }
 
+    /// Whether the theme mirrors Explorer's item rendering.
+    pub fn match_explorer(&self) -> bool {
+        self.preset == Preset::MatchExplorer
+    }
+
     /// The theme with every ranged value inside its bounds. Applied on load so
     /// a hand-edited out-of-range value cannot leave the settings UI showing
     /// no choice selected.
@@ -434,6 +469,16 @@ mod tests {
         assert_eq!(Color::rgb(1, 2, 3).fade(255).a, 255);
         assert_eq!(Color::rgb(1, 2, 3).fade(0).a, 0);
         assert_eq!(Color::rgba(1, 2, 3, 200).fade(128).a, 100);
+    }
+
+    #[test]
+    fn preset_mirrors_explorer_only_for_match_explorer() {
+        assert!(Theme::default().match_explorer());
+        let custom = Theme {
+            preset: Preset::Custom,
+            ..Theme::default()
+        };
+        assert!(!custom.match_explorer());
     }
 
     #[test]

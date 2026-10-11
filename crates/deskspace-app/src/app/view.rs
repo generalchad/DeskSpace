@@ -110,7 +110,7 @@ impl App {
 
     /// Whether a space mirrors Explorer's display settings.
     pub(super) fn match_explorer(&self, id: SpaceId) -> bool {
-        self.theme_for(id).match_explorer
+        self.theme_for(id).match_explorer()
     }
 
     /// The concrete colors for a space's scene: its theme's palette, with the
@@ -136,7 +136,7 @@ impl App {
     /// pixels) wins, so spaces are 1:1 with the desktop; otherwise the theme's
     /// icon-size setting applies.
     pub(super) fn icon_scale(&self, theme: &Theme) -> f32 {
-        if theme.match_explorer
+        if theme.match_explorer()
             && let Some(pixels) = self.shell_display.icon_size
         {
             return (pixels as f32 / ITEM_ICON_SIZE as f32).max(0.25);
@@ -150,7 +150,7 @@ impl App {
     pub(super) fn space_scale(&self, id: SpaceId) -> f32 {
         let theme = self.theme_for(id);
         let scale = self.icon_scale(theme);
-        if theme.match_explorer && self.shell_display.icon_size.is_some() {
+        if theme.match_explorer() && self.shell_display.icon_size.is_some() {
             return scale;
         }
         scale * space_dpi(id.0)
@@ -162,7 +162,7 @@ impl App {
     /// are never scaled, so the settings form keeps editing logical values.
     pub(super) fn base_layout(&self, theme: &Theme, grid: GridSpec, scale: f32) -> GridSpec {
         let mut layout = grid.scaled(scale);
-        if theme.match_explorer
+        if theme.match_explorer()
             && let Some(spacing) = self.shell_display.icon_spacing
         {
             layout.cell_width = spacing.width.max(1);
@@ -201,7 +201,7 @@ impl App {
             .desktop
             .spaces
             .iter()
-            .any(|space| space.theme(&self.config.theme).match_explorer);
+            .any(|space| space.theme(&self.config.theme).match_explorer());
         let relayout = any_matching
             && (display.icon_size != self.shell_display.icon_size
                 || display.icon_spacing != self.shell_display.icon_spacing);
@@ -486,6 +486,7 @@ impl App {
 mod tests {
     use super::*;
     use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
     use deskspace_platform::ShellDisplay;
 
@@ -519,7 +520,7 @@ mod tests {
             icon_size: Some(2 * ITEM_ICON_SIZE),
             ..ShellDisplay::default()
         });
-        app.config.theme.match_explorer = false;
+        app.config.theme.preset = Preset::Custom;
         app.config.theme.icon_size = 150;
         assert_eq!(app.icon_scale(&app.config.theme), 1.5);
         app.config.theme.icon_size = 50;
@@ -552,7 +553,7 @@ mod tests {
             icon_spacing: Some(Size::new(120, 130)),
             ..ShellDisplay::default()
         });
-        app.config.theme.match_explorer = false;
+        app.config.theme.preset = Preset::Custom;
         app.config.desktop.layout.gap = 20;
         let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0);
         assert_eq!(
@@ -564,7 +565,7 @@ mod tests {
     #[test]
     fn space_layout_and_metrics_follow_the_icon_size() {
         let mut app = app_with_display(ShellDisplay::default());
-        app.config.theme.match_explorer = false;
+        app.config.theme.preset = Preset::Custom;
         app.config.theme.icon_size = 200;
         let layout = app.layout_for(SpaceId(1));
         assert_eq!((layout.cell_width, layout.cell_height), (192, 208));
@@ -589,7 +590,7 @@ mod tests {
     #[test]
     fn effective_layout_uses_the_global_icon_size() {
         let mut app = app_with_display(ShellDisplay::default());
-        app.config.theme.match_explorer = false;
+        app.config.theme.preset = Preset::Custom;
         app.config.theme.icon_size = 200;
         assert_eq!(app.effective_layout().cell_width, 192);
     }

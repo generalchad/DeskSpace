@@ -82,11 +82,11 @@ context menus, and a settings window in the first usable release (v0.2).
   icon selection, like a desktop click.
 - Spaces mirror the desktop's look: item check boxes (both Explorer modes),
   filename extensions, hidden/protected files, and compressed/encrypted label
-  colors. With "Match Explorer's display" on, the desktop's own icon size
-  (`IFolderView2::GetViewModeAndIconSize`) and item spacing
-  (`IFolderView::GetSpacing`) replace the DeskSpace sliders, so spaces are 1:1
-  with the desktop, and the Layout page's icon-size, icon-spacing, and
-  edge-padding fields are greyed while it is on. Icons are rendered by
+  colors. With the "Match Explorer's display" item preset (the default), the
+  desktop's own icon size (`IFolderView2::GetViewModeAndIconSize`) and item
+  spacing (`IFolderView::GetSpacing`) replace the DeskSpace sliders, so spaces
+  are 1:1 with the desktop, and the Layout page's icon-size, icon-spacing, and
+  edge-padding fields are greyed while it is selected. Icons are rendered by
   `IShellItemImageFactory` at the
   effective pixel size (crisp at large sizes) with shell overlays composited on
   top, and layouts scale to each monitor's DPI. Hovering an item reveals
@@ -279,8 +279,8 @@ GridSpec {
   scroll all read the same per-space grid, so the grid the painter uses always
   matches the grid the pointer uses. The base grid and theme are the space's
   own while it is customized (`Space::grid`, `Space::theme`). When the space's
-  theme has `match_explorer` on, Explorer's item spacing replaces the cell and
-  gap outright.
+  theme uses the `MatchExplorer` preset, Explorer's item spacing replaces the
+  cell and gap outright.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
   the work area. `scroll_step()` is one row per wheel notch.
@@ -328,10 +328,19 @@ Theme {
     label_shadow: LabelShadow,// Auto (default) | On | Off
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
-    match_explorer: bool,     // default true; mirror Explorer's display
+    preset: Preset,           // Custom | MatchExplorer (default); item display
     use_accent: bool,         // default false; accent for selection and border
 }
 ```
+
+`Preset` bundles the item-display choices: `MatchExplorer` mirrors Explorer's
+icon size, spacing, check boxes, and extensions, and `Custom` uses DeskSpace's
+own item settings. `Theme::match_explorer()` reports `preset ==
+MatchExplorer`. The settings window exposes it as the Appearance page's "Item
+preset" dropdown; the Layout page's icon-size, icon-spacing, and edge-padding
+fields are greyed under `MatchExplorer`. The field also reads the older
+`match_explorer = true|false` setting. More presets and preset import/export
+are planned (ROADMAP F-48).
 
 `Theme::palette(system_dark) -> Palette` resolves concrete colors (tint with
 alpha, title fill, text, hover/selected fills, border) from the Windows 11
@@ -545,12 +554,12 @@ WindowSettings {
   `SSF_SHOWEXTENSIONS` (filename extensions), plus `IFolderView2::GetViewModeAndIconSize`
   (the desktop's icon size) and `IFolderView::GetSpacing` (item spacing).
   `ShellDisplay` carries all of them; the app overlays them when
-  `Theme.match_explorer` is on. In particular the desktop icon size and item
+  `Theme::match_explorer()` is on. In particular the desktop icon size and item
   spacing replace the DeskSpace icon-size and grid settings (and drive the
   jumbo icon fetch and the per-monitor layout scale), so matching is 1:1. `ShellDisplay.check_boxes` is a
   `CheckBoxMode`: `FWF_CHECKSELECT` gives `Independent`, `FWF_AUTOCHECKSELECT`
-  gives `Selection`, neither `Hidden`. When `Theme.match_explorer` is
-  on (default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
+  gives `Selection`, neither `Hidden`. When `Theme::match_explorer()` is
+  on (the default), the app feeds them into each scene: `SpaceScene.show_check_boxes`
   draws an Explorer-style check box at each icon's corner. In `Selection` mode
   the box is revealed on hover and while selected and its tick mirrors the
   selection; in `Independent` mode it is always shown and its tick is a
@@ -908,8 +917,8 @@ WindowSettings {
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top; right-clicking an item already in a multi-selection keeps it.
   Rest the pointer on an item for a moment to see Explorer's info tip.
-- Item check boxes follow Explorer's mode (when the desktop shows them and
-  `match_explorer` is on). With auto-check-select, hovering reveals the box and
+- Item check boxes follow Explorer's mode (when the desktop shows them and the
+  `MatchExplorer` preset is on). With auto-check-select, hovering reveals the box and
   it mirrors the selection; clicking an item ticks it and unticks the others,
   Ctrl+click ticks several, and clicking the box toggles one. With independent
   item check boxes, the boxes are always shown, clicking a box toggles a
@@ -1034,7 +1043,7 @@ WindowSettings {
   both Explorer modes: auto-check-select (the tick mirrors the selection) and
   independent item check boxes (a session-only tick set that is the operand for
   operations). Compressed/encrypted label colors are imported
-  (`SSF_SHOWCOMPCOLOR`). Under "Match Explorer's display" the desktop's icon
+  (`SSF_SHOWCOMPCOLOR`). Under the `MatchExplorer` preset the desktop's icon
   size (`IFolderView2::GetViewModeAndIconSize`) and item spacing
   (`IFolderView::GetSpacing`) are imported too, replacing the DeskSpace sliders,
   and icons are fetched at the effective pixel size with shell overlays, so

@@ -15,7 +15,7 @@ use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, Command, GridSpec, LabelShadow, Space, SpaceId, SpaceLook, Theme, ThemeMode,
+    Backdrop, Command, GridSpec, LabelShadow, Preset, Space, SpaceId, SpaceLook, Theme, ThemeMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
@@ -43,7 +43,7 @@ pub mod field {
     pub const LAYOUT_HEADING: u32 = 18;
     pub const GRID_GAP: u32 = 19;
     pub const GRID_PADDING: u32 = 41;
-    pub const MATCH_EXPLORER: u32 = 42;
+    pub const PRESET: u32 = 42;
     pub const ICON_SIZE: u32 = 43;
 
     pub const ADVANCED_HEADING: u32 = 44;
@@ -95,6 +95,19 @@ const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::On, "Always"),
     (LabelShadow::Off, "Never"),
 ];
+
+/// The item-display presets the Appearance page offers, in dropdown order.
+/// "Match Explorer's display" mirrors Explorer's icon size, spacing, check
+/// boxes, and extensions; "Custom" uses the fields below. The selection maps
+/// onto `Theme.preset`.
+const PRESETS: [&str; 2] = ["Match Explorer's display", "Custom"];
+
+fn preset_index(preset: Preset) -> usize {
+    match preset {
+        Preset::MatchExplorer => 0,
+        Preset::Custom => 1,
+    }
+}
 
 fn corner_marks() -> Vec<SliderMark> {
     vec![
@@ -238,7 +251,7 @@ fn snapshot_spaces(config: &Config) -> Vec<SpaceSnapshot> {
 pub fn needs_relayout(saved: &Session, config: &Config) -> bool {
     saved.saved_layout != config.desktop.layout
         || saved.saved_theme.icon_size != config.theme.icon_size
-        || saved.saved_theme.match_explorer != config.theme.match_explorer
+        || saved.saved_theme.preset != config.theme.preset
 }
 
 /// Whether reverting to `saved` needs the spaces restyled. `ui_mode` is
@@ -433,10 +446,11 @@ fn look_pages(
                 theme.title_shading.min(100) as i32,
             ),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
-            Field::toggle(
-                field::MATCH_EXPLORER,
-                "Match Explorer's display (check boxes, file extensions)",
-                theme.match_explorer,
+            Field::choice(
+                field::PRESET,
+                "Item preset",
+                &PRESETS,
+                preset_index(theme.preset),
             ),
         ],
     };
@@ -484,7 +498,7 @@ fn look_pages(
                 SliderMark::new(100, "Default"),
                 SliderMark::new(ICON_SIZE_RANGE.1.into(), "Large"),
             ])
-            .enabled(!theme.match_explorer),
+            .enabled(!theme.match_explorer()),
             Field::slider(
                 field::GRID_GAP,
                 "Icon spacing",
@@ -492,7 +506,7 @@ fn look_pages(
                 grid.gap.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px")
-            .enabled(!theme.match_explorer),
+            .enabled(!theme.match_explorer()),
             Field::slider(
                 field::GRID_PADDING,
                 "Edge padding",
@@ -500,7 +514,7 @@ fn look_pages(
                 grid.padding.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
             .suffix(" px")
-            .enabled(!theme.match_explorer),
+            .enabled(!theme.match_explorer()),
         ],
     };
 
@@ -698,8 +712,12 @@ fn apply_look_field(
             theme.show_border = *on;
             Effect::Appearance
         }
-        (field::MATCH_EXPLORER, FieldValue::Toggle(on)) => {
-            theme.match_explorer = *on;
+        (field::PRESET, FieldValue::Choice(index)) => {
+            theme.preset = if *index == 0 {
+                Preset::MatchExplorer
+            } else {
+                Preset::Custom
+            };
             // Mirroring also imports Explorer's icon size and item spacing, so
             // the grid has to re-flow, not just restyle.
             Effect::Layout
@@ -915,7 +933,7 @@ mod tests {
         for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
             assert!(!form.field(id).unwrap().enabled);
         }
-        config.theme.match_explorer = false;
+        config.theme.preset = Preset::Custom;
         let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
         for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
             assert!(form.field(id).unwrap().enabled);
@@ -965,18 +983,27 @@ mod tests {
     }
 
     #[test]
-    fn match_explorer_toggle_applies_live() {
+    fn preset_choice_applies_live() {
         let (mut config, mut session) = setup();
-        assert!(config.theme.match_explorer);
+        assert_eq!(config.theme.preset, Preset::MatchExplorer);
         let effect = apply_field(
             &mut config,
             &mut session,
-            field::MATCH_EXPLORER,
-            FieldValue::Toggle(false),
+            field::PRESET,
+            FieldValue::Choice(1),
             true,
         );
         assert_eq!(effect, Effect::Layout);
-        assert!(!config.theme.match_explorer);
+        assert_eq!(config.theme.preset, Preset::Custom);
+        assert!(!config.theme.match_explorer());
+        apply_field(
+            &mut config,
+            &mut session,
+            field::PRESET,
+            FieldValue::Choice(0),
+            true,
+        );
+        assert_eq!(config.theme.preset, Preset::MatchExplorer);
     }
 
     #[test]
@@ -1005,9 +1032,9 @@ mod tests {
         let (config, session) = setup();
         assert!(!needs_relayout(&session, &config));
 
-        let mut match_explorer = config.clone();
-        match_explorer.theme.match_explorer = !config.theme.match_explorer;
-        assert!(needs_relayout(&session, &match_explorer));
+        let mut preset = config.clone();
+        preset.theme.preset = Preset::Custom;
+        assert!(needs_relayout(&session, &preset));
 
         let mut icon_size = config.clone();
         icon_size.theme.icon_size = icon_size.theme.icon_size.wrapping_add(10);
