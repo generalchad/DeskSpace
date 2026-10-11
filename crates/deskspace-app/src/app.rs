@@ -1621,28 +1621,6 @@ impl App {
         self.refresh_surface(ui, surface);
     }
 
-    /// Shows the info tip for the hovered item, once the pointer has rested on
-    /// it, as Explorer does.
-    fn show_info_tip(&mut self, ui: &mut Ui) {
-        ui.clear_timer(INFO_TIP_TIMER);
-        let Some((surface, item)) = self.hovered else {
-            return;
-        };
-        let Some(entry) = self.config.desktop.item(item) else {
-            return;
-        };
-        let path = entry.path.clone();
-        let cell = self.surface_cell(surface, entry);
-        ui.show_info_tip(&path, Point::new(cell.x, cell.y));
-    }
-
-    /// Hides any info tip and cancels its delay, for example when a click or
-    /// drag interrupts the hover.
-    fn dismiss_info_tip(&mut self, ui: &mut Ui) {
-        ui.hide_info_tip();
-        ui.clear_timer(INFO_TIP_TIMER);
-    }
-
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
         // A rolled-up space hides its items, so it cannot keep one selected.
