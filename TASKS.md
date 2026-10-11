@@ -13,8 +13,7 @@ contributor (human or model) can do one without designing anything new.
    name given; the line is only a hint.
 4. If the code does not match the task's description, or the task needs a
    design decision it does not state, **stop and ask**. Do not improvise.
-5. Copy the pattern the task points at. Do not copy patterns listed under
-   "Known bad examples" below.
+5. Copy the pattern the task points at.
 6. Done means all of:
    - `cargo fmt --all`
    - `cargo clippy --workspace --all-targets -- -D warnings` (no new
@@ -31,16 +30,6 @@ contributor (human or model) can do one without designing anything new.
    Implement, then list exactly what to check in the commit body and leave the
    box unticked with "(awaiting check)".
 9. Tasks in section D are **not** for routine work. Skip them.
-
-### Known bad examples (do not copy until fixed)
-
-- `App::reflow_space` (`deskspace-app/src/app.rs`) mutates a `Space`
-  directly instead of through a `Command` (fixed by A5).
-- `Ui::show_info_tip` / `hide_info_tip` (`win32/runtime.rs`) hold a runtime
-  borrow across a Win32 call that sends messages (fixed by A1).
-- `unsafe` blocks without `// SAFETY:` (fixed by A2).
-- `pick_space_tint` / `pick_space_text` and the opacity/sort `match` arms in
-  `show_space_menu` are duplicated code (fixed by B3/B4).
 
 ### Recipe: a new global setting
 
