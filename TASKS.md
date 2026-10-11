@@ -710,7 +710,7 @@ Remaining gaps from the controls review. Do them in order.
   shell foreground and a space holding a few items, arrow around the grid,
   Shift+arrow to extend, Ctrl+arrow to move only the dotted focus rectangle and
   scroll it into view.
-- [ ] **G4. Slow double-click renames.** Clicking an already-selected item's
+- [x] **G4. Slow double-click renames.** Clicking an already-selected item's
   label again starts an inline rename, as Explorer does.
 - [ ] **G5. Right-button drag.** A right drag shows the copy/move/create-shortcut
   menu on drop.

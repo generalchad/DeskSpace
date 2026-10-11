@@ -177,6 +177,52 @@ enum Drag {
     },
 }
 
+/// A left press on an already-selected item without Ctrl/Shift, resolved on
+/// release if it did not become a drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingClick {
+    /// The item was part of a multi-selection: collapse the selection to it,
+    /// so dragging one member moves the whole group but a plain click selects
+    /// just this item.
+    Collapse(ItemId),
+    /// The item was already the only selected one: a second click starts an
+    /// inline rename, as a slow double-click does in Explorer.
+    Rename(ItemId),
+}
+
+/// Classifies a plain (no Ctrl/Shift) press on an already-selected item.
+fn pending_click(selected: &[ItemId], item: ItemId) -> PendingClick {
+    if selected == [item] {
+        PendingClick::Rename(item)
+    } else {
+        PendingClick::Collapse(item)
+    }
+}
+
+/// What releasing such a press does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingClickOutcome {
+    Rename,
+    Collapse,
+    Nothing,
+}
+
+fn resolve_pending_click(
+    pending: Option<PendingClick>,
+    item: ItemId,
+    still_selected: bool,
+) -> PendingClickOutcome {
+    match pending {
+        Some(PendingClick::Rename(pending_item)) if pending_item == item && still_selected => {
+            PendingClickOutcome::Rename
+        }
+        Some(PendingClick::Collapse(pending_item)) if pending_item == item && still_selected => {
+            PendingClickOutcome::Collapse
+        }
+        _ => PendingClickOutcome::Nothing,
+    }
+}
+
 /// What an inline edit is renaming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditTarget {
@@ -321,10 +367,9 @@ pub struct App {
     /// The item with keyboard focus, drawn with a focus rectangle. Follows the
     /// selection, but Ctrl+arrow moves it on its own.
     focused: Option<ItemId>,
-    /// An already-selected item pressed without Ctrl/Shift: if the press does
-    /// not become a drag, the selection collapses to it on release, so dragging
-    /// one member of a multi-selection moves the whole group.
-    pending_select: Option<ItemId>,
+    /// A left press on an already-selected item without Ctrl/Shift, resolved
+    /// on release if the press did not become a drag.
+    pending_click: Option<PendingClick>,
     /// Items on the clipboard as a cut, shown ghosted until pasted.
     cut_items: HashSet<ItemId>,
     /// Ticked items in independent item-check-box mode. Session-only.
@@ -379,7 +424,7 @@ impl App {
             selected_items: Vec::new(),
             selection_anchor: None,
             focused: None,
-            pending_select: None,
+            pending_click: None,
             cut_items: HashSet::new(),
             checked_items: Vec::new(),
             hovered: None,
@@ -1536,7 +1581,7 @@ impl App {
             return;
         }
         let previous = self.selected_space.replace(id);
-        self.pending_select = None;
+        self.pending_click = None;
         let item = self.item_at(id, point);
         match item {
             Some(item) => {
@@ -1546,8 +1591,8 @@ impl App {
                     self.toggle_selected(item);
                 } else if self.is_selected(item) {
                     // Keep the whole selection so a drag of one member moves
-                    // the group; collapse it on release if this was a click.
-                    self.pending_select = Some(item);
+                    // the group. On release, collapse it and maybe rename.
+                    self.pending_click = Some(pending_click(&self.selected_items, item));
                 } else {
                     self.selected_items = vec![item];
                 }
@@ -1792,7 +1837,7 @@ impl App {
     }
 
     fn end_drag(&mut self, ui: &mut Ui) {
-        let pending = self.pending_select.take();
+        let pending = self.pending_click.take();
         match std::mem::replace(&mut self.drag, Drag::None) {
             Drag::None => {}
             Drag::Item {
@@ -1802,12 +1847,17 @@ impl App {
                 ..
             } => {
                 // A press on an already-selected item that never became a drag
-                // is a plain click: collapse the selection to it.
-                if pending == Some(item) && self.is_selected(item) {
-                    self.selected_items = vec![item];
-                    self.selection_anchor = Some(item);
-                    self.focused = Some(item);
-                    self.refresh_space(ui, space);
+                // is a plain click: collapse the selection, or start a rename
+                // when it was already the only selected item.
+                match resolve_pending_click(pending, item, self.is_selected(item)) {
+                    PendingClickOutcome::Rename => self.begin_item_rename(ui, space, item),
+                    PendingClickOutcome::Collapse => {
+                        self.selected_items = vec![item];
+                        self.selection_anchor = Some(item);
+                        self.focused = Some(item);
+                        self.refresh_space(ui, space);
+                    }
+                    PendingClickOutcome::Nothing => {}
                 }
             }
             Drag::Item { active: true, .. } => {
@@ -1858,7 +1908,7 @@ impl App {
             DragImage::of_selection(&scene, &id_values, grab)
         });
         self.dragged = Some((space, ids));
-        self.pending_select = None;
+        self.pending_click = None;
         if let Some(image) = &self.drag_image {
             ui.show_drag_ghost(image, point);
         }
@@ -3452,6 +3502,49 @@ mod tests {
         assert_eq!(next_prefix_match(&[], "a", 0), None);
         // Repeated typing of the same letter cycles through the matches.
         assert_eq!(next_prefix_match(&labels, "b", 1), Some(1));
+    }
+
+    #[test]
+    fn a_second_click_on_the_only_selected_item_renames() {
+        assert_eq!(
+            pending_click(&[ItemId(1)], ItemId(1)),
+            PendingClick::Rename(ItemId(1))
+        );
+        // Part of a multi-selection (or no selection) collapses instead.
+        assert_eq!(
+            pending_click(&[ItemId(1), ItemId(2)], ItemId(1)),
+            PendingClick::Collapse(ItemId(1))
+        );
+        assert_eq!(
+            pending_click(&[], ItemId(1)),
+            PendingClick::Collapse(ItemId(1))
+        );
+    }
+
+    #[test]
+    fn releasing_a_second_click_starts_a_rename() {
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), true),
+            PendingClickOutcome::Rename
+        );
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Collapse(ItemId(1))), ItemId(1), true),
+            PendingClickOutcome::Collapse
+        );
+        // A press on some other item, or an item that is no longer selected,
+        // does nothing.
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(2), true),
+            PendingClickOutcome::Nothing
+        );
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), false),
+            PendingClickOutcome::Nothing
+        );
+        assert_eq!(
+            resolve_pending_click(None, ItemId(1), true),
+            PendingClickOutcome::Nothing
+        );
     }
 
     #[test]

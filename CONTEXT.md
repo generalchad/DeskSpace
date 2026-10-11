@@ -556,7 +556,9 @@ WindowSettings {
   as Explorer's does; a title's box stays on one line. A `WH_KEYBOARD_LL` hook, installed only while editing,
   translates key presses into `Event::EditKey` and consumes them, because
   spaces are never activated and cannot receive `WM_CHAR`. F2 renames the
-  focused item, or the current space's title when no item is selected; an item
+  focused item, or the current space's title when no item is selected, and a
+  second click on an already-selected item (a slow double-click) starts an
+  inline item rename; an item
   rename is committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
@@ -807,7 +809,9 @@ WindowSettings {
   click on the desktop: it focuses the desktop (deactivating the app in front)
   and clears the desktop icon selection, but leaves any selection inside a
   Explorer window alone.
-- Double-click an item to open it. Right-click it for Explorer's context
+- Double-click an item to open it. Clicking an already-selected item a second
+  time (a slow double-click) starts an inline rename of it, as Explorer does.
+  Right-click it for Explorer's context
   menu, with "Move back to desktop" (or "Remove from space" for items left in
   place) on top; right-clicking an item already in a multi-selection keeps it.
   Rest the pointer on an item for a moment to see Explorer's info tip.
