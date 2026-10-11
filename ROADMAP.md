@@ -103,8 +103,49 @@ A native, lightweight, offline Windows desktop organizer that:
     receives pre-releases (`-alpha.N`, `-beta.N`, `-rc.N`).
   - *Portable zip:* the same opt-in check, but notify only. It offers to open
     the release page and never replaces its own files.
-  - *Signing:* SignPath Foundation (free for open source), wired into
-    `release.yml`. Signing ships before or together with auto-update.
+   - *Signing:* SignPath Foundation (free for open source), wired into
+     `release.yml`. Signing ships before or together with auto-update.
+
+- **D7. Desktop takeover model (2026-10-10).**
+  - The desktop's loose icons - the Desktop-folder files that are not in any
+    space - are their own model type, `DesktopLayer`, not a `Space`. It holds
+    items with free positions in virtual-desktop coordinates, one entry per
+    loose file, and no chrome (no title bar, border, lock, resize, roll-up, or
+    sort). It is drawn on a chrome-less desktop-hosted window and sits behind
+    the spaces.
+  - The shell is the source of truth for membership and positions.
+    `DesktopLayer` is a refreshed cache: `Command::SyncDesktop` replaces it
+    from a platform snapshot and reconciles by path so `ItemId`s survive. A
+    loose item's position is absolute; a space item's stays relative to its
+    content area.
+  - Item interaction is shared, not duplicated. The app's hit-test, hover,
+    selection, rubber-band, drag, drop, clipboard, delete, and info-tip paths
+    take a `Surface` (`Space(id)` or `Desktop`) instead of a `SpaceId`.
+  - A loose item dropped into a space uses the existing file-move path (move
+    into storage, then `Command::MoveItem`); moving a space item back to the
+    desktop is `Command::MoveToDesktop`; dragging a loose item repositions it
+    (`Command::SetDesktopItemPosition`).
+
+- **D8. Takeover placement and safety (2026-10-10).** Resolves open questions
+  1 and 2.
+  - *Placement:* the desktop layer is a `WS_CHILD` of the desktop host
+    (`Progman` / wallpaper `WorkerW`), so it survives Show Desktop (Win+D) and
+    is opaque, as other hosted windows are. Spaces stay top-level with the
+    DWM/accent blur. A Win+D watcher re-shows the spaces when Show Desktop
+    hides them, so the desk stays complete; it watches DeskSpace's own
+    never-activated space windows (which only Show Desktop minimizes) and can
+    be turned off.
+  - *Hiding Explorer's icons:* hide the `SysListView32` of every
+    `SHELLDLL_DefView` (there is one per monitor) and restore it on a clean
+    exit. Re-hide after Explorer restarts (`TaskbarCreated`) and on a
+    low-frequency health timer.
+  - *Crash safety:* a small watchdog helper process, launched before the icons
+    are hidden, re-shows every listview if the main process exits without a
+    clean shutdown. The main process signals a clean exit, so the watchdog
+    only acts on a crash.
+  - *Opt-in during construction:* hiding is behind an off-by-default setting
+    (and a hidden `--takeover` flag) until the layer, watcher, and watchdog
+    all land, so a partial build never hides the desktop.
 
 ## 3. Guiding principles
 
@@ -239,22 +280,23 @@ Done:
   at the effective pixel size, with overlays from the system image list.
   `SHGetFileInfoW` remains a fallback.
 
-Remaining:
-1. **Enumerate the desktop through the shell.** List items with
-   `IShellFolder` and read their positions from the desktop view, instead of
-   walking the folder and keeping positions in the model.
-2. **Draw loose desktop items** in a free grid on a desktop-hosted window. Use
-   the same item drawing, hit-testing, selection, rubber-band, and drag code
-   that spaces use. Then dragging works within the desktop, into a space, and
-   out of one (F-06, desktop half).
+Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
+1. **Enumerate the desktop through the shell.** Read items and their positions
+   from the desktop `IShellView` / `IFolderView` (not the folder walk), and
+   add a `DesktopLayer` to the model (I1-I2).
+2. **Draw loose desktop items** on a chrome-less desktop-hosted window,
+   reusing the item drawing, hit-testing, selection, rubber-band, and drag
+   code through a `Surface` (`Space` or `Desktop`). Then dragging works within
+   the desktop, into a space, and out of one (F-06, desktop half) (I3-I4).
 3. **Hide Explorer's icon layer** (`SHELLDLL_DefView` / `SysListView32`):
-   - restore it on exit and after a crash;
-   - re-hide it after Explorer restarts, using a watchdog (open question 1);
-   - decide how spaces survive Show Desktop (Win+D) while keeping their blur
-     (open question 2).
+   - restore it on a clean exit, and with a watchdog helper on a crash (D8);
+   - re-hide it after Explorer restarts (`TaskbarCreated`) and on a health
+     timer;
+   - keep the top-level, blurred spaces visible across Show Desktop (Win+D)
+     with a watcher (D8). (I5-I7)
 4. **Watch the filesystem.** Keep the item model current after file
    operations and outside changes. Build the watcher so lenses can reuse it
-   (M4 phase 2).
+   (M4 phase 2) (I8).
 5. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
 
@@ -263,6 +305,7 @@ Exit criteria:
   are drawn and interactive.
 - Dragging moves real files, and the move can be undone.
 - Exiting, or a crash, restores the Explorer desktop.
+- Show Desktop (Win+D) leaves the spaces visible.
 
 ### M3 - Control center: tray, context menus, settings  **[partial]**
 
@@ -571,13 +614,12 @@ milestone that builds what it depends on.
 
 Resolve each one during the milestone that raises it.
 
-1. **Takeover safety (M2).** When Explorer restarts or recovers from a crash,
-   how aggressively should DeskSpace re-hide `SHELLDLL_DefView`? It probably
-   needs a watchdog timer.
-2. **Desktop layer vs blur (M2).** Top-level spaces have blur but Show Desktop
-   (Win+D) hides them. Desktop-hosted spaces survive Win+D but cannot blur.
-   Takeover (D1) needs a placement that gets both, or a Win+D watcher that
-   shows the top-level spaces again.
+1. **Takeover safety (M2).** *Resolved (D8):* a watchdog helper process
+   re-shows the icon layer after a crash, and DeskSpace re-hides it after an
+   Explorer restart and on a health timer.
+2. **Desktop layer vs blur (M2).** *Resolved (D8):* the desktop layer is
+   desktop-hosted, spaces stay top-level and blurred, and a Win+D watcher
+   re-shows the spaces.
 3. **Undo model (M2).** Should the undo stack be single-level or
    multi-level? Should it cover file moves, which are destructive? Explorer
    can already undo the shell operations (paste, delete, rename) through
@@ -588,6 +630,9 @@ Resolved:
 - **Blur fallback (M1).** See D2.
 - **Store layout (M2).** One shared folder, and deleting a space moves its
   stored files back to the desktop. See D3.
+- **Takeover model (M2).** A `DesktopLayer` and a shared `Surface`. See D7.
+- **Takeover safety and placement (M2).** Hosted layer, top-level spaces with
+  a Win+D watcher, and a watchdog helper. See D8.
 - **Update policy (M8).** Velopack, opt-in, prompt then restart, and skip a
   version. See D6.
 

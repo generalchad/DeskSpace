@@ -784,6 +784,154 @@ day; do not re-open without asking):
     the outline is visible on Acrylic (checked, visible), Clear, and Solid
     backdrops.
 
+## I. M2 desktop takeover (ROADMAP M2, D7/D8)
+
+Design is in `ROADMAP.md` D7 (model) and D8 (placement and safety); these
+tasks only say where things go. Do them in order. Hiding Explorer's icons
+(I5) stays behind an off-by-default setting and the hidden `--takeover` flag
+until I5-I7 all land, so no partial build hides the desktop.
+
+- [ ] **I1. Read the desktop's items and positions through the shell.**
+  - `crates/deskspace-platform/src/shell.rs`: extend `DesktopEntry` with
+    `position: Option<Point>` (from `deskspace_core::geometry::Point`).
+    Rewrite `enumerate_desktop_items` to prefer the desktop view:
+    `crate::win32::shell_view::desktop_shell_view()`, cast to `IFolderView`,
+    walk `ItemCount` items with `IFolderView::Item(i, IID_IShellItem)` for the
+    `SIGDN_NORMALDISPLAY` label and `ItemKind`, and read each position with
+    `IFolderView::ItemPosition` (via `SHGetIDListFromObject` on the item's
+    PIDL), in the view's logical coordinates. Keep `listed_by_explorer` and
+    the current folder walk as the fallback when the view is unavailable
+    (positions `None`). Keep the name-sorted order in the fallback only.
+  - `crates/deskspace-app/src/bootstrap.rs`: `seed_default_desktop` still
+    seeds the initial space; positions are not used until I3.
+  - Tests: a pure helper that maps a raw entry (path, name, attributes, and a
+    `POINT`) into a `DesktopEntry` gets a unit test. The COM path is
+    smoke-tested.
+  - Done when: every entry carries a position when the view is readable, and
+    a normal config behaves as before apart from item order.
+
+- [ ] **I2. Add `DesktopLayer` to the model (core).**
+  - New `crates/deskspace-core/src/desktop_layer.rs`:
+    `DesktopLayer { items: Vec<Item> }`, `#[serde(default)]`, `Default`, with
+    `item`, `item_at(position, cell)`, `push_item`, `remove_item`,
+    `replace_items`, `item_count`, `items`. Document that a layer item's
+    `position` is **absolute** (virtual-desktop coordinates), unlike a space
+    item's content-relative position.
+  - `crates/deskspace-core/src/desktop.rs`: add
+    `#[serde(default)] pub layer: DesktopLayer`; make `next_item_id` and
+    `item` cover both spaces and the layer; add `layer()` / `layer_mut()`.
+    `space_containing`, `space_at`, and the space helpers stay space-only.
+  - `crates/deskspace-core/src/command.rs`: add `SyncDesktop { items:
+    Vec<Item> }` (reconcile by path: reuse an existing id for a path, allocate
+    one for a new path, drop gone paths; order follows `items`),
+    `MoveToDesktop { item: ItemId }`, and `SetDesktopItemPosition { item,
+    position }`. `AddItem` / `MoveItem` (into a space) are unchanged.
+  - Tests: `SyncDesktop` keeps ids by path across a reorder; serde default is
+    empty; `next_item_id` spans spaces and the layer; `MoveToDesktop` moves
+    from a space to the layer and returns `NotFound` for a missing id.
+  - Update the Commands list in `CONTEXT.md` section 4.
+
+- [ ] **I3. Draw the desktop layer on a chrome-less hosted window.**
+  - `render/scene.rs`: give `SpaceScene` / `SpaceStyle` a `chrome: bool`
+    (title bar and border on or off) so the painter needs no new path; the
+    desktop layer's scene has no title, no border, and no scroll.
+  - Platform: `Ui::create_desktop_layer(rect)`, `set_desktop_layer_rect`,
+    `set_desktop_layer_scene`, `destroy_desktop_layer`; a `WS_CHILD` of the
+    host (reuse `space_window` with `chrome: false`), opaque, spanning the
+    virtual desktop, behind the spaces.
+  - App: build the layer scene from `config.desktop.layer` (items that
+    intersect the virtual desktop, no scroll) and push it when it changes;
+    rebuild after a `SyncDesktop` and on a display or DPI change.
+  - Gate with a hidden `--takeover-layer` flag. Additive: Explorer still
+    draws its icons, so the layer is only for an on-screen look.
+  - Tests: a layer scene-builder test showing items reach the scene.
+  - **[needs human]** check: `--on-top --takeover-layer` over a high-contrast
+    window shows the loose icons at the right positions.
+    Clean up the scratch config afterwards.
+
+- [ ] **I4. Generalize item interaction to a `Surface` (app refactor).**
+  - `crates/deskspace-app/src/app.rs`: add
+    `enum Surface { Space(SpaceId), Desktop }`; replace `selected_space:
+    Option<SpaceId>` with `selected_surface: Option<Surface>`; route
+    `item_at`, `select_at`, `update_hover`, `active_items`,
+    `select_all_in_space`, the pointer / drag / drop paths, and the scene
+    build through `Surface`. Resolve each surface's items, rect, layout, and
+    scene through one accessor rather than `config.desktop.space(id)`
+    directly.
+  - Keep spaces behavior identical; this is the D2-style refactor, done as
+    pure moves where possible.
+  - Done when: all existing tests pass unchanged and the desktop layer
+    responds to click, rubber-band, drag, drop, and open.
+  - **[needs human]** check: on the layer, select and drag an icon; drop a
+    loose item onto a space and confirm the file moves.
+
+- [ ] **I5. Hide and restore Explorer's icon layer (platform).**
+  - New `crates/deskspace-platform/src/win32/desktop_icons.rs`: `hide()`
+    finds every `SHELLDLL_DefView` (enumerate `Progman` and the wallpaper
+    `WorkerW` children, plus top-level windows) and hides its `SysListView32`
+    child (`ShowWindow(SW_HIDE)`); `restore()` shows them again. Track the
+    handles; both are idempotent.
+  - Config: a `WindowSettings.take_over_desktop: bool` (default false),
+    following "Recipe: a new global setting": a General-page toggle with
+    `Effect::Pending` and a serde default, applied through
+    `desktop_icons::hide` / `restore`. Add the hidden `--takeover` flag that
+    forces it on for development.
+  - Wire: hide after the layer is drawn and the setting is on; restore before
+    `OleUninitialize` (add to the `run` teardown in `runtime.rs`); re-hide on
+    `TaskbarCreated` (Explorer restart) and on a low-frequency health timer
+    (next free timer id; E10 uses 4, HIGHLIGHT 5, PREVIEW 6).
+  - Update `CONTEXT.md` sections 6 and 10 (the "No desktop icon
+    integration" limitation) and the `ROADMAP.md` F-01 row.
+  - Done when: clean exit restores the icons, and restarting Explorer brings
+    them back.
+  - **[needs human]** check: enable takeover, confirm the strip; exit and
+    confirm the icons return; kill and restart Explorer and confirm the strip
+    re-hides.
+
+- [ ] **I6. Crash-safe restore (watchdog helper).** After I5.
+  - A helper process started before the icons are hidden. Either
+    `deskspace.exe --watchdog <pid>` handled in `main`, or a small dedicated
+    bin. It waits on the main process and, if the main process exits without
+    the clean-exit signal, re-shows every `SHELLDLL_DefView` listview and
+    exits.
+  - Clean-exit signal: the main process sets a named event (or passes an exit
+    code) on a clean shutdown; the watchdog restores only when it is absent.
+    Keep the check a pure, tested function (`fn is_watchdog(args) -> bool`
+    and the clean/crash decision). Add a single-instance guard so two
+    watchdogs do not fight.
+  - The watchdog needs no workspace dependency; it may reuse
+    `desktop_icons::restore` if it links the platform crate, otherwise carry
+    a minimal copy.
+  - Update `CONTEXT.md` section 6.
+  - **[needs human]** check: enable takeover, kill `deskspace.exe` from Task
+    Manager, and confirm the desktop icons come back.
+
+- [ ] **I7. Win+D watcher.** After I5.
+  - Spike first: find the reliable signal, on Windows 11 build 26300, that
+    Show Desktop hid a space. Candidates: subclass the space window for
+    `WM_SYSCOMMAND` / `WM_WINDOWPOSCHANGING` (Show Desktop minimizes
+    never-activated windows); `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` plus
+    an `IsWindowVisible` check; a low-frequency timer. If none is reliable,
+    **stop and ask**.
+  - Implement the winner: when Show Desktop hides the spaces while
+    `spaces_visible`, re-show them (`Ui::set_spaces_visible(true)`); do not
+    fight a user hide.
+  - Config: a General-page toggle (default on) to disable the watcher.
+  - Update `CONTEXT.md` sections 6 and 10.
+  - **[needs human]** check: Win+D with spaces on reappears them; the toggle
+    turns the behavior off.
+
+- [ ] **I8. Watch the Desktop folder (platform).** Shared with M4 phase 2.
+  - `ReadDirectoryChangesW` on the Desktop folder, debounced about 100-150 ms,
+    off the UI thread. Post a wake to the controller (reuse E8's `Event::Wake`
+    if it has landed, else a new `WM_APP` id) and, on the app side,
+    re-enumerate and `SyncDesktop`.
+  - Build it so lenses can reuse it (M4 phase 2 watches a bound folder the
+    same way). Note the reuse in `CONTEXT.md` section 6.
+  - Tests: the debounce / coalesce helper as a pure function.
+  - Done when: creating or deleting a file on the desktop updates the layer
+    within about 150 ms.
+
 ## Found while working
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
