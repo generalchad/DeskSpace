@@ -1053,6 +1053,11 @@ design work; the split is a starting point, not a spec. Do them in order.
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
+- `deskspace-platform/src/win32/drop_target.rs` accepts `CF_HDROP` only
+  (`has_files`), so a Start menu or taskbar app drag - which carries a Shell ID
+  List, not files - shows the red no-drop cursor over a space. Accept
+  `CFSTR_SHELLIDLIST` and create a shortcut in the space, as Explorer does
+  (F-50; needs design, including packaged apps with no filesystem path).
 - `deskspace-platform/src/win32/controller.rs` handles `WM_SETTINGCHANGE`
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts

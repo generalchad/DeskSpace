@@ -308,6 +308,10 @@ Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
    watcher (M4 phase 2).
 5. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
+6. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
+   carries a Shell ID List, not `CF_HDROP`, so a space shows the red no-drop
+   cursor. It should create a shortcut in the space, as Explorer does, including
+   packaged apps that have no filesystem path. Needs design; see F-50.
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -625,6 +629,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
+| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Open; a space shows the no-drop cursor for them (drop target accepts `CF_HDROP` only) |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the
