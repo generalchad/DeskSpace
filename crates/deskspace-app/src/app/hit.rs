@@ -242,3 +242,43 @@ impl App {
             .map_or(Point::ZERO, |space| space.rect.center())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::Item;
+    use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn checkbox_hit_test_matches_the_icon_corner() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = app
+            .config
+            .desktop
+            .add_space("S", Rect::new(100, 100, 240, 200));
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        item.position = Point::ZERO;
+        app.config.desktop.add_item(id, item);
+        app.shell_display = ShellDisplay {
+            check_boxes: CheckBoxMode::Selection,
+            ..ShellDisplay::default()
+        };
+        let layout = app.config.desktop.layout;
+        let cell = Rect::new(100, 100 + 28, layout.cell_width, layout.cell_height);
+        let checkbox = item_check_box_hit(cell, app.metrics_for(id));
+        assert_eq!(
+            app.checkbox_at(
+                Surface::Space(id),
+                Point::new(checkbox.x + 3, checkbox.y + 3)
+            ),
+            Some(ItemId(1))
+        );
+        assert_eq!(
+            app.checkbox_at(Surface::Space(id), Point::new(cell.x + 60, cell.y + 60)),
+            None
+        );
+    }
+}
