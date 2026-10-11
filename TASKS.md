@@ -869,8 +869,7 @@ until I5-I7 all land, so no partial build hides the desktop.
   - **[needs human]** check: on the layer, select and drag an icon; drop a
     loose item onto a space and confirm the file moves.
 
-- [ ] **I5. Hide and restore Explorer's icon layer (platform).** (awaiting
-  check)
+- [x] **I5. Hide and restore Explorer's icon layer (platform).**
   - New `crates/deskspace-platform/src/win32/desktop_icons.rs`: `hide()`
     finds every `SHELLDLL_DefView` (enumerate `Progman` and the wallpaper
     `WorkerW` children, plus top-level windows) and hides its `SysListView32`

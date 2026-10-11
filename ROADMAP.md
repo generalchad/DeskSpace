@@ -294,7 +294,7 @@ Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
    - re-hide it after Explorer restarts (`TaskbarCreated`) and on a health
      timer;
    - keep the top-level, blurred spaces visible across Show Desktop (Win+D)
-     with a watcher (D8). (I5-I7)
+     with a watcher (D8). (I5 done; I6-I7 open)
 4. **Watch the filesystem.** Keep the item model current after file
    operations and outside changes. Build the watcher so lenses can reuse it
    (M4 phase 2) (I8).
