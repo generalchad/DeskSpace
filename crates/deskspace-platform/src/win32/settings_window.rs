@@ -18,19 +18,20 @@ use windows::Win32::Graphics::Dwm::{
     DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS,
-    DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW,
-    Ellipse, EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT,
-    RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, SelectObject,
-    SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, CreateFontIndirectW, CreatePen, CreateSolidBrush, DT_CALCRECT, DT_CENTER,
+    DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject,
+    DrawFocusRect, DrawTextW, Ellipse, EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ,
+    InvalidateRect, PAINTSTRUCT, PS_SOLID, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE,
+    RedrawWindow, ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
+    TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
-    DRAWITEMSTRUCT, NMHDR, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ, TBS_NOTICKS,
-    TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_GETITEMRECT, TCM_INSERTITEMW,
-    TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW, WC_LISTBOXW, WC_STATICW,
-    WC_TABCONTROLW,
+    DRAWITEMSTRUCT, NMHDR, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN,
+    TBS_HORZ, TBS_NOTICKS, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_GETITEMRECT,
+    TCM_INSERTITEMW, TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW,
+    WC_LISTBOXW, WC_STATICW, WC_TABCONTROLW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForWindow, SystemParametersInfoForDpi,
@@ -39,11 +40,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON,
-    CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW,
-    CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL,
-    ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GWLP_USERDATA, GetClassNameW,
-    GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
+    BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
+    BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
+    CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, EN_CHANGE, EN_KILLFOCUS,
+    ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GWLP_USERDATA,
+    GetClassNameW, GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
     GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL,
     LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
     LBS_OWNERDRAWFIXED, NONCLIENTMETRICSW, RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE,
@@ -79,6 +80,9 @@ const ID_SCOPES: usize = 6;
 const ID_HEADER_SWITCH: usize = 7;
 const ID_HEADER_BUTTON: usize = 8;
 const TAB_SUBCLASS_ID: usize = 1;
+/// A muted Windows critical red: the wash and edge of the destructive header
+/// button (a space's "Delete space").
+const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
 /// Height of one navigation-rail row, at 96 DPI.
 const NAV_ROW_HEIGHT: i32 = 30;
 /// Width of the navigation rail, at 96 DPI.
@@ -1096,7 +1100,7 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
                 hwnd,
                 WC_BUTTONW,
                 "",
-                BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+                BS_OWNERDRAW as u32 | WS_TABSTOP.0,
                 WINDOW_EX_STYLE(0),
                 (button_x, margin, button_width, header_height),
                 ID_HEADER_BUTTON,
@@ -2194,6 +2198,84 @@ unsafe fn paint_tab(tab: HWND) {
     }
 }
 
+/// Paints the header action button (a space's "Delete space") as an owner-draw
+/// control: a slight red wash with a red edge, so the destructive action stands
+/// out while the text stays readable in both color modes.
+unsafe fn on_draw_header_button(window: HWND, item: &DRAWITEMSTRUCT) {
+    // SAFETY: `item.hDC` is a live DC owned by the button during WM_DRAWITEM;
+    // the borrowed state is copied out before any GDI call.
+    unsafe {
+        let Some((colors, font, dpi)) =
+            with_state(window, |state| (state.colors, state.font, state.dpi))
+        else {
+            return;
+        };
+        let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
+        let pressed = item.itemState.0 & ODS_SELECTED.0 != 0;
+        // A deeper wash while pressed; the base is the dialog body, so the tint
+        // reads as a shade of red in both light and dark mode.
+        let amount = if pressed { 0.40 } else { 0.20 };
+        let fill = blend(colors.body, DELETE_RED, amount);
+        let brush = CreateSolidBrush(colorref(fill));
+        let pen = CreatePen(PS_SOLID, 1, colorref(DELETE_RED));
+        let old_pen = SelectObject(item.hDC, HGDIOBJ(pen.0));
+        let old_brush = SelectObject(item.hDC, HGDIOBJ(brush.0));
+        let radius = scaled(8, dpi);
+        let _ = RoundRect(
+            item.hDC,
+            item.rcItem.left,
+            item.rcItem.top,
+            item.rcItem.right,
+            item.rcItem.bottom,
+            radius,
+            radius,
+        );
+        SelectObject(item.hDC, old_brush);
+        SelectObject(item.hDC, old_pen);
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+
+        let label = window_text(item.hwndItem);
+        SetBkMode(item.hDC, TRANSPARENT);
+        let text = if disabled {
+            colors.disabled_text
+        } else {
+            colors.text
+        };
+        SetTextColor(item.hDC, colorref(text));
+        let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
+        let mut wide: Vec<u16> = label.encode_utf16().collect();
+        let mut rect = item.rcItem;
+        DrawTextW(
+            item.hDC,
+            &mut wide,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        SelectObject(item.hDC, previous);
+        if item.itemState.0 & ODS_FOCUS.0 != 0 {
+            let inset = scaled(3, dpi);
+            let focus = RECT {
+                left: item.rcItem.left + inset,
+                top: item.rcItem.top + inset,
+                right: item.rcItem.right - inset,
+                bottom: item.rcItem.bottom - inset,
+            };
+            let _ = DrawFocusRect(item.hDC, &focus);
+        }
+    }
+}
+
+/// Mixes `amount` of `over` into `base` (0 = base, 1 = over).
+fn blend(base: Color, over: Color, amount: f32) -> Color {
+    let mix = |a: u8, b: u8| (a as f32 * (1.0 - amount) + b as f32 * amount).round() as u8;
+    Color::rgb(
+        mix(base.r, over.r),
+        mix(base.g, over.g),
+        mix(base.b, over.b),
+    )
+}
+
 /// Subclass procedure of the tab control: takes over painting.
 /// https://learn.microsoft.com/en-us/windows/win32/controls/subclassing-overview
 unsafe extern "system" fn tab_proc(
@@ -2342,6 +2424,7 @@ unsafe extern "system" fn wndproc(
                 match (*item).CtlID as usize {
                     ID_LIST => on_draw_item(window, &*item),
                     ID_SCOPES => on_draw_scope(window, &*item),
+                    ID_HEADER_BUTTON => on_draw_header_button(window, &*item),
                     _ => return DefWindowProcW(window, message, wparam, lparam),
                 }
                 LRESULT(1)

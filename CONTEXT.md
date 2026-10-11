@@ -742,7 +742,8 @@ WindowSettings {
   pointing at a page; untitled groups have no title row; `NavChanged`), and a
   `header` above the page with a title, an optional switch (`HeaderSwitch`),
   and an optional action button (`HeaderButton`; the app uses it for a space's
-  "Delete space"). Both panes are owner-drawn list boxes painted like Windows
+  "Delete space", owner-drawn with a red tint to mark it as destructive). Both
+  panes are owner-drawn list boxes painted like Windows
   11 navigation (an accent bar on the selection). The platform knows nothing
   about spaces: the app fills the panes, maps an index back to what it means,
   and answers each event with a new form. The page shape never changes: every
