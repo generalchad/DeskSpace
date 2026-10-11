@@ -968,3 +968,7 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   `%APPDATA%\DeskSpace\DeskSpace\config\`. Confirm by running it, then fix
   the docs (a `docs:` task). This matters for E7's safety test and the
   uninstall docs.
+- `deskspace-core/src/desktop.rs` `Desktop::item_count` counts space items
+  only, so it will miss the loose desktop layer once I3 populates it (the tray
+  tooltip's item count). Decide whether it should span the layer, or whether
+  the tray wants a space-only count (a `fix:` task once the layer is live).
