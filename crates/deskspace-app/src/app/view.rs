@@ -481,3 +481,116 @@ impl App {
         self.refresh_desktop_layer(ui);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::geometry::Size;
+    use deskspace_platform::ShellDisplay;
+
+    /// An app with a known Explorer display snapshot. `space_dpi` is `1.0`
+    /// outside the UI thread, so the scale assertions are deterministic.
+    fn app_with_display(display: ShellDisplay) -> App {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        app.shell_display = display;
+        app
+    }
+
+    #[test]
+    fn icon_size_follows_explorer_when_matching() {
+        // Default theme: `match_explorer` on, icon size 100.
+        let mut app = app_with_display(ShellDisplay {
+            icon_size: Some(2 * ITEM_ICON_SIZE),
+            ..ShellDisplay::default()
+        });
+        assert_eq!(app.icon_scale(&app.config.theme), 2.0);
+        // Explorer's size wins, so the DeskSpace setting is inert.
+        app.config.theme.icon_size = 200;
+        assert_eq!(app.icon_scale(&app.config.theme), 2.0);
+        app.config.theme.icon_size = 50;
+        assert_eq!(app.icon_scale(&app.config.theme), 2.0);
+    }
+
+    #[test]
+    fn icon_size_setting_applies_without_matching() {
+        let mut app = app_with_display(ShellDisplay {
+            icon_size: Some(2 * ITEM_ICON_SIZE),
+            ..ShellDisplay::default()
+        });
+        app.config.theme.match_explorer = false;
+        app.config.theme.icon_size = 150;
+        assert_eq!(app.icon_scale(&app.config.theme), 1.5);
+        app.config.theme.icon_size = 50;
+        assert_eq!(app.icon_scale(&app.config.theme), 0.5);
+    }
+
+    #[test]
+    fn matching_without_a_reported_size_falls_back_to_the_setting() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.icon_size = 75;
+        assert_eq!(app.icon_scale(&app.config.theme), 0.75);
+    }
+
+    #[test]
+    fn explorer_spacing_replaces_the_cell_when_matching() {
+        let app = app_with_display(ShellDisplay {
+            icon_spacing: Some(Size::new(120, 130)),
+            ..ShellDisplay::default()
+        });
+        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0);
+        assert_eq!(
+            (layout.cell_width, layout.cell_height, layout.gap),
+            (120, 130, 0)
+        );
+    }
+
+    #[test]
+    fn grid_spacing_applies_without_matching() {
+        let mut app = app_with_display(ShellDisplay {
+            icon_spacing: Some(Size::new(120, 130)),
+            ..ShellDisplay::default()
+        });
+        app.config.theme.match_explorer = false;
+        app.config.desktop.layout.gap = 20;
+        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0);
+        assert_eq!(
+            (layout.cell_width, layout.cell_height, layout.gap),
+            (96, 104, 20)
+        );
+    }
+
+    #[test]
+    fn space_layout_and_metrics_follow_the_icon_size() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.match_explorer = false;
+        app.config.theme.icon_size = 200;
+        let layout = app.layout_for(SpaceId(1));
+        assert_eq!((layout.cell_width, layout.cell_height), (192, 208));
+        assert_eq!(app.metrics_for(SpaceId(1)).icon_size, 96);
+        app.config.theme.icon_size = 50;
+        let layout = app.layout_for(SpaceId(1));
+        assert_eq!((layout.cell_width, layout.cell_height), (48, 52));
+        assert_eq!(app.metrics_for(SpaceId(1)).icon_size, 24);
+    }
+
+    #[test]
+    fn a_matching_space_draws_explorer_icon_metrics() {
+        let mut app = app_with_display(ShellDisplay {
+            icon_size: Some(ITEM_ICON_SIZE),
+            ..ShellDisplay::default()
+        });
+        app.config.theme.icon_size = 200;
+        assert_eq!(app.metrics_for(SpaceId(1)).icon_size, ITEM_ICON_SIZE);
+        assert_eq!(app.layout_for(SpaceId(1)).cell_width, 96);
+    }
+
+    #[test]
+    fn effective_layout_uses_the_global_icon_size() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.match_explorer = false;
+        app.config.theme.icon_size = 200;
+        assert_eq!(app.effective_layout().cell_width, 192);
+    }
+}
