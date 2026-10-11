@@ -483,21 +483,24 @@ fn look_pages(
                 SliderMark::new(ICON_SIZE_RANGE.0.into(), "Small"),
                 SliderMark::new(100, "Default"),
                 SliderMark::new(ICON_SIZE_RANGE.1.into(), "Large"),
-            ]),
+            ])
+            .enabled(!theme.match_explorer),
             Field::slider(
                 field::GRID_GAP,
                 "Icon spacing",
                 (GAP_RANGE.0, GAP_RANGE.1),
                 grid.gap.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
-            .suffix(" px"),
+            .suffix(" px")
+            .enabled(!theme.match_explorer),
             Field::slider(
                 field::GRID_PADDING,
                 "Edge padding",
                 (GAP_RANGE.0, GAP_RANGE.1),
                 grid.padding.clamp(GAP_RANGE.0, GAP_RANGE.1),
             )
-            .suffix(" px"),
+            .suffix(" px")
+            .enabled(!theme.match_explorer),
         ],
     };
 
@@ -901,6 +904,22 @@ mod tests {
             FieldKind::Choice { selected: 3, .. }
         ));
         assert!(!form.apply_enabled);
+    }
+
+    #[test]
+    fn layout_fields_are_disabled_while_matching_explorer() {
+        let (mut config, session) = setup();
+        // `match_explorer` defaults on, so Explorer owns the icon size and
+        // spacing and the Layout controls are inert.
+        let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
+        for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
+            assert!(!form.field(id).unwrap().enabled);
+        }
+        config.theme.match_explorer = false;
+        let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
+        for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
+            assert!(form.field(id).unwrap().enabled);
+        }
     }
 
     #[test]

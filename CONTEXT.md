@@ -85,7 +85,9 @@ context menus, and a settings window in the first usable release (v0.2).
   colors. With "Match Explorer's display" on, the desktop's own icon size
   (`IFolderView2::GetViewModeAndIconSize`) and item spacing
   (`IFolderView::GetSpacing`) replace the DeskSpace sliders, so spaces are 1:1
-  with the desktop. Icons are rendered by `IShellItemImageFactory` at the
+  with the desktop, and the Layout page's icon-size, icon-spacing, and
+  edge-padding fields are greyed while it is on. Icons are rendered by
+  `IShellItemImageFactory` at the
   effective pixel size (crisp at large sizes) with shell overlays composited on
   top, and layouts scale to each monitor's DPI. Hovering an item reveals
   Explorer's info tip.
