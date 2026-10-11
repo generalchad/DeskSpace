@@ -84,6 +84,14 @@ pub enum SelectionKey {
     /// Menu key or Shift+F10: open the focused item's context menu, or the
     /// space's when no item is selected.
     Menu,
+    /// Home: scroll the current space to the top.
+    Home,
+    /// End: scroll the current space to the bottom.
+    End,
+    /// PageUp: scroll the current space up by one page.
+    PageUp,
+    /// PageDown: scroll the current space down by one page.
+    PageDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +165,9 @@ pub enum Event {
     ShowProperties,
     /// Ctrl+A was pressed while a space is current: select all its items.
     SelectAll,
+    /// A printable character was typed while a space is current (type-to-select,
+    /// see `Ui::watch_selection_keys`). The key is consumed by the hook.
+    Typed(char),
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {

@@ -681,10 +681,14 @@ Small requests, one commit each.
 
 Remaining gaps from the controls review. Do them in order.
 
-- [ ] **G1. Type-to-select, and Home/End/Page scroll.** Typing a letter moves
+- [x] **G1. Type-to-select, and Home/End/Page scroll.** Typing a letter moves
   the selection to the next item whose name starts with it (a short timeout
   buffer, as Explorer uses); Home/End/PageUp/PageDown scroll the space. Extend
   the selection-key watch and add a pure prefix-match helper with tests.
+  Landed as `feat: type-to-select and Home/End/Page scrolling (G1)`.
+  **[needs human]** check: on the desktop shell, type a letter to jump to an
+  item and watch the buffer expire and start fresh; press Home/End/PageUp/
+  PageDown over a scrolled space.
 - [ ] **G2. Ctrl+wheel changes the icon size.** Add `ctrl` to
   `SpaceEvent::Wheel` and adjust the icon size the way Explorer's desktop does,
   clamped to `ICON_SIZE_RANGE`.

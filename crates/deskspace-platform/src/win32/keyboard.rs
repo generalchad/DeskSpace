@@ -6,7 +6,9 @@
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. The same hook can instead watch the keys that act on a
 //! selection (Delete, F2, Alt+Enter, Ctrl+A, Ctrl+C, Ctrl+X) and on a current
-//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V). The hook runs for every key in the session and Windows drops it if
+//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, and any
+//! printable character, for type-to-select). The hook runs for every key in the
+//! session and Windows drops it if
 //! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
 //! installed only while one of those modes is active.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
@@ -18,8 +20,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_A, VK_APPS,
     VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_F10,
-    VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RIGHT, VK_RMENU,
-    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_V, VK_X,
+    VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
+    VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -56,11 +58,19 @@ pub(crate) const PROPERTIES_KEY: u32 = WM_APP + 9;
 /// `SEL_*` codes.
 pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
 
+/// Posted to the controller with a typed character for type-to-select; wParam
+/// is the character.
+pub(crate) const TYPE_KEY: u32 = WM_APP + 12;
+
 pub(crate) const SEL_OPEN: usize = 0;
 pub(crate) const SEL_CLEAR: usize = 1;
 pub(crate) const SEL_PERMANENT_DELETE: usize = 2;
 pub(crate) const SEL_REFRESH: usize = 3;
 pub(crate) const SEL_MENU: usize = 4;
+pub(crate) const SEL_HOME: usize = 5;
+pub(crate) const SEL_END: usize = 6;
+pub(crate) const SEL_PAGE_UP: usize = 7;
+pub(crate) const SEL_PAGE_DOWN: usize = 8;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -290,6 +300,29 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             post_message(SELECTION_KEY, SEL_MENU, 0);
             return true;
         }
+        // Scrolling and type-to-select need a current space, not just a
+        // selection (the paste watch tracks that).
+        if WATCH_PASTE.get() {
+            let scroll = if is_key(event.vkCode, VK_HOME) {
+                Some(SEL_HOME)
+            } else if is_key(event.vkCode, VK_END) {
+                Some(SEL_END)
+            } else if is_key(event.vkCode, VK_PRIOR) {
+                Some(SEL_PAGE_UP)
+            } else if is_key(event.vkCode, VK_NEXT) {
+                Some(SEL_PAGE_DOWN)
+            } else {
+                None
+            };
+            if let Some(scroll) = scroll {
+                post_message(SELECTION_KEY, scroll, 0);
+                return true;
+            }
+            if let Some(character) = typeahead_char(event.vkCode) {
+                post_message(TYPE_KEY, character as usize, 0);
+                return true;
+            }
+        }
         return false;
     }
 
@@ -340,6 +373,16 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
         }
         None => false,
     }
+}
+
+/// The character a bare key press contributes to type-to-select, or `None` for
+/// keys that are not text (modifiers, function keys, navigation, control
+/// characters). Shift is fine (an uppercase letter); Ctrl and Alt are handled
+/// before this is reached.
+fn typeahead_char(vk: u32) -> Option<char> {
+    // SAFETY: reading the keyboard state and layout; no pointers held.
+    let character = unsafe { char_for(vk) }?;
+    (!character.is_control()).then_some(character)
 }
 
 fn post(kind: usize, ch: usize) {
@@ -461,6 +504,10 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_PERMANENT_DELETE => SelectionKey::PermanentDelete,
         SEL_REFRESH => SelectionKey::Refresh,
         SEL_MENU => SelectionKey::Menu,
+        SEL_HOME => SelectionKey::Home,
+        SEL_END => SelectionKey::End,
+        SEL_PAGE_UP => SelectionKey::PageUp,
+        SEL_PAGE_DOWN => SelectionKey::PageDown,
         _ => return None,
     })
 }
@@ -564,6 +611,10 @@ mod tests {
         );
         assert_eq!(selection_key(SEL_REFRESH), Some(SelectionKey::Refresh));
         assert_eq!(selection_key(SEL_MENU), Some(SelectionKey::Menu));
+        assert_eq!(selection_key(SEL_HOME), Some(SelectionKey::Home));
+        assert_eq!(selection_key(SEL_END), Some(SelectionKey::End));
+        assert_eq!(selection_key(SEL_PAGE_UP), Some(SelectionKey::PageUp));
+        assert_eq!(selection_key(SEL_PAGE_DOWN), Some(SelectionKey::PageDown));
         assert_eq!(selection_key(99), None);
     }
 

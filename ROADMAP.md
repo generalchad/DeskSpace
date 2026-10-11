@@ -776,6 +776,10 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     into a look at startup.
   - Selecting a space in the scopes pane (or opening the window on one)
     highlights it on the desktop for about 1.2 s, so it can be found.
+- **Type-to-select and scrolling (Explorer-standard controls, TASKS.md G1).**
+  A typed letter selects the next item whose label starts with it (a short
+  timeout buffer, like typing on the desktop), and Home/End/PageUp/PageDown
+  scroll the current space.
 - **Settings performance.** A slider drag used to restyle and re-flow every
   space, re-apply DWM attributes, flush the menu themes, and repaint the
   rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail

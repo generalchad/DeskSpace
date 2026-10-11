@@ -174,6 +174,12 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::SelectAll);
                 LRESULT(0)
             }
+            keyboard::TYPE_KEY => {
+                if let Some(character) = char::from_u32(wparam.0 as u32) {
+                    runtime::dispatch(Event::Typed(character));
+                }
+                LRESULT(0)
+            }
             WM_CLIPBOARDUPDATE => {
                 runtime::dispatch(Event::ClipboardChanged);
                 LRESULT(0)

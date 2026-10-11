@@ -319,7 +319,8 @@ impl Ui {
     }
 
     /// Watches the keys that act on a selection (Delete, F2, Ctrl+C, Ctrl+X)
-    /// and on a current space (F2, Ctrl+V, Ctrl+A), since spaces are never
+    /// and on a current space (F2, Ctrl+V, Ctrl+A, Home, End, PageUp,
+    /// PageDown, and type-to-select characters), since spaces are never
     /// focused. Call with `false` when nothing applies; only those keys are
     /// consumed.
     pub fn watch_selection_keys(&mut self, selection: bool, paste: bool) {

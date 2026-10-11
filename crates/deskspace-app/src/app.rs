@@ -55,6 +55,10 @@ const PREVIEW_DELAY_MS: u32 = 15;
 const HIGHLIGHT_TIMER: usize = 5;
 /// How long the space selected in the settings window stays highlighted.
 const HIGHLIGHT_MS: u32 = 1200;
+/// Timer id for the type-to-select prefix buffer.
+const TYPE_TIMER: usize = 7;
+/// How long a type-to-select prefix lasts without another keystroke.
+const TYPE_DELAY_MS: u32 = 900;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -185,6 +189,15 @@ enum EditTarget {
 enum SpaceColor {
     Tint,
     Text,
+}
+
+/// A key that scrolls the current space.
+#[derive(Debug, Clone, Copy)]
+enum ScrollKey {
+    Home,
+    End,
+    PageUp,
+    PageDown,
 }
 
 /// An in-progress inline rename. The platform captures keys while it lives.
@@ -340,6 +353,8 @@ pub struct App {
     settings: Option<Session>,
     /// The space highlighted for the settings window, until `HIGHLIGHT_TIMER`.
     highlighted: Option<SpaceId>,
+    /// The keys typed so far for type-to-select, cleared by `TYPE_TIMER`.
+    type_buffer: String,
     open_settings_on_start: bool,
 }
 
@@ -375,6 +390,7 @@ impl App {
             pending_preview: Preview::default(),
             settings: None,
             highlighted: None,
+            type_buffer: String::new(),
             open_settings_on_start: open_settings,
         }
     }
@@ -927,7 +943,98 @@ impl App {
             SelectionKey::PermanentDelete => self.delete_selected_items(ui, true),
             SelectionKey::Refresh => self.refresh_spaces(ui),
             SelectionKey::Menu => self.open_context_menu(ui),
+            SelectionKey::Home => self.scroll_current_space(ui, ScrollKey::Home),
+            SelectionKey::End => self.scroll_current_space(ui, ScrollKey::End),
+            SelectionKey::PageUp => self.scroll_current_space(ui, ScrollKey::PageUp),
+            SelectionKey::PageDown => self.scroll_current_space(ui, ScrollKey::PageDown),
         }
+    }
+
+    /// Scrolls the current space as Home, End, PageUp, or PageDown does.
+    fn scroll_current_space(&mut self, ui: &mut Ui, key: ScrollKey) {
+        let Some(id) = self.selected_space else {
+            return;
+        };
+        let layout = self.layout_for(id);
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let max = space.max_scroll(layout.cell(), layout.padding);
+        let page = space.content_rect().height.max(1);
+        let current = self.scroll_of(id);
+        let offset = match key {
+            ScrollKey::Home => 0,
+            ScrollKey::End => max,
+            ScrollKey::PageUp => current - page,
+            ScrollKey::PageDown => current + page,
+        };
+        let offset = offset.clamp(0, max);
+        if offset == current {
+            return;
+        }
+        self.scroll.insert(id, offset);
+        // The items moved under a still cursor, so the hovered one changed.
+        self.hovered = self.hovered.filter(|(space, _)| *space != id);
+        self.refresh_space(ui, id);
+    }
+
+    /// Type-to-select: appends `ch` to the prefix buffer and selects the next
+    /// item whose label starts with it, wrapping around. The buffer clears
+    /// after a pause (`TYPE_TIMER`), so a new search starts fresh.
+    fn on_typed(&mut self, ui: &mut Ui, ch: char) {
+        let Some(id) = self.selected_space else {
+            return;
+        };
+        self.type_buffer.push(ch);
+        ui.set_timer(TYPE_TIMER, TYPE_DELAY_MS);
+        let show_extensions = self.match_explorer(id) && self.shell_display.show_extensions;
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let labels: Vec<String> = space
+            .items
+            .iter()
+            .map(|item| item_label(item, show_extensions))
+            .collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let current = self
+            .selected_items
+            .last()
+            .and_then(|item| space.items.iter().position(|entry| entry.id == *item));
+        let start = current.map_or(0, |index| index + 1);
+        let Some(index) = next_prefix_match(&labels, &self.type_buffer, start) else {
+            return;
+        };
+        let item = space.items[index].id;
+        self.selected_items = vec![item];
+        self.selection_anchor = Some(item);
+        self.scroll_item_into_view(id, index);
+        self.refresh_space(ui, id);
+    }
+
+    /// Brings the item at `index` (in the space's order) into the content area
+    /// by adjusting the scroll offset.
+    fn scroll_item_into_view(&mut self, id: SpaceId, index: usize) {
+        let layout = self.layout_for(id);
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let Some(item) = space.items.get(index) else {
+            return;
+        };
+        let content_height = space.content_rect().height;
+        let max = space.max_scroll(layout.cell(), layout.padding);
+        let scroll = self.scroll.get(&id).copied().unwrap_or(0);
+        let top = item.position.y;
+        let bottom = top + layout.cell_height;
+        let offset = if top - scroll < 0 {
+            top
+        } else if bottom - scroll > content_height {
+            bottom - content_height
+        } else {
+            return;
+        };
+        self.scroll.insert(id, offset.clamp(0, max));
     }
 
     /// Re-reads Explorer's display options and re-flows every space, as F5
@@ -2867,6 +2974,7 @@ impl EventHandler for App {
             Event::ShowProperties => self.show_properties(ui),
             Event::SelectionKey(key) => self.on_selection_key(ui, key),
             Event::SelectAll => self.select_all_in_space(ui),
+            Event::Typed(ch) => self.on_typed(ui, ch),
             Event::PointerDownOutside { on_desktop } => {
                 self.dismiss_info_tip(ui);
                 if self.edit.is_some() {
@@ -2890,6 +2998,8 @@ impl EventHandler for App {
             Event::Timer { id } if id == INFO_TIP_TIMER => self.show_info_tip(ui),
             Event::Timer { id } if id == PREVIEW_TIMER => self.flush_preview(ui),
             Event::Timer { id } if id == HIGHLIGHT_TIMER => self.clear_highlight(ui),
+            // The type-to-select prefix expired; the next key starts fresh.
+            Event::Timer { id } if id == TYPE_TIMER => self.type_buffer.clear(),
             Event::Timer { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
@@ -3163,6 +3273,20 @@ fn plan_paste(paths: &[PathBuf], cut: bool, known: impl Fn(&Path) -> Option<Item
     plan
 }
 
+/// The index of the next label that starts with `prefix`, searching from
+/// `start` and wrapping to the beginning, case-insensitively. `None` when
+/// nothing matches. Drives type-to-select.
+fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usize> {
+    if prefix.is_empty() || labels.is_empty() {
+        return None;
+    }
+    let prefix = prefix.to_lowercase();
+    let count = labels.len();
+    (0..count)
+        .map(|offset| (start + offset) % count)
+        .find(|index| labels[*index].to_lowercase().starts_with(&prefix))
+}
+
 fn tray_tooltip(desktop: &Desktop) -> String {
     let spaces = desktop.spaces.len();
     let items = desktop.item_count();
@@ -3174,6 +3298,28 @@ fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn type_to_select_matches_a_prefix_and_wraps() {
+        let labels = ["Apple", "Banana", "Berry", "Cherry"];
+        assert_eq!(next_prefix_match(&labels, "b", 0), Some(1));
+        assert_eq!(next_prefix_match(&labels, "be", 0), Some(2));
+        // Searching from the current item finds it again; from after the last
+        // match it wraps to the first.
+        assert_eq!(next_prefix_match(&labels, "b", 2), Some(2));
+        assert_eq!(next_prefix_match(&labels, "b", 3), Some(1), "wraps");
+        assert_eq!(next_prefix_match(&labels, "c", 0), Some(3));
+        assert_eq!(
+            next_prefix_match(&labels, "C", 0),
+            Some(3),
+            "case-insensitive"
+        );
+        assert_eq!(next_prefix_match(&labels, "z", 0), None);
+        assert_eq!(next_prefix_match(&labels, "", 0), None);
+        assert_eq!(next_prefix_match(&[], "a", 0), None);
+        // Repeated typing of the same letter cycles through the matches.
+        assert_eq!(next_prefix_match(&labels, "b", 1), Some(1));
+    }
 
     #[test]
     fn independent_checks_are_the_operand() {

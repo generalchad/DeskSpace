@@ -199,9 +199,11 @@ Rust specifics:
   (consumes all editing keys) and a selection-key watch (`Ui::watch_selection_keys`):
   Delete, F2, Alt+Enter, Enter, Shift+Delete, Esc, F5, the Menu key, Ctrl+C, and
   Ctrl+X while an item is selected, and F2, Alt+Enter, F5, the Menu key, Ctrl+V,
-  and Ctrl+A while a space is current (F2 renames the focused item or the space
+  Ctrl+A, Home, End, PageUp, PageDown, and typed characters (type-to-select)
+  while a space is current (F2 renames the focused item or the space
   title, Alt+Enter opens the item's Properties or DeskSpace Settings, Enter opens
-  the focused item, and the Menu key or Shift+F10 opens the context menu). The
+  the focused item, the Menu key or Shift+F10 opens the context menu, and
+  Home/End/PageUp/PageDown scroll the space). The
   watch only consumes those keys while the desktop shell has the foreground, so
   other apps keep their own shortcuts. A popup menu owns every key while it is
   open (`keyboard::set_menu_open`), so the hook passes keys through then. The
