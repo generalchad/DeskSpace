@@ -13,6 +13,7 @@ pub mod drag_image;
 mod drop_target;
 mod dwm;
 mod file_op;
+mod folder_watch;
 pub mod hotkey;
 mod icon;
 mod info_tip;

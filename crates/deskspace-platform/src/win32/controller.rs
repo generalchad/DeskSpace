@@ -32,6 +32,9 @@ use crate::win32::{desktop_icons, keyboard, outside_click, runtime, shell_items}
 pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 /// Posted by a second launch to ask this instance to show its spaces.
 pub(crate) const SHOW_SPACES: u32 = WM_APP + 8;
+/// Posted by the folder watcher when a watched folder's contents change
+/// (`Ui::watch_folder`). The next free id; E8 reserves `WM_APP + 10`.
+pub(crate) const FOLDER_CHANGE: u32 = WM_APP + 14;
 pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
 /// NIN_KEYSELECT is NIN_SELECT | NINF_KEY; defined here because it is a
 /// macro, not a constant, in the SDK headers.
@@ -115,6 +118,10 @@ unsafe extern "system" fn wndproc(
             }
             SHOW_SPACES => {
                 runtime::dispatch(Event::ShowSpaces);
+                LRESULT(0)
+            }
+            FOLDER_CHANGE => {
+                runtime::dispatch(Event::FolderChanged);
                 LRESULT(0)
             }
             TRAY_CALLBACK => {

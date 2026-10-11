@@ -45,8 +45,8 @@ use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
     clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
-    menu, outside_click, settings_window, shell_selection, shell_view, space_window, tray,
-    watchdog,
+    folder_watch, menu, outside_click, settings_window, shell_selection, shell_view, space_window,
+    tray, watchdog,
 };
 
 pub trait EventHandler {
@@ -87,6 +87,9 @@ struct Runtime {
     drag_ghost: Option<DragGhost>,
     /// Created on the first item hover and reused for every info tip.
     info_tip: Option<InfoTip>,
+    /// The folder under watch and its worker, when `Ui::watch_folder` is on.
+    /// Dropped on teardown, which stops the worker.
+    folder_watch: Option<(PathBuf, folder_watch::FolderWatch)>,
 }
 
 thread_local! {
@@ -170,6 +173,11 @@ pub(crate) fn settings_closed(window: HWND) {
 /// Destroys every space window and the settings window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
+    // Stop the folder watch first: its worker posts to the controller, which
+    // could otherwise re-create the layer window while windows are tearing
+    // down. Dropped outside the borrow, because stopping joins the worker.
+    let watch = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
+    drop(watch);
     let (windows, ghost, info_tip) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.extend(runtime.settings.take());
@@ -357,6 +365,43 @@ impl Ui {
         if let Some(controller) = with_runtime(|runtime| runtime.controller) {
             outside_click::watch(controller, enabled);
         }
+    }
+
+    /// Watches `path` for changes and delivers `Event::FolderChanged` once per
+    /// debounced burst. Idempotent for the path already watched; another path
+    /// replaces the watch. Call `unwatch_folder` to stop.
+    pub fn watch_folder(&mut self, path: &Path) {
+        let Some(controller) = with_runtime(|runtime| runtime.controller) else {
+            return;
+        };
+        let current = with_runtime(|runtime| {
+            runtime
+                .folder_watch
+                .as_ref()
+                .map(|(watched, _)| watched.clone())
+        })
+        .flatten();
+        if current.as_deref() == Some(path) {
+            return;
+        }
+        // Dropped outside the borrow: stopping joins the worker thread.
+        let previous = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
+        drop(previous);
+        match folder_watch::FolderWatch::start(path, controller, controller::FOLDER_CHANGE) {
+            Ok(watch) => {
+                with_runtime(|runtime| runtime.folder_watch = Some((path.to_path_buf(), watch)));
+            }
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not watch the folder");
+            }
+        }
+    }
+
+    /// Stops the folder watch started with `watch_folder`.
+    pub fn unwatch_folder(&mut self) {
+        // Dropped outside the borrow: stopping joins the worker thread.
+        let watch = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
+        drop(watch);
     }
 
     /// Arms a timer that delivers `Event::Timer` with `id` every `millis`
@@ -815,6 +860,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             close_dispatched: false,
             drag_ghost: None,
             info_tip: None,
+            folder_watch: None,
         });
     });
     tray::add(controller, &options.tray_tooltip);

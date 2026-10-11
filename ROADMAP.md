@@ -20,6 +20,7 @@ How to read this file:
 ## 1. Vision
 
 A native, lightweight, offline Windows desktop organizer that:
+
 - owns the desktop icon layer and draws real desktop items itself,
 - groups items into movable, resizable, lockable spaces,
 - mirrors folders as live lenses,
@@ -300,9 +301,11 @@ Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
    - (I5-I6 done. I7 was to keep the top-level, blurred spaces visible across
      Show Desktop; verified 2026-10-11 that they already are, so it is
      closed.)
-4. **Watch the filesystem.** Keep the item model current after file
-   operations and outside changes. Build the watcher so lenses can reuse it
-   (M4 phase 2) (I8).
+4. **Watch the filesystem (I8, partial).** The Desktop folder is watched while
+   the layer is drawn, so the loose items follow files added, removed, or
+   renamed outside DeskSpace. A stored file is still not watched: a change made
+   outside DeskSpace is noticed only by an item action. Lenses reuse the same
+   watcher (M4 phase 2).
 5. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
 

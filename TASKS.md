@@ -937,6 +937,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     human]` check remains.
 
 - [ ] **I8. Watch the Desktop folder (platform).** Shared with M4 phase 2.
+  (awaiting check)
   - `ReadDirectoryChangesW` on the Desktop folder, debounced about 100-150 ms,
     off the UI thread. Post a wake to the controller (reuse E8's `Event::Wake`
     if it has landed, else a new `WM_APP` id) and, on the app side,
@@ -946,6 +947,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: the debounce / coalesce helper as a pure function.
   - Done when: creating or deleting a file on the desktop updates the layer
     within about 150 ms.
+  - Landed in `crates/deskspace-platform/src/win32/folder_watch.rs`: a
+    reusable `FolderWatch` over `ReadDirectoryChangesW` (overlapped, one
+    worker thread), with the debounce in a pure `Coalescer`; it posts
+    `WM_APP + 14` (`controller::FOLDER_CHANGE`), which dispatches
+    `Event::FolderChanged`. The app watches the Desktop folder while the
+    layer is drawn (`App::watch_desktop_folder`) and re-runs
+    `resync_desktop_layer` on the event. `Win32_System_IO` joined the
+    `windows` features.
 
 ## Found while working
 

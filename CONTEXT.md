@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (245 tests) are green.
+  `cargo test --workspace` (248 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -105,8 +105,10 @@ context menus, and a settings window in the first usable release (v0.2).
   in-space ghost, the space-click focus/deselect, the check-box display and
   both check-box modes, rubber-band/Ctrl+A selection, the clipboard
   cut/copy/paste with its ghosting and external sync, F2 item rename, the
-  compressed/encrypted label colors, the info tips, jumbo icons, and
-  per-monitor DPI on a mixed-DPI setup. The
+  compressed/encrypted label colors, the info tips, jumbo icons,
+  per-monitor DPI on a mixed-DPI setup, and the desktop folder watch (a file
+  created or removed on the desktop reaches the layer within about 150 ms).
+  The
   offscreen item render and a synthetic check-box click were probed on the dev
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
@@ -745,6 +747,16 @@ WindowSettings {
 
 ### Desktop shell, shell items, DPI, hotkeys
 
+- `folder_watch.rs` watches a folder off the UI thread (`ReadDirectoryChangesW`
+  with overlapped I/O on one worker thread) and posts `controller::FOLDER_CHANGE`
+  (`WM_APP + 14`) when its contents change, debounced by up to 150 ms into one
+  message so a multi-file copy does not wake the app once per file; the
+  debounce is the pure `Coalescer`. `Ui::watch_folder` starts or replaces the
+  single watch (idempotent for the same path) and `Ui::unwatch_folder` stops
+  it; the controller turns the message into `Event::FolderChanged`. M2 watches
+  the Desktop folder while the layer is drawn (a change makes the app
+  re-enumerate and `SyncDesktop`); M4 phase 2 reuses the same watcher for a
+  lens's bound folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the takeover
@@ -977,9 +989,10 @@ WindowSettings {
   them if the process crashes (I6).
 - **File moves have no undo yet.** "Move back to desktop" and deleting a space
   return stored files; files from another drive stay in place (a move there
-  would copy). There is no filesystem watcher: a stored file deleted outside
-  DeskSpace stays listed until an item action notices it is gone, and an
-  item's `size`/`modified` (used by sorting) are read once at creation, so
+  would copy). The Desktop folder is watched while the layer is drawn, so the
+  loose items follow outside changes; a stored file is not, so one deleted
+  outside DeskSpace stays listed until an item action notices it is gone, and
+  an item's `size`/`modified` (used by sorting) are read once at creation, so
   they can go stale.
 - **Spaces survive Show Desktop (Win+D).** Show Desktop (`MinimizeAll`) skips
   `WS_EX_TOOLWINDOW` windows, and a space is

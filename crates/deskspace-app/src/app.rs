@@ -769,6 +769,16 @@ impl App {
         );
     }
 
+    /// Starts (or resumes) watching the user's Desktop folder so the layer
+    /// follows files added, removed, or renamed outside DeskSpace. A no-op once
+    /// the same folder is already watched.
+    fn watch_desktop_folder(&mut self, ui: &mut Ui) {
+        match desktop_directory() {
+            Ok(directory) => ui.watch_folder(&directory),
+            Err(error) => tracing::warn!(%error, "could not resolve the Desktop folder to watch"),
+        }
+    }
+
     /// The window style for the desktop layer (chrome-less, transparent).
     fn layer_style(&self) -> SpaceStyle {
         layer_style(&self.config.theme, self.system_dark)
@@ -840,6 +850,13 @@ impl App {
     /// until the layer is up, so a failure never leaves the desktop blank.
     fn apply_takeover(&mut self, ui: &mut Ui) {
         let takeover = self.desktop_takeover();
+        // Follow the Desktop folder while the layer is drawn, so a file added
+        // or removed outside DeskSpace reaches the layer (I8).
+        if self.layer_active() {
+            self.watch_desktop_folder(ui);
+        } else {
+            ui.unwatch_folder();
+        }
         let layer_up = self.sync_desktop_layer(ui);
         if takeover && layer_up {
             // Tests must not hide the developer's real desktop.
@@ -3647,6 +3664,9 @@ impl EventHandler for App {
                 }
             }
             Event::ShowSpaces => self.set_visible(ui, true),
+            // A watched folder changed (I8): re-read the shell's loose items
+            // and reconcile the layer. A no-op when the layer is not drawn.
+            Event::FolderChanged => self.resync_desktop_layer(ui),
             Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
                 self.set_visible(ui, !self.visible);
             }

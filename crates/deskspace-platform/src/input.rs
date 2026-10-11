@@ -211,6 +211,10 @@ pub enum Event {
     /// Another launch asked this instance to show its spaces (the desktop
     /// right-click "Show spaces" entry, or a shortcut).
     ShowSpaces,
+    /// A folder watched with `Ui::watch_folder` changed. The app re-reads the
+    /// folder and reconciles what it draws. M2 watches the Desktop folder for
+    /// the desktop layer; M4 reuses it for a lens's bound folder.
+    FolderChanged,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Delivered once, before the runtime tears windows down: on quit, console
