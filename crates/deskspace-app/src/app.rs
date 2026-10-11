@@ -13,8 +13,7 @@ use deskspace_platform::{
     EditOutcome, Event, EventHandler, FieldValue, Hotkey, IconCache, ItemMenuChoice, MenuEntry,
     MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, TextEdit,
     TrayEvent, Ui, desktop_directory, desktop_display, drag_threshold, hotkey_id, notify_moved,
-    parse_hotkey, set_start_with_windows, system_accent_color, system_uses_dark_mode,
-    virtual_desktop_rect, work_area_at,
+    parse_hotkey, system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
 use crate::scene::{desktop_layer_drag_scene, drag_scene, item_label};
@@ -524,76 +523,6 @@ impl App {
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
-        }
-    }
-
-    fn set_visible(&mut self, ui: &mut Ui, visible: bool) {
-        self.dismiss_info_tip(ui);
-        if !visible {
-            self.clear_selection(ui);
-        }
-        self.visible = visible;
-        ui.set_spaces_visible(visible);
-        self.sync_desktop_show_entry();
-        tracing::info!(visible, "toggled space visibility");
-    }
-
-    /// Adds the desktop right-click "Show spaces" entry while the spaces are
-    /// hidden and removes it once they are shown, so the entry is there exactly
-    /// when it can do something.
-    fn sync_desktop_show_entry(&self) {
-        // Tests must not touch the real per-user registry.
-        if cfg!(test) {
-            return;
-        }
-        if self.visible {
-            if let Err(error) = deskspace_platform::set_desktop_show_entry(false, "", "", "") {
-                tracing::warn!(%error, "could not remove the desktop Show spaces entry");
-            }
-            return;
-        }
-        let Ok(exe) = std::env::current_exe() else {
-            return;
-        };
-        let exe = exe.to_string_lossy();
-        // A real .ico beside the storage folder, so the menu shows the app's
-        // icon instead of the executable's placeholder.
-        let icon_path = self.storage.root().with_file_name("deskspace.ico");
-        if let Err(error) = deskspace_platform::write_icon(&icon_path) {
-            tracing::warn!(%error, "could not write the app icon");
-        }
-        let command = format!("\"{exe}\" --show");
-        let icon = icon_path.to_string_lossy();
-        if let Err(error) = deskspace_platform::set_desktop_show_entry(
-            true,
-            "Show DeskSpace spaces",
-            &command,
-            &icon,
-        ) {
-            tracing::warn!(%error, "could not add the desktop Show spaces entry");
-        }
-    }
-
-    /// Removes the desktop "Show spaces" entry, so a clean exit does not leave
-    /// a menu item that can only start a fresh instance.
-    fn remove_desktop_show_entry(&self) {
-        if cfg!(test) {
-            return;
-        }
-        if let Err(error) = deskspace_platform::set_desktop_show_entry(false, "", "", "") {
-            tracing::warn!(%error, "could not remove the desktop Show spaces entry");
-        }
-    }
-
-    /// Writes or clears the per-user `Run` value that starts DeskSpace at
-    /// sign-in. Rewriting it on every start keeps the stored path current.
-    fn sync_start_with_windows(&self, enabled: bool) {
-        // Tests must not touch the real per-user registry.
-        if cfg!(test) {
-            return;
-        }
-        if let Err(error) = set_start_with_windows(enabled) {
-            tracing::warn!(%error, "could not update the start-with-Windows entry");
         }
     }
 
@@ -2426,15 +2355,6 @@ impl App {
     }
 
     // ---- menus ---------------------------------------------------------
-
-    fn visibility_entry(&self) -> MenuEntry {
-        let label = if self.visible {
-            "Hide spaces"
-        } else {
-            "Show spaces"
-        };
-        MenuEntry::item(menu::TOGGLE_VISIBLE, label)
-    }
 
     fn show_space_menu(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
         let Some(space) = self.config.desktop.space(id) else {
