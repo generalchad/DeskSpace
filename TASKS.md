@@ -732,6 +732,17 @@ Small requests, one commit each.
 - [x] **F7. The Menu key or Shift+F10 opens the context menu.** Anchored at the
   focused item's cell center, or the space center with no item selected.
 
+- [ ] **F8. Shift and Caps Lock decode predictably in inline rename.**
+  (awaiting check) `win32/keyboard.rs` `char_for` read Caps Lock from
+  `GetAsyncKeyState`'s low bit, which is an unreliable "pressed since the last
+  call" flag rather than the toggle, and only ever set modifier bits, so a
+  stale `GetKeyboardState` bit (frozen, because the thread never removes
+  keyboard messages) could stick and force uppercase. It now reads each
+  modifier's live state and sets or clears the bit, and reads Caps Lock's
+  toggle from `GetKeyState`'s low bit. **[needs human]** check: in a rename,
+  type with Shift, Caps Lock on, Caps Lock off, Caps+Shift, and toggling Caps
+  mid-name; Shift+digit gives the symbol; no case gets stuck.
+
 ## G. More Explorer-standard controls
 
 Remaining gaps from the controls review. Do them in order.

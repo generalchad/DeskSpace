@@ -624,7 +624,13 @@ WindowSettings {
   name in the label's width and grows downward, drawn over the items below it,
   as Explorer's does; a title's box stays on one line. A `WH_KEYBOARD_LL` hook, installed only while editing,
   translates key presses into `Event::EditKey` and consumes them, because
-  spaces are never activated and cannot receive `WM_CHAR`. F2 renames the
+  spaces are never activated and cannot receive `WM_CHAR`. The hook cannot use
+  `GetKeyboardState` for modifiers or Caps Lock: the thread never removes
+  keyboard messages, so that state is frozen. It reads each held modifier from
+  `GetAsyncKeyState`'s sign bit and sets or clears it, and reads Caps Lock's
+  toggle from `GetKeyState`'s low bit (`GetAsyncKeyState`'s low bit is an
+  unrelated "pressed since the last call" flag), so Shift and Caps stay
+  predictable. F2 renames the
   focused item, or the current space's title when no item is selected, and a
   second click on an already-selected item (a slow double-click) starts an
   inline item rename; an item

@@ -19,10 +19,10 @@ use std::cell::Cell;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_A, VK_APPS,
-    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F2, VK_F5,
-    VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
-    VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP, VK_V, VK_X,
+    GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY,
+    VK_A, VK_APPS, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE,
+    VK_F2, VK_F5, VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT,
+    VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -562,10 +562,24 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
     })
 }
 
+/// Sets or clears one status bit for `key` in a keyboard-state array.
+fn set_bit(state: &mut [u8; 256], key: VIRTUAL_KEY, mask: u8, on: bool) {
+    let byte = &mut state[key.0 as usize];
+    if on {
+        *byte |= mask;
+    } else {
+        *byte &= !mask;
+    }
+}
+
 /// The character a key produces under the current layout and modifiers, or
-/// `None`. The thread's keyboard state can lag behind the hook (which runs
-/// before the key is queued), so pressed modifiers and Caps Lock are overlaid
-/// from the real-time key state, or Shift/Caps would produce lowercase.
+/// `None`. The space's thread never receives keyboard messages (spaces are
+/// never activated), so `GetKeyboardState` is frozen and its modifier bits
+/// cannot be trusted. Each modifier is read from live key state and set or
+/// cleared, so a released key cannot stay down. Caps Lock comes from
+/// `GetKeyState`'s toggle bit: `GetAsyncKeyState`'s low bit is a separate,
+/// unreliable "pressed since the last call" flag, not the toggle.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getasynckeystate
 unsafe fn char_for(vk: u32) -> Option<char> {
     let mut state = [0u8; 256];
     // SAFETY: `state` is a valid 256-byte buffer.
@@ -575,15 +589,14 @@ unsafe fn char_for(vk: u32) -> Option<char> {
         VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_CONTROL, VK_LMENU, VK_RMENU,
     ] {
         // SAFETY: plain key-state query.
-        if unsafe { GetAsyncKeyState(key.0 as i32) } < 0 {
-            state[key.0 as usize] |= 0x80;
-        }
+        let down = unsafe { GetAsyncKeyState(key.0 as i32) } < 0;
+        set_bit(&mut state, key, 0x80, down);
     }
-    // Caps Lock is a toggle: bit 0 of its state byte, not the pressed bit.
+    // Caps Lock is a toggle: its state byte's low bit. Read it from
+    // `GetKeyState`, whose low bit is the toggle, not the pressed bit.
     // SAFETY: plain key-state query.
-    if unsafe { GetAsyncKeyState(VK_CAPITAL.0 as i32) } & 1 != 0 {
-        state[VK_CAPITAL.0 as usize] |= 0x01;
-    }
+    let caps = unsafe { GetKeyState(VK_CAPITAL.0 as i32) } & 1 != 0;
+    set_bit(&mut state, VK_CAPITAL, 0x01, caps);
     // SAFETY: thread-local layout query; no pointers held.
     let layout = unsafe { GetKeyboardLayout(0) };
     let mut buffer = [0u16; 8];
@@ -601,6 +614,23 @@ unsafe fn char_for(vk: u32) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_bit_sets_and_clears_a_key_status_byte() {
+        let mut state = [0u8; 256];
+        set_bit(&mut state, VK_SHIFT, 0x80, true);
+        assert_eq!(state[VK_SHIFT.0 as usize], 0x80);
+        set_bit(&mut state, VK_SHIFT, 0x80, false);
+        assert_eq!(state[VK_SHIFT.0 as usize], 0x00);
+        set_bit(&mut state, VK_CAPITAL, 0x01, true);
+        assert_eq!(state[VK_CAPITAL.0 as usize], 0x01);
+        // Setting the pressed bit must not disturb the toggle bit and back.
+        state[VK_CAPITAL.0 as usize] = 0x01;
+        set_bit(&mut state, VK_CAPITAL, 0x80, true);
+        assert_eq!(state[VK_CAPITAL.0 as usize], 0x81);
+        set_bit(&mut state, VK_CAPITAL, 0x01, false);
+        assert_eq!(state[VK_CAPITAL.0 as usize], 0x80);
+    }
 
     #[test]
     fn decodes_posted_kinds_to_edit_keys() {
