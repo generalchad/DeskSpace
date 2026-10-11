@@ -1,6 +1,7 @@
 //! `App` menus: the tray, space, and item context menus (R1).
 
-use deskspace_core::geometry::Point;
+use deskspace_config::NEW_SPACE_SIZE_RANGE;
+use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
 use deskspace_platform::{ItemMenuChoice, MenuEntry, Ui, work_area_at};
 
@@ -306,9 +307,26 @@ impl App {
     }
 
     pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) {
+        let window = &self.config.window;
+        let size = Size::new(
+            window
+                .new_space_width
+                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+            window
+                .new_space_height
+                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+        );
+        let title = window.new_space_title.trim();
+        let title = if title.is_empty() {
+            "New space".to_string()
+        } else {
+            title.to_string()
+        };
         let command = Command::CreateSpace {
-            title: "New space".to_string(),
+            title,
             at,
+            size,
+            locked: window.new_space_locked,
         };
         if self.dispatch(command, at) {
             if !self.visible {

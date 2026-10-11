@@ -48,8 +48,9 @@ context menus, and a settings window in the first usable release (v0.2).
   selection highlights. Verified visually on Windows 11 build 26300.
 - A tray icon, a space right-click menu, and a native settings window in three
   panes: the scopes (Global, then every space indented under it), the pages
-  (Appearance, Labels, Layout, Colors, Advanced, plus General and Hotkeys for
-  Global, and About), and the page, with live preview and OK/Cancel/Apply.
+  (Appearance, Labels, Layout, Colors, Advanced, plus General, New spaces, and
+  Hotkeys for Global, and About), and the page, with live preview and
+  OK/Cancel/Apply.
 - Every space follows the global look until it is customized ("Customize
   this space" in the settings window, or any Appearance edit in its menu);
   it then has its own copy of every look setting (section 4, `SpaceLook`).
@@ -371,6 +372,10 @@ WindowSettings {
     start_hidden: bool,         // default false
     start_with_windows: bool,   // default false; per-user Run key at sign-in
     take_over_desktop: bool,    // default false; hide Explorer's icons (M2)
+    new_space_title: String,    // default "New space"
+    new_space_width: i32,       // default 240; clamped to NEW_SPACE_SIZE_RANGE
+    new_space_height: i32,      // default 120
+    new_space_locked: bool,     // default false
 }
 ```
 
@@ -903,6 +908,11 @@ WindowSettings {
   arrow badge, as a percent of the icon; default 80 %, 100 % matches Explorer).
   Icon size defaults to 100 %, which is
   Windows' 48 px desktop icon, and can also be typed as a percentage.
+- The Global-only General, New spaces, and Hotkeys pages carry the behavior
+  toggles (start hidden, keep on the desktop, start with Windows, take over the
+  desktop, settings/menu theme), the defaults a new space is created with (title,
+  width, height, and starting lock), and the global hotkeys (show/hide, new
+  space, open settings). They affect only spaces created afterwards.
 - Tray icon: left-click opens Settings; right-click for Settings…, Hide/Show
   spaces, New space, Exit DeskSpace.
 - Drop files from Explorer or the desktop onto a space to move them into it;
@@ -987,7 +997,7 @@ WindowSettings {
 | Backup / restore / layout snapshots | Config file only |
 | Right-click context menu | Space menu; item menu is Explorer's |
 | System tray icon | Implemented |
-| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, Hotkeys, About |
+| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, New spaces, Hotkeys, About |
 | Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
 | Per-monitor DPI | Implemented (per-space layout, icons, and hit tests; `WM_DPICHANGED` reflows) |
 | Explorer icon size / spacing / info tips | Implemented under match; jumbo icons at any size |

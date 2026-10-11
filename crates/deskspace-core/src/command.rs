@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::path::PathBuf;
 
 use crate::desktop::Desktop;
-use crate::geometry::{Point, Rect};
+use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemKind};
 use crate::layout::{
@@ -13,9 +13,13 @@ use crate::space::{ResizeEdges, SpaceLook};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Creates a space at `at` (its top-left in desktop coordinates) with the
+    /// configured `size`, optionally starting locked.
     CreateSpace {
         title: String,
         at: Point,
+        size: Size,
+        locked: bool,
     },
     DeleteSpace {
         id: SpaceId,
@@ -167,10 +171,18 @@ impl Desktop {
         bounds: Rect,
     ) -> CommandOutcome {
         match command {
-            Command::CreateSpace { title, at } => {
-                let mut rect = Rect::new(at.x, at.y, 240, 120);
+            Command::CreateSpace {
+                title,
+                at,
+                size,
+                locked,
+            } => {
+                let mut rect = Rect::new(at.x, at.y, size.width, size.height);
                 rect = clamp_to_bounds(rect, bounds);
-                self.add_space(title, rect);
+                let id = self.add_space(title, rect);
+                if locked && let Some(space) = self.space_mut(id) {
+                    space.locked = true;
+                }
                 CommandOutcome::Applied
             }
             Command::DeleteSpace { id } => match self.remove_space(id) {
@@ -531,16 +543,36 @@ mod tests {
             Command::CreateSpace {
                 title: "New".into(),
                 at: Point::new(40, 40),
+                size: Size::new(240, 120),
+                locked: false,
             },
             bounds(),
         );
         assert_eq!(desktop.spaces.len(), 1);
+        assert_eq!(desktop.spaces[0].rect, Rect::new(40, 40, 240, 120));
         let id = desktop.spaces[0].id;
         assert_eq!(
             desktop.apply(Command::DeleteSpace { id }, bounds()),
             CommandOutcome::Applied
         );
         assert!(desktop.spaces.is_empty());
+    }
+
+    #[test]
+    fn create_space_uses_the_size_and_lock() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Locked".into(),
+                at: Point::new(10, 10),
+                size: Size::new(320, 200),
+                locked: true,
+            },
+            bounds(),
+        );
+        let space = &desktop.spaces[0];
+        assert!(space.locked);
+        assert_eq!(space.rect.size(), Size::new(320, 200));
     }
 
     #[test]

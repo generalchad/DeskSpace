@@ -332,8 +332,9 @@ Done:
   - a one-off Sort by (F-31).
 - **[done]** Settings window (F-17). A data-driven form engine with live
   preview, OK/Cancel/Apply, and the pages Appearance, Labels, Layout, Colors,
-  Advanced, General, and About. It covers the material, corners, colors, label
-  style (F-27), grid density (F-26), icon size (F-25), and overlay size.
+  Advanced, General, New spaces, Hotkeys, and About. It covers the material,
+  corners, colors, label style (F-27), grid density (F-26), icon size (F-25),
+  overlay size, the new-space defaults, and the global hotkeys.
 - **[done]** Per-space looks (F-46). The settings window has three panes:
   the scopes (Global, then every space indented, dimmed while it follows
   Global), the pages of the selected scope, and the page. A space shows the
@@ -351,15 +352,12 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. A "New spaces" settings page (defaults for new spaces; F-17). The page is
-   not called "Spaces", so it is not confused with the scopes pane. (The
-   Hotkeys page landed; see F-18.)
-2. Tray and menu entries that depend on later milestones:
+1. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
    - snapshots (M6);
    - an Arrange submenu.
-3. More item presets and preset import/export (F-48). The "Item preset"
+2. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
 
@@ -594,7 +592,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu and Explorer item menu done; lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; takeover and snapshot entries wait for M2 and M6 |
-| F-17 | Settings window | M3, M4 | Partial: 7 pages in a scopes/pages/page layout; New spaces, Hotkeys, and Lenses pages open |
+| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout; Lenses page open |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |

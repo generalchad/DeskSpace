@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 /// made item positions relative to their space.
 pub const CURRENT_VERSION: u32 = 2;
 
+/// The inclusive range of a new space's default width and height, in pixels.
+pub const NEW_SPACE_SIZE_RANGE: (i32, i32) = (120, 1200);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     /// A missing version deserializes as 0 so `migrate` treats the file as legacy.
@@ -36,6 +39,15 @@ pub struct WindowSettings {
     /// Hide Explorer's desktop icons and draw the loose items on DeskSpace's
     /// own desktop layer (M2 takeover). Off by default.
     pub take_over_desktop: bool,
+    /// The title a space created from a menu or hotkey starts with.
+    pub new_space_title: String,
+    /// The size a new space starts with, in pixels, clamped to
+    /// `NEW_SPACE_SIZE_RANGE`.
+    pub new_space_width: i32,
+    pub new_space_height: i32,
+    /// Whether a new space starts locked (kept at its size, scrolling instead
+    /// of growing).
+    pub new_space_locked: bool,
 }
 
 impl Default for WindowSettings {
@@ -48,6 +60,10 @@ impl Default for WindowSettings {
             start_hidden: false,
             start_with_windows: false,
             take_over_desktop: false,
+            new_space_title: "New space".to_string(),
+            new_space_width: 240,
+            new_space_height: 120,
+            new_space_locked: false,
         }
     }
 }
@@ -346,6 +362,24 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.window.new_space_hotkey, "Ctrl+Alt+N");
         assert_eq!(parsed.window.settings_hotkey, "Ctrl+Alt+S");
+    }
+
+    #[test]
+    fn new_space_defaults_are_the_historic_title_and_size() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert_eq!(parsed.window.new_space_title, "New space");
+        assert_eq!(parsed.window.new_space_width, 240);
+        assert_eq!(parsed.window.new_space_height, 120);
+        assert!(!parsed.window.new_space_locked);
+        let parsed: Config = toml::from_str(
+            "version = 2\n[window]\nnew_space_title = \"Inbox\"\nnew_space_width = 320\n\
+             new_space_height = 200\nnew_space_locked = true\n",
+        )
+        .unwrap();
+        assert_eq!(parsed.window.new_space_title, "Inbox");
+        assert_eq!(parsed.window.new_space_width, 320);
+        assert_eq!(parsed.window.new_space_height, 200);
+        assert!(parsed.window.new_space_locked);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use deskspace_config::{Config, WindowSettings};
+use deskspace_config::{Config, NEW_SPACE_SIZE_RANGE, WindowSettings};
 use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
@@ -72,13 +72,21 @@ pub mod field {
     pub const HOTKEY_NEW_SPACE_NOTE: u32 = 53;
     pub const HOTKEY_SETTINGS: u32 = 54;
     pub const HOTKEY_SETTINGS_NOTE: u32 = 55;
+
+    pub const NEW_SPACES_HEADING: u32 = 56;
+    pub const NEW_SPACE_TITLE: u32 = 57;
+    pub const NEW_SPACE_WIDTH: u32 = 58;
+    pub const NEW_SPACE_HEIGHT: u32 = 59;
+    pub const NEW_SPACE_LOCKED: u32 = 60;
+    pub const NEW_SPACES_NOTE: u32 = 61;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
-/// which a space can override; General, Hotkeys, and About are Global only.
+/// which a space can override; General, New spaces, Hotkeys, and About are
+/// Global only.
 pub mod page {
     pub const APPEARANCE: usize = 0;
-    pub const ABOUT: usize = 7;
+    pub const ABOUT: usize = 8;
 }
 
 /// How many pages hold look settings (Appearance through Advanced).
@@ -397,6 +405,7 @@ pub fn build_form(
         }
     }
     pages.push(general_page(config));
+    pages.push(new_spaces_page(config));
     pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
     debug_assert_eq!(pages.len(), page::ABOUT + 1);
@@ -707,6 +716,51 @@ fn general_page(config: &Config) -> SettingsPage {
     }
 }
 
+fn new_spaces_page(config: &Config) -> SettingsPage {
+    let window = &config.window;
+    let size_slider = |id, label, value: i32| {
+        Field::slider(
+            id,
+            label,
+            (NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+            value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+        )
+        .editable()
+        .suffix(" px")
+    };
+    SettingsPage {
+        title: "New spaces".into(),
+        fields: vec![
+            Field::heading(field::NEW_SPACES_HEADING, "Defaults for new spaces"),
+            Field::text(
+                field::NEW_SPACE_TITLE,
+                "Default title",
+                &window.new_space_title,
+            ),
+            size_slider(
+                field::NEW_SPACE_WIDTH,
+                "Default width",
+                window.new_space_width,
+            ),
+            size_slider(
+                field::NEW_SPACE_HEIGHT,
+                "Default height",
+                window.new_space_height,
+            ),
+            Field::toggle(
+                field::NEW_SPACE_LOCKED,
+                "Start new spaces locked",
+                window.new_space_locked,
+            ),
+            Field::note(
+                field::NEW_SPACES_NOTE,
+                "New spaces otherwise follow the Global appearance and layout. \
+                 A locked space keeps its size and scrolls instead of growing.",
+            ),
+        ],
+    }
+}
+
 fn hotkeys_page(session: &Session) -> SettingsPage {
     let mut fields = vec![Field::heading(field::HOTKEYS_HEADING, "Global hotkeys")];
     for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
@@ -921,6 +975,24 @@ pub fn apply_field(
             }
             (field::ALWAYS_ON_DESKTOP, FieldValue::Toggle(on)) => {
                 config.window.always_on_desktop = on;
+                Effect::Pending
+            }
+            (field::NEW_SPACE_TITLE, FieldValue::Text(text)) => {
+                config.window.new_space_title = text;
+                Effect::Pending
+            }
+            (field::NEW_SPACE_WIDTH, FieldValue::Slider(value)) => {
+                config.window.new_space_width =
+                    value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
+                Effect::Pending
+            }
+            (field::NEW_SPACE_HEIGHT, FieldValue::Slider(value)) => {
+                config.window.new_space_height =
+                    value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
+                Effect::Pending
+            }
+            (field::NEW_SPACE_LOCKED, FieldValue::Toggle(on)) => {
+                config.window.new_space_locked = on;
                 Effect::Pending
             }
             _ => Effect::None,
@@ -1214,6 +1286,70 @@ mod tests {
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.new_space_hotkey.is_empty());
         assert_eq!(session.hotkey_texts[1], "Ctrl+Alt+N");
+    }
+
+    #[test]
+    fn new_space_defaults_are_pending_and_update_the_config() {
+        let (mut config, mut session) = setup();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_TITLE,
+                FieldValue::Text("Inbox".into()),
+                true,
+            ),
+            Effect::Pending
+        );
+        assert_eq!(config.window.new_space_title, "Inbox");
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_WIDTH,
+                FieldValue::Slider(320),
+                true,
+            ),
+            Effect::Pending
+        );
+        assert_eq!(config.window.new_space_width, 320);
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_HEIGHT,
+                FieldValue::Slider(9_000),
+                true,
+            ),
+            Effect::Pending
+        );
+        assert_eq!(config.window.new_space_height, NEW_SPACE_SIZE_RANGE.1);
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_LOCKED,
+                FieldValue::Toggle(true),
+                true,
+            ),
+            Effect::Pending
+        );
+        assert!(config.window.new_space_locked);
+        assert!(session.dirty);
+    }
+
+    #[test]
+    fn new_spaces_page_shows_the_configured_defaults() {
+        let (mut config, session) = setup();
+        config.window.new_space_title = "Inbox".into();
+        config.window.new_space_width = 300;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(form.field(field::NEW_SPACE_TITLE).unwrap().enabled);
+        assert_eq!(slider_value(&form, field::NEW_SPACE_WIDTH), 300);
+        assert_eq!(
+            form.field(field::NEW_SPACE_TITLE).unwrap().label,
+            "Default title"
+        );
     }
 
     #[test]

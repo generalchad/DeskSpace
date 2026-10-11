@@ -329,6 +329,22 @@ is large.
   - Landed as `feat: add the Hotkeys settings page (C7)`. The platform gained
     `cursor_pos()` (`win32/system.rs`).
 
+- [ ] **C8. The New spaces page (F-17, M3 remaining item 1).** (awaiting check)
+  - Config: `WindowSettings.new_space_title` (default "New space"),
+    `new_space_width` / `new_space_height` (default 240x120, clamped to
+    `NEW_SPACE_SIZE_RANGE`), and `new_space_locked` (default false), all
+    `#[serde(default)]`.
+  - Core: `Command::CreateSpace` carries `size` and `locked`; the app supplies
+    the configured defaults in `App::create_space`, clamped, with a fallback
+    title when the configured one is blank.
+  - Settings: a "New spaces" page with the title, the width and height
+    (`editable` sliders), and the lock toggle, all `Effect::Pending` (they
+    affect future spaces only).
+  - **[needs human]** check: create a space from the space menu, the tray, and
+    the hotkey; it uses the configured title, size, and lock state, and a
+    locked new space keeps its size and scrolls.
+  - Landed as `feat: add the New spaces settings page (C8)`.
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Listed so they are not attempted piecemeal. Each needs design work first.
