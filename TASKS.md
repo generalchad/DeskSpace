@@ -890,7 +890,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     draws the layer (no blank desktop); the health timer is the app's id 8,
     armed only while takeover is on.
 
-- [ ] **I6. Crash-safe restore (watchdog helper).** After I5. (awaiting check)
+- [x] **I6. Crash-safe restore (watchdog helper).** After I5.
   - A helper process started before the icons are hidden. Either
     `deskspace.exe --watchdog <pid>` handled in `main`, or a small dedicated
     bin. It waits on the main process and, if the main process exits without

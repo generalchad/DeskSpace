@@ -98,7 +98,8 @@ context menus, and a settings window in the first usable release (v0.2).
   desktop placement; 2026-10-10), the desktop layer's item interaction
   (`--takeover-layer`: select, drag, drop a loose item onto a space, and
   double-click to open; 2026-10-11), and the desktop takeover (`--takeover`:
-  the icons hide, return on exit, and re-hide after an Explorer restart;
+  the icons hide, return on exit, re-hide after an Explorer restart, and come
+  back when the process is killed, so the watchdog restores them after a crash;
   2026-10-11). Pending on-screen checks: the move/copy
   cursor, the `- Copy` fix, the drag image over Explorer and over spaces, the
   in-space ghost, the space-click focus/deselect, the check-box display and
