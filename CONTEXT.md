@@ -110,8 +110,7 @@ context menus, and a settings window in the first usable release (v0.2).
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Not yet: Win+D handling (the takeover itself is opt-in), lenses (phase 0 of
-  M4, resize and scroll, is done), auto-hide, undo
+- Not yet: lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
   for file moves, and mapping Explorer's view mode (list/details).
   See the parity matrix in section 9.
 
@@ -941,7 +940,7 @@ WindowSettings {
 
 | spaces feature | Status |
 |---|---|
-| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in, Win+D watcher open) |
+| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in) |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
@@ -974,17 +973,18 @@ WindowSettings {
   items on its own layer; a clean exit and every startup restore the icons, and
   `TaskbarCreated` and a 5-second health timer re-hide them after Explorer
   restarts. A watchdog helper launched before the icons are hidden restores
-  them if the process crashes (I6); spaces can still be hidden by Show Desktop
-  (I7).
+  them if the process crashes (I6).
 - **File moves have no undo yet.** "Move back to desktop" and deleting a space
   return stored files; files from another drive stay in place (a move there
   would copy). There is no filesystem watcher: a stored file deleted outside
   DeskSpace stays listed until an item action notices it is gone, and an
   item's `size`/`modified` (used by sorting) are read once at creation, so
   they can go stale.
-- **Spaces can be hidden by Show Desktop (Win+D).** Top-level spaces sit at
-  the bottom of the z-order but are not part of the desktop window. Desktop
-  hosting fixes this but loses blur (child windows get no DWM material).
+- **Spaces survive Show Desktop (Win+D).** Show Desktop (`MinimizeAll`) skips
+  `WS_EX_TOOLWINDOW` windows, and a space is
+  `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, so a top-level space is
+  left visible (verified on Windows 11 build 26300; a planned watcher was
+  dropped). Desktop-hosted spaces survive as children of the host.
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
   If a future Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.

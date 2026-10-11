@@ -782,7 +782,7 @@ day; do not re-open without asking):
 Design is in `ROADMAP.md` D7 (model) and D8 (placement and safety); these
 tasks only say where things go. Do them in order. Hiding Explorer's icons
 (I5) stays behind an off-by-default setting and the hidden `--takeover` flag
-until I5-I7 all land, so no partial build hides the desktop.
+until I5-I6 all land, so no partial build hides the desktop.
 
 - [x] **I1. Read the desktop's items and positions through the shell.**
   - `crates/deskspace-platform/src/shell.rs`: `DesktopEntry` gained
@@ -923,20 +923,18 @@ until I5-I7 all land, so no partial build hides the desktop.
       `deskspace.exe` in both the Velopack installer and the portable zip (see
       E6); without it the takeover silently loses crash safety.
 
-- [ ] **I7. Win+D watcher.** After I5.
-  - Spike first: find the reliable signal, on Windows 11 build 26300, that
-    Show Desktop hid a space. Candidates: subclass the space window for
-    `WM_SYSCOMMAND` / `WM_WINDOWPOSCHANGING` (Show Desktop minimizes
-    never-activated windows); `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` plus
-    an `IsWindowVisible` check; a low-frequency timer. If none is reliable,
-    **stop and ask**.
-  - Implement the winner: when Show Desktop hides the spaces while
-    `spaces_visible`, re-show them (`Ui::set_spaces_visible(true)`); do not
-    fight a user hide.
-  - Config: a General-page toggle (default on) to disable the watcher.
-  - Update `CONTEXT.md` sections 6 and 10.
-  - **[needs human]** check: Win+D with spaces on reappears them; the toggle
-    turns the behavior off.
+- [x] **I7. Win+D watcher - closed as not needed (2026-10-11).**
+  - The premise did not reproduce. On Windows 11 build 26300, Show Desktop
+    (`MinimizeAll`) skips `WS_EX_TOOLWINDOW` windows, and a space is
+    `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, so a top-level space is
+    left visible. Verified with the running app (top-level, `--on-top`,
+    `--takeover`, `--takeover-layer`, and both hosted placements, on both
+    monitors) and with an isolated style matrix; a normal window in the same
+    run was minimized (foreground went to `Progman`). A watcher would have been
+    a no-op, so no code and no config toggle were added.
+  - Done: the finding is recorded in `ROADMAP.md` D8 and the 2026-10-11
+    progress entry, and in `CONTEXT.md` sections 2, 9, and 10. No `[needs
+    human]` check remains.
 
 - [ ] **I8. Watch the Desktop folder (platform).** Shared with M4 phase 2.
   - `ReadDirectoryChangesW` on the Desktop folder, debounced about 100-150 ms,

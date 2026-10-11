@@ -131,10 +131,13 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Placement:* the desktop layer is a `WS_CHILD` of the desktop host
     (`Progman` / wallpaper `WorkerW`), so it survives Show Desktop (Win+D) and
     is opaque, as other hosted windows are. Spaces stay top-level with the
-    DWM/accent blur. A Win+D watcher re-shows the spaces when Show Desktop
-    hides them, so the desk stays complete; it watches DeskSpace's own
-    never-activated space windows (which only Show Desktop minimizes) and can
-    be turned off.
+    DWM/accent blur.
+    - Show Desktop was expected to hide the top-level spaces, and this decision
+      called for a Win+D watcher to re-show them. Verified 2026-10-11 on build
+      26300: it does not hide them, because Show Desktop (`MinimizeAll`) skips
+      `WS_EX_TOOLWINDOW` windows and a space is
+      `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`. The watcher is dropped;
+      see the 2026-10-11 progress entry.
   - *Hiding Explorer's icons:* hide the `SysListView32` of every
     `SHELLDLL_DefView` (there is one per monitor) and restore it on a clean
     exit. Re-hide after Explorer restarts (`TaskbarCreated`) and on a
@@ -144,8 +147,8 @@ A native, lightweight, offline Windows desktop organizer that:
     clean shutdown. The main process signals a clean exit, so the watchdog
     only acts on a crash.
   - *Opt-in during construction:* hiding is behind an off-by-default setting
-    (and a hidden `--takeover` flag) until the layer, watcher, and watchdog
-    all land, so a partial build never hides the desktop.
+    (and a hidden `--takeover` flag) until the layer and watchdog land, so a
+    partial build never hides the desktop.
 
 ## 3. Guiding principles
 
@@ -169,7 +172,7 @@ A native, lightweight, offline Windows desktop organizer that:
 **In progress:**
 - *M2:* spaces and their items are complete and behave like Explorer.
   Desktop takeover is opt-in (hide, restore, Explorer-restart re-hide, and the
-  crash watchdog are in); the Win+D watcher and undo remain.
+  crash watchdog are in); undo remains.
 - *M3:* the tray, menus, and settings window work. A few pages and settings
   are still missing.
 
@@ -180,8 +183,8 @@ A native, lightweight, offline Windows desktop organizer that:
    lists them). Confirm them before more work builds on them.
 2. **M2 takeover.** Enumerating the desktop through the shell, drawing the
    loose items with the space item code, hiding Explorer's icon layer, and the
-   crash watchdog are in (I1-I6). The Win+D watcher remains (I7), the last
-   v0.2 blocker.
+   crash watchdog are in (I1-I6). The Win+D watcher (I7) was verified
+   unnecessary and closed (2026-10-11), so M2's takeover is done.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
 4. **Finish M3:** the New spaces and Hotkeys settings pages, then cut v0.2.
@@ -293,9 +296,10 @@ Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
 3. **Hide Explorer's icon layer** (`SHELLDLL_DefView` / `SysListView32`):
    - restore it on a clean exit, and with a watchdog helper on a crash (D8);
    - re-hide it after Explorer restarts (`TaskbarCreated`) and on a health
-     timer;
-   - keep the top-level, blurred spaces visible across Show Desktop (Win+D)
-     with a watcher (D8). (I5-I6 done; I7 open)
+     timer.
+   - (I5-I6 done. I7 was to keep the top-level, blurred spaces visible across
+     Show Desktop; verified 2026-10-11 that they already are, so it is
+     closed.)
 4. **Watch the filesystem.** Keep the item model current after file
    operations and outside changes. Build the watcher so lenses can reuse it
    (M4 phase 2) (I8).
@@ -559,7 +563,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
-| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in (Win+D watcher open) |
+| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
@@ -620,8 +624,10 @@ Resolve each one during the milestone that raises it.
    re-shows the icon layer after a crash, and DeskSpace re-hides it after an
    Explorer restart and on a health timer.
 2. **Desktop layer vs blur (M2).** *Resolved (D8):* the desktop layer is
-   desktop-hosted, spaces stay top-level and blurred, and a Win+D watcher
-   re-shows the spaces.
+   desktop-hosted and spaces stay top-level and blurred. (A planned Win+D
+   watcher to re-show the spaces was dropped; Show Desktop already leaves
+   `WS_EX_TOOLWINDOW` windows alone. See D8 and the 2026-10-11 progress
+   entry.)
 3. **Undo model (M2).** Should the undo stack be single-level or
    multi-level? Should it cover file moves, which are destructive? Explorer
    can already undo the shell operations (paste, delete, rename) through
@@ -633,8 +639,8 @@ Resolved:
 - **Store layout (M2).** One shared folder, and deleting a space moves its
   stored files back to the desktop. See D3.
 - **Takeover model (M2).** A `DesktopLayer` and a shared `Surface`. See D7.
-- **Takeover safety and placement (M2).** Hosted layer, top-level spaces with
-  a Win+D watcher, and a watchdog helper. See D8.
+- **Takeover safety and placement (M2).** Hosted layer, top-level spaces, and
+  a watchdog helper. See D8.
 - **Update policy (M8).** Velopack, opt-in, prompt then restart, and skip a
   version. See D6.
 
@@ -857,7 +863,15 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     Explorer restart (`TaskbarCreated`) and on a health timer, and are
     restored before `OleUninitialize` (I5).
   - The takeover is opt-in (`take_over_desktop`, and the hidden `--takeover`
-    flag); the Win+D watcher (I7) is still open.
+    flag).
+- **I7 closed as not needed (Win+D watcher).**
+  - Show Desktop (`MinimizeAll`) skips `WS_EX_TOOLWINDOW` windows, so the
+    top-level, never-activated spaces are already left visible across Win+D.
+    Verified with the running app (top-level, `--on-top`, `--takeover`,
+    `--takeover-layer`, and both hosted placements; a normal window was
+    minimized in the same run) and with an isolated style matrix, on Windows 11
+    build 26300. The planned watcher would have been a no-op, so it was
+    dropped along with its config toggle.
 - **M2 crash-safe restore (`TASKS.md` I6).**
   - Before the icons are hidden the app launches a dedicated watchdog
     (`deskspace-watchdog.exe`, a second binary of `deskspace-app`) detached,
