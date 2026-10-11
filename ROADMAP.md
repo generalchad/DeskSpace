@@ -178,9 +178,10 @@ A native, lightweight, offline Windows desktop organizer that:
 1. **On-screen verification pass.** Many behaviors from the item-interaction
    work have only been unit-tested or smoke-tested (`CONTEXT.md` section 2
    lists them). Confirm them before more work builds on them.
-2. **M2 takeover.** Enumerate the desktop through the shell. Draw the loose
-   desktop items with the same item code the spaces use. Then hide Explorer's
-   icon layer, with a safe restore path. This is the remaining v0.2 blocker.
+2. **M2 takeover.** Enumerating the desktop through the shell, drawing the
+   loose items with the space item code, and hiding Explorer's icon layer are
+   in (I1-I5). The crash watchdog and the Win+D watcher remain (I6-I7), the
+   last v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
 4. **Finish M3:** the New spaces and Hotkeys settings pages, then cut v0.2.
@@ -822,7 +823,7 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     into a look at startup.
   - Selecting a space in the scopes pane (or opening the window on one)
     highlights it on the desktop for about 1.2 s, so it can be found.
-- **Explorer-standard controls (`TASKS.md` G1-G2).**
+- **Explorer-standard controls (`TASKS.md` G1-G4).**
   - A typed letter selects the next item whose label starts with it (a short
     timeout buffer, like typing on the desktop).
   - Home/End/PageUp/PageDown scroll the current space.
@@ -830,8 +831,30 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     that follow Global resize together.
   - The arrow keys move the selection across the grid (Shift extends it, Ctrl
     moves a dotted focus rectangle on its own), scrolling the item into view.
+  - Clicking an already-selected item's label a second time (a slow
+    double-click) starts an inline rename, as Explorer does.
 - **Settings performance.** A slider drag used to restyle and re-flow every
   space, re-apply DWM attributes, flush the menu themes, and repaint the
   rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail
   selections are now skipped, and space previews wait for an idle message
   queue (`PREVIEW_TIMER`), so a drag collapses into one pass per pause.
+
+### 2026-10-11
+
+- **M2 desktop takeover (`TASKS.md` I1-I5).**
+  - The desktop's loose items and their positions are read through the shell
+    (`IFolderView::Item`/`GetItemPosition`), with the folder walk as a
+    fallback, and cached in a `DesktopLayer`: absolute virtual-desktop
+    positions, reconciled by path so ids survive with `Command::SyncDesktop`
+    (I1-I2).
+  - A chrome-less desktop-hosted layer window draws the loose items through
+    the same item code as the spaces (I3).
+  - Item hit-testing, hover, selection, rubber-band, drag, drop, info tips,
+    and the scene build go through a `Surface` (`Space` or `Desktop`) instead
+    of a space id, so one path serves spaces and the desktop layer (I4).
+  - `desktop_icons::hide`/`restore` hide and show Explorer's `SysListView32`
+    icon listviews, re-enumerating on each call; the icons re-hide after an
+    Explorer restart (`TaskbarCreated`) and on a health timer, and are
+    restored before `OleUninitialize` (I5).
+  - The takeover is opt-in (`take_over_desktop`, and the hidden `--takeover`
+    flag); the crash watchdog and Win+D watcher (I6-I7) are still open.
