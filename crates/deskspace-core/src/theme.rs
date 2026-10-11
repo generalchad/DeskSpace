@@ -338,6 +338,24 @@ impl Theme {
         self.mode.resolve(system_dark)
     }
 
+    /// The theme with every ranged value inside its bounds. Applied on load so
+    /// a hand-edited out-of-range value cannot leave the settings UI showing
+    /// no choice selected.
+    pub fn clamped(mut self) -> Self {
+        self.corner_radius = self.corner_radius.min(corner::MAX);
+        self.tint_opacity = self.tint_opacity.min(100);
+        self.title_shading = self.title_shading.min(100);
+        self.label_lines = self.label_lines.clamp(1, 2);
+        self.label_size = self
+            .label_size
+            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1);
+        self.icon_size = self.icon_size.clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1);
+        self.overlay_size = self
+            .overlay_size
+            .clamp(OVERLAY_SIZE_RANGE.0, OVERLAY_SIZE_RANGE.1);
+        self
+    }
+
     pub fn palette(&self, system_dark: bool) -> Palette {
         let dark = self.is_dark(system_dark);
         let (tint, text) = match (self.custom_colors, dark) {
@@ -521,5 +539,27 @@ mod tests {
         assert!(!ThemeMode::System.resolve(false));
         assert!(ThemeMode::Dark.resolve(false));
         assert!(!ThemeMode::Light.resolve(true));
+    }
+
+    #[test]
+    fn clamped_bounds_every_ranged_value() {
+        let theme = Theme {
+            corner_radius: 200,
+            tint_opacity: 250,
+            title_shading: 250,
+            label_lines: 7,
+            label_size: 5,
+            icon_size: 5,
+            overlay_size: 250,
+            ..Theme::default()
+        }
+        .clamped();
+        assert_eq!(theme.corner_radius, corner::MAX);
+        assert_eq!(theme.tint_opacity, 100);
+        assert_eq!(theme.title_shading, 100);
+        assert_eq!(theme.label_lines, 2);
+        assert_eq!(theme.label_size, LABEL_SIZE_RANGE.0);
+        assert_eq!(theme.icon_size, ICON_SIZE_RANGE.0);
+        assert_eq!(theme.overlay_size, OVERLAY_SIZE_RANGE.1);
     }
 }

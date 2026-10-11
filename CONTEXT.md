@@ -364,7 +364,9 @@ WindowSettings {
   resets the theme (v1 colors were opaque and tuned for the old color-keyed
   overlay), drops each space's v1 `opacity` (it was a fill alpha), and re-runs `position_items`
   because v1 stored absolute item positions. A missing `version` key
-  deserializes as 0.
+  deserializes as 0. On every load it also clamps each ranged value
+  (`Theme::clamped`, and through it every `SpaceLook`), so a hand-edited
+  out-of-range setting loads within bounds.
 - `WindowSettings`, `GridSpec`, and `Theme` use struct-level
   `#[serde(default)]`, and `Item.kind` / `Item.position` default, so partial
   tables fill in defaults instead of failing the whole file. Unknown keys (for

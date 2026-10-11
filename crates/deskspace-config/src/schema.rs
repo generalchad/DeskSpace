@@ -1,5 +1,5 @@
 use deskspace_core::layout::position_items;
-use deskspace_core::{Desktop, Theme};
+use deskspace_core::{Desktop, SpaceLook, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -86,13 +86,20 @@ impl Config {
         if self.version < CURRENT_VERSION {
             self.version = CURRENT_VERSION;
         }
+        // Clamp ranged values so a hand-edited out-of-range setting cannot
+        // leave the settings window showing no choice selected.
+        self.theme = self.theme.clone().clamped();
+        for space in &mut self.desktop.spaces {
+            space.look = space.look.take().map(SpaceLook::clamped);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::theme::corner;
+    use deskspace_core::layout::GAP_RANGE;
+    use deskspace_core::theme::{ICON_SIZE_RANGE, OVERLAY_SIZE_RANGE, corner};
     use deskspace_core::{Backdrop, Point};
 
     #[test]
@@ -216,6 +223,39 @@ mod tests {
         config.theme.tint_opacity = 77;
         config.migrate();
         assert_eq!(config.theme.tint_opacity, 77);
+    }
+
+    #[test]
+    fn migrate_clamps_out_of_range_values() {
+        let text = r#"
+            version = 2
+
+            [theme]
+            icon_size = 1
+            tint_opacity = 250
+            label_lines = 7
+
+            [[desktop.spaces]]
+            id = 1
+            title = "Work"
+            rect = { x = 0, y = 0, width = 100, height = 100 }
+
+            [desktop.spaces.look]
+            gap = 999
+            padding = -4
+
+            [desktop.spaces.look.theme]
+            overlay_size = 5
+        "#;
+        let mut parsed: Config = toml::from_str(text).unwrap();
+        parsed.migrate();
+        assert_eq!(parsed.theme.icon_size, ICON_SIZE_RANGE.0);
+        assert_eq!(parsed.theme.tint_opacity, 100);
+        assert_eq!(parsed.theme.label_lines, 2);
+        let look = parsed.desktop.spaces[0].look.as_ref().unwrap();
+        assert_eq!(look.gap, GAP_RANGE.1);
+        assert_eq!(look.padding, GAP_RANGE.0);
+        assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
     }
 
     #[test]

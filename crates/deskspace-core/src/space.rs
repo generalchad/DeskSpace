@@ -4,7 +4,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
-use crate::theme::{Color, ICON_SIZE_RANGE, Theme};
+use crate::theme::{Color, Theme};
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
 
@@ -49,10 +49,7 @@ impl SpaceLook {
 
     /// The look with every ranged value inside its bounds.
     pub fn clamped(mut self) -> Self {
-        self.theme.icon_size = self
-            .theme
-            .icon_size
-            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1);
+        self.theme = self.theme.clamped();
         self.gap = self.gap.clamp(GAP_RANGE.0, GAP_RANGE.1);
         self.padding = self.padding.clamp(GAP_RANGE.0, GAP_RANGE.1);
         self
@@ -434,5 +431,22 @@ mod tests {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 200, 200));
         assert!(!space.fold_legacy_overrides(&Theme::default(), &GridSpec::default(), false));
         assert!(!space.custom && space.look.is_none());
+    }
+
+    #[test]
+    fn clamped_look_bounds_theme_and_spacing() {
+        let look = SpaceLook {
+            theme: Theme {
+                icon_size: 1,
+                overlay_size: 5,
+                ..Theme::default()
+            },
+            gap: 999,
+            padding: -10,
+        }
+        .clamped();
+        assert_eq!(look.theme.icon_size, crate::theme::ICON_SIZE_RANGE.0);
+        assert_eq!(look.gap, GAP_RANGE.1);
+        assert_eq!(look.padding, GAP_RANGE.0);
     }
 }

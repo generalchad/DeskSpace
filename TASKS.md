@@ -941,13 +941,8 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts
   `WM_DWMCOLORIZATIONCOLORCHANGED` when the accent changes; if
-  "ImmersiveColorSet" is not sent for every accent change, the palette is
-  stale until the next theme change. Watch for it during the F-29 check.
-- `deskspace-core/src/space.rs` `SpaceLook`: values are clamped when a
-  command sets them (`SpaceLook::clamped`), but an out-of-range value in a
-  hand-edited `look` is only clamped where it is used (icon size in
-  `App::icon_scale`), so the menu shows no preset checked. The global theme
-  has the same gap. Consider clamping both on load (a `fix:` task).
+   "ImmersiveColorSet" is not sent for every accent change, the palette is
+   stale until the next theme change. Watch for it during the F-29 check.
 - `deskspace-platform/src/win32/runtime.rs` `Ui::update_settings`:
   `settings_window::update` returns `false` when the new form has a different
   shape, but `update_settings` drops that result, and `App::refresh_settings`
