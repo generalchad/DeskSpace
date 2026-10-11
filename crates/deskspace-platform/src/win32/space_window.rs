@@ -567,10 +567,14 @@ unsafe extern "system" fn wndproc(
                 if hosted() {
                     MapWindowPoints(None, GetParent(window).ok(), &mut point);
                 }
+                // SAFETY: GetKeyState reads this thread's input queue state,
+                // which matches the message being processed.
+                let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
                 space_event(SpaceEvent::Wheel {
                     x: point[0].x,
                     y: point[0].y,
                     delta,
+                    ctrl,
                 });
                 LRESULT(0)
             }

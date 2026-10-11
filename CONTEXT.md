@@ -452,9 +452,11 @@ WindowSettings {
   composition backdrop (M5).
 - Mouse input is reported in desktop coordinates as `SpaceEvent`s;
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
-  the last button-up. `WM_MOUSEWHEEL` (screen coordinates) becomes
-  `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
-  "scroll inactive windows" setting (on by default).
+  the last button-up. `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state)
+  becomes `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
+  "scroll inactive windows" setting (on by default). Ctrl+wheel changes the
+  global icon size (`App::adjust_icon_size`), as it does on the desktop; a
+  customized space keeps its own size.
 - File drops (`win32/drop_target.rs`): every space is an OLE `IDropTarget`
   (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
   window, so it chooses the drop effect and the shell shows the move/copy
@@ -761,7 +763,7 @@ WindowSettings {
 
 - Drag a space title bar to move it (snaps to the grid).
 - Drag a space edge or corner to resize it; the wheel scrolls overflowing
-  content.
+  content, and Ctrl+wheel changes the icon size.
 - Double-click a space title bar to roll it up or down.
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).

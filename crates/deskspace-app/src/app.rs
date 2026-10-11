@@ -31,6 +31,8 @@ const RESIZE_BORDER: i32 = 6;
 /// `WHEEL_DELTA`: one notch of a standard mouse wheel.
 /// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
 const WHEEL_DELTA: i32 = 120;
+/// Icon-size percent changed by one Ctrl+wheel notch.
+const ICON_SIZE_WHEEL_STEP: i32 = 10;
 /// Timer id for the debounced configuration save.
 const AUTOSAVE_TIMER: usize = 1;
 /// How long after the last change the configuration is written.
@@ -1398,7 +1400,13 @@ impl App {
                     self.update_hover(ui, id, point);
                 }
             }
-            SpaceEvent::Wheel { x, y, delta } => self.scroll_by(ui, id, Point::new(x, y), delta),
+            SpaceEvent::Wheel { x, y, delta, ctrl } => {
+                if ctrl {
+                    self.adjust_icon_size(ui, delta);
+                } else {
+                    self.scroll_by(ui, id, Point::new(x, y), delta);
+                }
+            }
             SpaceEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
@@ -1673,6 +1681,30 @@ impl App {
                 space.resize_edges_at(point, RESIZE_BORDER)
             });
         ui.set_space_cursor(id.0, cursor_for(edges));
+    }
+
+    /// Ctrl+wheel changes the global icon size, as it does on the desktop:
+    /// spaces that follow Global resize together, while a customized space
+    /// keeps its own size. Persisted through the settings, not the config's
+    /// base grid.
+    fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
+        let step = delta * ICON_SIZE_WHEEL_STEP / WHEEL_DELTA;
+        if step == 0 {
+            return;
+        }
+        let current = self
+            .config
+            .theme
+            .icon_size
+            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as i32;
+        let next = (current + step).clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into());
+        if next as u8 == self.config.theme.icon_size {
+            return;
+        }
+        self.config.theme.icon_size = next as u8;
+        self.relayout_all(ui);
+        self.schedule_save(ui);
+        self.refresh_settings(ui);
     }
 
     fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {

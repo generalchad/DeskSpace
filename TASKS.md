@@ -689,9 +689,15 @@ Remaining gaps from the controls review. Do them in order.
   **[needs human]** check: on the desktop shell, type a letter to jump to an
   item and watch the buffer expire and start fresh; press Home/End/PageUp/
   PageDown over a scrolled space.
-- [ ] **G2. Ctrl+wheel changes the icon size.** Add `ctrl` to
+- [x] **G2. Ctrl+wheel changes the icon size.** Add `ctrl` to
   `SpaceEvent::Wheel` and adjust the icon size the way Explorer's desktop does,
-  clamped to `ICON_SIZE_RANGE`.
+  clamped to `ICON_SIZE_RANGE`. Landed as
+  `feat: change the icon size with Ctrl+wheel (G2)`. The standard behavior was
+  chosen: it changes the global `Theme.icon_size` (10 % a notch), so spaces
+  that follow Global resize together while a customized space keeps its own
+  size; it re-lays out the spaces and saves. **[needs human]** check: Ctrl+wheel
+  over a space resizes the icons of every non-customized space, clamped at
+  50 %/200 %.
 - [ ] **G3. Arrow-key selection navigation.** Grid-aware Left/Right/Up/Down with
   Shift to extend and Ctrl to move focus, scroll the focused item into view, and
   draw a focus rectangle. Needs its own movement model; the largest item here.

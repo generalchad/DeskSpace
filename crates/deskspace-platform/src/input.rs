@@ -36,10 +36,12 @@ pub enum SpaceEvent {
     MouseLeave,
     /// Mouse wheel over the space. `delta` is in `WHEEL_DELTA` (120) units
     /// per notch; positive means the wheel was rotated away from the user.
+    /// `ctrl` is true while Ctrl is held (Ctrl+wheel changes the icon size).
     Wheel {
         x: i32,
         y: i32,
         delta: i32,
+        ctrl: bool,
     },
     /// Files or folders dragged from Explorer or the desktop were dropped on
     /// the space.
