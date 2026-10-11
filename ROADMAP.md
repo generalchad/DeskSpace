@@ -782,6 +782,8 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   - Home/End/PageUp/PageDown scroll the current space.
   - Ctrl+wheel changes the global icon size, as on the desktop, so spaces
     that follow Global resize together.
+  - The arrow keys move the selection across the grid (Shift extends it, Ctrl
+    moves a dotted focus rectangle on its own), scrolling the item into view.
 - **Settings performance.** A slider drag used to restyle and re-flow every
   space, re-apply DWM attributes, flush the menu themes, and repaint the
   rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail

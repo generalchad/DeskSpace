@@ -180,6 +180,12 @@ unsafe extern "system" fn wndproc(
                 }
                 LRESULT(0)
             }
+            keyboard::NAV_KEY => {
+                if let Some(key) = keyboard::nav_key(wparam.0) {
+                    runtime::dispatch(Event::Navigate(key));
+                }
+                LRESULT(0)
+            }
             WM_CLIPBOARDUPDATE => {
                 runtime::dispatch(Event::ClipboardChanged);
                 LRESULT(0)

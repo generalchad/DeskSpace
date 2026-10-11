@@ -6,8 +6,9 @@
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. The same hook can instead watch the keys that act on a
 //! selection (Delete, F2, Alt+Enter, Ctrl+A, Ctrl+C, Ctrl+X) and on a current
-//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, and any
-//! printable character, for type-to-select). The hook runs for every key in the
+//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, the
+//! arrow keys, and any printable character, for type-to-select). The hook runs
+//! for every key in the
 //! session and Windows drops it if
 //! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
 //! installed only while one of those modes is active.
@@ -19,9 +20,9 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY, VK_A, VK_APPS,
-    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_F10,
-    VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
-    VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_V, VK_X,
+    VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F2, VK_F5,
+    VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RETURN,
+    VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -30,7 +31,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::edit::{EditKey, MoveDir};
-use crate::input::{ClipboardAction, SelectionKey};
+use crate::input::{ClipboardAction, NavDir, NavKey, SelectionKey};
 use crate::win32::desktop_shell;
 
 /// Posted to the controller with the decoded key: wParam is a kind code and
@@ -62,6 +63,10 @@ pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
 /// is the character.
 pub(crate) const TYPE_KEY: u32 = WM_APP + 12;
 
+/// Posted to the controller for an arrow key; wParam packs the direction and
+/// the Shift (extend) and Ctrl (focus) modifiers.
+pub(crate) const NAV_KEY: u32 = WM_APP + 13;
+
 pub(crate) const SEL_OPEN: usize = 0;
 pub(crate) const SEL_CLEAR: usize = 1;
 pub(crate) const SEL_PERMANENT_DELETE: usize = 2;
@@ -71,6 +76,12 @@ pub(crate) const SEL_HOME: usize = 5;
 pub(crate) const SEL_END: usize = 6;
 pub(crate) const SEL_PAGE_UP: usize = 7;
 pub(crate) const SEL_PAGE_DOWN: usize = 8;
+
+/// Direction codes packed into `NAV_KEY`'s wParam low bits.
+pub(crate) const NAV_LEFT: usize = 0;
+pub(crate) const NAV_RIGHT: usize = 1;
+pub(crate) const NAV_UP: usize = 2;
+pub(crate) const NAV_DOWN: usize = 3;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -269,6 +280,13 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
                 post_message(CLIPBOARD_KEY, action, 0);
                 return true;
             }
+            // Ctrl+arrow moves the focus only, leaving the selection.
+            if WATCH_PASTE.get()
+                && let Some(dir) = arrow_dir(event.vkCode)
+            {
+                post_message(NAV_KEY, dir | (1 << 3), 0);
+                return true;
+            }
             return false;
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_RETURN) {
@@ -300,9 +318,14 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             post_message(SELECTION_KEY, SEL_MENU, 0);
             return true;
         }
-        // Scrolling and type-to-select need a current space, not just a
-        // selection (the paste watch tracks that).
+        // Scrolling, arrows, and type-to-select need a current space, not just
+        // a selection (the paste watch tracks that).
         if WATCH_PASTE.get() {
+            if let Some(dir) = arrow_dir(event.vkCode) {
+                let extend = if key_down(VK_SHIFT) { 1 << 2 } else { 0 };
+                post_message(NAV_KEY, dir | extend, 0);
+                return true;
+            }
             let scroll = if is_key(event.vkCode, VK_HOME) {
                 Some(SEL_HOME)
             } else if is_key(event.vkCode, VK_END) {
@@ -373,6 +396,33 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
         }
         None => false,
     }
+}
+
+/// The `NAV_*` direction code for an arrow key, or `None` for any other key.
+fn arrow_dir(vk: u32) -> Option<usize> {
+    Some(match vk {
+        v if v == VK_LEFT.0 as u32 => NAV_LEFT,
+        v if v == VK_RIGHT.0 as u32 => NAV_RIGHT,
+        v if v == VK_UP.0 as u32 => NAV_UP,
+        v if v == VK_DOWN.0 as u32 => NAV_DOWN,
+        _ => return None,
+    })
+}
+
+/// Decodes a posted `NAV_KEY` wParam into a `NavKey`.
+pub(crate) fn nav_key(action: usize) -> Option<NavKey> {
+    let dir = match action & 0x3 {
+        NAV_LEFT => NavDir::Left,
+        NAV_RIGHT => NavDir::Right,
+        NAV_UP => NavDir::Up,
+        NAV_DOWN => NavDir::Down,
+        _ => return None,
+    };
+    Some(NavKey {
+        dir,
+        extend: action & (1 << 2) != 0,
+        focus: action & (1 << 3) != 0,
+    })
 }
 
 /// The character a bare key press contributes to type-to-select, or `None` for
@@ -616,6 +666,36 @@ mod tests {
         assert_eq!(selection_key(SEL_PAGE_UP), Some(SelectionKey::PageUp));
         assert_eq!(selection_key(SEL_PAGE_DOWN), Some(SelectionKey::PageDown));
         assert_eq!(selection_key(99), None);
+    }
+
+    #[test]
+    fn decodes_nav_keys_with_modifiers() {
+        assert_eq!(
+            nav_key(NAV_LEFT),
+            Some(NavKey {
+                dir: NavDir::Left,
+                extend: false,
+                focus: false
+            })
+        );
+        assert_eq!(
+            nav_key(NAV_DOWN | (1 << 2)),
+            Some(NavKey {
+                dir: NavDir::Down,
+                extend: true,
+                focus: false
+            })
+        );
+        assert_eq!(
+            nav_key(NAV_RIGHT | (1 << 3)),
+            Some(NavKey {
+                dir: NavDir::Right,
+                extend: false,
+                focus: true
+            })
+        );
+        assert_eq!(arrow_dir(VK_UP.0 as u32), Some(NAV_UP));
+        assert_eq!(arrow_dir(VK_A.0 as u32), None);
     }
 
     #[test]

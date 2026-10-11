@@ -562,15 +562,19 @@ WindowSettings {
   through `Command::RenameItem`, which updates the item's path and label. The
   same hook watches Delete, F2, Alt+Enter, Enter, Shift+Delete, Esc, F5, the
   Menu key, and Ctrl+C/X while an item is selected and F2, Alt+Enter, F5, the
-  Menu key, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, and typed characters
-  while a space is current (`Ui::watch_selection_keys`) and passes every other
-  key through. Alt+Enter
+  Menu key, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, the arrow keys, and
+  typed characters while a space is current (`Ui::watch_selection_keys`) and
+  passes every other key through. Alt+Enter
   shows the focused item's Properties (`Ui::show_properties`) or DeskSpace
   Settings; Enter opens the focused item, Esc clears the selection, F5 refreshes
   the spaces, the Menu key or Shift+F10 opens the item's or space's context
   menu, Home/End/PageUp/PageDown scroll the space, and a typed character selects
   the next item whose label starts with it (type-to-select, with a short
-  timeout buffer; `Event::Typed`). While a popup menu is open it owns every key, so the hook passes them
+  timeout buffer; `Event::Typed`). An arrow key moves the selection to the
+  nearest item in that direction (`Event::Navigate`), Shift+arrow extends the
+  selection from the anchor, and Ctrl+arrow moves the item focus without
+  changing the selection; the moved item is scrolled into view. The focused
+  item is drawn with a dotted rectangle (`SpaceScene.focused_item`). While a popup menu is open it owns every key, so the hook passes them
   through (`keyboard::set_menu_open`). The watch
   only consumes those keys while the desktop shell has the foreground
   (`desktop_is_foreground`), because the selection is kept when another app is
@@ -837,7 +841,9 @@ WindowSettings {
   Escape clears the selection and F5 refreshes the spaces. With a space current,
   typing a letter selects the next item whose label starts with the typed
   letters (the buffer clears after about a second), and Home, End, PageUp, and
-  PageDown scroll the space to the top, the bottom, or one page.
+  PageDown scroll the space to the top, the bottom, or one page. The arrow keys
+  move the selection across the grid (Shift extends, Ctrl moves the dotted
+  focus rectangle only).
 - `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
   spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
   right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once

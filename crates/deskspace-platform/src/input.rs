@@ -7,6 +7,26 @@ pub enum MouseButton {
     Middle,
 }
 
+/// A direction for keyboard item navigation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// A keyboard navigation key pressed while a space is current (see
+/// `Ui::watch_selection_keys`). `extend` is Shift (extend the selection from
+/// the anchor); `focus` is Ctrl without Shift (move the focus only, leaving
+/// the selection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NavKey {
+    pub dir: NavDir,
+    pub extend: bool,
+    pub focus: bool,
+}
+
 /// Input on a space window. Coordinates are desktop coordinates (the
 /// coordinate system of `Space::rect`), not client coordinates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +190,9 @@ pub enum Event {
     /// A printable character was typed while a space is current (type-to-select,
     /// see `Ui::watch_selection_keys`). The key is consumed by the hook.
     Typed(char),
+    /// An arrow key was pressed while a space is current: move the selection,
+    /// extend it (Shift), or move the focus only (Ctrl).
+    Navigate(NavKey),
     /// A timer armed with `Ui::set_timer` elapsed. `id` is the caller's own
     /// timer id, so the app can tell timers apart.
     Timer {

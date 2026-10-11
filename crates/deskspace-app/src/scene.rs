@@ -39,6 +39,8 @@ pub struct ViewState {
     /// Draw a highlight outline, marking the space selected in the settings
     /// window.
     pub highlight: bool,
+    /// The item with keyboard focus, drawn with a focus rectangle.
+    pub focused: Option<ItemId>,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -138,6 +140,7 @@ pub fn space_scene(
         locked: space.locked,
         rolled_up: space.rolled_up,
         highlight: view.highlight,
+        focused_item: view.focused.map(|id| id.0),
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -501,6 +504,25 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn the_focused_item_reaches_the_scene() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState {
+                focused: Some(ItemId(4)),
+                ..ViewState::default()
+            },
+            &mut IconCache::new(),
+        );
+        assert_eq!(scene.focused_item, Some(4));
     }
 
     #[test]

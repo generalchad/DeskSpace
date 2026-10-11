@@ -698,9 +698,18 @@ Remaining gaps from the controls review. Do them in order.
   size; it re-lays out the spaces and saves. **[needs human]** check: Ctrl+wheel
   over a space resizes the icons of every non-customized space, clamped at
   50 %/200 %.
-- [ ] **G3. Arrow-key selection navigation.** Grid-aware Left/Right/Up/Down with
+- [x] **G3. Arrow-key selection navigation.** Grid-aware Left/Right/Up/Down with
   Shift to extend and Ctrl to move focus, scroll the focused item into view, and
   draw a focus rectangle. Needs its own movement model; the largest item here.
+  Landed as `feat: arrow-key selection navigation (G3)`. The hook posts
+  `NAV_KEY` (yielding `Event::Navigate`); `next_in_direction` (a pure helper
+  with tests) picks the nearest item by primary-axis distance, tie-broken by the
+  cross axis; the app moves the selection, extends it (Shift, in item order like
+  Shift+click), or moves a `focused` item (Ctrl); `SpaceScene.focused_item`
+  draws a dotted focus rectangle. **[needs human]** check: with the desktop
+  shell foreground and a space holding a few items, arrow around the grid,
+  Shift+arrow to extend, Ctrl+arrow to move only the dotted focus rectangle and
+  scroll it into view.
 - [ ] **G4. Slow double-click renames.** Clicking an already-selected item's
   label again starts an inline rename, as Explorer does.
 - [ ] **G5. Right-button drag.** A right drag shows the copy/move/create-shortcut

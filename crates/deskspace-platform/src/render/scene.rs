@@ -51,6 +51,9 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
+    /// the current space's scene sets it.
+    pub focused_item: Option<u64>,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,

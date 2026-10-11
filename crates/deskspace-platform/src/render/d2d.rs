@@ -19,13 +19,14 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS_CLIP,
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
-    D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1RenderTarget,
-    ID2D1SolidColorBrush,
+    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_PROPERTIES, D2D1_DASH_STYLE_DOT,
+    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory,
+    ID2D1HwndRenderTarget, ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -84,6 +85,8 @@ struct Graphics {
     /// format on every paint.
     label_formats: HashMap<u8, IDWriteTextFormat>,
     glyph_format: Option<IDWriteTextFormat>,
+    /// A dotted stroke for the keyboard focus rectangle.
+    focus_stroke: ID2D1StrokeStyle,
 }
 
 thread_local! {
@@ -177,6 +180,14 @@ impl Graphics {
                 None => None,
             };
 
+            let focus_stroke = d2d.CreateStrokeStyle(
+                &D2D1_STROKE_STYLE_PROPERTIES {
+                    dashStyle: D2D1_DASH_STYLE_DOT,
+                    ..Default::default()
+                },
+                None,
+            )?;
+
             Ok(Self {
                 d2d,
                 dwrite,
@@ -186,6 +197,7 @@ impl Graphics {
                 label_format,
                 label_formats,
                 glyph_format,
+                focus_stroke,
             })
         }
     }
@@ -779,6 +791,13 @@ unsafe fn draw_item(
                     scene.text_shadow.map(|shadow| shadow.fade(alpha)),
                 );
             }
+        }
+
+        // A dotted rectangle marks the item with keyboard focus, as Explorer
+        // draws on a focused view item. A faded dragged slot keeps none.
+        if scene.focused_item == Some(item.id) && item.state != ItemState::Dragged {
+            brush.SetColor(&color_f(scene.item_text.with_alpha(220)));
+            target.DrawRectangle(&inset(cell, 2.0), brush, 1.0, Some(&graphics.focus_stroke));
         }
     }
 }

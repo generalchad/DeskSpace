@@ -13,10 +13,11 @@ use deskspace_core::{
 use deskspace_platform::{
     CheckBoxMode, ClipboardAction, ClipboardFiles, CursorShape, DragImage, EditKey, EditOutcome,
     Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache, ItemMenuChoice,
-    ItemMetrics, MenuEntry, MouseButton, Placement, RunOptions, SelectionKey, SettingsEvent,
-    ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui, desktop_directory,
-    desktop_display, drag_threshold, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
-    set_start_with_windows, space_dpi, system_accent_color, system_uses_dark_mode, work_area_at,
+    ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions, SelectionKey,
+    SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
+    desktop_directory, desktop_display, drag_threshold, hotkey_id, item_check_box_hit,
+    notify_moved, parse_hotkey, set_start_with_windows, space_dpi, system_accent_color,
+    system_uses_dark_mode, work_area_at,
 };
 
 use crate::bootstrap::seed_default_desktop;
@@ -315,8 +316,11 @@ pub struct App {
     selected_space: Option<SpaceId>,
     /// Items selected in `selected_space`, in the order they were selected.
     selected_items: Vec<ItemId>,
-    /// The item a Shift+click extends the selection from.
+    /// The item a Shift+click or Shift+arrow extends the selection from.
     selection_anchor: Option<ItemId>,
+    /// The item with keyboard focus, drawn with a focus rectangle. Follows the
+    /// selection, but Ctrl+arrow moves it on its own.
+    focused: Option<ItemId>,
     /// An already-selected item pressed without Ctrl/Shift: if the press does
     /// not become a drag, the selection collapses to it on release, so dragging
     /// one member of a multi-selection moves the whole group.
@@ -374,6 +378,7 @@ impl App {
             selected_space: None,
             selected_items: Vec::new(),
             selection_anchor: None,
+            focused: None,
             pending_select: None,
             cut_items: HashSet::new(),
             checked_items: Vec::new(),
@@ -511,6 +516,9 @@ impl App {
                 ))
             }),
             highlight: self.highlighted == Some(id),
+            focused: (self.selected_space == Some(id))
+                .then_some(self.focused)
+                .flatten(),
         }
     }
 
@@ -800,6 +808,7 @@ impl App {
         let space = self.selected_space.take();
         let had = !std::mem::take(&mut self.selected_items).is_empty();
         self.selection_anchor = None;
+        self.focused = None;
         had.then_some(space).flatten()
     }
 
@@ -1010,7 +1019,57 @@ impl App {
         let item = space.items[index].id;
         self.selected_items = vec![item];
         self.selection_anchor = Some(item);
+        self.focused = Some(item);
         self.scroll_item_into_view(id, index);
+        self.refresh_space(ui, id);
+    }
+
+    /// Arrow-key navigation: move the selection the nearest item in that
+    /// direction, extend it (Shift), or move the focus only (Ctrl), then bring
+    /// the item into view.
+    fn on_navigate(&mut self, ui: &mut Ui, key: NavKey) {
+        let Some(id) = self.selected_space else {
+            return;
+        };
+        let layout = self.layout_for(id);
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let cells: Vec<Point> = space
+            .items
+            .iter()
+            .map(|item| {
+                Point::new(
+                    item.position.x + layout.cell_width / 2,
+                    item.position.y + layout.cell_height / 2,
+                )
+            })
+            .collect();
+        let current = self
+            .focused
+            .or_else(|| self.selected_items.last().copied())
+            .and_then(|item| space.items.iter().position(|entry| entry.id == item));
+        // A first arrow with nothing focused picks the first item.
+        let target = match current {
+            Some(index) => match next_in_direction(&cells, index, key.dir) {
+                Some(index) => index,
+                None => return,
+            },
+            None => 0,
+        };
+        let Some(item) = space.items.get(target).map(|entry| entry.id) else {
+            return;
+        };
+        self.focused = Some(item);
+        if key.focus {
+            // Move the focus rectangle only; the selection stays.
+        } else if key.extend {
+            self.extend_selection(id, item);
+        } else {
+            self.selected_items = vec![item];
+            self.selection_anchor = Some(item);
+        }
+        self.scroll_item_into_view(id, target);
         self.refresh_space(ui, id);
     }
 
@@ -1240,6 +1299,7 @@ impl App {
         }
         self.selected_items = ids;
         self.selection_anchor = self.selected_items.first().copied();
+        self.focused = self.selection_anchor;
         self.refresh_space(ui, space);
     }
 
@@ -1468,6 +1528,7 @@ impl App {
                 self.toggle_selected(item);
             }
             self.selection_anchor = Some(item);
+            self.focused = Some(item);
             if let Some(previous) = previous.filter(|previous| *previous != id) {
                 self.refresh_space(ui, previous);
             }
@@ -1491,10 +1552,12 @@ impl App {
                     self.selected_items = vec![item];
                 }
                 self.selection_anchor = Some(item);
+                self.focused = Some(item);
             }
             None => {
                 if !ctrl && !shift {
                     self.selected_items.clear();
+                    self.focused = None;
                 }
             }
         }
@@ -1576,9 +1639,13 @@ impl App {
             Some(item) if !self.is_selected(item) => {
                 self.selected_items = vec![item];
                 self.selection_anchor = Some(item);
+                self.focused = Some(item);
             }
-            Some(_) => {}
-            None => self.selected_items.clear(),
+            Some(item) => self.focused = Some(item),
+            None => {
+                self.selected_items.clear();
+                self.focused = None;
+            }
         }
         if let Some(previous) = previous.filter(|previous| *previous != id) {
             self.refresh_space(ui, previous);
@@ -1739,6 +1806,7 @@ impl App {
                 if pending == Some(item) && self.is_selected(item) {
                     self.selected_items = vec![item];
                     self.selection_anchor = Some(item);
+                    self.focused = Some(item);
                     self.refresh_space(ui, space);
                 }
             }
@@ -1989,6 +2057,7 @@ impl App {
         }
         self.selected_items.clear();
         self.selection_anchor = None;
+        self.focused = None;
         self.hovered = None;
         let paths: Vec<PathBuf> = items
             .iter()
@@ -2178,6 +2247,7 @@ impl App {
         if !pasted.is_empty() {
             self.selected_space = Some(target);
             self.selection_anchor = pasted.first().copied();
+            self.focused = pasted.first().copied();
             self.selected_items = pasted;
         }
 
@@ -2440,6 +2510,7 @@ impl App {
         self.selected_space = Some(id);
         self.selected_items = marquee_selection(&cells, rect, additive, &self.selected_items);
         self.selection_anchor = None;
+        self.focused = self.selected_items.last().copied();
         self.refresh_space(ui, id);
     }
 
@@ -2520,6 +2591,7 @@ impl App {
                 self.selected_space = None;
                 self.selected_items.clear();
                 self.selection_anchor = None;
+                self.focused = None;
             }
             if self.hovered.is_some_and(|(space, _)| space == id) {
                 self.hovered = None;
@@ -3007,6 +3079,7 @@ impl EventHandler for App {
             Event::SelectionKey(key) => self.on_selection_key(ui, key),
             Event::SelectAll => self.select_all_in_space(ui),
             Event::Typed(ch) => self.on_typed(ui, ch),
+            Event::Navigate(key) => self.on_navigate(ui, key),
             Event::PointerDownOutside { on_desktop } => {
                 self.dismiss_info_tip(ui);
                 if self.edit.is_some() {
@@ -3305,6 +3378,34 @@ fn plan_paste(paths: &[PathBuf], cut: bool, known: impl Fn(&Path) -> Option<Item
     plan
 }
 
+/// The index of the item nearest `current` in `dir`, from cell centers.
+/// Candidates must lie strictly in that direction; the smallest primary-axis
+/// distance wins, breaking ties by the cross-axis distance. `None` at the edge
+/// of the grid.
+fn next_in_direction(cells: &[Point], current: usize, dir: NavDir) -> Option<usize> {
+    let origin = cells.get(current)?;
+    let mut best: Option<(i32, i32, usize)> = None;
+    for (index, cell) in cells.iter().enumerate() {
+        if index == current {
+            continue;
+        }
+        let (dx, dy) = (cell.x - origin.x, cell.y - origin.y);
+        let (primary, cross) = match dir {
+            NavDir::Left if dx < 0 => (-dx, dy.abs()),
+            NavDir::Right if dx > 0 => (dx, dy.abs()),
+            NavDir::Up if dy < 0 => (-dy, dx.abs()),
+            NavDir::Down if dy > 0 => (dy, dx.abs()),
+            _ => continue,
+        };
+        if best.is_none_or(|(best_primary, best_cross, _)| {
+            (primary, cross) < (best_primary, best_cross)
+        }) {
+            best = Some((primary, cross, index));
+        }
+    }
+    best.map(|(_, _, index)| index)
+}
+
 /// The index of the next label that starts with `prefix`, searching from
 /// `start` and wrapping to the beginning, case-insensitively. `None` when
 /// nothing matches. Drives type-to-select.
@@ -3351,6 +3452,40 @@ mod tests {
         assert_eq!(next_prefix_match(&[], "a", 0), None);
         // Repeated typing of the same letter cycles through the matches.
         assert_eq!(next_prefix_match(&labels, "b", 1), Some(1));
+    }
+
+    #[test]
+    fn navigation_picks_the_nearest_aligned_item() {
+        // A 2x2 grid of cell centers: 0 1 / 2 3.
+        let cells = [
+            Point::new(0, 0),
+            Point::new(100, 0),
+            Point::new(0, 100),
+            Point::new(100, 100),
+        ];
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(1));
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Left), Some(0));
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(2));
+        assert_eq!(next_in_direction(&cells, 3, NavDir::Up), Some(1));
+        assert_eq!(next_in_direction(&cells, 2, NavDir::Right), Some(3));
+        // The edges of the grid go nowhere.
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Left), None);
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Right), None);
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Up), None);
+        assert_eq!(next_in_direction(&cells, 3, NavDir::Down), None);
+        assert_eq!(next_in_direction(&[], 0, NavDir::Right), None);
+    }
+
+    #[test]
+    fn navigation_prefers_the_aligned_neighbor() {
+        let cells = [
+            Point::new(0, 0),    // 0
+            Point::new(100, 40), // 1: diagonal to the right
+            Point::new(100, 0),  // 2: aligned to the right
+        ];
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(2));
+        // Both are below, but 1 is nearer vertically than 2.
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(1));
     }
 
     #[test]

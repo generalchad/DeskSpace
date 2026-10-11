@@ -9,7 +9,8 @@ pub mod win32;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
-    ClipboardAction, Event, MouseButton, SelectionKey, SettingsEvent, SpaceEvent, TrayEvent,
+    ClipboardAction, Event, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, SpaceEvent,
+    TrayEvent,
 };
 pub use render::{
     ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
