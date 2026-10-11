@@ -943,7 +943,3 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   `WM_DWMCOLORIZATIONCOLORCHANGED` when the accent changes; if
    "ImmersiveColorSet" is not sent for every accent change, the palette is
    stale until the next theme change. Watch for it during the F-29 check.
-- `deskspace-core/src/desktop.rs` `Desktop::item_count` counts space items
-  only, so it will miss the loose desktop layer once I3 populates it (the tray
-  tooltip's item count). Decide whether it should span the layer, or whether
-  the tray wants a space-only count (a `fix:` task once the layer is live).

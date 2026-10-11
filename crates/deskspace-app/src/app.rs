@@ -3957,7 +3957,7 @@ fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usiz
 
 fn tray_tooltip(desktop: &Desktop) -> String {
     let spaces = desktop.spaces.len();
-    let items = desktop.item_count();
+    let items = desktop.space_item_count();
     let space_word = if spaces == 1 { "space" } else { "spaces" };
     let item_word = if items == 1 { "item" } else { "items" };
     format!("DeskSpace \u{2014} {spaces} {space_word}, {items} {item_word}")

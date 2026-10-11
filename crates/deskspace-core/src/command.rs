@@ -583,7 +583,7 @@ mod tests {
             ),
             CommandOutcome::NotFound
         );
-        assert_eq!(desktop.item_count(), 1);
+        assert_eq!(desktop.space_item_count(), 1);
     }
 
     #[test]

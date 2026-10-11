@@ -236,7 +236,7 @@ Desktop { spaces: Vec<Space>, layer: DesktopLayer, layout: GridSpec }
 
 `spaces` also reads the pre-rename key `spaces`, so older config files load.
 
-Operations: add/remove space, add/remove/move item, `item_count`,
+Operations: add/remove space, add/remove/move item, `space_item_count`,
 `space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`. `move_item` validates the target before removing the item, so a
 failed move never loses it. `next_item_id` spans the spaces and the layer,
 and `item` finds an item in either.

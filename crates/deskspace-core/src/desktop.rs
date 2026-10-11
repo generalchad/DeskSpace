@@ -132,7 +132,11 @@ impl Desktop {
         true
     }
 
-    pub fn item_count(&self) -> usize {
+    /// The number of items held by spaces. The desktop layer's loose items are
+    /// deliberately excluded: they are the desktop's own, not organized into a
+    /// space, so the tray tooltip counts only what DeskSpace manages
+    /// (`DesktopLayer::item_count` counts the layer separately).
+    pub fn space_item_count(&self) -> usize {
         self.spaces.iter().map(Space::item_count).sum()
     }
 
@@ -210,6 +214,18 @@ mod tests {
         desktop.add_item(a, item);
         assert!(!desktop.move_item(item_id, SpaceId(999)));
         assert_eq!(desktop.space_containing(item_id), Some(a));
+    }
+
+    #[test]
+    fn space_item_count_excludes_the_desktop_layer() {
+        let mut desktop = Desktop::new();
+        let space = desktop.add_space("A", Rect::ZERO);
+        desktop.add_item(space, Item::new(ItemId(1), "in-space.txt"));
+        desktop
+            .layer_mut()
+            .push_item(Item::new(ItemId(2), "loose.txt"));
+        assert_eq!(desktop.space_item_count(), 1);
+        assert_eq!(desktop.layer().item_count(), 1);
     }
 
     #[test]
