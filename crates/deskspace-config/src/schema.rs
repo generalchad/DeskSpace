@@ -26,6 +26,10 @@ pub struct WindowSettings {
     /// Applied when DeskSpace starts.
     pub always_on_desktop: bool,
     pub toggle_hotkey: String,
+    /// Creates a space at the pointer. Empty means unbound.
+    pub new_space_hotkey: String,
+    /// Opens the settings window. Empty means unbound.
+    pub settings_hotkey: String,
     pub start_hidden: bool,
     /// Run DeskSpace at sign-in through the per-user `Run` key.
     pub start_with_windows: bool,
@@ -39,6 +43,8 @@ impl Default for WindowSettings {
         Self {
             always_on_desktop: false,
             toggle_hotkey: "Ctrl+Alt+D".to_string(),
+            new_space_hotkey: String::new(),
+            settings_hotkey: String::new(),
             start_hidden: false,
             start_with_windows: false,
             take_over_desktop: false,
@@ -327,6 +333,19 @@ mod tests {
         let text = toml::to_string(&config).unwrap();
         assert!(text.contains("preset = \"custom\""), "{text}");
         assert!(!text.contains("match_explorer"), "{text}");
+    }
+
+    #[test]
+    fn extra_hotkeys_default_to_unbound_and_parse_when_set() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert!(parsed.window.new_space_hotkey.is_empty());
+        assert!(parsed.window.settings_hotkey.is_empty());
+        let parsed: Config = toml::from_str(
+            "version = 2\n[window]\nnew_space_hotkey = \"Ctrl+Alt+N\"\nsettings_hotkey = \"Ctrl+Alt+S\"\n",
+        )
+        .unwrap();
+        assert_eq!(parsed.window.new_space_hotkey, "Ctrl+Alt+N");
+        assert_eq!(parsed.window.settings_hotkey, "Ctrl+Alt+S");
     }
 
     #[test]

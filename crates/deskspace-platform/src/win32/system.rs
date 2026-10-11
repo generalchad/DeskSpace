@@ -6,7 +6,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG, SM_CYVIRTUALSCREEN,
+    GetCursorPos, GetSystemMetrics, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG, SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 use windows::core::w;
@@ -40,6 +40,17 @@ pub fn work_area_at(point: Point) -> Rect {
         work.right - work.left,
         work.bottom - work.top,
     )
+}
+
+/// The pointer's position in virtual-desktop coordinates. Falls back to the
+/// origin when the pointer cannot be read.
+pub fn cursor_pos() -> Point {
+    let mut point = POINT::default();
+    // SAFETY: `point` is a valid out-pointer for GetCursorPos to fill.
+    if unsafe { GetCursorPos(&mut point) }.is_err() {
+        return Point::ZERO;
+    }
+    Point::new(point.x, point.y)
 }
 
 /// Whether Windows is set to dark mode for apps. There is no documented Win32

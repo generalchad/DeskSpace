@@ -66,13 +66,19 @@ pub mod field {
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;
     pub const TAKE_OVER_DESKTOP: u32 = 50;
+
+    pub const HOTKEYS_HEADING: u32 = 51;
+    pub const HOTKEY_NEW_SPACE: u32 = 52;
+    pub const HOTKEY_NEW_SPACE_NOTE: u32 = 53;
+    pub const HOTKEY_SETTINGS: u32 = 54;
+    pub const HOTKEY_SETTINGS_NOTE: u32 = 55;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
-/// which a space can override; General and About are Global only.
+/// which a space can override; General, Hotkeys, and About are Global only.
 pub mod page {
     pub const APPEARANCE: usize = 0;
-    pub const ABOUT: usize = 6;
+    pub const ABOUT: usize = 7;
 }
 
 /// How many pages hold look settings (Appearance through Advanced).
@@ -119,7 +125,66 @@ fn corner_marks() -> Vec<SliderMark> {
 }
 
 const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit, or F1-F24, \
-     for example Ctrl+Alt+D.";
+     for example Ctrl+Alt+D. Empty leaves the action unbound.";
+
+/// A global hotkey the Hotkeys page can bind: the field that edits it, the note
+/// field below it, its label, and the registration index the app passes to
+/// `Ui::register_hotkey`.
+#[derive(Clone, Copy, Debug)]
+pub struct HotkeyBinding {
+    pub field: u32,
+    pub note: u32,
+    pub label: &'static str,
+    pub index: i32,
+}
+
+/// The global hotkeys, in registration order. The app iterates this to register
+/// and to apply each binding, so a new binding is one entry here plus its
+/// `WindowSettings` field.
+pub const HOTKEY_BINDINGS: [HotkeyBinding; 3] = [
+    HotkeyBinding {
+        field: field::HOTKEY,
+        note: field::HOTKEY_NOTE,
+        label: "Show or hide spaces",
+        index: 0,
+    },
+    HotkeyBinding {
+        field: field::HOTKEY_NEW_SPACE,
+        note: field::HOTKEY_NEW_SPACE_NOTE,
+        label: "Create a new space",
+        index: 1,
+    },
+    HotkeyBinding {
+        field: field::HOTKEY_SETTINGS,
+        note: field::HOTKEY_SETTINGS_NOTE,
+        label: "Open settings",
+        index: 2,
+    },
+];
+
+/// The stored text of the binding at `index`.
+pub fn hotkey_setting(window: &WindowSettings, index: i32) -> &str {
+    match index {
+        0 => &window.toggle_hotkey,
+        1 => &window.new_space_hotkey,
+        2 => &window.settings_hotkey,
+        _ => "",
+    }
+}
+
+/// Sets the stored text of the binding at `index`.
+pub fn set_hotkey_setting(window: &mut WindowSettings, index: i32, text: String) {
+    match index {
+        0 => window.toggle_hotkey = text,
+        1 => window.new_space_hotkey = text,
+        2 => window.settings_hotkey = text,
+        _ => {}
+    }
+}
+
+fn is_hotkey_field(id: u32) -> bool {
+    HOTKEY_BINDINGS.iter().any(|binding| binding.field == id)
+}
 
 /// A space's customization, snapshotted so Cancel can restore it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,8 +221,9 @@ pub struct Session {
     pub saved_theme: Theme,
     pub saved_window: WindowSettings,
     pub saved_layout: GridSpec,
-    pub hotkey_text: String,
-    pub hotkey_error: Option<String>,
+    /// The binding text as typed, per `HOTKEY_BINDINGS`, committed on Apply.
+    pub hotkey_texts: [String; HOTKEY_BINDINGS.len()],
+    pub hotkey_errors: [Option<String>; HOTKEY_BINDINGS.len()],
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -174,8 +240,10 @@ impl Session {
             saved_theme: config.theme.clone(),
             saved_window: config.window.clone(),
             saved_layout: config.desktop.layout,
-            hotkey_text: config.window.toggle_hotkey.clone(),
-            hotkey_error: None,
+            hotkey_texts: std::array::from_fn(|slot| {
+                hotkey_setting(&config.window, HOTKEY_BINDINGS[slot].index).to_string()
+            }),
+            hotkey_errors: Default::default(),
             dirty: false,
             scope: None,
             page: page::APPEARANCE,
@@ -189,7 +257,10 @@ impl Session {
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
         self.saved_spaces = snapshot_spaces(config);
-        self.hotkey_error = None;
+        self.hotkey_texts = std::array::from_fn(|slot| {
+            hotkey_setting(&config.window, HOTKEY_BINDINGS[slot].index).to_string()
+        });
+        self.hotkey_errors = Default::default();
         self.dirty = false;
     }
 
@@ -325,7 +396,8 @@ pub fn build_form(
             field.enabled = false;
         }
     }
-    pages.push(general_page(config, session));
+    pages.push(general_page(config));
+    pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
     debug_assert_eq!(pages.len(), page::ABOUT + 1);
 
@@ -588,16 +660,11 @@ fn look_pages(
     ]
 }
 
-fn general_page(config: &Config, session: &Session) -> SettingsPage {
+fn general_page(config: &Config) -> SettingsPage {
     SettingsPage {
         title: "General".into(),
         fields: vec![
             Field::heading(field::BEHAVIOR_HEADING, "Behavior"),
-            Field::text(field::HOTKEY, "Show/hide hotkey", &session.hotkey_text),
-            Field::note(
-                field::HOTKEY_NOTE,
-                session.hotkey_error.as_deref().unwrap_or(HOTKEY_HINT),
-            ),
             Field::toggle(
                 field::START_HIDDEN,
                 "Start with spaces hidden",
@@ -637,6 +704,27 @@ fn general_page(config: &Config, session: &Session) -> SettingsPage {
                 index_of(&MODES, config.theme.ui_mode),
             ),
         ],
+    }
+}
+
+fn hotkeys_page(session: &Session) -> SettingsPage {
+    let mut fields = vec![Field::heading(field::HOTKEYS_HEADING, "Global hotkeys")];
+    for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
+        fields.push(Field::text(
+            binding.field,
+            binding.label,
+            &session.hotkey_texts[slot],
+        ));
+        fields.push(Field::note(
+            binding.note,
+            session.hotkey_errors[slot]
+                .as_deref()
+                .unwrap_or(HOTKEY_HINT),
+        ));
+    }
+    SettingsPage {
+        title: "Hotkeys".into(),
+        fields,
     }
 }
 
@@ -814,9 +902,13 @@ pub fn apply_field(
                 config.window.take_over_desktop = on;
                 Effect::Pending
             }
-            (field::HOTKEY, FieldValue::Text(text)) => {
-                session.hotkey_text = text;
-                session.hotkey_error = None;
+            (id, FieldValue::Text(text)) if is_hotkey_field(id) => {
+                let slot = HOTKEY_BINDINGS
+                    .iter()
+                    .position(|binding| binding.field == id)
+                    .expect("a hotkey field is in the table");
+                session.hotkey_texts[slot] = text;
+                session.hotkey_errors[slot] = None;
                 Effect::Pending
             }
             (field::START_HIDDEN, FieldValue::Toggle(on)) => {
@@ -1092,9 +1184,36 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert_eq!(config.window.toggle_hotkey, "Ctrl+Alt+D");
-        assert_eq!(session.hotkey_text, "Ctrl+Shift+F");
+        assert_eq!(session.hotkey_texts[0], "Ctrl+Shift+F");
         let form = build_form(&config, &session, true, Path::new("x"));
         assert!(form.apply_enabled);
+    }
+
+    #[test]
+    fn every_hotkey_binding_has_an_editable_field() {
+        let (config, session) = setup();
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert_eq!(session.hotkey_texts.len(), HOTKEY_BINDINGS.len());
+        for binding in HOTKEY_BINDINGS {
+            let field = form.field(binding.field).expect("its text field");
+            assert!(field.enabled);
+            assert!(form.field(binding.note).is_some(), "its hint note");
+        }
+    }
+
+    #[test]
+    fn a_second_hotkey_is_staged_like_the_first() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::HOTKEY_NEW_SPACE,
+            FieldValue::Text("Ctrl+Alt+N".into()),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(config.window.new_space_hotkey.is_empty());
+        assert_eq!(session.hotkey_texts[1], "Ctrl+Alt+N");
     }
 
     #[test]
@@ -1290,9 +1409,14 @@ mod tests {
     #[test]
     fn hotkey_errors_replace_the_hint() {
         let (config, mut session) = setup();
-        session.hotkey_error = Some("bad".into());
+        session.hotkey_errors[0] = Some("bad".into());
+        session.hotkey_errors[2] = Some("worse".into());
         let form = build_form(&config, &session, true, Path::new("x"));
         assert_eq!(form.field(field::HOTKEY_NOTE).unwrap().label, "bad");
+        assert_eq!(
+            form.field(field::HOTKEY_SETTINGS_NOTE).unwrap().label,
+            "worse"
+        );
     }
 
     use deskspace_core::Rect;

@@ -37,7 +37,8 @@ pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::system::{
-    drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
+    cursor_pos, drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect,
+    work_area_at,
 };
 pub use win32::watchdog::{
     arm as arm_watchdog, is_watchdog, run_watchdog,

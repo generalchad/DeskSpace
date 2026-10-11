@@ -305,7 +305,7 @@ impl App {
         }
     }
 
-    fn create_space(&mut self, ui: &mut Ui, at: Point) {
+    pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) {
         let command = Command::CreateSpace {
             title: "New space".to_string(),
             at,

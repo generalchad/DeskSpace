@@ -344,16 +344,16 @@ Done:
   Selecting a space highlights it on the desktop.
 - **[done]** Every `WindowSettings` field is wired to behavior:
   - `start_hidden`;
-  - `toggle_hotkey`, editable as text, with validation and conflict reporting
-    (F-18, partial);
+  - the global hotkeys, editable as text on the Hotkeys page with validation
+    and conflict reporting: show/hide, new space, and open settings (F-18);
   - `always_on_desktop`, applied at the next launch;
   - snapping, now `GridSpec.snap`.
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. A "New spaces" settings page (defaults for new spaces), and a Hotkeys page
-   with more bindings (F-17, F-18). The page is not called "Spaces", so it
-   is not confused with the scopes pane.
+1. A "New spaces" settings page (defaults for new spaces; F-17). The page is
+   not called "Spaces", so it is not confused with the scopes pane. (The
+   Hotkeys page landed; see F-18.)
 2. Tray and menu entries that depend on later milestones:
    - pause takeover (after M2);
    - new lens (M4);
@@ -595,7 +595,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; takeover and snapshot entries wait for M2 and M6 |
 | F-17 | Settings window | M3, M4 | Partial: 7 pages in a scopes/pages/page layout; New spaces, Hotkeys, and Lenses pages open |
-| F-18 | Hotkeys | M3 | Toggle hotkey and its text editor done; more bindings open |
+| F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |

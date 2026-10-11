@@ -312,6 +312,23 @@ is large.
   - The preset grows to cover the remaining Explorer-equivalent item settings
     as they land (hidden/protected files once F-22 exists).
 
+- [ ] **C7. The Hotkeys page (F-18, M3 remaining item 1).** (awaiting check)
+  - Config: `WindowSettings.new_space_hotkey` and `settings_hotkey` strings
+    (default empty = unbound), `#[serde(default)]`.
+  - `settings.rs`: a `HOTKEY_BINDINGS` table (field, note field, label, index)
+    drives both the page and the app's registration. Move the existing
+    `HOTKEY` field here; a `hotkey_texts` / `hotkey_errors` pair on `Session`
+    stages each binding until Apply.
+  - App: register every binding on `Started` and on Apply (empty unregisters),
+    unregister all on `CloseRequested`; `NEW_SPACE_HOTKEY` creates a space at
+    `cursor_pos()`, `SETTINGS_HOTKEY` opens settings. A test keeps the app's
+    indices in step with the table.
+  - **[needs human]** check: bind each hotkey, confirm it fires; a conflicting
+    binding is reported next to its field and the window stays open; clearing
+    a binding stops it firing.
+  - Landed as `feat: add the Hotkeys settings page (C7)`. The platform gained
+    `cursor_pos()` (`win32/system.rs`).
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Listed so they are not attempted piecemeal. Each needs design work first.

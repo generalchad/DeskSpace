@@ -48,8 +48,8 @@ context menus, and a settings window in the first usable release (v0.2).
   selection highlights. Verified visually on Windows 11 build 26300.
 - A tray icon, a space right-click menu, and a native settings window in three
   panes: the scopes (Global, then every space indented under it), the pages
-  (Appearance, Labels, Layout, Colors, Advanced, plus General and About for
-  Global), and the page, with live preview and OK/Cancel/Apply.
+  (Appearance, Labels, Layout, Colors, Advanced, plus General and Hotkeys for
+  Global, and About), and the page, with live preview and OK/Cancel/Apply.
 - Every space follows the global look until it is customized ("Customize
   this space" in the settings window, or any Appearance edit in its menu);
   it then has its own copy of every look setting (section 4, `SpaceLook`).
@@ -365,7 +365,9 @@ Config { version, desktop: Desktop, theme: Theme, window: WindowSettings }
 
 WindowSettings {
     always_on_desktop: bool,    // default false; hosted placement at startup
-    toggle_hotkey: String,      // default "Ctrl+Alt+D"
+    toggle_hotkey: String,      // default "Ctrl+Alt+D"; show/hide spaces
+    new_space_hotkey: String,   // default "" (unbound); create a space at the pointer
+    settings_hotkey: String,    // default "" (unbound); open settings
     start_hidden: bool,         // default false
     start_with_windows: bool,   // default false; per-user Run key at sign-in
     take_over_desktop: bool,    // default false; hide Explorer's icons (M2)
@@ -732,7 +734,7 @@ WindowSettings {
   `HIGHLIGHT_TIMER` clears it; selecting another space moves it, and Cancel,
   OK, and closing the window clear it too.
 - The app's form (`settings.rs`): the scopes are Global, then every space
-  indented, dimmed while it follows Global. Global lists all seven pages; a
+  indented, dimmed while it follows Global. Global lists every page; a
   space lists only the five look pages and shows its values (from Global
   until customized) greyed unless the header's "Customize this space" switch
   is on. Global edits write `Config` directly; a space's edits become
@@ -832,7 +834,11 @@ WindowSettings {
   (`TTF_TRACK`, `TTM_TRACKPOSITION`/`TTM_TRACKACTIVATE`). The app owns the hover
   delay with a timer; moving off, clicking, or hiding spaces dismisses it.
 - `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, register/unregister
-  (on the controller window via `Ui`).
+  (on the controller window via `Ui`). The app registers three bindings, each at
+  its own index and editable on the Hotkeys page: show/hide spaces (`Ctrl+Alt+D`
+  by default), create a new space at the pointer, and open settings (both
+  unbound by default). An empty binding is unregistered; the table lives in
+  `settings::HOTKEY_BINDINGS`.
 
 ## 7. Runtime flow
 
@@ -950,12 +956,13 @@ WindowSettings {
   PageDown scroll the space to the top, the bottom, or one page. The arrow keys
   move the selection across the grid (Shift extends, Ctrl moves the dotted
   focus rectangle only).
-- `Ctrl+Alt+D` (editable in Settings → General) hides or shows spaces. While
-  spaces are hidden, a "Show DeskSpace spaces" entry is added to the desktop's
-  right-click menu (a per-user `DesktopBackground\Shell` verb) and removed once
-  they are shown. It runs the executable with `--show`, which signals the
-  running instance through its controller window instead of starting a second
-  copy.
+- The Settings → Hotkeys page binds the global hotkeys: show/hide spaces
+  (`Ctrl+Alt+D` by default), create a new space at the pointer, and open
+  settings (both unbound). While spaces are hidden, a "Show DeskSpace spaces"
+  entry is added to the desktop's right-click menu (a per-user
+  `DesktopBackground\Shell` verb) and removed once they are shown. It runs the
+  executable with `--show`, which signals the running instance through its
+  controller window instead of starting a second copy.
 - CLI flags: `--config`, `--placement`, `--reset`, `--hidden`, `--show`,
   `--settings`, `--no-icons`, `--click-through`, `-v`, and hidden `--on-top`,
   `--takeover-layer`, and `--takeover`.
@@ -980,7 +987,7 @@ WindowSettings {
 | Backup / restore / layout snapshots | Config file only |
 | Right-click context menu | Space menu; item menu is Explorer's |
 | System tray icon | Implemented |
-| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, About |
+| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, Hotkeys, About |
 | Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
 | Per-monitor DPI | Implemented (per-space layout, icons, and hit tests; `WM_DPICHANGED` reflows) |
 | Explorer icon size / spacing / info tips | Implemented under match; jumbo icons at any size |

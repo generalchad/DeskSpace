@@ -231,24 +231,28 @@ impl App {
     /// Commits pending settings. Returns false (and keeps the window open)
     /// when the hotkey cannot be used.
     pub(super) fn apply_settings(&mut self, ui: &mut Ui) -> bool {
-        let Some(text) = self
+        let Some(texts) = self
             .settings
             .as_ref()
-            .map(|s| s.hotkey_text.trim().to_string())
+            .map(|session| session.hotkey_texts.clone())
         else {
             return false;
         };
-        if text != self.config.window.toggle_hotkey || self.hotkey.is_none() {
-            if let Err(message) = self.register_hotkey(ui, &text) {
+        for (slot, binding) in settings::HOTKEY_BINDINGS.iter().enumerate() {
+            let text = texts[slot].trim().to_string();
+            let current = settings::hotkey_setting(&self.config.window, binding.index).to_string();
+            if text == current && self.hotkeys[binding.index as usize].is_some() {
+                continue;
+            }
+            if let Err(message) = self.register_hotkey(ui, binding.index, &text) {
                 // Put the previous binding back so the hotkey keeps working.
-                let previous = self.config.window.toggle_hotkey.clone();
-                let _ = self.register_hotkey(ui, &previous);
+                let _ = self.register_hotkey(ui, binding.index, &current);
                 if let Some(session) = self.settings.as_mut() {
-                    session.hotkey_error = Some(message);
+                    session.hotkey_errors[slot] = Some(message);
                 }
                 return false;
             }
-            self.config.window.toggle_hotkey = text;
+            settings::set_hotkey_setting(&mut self.config.window, binding.index, text);
         }
         let start_changed = self.settings.as_ref().is_some_and(|session| {
             session.saved_window.start_with_windows != self.config.window.start_with_windows
@@ -264,7 +268,6 @@ impl App {
         }
         self.save();
         if let Some(session) = self.settings.as_mut() {
-            session.hotkey_text = self.config.window.toggle_hotkey.clone();
             session.commit(&self.config);
         }
         true
