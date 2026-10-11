@@ -1,15 +1,14 @@
 # DeskSpace
 
-DeskSpace is a free, open-source desktop organizer for Windows, an alternative
-to comparable tools. It groups your desktop icons into movable boxes called
-*spaces* that you can arrange, resize, and style. Spaces fit right in on
+DeskSpace is a free and open-source desktop organizer for Windows. It groups your desktop icons and desired folder contents into movable boxes called
+*spaces* that you can arrange, resize, and style on a per-space basis. Spaces fit right in on
 Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
-service, no tracking.
+service, and most importantly: No tracking or telemetry. DeskSpace will never phone home except to look for updates - and even that is an opt-in setting.
 
-The goal is to match spaces feature for feature. Coming later are *lenses*
-(spaces that show the live contents of a folder), auto-hiding, multiple pages,
-and saved layouts. See [`ROADMAP.md`](ROADMAP.md).
+Currently, only desktop items and shortcuts are supported. Very soon, we intend to release *lenses*:
+ Lenses are spaces that show the live contents of a folder. Other planned features include auto-hiding, multiple pages,
+and saved layouts. See [`ROADMAP.md`](ROADMAP.md) but be forewarned - it's a bit wordy right now!
 
 Status: early but usable. Spaces, desktop items, and the tray, menus, and
 settings window are in place; some behaviors are still being checked. This is
