@@ -46,6 +46,7 @@ use crate::win32::system::wide;
 use crate::win32::{
     clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
     menu, outside_click, settings_window, shell_selection, shell_view, space_window, tray,
+    watchdog,
 };
 
 pub trait EventHandler {
@@ -829,6 +830,10 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     // Takeover: show Explorer's icons again so a clean exit never leaves the
     // desktop blank. Idempotent, so this is harmless when takeover was off.
     desktop_icons::restore();
+    // Tell the takeover watchdog this was a clean exit, so it does not restore
+    // the icons again (it only acts when the process died without reaching
+    // here).
+    watchdog::signal_clean_exit();
     if com.is_ok() {
         // SAFETY: balances the successful OleInitialize above, after every
         // COM object owned by this thread has been released.

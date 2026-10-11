@@ -27,6 +27,7 @@ pub(crate) mod shell_view;
 mod space_window;
 pub mod system;
 mod tray;
+pub mod watchdog;
 
 pub use clipboard::ClipboardFiles;
 pub use desktop_shell::Placement;

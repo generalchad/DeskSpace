@@ -15,7 +15,7 @@ use deskspace_platform::{
     EditOutcome, Event, EventHandler, FieldValue, Hotkey, ITEM_ICON_SIZE, IconCache,
     ItemMenuChoice, ItemMetrics, MenuEntry, MouseButton, NavDir, NavKey, Placement, RunOptions,
     SelectionKey, SettingsEvent, ShellDisplay, SpaceEvent, SpaceStyle, TextEdit, TrayEvent, Ui,
-    desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items,
+    arm_watchdog, desktop_directory, desktop_display, drag_threshold, enumerate_desktop_items,
     hide_desktop_icons, hotkey_id, item_check_box_hit, notify_moved, parse_hotkey,
     rehide_desktop_icons, restore_desktop_icons, set_start_with_windows, space_dpi,
     system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
@@ -844,6 +844,9 @@ impl App {
         if takeover && layer_up {
             // Tests must not hide the developer's real desktop.
             if !cfg!(test) {
+                // The watchdog must be running before the icons are hidden, so
+                // a crash cannot leave the desktop blank.
+                arm_watchdog();
                 hide_desktop_icons();
             }
             ui.set_timer(HEALTH_TIMER, HEALTH_MS);

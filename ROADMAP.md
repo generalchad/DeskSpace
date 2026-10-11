@@ -168,8 +168,8 @@ A native, lightweight, offline Windows desktop organizer that:
 
 **In progress:**
 - *M2:* spaces and their items are complete and behave like Explorer.
-  Desktop takeover is opt-in (hide, restore, and Explorer-restart re-hide are
-  in); the crash watchdog, Win+D watcher, and undo have not started.
+  Desktop takeover is opt-in (hide, restore, Explorer-restart re-hide, and the
+  crash watchdog are in); the Win+D watcher and undo remain.
 - *M3:* the tray, menus, and settings window work. A few pages and settings
   are still missing.
 
@@ -179,9 +179,9 @@ A native, lightweight, offline Windows desktop organizer that:
    work have only been unit-tested or smoke-tested (`CONTEXT.md` section 2
    lists them). Confirm them before more work builds on them.
 2. **M2 takeover.** Enumerating the desktop through the shell, drawing the
-   loose items with the space item code, and hiding Explorer's icon layer are
-   in (I1-I5). The crash watchdog and the Win+D watcher remain (I6-I7), the
-   last v0.2 blocker.
+   loose items with the space item code, hiding Explorer's icon layer, and the
+   crash watchdog are in (I1-I6). The Win+D watcher remains (I7), the last
+   v0.2 blocker.
 3. **M2 undo** for file moves and space deletion. First settle open
    question 3.
 4. **Finish M3:** the New spaces and Hotkeys settings pages, then cut v0.2.
@@ -295,7 +295,7 @@ Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
    - re-hide it after Explorer restarts (`TaskbarCreated`) and on a health
      timer;
    - keep the top-level, blurred spaces visible across Show Desktop (Win+D)
-     with a watcher (D8). (I5 done; I6-I7 open)
+     with a watcher (D8). (I5-I6 done; I7 open)
 4. **Watch the filesystem.** Keep the item model current after file
    operations and outside changes. Build the watcher so lenses can reuse it
    (M4 phase 2) (I8).
@@ -559,7 +559,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
-| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in (watchdog and Win+D watcher open) |
+| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in (Win+D watcher open) |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
@@ -857,4 +857,11 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     Explorer restart (`TaskbarCreated`) and on a health timer, and are
     restored before `OleUninitialize` (I5).
   - The takeover is opt-in (`take_over_desktop`, and the hidden `--takeover`
-    flag); the crash watchdog and Win+D watcher (I6-I7) are still open.
+    flag); the Win+D watcher (I7) is still open.
+- **M2 crash-safe restore (`TASKS.md` I6).**
+  - Before the icons are hidden the app launches a watchdog of the same
+    executable (`deskspace --watchdog <pid>`), which waits on the main process
+    and re-shows every listview unless a clean-exit event was signaled.
+  - The runtime teardown signals that event right after it restores the icons,
+    so the watchdog acts only on a crash; a named mutex keeps a stray watchdog
+    a no-op.

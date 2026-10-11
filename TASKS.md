@@ -889,7 +889,7 @@ until I5-I7 all land, so no partial build hides the desktop.
     draws the layer (no blank desktop); the health timer is the app's id 8,
     armed only while takeover is on.
 
-- [ ] **I6. Crash-safe restore (watchdog helper).** After I5.
+- [ ] **I6. Crash-safe restore (watchdog helper).** After I5. (awaiting check)
   - A helper process started before the icons are hidden. Either
     `deskspace.exe --watchdog <pid>` handled in `main`, or a small dedicated
     bin. It waits on the main process and, if the main process exits without
@@ -906,6 +906,15 @@ until I5-I7 all land, so no partial build hides the desktop.
   - Update `CONTEXT.md` section 6.
   - **[needs human]** check: enable takeover, kill `deskspace.exe` from Task
     Manager, and confirm the desktop icons come back.
+  - Landed in `crates/deskspace-platform/src/win32/watchdog.rs`: the app calls
+    `arm_watchdog` (per-pid clean-exit event + `deskspace --watchdog <pid>`,
+    created with `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`) just before
+    hiding the icons, and the runtime teardown signals the event right after
+    `desktop_icons::restore`. The watchdog polls the event once the parent
+    exits and restores the icons only when it was never signaled; a per-pid
+    named mutex keeps a stray watchdog a no-op. `main` handles the flag before
+    `Cli::parse`. Pure `watchdog_pid` / `is_watchdog` / `should_restore` are
+    tested; the process wait and restore need the on-screen check.
 
 - [ ] **I7. Win+D watcher.** After I5.
   - Spike first: find the reliable signal, on Windows 11 build 26300, that

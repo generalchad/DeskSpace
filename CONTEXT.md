@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (240 tests) are green.
+  `cargo test --workspace` (244 tests) are green.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
@@ -110,9 +110,8 @@ context menus, and a settings window in the first usable release (v0.2).
   machine.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Not yet: crash-safe takeover restore and Win+D handling (the takeover itself
-  is opt-in), lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
-  undo
+- Not yet: Win+D handling (the takeover itself is opt-in), lenses (phase 0 of
+  M4, resize and scroll, is done), auto-hide, undo
   for file moves, and mapping Explorer's view mode (list/details).
   See the parity matrix in section 9.
 
@@ -749,6 +748,16 @@ WindowSettings {
   `find_host` and the shell-view COM reads keep working. `restore` runs in the
   `run` teardown before `OleUninitialize`; `rehide_if_active` runs on
   `TaskbarCreated` (Explorer restart) and from the app's health timer.
+- `watchdog.rs` is the crash-safety half of the takeover (D8). Before the icons
+  are hidden the app calls `arm_watchdog`, which creates a per-pid clean-exit
+  event and launches the same executable as `deskspace --watchdog <pid>` (no
+  console window, its own process group). The watchdog waits on the main
+  process and re-shows every listview unless the event was signaled; `main`
+  handles the flag before `Cli::parse`, and the runtime teardown calls
+  `signal_watchdog_clean_exit` right after `desktop_icons::restore`, so the
+  watchdog acts only on a crash. A named mutex keeps a stray watchdog a no-op,
+  and the pure `watchdog_pid` / `is_watchdog` and `should_restore` decide the
+  arguments and the restore.
 - `shell.rs`: `enumerate_desktop_items` and `IconCache`.
   `enumerate_desktop_items` reads the desktop view's items and their positions
   (`IFolderView::ItemCount`/`Item`/`GetItemPosition`) once OLE is up, and
@@ -923,7 +932,7 @@ WindowSettings {
 
 | spaces feature | Status |
 |---|---|
-| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in, no watchdog yet) |
+| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in, Win+D watcher open) |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
 | Roll-up spaces | Implemented (title-bar double-click, context menu) |
 | Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
@@ -955,8 +964,9 @@ WindowSettings {
   flag), DeskSpace hides every desktop `SysListView32` and draws the loose
   items on its own layer; a clean exit and every startup restore the icons, and
   `TaskbarCreated` and a 5-second health timer re-hide them after Explorer
-  restarts. Crash-safe restore (a watchdog helper) is not built yet (I6), and
-  spaces can still be hidden by Show Desktop (I7).
+  restarts. A watchdog helper launched before the icons are hidden restores
+  them if the process crashes (I6); spaces can still be hidden by Show Desktop
+  (I7).
 - **File moves have no undo yet.** "Move back to desktop" and deleting a space
   return stored files; files from another drive stay in place (a move there
   would copy). There is no filesystem watcher: a stored file deleted outside

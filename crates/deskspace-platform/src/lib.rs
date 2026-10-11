@@ -39,6 +39,10 @@ pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::system::{
     drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
+pub use win32::watchdog::{
+    arm as arm_watchdog, is_watchdog, run_watchdog,
+    signal_clean_exit as signal_watchdog_clean_exit, watchdog_pid,
+};
 pub use win32::write_icon;
 pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, run, space_dpi};
 
