@@ -194,6 +194,13 @@ enum Drag {
     Resize {
         id: SpaceId,
         edges: ResizeEdges,
+        /// Where the button went down. The resize ignores small movements, so
+        /// grabbing a border (to move or click the space) never resizes it.
+        origin: Point,
+        /// Whether the horizontal/vertical axes have passed the dead zone.
+        /// Set once and kept, so the edge then tracks the pointer back.
+        active_x: bool,
+        active_y: bool,
     },
     /// The left button went down on an item. Past the drag threshold it
     /// rearranges the item within its surface; once the pointer leaves it the

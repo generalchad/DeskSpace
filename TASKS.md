@@ -758,6 +758,14 @@ Small requests, one commit each.
   **[needs human]** check: select a resized space in Settings, open Layout,
   press "Fit to contents", and confirm the space grows to fit its items with
   even padding.
+- [ ] **F11. A dead zone before a border drag resizes a space.** (awaiting
+  check) A press on a border started a resize at once, so a click or tiny
+  jitter changed the size (and a corner grab changed both axes). The resize now
+  waits until the pointer leaves a half-cell dead zone around the grab
+  (`pointer::resize_edges_now`), and each axis joins on its own, so a
+  horizontal move on a corner resizes only the width. **[needs human]** check:
+  click a border without moving (no resize); drag a side past half a cell (only
+  that axis resizes); drag a corner horizontally (only the width changes).
 
 ## G. More Explorer-standard controls
 

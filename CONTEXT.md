@@ -684,7 +684,10 @@ WindowSettings {
 - Resizing is app-driven like moving: the app hit-tests edges and sets the
   pointer with `Ui::set_space_cursor(CursorShape)`, which the window applies at
   once (WM_SETCURSOR is not sent while the mouse is captured) and on
-  `WM_SETCURSOR`.
+  `WM_SETCURSOR`. A press on a border only resizes once the pointer leaves a
+  half-cell dead zone around the grab (`pointer::resize_edges_now`), so a click
+  or a tiny drag on a border never resizes the space, and each axis joins
+  separately: a corner grab that moves on one axis resizes only that axis.
 - `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
   checked without uncovering the desktop.
 
