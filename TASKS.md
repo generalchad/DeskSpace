@@ -341,7 +341,7 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
   - Then delete "(`TASKS.md` A9)" from `CONTEXT.md` section 5 and say the
     grid and new-space size are clamped on load too.
 
-- [ ] **A10. Make the menu-id test cover every id.**
+- [x] **A10. Make the menu-id test cover every id.**
   - `crates/deskspace-app/src/app.rs`, test `menu_ids_are_unique`: the
     `other` list omits `menu::SPACE_SETTINGS`. Add it.
   - Done when: every `pub const` in `mod menu` appears either in `other` or

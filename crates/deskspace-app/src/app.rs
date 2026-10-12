@@ -665,6 +665,7 @@ mod tests {
             menu::SPACE_TINT,
             menu::SPACE_TEXT,
             menu::RESET_APPEARANCE,
+            menu::SPACE_SETTINGS,
         ];
         let mut ids: Vec<u32> = other.to_vec();
         ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));
