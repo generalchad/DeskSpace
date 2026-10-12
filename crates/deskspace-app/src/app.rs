@@ -5,7 +5,7 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Color, Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
     ClipboardAction, DesktopEntry, Event, EventHandler, Hotkey, IconCache, SelectionKey,
-    ShellDisplay, TrayEvent, Ui, cursor_pos, desktop_display, hotkey_id, parse_hotkey,
+    ShellDisplay, TrayEvent, Ui, cursor_pos, desktop_display_since, hotkey_id, parse_hotkey,
     system_accent_color, system_uses_dark_mode,
 };
 
@@ -467,7 +467,7 @@ impl EventHandler for App {
                     self.sync_start_with_windows(true);
                 }
                 // OLE is up by now, so the desktop view can be queried.
-                self.shell_display = desktop_display();
+                self.shell_display = desktop_display_since(self.shell_display.check_boxes);
                 self.refresh_desktop_entries();
                 self.apply_takeover(ui);
                 self.sync_windows(ui);

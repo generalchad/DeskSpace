@@ -292,7 +292,7 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
     match. Then delete the "(`TASKS.md` A7)" sentence from the AGENTS.md
     Gotchas entry.
 
-- [ ] **A8. Keep the check-box mode when the desktop view cannot be read.**
+- [x] **A8. Keep the check-box mode when the desktop view cannot be read.**
   - Bug: `crates/deskspace-platform/src/win32/display_settings.rs`,
     `desktop_display` starts from `global_display()`, whose `check_boxes` is
     `CheckBoxMode::Hidden`, and only overrides it when the view read

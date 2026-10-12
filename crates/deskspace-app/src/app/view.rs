@@ -8,7 +8,7 @@ use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog, desktop_directory,
-    desktop_display, enumerate_desktop_items, hide_desktop_icons, rehide_desktop_icons,
+    desktop_display_since, enumerate_desktop_items, hide_desktop_icons, rehide_desktop_icons,
     restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
 };
 
@@ -182,7 +182,7 @@ impl App {
     /// Re-reads Explorer's display options and repaints if they changed. A
     /// changed icon size or item spacing re-flows every space too.
     pub(super) fn refresh_shell_display(&mut self, ui: &mut Ui) {
-        let display = desktop_display();
+        let display = desktop_display_since(self.shell_display.check_boxes);
         if display == self.shell_display {
             return;
         }

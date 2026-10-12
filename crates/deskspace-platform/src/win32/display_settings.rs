@@ -56,13 +56,22 @@ pub struct ShellDisplay {
 
 /// Reads the desktop's current display options.
 pub fn desktop_display() -> ShellDisplay {
+    desktop_display_since(CheckBoxMode::Hidden)
+}
+
+/// Like `desktop_display`, but when the desktop view is unavailable or its
+/// flags cannot be read it keeps `previous` as the check-box mode instead of
+/// reporting `Hidden`. A failed read (the view is briefly unavailable, for
+/// example while Explorer restarts) must not silently hide the boxes.
+///
+/// The icon size and spacing still fall back to their defaults on a failed
+/// read: their `None` also means "not in icon mode", so they need a separate
+/// design.
+pub fn desktop_display_since(previous: CheckBoxMode) -> ShellDisplay {
     let mut display = global_display();
+    display.check_boxes = previous;
     if let Some(view) = shell_view::desktop_shell_view() {
-        // Only override when the view reports its flags; a failed read (the
-        // view is briefly unavailable) must not silently hide check boxes.
-        if let Some(mode) = view_check_boxes(&view) {
-            display.check_boxes = mode;
-        }
+        display.check_boxes = check_box_mode(view_check_boxes(&view), previous);
         if let Some(size) = view_icon_size(&view) {
             display.icon_size = Some(size);
         }
@@ -71,6 +80,12 @@ pub fn desktop_display() -> ShellDisplay {
         }
     }
     display
+}
+
+/// The check-box mode for a display read: the view's mode when it was readable,
+/// else the mode already known.
+fn check_box_mode(read: Option<CheckBoxMode>, previous: CheckBoxMode) -> CheckBoxMode {
+    read.unwrap_or(previous)
 }
 
 fn view_check_boxes(view: &IShellView) -> Option<CheckBoxMode> {
@@ -142,5 +157,26 @@ fn global_display() -> ShellDisplay {
         show_compressed_color: set(SSF_SHOWCOMPCOLOR),
         icon_size: None,
         icon_spacing: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_box_mode_keeps_the_previous_mode_when_the_read_fails() {
+        assert_eq!(
+            check_box_mode(Some(CheckBoxMode::Independent), CheckBoxMode::Selection),
+            CheckBoxMode::Independent
+        );
+        assert_eq!(
+            check_box_mode(None, CheckBoxMode::Selection),
+            CheckBoxMode::Selection
+        );
+        assert_eq!(
+            check_box_mode(None, CheckBoxMode::Hidden),
+            CheckBoxMode::Hidden
+        );
     }
 }

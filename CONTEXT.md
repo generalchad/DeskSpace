@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (279 tests) are green. Update this count whenever a
+  `cargo test --workspace` (280 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -736,10 +736,10 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   it is unknown) under a white tick. In `Selection` mode
   the box is revealed on hover and while selected and its tick mirrors the
   selection; in `Independent` mode it is always shown and its tick is a
-  session-only set separate from the selection. A failed view read falls
-  back to `CheckBoxMode::Hidden` (`global_display` starts there), so a
-  transient failure hides the boxes until the next read, although the
-  comment in `desktop_display` claims otherwise (`TASKS.md` A8).
+  session-only set separate from the selection. `desktop_display_since` keeps
+  the stored mode when the view read fails (the view is briefly unavailable,
+  for example while Explorer restarts), so a transient failure no longer hides
+  the boxes; `desktop_display` is the same read starting from `Hidden`.
   `scene::item_label` shows a file's full name when
   extensions are on, except for shortcuts, whose `.lnk`/`.url` extension
   Explorer never shows; both forms are derived from the path, so the option can
