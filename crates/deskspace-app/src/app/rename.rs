@@ -36,10 +36,10 @@ impl App {
         // Only a space renames: its title, or an item's file. A loose desktop
         // item's file rename would need `Command::RenameItem` to reach the
         // layer.
-        let Some(Surface::Space(space)) = self.selected_surface else {
+        let Some(Surface::Space(space)) = self.selection.surface else {
             return;
         };
-        match self.selected_items.last().copied() {
+        match self.selection.items.last().copied() {
             Some(item) => self.begin_item_rename(ui, space, item),
             None => self.begin_rename(ui, space),
         }

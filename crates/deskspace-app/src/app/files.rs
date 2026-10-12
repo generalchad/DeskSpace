@@ -141,16 +141,14 @@ impl App {
     pub(super) fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
         // Deleting a loose desktop item would need a way to drop it from the
         // layer, so only a space's items are deleted here.
-        let Some(Surface::Space(space)) = self.selected_surface else {
+        let Some(Surface::Space(space)) = self.selection.surface else {
             return;
         };
         let items = self.active_items();
         if items.is_empty() {
             return;
         }
-        self.selected_items.clear();
-        self.selection_anchor = None;
-        self.focused = None;
+        self.selection.clear_items();
         self.hovered = None;
         let paths: Vec<PathBuf> = items
             .iter()
@@ -180,11 +178,14 @@ impl App {
         self.save();
     }
 
-    /// Forgets an item's transient per-item state (cut ghosting and any
-    /// independent check) after it is removed or its file is gone.
+    /// Forgets an item's transient per-item state (the selection, cut
+    /// ghosting, any independent check, and the hover) after it is removed or
+    /// its file is gone.
     pub(super) fn forget_item(&mut self, item: ItemId) {
-        self.cut_items.remove(&item);
-        self.checked_items.retain(|checked| *checked != item);
+        self.selection.forget(item);
+        if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
+            self.hovered = None;
+        }
     }
 
     /// Drops items whose files no longer exist in every space. Called once at
@@ -224,11 +225,7 @@ impl App {
         for item in missing {
             let near = self.space_center(id);
             self.dispatch(Command::RemoveItem { id: item }, near);
-            self.selected_items.retain(|selected| *selected != item);
             self.forget_item(item);
-            if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
-                self.hovered = None;
-            }
         }
         self.refresh_space(ui, id);
         self.refresh_tray(ui);
@@ -272,11 +269,8 @@ impl App {
         }
         let near = self.space_center(id);
         if self.dispatch(Command::DeleteSpace { id }, near) {
-            if self.selected_surface == Some(Surface::Space(id)) {
-                self.selected_surface = None;
-                self.selected_items.clear();
-                self.selection_anchor = None;
-                self.focused = None;
+            if self.selection.surface == Some(Surface::Space(id)) {
+                self.selection.clear();
             }
             if self
                 .hovered

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
@@ -24,6 +24,8 @@ mod selection;
 mod settings_session;
 mod view;
 mod visibility;
+
+use selection::Selection;
 
 const TOGGLE_HOTKEY: i32 = 0;
 /// Registration indices for the global hotkeys. `settings::HOTKEY_BINDINGS`
@@ -395,21 +397,12 @@ pub struct App {
     /// The desktop's loose items read from the shell on `Started`. The M2
     /// desktop layer consumes them; until then they are only diagnostics.
     desktop_entries: Vec<DesktopEntry>,
-    selected_surface: Option<Surface>,
-    /// Items selected in `selected_surface`, in the order they were selected.
-    selected_items: Vec<ItemId>,
-    /// The item a Shift+click or Shift+arrow extends the selection from.
-    selection_anchor: Option<ItemId>,
-    /// The item with keyboard focus, drawn with a focus rectangle. Follows the
-    /// selection, but Ctrl+arrow moves it on its own.
-    focused: Option<ItemId>,
+    /// The item selection: the current surface, its items, the Shift anchor,
+    /// the keyboard focus, and the cut and check-box marks.
+    selection: Selection,
     /// A left press on an already-selected item without Ctrl/Shift, resolved
     /// on release if the press did not become a drag.
     pending_click: Option<PendingClick>,
-    /// Items on the clipboard as a cut, shown ghosted until pasted.
-    cut_items: HashSet<ItemId>,
-    /// Ticked items in independent item-check-box mode. Session-only.
-    checked_items: Vec<ItemId>,
     hovered: Option<(Surface, ItemId)>,
     drag: Drag,
     /// The items whose slots are drawn faded while they are dragged.
@@ -465,13 +458,8 @@ impl App {
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
             desktop_entries: Vec::new(),
-            selected_surface: None,
-            selected_items: Vec::new(),
-            selection_anchor: None,
-            focused: None,
+            selection: Selection::default(),
             pending_click: None,
-            cut_items: HashSet::new(),
-            checked_items: Vec::new(),
             hovered: None,
             drag: Drag::None,
             dragged: None,
@@ -498,7 +486,8 @@ impl App {
     /// Properties dialog, or DeskSpace Settings when no item is selected.
     fn show_properties(&mut self, ui: &mut Ui) {
         if let Some(entry) = self
-            .selected_items
+            .selection
+            .items
             .last()
             .and_then(|item| self.config.desktop.item(*item))
         {
@@ -526,7 +515,8 @@ impl App {
     /// Opens the focused (last-selected) item, as Enter does in Explorer.
     fn open_selected_item(&mut self, ui: &mut Ui) {
         if let Some(path) = self
-            .selected_items
+            .selection
+            .items
             .last()
             .and_then(|item| self.config.desktop.item(*item))
             .map(|item| item.path.clone())
@@ -538,8 +528,8 @@ impl App {
     fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
         // A rolled-up space hides its items, so it cannot keep one selected.
-        if self.selected_surface == Some(Surface::Space(id)) {
-            self.take_selection();
+        if self.selection.surface == Some(Surface::Space(id)) {
+            self.selection.clear();
         }
         self.apply_to_space(ui, id, Command::ToggleRollup { id }, near);
     }
@@ -683,8 +673,8 @@ impl EventHandler for App {
         // keys, and a selection or current space watches the item keys.
         ui.capture_text_input(self.edit.is_some());
         ui.watch_selection_keys(
-            self.edit.is_none() && !self.selected_items.is_empty(),
-            self.edit.is_none() && self.selected_surface.is_some(),
+            self.edit.is_none() && !self.selection.items.is_empty(),
+            self.edit.is_none() && self.selection.surface.is_some(),
         );
         self.sync_outside_watch(ui);
     }

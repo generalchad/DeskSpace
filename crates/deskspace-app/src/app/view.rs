@@ -47,8 +47,8 @@ impl App {
                 .hovered
                 .filter(|(owner, _)| *owner == surface)
                 .map(|(_, item)| item),
-            selected: if self.selected_surface == Some(surface) {
-                self.selected_items.clone()
+            selected: if self.selection.surface == Some(surface) {
+                self.selection.items.clone()
             } else {
                 Vec::new()
             },
@@ -61,12 +61,12 @@ impl App {
             scroll: self.surface_scroll(surface),
             show_check_boxes: check_boxes != CheckBoxMode::Hidden,
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
-            checked: self.checked_items.clone(),
+            checked: self.selection.checked.clone(),
             show_extensions: self.surface_match_explorer(surface)
                 && self.shell_display.show_extensions,
             show_compressed_color: self.surface_match_explorer(surface)
                 && self.shell_display.show_compressed_color,
-            cut: self.cut_items.iter().copied().collect(),
+            cut: self.selection.cut.iter().copied().collect(),
             marquee: self.marquee.and_then(|(owner, rect)| {
                 if owner != surface {
                     return None;
@@ -82,8 +82,8 @@ impl App {
             highlight: self
                 .highlighted
                 .is_some_and(|id| surface == Surface::Space(id)),
-            focused: (self.selected_surface == Some(surface))
-                .then_some(self.focused)
+            focused: (self.selection.surface == Some(surface))
+                .then_some(self.selection.focused)
                 .flatten(),
         }
     }
@@ -208,7 +208,7 @@ impl App {
         self.shell_display = display;
         // Independent ticks do not survive a switch out of that mode.
         if self.shell_display.check_boxes != CheckBoxMode::Independent {
-            self.checked_items.clear();
+            self.selection.checked.clear();
         }
         if relayout {
             self.relayout_all(ui);

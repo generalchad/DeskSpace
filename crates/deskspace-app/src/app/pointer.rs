@@ -142,48 +142,43 @@ impl App {
         // selection (auto-check-select) or the independent tick set, and moves
         // the highlight to it.
         if let Some(item) = self.checkbox_at(surface, point) {
-            let previous = self.selected_surface.replace(surface);
+            let previous = self.selection.surface.replace(surface);
             if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
-                if let Some(index) = self.checked_items.iter().position(|entry| *entry == item) {
-                    self.checked_items.remove(index);
-                } else {
-                    self.checked_items.push(item);
-                }
-                self.selected_items = vec![item];
+                self.selection.toggle_checked(item);
+                self.selection.items = vec![item];
             } else {
-                self.toggle_selected(item);
+                self.selection.toggle(item);
             }
-            self.selection_anchor = Some(item);
-            self.focused = Some(item);
+            self.selection.focus(item);
             if let Some(previous) = previous.filter(|previous| *previous != surface) {
                 self.refresh_surface(ui, previous);
             }
             self.refresh_surface(ui, surface);
             return;
         }
-        let previous = self.selected_surface.replace(surface);
+        let previous = self.selection.surface.replace(surface);
         self.pending_click = None;
         let item = self.surface_item_at(surface, point);
         match item {
             Some(item) => {
                 if shift {
                     self.extend_selection(surface, item);
+                    self.selection.focus(item);
                 } else if ctrl {
-                    self.toggle_selected(item);
-                } else if self.is_selected(item) {
+                    self.selection.toggle(item);
+                    self.selection.focus(item);
+                } else if self.selection.is_selected(item) {
                     // Keep the whole selection so a drag of one member moves
                     // the group. On release, collapse it and maybe rename.
-                    self.pending_click = Some(pending_click(&self.selected_items, item));
+                    self.pending_click = Some(pending_click(&self.selection.items, item));
+                    self.selection.focus(item);
                 } else {
-                    self.selected_items = vec![item];
+                    self.selection.select_only(surface, item);
                 }
-                self.selection_anchor = Some(item);
-                self.focused = Some(item);
             }
             None => {
                 if !ctrl && !shift {
-                    self.selected_items.clear();
-                    self.focused = None;
+                    self.selection.deselect();
                 }
             }
         }
@@ -201,7 +196,7 @@ impl App {
                         active_x: false,
                         active_y: false,
                     };
-                    self.selected_items.clear();
+                    self.selection.items.clear();
                 } else if let Some(item) = item {
                     self.drag = Drag::Item {
                         surface,
@@ -249,19 +244,14 @@ impl App {
     /// as a right-click does before its menu opens. Right-clicking an item
     /// that is already part of a multi-selection keeps the selection.
     pub(super) fn select_at(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
-        let previous = self.selected_surface.replace(surface);
+        let previous = self.selection.surface.replace(surface);
         let item = self.surface_item_at(surface, point);
         match item {
-            Some(item) if !self.is_selected(item) => {
-                self.selected_items = vec![item];
-                self.selection_anchor = Some(item);
-                self.focused = Some(item);
+            Some(item) if !self.selection.is_selected(item) => {
+                self.selection.select_only(surface, item);
             }
-            Some(item) => self.focused = Some(item),
-            None => {
-                self.selected_items.clear();
-                self.focused = None;
-            }
+            Some(item) => self.selection.focused = Some(item),
+            None => self.selection.deselect(),
         }
         if let Some(previous) = previous.filter(|previous| *previous != surface) {
             self.refresh_surface(ui, previous);
@@ -461,16 +451,14 @@ impl App {
                 // is a plain click: collapse the selection, or start a rename
                 // when it was already the only selected item. Only a space
                 // renames inline.
-                match resolve_pending_click(pending, item, self.is_selected(item)) {
+                match resolve_pending_click(pending, item, self.selection.is_selected(item)) {
                     PendingClickOutcome::Rename => {
                         if let Surface::Space(id) = surface {
                             self.begin_item_rename(ui, id, item);
                         }
                     }
                     PendingClickOutcome::Collapse => {
-                        self.selected_items = vec![item];
-                        self.selection_anchor = Some(item);
-                        self.focused = Some(item);
+                        self.selection.select_only(surface, item);
                         self.refresh_surface(ui, surface);
                     }
                     PendingClickOutcome::Nothing => {}
@@ -719,10 +707,10 @@ impl App {
         let rect = Rect::new(left, top, (right - left).max(0), (bottom - top).max(0));
         self.marquee = Some((surface, rect));
 
-        self.selected_surface = Some(surface);
-        self.selected_items = marquee_selection(&cells, rect, additive, &self.selected_items);
-        self.selection_anchor = None;
-        self.focused = self.selected_items.last().copied();
+        self.selection.surface = Some(surface);
+        self.selection.items = marquee_selection(&cells, rect, additive, &self.selection.items);
+        self.selection.anchor = None;
+        self.selection.focused = self.selection.items.last().copied();
         self.refresh_surface(ui, surface);
     }
 }

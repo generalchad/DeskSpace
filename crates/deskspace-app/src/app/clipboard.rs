@@ -28,27 +28,29 @@ impl App {
         // Replacing the cut set un-ghosts the previous items, which may live in
         // other spaces, so repaint every space that showed one.
         let mut touched: HashSet<SpaceId> = self
-            .cut_items
+            .selection
+            .cut
             .iter()
             .filter_map(|item| self.config.desktop.space_containing(*item))
             .collect();
-        self.cut_items = if cut {
+        self.selection.cut = if cut {
             active.iter().copied().collect()
         } else {
             HashSet::new()
         };
         touched.extend(
-            self.cut_items
+            self.selection
+                .cut
                 .iter()
                 .filter_map(|item| self.config.desktop.space_containing(*item)),
         );
-        if let Some(Surface::Space(space)) = self.selected_surface {
+        if let Some(Surface::Space(space)) = self.selection.surface {
             touched.insert(space);
         }
         for id in touched {
             self.refresh_space(ui, id);
         }
-        if self.selected_surface == Some(Surface::Desktop) {
+        if self.selection.surface == Some(Surface::Desktop) {
             self.refresh_desktop_layer(ui);
         }
     }
@@ -59,11 +61,12 @@ impl App {
     /// dropped. A failed clipboard read keeps the ghost rather than clearing it
     /// wrongly, since another process can hold the clipboard for a moment.
     pub(super) fn sync_cut_with_clipboard(&mut self, ui: &mut Ui) {
-        if self.cut_items.is_empty() {
+        if self.selection.cut.is_empty() {
             return;
         }
         let cut_paths: Vec<PathBuf> = self
-            .cut_items
+            .selection
+            .cut
             .iter()
             .filter_map(|item| self.config.desktop.item(*item))
             .map(|item| item.path.clone())
@@ -75,11 +78,12 @@ impl App {
             return;
         }
         let touched: HashSet<SpaceId> = self
-            .cut_items
+            .selection
+            .cut
             .iter()
             .filter_map(|item| self.config.desktop.space_containing(*item))
             .collect();
-        self.cut_items.clear();
+        self.selection.cut.clear();
         for id in touched {
             self.prune_missing(ui, id);
             self.refresh_space(ui, id);
@@ -97,7 +101,7 @@ impl App {
     /// apply.
     pub(super) fn paste_clipboard(&mut self, ui: &mut Ui) {
         // Pasting lands in a space, never on the loose desktop layer.
-        let Some(Surface::Space(target)) = self.selected_surface else {
+        let Some(Surface::Space(target)) = self.selection.surface else {
             return;
         };
         let Some(clipboard) = ui.clipboard_files() else {
@@ -168,16 +172,13 @@ impl App {
                 .filter_map(|path| self.find_item_by_file(path)),
         );
         if !pasted.is_empty() {
-            self.selected_surface = Some(Surface::Space(target));
-            self.selection_anchor = pasted.first().copied();
-            self.focused = pasted.first().copied();
-            self.selected_items = pasted;
+            self.selection.select_items(Surface::Space(target), pasted);
         }
 
         if clipboard.cut {
             // Un-ghost every cut item, including any not part of this paste,
             // and repaint the spaces that showed them.
-            for item in std::mem::take(&mut self.cut_items) {
+            for item in std::mem::take(&mut self.selection.cut) {
                 if let Some(space) = self.config.desktop.space_containing(item) {
                     touched.insert(space);
                 }

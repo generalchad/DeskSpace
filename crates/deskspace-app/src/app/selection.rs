@@ -1,5 +1,7 @@
 //! `App` selection: the item selection, keyboard navigation, and
-//! type-to-select (R1).
+//! type-to-select (R1), plus the `Selection` state they share (R2).
+
+use std::collections::HashSet;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{ItemId, Rect, SpaceId};
@@ -9,19 +11,125 @@ use crate::scene::item_label;
 
 use super::{App, ScrollKey, Surface, TYPE_DELAY_MS, TYPE_TIMER};
 
-impl App {
-    /// Clears the item selection, as clicking elsewhere does in Explorer.
-    /// Returns the space that showed it, which needs a new scene.
-    pub(super) fn take_selection(&mut self) -> Option<Surface> {
-        let surface = self.selected_surface.take();
-        let had = !std::mem::take(&mut self.selected_items).is_empty();
-        self.selection_anchor = None;
+/// The item selection and the per-item marks that travel with it: the current
+/// surface, the selected items, the Shift anchor, the keyboard focus, the cut
+/// (ghosted) items, and the independent check-box ticks. Grouping them gives
+/// one "select only this item" and one "forget this item" in place of the
+/// copies the pointer, clipboard, and file paths used to repeat.
+#[derive(Debug, Default)]
+pub(super) struct Selection {
+    /// The surface the selection lives in, if any.
+    pub(super) surface: Option<Surface>,
+    /// Items selected in `surface`, in the order they were selected.
+    pub(super) items: Vec<ItemId>,
+    /// The item a Shift+click or Shift+arrow extends the selection from.
+    pub(super) anchor: Option<ItemId>,
+    /// The item with keyboard focus, drawn with a focus rectangle. Follows the
+    /// selection, but Ctrl+arrow moves it on its own.
+    pub(super) focused: Option<ItemId>,
+    /// Items on the clipboard as a cut, shown ghosted until pasted.
+    pub(super) cut: HashSet<ItemId>,
+    /// Ticked items in independent item-check-box mode. Session-only.
+    pub(super) checked: Vec<ItemId>,
+}
+
+impl Selection {
+    /// Selects exactly `item` in `surface`, moving the anchor and focus to it,
+    /// as a plain click does.
+    pub(super) fn select_only(&mut self, surface: Surface, item: ItemId) {
+        self.surface = Some(surface);
+        self.items = vec![item];
+        self.anchor = Some(item);
+        self.focused = Some(item);
+    }
+
+    /// Selects `items` in `surface`, anchoring and focusing the first, as
+    /// Ctrl+A or a paste does.
+    pub(super) fn select_items(&mut self, surface: Surface, items: Vec<ItemId>) {
+        self.surface = Some(surface);
+        self.anchor = items.first().copied();
+        self.focused = self.anchor;
+        self.items = items;
+    }
+
+    /// Moves the anchor and focus to `item`, as a Shift/Ctrl click does before
+    /// it extends or toggles the selection.
+    pub(super) fn focus(&mut self, item: ItemId) {
+        self.anchor = Some(item);
+        self.focused = Some(item);
+    }
+
+    /// Clears the selected items and focus, keeping the surface and anchor, as
+    /// clicking empty content does.
+    pub(super) fn deselect(&mut self) {
+        self.items.clear();
         self.focused = None;
+    }
+
+    /// Clears the selected items, the anchor, and the focus, keeping the
+    /// surface.
+    pub(super) fn clear_items(&mut self) {
+        self.items.clear();
+        self.anchor = None;
+        self.focused = None;
+    }
+
+    /// Clears the whole selection, surface included.
+    pub(super) fn clear(&mut self) {
+        let _ = self.take();
+    }
+
+    /// Clears the selection and reports the surface that showed it, when one
+    /// did, so it can be repainted.
+    pub(super) fn take(&mut self) -> Option<Surface> {
+        let surface = self.surface.take();
+        let had = !self.items.is_empty();
+        self.clear_items();
         had.then_some(surface).flatten()
     }
 
+    /// Drops `item` from every per-item mark after it is removed or its file
+    /// is gone.
+    pub(super) fn forget(&mut self, item: ItemId) {
+        self.items.retain(|selected| *selected != item);
+        if self.anchor == Some(item) {
+            self.anchor = None;
+        }
+        if self.focused == Some(item) {
+            self.focused = None;
+        }
+        self.cut.remove(&item);
+        self.checked.retain(|checked| *checked != item);
+    }
+
+    pub(super) fn is_selected(&self, item: ItemId) -> bool {
+        self.items.contains(&item)
+    }
+
+    /// Adds `item` to the selection, or removes it if it was already selected.
+    pub(super) fn toggle(&mut self, item: ItemId) {
+        if let Some(index) = self.items.iter().position(|entry| *entry == item) {
+            self.items.remove(index);
+        } else {
+            self.items.push(item);
+        }
+    }
+
+    /// Ticks or unticks `item` in the independent check-box set.
+    pub(super) fn toggle_checked(&mut self, item: ItemId) {
+        if let Some(index) = self.checked.iter().position(|entry| *entry == item) {
+            self.checked.remove(index);
+        } else {
+            self.checked.push(item);
+        }
+    }
+}
+
+impl App {
+    /// Clears the item selection, as clicking elsewhere does in Explorer.
+    /// Returns the space that showed it, which needs a new scene.
     pub(super) fn clear_selection(&mut self, ui: &mut Ui) {
-        if let Some(surface) = self.take_selection() {
+        if let Some(surface) = self.selection.take() {
             self.refresh_surface(ui, surface);
         }
     }
@@ -29,9 +137,9 @@ impl App {
     /// Asks for outside clicks only while there is something for them to
     /// clear, because watching them hooks every mouse event in the session.
     pub(super) fn sync_outside_watch(&mut self, ui: &mut Ui) {
-        let wanted = !self.selected_items.is_empty()
+        let wanted = !self.selection.items.is_empty()
             || self.edit.is_some()
-            || self.selected_surface.is_some();
+            || self.selection.surface.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);
             self.watching_outside = wanted;
@@ -40,7 +148,7 @@ impl App {
 
     /// Selects every item in the current surface, as Ctrl+A does.
     pub(super) fn select_all_in_space(&mut self, ui: &mut Ui) {
-        let Some(surface) = self.selected_surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         let ids: Vec<ItemId> = self
@@ -51,15 +159,13 @@ impl App {
         if ids.is_empty() {
             return;
         }
-        self.selected_items = ids;
-        self.selection_anchor = self.selected_items.first().copied();
-        self.focused = self.selection_anchor;
+        self.selection.select_items(surface, ids);
         self.refresh_surface(ui, surface);
     }
 
     /// Scrolls the current space as Home, End, PageUp, or PageDown does.
     pub(super) fn scroll_current_space(&mut self, ui: &mut Ui, key: ScrollKey) {
-        let Some(Surface::Space(id)) = self.selected_surface else {
+        let Some(Surface::Space(id)) = self.selection.surface else {
             return;
         };
         let layout = self.layout_for(id);
@@ -91,7 +197,7 @@ impl App {
     /// item whose label starts with it, wrapping around. The buffer clears
     /// after a pause (`TYPE_TIMER`), so a new search starts fresh.
     pub(super) fn on_typed(&mut self, ui: &mut Ui, ch: char) {
-        let Some(surface) = self.selected_surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         self.type_buffer.push(ch);
@@ -104,7 +210,7 @@ impl App {
             .map(|item| item_label(item, show_extensions))
             .collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        let current = self.selected_items.last().and_then(|item| {
+        let current = self.selection.items.last().and_then(|item| {
             self.surface_items(surface)
                 .iter()
                 .position(|entry| entry.id == *item)
@@ -116,9 +222,7 @@ impl App {
         let Some(item) = self.surface_items(surface).get(index).map(|entry| entry.id) else {
             return;
         };
-        self.selected_items = vec![item];
-        self.selection_anchor = Some(item);
-        self.focused = Some(item);
+        self.selection.select_only(surface, item);
         if let Surface::Space(id) = surface {
             self.scroll_item_into_view(id, index);
         }
@@ -129,7 +233,7 @@ impl App {
     /// direction, extend it (Shift), or move the focus only (Ctrl), then bring
     /// the item into view.
     pub(super) fn on_navigate(&mut self, ui: &mut Ui, key: NavKey) {
-        let Some(surface) = self.selected_surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         let layout = self.surface_layout(surface);
@@ -144,8 +248,9 @@ impl App {
             })
             .collect();
         let current = self
+            .selection
             .focused
-            .or_else(|| self.selected_items.last().copied())
+            .or_else(|| self.selection.items.last().copied())
             .and_then(|item| {
                 self.surface_items(surface)
                     .iter()
@@ -166,14 +271,14 @@ impl App {
         else {
             return;
         };
-        self.focused = Some(item);
         if key.focus {
             // Move the focus rectangle only; the selection stays.
+            self.selection.focused = Some(item);
         } else if key.extend {
+            self.selection.focused = Some(item);
             self.extend_selection(surface, item);
         } else {
-            self.selected_items = vec![item];
-            self.selection_anchor = Some(item);
+            self.selection.select_only(surface, item);
         }
         if let Surface::Space(id) = surface {
             self.scroll_item_into_view(id, target);
@@ -206,24 +311,11 @@ impl App {
         self.scroll.insert(id, offset.clamp(0, max));
     }
 
-    pub(super) fn is_selected(&self, item: ItemId) -> bool {
-        self.selected_items.contains(&item)
-    }
-
-    /// Adds `item` to the selection, or removes it if it was already selected.
-    pub(super) fn toggle_selected(&mut self, item: ItemId) {
-        if let Some(index) = self.selected_items.iter().position(|entry| *entry == item) {
-            self.selected_items.remove(index);
-        } else {
-            self.selected_items.push(item);
-        }
-    }
-
     /// Selects every item between the anchor and `item` in the space's order,
     /// as a Shift+click does.
     pub(super) fn extend_selection(&mut self, surface: Surface, item: ItemId) {
-        let Some(anchor) = self.selection_anchor else {
-            self.selected_items = vec![item];
+        let Some(anchor) = self.selection.anchor else {
+            self.selection.items = vec![item];
             return;
         };
         let index = |target| {
@@ -232,7 +324,7 @@ impl App {
                 .position(|entry| entry.id == target)
         };
         let (Some(a), Some(b)) = (index(anchor), index(item)) else {
-            self.selected_items = vec![item];
+            self.selection.items = vec![item];
             return;
         };
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
@@ -240,7 +332,7 @@ impl App {
             .iter()
             .map(|entry| entry.id)
             .collect();
-        self.selected_items = selected;
+        self.selection.items = selected;
     }
 
     /// The items an item operation acts on: the independent tick set when
@@ -249,10 +341,10 @@ impl App {
         // Ticks can only be made in a space that shows check boxes, so any
         // left over in independent mode are the operand.
         let independent = self.shell_display.check_boxes == CheckBoxMode::Independent;
-        if independent && !self.checked_items.is_empty() {
-            self.checked_items.clone()
+        if independent && !self.selection.checked.is_empty() {
+            self.selection.checked.clone()
         } else {
-            self.selected_items.clone()
+            self.selection.items.clone()
         }
     }
 
@@ -338,8 +430,8 @@ mod tests {
     fn app_with_selection(space: Option<SpaceId>, item: Option<ItemId>) -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        app.selected_surface = space.map(Surface::Space);
-        app.selected_items = item.into_iter().collect();
+        app.selection.surface = space.map(Surface::Space);
+        app.selection.items = item.into_iter().collect();
         app
     }
 
@@ -407,11 +499,11 @@ mod tests {
             check_boxes: CheckBoxMode::Independent,
             ..ShellDisplay::default()
         };
-        app.selected_items = vec![ItemId(1)];
-        app.checked_items = vec![ItemId(2), ItemId(3)];
+        app.selection.items = vec![ItemId(1)];
+        app.selection.checked = vec![ItemId(2), ItemId(3)];
         assert_eq!(app.active_items(), vec![ItemId(2), ItemId(3)]);
         // With nothing ticked the selection is used.
-        app.checked_items.clear();
+        app.selection.checked.clear();
         assert_eq!(app.active_items(), vec![ItemId(1)]);
     }
 
@@ -425,18 +517,18 @@ mod tests {
                 .desktop
                 .add_item(id, Item::new(ItemId(n), format!("C:/missing/{n}.txt")));
         }
-        app.selected_surface = Some(Surface::Space(id));
+        app.selection.surface = Some(Surface::Space(id));
         // Ctrl+click builds a selection and toggles items off again.
-        app.toggle_selected(ItemId(1));
-        app.toggle_selected(ItemId(3));
-        assert_eq!(app.selected_items, vec![ItemId(1), ItemId(3)]);
-        app.toggle_selected(ItemId(1));
-        assert_eq!(app.selected_items, vec![ItemId(3)]);
+        app.selection.toggle(ItemId(1));
+        app.selection.toggle(ItemId(3));
+        assert_eq!(app.selection.items, vec![ItemId(1), ItemId(3)]);
+        app.selection.toggle(ItemId(1));
+        assert_eq!(app.selection.items, vec![ItemId(3)]);
         // Shift+click extends from the anchor across the space's order.
-        app.selection_anchor = Some(ItemId(1));
+        app.selection.anchor = Some(ItemId(1));
         app.extend_selection(Surface::Space(id), ItemId(4));
         assert_eq!(
-            app.selected_items,
+            app.selection.items,
             vec![ItemId(1), ItemId(2), ItemId(3), ItemId(4)]
         );
     }
@@ -444,17 +536,20 @@ mod tests {
     #[test]
     fn taking_a_selection_reports_the_space_to_repaint() {
         let mut app = app_with_selection(Some(SpaceId(2)), Some(ItemId(5)));
-        assert_eq!(app.take_selection(), Some(Surface::Space(SpaceId(2))));
-        assert_eq!((app.selected_surface, app.selected_items.len()), (None, 0));
+        assert_eq!(app.selection.take(), Some(Surface::Space(SpaceId(2))));
+        assert_eq!(
+            (app.selection.surface, app.selection.items.len()),
+            (None, 0)
+        );
         // Nothing is left to clear, so nothing needs repainting.
-        assert_eq!(app.take_selection(), None);
+        assert_eq!(app.selection.take(), None);
     }
 
     #[test]
     fn a_space_without_a_selected_item_needs_no_repaint() {
         let mut app = app_with_selection(Some(SpaceId(2)), None);
-        assert_eq!(app.take_selection(), None);
-        assert_eq!(app.selected_surface, None);
+        assert_eq!(app.selection.take(), None);
+        assert_eq!(app.selection.surface, None);
     }
 
     #[test]

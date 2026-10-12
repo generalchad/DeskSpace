@@ -14,13 +14,13 @@ impl App {
     /// Opens the context menu for the focused item, or for the current space
     /// when no item is selected, as the Menu key or Shift+F10 does.
     pub(super) fn open_context_menu(&mut self, ui: &mut Ui) {
-        let Some(surface) = self.selected_surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         let Some(at) = self.menu_anchor() else {
             return;
         };
-        match self.selected_items.last().copied() {
+        match self.selection.items.last().copied() {
             Some(item) => self.show_item_menu(ui, surface, item, at),
             None => {
                 if let Surface::Space(id) = surface {
@@ -33,8 +33,8 @@ impl App {
     /// Where to anchor a keyboard-opened menu: the center of the focused item's
     /// cell, or the current surface's center when no item is selected.
     pub(super) fn menu_anchor(&self) -> Option<Point> {
-        let surface = self.selected_surface?;
-        let Some(item) = self.selected_items.last().copied() else {
+        let surface = self.selection.surface?;
+        let Some(item) = self.selection.items.last().copied() else {
             return Some(self.surface_window_rect(surface)?.center());
         };
         let entry = self.surface_item(surface, item)?;
@@ -182,9 +182,7 @@ impl App {
             }
             Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
                 if self.release_item(item) {
-                    self.selected_items.retain(|selected| *selected != item);
                     self.forget_item(item);
-                    self.hovered = None;
                     self.refresh_surface(ui, surface);
                     self.refresh_tray(ui);
                     self.save();
@@ -406,7 +404,7 @@ mod tests {
         let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
         item.position = Point::new(12, 12);
         app.config.desktop.add_item(id, item);
-        app.selected_surface = Some(Surface::Space(id));
+        app.selection.surface = Some(Surface::Space(id));
 
         let (rect, content) = {
             let space = app.config.desktop.space(id).unwrap();
@@ -414,10 +412,10 @@ mod tests {
         };
         let layout = app.config.desktop.layout;
 
-        app.selected_items.clear();
+        app.selection.items.clear();
         assert_eq!(app.menu_anchor(), Some(rect.center()));
 
-        app.selected_items = vec![ItemId(1)];
+        app.selection.items = vec![ItemId(1)];
         assert_eq!(
             app.menu_anchor(),
             Some(Point::new(
