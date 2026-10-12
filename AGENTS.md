@@ -259,8 +259,7 @@ Rust specifics:
   The watch consumes keys only while the desktop shell has the foreground, so
   other apps keep their own shortcuts, and passes everything through while a
   popup menu is open (`keyboard::set_menu_open`). The hook is installed only
-  while a flag is set. The module header and the flag comments in
-  `keyboard.rs` still describe an older, narrower key set (`TASKS.md` A7).
+  while a flag is set.
 - Dragging an item inside its space rearranges it (`ReorderItem`); only once
   the pointer leaves the space does the app start an OLE shell drag, which is
   what moves the real file.

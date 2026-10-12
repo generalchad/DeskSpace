@@ -271,7 +271,7 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
   - Prefer a small pure helper `fn needs_relayout(saved: &Session, config:
     &Config) -> bool` in `settings.rs` with a test, used by `cancel_settings`.
 
-- [ ] **A7. Bring the keyboard comments up to date.** Comments only.
+- [x] **A7. Bring the keyboard comments up to date.** Comments only.
   - `crates/deskspace-platform/src/win32/keyboard.rs`:
     - the module header (lines ~1-14) lists an old, narrow key set. Rewrite
       it to say the hook has an edit mode and two watch flags, and point to

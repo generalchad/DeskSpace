@@ -4,14 +4,12 @@
 //! clipboard/Delete accelerators. While the app is renaming a space it installs
 //! a `WH_KEYBOARD_LL` hook, translates each key press into an `EditKey`, posts
 //! it to the controller, and consumes the event so it does not reach the
-//! focused app. The same hook can instead watch the keys that act on a
-//! selection (Delete, F2, Alt+Enter, Ctrl+A, Ctrl+C, Ctrl+X) and on a current
-//! space (F2, Alt+Enter, Ctrl+A, Ctrl+V, Home, End, PageUp, PageDown, the
-//! arrow keys, and any printable character, for type-to-select). The hook runs
-//! for every key in the
-//! session and Windows drops it if
-//! this thread is slow to pump messages (`LowLevelHooksTimeout`), so it is
-//! installed only while one of those modes is active.
+//! focused app. Outside a rename the same hook can watch keys for the current
+//! selection or space instead of editing; `fn handle` is the source of truth for
+//! which key needs which flag, and the AGENTS.md "Gotchas" table repeats it. The
+//! hook runs for every key in the session and Windows drops it if this thread is
+//! slow to pump messages (`LowLevelHooksTimeout`), so it is installed only
+//! while one of those modes is active.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
 
 use std::cell::Cell;
@@ -45,7 +43,8 @@ pub(crate) const DELETE_KEY: u32 = WM_APP + 4;
 /// `ACTION_*` codes.
 pub(crate) const CLIPBOARD_KEY: u32 = WM_APP + 5;
 
-/// Posted to the controller when F2 is pressed while an item is selected.
+/// Posted to the controller when F2 is pressed while an item is selected or a
+/// space is current.
 pub(crate) const RENAME_KEY: u32 = WM_APP + 6;
 
 /// Posted to the controller when Ctrl+A is pressed while a space is current.
@@ -113,9 +112,9 @@ thread_local! {
     static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
     /// Capturing every editing keystroke (inline rename).
     static EDITING: Cell<bool> = const { Cell::new(false) };
-    /// Watching Delete, Ctrl+C, and Ctrl+X while an item is selected.
+    /// Watching while an item is selected.
     static WATCH_SELECTION: Cell<bool> = const { Cell::new(false) };
-    /// Watching Ctrl+V while a space is current.
+    /// Watching while a space is current (the name is historical).
     static WATCH_PASTE: Cell<bool> = const { Cell::new(false) };
     /// A popup menu is being tracked, so every key belongs to it; the hook
     /// passes everything through until it closes.
@@ -135,8 +134,8 @@ pub(crate) fn capture(controller: HWND, enabled: bool) {
     refresh(controller);
 }
 
-/// Watches the keys that act on a selection (Delete, Ctrl+C, Ctrl+X) and on a
-/// current space (Ctrl+V). Idempotent.
+/// Watches the selection keys while `selection` is true, and the keys that need
+/// a current space while `paste` is true. Idempotent.
 pub(crate) fn watch_selection(controller: HWND, selection: bool, paste: bool) {
     WATCH_SELECTION.set(selection);
     WATCH_PASTE.set(paste);
