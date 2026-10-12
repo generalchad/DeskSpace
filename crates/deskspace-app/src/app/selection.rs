@@ -123,6 +123,27 @@ impl Selection {
             self.checked.push(item);
         }
     }
+
+    /// Replaces the selected items, keeping the surface, anchor, and focus, as
+    /// extending a range does.
+    pub(super) fn replace_items(&mut self, items: Vec<ItemId>) {
+        self.items = items;
+    }
+
+    /// Replaces the selection with a rubber-band result: the surface, the
+    /// items, no anchor, and the last item focused.
+    pub(super) fn rubber_band(&mut self, surface: Surface, items: Vec<ItemId>) {
+        self.items = items;
+        self.surface = Some(surface);
+        self.anchor = None;
+        self.focused = self.items.last().copied();
+    }
+
+    /// Clears the selected items, keeping the surface, anchor, and focus, as
+    /// starting a space resize does.
+    pub(super) fn clear_selected(&mut self) {
+        self.items.clear();
+    }
 }
 
 impl App {
@@ -313,7 +334,7 @@ impl App {
     /// as a Shift+click does.
     pub(super) fn extend_selection(&mut self, surface: Surface, item: ItemId) {
         let Some(anchor) = self.selection.anchor else {
-            self.selection.items = vec![item];
+            self.selection.replace_items(vec![item]);
             return;
         };
         let index = |target| {
@@ -322,7 +343,7 @@ impl App {
                 .position(|entry| entry.id == target)
         };
         let (Some(a), Some(b)) = (index(anchor), index(item)) else {
-            self.selection.items = vec![item];
+            self.selection.replace_items(vec![item]);
             return;
         };
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
@@ -330,7 +351,7 @@ impl App {
             .iter()
             .map(|entry| entry.id)
             .collect();
-        self.selection.items = selected;
+        self.selection.replace_items(selected);
     }
 
     /// The items an item operation acts on: the independent tick set when
@@ -431,6 +452,43 @@ mod tests {
         app.selection.surface = space.map(Surface::Space);
         app.selection.items = item.into_iter().collect();
         app
+    }
+
+    #[test]
+    fn rubber_band_replaces_the_selection_and_focus() {
+        let mut selection = Selection {
+            surface: Some(Surface::Space(SpaceId(9))),
+            items: vec![ItemId(1)],
+            anchor: Some(ItemId(1)),
+            focused: Some(ItemId(1)),
+            ..Selection::default()
+        };
+        selection.rubber_band(Surface::Space(SpaceId(2)), vec![ItemId(3), ItemId(4)]);
+        assert_eq!(selection.surface, Some(Surface::Space(SpaceId(2))));
+        assert_eq!(selection.items, vec![ItemId(3), ItemId(4)]);
+        assert_eq!(selection.anchor, None);
+        assert_eq!(selection.focused, Some(ItemId(4)));
+    }
+
+    #[test]
+    fn replace_items_keeps_the_surface_anchor_and_focus() {
+        let mut selection = Selection {
+            surface: Some(Surface::Desktop),
+            items: vec![ItemId(1)],
+            anchor: Some(ItemId(1)),
+            focused: Some(ItemId(2)),
+            ..Selection::default()
+        };
+        selection.replace_items(vec![ItemId(5), ItemId(6)]);
+        assert_eq!(selection.surface, Some(Surface::Desktop));
+        assert_eq!(selection.items, vec![ItemId(5), ItemId(6)]);
+        assert_eq!(selection.anchor, Some(ItemId(1)));
+        assert_eq!(selection.focused, Some(ItemId(2)));
+        // Clearing the selected items leaves the anchor and focus alone.
+        selection.clear_selected();
+        assert!(selection.items.is_empty());
+        assert_eq!(selection.anchor, Some(ItemId(1)));
+        assert_eq!(selection.focused, Some(ItemId(2)));
     }
 
     #[test]

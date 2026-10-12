@@ -296,11 +296,11 @@ impl App {
             let previous = self.selection.surface.replace(surface);
             if self.surface_check_box_mode(surface) == CheckBoxMode::Independent {
                 self.selection.toggle_checked(item);
-                self.selection.items = vec![item];
+                self.selection.select_only(surface, item);
             } else {
                 self.selection.toggle(item);
+                self.selection.focus(item);
             }
-            self.selection.focus(item);
             if let Some(previous) = previous.filter(|previous| *previous != surface) {
                 self.refresh_surface(ui, previous);
             }
@@ -347,7 +347,7 @@ impl App {
                         active_x: false,
                         active_y: false,
                     };
-                    self.selection.items.clear();
+                    self.selection.clear_selected();
                 } else if let Some(item) = item {
                     self.pointer.drag = Drag::Item {
                         surface,
@@ -858,10 +858,8 @@ impl App {
         let rect = Rect::new(left, top, (right - left).max(0), (bottom - top).max(0));
         self.pointer.marquee = Some((surface, rect));
 
-        self.selection.surface = Some(surface);
-        self.selection.items = marquee_selection(&cells, rect, additive, &self.selection.items);
-        self.selection.anchor = None;
-        self.selection.focused = self.selection.items.last().copied();
+        let items = marquee_selection(&cells, rect, additive, &self.selection.items);
+        self.selection.rubber_band(surface, items);
         self.refresh_surface(ui, surface);
     }
 }
