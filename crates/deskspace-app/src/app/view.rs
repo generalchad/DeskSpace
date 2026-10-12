@@ -44,21 +44,13 @@ impl App {
     pub(super) fn view_for(&self, surface: Surface) -> ViewState {
         let check_boxes = self.surface_check_box_mode(surface);
         ViewState {
-            hovered: self
-                .hovered
-                .filter(|(owner, _)| *owner == surface)
-                .map(|(_, item)| item),
+            hovered: self.pointer.hovered_item_on(surface),
             selected: if self.selection.surface == Some(surface) {
                 self.selection.items.clone()
             } else {
                 Vec::new()
             },
-            dragged: self
-                .dragged
-                .as_ref()
-                .filter(|(owner, _)| *owner == surface)
-                .map(|(_, items)| items.clone())
-                .unwrap_or_default(),
+            dragged: self.pointer.dragged_on(surface),
             scroll: self.surface_scroll(surface),
             show_check_boxes: check_boxes != CheckBoxMode::Hidden,
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
@@ -68,10 +60,7 @@ impl App {
             show_compressed_color: self.surface_match_explorer(surface)
                 && self.shell_display.show_compressed_color,
             cut: self.selection.cut.iter().copied().collect(),
-            marquee: self.marquee.and_then(|(owner, rect)| {
-                if owner != surface {
-                    return None;
-                }
+            marquee: self.pointer.marquee_on(surface).and_then(|rect| {
                 let origin = self.surface_window_rect(surface)?.origin();
                 Some(Rect::new(
                     rect.x - origin.x,

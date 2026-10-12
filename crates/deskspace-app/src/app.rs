@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Color, Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
+use deskspace_core::{Color, Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    ClipboardAction, DesktopEntry, DragImage, Event, EventHandler, Hotkey, IconCache, SelectionKey,
+    ClipboardAction, DesktopEntry, Event, EventHandler, Hotkey, IconCache, SelectionKey,
     ShellDisplay, TrayEvent, Ui, cursor_pos, desktop_display, hotkey_id, parse_hotkey,
     system_accent_color, system_uses_dark_mode,
 };
@@ -25,6 +25,7 @@ mod settings_session;
 mod view;
 mod visibility;
 
+use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
 
@@ -188,87 +189,6 @@ impl Surface {
     }
 }
 
-enum Drag {
-    None,
-    Space {
-        id: SpaceId,
-        grab: Point,
-    },
-    Resize {
-        id: SpaceId,
-        edges: ResizeEdges,
-        /// Where the button went down. The resize ignores small movements, so
-        /// grabbing a border (to move or click the space) never resizes it.
-        origin: Point,
-        /// Whether the horizontal/vertical axes have passed the dead zone.
-        /// Set once and kept, so the edge then tracks the pointer back.
-        active_x: bool,
-        active_y: bool,
-    },
-    /// The left button went down on an item. Past the drag threshold it
-    /// rearranges the item within its surface; once the pointer leaves it the
-    /// drag becomes a shell drag, as dragging an icon out of a folder.
-    Item {
-        surface: Surface,
-        item: ItemId,
-        origin: Point,
-        active: bool,
-    },
-    /// Rubber-band selection over empty content.
-    Marquee {
-        surface: Surface,
-        origin: Point,
-        /// Ctrl/Shift: add to the selection instead of replacing it.
-        additive: bool,
-    },
-}
-
-/// A left press on an already-selected item without Ctrl/Shift, resolved on
-/// release if it did not become a drag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingClick {
-    /// The item was part of a multi-selection: collapse the selection to it,
-    /// so dragging one member moves the whole group but a plain click selects
-    /// just this item.
-    Collapse(ItemId),
-    /// The item was already the only selected one: a second click starts an
-    /// inline rename, as a slow double-click does in Explorer.
-    Rename(ItemId),
-}
-
-/// Classifies a plain (no Ctrl/Shift) press on an already-selected item.
-fn pending_click(selected: &[ItemId], item: ItemId) -> PendingClick {
-    if selected == [item] {
-        PendingClick::Rename(item)
-    } else {
-        PendingClick::Collapse(item)
-    }
-}
-
-/// What releasing such a press does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingClickOutcome {
-    Rename,
-    Collapse,
-    Nothing,
-}
-
-fn resolve_pending_click(
-    pending: Option<PendingClick>,
-    item: ItemId,
-    still_selected: bool,
-) -> PendingClickOutcome {
-    match pending {
-        Some(PendingClick::Rename(pending_item)) if pending_item == item && still_selected => {
-            PendingClickOutcome::Rename
-        }
-        Some(PendingClick::Collapse(pending_item)) if pending_item == item && still_selected => {
-            PendingClickOutcome::Collapse
-        }
-        _ => PendingClickOutcome::Nothing,
-    }
-}
-
 /// Which per-space color an inline color picker edits.
 #[derive(Debug, Clone, Copy)]
 enum SpaceColor {
@@ -383,19 +303,9 @@ pub struct App {
     /// The item selection: the current surface, its items, the Shift anchor,
     /// the keyboard focus, and the cut and check-box marks.
     selection: Selection,
-    /// A left press on an already-selected item without Ctrl/Shift, resolved
-    /// on release if the press did not become a drag.
-    pending_click: Option<PendingClick>,
-    hovered: Option<(Surface, ItemId)>,
-    drag: Drag,
-    /// The items whose slots are drawn faded while they are dragged.
-    dragged: Option<(Surface, Vec<ItemId>)>,
-    /// The rubber-band selection rectangle in desktop coordinates and the
-    /// surface it belongs to, while the user drags over empty content.
-    marquee: Option<(Surface, Rect)>,
-    /// The picture under the pointer during an item drag, shown by the ghost
-    /// window inside the space and by the shell once the drag leaves it.
-    drag_image: Option<DragImage>,
+    /// The transient pointer state: the in-progress drag, the hover, the
+    /// rubber-band rectangle, and the drag image.
+    pointer: PointerState,
     /// The in-progress inline rename, of a space title or an item label.
     edit: EditState,
     /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
@@ -440,12 +350,7 @@ impl App {
             shell_display: ShellDisplay::default(),
             desktop_entries: Vec::new(),
             selection: Selection::default(),
-            pending_click: None,
-            hovered: None,
-            drag: Drag::None,
-            dragged: None,
-            marquee: None,
-            drag_image: None,
+            pointer: PointerState::default(),
             edit: EditState::default(),
             autosave: Autosave::default(),
             scroll: HashMap::new(),
@@ -695,50 +600,8 @@ pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::{ItemId, Rect};
     use std::path::PathBuf;
-
-    #[test]
-    fn a_second_click_on_the_only_selected_item_renames() {
-        assert_eq!(
-            pending_click(&[ItemId(1)], ItemId(1)),
-            PendingClick::Rename(ItemId(1))
-        );
-        // Part of a multi-selection (or no selection) collapses instead.
-        assert_eq!(
-            pending_click(&[ItemId(1), ItemId(2)], ItemId(1)),
-            PendingClick::Collapse(ItemId(1))
-        );
-        assert_eq!(
-            pending_click(&[], ItemId(1)),
-            PendingClick::Collapse(ItemId(1))
-        );
-    }
-
-    #[test]
-    fn releasing_a_second_click_starts_a_rename() {
-        assert_eq!(
-            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), true),
-            PendingClickOutcome::Rename
-        );
-        assert_eq!(
-            resolve_pending_click(Some(PendingClick::Collapse(ItemId(1))), ItemId(1), true),
-            PendingClickOutcome::Collapse
-        );
-        // A press on some other item, or an item that is no longer selected,
-        // does nothing.
-        assert_eq!(
-            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(2), true),
-            PendingClickOutcome::Nothing
-        );
-        assert_eq!(
-            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), false),
-            PendingClickOutcome::Nothing
-        );
-        assert_eq!(
-            resolve_pending_click(None, ItemId(1), true),
-            PendingClickOutcome::Nothing
-        );
-    }
 
     #[test]
     fn item_cells_place_each_dragged_item_in_desktop_coordinates() {

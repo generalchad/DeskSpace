@@ -187,9 +187,7 @@ impl App {
         }
         self.scroll.insert(id, offset);
         // The items moved under a still cursor, so the hovered one changed.
-        self.hovered = self
-            .hovered
-            .filter(|(space, _)| *space != Surface::Space(id));
+        self.pointer.clear_hover_on(Surface::Space(id));
         self.refresh_space(ui, id);
     }
 

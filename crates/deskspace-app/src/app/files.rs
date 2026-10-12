@@ -149,7 +149,7 @@ impl App {
             return;
         }
         self.selection.clear_items();
-        self.hovered = None;
+        self.pointer.clear_hover();
         let paths: Vec<PathBuf> = items
             .iter()
             .filter_map(|item| self.config.desktop.item(*item))
@@ -183,9 +183,7 @@ impl App {
     /// its file is gone.
     pub(super) fn forget_item(&mut self, item: ItemId) {
         self.selection.forget(item);
-        if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
-            self.hovered = None;
-        }
+        self.pointer.clear_hover_for_item(item);
     }
 
     /// Drops items whose files no longer exist in every space. Called once at
@@ -272,12 +270,7 @@ impl App {
             if self.selection.surface == Some(Surface::Space(id)) {
                 self.selection.clear();
             }
-            if self
-                .hovered
-                .is_some_and(|(owner, _)| owner == Surface::Space(id))
-            {
-                self.hovered = None;
-            }
+            self.pointer.clear_hover_on(Surface::Space(id));
             self.scroll.remove(&id);
             self.sync_windows(ui);
             self.save();

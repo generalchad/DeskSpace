@@ -10,7 +10,7 @@ impl App {
     /// it, as Explorer does.
     pub(super) fn show_info_tip(&mut self, ui: &mut Ui) {
         ui.clear_timer(INFO_TIP_TIMER);
-        let Some((surface, item)) = self.hovered else {
+        let Some((surface, item)) = self.pointer.hovered() else {
             return;
         };
         let Some(entry) = self.config.desktop.item(item) else {

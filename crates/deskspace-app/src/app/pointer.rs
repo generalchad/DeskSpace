@@ -16,9 +16,156 @@ use crate::scene::{desktop_layer_drag_scene, drag_scene};
 use super::selection::marquee_selection;
 
 use super::{
-    App, Drag, ICON_SIZE_WHEEL_STEP, INFO_TIP_DELAY_MS, INFO_TIP_TIMER, PendingClickOutcome,
-    RESIZE_BORDER, Surface, WHEEL_DELTA, pending_click, resolve_pending_click,
+    App, ICON_SIZE_WHEEL_STEP, INFO_TIP_DELAY_MS, INFO_TIP_TIMER, RESIZE_BORDER, Surface,
+    WHEEL_DELTA,
 };
+
+/// The in-progress pointer gesture on a surface, if any.
+#[derive(Default)]
+enum Drag {
+    #[default]
+    None,
+    Space {
+        id: SpaceId,
+        grab: Point,
+    },
+    Resize {
+        id: SpaceId,
+        edges: ResizeEdges,
+        /// Where the button went down. The resize ignores small movements, so
+        /// grabbing a border (to move or click the space) never resizes it.
+        origin: Point,
+        /// Whether the horizontal/vertical axes have passed the dead zone.
+        /// Set once and kept, so the edge then tracks the pointer back.
+        active_x: bool,
+        active_y: bool,
+    },
+    /// The left button went down on an item. Past the drag threshold it
+    /// rearranges the item within its surface; once the pointer leaves it the
+    /// drag becomes a shell drag, as dragging an icon out of a folder.
+    Item {
+        surface: Surface,
+        item: ItemId,
+        origin: Point,
+        active: bool,
+    },
+    /// Rubber-band selection over empty content.
+    Marquee {
+        surface: Surface,
+        origin: Point,
+        /// Ctrl/Shift: add to the selection instead of replacing it.
+        additive: bool,
+    },
+}
+
+/// A left press on an already-selected item without Ctrl/Shift, resolved on
+/// release if it did not become a drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingClick {
+    /// The item was part of a multi-selection: collapse the selection to it,
+    /// so dragging one member moves the whole group but a plain click selects
+    /// just this item.
+    Collapse(ItemId),
+    /// The item was already the only selected one: a second click starts an
+    /// inline rename, as a slow double-click does in Explorer.
+    Rename(ItemId),
+}
+
+/// Classifies a plain (no Ctrl/Shift) press on an already-selected item.
+fn pending_click(selected: &[ItemId], item: ItemId) -> PendingClick {
+    if selected == [item] {
+        PendingClick::Rename(item)
+    } else {
+        PendingClick::Collapse(item)
+    }
+}
+
+/// What releasing such a press does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingClickOutcome {
+    Rename,
+    Collapse,
+    Nothing,
+}
+
+fn resolve_pending_click(
+    pending: Option<PendingClick>,
+    item: ItemId,
+    still_selected: bool,
+) -> PendingClickOutcome {
+    match pending {
+        Some(PendingClick::Rename(pending_item)) if pending_item == item && still_selected => {
+            PendingClickOutcome::Rename
+        }
+        Some(PendingClick::Collapse(pending_item)) if pending_item == item && still_selected => {
+            PendingClickOutcome::Collapse
+        }
+        _ => PendingClickOutcome::Nothing,
+    }
+}
+
+/// The transient pointer state: the drag in progress, what is hovered, the
+/// rubber-band rectangle, and the drag image. Other modules read it through
+/// these methods rather than its fields, so the hover, the drag, and the drag
+/// image stay in step.
+#[derive(Default)]
+pub(super) struct PointerState {
+    drag: Drag,
+    pending_click: Option<PendingClick>,
+    hovered: Option<(Surface, ItemId)>,
+    dragged: Option<(Surface, Vec<ItemId>)>,
+    marquee: Option<(Surface, Rect)>,
+    drag_image: Option<DragImage>,
+}
+
+impl PointerState {
+    /// The item hovered on `surface`, when that surface owns the hover.
+    pub(super) fn hovered_item_on(&self, surface: Surface) -> Option<ItemId> {
+        self.hovered
+            .filter(|(owner, _)| *owner == surface)
+            .map(|(_, item)| item)
+    }
+
+    /// The dragged items on `surface`, empty when another surface is dragged.
+    pub(super) fn dragged_on(&self, surface: Surface) -> Vec<ItemId> {
+        self.dragged
+            .as_ref()
+            .filter(|(owner, _)| *owner == surface)
+            .map(|(_, items)| items.clone())
+            .unwrap_or_default()
+    }
+
+    /// The rubber-band rectangle on `surface`, in desktop coordinates.
+    pub(super) fn marquee_on(&self, surface: Surface) -> Option<Rect> {
+        self.marquee
+            .filter(|(owner, _)| *owner == surface)
+            .map(|(_, rect)| rect)
+    }
+
+    /// The hovered item and its surface, if any.
+    pub(super) fn hovered(&self) -> Option<(Surface, ItemId)> {
+        self.hovered
+    }
+
+    /// Forgets the hover, as when it is dismissed outright.
+    pub(super) fn clear_hover(&mut self) {
+        self.hovered = None;
+    }
+
+    /// Forgets the hover when it is on `surface`.
+    pub(super) fn clear_hover_on(&mut self, surface: Surface) {
+        if self.hovered.is_some_and(|(owner, _)| owner == surface) {
+            self.hovered = None;
+        }
+    }
+
+    /// Forgets the hover when it is `item`.
+    pub(super) fn clear_hover_for_item(&mut self, item: ItemId) {
+        if self.hovered.is_some_and(|(_, hovered)| hovered == item) {
+            self.hovered = None;
+        }
+    }
+}
 
 impl App {
     pub(super) fn on_space_event(&mut self, ui: &mut Ui, id: SpaceId, event: SpaceEvent) {
@@ -104,8 +251,12 @@ impl App {
             SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
-                if self.hovered.is_some_and(|(owner, _)| owner == surface) {
-                    self.hovered = None;
+                if self
+                    .pointer
+                    .hovered
+                    .is_some_and(|(owner, _)| owner == surface)
+                {
+                    self.pointer.hovered = None;
                     self.refresh_surface(ui, surface);
                 }
             }
@@ -157,7 +308,7 @@ impl App {
             return;
         }
         let previous = self.selection.surface.replace(surface);
-        self.pending_click = None;
+        self.pointer.pending_click = None;
         let item = self.surface_item_at(surface, point);
         match item {
             Some(item) => {
@@ -170,7 +321,7 @@ impl App {
                 } else if self.selection.is_selected(item) {
                     // Keep the whole selection so a drag of one member moves
                     // the group. On release, collapse it and maybe rename.
-                    self.pending_click = Some(pending_click(&self.selection.items, item));
+                    self.pointer.pending_click = Some(pending_click(&self.selection.items, item));
                     self.selection.focus(item);
                 } else {
                     self.selection.select_only(surface, item);
@@ -189,7 +340,7 @@ impl App {
                 };
                 let edges = space.resize_edges_at(point, RESIZE_BORDER);
                 if edges.any() {
-                    self.drag = Drag::Resize {
+                    self.pointer.drag = Drag::Resize {
                         id,
                         edges,
                         origin: point,
@@ -198,20 +349,20 @@ impl App {
                     };
                     self.selection.items.clear();
                 } else if let Some(item) = item {
-                    self.drag = Drag::Item {
+                    self.pointer.drag = Drag::Item {
                         surface,
                         item,
                         origin: point,
                         active: false,
                     };
                 } else if !space.locked && space.title_bar().contains(point) {
-                    self.drag = Drag::Space {
+                    self.pointer.drag = Drag::Space {
                         id,
                         grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
                     };
                 } else if space.content_rect().contains(point) {
                     // Empty content: start a rubber-band selection.
-                    self.drag = Drag::Marquee {
+                    self.pointer.drag = Drag::Marquee {
                         surface,
                         origin: point,
                         additive: ctrl || shift,
@@ -219,7 +370,7 @@ impl App {
                 }
             }
             Surface::Desktop => {
-                self.drag = match item {
+                self.pointer.drag = match item {
                     Some(item) => Drag::Item {
                         surface,
                         item,
@@ -260,7 +411,7 @@ impl App {
     }
 
     pub(super) fn drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
-        match self.drag {
+        match self.pointer.drag {
             Drag::None => false,
             Drag::Item {
                 surface,
@@ -275,7 +426,7 @@ impl App {
                     {
                         return true;
                     }
-                    self.drag = Drag::Item {
+                    self.pointer.drag = Drag::Item {
                         surface,
                         item,
                         origin,
@@ -293,7 +444,7 @@ impl App {
                         Surface::Desktop => self.move_desktop_item(ui, item, origin, point),
                     }
                 } else {
-                    self.drag = Drag::None;
+                    self.pointer.drag = Drag::None;
                     // The shell draws the same image from here on.
                     ui.hide_drag_ghost();
                     self.drag_item_out(ui, surface, item);
@@ -311,7 +462,7 @@ impl App {
             }
             Drag::Space { id, grab } => {
                 let Some(space) = self.config.desktop.space(id) else {
-                    self.drag = Drag::None;
+                    self.pointer.drag = Drag::None;
                     return false;
                 };
                 let rect = Rect::new(
@@ -337,7 +488,7 @@ impl App {
                 let layout = self.layout_for(id);
                 let (active_edges, active) =
                     resize_edges_now(edges, origin, point, layout.cell(), (active_x, active_y));
-                self.drag = Drag::Resize {
+                self.pointer.drag = Drag::Resize {
                     id,
                     edges,
                     origin,
@@ -431,15 +582,15 @@ impl App {
         self.scroll.insert(id, next);
         // Items moved under a still cursor, so the hovered one changed too.
         let surface = Surface::Space(id);
-        self.hovered = self
+        self.pointer.hovered = self
             .surface_item_at(surface, point)
             .map(|item| (surface, item));
         self.refresh_space(ui, id);
     }
 
     pub(super) fn end_drag(&mut self, ui: &mut Ui) {
-        let pending = self.pending_click.take();
-        match std::mem::replace(&mut self.drag, Drag::None) {
+        let pending = self.pointer.pending_click.take();
+        match std::mem::replace(&mut self.pointer.drag, Drag::None) {
             Drag::None => {}
             Drag::Item {
                 surface,
@@ -470,7 +621,7 @@ impl App {
             }
             Drag::Marquee { surface, .. } => {
                 // The selection already updated live; just drop the rectangle.
-                self.marquee = None;
+                self.pointer.marquee = None;
                 self.refresh_surface(ui, surface);
             }
             Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
@@ -500,7 +651,7 @@ impl App {
         let grab = self
             .surface_window_rect(surface)
             .map(|rect| Point::new(origin.x - rect.x, origin.y - rect.y));
-        self.drag_image = match surface {
+        self.pointer.drag_image = match surface {
             Surface::Space(id) => self.config.desktop.space(id).and_then(|entry| {
                 let scene = drag_scene(
                     entry,
@@ -529,9 +680,9 @@ impl App {
                 grab.and_then(|grab| DragImage::of_selection(&scene, &id_values, grab))
             }
         };
-        self.dragged = Some((surface, ids));
-        self.pending_click = None;
-        if let Some(image) = &self.drag_image {
+        self.pointer.dragged = Some((surface, ids));
+        self.pointer.pending_click = None;
+        if let Some(image) = &self.pointer.drag_image {
             ui.show_drag_ghost(image, point);
         }
         self.refresh_surface(ui, surface);
@@ -539,8 +690,8 @@ impl App {
 
     pub(super) fn end_drag_visual(&mut self, ui: &mut Ui) {
         ui.hide_drag_ghost();
-        self.drag_image = None;
-        if let Some((surface, _)) = self.dragged.take() {
+        self.pointer.drag_image = None;
+        if let Some((surface, _)) = self.pointer.dragged.take() {
             self.refresh_surface(ui, surface);
         }
     }
@@ -549,10 +700,10 @@ impl App {
         let hovered = self
             .surface_item_at(surface, point)
             .map(|item| (surface, item));
-        if hovered == self.hovered {
+        if hovered == self.pointer.hovered {
             return;
         }
-        let previous = std::mem::replace(&mut self.hovered, hovered);
+        let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         ui.clear_timer(INFO_TIP_TIMER);
@@ -676,7 +827,7 @@ impl App {
             }
             return;
         }
-        let Some(result) = ui.drag_out(&paths, &positions, self.drag_image.as_ref()) else {
+        let Some(result) = ui.drag_out(&paths, &positions, self.pointer.drag_image.as_ref()) else {
             return;
         };
         tracing::debug!(?result, files = paths.len(), "item drag ended");
@@ -705,7 +856,7 @@ impl App {
         let right = origin.x.max(point.x).min(content.right());
         let bottom = origin.y.max(point.y).min(content.bottom());
         let rect = Rect::new(left, top, (right - left).max(0), (bottom - top).max(0));
-        self.marquee = Some((surface, rect));
+        self.pointer.marquee = Some((surface, rect));
 
         self.selection.surface = Some(surface);
         self.selection.items = marquee_selection(&cells, rect, additive, &self.selection.items);
@@ -775,6 +926,49 @@ mod tests {
     use super::*;
 
     use deskspace_core::GridSpec;
+
+    #[test]
+    fn a_second_click_on_the_only_selected_item_renames() {
+        assert_eq!(
+            pending_click(&[ItemId(1)], ItemId(1)),
+            PendingClick::Rename(ItemId(1))
+        );
+        // Part of a multi-selection (or no selection) collapses instead.
+        assert_eq!(
+            pending_click(&[ItemId(1), ItemId(2)], ItemId(1)),
+            PendingClick::Collapse(ItemId(1))
+        );
+        assert_eq!(
+            pending_click(&[], ItemId(1)),
+            PendingClick::Collapse(ItemId(1))
+        );
+    }
+
+    #[test]
+    fn releasing_a_second_click_starts_a_rename() {
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), true),
+            PendingClickOutcome::Rename
+        );
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Collapse(ItemId(1))), ItemId(1), true),
+            PendingClickOutcome::Collapse
+        );
+        // A press on some other item, or an item that is no longer selected,
+        // does nothing.
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(2), true),
+            PendingClickOutcome::Nothing
+        );
+        assert_eq!(
+            resolve_pending_click(Some(PendingClick::Rename(ItemId(1))), ItemId(1), false),
+            PendingClickOutcome::Nothing
+        );
+        assert_eq!(
+            resolve_pending_click(None, ItemId(1), true),
+            PendingClickOutcome::Nothing
+        );
+    }
 
     #[test]
     fn resize_cursor_matches_grabbed_edges() {
