@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (280 tests) are green. Update this count whenever a
+  `cargo test --workspace` (283 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -443,10 +443,10 @@ WindowSettings {
   opacity, which was a fill alpha, tint, text, and icon size), and re-runs
   `position_items` because v1 stored absolute item positions. A missing
   `version` key deserializes as 0. On every load it also clamps the global
-  theme (`Theme::clamped`) and every space's look (`SpaceLook::clamped`), so a
-  hand-edited out-of-range look loads within bounds. The grid's gap, padding,
-  and snap and the new-space size are not clamped on load, only where they
-  are used or edited (`TASKS.md` A9).
+  theme (`Theme::clamped`), the grid (`GridSpec::clamped`: gap, padding, and
+  snap), the new-space size (`WindowSettings::clamped`), and every space's look
+  (`SpaceLook::clamped`), so a hand-edited out-of-range value loads within
+  bounds.
 - `WindowSettings`, `GridSpec`, `Theme`, `SpaceLook`, and `DesktopLayer` use
   struct-level `#[serde(default)]`, and `Item.kind`, `position`, `size`,
   `modified`, `compressed`, and `encrypted` default, so partial

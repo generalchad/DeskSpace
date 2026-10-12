@@ -57,6 +57,18 @@ impl GridSpec {
         Size::new(self.cell_width, self.cell_height)
     }
 
+    /// This grid with `gap`, `padding`, and `snap` brought into range, so a
+    /// hand-edited config loads within the bounds its settings expose.
+    pub fn clamped(self) -> Self {
+        let clamp = |value: i32, range: (i32, i32)| value.clamp(range.0, range.1);
+        Self {
+            gap: clamp(self.gap, GAP_RANGE),
+            padding: clamp(self.padding, GAP_RANGE),
+            snap: clamp(self.snap, SNAP_RANGE),
+            ..self
+        }
+    }
+
     pub fn grid_position(&self, index: usize) -> Point {
         self.grid_position_in(index, self.columns)
     }
@@ -302,6 +314,21 @@ mod tests {
         assert_eq!(snap_to_grid(23, 16), 16);
         assert_eq!(snap_to_grid(25, 16), 32);
         assert_eq!(snap_to_grid(7, 0), 7);
+    }
+
+    #[test]
+    fn clamped_brings_the_grid_into_range() {
+        let spec = GridSpec {
+            gap: 999,
+            padding: -4,
+            snap: 500,
+            ..GridSpec::default()
+        }
+        .clamped();
+        assert_eq!(spec.gap, GAP_RANGE.1);
+        assert_eq!(spec.padding, GAP_RANGE.0);
+        assert_eq!(spec.snap, SNAP_RANGE.1);
+        assert_eq!(GridSpec::default().clamped(), GridSpec::default());
     }
 
     #[test]

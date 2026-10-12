@@ -64,6 +64,19 @@ impl Default for WindowSettings {
     }
 }
 
+impl WindowSettings {
+    /// The settings with `new_space_width` and `new_space_height` brought into
+    /// `NEW_SPACE_SIZE_RANGE`, so a hand-edited file loads in range.
+    pub fn clamped(self) -> Self {
+        let size = |value: i32| value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
+        Self {
+            new_space_width: size(self.new_space_width),
+            new_space_height: size(self.new_space_height),
+            ..self
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -107,6 +120,8 @@ impl Config {
         // Clamp ranged values so a hand-edited out-of-range setting cannot
         // leave the settings window showing no choice selected.
         self.theme = self.theme.clone().clamped();
+        self.window = self.window.clone().clamped();
+        self.desktop.layout = self.desktop.layout.clamped();
         for space in &mut self.desktop.spaces {
             space.look = space.look.take().map(SpaceLook::clamped);
         }
@@ -116,7 +131,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::layout::GAP_RANGE;
+    use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
     use deskspace_core::theme::{ICON_SIZE_RANGE, OVERLAY_SIZE_RANGE, corner};
     use deskspace_core::{Backdrop, Point};
 
@@ -273,6 +288,45 @@ mod tests {
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
         assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
+    }
+
+    #[test]
+    fn window_settings_clamped_brings_sizes_into_range() {
+        let settings = WindowSettings {
+            new_space_width: 5,
+            new_space_height: 9999,
+            ..WindowSettings::default()
+        }
+        .clamped();
+        assert_eq!(settings.new_space_width, NEW_SPACE_SIZE_RANGE.0);
+        assert_eq!(settings.new_space_height, NEW_SPACE_SIZE_RANGE.1);
+        assert_eq!(
+            WindowSettings::default().clamped(),
+            WindowSettings::default()
+        );
+    }
+
+    #[test]
+    fn migrate_clamps_the_grid_and_new_space_size() {
+        let text = r#"
+            version = 2
+
+            [desktop.layout]
+            gap = 999
+            padding = -4
+            snap = 500
+
+            [window]
+            new_space_width = 5
+            new_space_height = 9999
+        "#;
+        let mut parsed: Config = toml::from_str(text).unwrap();
+        parsed.migrate();
+        assert_eq!(parsed.desktop.layout.gap, GAP_RANGE.1);
+        assert_eq!(parsed.desktop.layout.padding, GAP_RANGE.0);
+        assert_eq!(parsed.desktop.layout.snap, SNAP_RANGE.1);
+        assert_eq!(parsed.window.new_space_width, NEW_SPACE_SIZE_RANGE.0);
+        assert_eq!(parsed.window.new_space_height, NEW_SPACE_SIZE_RANGE.1);
     }
 
     #[test]

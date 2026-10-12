@@ -324,7 +324,7 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
     describe the new behavior there.
   - Done when: the new test passes and both app callers pass the stored mode.
 
-- [ ] **A9. Clamp the grid and new-space size when the config loads.**
+- [x] **A9. Clamp the grid and new-space size when the config loads.**
   - Today `Config::migrate` (`crates/deskspace-config/src/schema.rs`, ~109)
     clamps the theme and every space look, but not `desktop.layout.gap`,
     `padding`, or `snap`, nor `window.new_space_width` / `new_space_height`.
