@@ -4,32 +4,96 @@ Concrete, self-contained work items. `ROADMAP.md` says *what* to build and in
 what order; this file says *how*, one task per commit. Tasks are written so a
 contributor (human or model) can do one without designing anything new.
 
+Ticked tasks are kept for the record. Their file and line pointers describe
+the code when they landed, often before `app.rs` was split into `app/`
+modules (R1); use the file map below, not those pointers, to find code today.
+Unticked tasks were re-checked against the code on 2026-10-11.
+
+**Pick a task:** start with section A (comment and small correctness fixes),
+then B (cleanups) and K (file splits). These are the safest and make every
+later task easier. Tasks marked **[needs decision]** or in section D are not
+ready; skip them.
+
 ## How to work a task
 
-1. Read `AGENTS.md` once, then only the `CONTEXT.md` sections a task names.
+1. Read `AGENTS.md` once (especially "Design priorities"), then only the
+   `CONTEXT.md` sections a task names. Use the file map below to find code.
 2. Do one task per commit. Do not combine tasks or fix "nearby" things; note
    them under **Found while working** at the end of this file instead.
 3. Line numbers are approximate and drift. Find code by the function or type
-   name given; the line is only a hint.
+   name given (search for `fn name`); the line is only a hint.
 4. If the code does not match the task's description, or the task needs a
    design decision it does not state, **stop and ask**. Do not improvise.
-5. Copy the pattern the task points at.
-6. Done means all of:
+5. Copy the pattern the task points at. Prefer the recipes below over
+   inventing a new structure.
+6. Leave the code more readable than you found it, within the task's scope:
+   descriptive names, small functions, named constants, and a `///` doc on any
+   new item whose behavior is not obvious. Do not add a feature by special-
+   casing an existing function; if no extension point fits, stop and ask.
+7. Done means all of:
    - `cargo fmt --all`
    - `cargo clippy --workspace --all-targets -- -D warnings` (no new
      `#[allow]`)
-   - `cargo test --workspace`, with new tests for new logic
+   - `cargo test --workspace`, with new tests for new logic; then update the
+     test count in `CONTEXT.md` section 2
    - `CONTEXT.md` updated where the task changes behavior, and the
      `ROADMAP.md` feature index (section 7) updated if a feature's status
      changed
    - the task's own "Done when" list
-7. Commit with the repo's style: `feat: ...`, `fix: ...`, `refactor: ...`,
-   `docs: ...`, imperative and lowercase. Then tick the task's box here in
-   the same commit.
-8. Tasks marked **[needs human]** need an on-screen check you cannot do.
+8. Commit with the repo's style: `feat: ...`, `fix: ...`, `refactor: ...`,
+   `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`, imperative and
+   lowercase, with the task id in parentheses (`refactor: split d2d.rs (K2)`).
+   Tick the task's box here in the same commit.
+9. Tasks marked **[needs human]** need an on-screen check you cannot do.
    Implement, then list exactly what to check in the commit body and leave the
    box unticked with "(awaiting check)".
-9. Tasks in section D are **not** for routine work. Skip them.
+10. Tasks in section D are **not** for routine work. Skip them.
+
+## File map
+
+Where each kind of code lives. Paths are under `crates/`.
+
+| To change... | Look in |
+|--------------|---------|
+| The model (spaces, items, the desktop layer) | `deskspace-core/src/{space,item,desktop,desktop_layer}.rs` |
+| A model mutation | `deskspace-core/src/command.rs` (`Command`, `Desktop::apply_with_layout`) |
+| Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
+| A look setting or color | `deskspace-core/src/theme.rs` (`Theme`, `Palette`, `*_RANGE`) |
+| A non-look setting, config load/migrate | `deskspace-config/src/schema.rs` (`WindowSettings`, `Config::migrate`) |
+| Config file paths and atomic save | `deskspace-config/src/store.rs` |
+| CLI flags | `deskspace-app/src/cli.rs` |
+| Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
+| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `mod menu`, `*_PRESETS`) |
+| Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
+| What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
+| Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
+| Mouse, drag, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
+| Inline rename | `deskspace-app/src/app/rename.rs` |
+| Drops, delete, prune | `deskspace-app/src/app/files.rs` |
+| Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
+| Space, item, and tray menus | `deskspace-app/src/app/menus.rs` |
+| Settings window behavior (open, preview, Apply, Cancel) | `deskspace-app/src/app/settings_session.rs` |
+| Settings pages, fields, `field::` ids (pure) | `deskspace-app/src/settings.rs` |
+| Show/hide, desktop verb, start with Windows | `deskspace-app/src/app/visibility.rs` |
+| Model → `SpaceScene` (pure) | `deskspace-app/src/scene.rs` |
+| Managed store for dropped files | `deskspace-app/src/storage.rs` |
+| Events the platform raises | `deskspace-platform/src/input.rs` |
+| Menu and settings-form data types | `deskspace-platform/src/ui.rs` |
+| `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime.rs` |
+| Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
+| Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
+| Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
+| Drawing | `deskspace-platform/src/render/{scene,d2d}.rs` |
+| Settings window controls | `deskspace-platform/src/win32/settings_window.rs` |
+| Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
+| Desktop enumeration, icons | `deskspace-platform/src/shell.rs` |
+| Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
+| CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
+
+Ids (`WM_APP` messages, timers, menu ids, `field::` ids) and their next free
+values are tabled in `CONTEXT.md` section 6, "Message, timer, and id tables".
+Never renumber an id; take the next free one and update that table.
 
 ### Recipe: a new global setting
 
@@ -38,18 +102,82 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
 1. `deskspace-core/src/theme.rs` (or `deskspace-config/src/schema.rs` for a
    `WindowSettings` field): add the field with a `///` doc, give it a value in
    `Default`, and rely on the struct-level `#[serde(default)]`. If it is a
-   range, add `pub const NAME_RANGE`/`NAME_DEFAULT` like `OVERLAY_SIZE_RANGE`.
-2. `deskspace-app/src/settings.rs`: add a `field::` id (next free number) and
-   a `Field` on the right page: a look setting goes in `look_pages` (fed the
-   theme being edited, which is a space's own while it is customized), a
-   Global-only one in `general_page`. Then add the match arm that clamps and
-   returns the right `Effect` (`Appearance` to restyle, `Layout` to re-flow,
-   `Pending` for apply-on-OK): in `apply_look_field` for a look setting, which
-   makes it per space with no further work, or in `apply_field`'s Global-only
-   arms otherwise.
-3. If Cancel must undo a re-flow, extend `App::cancel_settings`.
-4. Tests: a serde round-trip / missing-field default test in core or config,
-   and an `apply_field` test in `settings.rs` (copy the existing ones).
+   range, add `pub const NAME_RANGE`/`NAME_DEFAULT` like `OVERLAY_SIZE_RANGE`,
+   and clamp it in `Theme::clamped` so a hand-edited file loads in range.
+2. `deskspace-app/src/settings.rs`: add a `field::` id (the next free number;
+   see the id tables) and a `Field` on the right page: a look setting goes in
+   `look_pages` (fed the theme being edited, which is a space's own while it
+   is customized), a Global-only one in `general_page` (or the page it
+   belongs on). Then add the match arm that clamps and returns the right
+   `Effect` (`None`, `Appearance` to restyle, `Layout` to re-flow, `Pending`
+   for apply-on-OK): in `apply_look_field` for a look setting, which makes it
+   per space with no further work, or in `apply_field`'s Global-only arms
+   otherwise.
+3. If Cancel must undo a re-flow or restyle, extend `settings::needs_relayout`
+   or `needs_restyle` (`App::cancel_settings` in `app/settings_session.rs`
+   calls them).
+4. If Apply must do something outside the config (registry, hotkeys,
+   takeover), add it to `App::apply_settings` (`app/settings_session.rs`)
+   next to `sync_start_with_windows`.
+5. Tests: a serde round-trip / missing-field default test in core or config,
+   and an `apply_field` test in `settings.rs` (copy
+   `start_with_windows_is_pending`).
+
+### Recipe: a new model change (`Command`)
+
+1. `deskspace-core/src/command.rs`: add a variant with a `///` doc. Add its
+   arm in `apply_with_layout`; return `NotFound` for a missing id,
+   `Rejected` when the change is not allowed (for example a locked space),
+   else `Applied`. Keep the arm short: put real logic in a method on
+   `Space`/`Desktop` or a `layout.rs` function.
+2. Tests in `command.rs`: one per outcome (copy the `Reflow` tests).
+3. App: call it through `self.dispatch(...)` or, for a change to one space
+   that should repaint and save, `self.apply_to_space(ui, id, command, at)`
+   (`app/persist.rs`). Never mutate `self.config.desktop` directly.
+4. Add the variant to the Commands list in `CONTEXT.md` section 4.
+
+### Recipe: a new key
+
+1. `deskspace-platform/src/input.rs`: add a `SelectionKey` variant (no data)
+   with a `///` doc. Only a key that carries data gets its own `Event`
+   variant and `WM_APP` id.
+2. `win32/keyboard.rs`: add a `SEL_*` code, then a branch in `fn handle`
+   under the right flag (see the AGENTS.md Gotchas table) that posts
+   `SELECTION_KEY` with it. Map the code to the variant where `SELECTION_KEY`
+   is dispatched in `win32/controller.rs`.
+3. `deskspace-app/src/app.rs`: handle the variant in `App::on_selection_key`,
+   calling a method in the `app/` module that owns the behavior.
+4. Update the key lists in `AGENTS.md` (Gotchas), `CONTEXT.md` section 8,
+   and `README.md` Controls.
+
+### Recipe: a new menu entry
+
+1. `deskspace-app/src/app.rs`: add an id to `mod menu` (next free; see the id
+   tables) and to the `other` list in the `menu_ids_are_unique` test. If the
+   entry is one of a family (opacity, icon size, sort), add a row to the
+   preset table instead.
+2. `deskspace-app/src/app/menus.rs`: add a `MenuEntry` in the builder
+   (`show_space_menu`, `show_tray_menu`, `show_item_menu`, or the submenu
+   helper) and an arm that handles the chosen id. Entries shared by the tray
+   and the space menu go through `run_common_menu`.
+3. Update the menu lists in `CONTEXT.md` section 8 and `README.md` Controls.
+
+### Recipe: a new visual in a space
+
+1. `deskspace-platform/src/render/scene.rs`: add a `SpaceScene` field with a
+   `///` doc and a neutral default (copy `highlight`).
+2. `deskspace-app/src/scene.rs`: fill it in `space_scene` (and
+   `desktop_layer_scene` if the layer needs it). Add a scene test (copy
+   `the_settings_highlight_reaches_the_scene`).
+3. `render/d2d.rs`: draw it in `Painter`'s paint path. Do not allocate there;
+   pre-compute in `PreparedScene` if needed.
+
+### Recipe: behavior on both spaces and the desktop layer
+
+Take a `Surface`, not a `SpaceId`, and read through the `surface_*`
+accessors in `app/hit.rs` (`surface_items`, `surface_item_at`,
+`surface_layout`, `surface_palette`, ...). If an accessor is missing, add it
+there for both variants rather than matching on `Surface` at the call site.
 
 ### Per-space settings
 
@@ -143,6 +271,87 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
   - Prefer a small pure helper `fn needs_relayout(saved: &Session, config:
     &Config) -> bool` in `settings.rs` with a test, used by `cancel_settings`.
 
+- [ ] **A7. Bring the keyboard comments up to date.** Comments only.
+  - `crates/deskspace-platform/src/win32/keyboard.rs`:
+    - the module header (lines ~1-14) lists an old, narrow key set. Rewrite
+      it to say the hook has an edit mode and two watch flags, and point to
+      `fn handle` for the keys, instead of listing them (a list goes stale);
+    - the `WATCH_SELECTION` / `WATCH_PASTE` comments in `thread_local!`
+      (~116-119) say "Delete, Ctrl+C, and Ctrl+X" and "Ctrl+V". Reword to
+      "an item is selected" and "a space is current (the name is
+      historical)";
+    - the doc of `watch_selection` (~138) repeats the old key list; reword it
+      the same way;
+    - `RENAME_KEY` (~48) says "while an item is selected"; F2 also fires with
+      only a current space.
+  - `crates/deskspace-platform/src/win32/runtime.rs`, the doc of
+    `Ui::watch_selection_keys` (~439-443): same fix.
+  - Use the flag-by-key table in `AGENTS.md` (Gotchas) as the source of
+    truth, and do not copy the table into the code.
+  - Done when: no comment in either file lists keys that `fn handle` does not
+    match. Then delete the "(`TASKS.md` A7)" sentence from the AGENTS.md
+    Gotchas entry.
+
+- [ ] **A8. Keep the check-box mode when the desktop view cannot be read.**
+  - Bug: `crates/deskspace-platform/src/win32/display_settings.rs`,
+    `desktop_display` starts from `global_display()`, whose `check_boxes` is
+    `CheckBoxMode::Hidden`, and only overrides it when the view read
+    succeeds. So a failed read (the view is briefly unavailable, for example
+    while Explorer restarts) hides the boxes, while the comment in
+    `desktop_display` claims it does not. The app then stores that snapshot
+    (`App::refresh_shell_display`, `app/view.rs`) and, because the mode left
+    `Independent`, clears the independent ticks.
+  - Fix:
+    1. Add `pub fn desktop_display_since(previous: CheckBoxMode) ->
+       ShellDisplay` beside `desktop_display`. It does the same reads, but
+       when the view is unavailable or `view_check_boxes` returns `None` it
+       uses `previous`. Have `desktop_display()` call it with
+       `CheckBoxMode::Hidden`, so its behavior is unchanged for
+       `shell.rs` (`enumerate_desktop_items`, which reads only the hidden-file
+       flags).
+    2. Put the choice in a pure function `fn check_box_mode(read:
+       Option<CheckBoxMode>, previous: CheckBoxMode) -> CheckBoxMode` with a
+       test for both cases.
+    3. Re-export it from `win32/mod.rs` and `lib.rs` next to
+       `desktop_display`. In the app, the two callers (`app.rs` in the
+       `Started` arm and `App::refresh_shell_display` in `app/view.rs`) call
+       `desktop_display_since(self.shell_display.check_boxes)`.
+    4. Move the "a failed read must not hide check boxes" comment onto
+       `desktop_display_since`, where it is true.
+  - Leave `icon_size` and `icon_spacing` as they are (their `None` also means
+    "not in icon mode", so they need a separate design).
+  - Then delete the "(`TASKS.md` A8)" sentence in `CONTEXT.md` section 6 and
+    describe the new behavior there.
+  - Done when: the new test passes and both app callers pass the stored mode.
+
+- [ ] **A9. Clamp the grid and new-space size when the config loads.**
+  - Today `Config::migrate` (`crates/deskspace-config/src/schema.rs`, ~109)
+    clamps the theme and every space look, but not `desktop.layout.gap`,
+    `padding`, or `snap`, nor `window.new_space_width` / `new_space_height`.
+    They are clamped only where used, so a hand-edited value is wrong in the
+    settings window until it is edited.
+  - Add `pub fn clamped(self) -> Self` to `GridSpec`
+    (`crates/deskspace-core/src/layout.rs`): `gap` and `padding` to
+    `GAP_RANGE`, `snap` to `SNAP_RANGE`. Copy the shape of `Theme::clamped`.
+  - Add `pub fn clamped(self) -> Self` to `WindowSettings` (`schema.rs`):
+    width and height to `NEW_SPACE_SIZE_RANGE`.
+  - Call both in `Config::migrate`, next to the theme clamp.
+  - Tests: one per `clamped` (out-of-range in, in-range out), and one
+    `Config` load test with an out-of-range `gap` in the TOML.
+  - Then delete "(`TASKS.md` A9)" from `CONTEXT.md` section 5 and say the
+    grid and new-space size are clamped on load too.
+
+- [ ] **A10. Make the menu-id test cover every id.**
+  - `crates/deskspace-app/src/app.rs`, test `menu_ids_are_unique`: the
+    `other` list omits `menu::SPACE_SETTINGS`. Add it.
+  - Done when: every `pub const` in `mod menu` appears either in `other` or
+    in a preset table. Test-only change (`test: ...`).
+
+- [ ] **A11. Say "spaces", not "spaces", in `scripts/dev.ps1`.**
+  - The help text and parameter comments still say "spaces" (examples at
+    ~17 and ~21, parameters at ~39 and ~43). Replace with "spaces". Comments
+    and help text only; no behavior change.
+
 ## B. Small cleanups
 
 Each is independent. None changes behavior.
@@ -201,6 +410,42 @@ Each is independent. None changes behavior.
     Move the body into `fn handle(code, wparam, event) -> bool` (true =
     consumed) and have `hook_proc` call `CallNextHookEx` once when it returns
     false. No behavior change; keep the comments that explain each branch.
+
+- [ ] **B8. Remove the settings window's unused tab layout.**
+  - `SettingsForm.nav` (`crates/deskspace-platform/src/ui.rs`) is an
+    `Option<SettingsNav>`; `None` builds the old top-tab layout. The app
+    always passes `Some` (`build_form` in `deskspace-app/src/settings.rs`),
+    so the tab code is dead.
+  - Make the field `pub nav: SettingsNav` and update its doc. Fix the
+    constructors and tests in `ui.rs` (a test that used `nav: None` can use a
+    small `SettingsNav` with one group, like `nav_entry` already builds).
+  - In `crates/deskspace-platform/src/win32/settings_window.rs`, delete what
+    only the tab layout used: `ID_TAB`, `TAB_SUBCLASS_ID`, `tab_proc`,
+    `paint_tab`, `on_tab_changed`, the `None` branch in `build` (it creates a
+    `WC_TABCONTROLW`), and any `match`/`if let` on `nav` that only existed for
+    `None`. Search for each name after deleting to be sure nothing still uses
+    it.
+  - In `win32/dark_mode.rs`, reword the `UiColors` field comments that
+    describe tabs (~128-135) to describe the panes.
+  - Done when: `rg -i "tab_proc|paint_tab|WC_TABCONTROL|ID_TAB" crates`
+    finds nothing, and the settings window still opens (check with
+    `cargo run -p deskspace-app -- --config <scratch.toml> --settings`;
+    remove the scratch config afterwards). Update `CONTEXT.md` section 6
+    (the `SettingsForm.nav` and dark-mode bullets mention B8).
+
+- [ ] **B9. Remove stale `too_many_arguments` allows.**
+  - `#[allow(clippy::too_many_arguments)]` sits on functions in
+    `deskspace-app/src/scene.rs` (`space_scene`, `desktop_layer_scene`,
+    `desktop_layer_drag_scene`, `drag_scene`), `render/d2d.rs` (`draw_item`,
+    `draw_check_box`, `draw_text`, `draw_edit_buffer`), and
+    `win32/settings_window.rs` (one `Builder` method). `space_scene` takes 7
+    arguments, which clippy allows, so at least that one is stale.
+  - Remove each allow, one at a time, and run
+    `cargo clippy --workspace --all-targets -- -D warnings`. Put it back only
+    if clippy then fails for that function.
+  - Do not restructure arguments in this task. List the allows that had to
+    stay under **Found while working** with their argument counts, so a later
+    task can group them into a struct (as `ViewState` does for scenes).
 
 ## C. Features (ROADMAP M3, remaining items 1-4)
 
@@ -358,20 +603,36 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   `bootstrap.rs`. Pure moves, no behavior change. The scaffold (the `app/`
   module tree plus the `run` move) landed first; each group then moves into
   place in its own commit. Landed: every group is in place, and `app.rs` is
-  down to about 720 lines.
+  down to about 775 lines (about 600 without tests). The resulting layout is
+  in `CONTEXT.md` section 3 and the file map above.
 - **R2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
   After R1. Collapses the five copies of "select only this item" and the
   three copies of "forget this item everywhere". Landed: each owns its state
   behind its own methods, and the pointer, hover, marquee, and selection
   writes go through them.
-- **R3. Platform module layout.** Move `shell.rs` under `win32/` and split it
-  (desktop items, icon loading, pixel helpers); one icon decoder instead of
-  two; a `win32/messages.rs` owning every `WM_APP + n`; generic helpers for
-  `GWLP_USERDATA` window state and window-class registration; split
-  `settings_window.rs` and `render/d2d.rs`; make internal modules private.
-- **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads file
-  metadata; move it to the app/platform and pass the values into
-  `Command::AddItem`.
+- **R3. Platform module layout.** The mechanical splits are now ready-to-do
+  tasks in section K (`shell.rs`, `settings_window.rs`, `render/d2d.rs`,
+  `runtime.rs`). What remains needs design:
+  - one icon decoder instead of two: `shell::decode_icon_masked` (GDI
+    `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
+  - a `win32/messages.rs` owning every `WM_APP + n` (today in
+    `controller.rs`, `keyboard.rs`, and `outside_click.rs`; see the table in
+    `CONTEXT.md` section 6), with a test that the values are unique;
+  - generic helpers for `GWLP_USERDATA` window state (copies in
+    `settings_window.rs` and `space_window.rs`) and for window-class
+    registration (`controller.rs`, `drag_ghost.rs`, `settings_window.rs`,
+    `space_window.rs`);
+  - make internal modules private: `win32/mod.rs` has 12 `pub mod`s, though
+    the app uses only the `lib.rs` re-exports.
+- **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads the file
+  system: `ItemKind::classify` (`path.is_dir()`), `read_metadata`
+  (`std::fs::metadata`), and `file_flags` (Windows attributes), all from
+  `Item::new`, which `Command::AddItem { space, path }` calls inside core.
+  Move the reads to the app or platform, add an `ItemFacts { kind, size,
+  modified, compressed, encrypted }` (name to be decided) that the caller
+  fills, and pass it into `AddItem` and `Item::new`. Callers:
+  `app/files.rs` (`add_dropped`) and `bootstrap.rs` (seeding). Needs a
+  decision on where the reads live (the app's `storage.rs` is a candidate).
 - **R5. M2 desktop takeover design.** Resolved: ROADMAP D7 (model) and D8
   (placement and safety). The work is I1-I8.
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
@@ -394,6 +655,7 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 - **R12. First release dry run (maintainer).** After E1-E6. Follow
   `RELEASING.md` with a pre-release version (for example `0.2.0-alpha.1`).
   Check:
+  - the zip contains `deskspace-watchdog.exe` beside `deskspace.exe` (E12);
   - the workflow publishes a pre-release with the zip, the `.sha256`, and
     the Velopack assets (`DeskSpace.App-win-Setup.exe`, the full `.nupkg`,
     `releases.win.json`);
@@ -421,10 +683,34 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 
 ## E. Release engineering (ROADMAP M8)
 
-Do E1-E4 in order. E5-E11 have their own dependencies, stated in each task.
-Code signing (R10), the first dry run (R12), and winget (R13) are maintainer
-work. `.github/workflows/release.yml` already publishes a zip on a `v*` tag;
-read it before starting.
+E1-E2 have landed (awaiting check). Do E12 first (it is small and fixes a
+shipped gap), then E3-E4 in order. E5-E11 have their own dependencies,
+stated in each task. Code signing (R10), the first dry run (R12), and winget
+(R13) are maintainer work.
+
+`.github/workflows/release.yml` runs on a `v*` tag. Its steps, in order:
+checkout; `dtolnay/rust-toolchain@stable`; "Check tag matches workspace
+version" (compares `v<version>` of package `deskspace-app` from `cargo
+metadata` with `GITHUB_REF_NAME`); "Test" (`cargo test --workspace
+--locked`); "Build" (`cargo build --release --locked -p deskspace-app`, which
+builds both `deskspace.exe` and `deskspace-watchdog.exe`); "Package" (stages
+`deskspace.exe`, `LICENSE`, `NOTICE`, `README.md` into
+`deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
+SHA-256); "Publish" (`gh release create <tag> <zip> <zip>.sha256 --title
+"DeskSpace <tag>" --generate-notes`, plus `--prerelease` when the tag
+contains `-`). Read it before starting any E task.
+
+- [ ] **E12. Ship the watchdog in the release zip.**
+  - The takeover's crash restore needs `deskspace-watchdog.exe` beside
+    `deskspace.exe` (`win32/watchdog.rs`, `arm_watchdog`), but the "Package"
+    step copies only `deskspace.exe`, `LICENSE`, `NOTICE`, and `README.md`.
+  - In `.github/workflows/release.yml`, "Package" step: add
+    `target/release/deskspace-watchdog.exe` to the files copied into the
+    staging folder, exactly like `deskspace.exe`. Change nothing else.
+  - Done when: the workflow passes `actionlint` (or a careful read if it is
+    not installed), and `CONTEXT.md` section 10 (the takeover and "No
+    installer" bullets) and `ROADMAP.md` (M8 item 5, F-45, D8) no longer say
+    the watchdog is missing. The real check is R12. **[needs human]**
 
 - [ ] **E1. Commit an `.ico` asset and embed it, with version info, in the
   executable (ROADMAP M8 item 2).** (awaiting check) Landed as
@@ -477,6 +763,13 @@ read it before starting.
     menu entry show the icon at 100 % and 150 % scaling.
 
 - [ ] **E3. Reproducible release build (ROADMAP M8 item 5).**
+  - The toolchain is not pinned: `rust-toolchain.toml` says
+    `channel = "stable"` and both workflows use
+    `dtolnay/rust-toolchain@stable`, so a later rebuild may use a different
+    rustc. Do not pin it in this task. Instead, make the "Build" step print
+    `rustc -Vv` into the log, and say in `CONTEXT.md` that reproducing a
+    release needs that rustc version. If you think the channel should be
+    pinned, note it under **Found while working**.
   - `.github/workflows/release.yml`: on the Build step, set
     `RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo`.
     Then confirm with `strings`/`Select-String` that no runner path is left
@@ -495,9 +788,10 @@ read it before starting.
 
 - [ ] **E4. Release checklist and versioning policy (ROADMAP M8 item 5).**
   - New `RELEASING.md` at the repository root. Link it from `AGENTS.md`
-    (extend the existing "Release" row of the Commands table) and from
-    `ROADMAP.md` M8 item 5. Add `release:` to the commit types in rule 7
-    above. Contents:
+    (extend the existing "Release" row of the Commands table), from the
+    `README.md` Documentation table, and from `ROADMAP.md` M8 item 5. Add
+    `release:` to the commit types in rule 8 above and in `AGENTS.md`
+    (Commits). Contents:
     - Versioning: SemVer on `workspace.package.version`. While below 1.0, the
       minor version follows ROADMAP section 6 (v0.2, v0.3, ...) and patch
       versions are fixes. Pre-releases use `-alpha.N` / `-beta.N` / `-rc.N`,
@@ -514,7 +808,8 @@ read it before starting.
       (`gh release delete vX.Y.Z --cleanup-tag`), fix, and publish the next
       patch version. Never re-use a published version number.
   - Done when: the checklist matches `release.yml` step for step (the tag
-    check, `--locked`, the asset names).
+    check, `--locked`, the asset names; the step list is at the top of this
+    section).
 
 ### Installer and auto-update (ROADMAP D6, F-45)
 
@@ -535,7 +830,8 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     `crates/deskspace-app/src/main.rs`, before `Cli::parse()`. Velopack
     starts the exe with its own arguments during install, update, and
     uninstall, and may exit the process; clap would reject those arguments.
-    Add a comment saying so.
+    Add a comment saying so. Do not call it from `watchdog_main.rs` (the
+    `deskspace-watchdog` binary): only the main exe is Velopack's.
   - `pub enum InstallKind { Installed, Portable }` and `pub fn
     install_kind() -> InstallKind`: `Installed` when
     `velopack::UpdateManager::new(...)` succeeds for this process, else
@@ -545,7 +841,14 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     `app -> {config, platform, update} -> core`; `update` depends on no
     workspace crate) and `CONTEXT.md` section 3.
   - If `cargo deny check` rejects `velopack` or anything it pulls in,
-    **stop and ask**; do not edit `deny.toml` on your own.
+    **stop and ask**; do not edit `deny.toml` on your own. Expect this:
+    `deny.toml` allows only `Apache-2.0`, `MIT`, `MPL-2.0`, and
+    `Unicode-3.0`, and an HTTP/TLS stack often needs more (ISC,
+    BSD-3-Clause, ...). Run `cargo deny check licenses` right after
+    `cargo add` and report the result before writing any code.
+  - `members = ["crates/*"]` picks the crate up; add
+    `deskspace-update = { path = "crates/deskspace-update" }` to
+    `[workspace.dependencies]` in the root `Cargo.toml`.
   - Done when: `cargo run -p deskspace-app -- --no-icons` still starts
     normally, and a test asserts `install_kind()` is `Portable` under
     `cargo test`.
@@ -582,8 +885,10 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     "hooks" / fast-callback docs and the crate's `app.rs`; the C# SDK calls
     it `--veloapp-uninstall`). In `main.rs`, before `startup()`, if that
     argument is present: call `deskspace_platform::set_desktop_show_entry(
-    false, "", "", "")` and (if C4 is done) `set_start_with_windows(false)`,
-    log any failures at `warn`, and return. Do not touch the config or the
+    false, "", "", "")`, `deskspace_platform::set_start_with_windows(false)`
+    (C4 has landed), and `deskspace_platform::restore_desktop_icons()` (so an
+    uninstall during takeover never leaves the desktop blank; ROADMAP M8
+    item 1), log any failures at `warn`, and return. Do not touch the config or the
     storage folder (D6). If the SDK exposes a proper uninstall hook instead,
     use that. If neither exists, **stop and ask**.
   - Put the argument check in a pure, tested function (`fn
@@ -603,29 +908,38 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     result to the UI thread. Add a generic mechanism that knows nothing
     about updates:
     - `#[derive(Clone)] pub struct Waker` (`Send + Sync`), obtained from
-      `Ui::waker()`. `Waker::wake(&self, id: usize)` posts
-      `WM_APP + 10` (next free; the ids are in `controller.rs`,
-      `keyboard.rs`, and `outside_click.rs`) to the controller window with
-      `id` in `wparam`.
-    - The controller's window procedure dispatches it as a new
-      `Event::Wake { id: usize }`, documented like `Event::Timer`.
-  - Copy the cross-thread `PostMessageW` pattern and its `// SAFETY:`
-    wording from `win32/console.rs`. A wake after the window is gone must
-    just fail silently.
+      `Ui::waker()`. `Waker::wake(&self, id: usize)` posts `WAKE`
+      (`WM_APP + 10`, already reserved by a comment in `controller.rs`; turn
+      that comment into `pub(crate) const WAKE: u32 = WM_APP + 10;`) to the
+      controller window with `id` in `wparam`.
+    - Get the controller handle with `with_runtime(|runtime|
+      runtime.controller)` in `Ui::waker`. `HWND` is not `Send`, so store it
+      as an `isize`, the way `win32/folder_watch.rs` does.
+    - The controller's window procedure (`controller.rs`, `wndproc`)
+      dispatches it as a new `Event::Wake { id: usize }` in `input.rs`,
+      documented like `Event::Timer`. Copy the `FOLDER_CHANGE =>` arm.
+  - Copy the worker-thread `PostMessageW` call and its `// SAFETY:` wording
+    from `win32/folder_watch.rs` ("a post to a destroyed window just
+    fails"). A wake after the window is gone must just fail silently.
+  - Re-export `Waker` from `win32/mod.rs` and `lib.rs`.
   - The app pairs it with a `std::sync::mpsc` channel it owns; the platform
     carries only the id.
-  - Done when: `Event::Wake` is in `CONTEXT.md` section 6 next to the timer
-    events. No behavior change.
+  - Done when: `Event::Wake` is in `CONTEXT.md` section 6 (the Events list,
+    and `WM_APP + 10` in the message table). No behavior change.
 
 - [ ] **E9. A three-button question dialog (platform).** Independent.
   - `Ui::choose(&mut self, title: &str, text: &str, buttons: &[&str],
     default: usize) -> Option<usize>`: a modal `TaskDialogIndirect` owned by
-    the controller window, with custom buttons (`TDF_USE_COMMAND_LINKS` off).
+    the same window as `Ui::confirm` (the settings window when it is open,
+    else the controller), with custom buttons (`TDF_USE_COMMAND_LINKS` off).
     It returns the index of the button pressed, or `None` if the dialog was
     closed. The Common Controls v6 manifest in `build.rs` makes
     `TaskDialogIndirect` available.
-  - Follow `Ui::confirm` (`runtime.rs` ~574) for ownership, foreground
-    handling, and not holding a runtime borrow across the modal call.
+  - Follow `Ui::confirm` (`runtime.rs` ~726) for ownership, foreground
+    handling, and not holding a runtime borrow across the modal call: it
+    reads the owner inside `with_runtime`, releases the borrow, then calls
+    `SetForegroundWindow` and the modal API. `Win32_UI_Controls` is already a
+    `windows` feature of the platform crate.
   - Link the `TaskDialogIndirect` page on Microsoft Learn beside the call.
   - Done when: it compiles and clippy is clean. **[needs human]** check: a
     temporary call shows three buttons and returns the right index (remove
@@ -657,17 +971,23 @@ https://docs.velopack.io; if one differs, **stop and ask**.
       &[Release], current: &Version, prerelease: bool) -> Option<&Release>`,
       parsed from fixture JSON in the test.
     - Blocking is fine here; the app calls it on a worker thread.
-  - App (`app.rs`):
-    - `UPDATE_TIMER = 4`. On `Started`, when `check_for_updates` is on, arm
-      it for 60 s, then hourly. When it fires and `fn check_due(last:
+  - App. The code goes in a new `app/update.rs` (one `impl App` block, like
+    the other `app/` modules; declare it in `app.rs`), except the constants
+    and the `on_event` arms, which stay in `app.rs`:
+    - `UPDATE_TIMER = 4` (reserved by the comment on `PREVIEW_TIMER` in
+      `app.rs`; remove that note). On `Started`, when `check_for_updates` is
+      on, arm it for 60 s, then hourly. When it fires and `fn check_due(last:
       Option<u64>, now: u64) -> bool` (24 h, tested) is true, start a check.
     - A check runs on `std::thread::spawn`, sends the result over the
       channel, and calls `waker.wake(UPDATE_WAKE)`. On
       `Event::Wake { id: UPDATE_WAKE }`, take the result, set
       `last_update_check`, and `schedule_save`. Keep one check in flight at
       a time (an `update_in_flight` flag).
-    - Tray: a "Check for updates…" entry (new `menu::CHECK_UPDATES`, next
-      free id) above the separator in `show_tray_menu`, always shown. A
+    - Tray: a "Check for updates…" entry (new `menu::CHECK_UPDATES = 12`,
+      the lowest free id; add it to `menu_ids_are_unique`) above the
+      separator in `App::show_tray_menu` (`app/menus.rs`), always shown, and
+      its arm there (not in `run_common_menu`, which the space menu shares).
+      Follow "Recipe: a new menu entry". A
       manual check ignores `check_for_updates` and `skipped_version`, and
       reports "DeskSpace is up to date" or the error through `ui.choose`
       with one "OK" button.
@@ -677,8 +997,11 @@ https://docs.velopack.io; if one differs, **stop and ask**.
       - Installed: "Update and restart" / "Later" / "Skip this version".
       - Portable: "Open release page" / "Later" / "Skip this version".
       - "Skip" stores `skipped_version`. "Later" does nothing. "Open release
-        page" opens `page_url` (check whether `ui.open_path` handles a URL;
-        if not, add `Ui::open_url` with `ShellExecuteW`).
+        page" opens `page_url`. `Ui::open_path` cannot open a URL (it turns
+        `/` into `\` and uses the item verb), so add `Ui::open_url(&mut self,
+        url: &str)` in `runtime.rs` with a plain `ShellExecuteW` "open" in
+        `win32/shell_items.rs`, keeping the `AllowSetForegroundWindow` step
+        `open` already does.
       - "Update and restart" calls the E11 entry point. Until E11 lands,
         open the release page there and leave a `// TODO(deskspace): E11`.
   - Done when: the tests above pass and nothing contacts the network with
@@ -697,14 +1020,27 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     channel and `Waker` as E10, with a new wake id), and sets the tray
     tooltip to "Downloading update…" with `ui.set_tray_tooltip`. When the
     download finishes:
-    - flush the configuration synchronously, the same way the app does on
-      `CloseRequested` (a pending autosave must not be lost);
-    - unregister the hotkey;
+    - flush the configuration synchronously with `self.flush_save(ui)`
+      (`app/persist.rs`; a pending autosave must not be lost);
+    - unregister every hotkey (loop over `self.hotkeys`, as the
+      `CloseRequested` arm in `app.rs` does);
+    - remove the desktop verb (`remove_desktop_show_entry`);
+    - call `deskspace_platform::restore_desktop_icons()` and
+      `deskspace_platform::signal_watchdog_clean_exit()`, because
+      `apply_and_restart` exits the process without running the platform
+      teardown (`runtime.rs`, end of `run`) that normally does both;
     - call `apply_and_restart`.
+    Put the first three steps (flush, hotkeys, verb) in one `fn
+    release_for_exit(&mut self, ui)` in `app/persist.rs` and call it from the
+    `CloseRequested` arm too, so the two exit paths cannot drift. Keep the
+    icon restore and the watchdog signal in the update path only; on a normal
+    close the platform teardown does them.
     On failure, restore the tooltip and report the error with `ui.choose`.
   - Keep Velopack's default `set_auto_apply_on_startup(true)`: an update that
     finished downloading but did not restart is applied on the next launch,
     which matches D6 ("apply on restart").
+  - Use the same channel as E10 and a new wake id (`UPDATE_DOWNLOADED_WAKE`
+    next to `UPDATE_WAKE` in `app.rs`).
   - Remove the E10 `TODO`. Mark F-45 "Done; check pending" in the ROADMAP
     feature index, and update `CONTEXT.md` (sections 6, 7, and 10).
   - **[needs human]** check during R12: an `alpha.1` install updates to
@@ -783,6 +1119,16 @@ Small requests, one commit each.
   in a space and compare the box to Explorer's; change the Windows accent and
   confirm the box follows it.
 
+- [ ] **F13. Ctrl+wheel under "Match Explorer's display".** **[needs
+  decision]** `App::adjust_icon_size` (`app/pointer.rs`) changes the global
+  `Theme.icon_size`, but under the default `MatchExplorer` preset Explorer's
+  icon size replaces it (`App::space_scale`, `app/view.rs`), so Ctrl+wheel
+  visibly does nothing for most users. Options for the maintainer: (a) do
+  nothing while matching and say so; (b) switch the preset to `Custom` on the
+  first Ctrl+wheel; (c) change the desktop's own icon size through
+  `IFolderView2::SetViewModeAndIconSize`, as Explorer's Ctrl+wheel does, so
+  spaces follow it. Do not implement until one is chosen.
+
 ## G. More Explorer-standard controls
 
 Remaining gaps from the controls review. Do them in order.
@@ -818,8 +1164,15 @@ Remaining gaps from the controls review. Do them in order.
   scroll it into view.
 - [x] **G4. Slow double-click renames.** Clicking an already-selected item's
   label again starts an inline rename, as Explorer does.
-- [ ] **G5. Right-button drag.** A right drag shows the copy/move/create-shortcut
-  menu on drop.
+- [ ] **G5. Right-button drag.** **[needs decision]** A right drag shows the
+  copy/move/create-shortcut menu on drop. Nothing exists yet. Where it would
+  touch: a right press only selects (`on_space_event`, `app/pointer.rs`) and
+  a right release opens the item or space menu; `space_window.rs` maps the
+  buttons (`MK_RBUTTON`); `drop_target.rs` `desired_effect` reads only
+  `MK_SHIFT`; `shell_items.rs` `drag_out` (`SHDoDragDrop`) already allows
+  move, copy, and link. Decide: does a right drag inside a space reorder (as
+  a left drag does) or always start a shell drag, and what does the drop
+  menu show on a DeskSpace target?
 - [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP.md section 8, open
   question 3.
 
@@ -839,7 +1192,7 @@ day; do not re-open without asking):
   the theme plus icon spacing and edge padding), seeded from Global the first
   time. Turning the switch off keeps the copy, and turning it on again
   restores it.
-- **The page shape never changes.** All seven pages are always built; the app
+- **The page shape never changes.** Every page (nine today) is always built; the app
   chooses which ones the pages pane lists and fills them with the scope's
   values, so the in-place update machinery keeps working.
 - **The platform knows nothing about spaces.** It draws the scopes, pages,
@@ -879,6 +1232,8 @@ day; do not re-open without asking):
     following the corner radius.
   - Color: the space's `palette_for(id).selected_fill` at full alpha, so it
     follows the Windows accent when the space uses it.
+  - Landed: `watch_highlight` / `clear_highlight` in
+    `app/settings_session.rs`.
   - App: `highlighted: Option<SpaceId>`, and `HIGHLIGHT_TIMER = 5` (E10
     reserves 4 for `UPDATE_TIMER`; `PREVIEW_TIMER` is 6) at about 1200 ms.
     `SettingsEvent::ScopeChanged` to a space, and `open_settings_with` on a
@@ -1045,7 +1400,10 @@ until I5-I6 all land, so no partial build hides the desktop.
     `--takeover`, `--takeover-layer`, and both hosted placements, on both
     monitors) and with an isolated style matrix; a normal window in the same
     run was minimized (foreground went to `Progman`). A watcher would have been
-    a no-op, so no code and no config toggle were added.
+    a no-op, so no watcher and no config toggle were added. A later commit
+    (`996a939`) made spaces ignore `WM_SYSCOMMAND`/`SC_MINIMIZE`
+    (`space_window.rs`), so survival no longer depends on the tool-window
+    exclusion.
   - Done: the finding is recorded in `ROADMAP.md` D8 and the 2026-10-11
     progress entry, and in `CONTEXT.md` sections 2, 9, and 10. No `[needs
     human]` check remains.
@@ -1068,7 +1426,11 @@ until I5-I6 all land, so no partial build hides the desktop.
     `Event::FolderChanged`. The app watches the Desktop folder while the
     layer is drawn (`App::watch_desktop_folder`) and re-runs
     `resync_desktop_layer` on the event. `Win32_System_IO` joined the
-    `windows` features.
+    `windows` features. It took its own message id (14), so E8's `Event::Wake`
+    is not needed for it.
+  - **[needs human]** check: with takeover on, create, rename, and delete a
+    file on the desktop from Explorer or a terminal; the layer follows within
+    about 150 ms.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
@@ -1100,6 +1462,151 @@ design work; the split is a starting point, not a spec. Do them in order.
 - [ ] **J5. Space menu.** Enable/disable tabs, previous/next page, and a page
   list.
 
+## K. Split the large files (readability)
+
+AGENTS.md asks for files under about 800 lines of non-test code. These are
+over it. Each task is a **pure move**: no renames, no logic changes, no
+signature changes beyond visibility. That keeps them safe for any
+contributor and easy to review (the diff should be almost all moved lines).
+
+Rules for every K task:
+
+- Turn `foo.rs` into a directory module: `foo/mod.rs` keeps what the task
+  says stays, and each new file is declared in it with `mod name;`. Keep the
+  public path the same (re-export with `pub(crate) use` / `pub use` from
+  `mod.rs` where callers outside the module use a moved item), so no caller
+  outside the module changes.
+- Widen visibility only as far as needed: `pub(super)` for items the
+  sibling files share. Child modules already see their parent's private
+  items, so moved code calling something that stays in `mod.rs` needs no
+  change there.
+- Move each test with the function it tests, into a `#[cfg(test)] mod tests`
+  at the bottom of the new file. Do not change test bodies.
+- Give each new file a one-line `//!` header saying what it holds.
+- Do one K task per commit (`refactor: split <file> (Kn)`). If a function
+  does not clearly belong to one group, leave it in `mod.rs`.
+- Done when: fmt, clippy `-D warnings`, and tests pass with the same test
+  count; `git diff --stat` shows mostly moved lines; and `CONTEXT.md`
+  section 2 (code health) and the file map above are updated.
+
+- [ ] **K1. Split `win32/settings_window.rs` (~2,600 lines).** Do B8 first;
+  it deletes the tab code, so there is less to move.
+  - `settings_window/mod.rs` keeps: the constants, `FieldControls`,
+    `SettingsState` and its impls, `create`, `set_dark`, `theme_controls`,
+    `bring_to_front`, `window_style`, `ensure_classes`, `state_of`,
+    `with_state`, `settings_event`, `wndproc`, and `page_wndproc`.
+  - `build.rs`: `Builder` and its impl, `build`, `rail_list`, `fill_list`,
+    `scaled`, `create_fonts`.
+  - `update.rs`: `Update`, `update`, `plan_field`, `set_swatch`,
+    `apply_header`, `apply_enabled`, `sync_selection`.
+  - `nav.rs`: `NavRow` and its impl, `nav_rows`, `row_entry`, `entry_row`,
+    `on_nav_changed`, `on_scope_changed`, `on_header_switch`.
+  - `paint.rs`: `on_paint`, `erase_body`, `on_draw_scope`, `on_draw_item`,
+    `on_draw_header_button`, `blend`.
+  - `commands.rs`: `on_field_command`, `pick_color`, `on_scroll`,
+    `show_page`, `window_text`, `colorref`, `from_colorref`.
+  - `runtime.rs` calls `settings_window::{create, update, set_dark,
+    bring_to_front, pick_color}`; keep those paths working.
+
+- [ ] **K2. Split `render/d2d.rs` (~1,475 lines).**
+  - `d2d/mod.rs` keeps: the drawing constants, `PreparedScene`, `Painter`
+    and its impl, `PaintFrame`, `release_graphics`, `render_items`.
+  - `graphics.rs`: `Graphics` and its impl, `graphics`,
+    `character_trimming`, `make_format`, `first_installed`, and the
+    thread-local that holds `Graphics`.
+  - `item.rs`: `draw_item`, `draw_check_box`, `draw_marquee`.
+  - `edit.rs`: `draw_edit_title`, the `EDIT_*` constants, `EditLine`,
+    `edit_lines`, `draw_edit_buffer`, `edit_field`, `draw_edit_text`,
+    `utf16_index`.
+  - `bitmap.rs`: `decode_bitmap`, `to_icon`.
+  - `geometry.rs`: `fill_rounded`, `draw_text`, `color_f`, `rect_f`,
+    `to_rect_f`, `inset`.
+  - Callers outside the module use `d2d::{Painter, PreparedScene,
+    PaintFrame, render_items, decode_bitmap, release_graphics}`; keep them.
+
+- [ ] **K3. Split `deskspace-app/src/settings.rs` (~1,820 lines, ~1,060
+  without tests).** It is pure, so this is the easiest split to verify.
+  - `settings/mod.rs` keeps: `Effect`, `build_form`, `scope_index`,
+    `scope_at`, `scope_space`, `index_of`, `labels`, `LOOK_PAGE_COUNT`, and
+    the `pub use` lines below.
+  - `ids.rs`: `pub mod field` and `pub mod page` (re-exported from
+    `mod.rs` as `pub use ids::{field, page};` so `settings::field::X` still
+    works).
+  - `tables.rs`: `MODES`, `BACKDROPS`, `LABEL_LINES_OPTIONS`,
+    `LABEL_SHADOW_OPTIONS`, `PRESETS`, `preset_index`, `corner_marks`,
+    `HOTKEY_HINT`, `HotkeyBinding`, `HOTKEY_BINDINGS`, `hotkey_setting`,
+    `set_hotkey_setting`, `is_hotkey_field`.
+  - `pages.rs`: `look_pages`, `general_page`, `new_spaces_page`,
+    `hotkeys_page`, `about_page`.
+  - `apply.rs`: `apply_look_field`, `apply_field`, `space_edit`,
+    `customize_space`, `match_global`, `reset_appearance`.
+  - `session.rs`: `SpaceSnapshot`, `Session`, `snapshot_spaces`,
+    `needs_relayout`, `needs_restyle`.
+  - Re-export every item the app uses from `mod.rs` (search
+    `settings::` in `crates/deskspace-app/src`), so no caller changes.
+  - Update the recipe "a new global setting" above to name the new files.
+
+- [ ] **K4. Split `win32/runtime.rs` (~940 lines).** `Ui`'s methods move
+  into several `impl Ui` blocks, one file per area; the fields stay
+  private (child modules can read them).
+  - `runtime/mod.rs` keeps: `EventHandler`, `RunOptions`, `Runtime`, the
+    thread-local, `with_runtime`, `dispatch`, `dispatch_close_once`,
+    `tray_tooltip`, `is_space_window`, `space_dpi`, `settings_closed`,
+    `destroy_ui_windows`, the `Ui` struct, `desktop_to_screen`,
+    `space_hwnd`, `settings_hwnd`, `warn_on_shape_change`, `run`,
+    `message_loop`, `init_common_controls`.
+  - `ui_spaces.rs`: `create_space` through `destroy_desktop_layer`
+    (`destroy_space`, `space_ids`, `set_space_rect`, `set_space_scene`,
+    `set_space_cursor`, `set_space_style`, `set_spaces_visible`, the four
+    desktop-layer methods), plus `show_drag_ghost`, `move_drag_ghost`,
+    `hide_drag_ghost`, `with_ghost`.
+  - `ui_input.rs`: `watch_outside_clicks`, `watch_folder`,
+    `unwatch_folder`, `set_timer`, `clear_timer`, `capture_text_input`,
+    `watch_selection_keys`, `register_hotkey`, `unregister_hotkey`.
+  - `ui_shell.rs`: `open_path`, `show_properties`, `item_menu`, `drag_out`,
+    `set_clipboard_files`, `clipboard_files`, `clear_clipboard`,
+    `transfer_files`, `delete_files`, `rename_path`, `show_info_tip`,
+    `hide_info_tip`, `with_info_tip`, `on_desktop_click`.
+  - `ui_chrome.rs`: `pick_color`, `popup_menu`, `set_ui_dark`,
+    `open_settings`, `update_settings`, `close_settings`, `confirm`,
+    `is_settings_open`, `set_tray_tooltip`, `quit`.
+  - Keep each method's doc comment with it. The module header (the borrow
+    rules) stays in `mod.rs`.
+
+- [ ] **K5. Move drag out of `app/pointer.rs` (~1,080 lines, ~920 without
+  tests).**
+  - New `app/drag.rs` (declare it in `app.rs` next to `mod pointer;`) with
+    one `impl App` block holding `drag_to`, `end_drag`, `begin_drag_visual`,
+    `end_drag_visual`, `reorder_item_at`, `drag_item_out`, and
+    `move_desktop_item`, plus the `Drag` enum (make it `pub(super)`;
+    `PointerState` keeps its field of that type).
+  - `pointer.rs` keeps mouse dispatch (`on_space_event`,
+    `begin_interaction`), `select_at`, hover, double-click, marquee,
+    scrolling, `adjust_icon_size`, the cursor and resize helpers, and
+    `PointerState`.
+  - Add `drag` to the module table in `CONTEXT.md` section 3.
+
+- [ ] **K6. Move `shell.rs` under `win32/` and split it (~820 lines).** It
+  holds `unsafe` Win32 code, which AGENTS.md keeps under `win32/`.
+  - `win32/desktop_items.rs`: `DesktopEntry`, `enumerate_desktop_items`,
+    `enumerate_via_view`, `enumerate_via_folder`, `listed_by_explorer`,
+    `keep_attributes`, `filesystem_path`, `display_name`, `fallback_label`,
+    `desktop_directory`, `notify_moved`.
+  - `win32/icons.rs`: `IconCache`, `CachedIcon`, `load_icon`,
+    `is_shortcut`, `load_classic_icon`, `load_base_icon`,
+    `decode_icon_masked`, `overlay_index`, `load_overlay_image`,
+    `scale_overlay_to_corner`, `system_image_list`, `resample`,
+    `composite_overlay`.
+  - Delete `shell.rs` and `pub mod shell` in `lib.rs`; change the `lib.rs`
+    re-exports (`DesktopEntry`, `IconCache`, `desktop_directory`,
+    `enumerate_desktop_items`, `notify_moved`) to point at the new modules.
+    The app uses only those re-exports, so it does not change. Check with
+    `rg "crate::shell" crates` that nothing in the platform crate still uses
+    the old path (nothing did when this task was written).
+  - `shell.rs` calls `crate::render::d2d::decode_bitmap`; keep that call
+    as it is (R3 decides about the two decoders).
+  - Update the module map in `CONTEXT.md` section 6 and the R3 entry above.
+
 ## Found while working
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
@@ -1113,5 +1620,26 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts
   `WM_DWMCOLORIZATIONCOLORCHANGED` when the accent changes; if
-   "ImmersiveColorSet" is not sent for every accent change, the palette is
-   stale until the next theme change. Watch for it during the F-29 check.
+  "ImmersiveColorSet" is not sent for every accent change, the palette is
+  stale until the next theme change. Watch for it during the F-29 check.
+- `deskspace-app/src/app/files.rs` / `app.rs`: `Event::FolderChanged`
+  re-syncs the desktop layer but never calls `IconCache::invalidate`, so a
+  desktop file whose icon changes in place keeps its old icon until restart.
+  Suggested task: invalidate the paths whose `modified` changed during
+  `resync_desktop_layer`.
+- `deskspace-platform/src/win32/runtime.rs`: `is_space_window` checks only
+  the spaces map, so a press on the desktop layer is reported as
+  `PointerDownOutside` as well as the layer's own `MouseDown`. Check whether
+  that clears a layer selection before a Ctrl+click adds to it, and decide
+  whether the layer should count as inside.
+- `deskspace-platform/src/win32/runtime.rs`: `set_spaces_visible` never hides
+  the desktop layer. Probably right (the layer stands in for Explorer's
+  icons, which Hide does not hide), but undocumented as a decision; confirm
+  with the maintainer and record it in `CONTEXT.md` section 6.
+- `deskspace-app/src/app/files.rs`: Delete and Shift+Delete do nothing for
+  loose items on the desktop layer, although Explorer would delete them.
+  Suggested task once the takeover is on by default: route layer deletes
+  through the same `delete_files` path.
+- `deskspace-platform/src/win32/dark_mode.rs`: the settings window's
+  selection bar uses a fixed `UiColors.accent`, not the Windows accent the
+  spaces' check boxes use. Consider `system_accent_color()` for consistency.
