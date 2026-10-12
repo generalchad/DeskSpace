@@ -125,13 +125,13 @@ pub(crate) struct UiColors {
     /// The command bar behind OK / Cancel / Apply.
     pub command_bar: Color,
     pub text: Color,
-    /// Unselected tabs.
+    /// Unselected navigation rows.
     pub secondary_text: Color,
     /// Labels of disabled fields.
     pub disabled_text: Color,
-    /// Underline of the selected tab.
+    /// The selection bar and marked dot in the navigation panes.
     pub accent: Color,
-    /// Line under the tab strip.
+    /// Hairline between the navigation panes.
     pub divider: Color,
 }
 

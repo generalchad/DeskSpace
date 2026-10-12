@@ -88,9 +88,9 @@ impl MenuEntry {
     }
 }
 
-/// The optional navigation rail of the settings window, in place of the top
-/// tabs. The platform renders the groups and reports which entry was picked;
-/// the app owns what each entry means. `None` keeps the tabs.
+/// The settings window's navigation: a scopes pane and a categories pane. The
+/// platform renders the groups and reports which entry was picked; the app owns
+/// what each entry means.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsNav {
     /// What the settings apply to, in a pane left of the categories (for
@@ -167,8 +167,8 @@ pub struct SettingsForm {
     pub title: String,
     pub pages: Vec<SettingsPage>,
     pub apply_enabled: bool,
-    /// Replaces the top tabs with a navigation rail when set.
-    pub nav: Option<SettingsNav>,
+    /// The navigation rail: the scopes and categories panes.
+    pub nav: SettingsNav,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -408,7 +408,13 @@ mod tests {
                 fields,
             }],
             apply_enabled: false,
-            nav: None,
+            nav: SettingsNav {
+                groups: vec![SettingsNavGroup {
+                    title: "Settings".into(),
+                    entries: vec![nav_entry("Page", 0, false)],
+                }],
+                ..Default::default()
+            },
         }
     }
 
@@ -457,19 +463,15 @@ mod tests {
     fn nav_is_not_part_of_the_form_shape() {
         let mut a = form(vec![Field::toggle(1, "A", true)]);
         let mut b = form(vec![Field::toggle(1, "A", true)]);
-        a.nav = Some(SettingsNav {
+        a.nav = SettingsNav {
             groups: vec![SettingsNavGroup {
                 title: "Spaces".into(),
                 entries: vec![nav_entry("Work", 0, true)],
             }],
             selected: 0,
             ..Default::default()
-        });
-        b.nav = Some(SettingsNav {
-            groups: vec![],
-            selected: 0,
-            ..Default::default()
-        });
+        };
+        b.nav = SettingsNav::default();
         assert!(a.same_shape(&b));
     }
 

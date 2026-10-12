@@ -472,7 +472,7 @@ pub fn build_form(
         title: "DeskSpace Settings".into(),
         pages,
         apply_enabled: session.dirty,
-        nav: Some(SettingsNav {
+        nav: SettingsNav {
             scopes,
             selected_scope: scope_index(config, session),
             groups: vec![SettingsNavGroup {
@@ -481,7 +481,7 @@ pub fn build_form(
             }],
             selected: session.page.min(page_count - 1),
             header: Some(header),
-        }),
+        },
     }
 }
 
@@ -1559,7 +1559,7 @@ mod tests {
     }
 
     fn nav(form: &SettingsForm) -> &SettingsNav {
-        form.nav.as_ref().expect("the rail is set")
+        &form.nav
     }
 
     fn slider_value(form: &SettingsForm, id: u32) -> i32 {

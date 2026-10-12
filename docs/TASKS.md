@@ -411,7 +411,7 @@ Each is independent. None changes behavior.
     consumed) and have `hook_proc` call `CallNextHookEx` once when it returns
     false. No behavior change; keep the comments that explain each branch.
 
-- [ ] **B8. Remove the settings window's unused tab layout.**
+- [x] **B8. Remove the settings window's unused tab layout.**
   - `SettingsForm.nav` (`crates/deskspace-platform/src/ui.rs`) is an
     `Option<SettingsNav>`; `None` builds the old top-tab layout. The app
     always passes `Some` (`build_form` in `deskspace-app/src/settings.rs`),

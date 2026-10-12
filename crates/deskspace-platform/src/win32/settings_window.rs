@@ -1,7 +1,7 @@
 //! The settings window: a native, data-driven form. The app describes pages
 //! and fields with `ui::SettingsForm`; this module lays them out with standard
-//! Win32 controls (common controls v6 via the app's manifest) under a tab
-//! control, and reports edits as `SettingsEvent`s.
+//! Win32 controls (common controls v6 via the app's manifest) in a scopes
+//! pane, a categories pane, and a page, and reports edits as `SettingsEvent`s.
 //!
 //! Each page is a container window (`PAGE_CLASS`) that forwards control
 //! notifications to the settings window, so every control can be found by id
@@ -28,17 +28,13 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
-    DRAWITEMSTRUCT, NMHDR, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN,
-    TBS_HORZ, TBS_NOTICKS, TCIF_TEXT, TCITEMW, TCM_ADJUSTRECT, TCM_GETCURSEL, TCM_GETITEMRECT,
-    TCM_INSERTITEMW, TCN_SELCHANGE, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW,
-    WC_LISTBOXW, WC_STATICW, WC_TABCONTROLW,
+    DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ,
+    TBS_NOTICKS, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW, WC_LISTBOXW, WC_STATICW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForWindow, SystemParametersInfoForDpi,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
-use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
     BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
@@ -51,10 +47,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
     SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
     WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
-    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_KILLFOCUS, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY,
-    WM_PAINT, WM_SETFOCUS, WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
-    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT,
+    WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
+    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -74,12 +70,10 @@ const PAGE_CLASS: PCWSTR = w!("DeskSpaceSettingsPage");
 const ID_OK: usize = 1;
 const ID_CANCEL: usize = 2;
 const ID_APPLY: usize = 3;
-const ID_TAB: usize = 4;
 const ID_LIST: usize = 5;
 const ID_SCOPES: usize = 6;
 const ID_HEADER_SWITCH: usize = 7;
 const ID_HEADER_BUTTON: usize = 8;
-const TAB_SUBCLASS_ID: usize = 1;
 /// A muted Windows critical red: the wash and edge of the destructive header
 /// button (a space's "Delete space").
 const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
@@ -149,8 +143,7 @@ struct SettingsState {
     form: SettingsForm,
     fields: Vec<(Field, FieldControls)>,
     pages: Vec<HWND>,
-    tab: Option<HWND>,
-    /// The navigation rail, when the form supplies one (`SettingsForm::nav`).
+    /// The navigation rail's categories pane.
     list: Option<HWND>,
     /// The rail's rows, rebuilt when the nav changes.
     nav_rows: Vec<NavRow>,
@@ -319,7 +312,6 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             form: form.clone(),
             fields: Vec::new(),
             pages: Vec::new(),
-            tab: None,
             list: None,
             nav_rows: Vec::new(),
             scopes_list: None,
@@ -417,9 +409,7 @@ pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
     }
 }
 
-/// Gives every control the dark or light visual style for its class. The
-/// tab control is painted by `paint_tab` instead, because it has no dark
-/// style.
+/// Gives every control the dark or light visual style for its class.
 unsafe fn theme_controls(window: HWND, dark: bool) {
     unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
         let mut class = [0u16; 32];
@@ -958,54 +948,17 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
         let margin = s(12);
         let page_width = s(540);
 
-        let nav = form.nav.as_ref();
-        let tab = if nav.is_none() {
-            let tab = builder.control(
-                hwnd,
-                WC_TABCONTROLW,
-                "",
-                (WS_CLIPSIBLINGS | WS_TABSTOP).0,
-                WINDOW_EX_STYLE(0),
-                (margin, margin, page_width, s(100)),
-                ID_TAB,
-            );
-            if let Some(tab) = tab {
-                let _ = SetWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID, 0);
-                for (index, page) in form.pages.iter().enumerate() {
-                    let mut text = wide(&page.title);
-                    let item = TCITEMW {
-                        mask: TCIF_TEXT,
-                        pszText: windows::core::PWSTR(text.as_mut_ptr()),
-                        ..Default::default()
-                    };
-                    SendMessageW(
-                        tab,
-                        TCM_INSERTITEMW,
-                        Some(WPARAM(index)),
-                        Some(LPARAM(&item as *const _ as isize)),
-                    );
-                }
-            }
-            tab
-        } else {
-            None
-        };
+        let nav = &form.nav;
 
         let mut pages = Vec::new();
         let mut fields = Vec::new();
         let mut page_height = 0;
-        for (page_index, page) in form.pages.iter().enumerate() {
+        for page in &form.pages {
             let container = CreateWindowExW(
                 WS_EX_CONTROLPARENT,
                 PAGE_CLASS,
                 w!(""),
-                WS_CHILD
-                    | WS_CLIPCHILDREN
-                    | if nav.is_none() && page_index == 0 {
-                        WS_VISIBLE
-                    } else {
-                        WINDOW_STYLE(0)
-                    },
+                WS_CHILD | WS_CLIPCHILDREN,
                 0,
                 0,
                 page_width,
@@ -1030,156 +983,105 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             pages.push(container);
         }
 
-        // Lay the pages over the tab's display area (tabs) or beside the rail
-        // (nav), and compute the client size.
+        // Lay the pages beside the rail and compute the client size.
         let (client_width, command_bar_top, list);
         let mut scopes_list = None;
-        let (mut header_title, mut header_switch, mut header_button) = (None, None, None);
         let mut dividers = Vec::new();
-        if let Some(nav) = nav {
-            let header_height = s(HEADER_HEIGHT);
-            let panes_height = header_height + page_height;
-            let rail = s(NAV_WIDTH);
-            let mut x = margin;
-            if !nav.scopes.is_empty() {
-                let width = s(SCOPE_WIDTH);
-                scopes_list =
-                    rail_list(&builder, hwnd, (x, margin, width, panes_height), ID_SCOPES);
-                if let Some(created) = scopes_list {
-                    fill_list(created, nav.scopes.iter().map(|scope| scope.label.as_str()));
-                    SendMessageW(
-                        created,
-                        LB_SETCURSEL,
-                        Some(WPARAM(nav.selected_scope)),
-                        None,
-                    );
-                }
-                x += width + s(6);
-                dividers.push((x - s(3), margin, margin + panes_height));
-            }
-            let rows = nav_rows(nav);
-            list = rail_list(&builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
-            if let Some(created) = list {
-                fill_list(created, rows.iter().map(NavRow::label));
-                let selected = entry_row(&rows, nav.selected);
-                SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
-            }
-            x += rail + s(6);
-            dividers.push((x - s(3), margin, margin + panes_height));
-            let pages_x = x + s(6);
-            client_width = pages_x + page_width + margin;
-            command_bar_top = margin + panes_height + margin;
-
-            // The header lines up with the fields, which sit s(16) into a page.
-            let switch_width = s(HEADER_SWITCH_WIDTH);
-            let button_width = s(HEADER_BUTTON_WIDTH);
-            let gap = s(8);
-            let switch_x = pages_x + page_width - s(16) - switch_width;
-            let button_x = switch_x - gap - button_width;
-            let title_x = pages_x + s(16);
-            let header = nav.header.as_ref();
-            header_title = builder.label(
-                hwnd,
-                header.map_or("", |header| header.title.as_str()),
-                (
-                    title_x,
-                    margin,
-                    (button_x - gap - title_x).max(s(40)),
-                    header_height,
-                ),
-            );
-            if let Some(title) = header_title {
+        let header_height = s(HEADER_HEIGHT);
+        let panes_height = header_height + page_height;
+        let rail = s(NAV_WIDTH);
+        let mut x = margin;
+        if !nav.scopes.is_empty() {
+            let width = s(SCOPE_WIDTH);
+            scopes_list = rail_list(&builder, hwnd, (x, margin, width, panes_height), ID_SCOPES);
+            if let Some(created) = scopes_list {
+                fill_list(created, nav.scopes.iter().map(|scope| scope.label.as_str()));
                 SendMessageW(
-                    title,
-                    WM_SETFONT,
-                    Some(WPARAM(builder.heading_font.0 as usize)),
-                    Some(LPARAM(1)),
-                );
-            }
-            header_button = builder.control(
-                hwnd,
-                WC_BUTTONW,
-                "",
-                BS_OWNERDRAW as u32 | WS_TABSTOP.0,
-                WINDOW_EX_STYLE(0),
-                (button_x, margin, button_width, header_height),
-                ID_HEADER_BUTTON,
-            );
-            header_switch = builder.control(
-                hwnd,
-                WC_BUTTONW,
-                "",
-                BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
-                WINDOW_EX_STYLE(0),
-                (switch_x, margin, switch_width, header_height),
-                ID_HEADER_SWITCH,
-            );
-            apply_header(header_title, header_switch, header_button, header);
-
-            for page in &pages {
-                let _ = SetWindowPos(
-                    *page,
-                    Some(HWND_TOP),
-                    pages_x,
-                    margin + header_height,
-                    page_width,
-                    page_height,
-                    SWP_NOACTIVATE,
-                );
-            }
-            show_page(&pages, nav.page_of(nav.selected).unwrap_or(0));
-            let scope_rows = nav.scopes.clone();
-            with_state(hwnd, |state| {
-                state.nav_rows = rows;
-                state.scope_rows = scope_rows;
-            });
-        } else {
-            // Size the tab so its display area is exactly the page area; the
-            // header height depends on the font, so ask the control.
-            let mut tab_rect = RECT {
-                left: margin,
-                top: margin,
-                right: margin + page_width,
-                bottom: margin + page_height,
-            };
-            if let Some(tab) = tab {
-                SendMessageW(
-                    tab,
-                    TCM_ADJUSTRECT,
-                    Some(WPARAM(1)),
-                    Some(LPARAM(&mut tab_rect as *mut _ as isize)),
-                );
-            }
-            let dx = margin - tab_rect.left;
-            let dy = margin - tab_rect.top;
-            if let Some(tab) = tab {
-                let _ = SetWindowPos(
-                    tab,
+                    created,
+                    LB_SETCURSEL,
+                    Some(WPARAM(nav.selected_scope)),
                     None,
-                    tab_rect.left + dx,
-                    tab_rect.top + dy,
-                    tab_rect.right - tab_rect.left,
-                    tab_rect.bottom - tab_rect.top,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
                 );
             }
-            for page in &pages {
-                // Pages sit over the tab control's display area, so they must
-                // be above it in z-order (children are created at the bottom).
-                let _ = SetWindowPos(
-                    *page,
-                    Some(HWND_TOP),
-                    margin + dx,
-                    margin + dy,
-                    page_width,
-                    page_height,
-                    SWP_NOACTIVATE,
-                );
-            }
-            client_width = (tab_rect.right - tab_rect.left) + 2 * margin;
-            command_bar_top = tab_rect.bottom + dy + margin;
-            list = None;
+            x += width + s(6);
+            dividers.push((x - s(3), margin, margin + panes_height));
         }
+        let rows = nav_rows(nav);
+        list = rail_list(&builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
+        if let Some(created) = list {
+            fill_list(created, rows.iter().map(NavRow::label));
+            let selected = entry_row(&rows, nav.selected);
+            SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
+        }
+        x += rail + s(6);
+        dividers.push((x - s(3), margin, margin + panes_height));
+        let pages_x = x + s(6);
+        client_width = pages_x + page_width + margin;
+        command_bar_top = margin + panes_height + margin;
+
+        // The header lines up with the fields, which sit s(16) into a page.
+        let switch_width = s(HEADER_SWITCH_WIDTH);
+        let button_width = s(HEADER_BUTTON_WIDTH);
+        let gap = s(8);
+        let switch_x = pages_x + page_width - s(16) - switch_width;
+        let button_x = switch_x - gap - button_width;
+        let title_x = pages_x + s(16);
+        let header = nav.header.as_ref();
+        let header_title = builder.label(
+            hwnd,
+            header.map_or("", |header| header.title.as_str()),
+            (
+                title_x,
+                margin,
+                (button_x - gap - title_x).max(s(40)),
+                header_height,
+            ),
+        );
+        if let Some(title) = header_title {
+            SendMessageW(
+                title,
+                WM_SETFONT,
+                Some(WPARAM(builder.heading_font.0 as usize)),
+                Some(LPARAM(1)),
+            );
+        }
+        let header_button = builder.control(
+            hwnd,
+            WC_BUTTONW,
+            "",
+            BS_OWNERDRAW as u32 | WS_TABSTOP.0,
+            WINDOW_EX_STYLE(0),
+            (button_x, margin, button_width, header_height),
+            ID_HEADER_BUTTON,
+        );
+        let header_switch = builder.control(
+            hwnd,
+            WC_BUTTONW,
+            "",
+            BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+            WINDOW_EX_STYLE(0),
+            (switch_x, margin, switch_width, header_height),
+            ID_HEADER_SWITCH,
+        );
+        apply_header(header_title, header_switch, header_button, header);
+
+        for page in &pages {
+            let _ = SetWindowPos(
+                *page,
+                Some(HWND_TOP),
+                pages_x,
+                margin + header_height,
+                page_width,
+                page_height,
+                SWP_NOACTIVATE,
+            );
+        }
+        show_page(&pages, nav.page_of(nav.selected).unwrap_or(0));
+        let scope_rows = nav.scopes.clone();
+        with_state(hwnd, |state| {
+            state.nav_rows = rows;
+            state.scope_rows = scope_rows;
+        });
         let button_height = s(30);
         let command_bar_height = button_height + 2 * s(14);
         let client_height = command_bar_top + command_bar_height;
@@ -1240,7 +1142,6 @@ unsafe fn build(hwnd: HWND, form: &SettingsForm) {
         with_state(hwnd, |state| {
             state.fields = fields;
             state.pages = pages;
-            state.tab = tab;
             state.list = list;
             state.scopes_list = scopes_list;
             state.header_title = header_title;
@@ -1415,34 +1316,22 @@ pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
                 plan_field(old, controls, new, &mut updates);
                 *old = new.clone();
             }
-            let new_rows = form.nav.as_ref().map(nav_rows).unwrap_or_default();
+            let new_rows = nav_rows(&form.nav);
             let rebuild = state.nav_rows != new_rows;
-            let selected_row = form
-                .nav
-                .as_ref()
-                .map(|nav| entry_row(&new_rows, nav.selected))
-                .unwrap_or(0);
-            let page = form.nav.as_ref().and_then(|nav| nav.page_of(nav.selected));
-            let old_page = state
-                .form
-                .nav
-                .as_ref()
-                .and_then(|nav| nav.page_of(nav.selected));
+            let selected_row = entry_row(&new_rows, form.nav.selected);
+            let page = form.nav.page_of(form.nav.selected);
+            let old_page = state.form.nav.page_of(state.form.nav.selected);
             // Re-showing the same page on every edit would hide and show the
             // pages for nothing.
             let page = page.filter(|page| rebuild || Some(*page) != old_page);
-            let new_scopes = form
-                .nav
-                .as_ref()
-                .map(|nav| nav.scopes.clone())
-                .unwrap_or_default();
+            let new_scopes = form.nav.scopes.clone();
             let scopes = state.scopes_list.map(|list| {
                 let rebuild = state.scope_rows != new_scopes;
-                let selected = form.nav.as_ref().map_or(0, |nav| nav.selected_scope);
+                let selected = form.nav.selected_scope;
                 (list, new_scopes.clone(), rebuild, selected)
             });
-            let new_header = form.nav.as_ref().and_then(|nav| nav.header.clone());
-            let old_header = state.form.nav.as_ref().and_then(|nav| nav.header.as_ref());
+            let new_header = form.nav.header.clone();
+            let old_header = state.form.nav.header.as_ref();
             let header = (old_header != new_header.as_ref()).then_some((
                 state.header_title,
                 state.header_switch,
@@ -1852,20 +1741,6 @@ unsafe fn show_page(pages: &[HWND], index: usize) {
     }
 }
 
-unsafe fn on_tab_changed(window: HWND) {
-    // SAFETY: tab and pages are live children of this window.
-    unsafe {
-        let Some((Some(tab), pages)) = with_state(window, |state| (state.tab, state.pages.clone()))
-        else {
-            return;
-        };
-        let selected = SendMessageW(tab, TCM_GETCURSEL, None, None).0;
-        if selected >= 0 {
-            show_page(&pages, selected as usize);
-        }
-    }
-}
-
 /// Handles a rail selection change. Group titles are not selectable: landing
 /// on one moves the selection to the nearest entry. Shows that entry's page,
 /// then tells the app last, because the handler may rebuild the form.
@@ -1900,7 +1775,7 @@ unsafe fn on_nav_changed(window: HWND) {
             selected = target;
         }
         let entry = row_entry(&rows, selected).expect("moved to an entry row");
-        if let Some(page) = nav.and_then(|nav| nav.page_of(entry)) {
+        if let Some(page) = nav.page_of(entry) {
             show_page(&pages, page);
         }
         settings_event(SettingsEvent::NavChanged { entry });
@@ -2114,90 +1989,6 @@ unsafe fn erase_body(settings: HWND, window: HWND, dc: HDC) -> bool {
     }
 }
 
-/// Paints the tab strip like Windows 11 navigation: tab titles on the body
-/// color, the selected one in full-strength text with an accent underline,
-/// and a divider below. The common tab control has no dark visual style, so
-/// it is painted here in both modes for a consistent look.
-unsafe fn paint_tab(tab: HWND) {
-    // SAFETY: BeginPaint/EndPaint on the live tab control; the GDI objects
-    // created here are deleted before returning, and the font is restored.
-    unsafe {
-        let mut ps = PAINTSTRUCT::default();
-        let dc = BeginPaint(tab, &mut ps);
-        let settings = GetParent(tab).unwrap_or_default();
-        let Some((colors, body, font, titles)) = with_state(settings, |state| {
-            let titles: Vec<Vec<u16>> = state
-                .form
-                .pages
-                .iter()
-                .map(|page| page.title.encode_utf16().collect())
-                .collect();
-            (state.colors, state.body_brush, state.font, titles)
-        }) else {
-            let _ = EndPaint(tab, &ps);
-            return;
-        };
-        let mut client = RECT::default();
-        let _ = GetClientRect(tab, &mut client);
-        FillRect(dc, &client, body);
-
-        let selected = SendMessageW(tab, TCM_GETCURSEL, None, None).0;
-        let focused = GetFocus() == tab;
-        let previous_font = SelectObject(dc, HGDIOBJ(font.0));
-        SetBkMode(dc, TRANSPARENT);
-        let accent = CreateSolidBrush(colorref(colors.accent));
-        let mut header_bottom = 0;
-        for (index, title) in titles.iter().enumerate() {
-            let mut item = RECT::default();
-            SendMessageW(
-                tab,
-                TCM_GETITEMRECT,
-                Some(WPARAM(index)),
-                Some(LPARAM(&mut item as *mut RECT as isize)),
-            );
-            header_bottom = header_bottom.max(item.bottom);
-            let is_selected = index as isize == selected;
-            let color = if is_selected {
-                colors.text
-            } else {
-                colors.secondary_text
-            };
-            SetTextColor(dc, colorref(color));
-            let mut text = title.clone();
-            DrawTextW(
-                dc,
-                &mut text,
-                &mut item.clone(),
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-            );
-            if is_selected {
-                let inset = (item.right - item.left) / 4;
-                let underline = RECT {
-                    left: item.left + inset,
-                    right: item.right - inset,
-                    top: item.bottom - 3,
-                    bottom: item.bottom,
-                };
-                FillRect(dc, &underline, accent);
-                if focused {
-                    let _ = DrawFocusRect(dc, &item);
-                }
-            }
-        }
-        let _ = DeleteObject(HGDIOBJ(accent.0));
-        let divider = CreateSolidBrush(colorref(colors.divider));
-        let line = RECT {
-            top: header_bottom,
-            bottom: header_bottom + 1,
-            ..client
-        };
-        FillRect(dc, &line, divider);
-        let _ = DeleteObject(HGDIOBJ(divider.0));
-        SelectObject(dc, previous_font);
-        let _ = EndPaint(tab, &ps);
-    }
-}
-
 /// Paints the header action button (a space's "Delete space") as an owner-draw
 /// control: a slight red wash with a red edge, so the destructive action stands
 /// out while the text stays readable in both color modes.
@@ -2276,37 +2067,6 @@ fn blend(base: Color, over: Color, amount: f32) -> Color {
     )
 }
 
-/// Subclass procedure of the tab control: takes over painting.
-/// https://learn.microsoft.com/en-us/windows/win32/controls/subclassing-overview
-unsafe extern "system" fn tab_proc(
-    tab: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    _id: usize,
-    _data: usize,
-) -> LRESULT {
-    // SAFETY: called by comctl32 for the subclassed tab control.
-    unsafe {
-        match message {
-            WM_PAINT => {
-                paint_tab(tab);
-                LRESULT(0)
-            }
-            WM_ERASEBKGND => LRESULT(1),
-            WM_SETFOCUS | WM_KILLFOCUS => {
-                let _ = InvalidateRect(Some(tab), None, false);
-                DefSubclassProc(tab, message, wparam, lparam)
-            }
-            WM_NCDESTROY => {
-                let _ = RemoveWindowSubclass(tab, Some(tab_proc), TAB_SUBCLASS_ID);
-                DefSubclassProc(tab, message, wparam, lparam)
-            }
-            _ => DefSubclassProc(tab, message, wparam, lparam),
-        }
-    }
-}
-
 unsafe extern "system" fn wndproc(
     window: HWND,
     message: u32,
@@ -2349,16 +2109,6 @@ unsafe extern "system" fn wndproc(
             WM_HSCROLL => {
                 if lparam.0 != 0 {
                     on_scroll(window, HWND(lparam.0 as *mut core::ffi::c_void));
-                }
-                LRESULT(0)
-            }
-            WM_NOTIFY => {
-                let header = lparam.0 as *const NMHDR;
-                if !header.is_null()
-                    && (*header).idFrom == ID_TAB
-                    && (*header).code == TCN_SELCHANGE
-                {
-                    on_tab_changed(window);
                 }
                 LRESULT(0)
             }

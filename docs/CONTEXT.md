@@ -923,8 +923,8 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   diffs a new form of the same shape into the existing controls, and touches
   the panes and header only when they change, since a slider drag sends an
   update per tick.
-- `SettingsForm.nav` (an `Option<SettingsNav>`) replaces the tab control with
-  panes, separated by hairlines: a scopes pane (`scopes`, each with an
+- `SettingsForm.nav` (a `SettingsNav`) fills the window with panes, separated
+  by hairlines: a scopes pane (`scopes`, each with an
   `indent` and a `dimmed` flag; `ScopeChanged`), a categories pane (`groups`
   of `SettingsNavEntry`s, each pointing at a page and optionally `marked`
   with a dot; untitled groups have no title row; `NavChanged`), and a
@@ -932,9 +932,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `SettingsSwitch` (reported as `HeaderSwitch`), and an optional
   `SettingsButton` (reported as `HeaderButton`; shown only with a switch;
   the app uses it for a space's "Delete space", owner-drawn with a red tint
-  to mark it as destructive). The app always sets `nav`, so the older
-  top-tab layout (`nav: None`, a subclassed `WC_TABCONTROLW`) is dead in
-  practice (`TASKS.md` B8 removes it). Both
+  to mark it as destructive). Both
   panes are owner-drawn list boxes painted like Windows
   11 navigation (an accent bar on the selection). The platform knows nothing
   about spaces: the app fills the panes, maps an index back to what it means,
@@ -969,8 +967,8 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   popup menus (uxtheme ordinals 135/136, `SetPreferredAppMode` and
   `FlushMenuThemes`) and the settings window: dark caption, body and command
   bar colors (`UiColors`), `DarkMode_Explorer` / `DarkMode_CFD` control
-  styles, and owner-drawn panes in both modes (plus the unused tab strip's
-  subclass painter, B8). The settings window's accent bar is a fixed
+  styles, and owner-drawn panes and header in both modes. The settings
+  window's accent bar is a fixed
   `UiColors.accent`, not the Windows accent. Static labels are never disabled (Windows
   embosses disabled static text); disabled fields grey them through
   `WM_CTLCOLORSTATIC`. The spaces follow their own `mode` setting.
