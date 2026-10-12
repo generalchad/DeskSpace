@@ -36,7 +36,7 @@ any new clippy lints in the same commit, and commit as
 | Lint   | `cargo clippy --workspace --all-targets` |
 | Format | `cargo fmt --all` |
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
-| Release| `cargo build --release` |
+| Release| `cargo build --release`; the checklist is in `RELEASING.md` |
 | Dev loop | `./scripts/dev.ps1` (see below) |
 
 `scripts/dev.ps1` stops any DeskSpace running from `target\` before building,
@@ -168,7 +168,7 @@ commits - do not batch them. When working from `docs/TASKS.md`, make one commit 
 task (see its "How to work a task", rule 8) and tick the task's box in that
 same commit. Follow the message style there: `feat: ...`, `fix: ...`,
 `refactor: ...`, `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`,
-imperative and lowercase. Run `cargo fmt --all`,
+`release: ...`, imperative and lowercase. Run `cargo fmt --all`,
 `cargo clippy --workspace --all-targets -- -D warnings`, and
 `cargo test --workspace` before committing.
 

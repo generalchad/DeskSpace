@@ -161,6 +161,7 @@ show and the platform turns that into windows and pixels.
 | [`CONTEXT.md`](docs/CONTEXT.md) | Architecture and current behavior (authoritative) |
 | [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](docs/TASKS.md) | Concrete, one-commit work items |
+| [`RELEASING.md`](RELEASING.md) | How to cut a release, and the versioning policy |
 | [`AGENTS.md`](AGENTS.md) | Engineering rules and the build/test workflow |
 
 ## Contributing

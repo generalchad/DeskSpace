@@ -41,8 +41,8 @@ ready; skip them.
      changed
    - the task's own "Done when" list
 8. Commit with the repo's style: `feat: ...`, `fix: ...`, `refactor: ...`,
-   `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`, imperative and
-   lowercase, with the task id in parentheses (`refactor: split d2d.rs (K2)`).
+   `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`, `release: ...`,
+   imperative and lowercase, with the task id in parentheses (`refactor: split d2d.rs (K2)`).
    Tick the task's box here in the same commit.
 9. Tasks marked **[needs human]** need an on-screen check you cannot do.
    Implement, then list exactly what to check in the commit body and leave the
@@ -807,7 +807,7 @@ contains `-`). Read it before starting any E task.
     release build to the "No installer, no code signing, no auto-update" note
     in `CONTEXT.md` section 10.
 
-- [ ] **E4. Release checklist and versioning policy (ROADMAP M8 item 5).**
+- [x] **E4. Release checklist and versioning policy (ROADMAP M8 item 5).**
   - New `RELEASING.md` at the repository root. Link it from `AGENTS.md`
     (extend the existing "Release" row of the Commands table), from the
     `README.md` Documentation table, and from `ROADMAP.md` M8 item 5. Add

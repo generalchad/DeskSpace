@@ -575,6 +575,7 @@ Remaining:
    - M2 takeover may make it unnecessary by giving DeskSpace its own desktop
      menu.
 5. A release checklist, a versioning policy, and a reproducible build.
+   `RELEASING.md` documents the checklist and the versioning policy.
    `.github/workflows/release.yml` already publishes a zip (`deskspace.exe`,
    `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its SHA-256
    to GitHub Releases on a `v*` tag that matches the workspace version.
