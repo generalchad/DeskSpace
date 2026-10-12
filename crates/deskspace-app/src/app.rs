@@ -5,7 +5,7 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Color, Command, Desktop, ItemId, Rect, ResizeEdges, SortKey, Space, SpaceId};
 use deskspace_platform::{
     ClipboardAction, DesktopEntry, DragImage, Event, EventHandler, Hotkey, IconCache, SelectionKey,
-    ShellDisplay, TextEdit, TrayEvent, Ui, cursor_pos, desktop_display, hotkey_id, parse_hotkey,
+    ShellDisplay, TrayEvent, Ui, cursor_pos, desktop_display, hotkey_id, parse_hotkey,
     system_accent_color, system_uses_dark_mode,
 };
 
@@ -25,6 +25,7 @@ mod settings_session;
 mod view;
 mod visibility;
 
+use rename::EditState;
 use selection::Selection;
 
 const TOGGLE_HOTKEY: i32 = 0;
@@ -268,16 +269,6 @@ fn resolve_pending_click(
     }
 }
 
-/// What an inline edit is renaming.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditTarget {
-    /// The space's title.
-    Title,
-    /// An item's file name. `shows_extension` is true when the edited label
-    /// includes the file extension, so the typed text is the whole name.
-    Item { id: ItemId, shows_extension: bool },
-}
-
 /// Which per-space color an inline color picker edits.
 #[derive(Debug, Clone, Copy)]
 enum SpaceColor {
@@ -292,14 +283,6 @@ enum ScrollKey {
     End,
     PageUp,
     PageDown,
-}
-
-/// An in-progress inline rename. The platform captures keys while it lives.
-struct EditSession {
-    surface: Surface,
-    target: EditTarget,
-    original: String,
-    text: TextEdit,
 }
 
 /// The space refreshes a settings preview still owes: a restyle re-applies a
@@ -414,9 +397,7 @@ pub struct App {
     /// window inside the space and by the shell once the drag leaves it.
     drag_image: Option<DragImage>,
     /// The in-progress inline rename, of a space title or an item label.
-    edit: Option<EditSession>,
-    /// Whether the edit caret is currently shown; toggled by `CARET_TIMER`.
-    caret_visible: bool,
+    edit: EditState,
     /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
     autosave: Autosave,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
@@ -465,8 +446,7 @@ impl App {
             dragged: None,
             marquee: None,
             drag_image: None,
-            edit: None,
-            caret_visible: true,
+            edit: EditState::default(),
             autosave: Autosave::default(),
             scroll: HashMap::new(),
             visible: !hidden,
@@ -614,7 +594,7 @@ impl EventHandler for App {
             Event::Navigate(key) => self.on_navigate(ui, key),
             Event::PointerDownOutside { on_desktop } => {
                 self.dismiss_info_tip(ui);
-                if self.edit.is_some() {
+                if self.edit.is_active() {
                     self.finish_rename(ui, true);
                 } else if on_desktop {
                     self.clear_selection(ui);
@@ -671,10 +651,10 @@ impl EventHandler for App {
         }
         // The keyboard hook is on only while it is needed: editing captures
         // keys, and a selection or current space watches the item keys.
-        ui.capture_text_input(self.edit.is_some());
+        ui.capture_text_input(self.edit.is_active());
         ui.watch_selection_keys(
-            self.edit.is_none() && !self.selection.items.is_empty(),
-            self.edit.is_none() && self.selection.surface.is_some(),
+            !self.edit.is_active() && !self.selection.items.is_empty(),
+            !self.edit.is_active() && self.selection.surface.is_some(),
         );
         self.sync_outside_watch(ui);
     }

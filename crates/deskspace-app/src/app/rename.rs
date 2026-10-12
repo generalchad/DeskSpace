@@ -1,4 +1,5 @@
-//! `App` inline rename: the edit session, caret, and commit (R1).
+//! `App` inline rename: the edit session, caret, and commit (R1), plus the
+//! `EditState` they share (R2).
 
 use std::path::Path;
 
@@ -8,7 +9,82 @@ use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
 use crate::scene::item_label;
 
-use super::{App, CARET_BLINK_MS, CARET_TIMER, EditSession, EditTarget, Surface};
+use super::{App, CARET_BLINK_MS, CARET_TIMER, Surface};
+
+/// What an inline edit is renaming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditTarget {
+    /// The space's title.
+    Title,
+    /// An item's file name. `shows_extension` is true when the edited label
+    /// includes the file extension, so the typed text is the whole name.
+    Item { id: ItemId, shows_extension: bool },
+}
+
+/// An in-progress inline rename. The platform captures keys while it lives.
+#[derive(Debug)]
+pub(super) struct EditSession {
+    pub(super) surface: Surface,
+    pub(super) target: EditTarget,
+    pub(super) original: String,
+    pub(super) text: TextEdit,
+}
+
+/// The inline-edit state: the active rename session, if any, and whether the
+/// caret is currently shown (toggled by `CARET_TIMER`).
+#[derive(Debug, Default)]
+pub(super) struct EditState {
+    session: Option<EditSession>,
+    caret_visible: bool,
+}
+
+impl EditState {
+    /// Whether a rename is in progress.
+    pub(super) fn is_active(&self) -> bool {
+        self.session.is_some()
+    }
+
+    /// The surface being renamed, when one is.
+    pub(super) fn surface(&self) -> Option<Surface> {
+        self.session.as_ref().map(|session| session.surface)
+    }
+
+    /// The active session, for reading its target and text.
+    pub(super) fn session(&self) -> Option<&EditSession> {
+        self.session.as_ref()
+    }
+
+    /// The active session, for applying a key to its text.
+    pub(super) fn session_mut(&mut self) -> Option<&mut EditSession> {
+        self.session.as_mut()
+    }
+
+    /// Starts a rename with the caret shown.
+    pub(super) fn begin(&mut self, session: EditSession) {
+        self.session = Some(session);
+        self.caret_visible = true;
+    }
+
+    /// Ends the rename and hands back the session.
+    pub(super) fn take(&mut self) -> Option<EditSession> {
+        self.session.take()
+    }
+
+    /// Shows the caret, restarting its blink after a keystroke.
+    pub(super) fn show_caret(&mut self) {
+        self.caret_visible = true;
+    }
+
+    /// Flips the caret for a blink.
+    pub(super) fn toggle_caret(&mut self) {
+        self.caret_visible = !self.caret_visible;
+    }
+
+    /// Whether the caret is currently shown.
+    pub(super) fn caret_visible(&self) -> bool {
+        self.caret_visible
+    }
+}
 
 impl App {
     /// Starts inline editing of a space's title, capturing keys until commit
@@ -18,13 +94,12 @@ impl App {
             return;
         };
         let original = space.title.clone();
-        self.edit = Some(EditSession {
+        self.edit.begin(EditSession {
             surface: Surface::Space(id),
             target: EditTarget::Title,
             original: original.clone(),
             text: TextEdit::new(original),
         });
-        self.caret_visible = true;
         ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_space(ui, id);
@@ -60,7 +135,7 @@ impl App {
                 text.select_range(0, dot);
             }
         }
-        self.edit = Some(EditSession {
+        self.edit.begin(EditSession {
             surface: Surface::Space(space),
             target: EditTarget::Item {
                 id: item,
@@ -69,14 +144,13 @@ impl App {
             original,
             text,
         });
-        self.caret_visible = true;
         ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_space(ui, space);
     }
 
     pub(super) fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
-        let Some(session) = self.edit.as_mut() else {
+        let Some(session) = self.edit.session_mut() else {
             return;
         };
         let space = session.surface;
@@ -84,7 +158,7 @@ impl App {
         match outcome {
             EditOutcome::Changed => {
                 // Typing restarts the blink with the caret shown.
-                self.caret_visible = true;
+                self.edit.show_caret();
                 self.refresh_surface(ui, space);
             }
             EditOutcome::Commit => self.finish_rename(ui, true),
@@ -183,18 +257,18 @@ impl App {
     }
 
     pub(super) fn cancel_edit(&mut self, ui: &mut Ui) {
-        if self.edit.is_some() {
+        if self.edit.is_active() {
             self.finish_rename(ui, false);
         }
     }
 
     /// Toggles the edit caret so it blinks, as Windows does.
     pub(super) fn blink_caret(&mut self, ui: &mut Ui) {
-        let Some(surface) = self.edit.as_ref().map(|session| session.surface) else {
+        let Some(surface) = self.edit.surface() else {
             ui.clear_timer(CARET_TIMER);
             return;
         };
-        self.caret_visible = !self.caret_visible;
+        self.edit.toggle_caret();
         self.refresh_surface(ui, surface);
     }
 }

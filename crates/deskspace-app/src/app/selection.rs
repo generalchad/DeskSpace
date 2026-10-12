@@ -138,7 +138,7 @@ impl App {
     /// clear, because watching them hooks every mouse event in the session.
     pub(super) fn sync_outside_watch(&mut self, ui: &mut Ui) {
         let wanted = !self.selection.items.is_empty()
-            || self.edit.is_some()
+            || self.edit.is_active()
             || self.selection.surface.is_some();
         if wanted != self.watching_outside {
             ui.watch_outside_clicks(wanted);

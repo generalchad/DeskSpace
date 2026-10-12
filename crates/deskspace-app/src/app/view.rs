@@ -14,7 +14,8 @@ use deskspace_platform::{
 
 use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_scene, space_style};
 
-use super::{App, EditTarget, HEALTH_MS, HEALTH_TIMER, Surface, tray_tooltip};
+use super::rename::EditTarget;
+use super::{App, HEALTH_MS, HEALTH_TIMER, Surface, tray_tooltip};
 
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -404,7 +405,7 @@ impl App {
         );
         if let Some(session) = self
             .edit
-            .as_ref()
+            .session()
             .filter(|session| session.surface == Surface::Space(id))
         {
             match session.target {
@@ -414,7 +415,7 @@ impl App {
                 }
             }
         }
-        scene.caret_visible = self.caret_visible;
+        scene.caret_visible = self.edit.caret_visible();
         ui.set_space_rect(id.0, space.visible_rect());
         ui.set_space_scene(id.0, scene);
     }

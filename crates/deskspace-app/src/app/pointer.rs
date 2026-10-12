@@ -35,7 +35,7 @@ impl App {
         }
         // Clicking anywhere commits a rename in progress before the click is
         // handled, as clicking away from a title does elsewhere.
-        if self.edit.is_some()
+        if self.edit.is_active()
             && matches!(
                 &event,
                 SpaceEvent::MouseDown { .. } | SpaceEvent::DoubleClick { .. }
