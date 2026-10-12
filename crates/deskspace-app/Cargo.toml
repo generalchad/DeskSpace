@@ -28,3 +28,29 @@ tracing-subscriber.workspace = true
 
 [build-dependencies]
 winresource = "0.1.31"
+
+# Windows installer and uninstaller, built by the CI-only `cargo-packager`
+# tool (ROADMAP D6). Run from the repository root:
+#   cargo build --release -p deskspace-app
+#   cargo packager -p deskspace-app --release --formats nsis
+# `binaries` is explicit because the package has two bin targets and neither
+# is named `deskspace-app`, so auto-detection would mark both as non-main.
+# cargo-packager changes into this package's directory before packaging, so
+# `resources`, `template`, and `installerIcon` are relative to it.
+[package.metadata.packager]
+productName = "DeskSpace"
+identifier = "com.generalchad.despacespace"
+publisher = "Timothy W. Brown"
+description = "A free and open-source desktop space organizer for Windows"
+homepage = "https://github.com/generalchad/DeskSpace"
+formats = ["nsis"]
+binaries = [
+    { path = "deskspace", main = true },
+    { path = "deskspace-watchdog" },
+]
+resources = ["../../LICENSE", "../../NOTICE", "../../README.md"]
+
+[package.metadata.packager.nsis]
+installMode = "currentUser"
+installerIcon = "../../assets/deskspace.ico"
+template = "../../packaging/nsis/installer.nsi"

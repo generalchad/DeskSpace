@@ -124,6 +124,7 @@ fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_config::ConfigStore;
 
     /// A fresh directory under the system temp folder, removed on drop.
     struct Scratch(PathBuf);
@@ -213,5 +214,47 @@ mod tests {
             store.adopt(Path::new("C:\\")),
             Err(StoreError::NotMovable(_))
         ));
+    }
+
+    /// Whether `path` is `root` or lies below it, comparing whole components
+    /// case-insensitively as Windows paths do. Unlike a string-prefix test,
+    /// `...\DeskSpace.App` is not inside `...\DeskSpace`.
+    fn is_inside(path: &Path, root: &Path) -> bool {
+        let mut path = path.components();
+        root.components().all(|root| {
+            path.next()
+                .is_some_and(|part| part.as_os_str().eq_ignore_ascii_case(root.as_os_str()))
+        })
+    }
+
+    #[test]
+    fn is_inside_compares_whole_components() {
+        assert!(is_inside(Path::new(r"C:\A\B\x.txt"), Path::new(r"C:\a\b")));
+        assert!(is_inside(Path::new(r"C:\A"), Path::new(r"C:\a")));
+        assert!(!is_inside(
+            Path::new(r"C:\DeskSpace.App"),
+            Path::new(r"C:\DeskSpace")
+        ));
+        assert!(!is_inside(
+            Path::new(r"C:\DeskSpace"),
+            Path::new(r"C:\DeskSpace.App")
+        ));
+        assert!(!is_inside(Path::new(r"C:\Other"), Path::new(r"C:\A")));
+    }
+
+    /// ROADMAP D6: the installer's install root (`%LocalAppData%\DeskSpace.App`)
+    /// must never contain the config or the stored files, or uninstalling would
+    /// delete the user's data.
+    #[test]
+    fn user_data_is_outside_the_install_root() {
+        let Ok(store) = ConfigStore::discover() else {
+            return;
+        };
+        let Some(local) = std::env::var_os("LOCALAPPDATA") else {
+            return;
+        };
+        let install_root = PathBuf::from(local).join("DeskSpace.App");
+        assert!(!is_inside(store.path(), &install_root));
+        assert!(!is_inside(store.storage_dir(), &install_root));
     }
 }
