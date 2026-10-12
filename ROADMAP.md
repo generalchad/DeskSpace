@@ -138,7 +138,9 @@ A native, lightweight, offline Windows desktop organizer that:
       26300: it does not hide them, because Show Desktop (`MinimizeAll`) skips
       `WS_EX_TOOLWINDOW` windows and a space is
       `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`. The watcher is dropped;
-      see the 2026-10-11 progress entry.
+      see the 2026-10-11 progress entry. A space also ignores
+      `WM_SYSCOMMAND`/`SC_MINIMIZE`, so survival does not depend on that
+      exclusion and Show Desktop cannot tear down the accent blur.
   - *Hiding Explorer's icons:* hide the `SysListView32` of every
     `SHELLDLL_DefView` (there is one per monitor) and restore it on a clean
     exit. Re-hide after Explorer restarts (`TaskbarCreated`) and on a

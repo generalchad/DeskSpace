@@ -506,7 +506,10 @@ WindowSettings {
     clipboard paste) stay keyed on a space.
 - Top-level placement: `WS_POPUP` + `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`,
   kept at `HWND_BOTTOM` via `WM_WINDOWPOSCHANGING`, never
-  activated (`MA_NOACTIVATE`). `dwm::apply_style` extends the frame over the
+  activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND`/`SC_MINIMIZE`,
+  so Show Desktop cannot minimize it: survival never depends on the shell's
+  undocumented tool-window exclusion, and the accent blur is never torn down.
+  `dwm::apply_style` extends the frame over the
   client area, sets dark mode, corner preference, and border color, and turns
   on the blur material with the undocumented accent policy
   (`SetWindowCompositionAttribute`, `ACCENT_ENABLE_ACRYLICBLURBEHIND` /
@@ -1054,7 +1057,10 @@ WindowSettings {
   `WS_EX_TOOLWINDOW` windows, and a space is
   `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, so a top-level space is
   left visible (verified on Windows 11 build 26300; a planned watcher was
-  dropped). Desktop-hosted spaces survive as children of the host.
+  dropped). A space also ignores `WM_SYSCOMMAND`/`SC_MINIMIZE`, so survival
+  does not depend on that undocumented exclusion and the accent blur is never
+  torn down by a minimize. Desktop-hosted spaces survive as children of the
+  host.
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
   If a future Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.

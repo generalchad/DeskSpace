@@ -29,14 +29,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetClientRect,
     GetParent, GetWindowLongPtrW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW,
     IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE,
-    RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetCursor, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD,
-    WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    RegisterClassW, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
+    WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -524,6 +524,17 @@ unsafe extern "system" fn wndproc(
             WM_SIZE => {
                 update_region(window);
                 let _ = InvalidateRect(Some(window), None, false);
+                LRESULT(0)
+            }
+            WM_SYSCOMMAND if (wparam.0 as u32 & 0xFFF0) == SC_MINIMIZE => {
+                // A space is part of the desktop and must stay on it: Show
+                // Desktop (`MinimizeAll`) minimizes every normal window, and a
+                // space has to survive with its blur. `WS_EX_TOOLWINDOW` makes
+                // the shell skip tool windows, and this ignores the command if
+                // one is sent directly, so survival never depends on that
+                // undocumented exclusion. Minimizing would also tear down the
+                // accent blur, which only survives while the window does.
+                // https://learn.microsoft.com/en-us/windows/win32/menurc/wm-syscommand
                 LRESULT(0)
             }
             WM_DPICHANGED => {
