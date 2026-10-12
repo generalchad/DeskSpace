@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (277 tests) are green. Update this count whenever a
+  `cargo test --workspace` (279 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -161,7 +161,9 @@ windows and controls.
   and global hotkeys.
 - `deskspace-app`: `clap` CLI, the `EventHandler` (`App`), model-to-scene
   conversion, the settings form and its mapping onto `Config`, and bootstrap
-  seeding.
+  seeding. `App` is split across `app/` submodules (`persist`, `view`, `hit`,
+  `selection`, `pointer`, `rename`, `files`, `clipboard`, `menus`,
+  `settings_session`, `visibility`, `info_tip`), one `impl App` block each.
 
 ## 4. Domain model (`deskspace-core`)
 

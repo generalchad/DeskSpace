@@ -357,10 +357,13 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   `files`, `clipboard`, `menus`, `settings_session`. Move `app::run` into
   `bootstrap.rs`. Pure moves, no behavior change. The scaffold (the `app/`
   module tree plus the `run` move) landed first; each group then moves into
-  place in its own commit.
+  place in its own commit. Landed: every group is in place, and `app.rs` is
+  down to about 720 lines.
 - **R2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
   After R1. Collapses the five copies of "select only this item" and the
-  three copies of "forget this item everywhere".
+  three copies of "forget this item everywhere". Landed: each owns its state
+  behind its own methods, and the pointer, hover, marquee, and selection
+  writes go through them.
 - **R3. Platform module layout.** Move `shell.rs` under `win32/` and split it
   (desktop items, icon loading, pixel helpers); one icon decoder instead of
   two; a `win32/messages.rs` owning every `WM_APP + n`; generic helpers for
