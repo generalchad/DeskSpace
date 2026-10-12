@@ -34,6 +34,16 @@ jobs:
         env:
           RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo
         run: cargo build --release --locked -p deskspace-app
+      # The installer is unsigned until SignPath is wired in (TASKS R10).
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked --version 0.11.8
+      - name: Build installer
+        shell: pwsh
+        run: |
+          cargo packager -p deskspace-app --release --formats nsis
+          $setup = Get-ChildItem target/release/*-setup.exe | Select-Object -First 1
+          if (-not $setup) { throw "cargo-packager produced no NSIS setup.exe" }
+          "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
       - name: Package
         shell: pwsh
         run: |
@@ -51,5 +61,5 @@ jobs:
         run: |
           $extra = @()
           if ($env:GITHUB_REF_NAME -match '-') { $extra += '--prerelease' }
-          gh release create $env:GITHUB_REF_NAME "$env:ASSET.zip" "$env:ASSET.zip.sha256" `
+          gh release create $env:GITHUB_REF_NAME "$env:ASSET.zip" "$env:ASSET.zip.sha256" "$env:SETUP" `
             --title "DeskSpace $env:GITHUB_REF_NAME" --generate-notes @extra
