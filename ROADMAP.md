@@ -151,7 +151,10 @@ A native, lightweight, offline Windows desktop organizer that:
     only acts on a crash.
   - *Opt-in during construction:* hiding is behind an off-by-default setting
     (and a hidden `--takeover` flag) until the layer and watchdog land, so a
-    partial build never hides the desktop.
+    partial build never hides the desktop. Both have landed; it stays off by
+    default until the pending on-screen checks pass and the release ships the
+    watchdog (`TASKS.md` E12). Turning it on by default is a maintainer
+    decision for v0.2.
 
 ## 3. Guiding principles
 
@@ -167,6 +170,13 @@ A native, lightweight, offline Windows desktop organizer that:
 - **Verify before building on top.** Each milestone lands with tests, a clean
   clippy run, and a runnable binary. Behavior that has only been unit-tested is
   checked on screen before other work depends on it.
+- **Readable, maintainable, extensible first.** Every feature arrives through
+  an existing extension point (`Command`, `Event`, `SpaceScene` /
+  `SettingsForm` field, `#[serde(default)]` setting, `Surface`) or a newly
+  designed one, never as a special case. When a milestone grows a file past
+  about 800 lines of non-test code, the split is part of that milestone, not
+  a later cleanup (`TASKS.md` section K). AGENTS.md "Design priorities" has
+  the details.
 
 ## 4. Where we are
 
@@ -174,25 +184,26 @@ A native, lightweight, offline Windows desktop organizer that:
 
 **In progress:**
 - *M2:* spaces and their items are complete and behave like Explorer.
-  Desktop takeover is opt-in (hide, restore, Explorer-restart re-hide, and the
-  crash watchdog are in); undo remains.
-- *M3:* the tray, menus, and settings window work. A few pages and settings
-  are still missing.
+  Desktop takeover is built and opt-in (the layer, hide, restore,
+  Explorer-restart re-hide, the crash watchdog, and the Desktop-folder watch
+  are in); undo and non-file shell drags (F-50) remain.
+- *M3:* the tray, menus, and settings window work, with all nine pages.
+  What remains depends on later milestones (lens and snapshot entries) or on
+  design (more item presets).
 
 **Next, in order:**
 
-1. **On-screen verification pass.** Many behaviors from the item-interaction
-   work have only been unit-tested or smoke-tested (`CONTEXT.md` section 2
-   lists them). Confirm them before more work builds on them.
-2. **M2 takeover.** Enumerating the desktop through the shell, drawing the
-   loose items with the space item code, hiding Explorer's icon layer, and the
-   crash watchdog are in (I1-I6). The Win+D watcher (I7) was verified
-   unnecessary and closed (2026-10-11), so M2's takeover is done.
-3. **M2 undo** for file moves and space deletion. First settle open
+1. **Readability fixes and file splits** (`TASKS.md` sections A, B, and K).
+   Small, safe, and they make every later task easier for any contributor.
+2. **On-screen verification pass.** Many behaviors have only been
+   unit-tested or smoke-tested (`CONTEXT.md` section 2 lists them, and every
+   "(awaiting check)" task in `TASKS.md`). Confirm them before more work
+   builds on them.
+3. **Release readiness for v0.2:** ship the watchdog in the zip (E12), then
+   the reproducible build and release checklist (E3, E4).
+4. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-4. **Finish M3:** the New spaces and Hotkeys settings pages, then cut v0.2.
-   F-46 is implemented (the highlight included); only its on-screen check
-   (`TASKS.md` H4-H5) remains.
+5. **Cut v0.2**, and decide whether takeover is on by default (D8).
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -284,33 +295,30 @@ Done:
     - extensions, hidden files, and compressed/encrypted label colors;
     - shell overlays, icon size, and item spacing;
     - info tips.
-- **[partial]** Shell-sourced icons. `IShellItemImageFactory` renders icons
+- **[done]** Shell-sourced icons. `IShellItemImageFactory` renders icons
   at the effective pixel size, with overlays from the system image list.
   `SHGetFileInfoW` remains a fallback.
+- **[done]** Desktop takeover (D7/D8, `TASKS.md` I1-I8), opt-in:
+  - the desktop's items and positions are read through the shell's
+    `IFolderView` into a `DesktopLayer` (I1-I2);
+  - a chrome-less layer window draws the loose items with the space item code,
+    and item interaction goes through a `Surface` (`Space` or `Desktop`), so
+    dragging works within the desktop and into a space (I3-I4);
+  - Explorer's icon listviews are hidden, restored on a clean exit, re-hidden
+    after an Explorer restart and on a health timer (I5), and restored by a
+    watchdog helper on a crash (I6);
+  - spaces survive Show Desktop without a watcher (I7 closed; spaces also
+    ignore `SC_MINIMIZE`);
+  - the Desktop folder is watched while the layer is drawn, so loose items
+    follow outside changes (I8).
 
-Remaining (design decided in D7/D8; work items in `TASKS.md` section I):
-1. **Enumerate the desktop through the shell.** Read items and their positions
-   from the desktop `IShellView` / `IFolderView` (not the folder walk), and
-   add a `DesktopLayer` to the model (I1-I2).
-2. **Draw loose desktop items** on a chrome-less desktop-hosted window,
-   reusing the item drawing, hit-testing, selection, rubber-band, and drag
-   code through a `Surface` (`Space` or `Desktop`). Then dragging works within
-   the desktop, into a space, and out of one (F-06, desktop half) (I3-I4).
-3. **Hide Explorer's icon layer** (`SHELLDLL_DefView` / `SysListView32`):
-   - restore it on a clean exit, and with a watchdog helper on a crash (D8);
-   - re-hide it after Explorer restarts (`TaskbarCreated`) and on a health
-     timer.
-   - (I5-I6 done. I7 was to keep the top-level, blurred spaces visible across
-     Show Desktop; verified 2026-10-11 that they already are, so it is
-     closed.)
-4. **Watch the filesystem (I8, partial).** The Desktop folder is watched while
-   the layer is drawn, so the loose items follow files added, removed, or
-   renamed outside DeskSpace. A stored file is still not watched: a change made
-   outside DeskSpace is noticed only by an item action. Lenses reuse the same
-   watcher (M4 phase 2).
-5. **Undo** for file moves, item removal, and space deletion (open question
+Remaining:
+1. **Watch stored files.** Only the Desktop folder is watched; a change to a
+   stored file made outside DeskSpace is noticed only by an item action or at
+   startup. Lenses will reuse the same watcher (M4 phase 2).
+2. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
-6. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
+3. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
    carries a Shell ID List, not `CF_HDROP`, so a space shows the red no-drop
    cursor. It should create a shortcut in the space, as Explorer does, including
    packaged apps that have no filesystem path. Needs design; see F-50.
@@ -357,8 +365,8 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 
 Remaining:
-1. Tray and menu entries that depend on later milestones:
-   - pause takeover (after M2);
+1. Tray and menu entries:
+   - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
    - an Arrange submenu.
@@ -499,8 +507,9 @@ Remaining:
 1. Rules for new desktop items: consolidate them into target spaces, create
    new spaces, or leave them loose (F-21).
 2. Include/exclude filters and an ignore list for shortcuts (F-22).
-3. Keyboard navigation: move between items and spaces, and open, rename, or
-   delete (F-23).
+3. Keyboard navigation between spaces and onto the desktop layer (F-23).
+   Within a space it is done: arrows, type-to-select, Home/End/Page, Enter,
+   F2, Delete, and the Menu key.
 4. Accessibility: keyboard focus, a high-contrast theme, and screen-reader
    labels.
 5. Performance pass: idle CPU near zero, and large spaces handled well. Scenes
@@ -524,8 +533,9 @@ Remaining:
    - an option to start with Windows (F-34);
    - an uninstaller that removes the Run value and the desktop verb, restores
      the desktop (after M2), and leaves stored files in place.
-2. An `.ico` resource for the executable, replacing the icon drawn in code
-   (`win32/icon.rs`).
+2. **[done]** An `.ico` resource for the executable (`assets/deskspace.ico`,
+   embedded with version info by `winresource`), replacing the icon that was
+   drawn in code (`TASKS.md` E1-E2; on-screen check pending).
 3. Code signing through SignPath Foundation (D6), and release notes.
 4. A Windows 11 top-level context menu entry. Move "Show spaces" out of
    "Show more options" with an `IExplorerCommand` handler.
@@ -539,7 +549,8 @@ Remaining:
 5. A release checklist, a versioning policy, and a reproducible build.
    `.github/workflows/release.yml` already publishes a zip (exe, `LICENSE`,
    `NOTICE`, `README.md`) and its SHA-256 to GitHub Releases on a `v*` tag
-   that matches the workspace version.
+   that matches the workspace version. The zip must also carry
+   `deskspace-watchdog.exe`, the takeover crash helper (`TASKS.md` E12).
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
 7. Auto-update from GitHub Releases (F-45), following the policy in D6.
@@ -581,12 +592,12 @@ through `SpaceLook`), and other per-space state in `Space`, as
 
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
-| F-01 | Spaces / icon groups | M2 | Partial: spaces work; takeover is opt-in |
+| F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
-| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents) |
+| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column fit and the resize dead zone: check pending |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces; loose items interactive on the takeover layer, which Explorer still draws |
+| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); check pending for the layer |
 | F-07 | Lenses (spaces: Folder Portals) | M4 | Open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
@@ -596,14 +607,14 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-13 | Quick peek / transparency toggle | M5 | Open |
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu and Explorer item menu done; lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
-| F-16 | System tray | M3 | Done; takeover and snapshot entries wait for M2 and M6 |
-| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout; Lenses page open |
+| F-16 | System tray | M3 | Done; a pause-takeover entry is open, snapshot entries wait for M6 |
+| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout (New spaces: check pending); Lenses page open |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |
 | F-22 | Exclude rules / filters | M7 | Open |
-| F-23 | Keyboard navigation | M7 | Open |
+| F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
 | F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
@@ -625,7 +636,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
+| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done (watchdog missing from the zip, E12) |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
@@ -906,4 +917,34 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   header now carries a "Delete space" button beside the "Customize this space"
   switch. It runs the same delete (with its confirmation for a non-empty
   space) as the context menu, then the window falls back to Global; deletion is
-  immediate, so Cancel does not bring the space back.
+  immediate, so Cancel does not bring the space back. It is tinted red to mark
+  it as destructive.
+- **Desktop folder watch (`TASKS.md` I8).** A reusable `FolderWatch`
+  (`ReadDirectoryChangesW` on a worker thread, debounced to 150 ms) re-syncs
+  the desktop layer when files change outside DeskSpace.
+- **Item preset (F-48, C5).** "Match Explorer's display" became the
+  Appearance page's "Item preset" dropdown (`Match Explorer's display` /
+  `Custom`); the Layout page greys the fields Explorer supplies.
+- **Hotkeys and New spaces pages (F-17, F-18; C7, C8).** Three editable
+  global hotkeys (show/hide, new space, open settings), table-driven by
+  `HOTKEY_BINDINGS`, and the defaults a new space is created with.
+- **App split (`TASKS.md` R1, R2).** `app.rs` (about 4,500 lines) became
+  `app/` submodules with one `impl App` each, and `Selection`, `EditState`,
+  and `PointerState` were pulled out of `App`. Pure moves.
+- **Space polish (F8-F12).** Shift and Caps Lock decode predictably in
+  rename; a horizontal resize fits whole columns; "Fit to contents" joined a
+  space's Layout page; a border press waits out a dead zone before resizing;
+  checked item boxes use the Windows accent with a white tick.
+- **Embedded icon (`TASKS.md` E1, E2).** `assets/deskspace.ico` and version
+  info are compiled into the executable; the tray, the settings window, and
+  the desktop verb use it, and the icon drawn in code is gone.
+- **Show Desktop hardening.** Spaces ignore `WM_SYSCOMMAND`/`SC_MINIMIZE`, so
+  survival across Win+D no longer depends on the tool-window exclusion.
+- **Placement setting removed.** The General page's "Keep spaces on the
+  desktop" (`always_on_desktop`) is gone; desktop-hosted placement is only
+  the `--placement` CLI option. Old config files still load (the key is
+  ignored).
+- **Docs review.** `AGENTS.md` gained "Design priorities"
+  (readability, maintainability, extensibility); `CONTEXT.md` gained module,
+  message, timer, and id tables; `TASKS.md` gained a file map, extension
+  recipes, and section K (file splits).
