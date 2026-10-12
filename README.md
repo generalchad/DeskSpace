@@ -4,7 +4,7 @@ DeskSpace is a free and open-source desktop organizer for Windows. It groups you
 *spaces* that you can arrange, resize, and style on a per-space basis. Spaces fit right in on
 Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
-service, and most importantly: No tracking or telemetry. DeskSpace will never phone home except to look for updates - and even that is an opt-in setting.
+service, and most importantly: No tracking or telemetry. DeskSpace never contacts the network today. A planned update check will be the one exception, and it will be off unless you turn it on.
 
 Currently, only desktop items and shortcuts are supported. Very soon, we intend to release *lenses*:
  Lenses are spaces that show the live contents of a folder. Other planned features include auto-hiding, multiple pages,
@@ -26,8 +26,9 @@ not a finished product yet.
   moving; cut, copy, and paste; delete to the Recycle Bin; rename in place; and
   hover for details. Icons keep their shortcut arrows and badges.
 - **Optional desktop takeover.** DeskSpace can hide Explorer's own desktop icons
-  and draw them itself for a consistent look. A small helper restores them if
-  DeskSpace is closed or crashes.
+  and draw them itself for a consistent look. Closing DeskSpace puts them back,
+  and a small helper (`deskspace-watchdog.exe`, kept beside `deskspace.exe`)
+  puts them back if it crashes.
 - **Themes.** All spaces share one look by default, and you can customize a
   single space without changing the rest.
 - **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
@@ -36,8 +37,9 @@ not a finished product yet.
 ## Requirements
 
 - Windows 10 or 11.
-- The stable Rust toolchain with the MSVC target (pinned in
-  `rust-toolchain.toml`). There are no other system dependencies.
+- The stable Rust toolchain (1.85 or newer) with the MSVC target;
+  `rust-toolchain.toml` selects the stable channel. There are no other system
+  dependencies.
 
 DeskSpace is Windows-only. Blur needs Windows 10 1803 or newer; rounded corners
 need Windows 11.
@@ -63,7 +65,7 @@ cargo run -p deskspace-app -- --no-icons
 --settings               Open the settings window on start
 --no-icons               Do not populate spaces from the desktop folder
 --click-through          Make spaces click-through (display only)
--v, --verbose            Increase log verbosity
+-v, --verbose            More logging: -v debug, -vv trace (RUST_LOG overrides)
 ```
 
 The hidden development flags `--on-top`, `--takeover`, and `--takeover-layer`
@@ -82,34 +84,45 @@ help inspect the look and the desktop layer.
 | Release | `cargo build --release` |
 | Dev loop | `./scripts/dev.ps1` |
 
-`scripts/dev.ps1` builds and runs a scratch profile; see
-`Get-Help ./scripts/dev.ps1` for its `-Fresh`, `-OnTop`, `-Settings`, `-Check`,
-and `-Release` switches.
+`scripts/dev.ps1` builds and runs with a scratch profile in
+`%TEMP%\deskspace-dev`. Its switches are `-Release`, `-Fresh`, `-RealConfig`,
+`-OnTop`, `-Settings`, `-NoIcons`, `-Check`, `-NoRun`, and `-Verbosity`;
+arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
 
 ## Controls
 
 - Drag a space title bar to move it; drag an edge or corner to resize it. The
-  wheel scrolls a resized space, and Ctrl+wheel changes the icon size.
+  wheel scrolls a space whose items do not fit, and Ctrl+wheel changes the
+  icon size (when the item preset is "Custom"; "Match Explorer's display"
+  follows the desktop's own icon size).
 - Double-click a space title bar to roll it up or down. Right-click a space for
   roll up, rename, lock, fit to contents, appearance, sort, delete, new space,
-  settings, and exit.
+  settings, hide/show spaces, and exit.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the
   desktop.
-- Double-click an item to open it; right-click for Explorer's context menu.
+- Double-click an item to open it; right-click for Explorer's context menu,
+  with DeskSpace's Rename and Move back to desktop on top. Click a selected
+  item again (slowly) to rename it.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
   selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
-  clears the selection, and `F5` refreshes the spaces.
+  clears the selection, `F5` refreshes the spaces, and the Menu key or
+  `Shift+F10` opens the context menu.
+- The arrow keys move the selection (Shift extends it, Ctrl moves only the
+  focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
+  `PageDown` scroll the space.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are.
 - The tray icon opens Settings on left-click and offers Settings, hide/show
   spaces, new space, and exit on right-click.
-- Press `Ctrl+Alt+D` (editable on the Hotkeys settings page) to hide or show the
-  spaces.
+- Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page
+  changes it and can also bind keys for a new space and for Settings. While
+  spaces are hidden, the desktop's right-click menu (under "Show more options"
+  on Windows 11) has "Show DeskSpace spaces".
 
 ## Configuration
 
@@ -162,6 +175,8 @@ cargo deny check all
 ```
 
 Keep each commit one logical unit of work, and add tests for new behavior.
+Readability, maintainability, and extensibility come first: see "Design
+priorities" in `AGENTS.md`, and pick up a ready-made task from `TASKS.md`.
 
 ## License
 
