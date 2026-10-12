@@ -16,7 +16,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+      - name: Show Rust version
+        run: rustc -Vv
       - name: Check tag matches workspace version
         shell: pwsh
         run: |

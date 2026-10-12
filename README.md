@@ -38,9 +38,8 @@ not a finished product yet.
 ## Requirements
 
 - Windows 10 or 11.
-- The stable Rust toolchain (1.85 or newer) with the MSVC target;
-  `rust-toolchain.toml` selects the stable channel. There are no other system
-  dependencies.
+- The pinned Rust toolchain with the MSVC target, installed automatically by
+  rustup from `rust-toolchain.toml`. There are no other system dependencies.
 
 DeskSpace is Windows-only. Blur needs Windows 10 1803 or newer; rounded corners
 need Windows 11.

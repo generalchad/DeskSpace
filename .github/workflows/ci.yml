@@ -14,9 +14,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+      - name: Show Rust version
+        run: rustc -Vv
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all --check

@@ -15,11 +15,15 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 ## Prerequisites
 
 - Windows 10 or 11 (x64)
-- Rust with the MSVC toolchain. `rust-toolchain.toml` selects the `stable`
-  channel today; ROADMAP D9 decides to pin an exact version there, which
-  rustup installs automatically (`docs/TASKS.md` E13). `Cargo.toml` sets
-  `rust-version = "1.85"` as the minimum supported version, a separate fact.
+- Rust with the MSVC toolchain. `rust-toolchain.toml` pins the exact stable
+  version, which rustup installs automatically (with the components and
+  targets it lists). `Cargo.toml` sets `rust-version = "1.85"` as the minimum
+  supported version, a separate fact.
 - No other system dependencies
+
+To bump the toolchain, change the version in `rust-toolchain.toml` alone, fix
+any new clippy lints in the same commit, and commit as
+`ci: bump the Rust toolchain to 1.x.y`.
 
 ## Commands
 

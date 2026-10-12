@@ -683,19 +683,19 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 
 ## E. Release engineering (ROADMAP M8)
 
-E1-E2 have landed (awaiting check). Do E12 first (it is small and fixes a
-shipped gap), then E13, then E3-E4 in order. E5-E11 have their own dependencies,
-stated in each task. Code signing (R10), the first dry run (R12), and winget
-(R13) are maintainer work.
+E1-E2 have landed (awaiting check), as have E12 and E13. Do E3, then E4, in
+order. E5-E11 have their own dependencies, stated in each task. Code signing
+(R10), the first dry run (R12), and winget (R13) are maintainer work.
 
 `.github/workflows/release.yml` runs on a `v*` tag. Its steps, in order:
-checkout; `dtolnay/rust-toolchain@stable` (E13 replaces it); "Check tag matches workspace
+checkout; `rustup toolchain install` (installs the pinned version from
+`rust-toolchain.toml`) and `rustc -Vv`; "Check tag matches workspace
 version" (compares `v<version>` of package `deskspace-app` from `cargo
 metadata` with `GITHUB_REF_NAME`); "Test" (`cargo test --workspace
 --locked`); "Build" (`cargo build --release --locked -p deskspace-app`, which
 builds both `deskspace.exe` and `deskspace-watchdog.exe`); "Package" (stages
-`deskspace.exe`, `LICENSE`, `NOTICE`, `README.md` into
-`deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
+`deskspace.exe`, `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`
+into `deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
 SHA-256); "Publish" (`gh release create <tag> <zip> <zip>.sha256 --title
 "DeskSpace <tag>" --generate-notes`, plus `--prerelease` when the tag
 contains `-`). Read it before starting any E task.
@@ -762,7 +762,7 @@ contains `-`). Read it before starting any E task.
     check: the tray, the settings title bar, and the Shift+right-click desktop
     menu entry show the icon at 100 % and 150 % scaling.
 
-- [ ] **E13. Pin the Rust toolchain (ROADMAP D9).** Before E3.
+- [x] **E13. Pin the Rust toolchain (ROADMAP D9).** Before E3.
   - `rust-toolchain.toml`: change `channel = "stable"` to the exact current
     stable version, written as `"1.MINOR.PATCH"` (run `rustc -V` with the
     current stable; at the time of writing it was 1.98.1). Keep the
