@@ -347,7 +347,7 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
   - Done when: every `pub const` in `mod menu` appears either in `other` or
     in a preset table. Test-only change (`test: ...`).
 
-- [ ] **A11. Say "spaces", not "spaces", in `scripts/dev.ps1`.**
+- [x] **A11. Say "spaces", not "spaces", in `scripts/dev.ps1`.**
   - The help text and parameter comments still say "spaces" (examples at
     ~17 and ~21, parameters at ~39 and ~43). Replace with "spaces". Comments
     and help text only; no behavior change.
