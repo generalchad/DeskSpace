@@ -353,7 +353,6 @@ Done:
   - `start_hidden`;
   - the global hotkeys, editable as text on the Hotkeys page with validation
     and conflict reporting: show/hide, new space, and open settings (F-18);
-  - `always_on_desktop`, applied at the next launch;
   - snapping, now `GridSpec.snap`.
 - **[done]** Dark mode for the settings window and menus, following Windows.
 

@@ -55,8 +55,7 @@ cargo run -p deskspace-app -- --no-icons
 --config <FILE>          Path to an explicit configuration file
 --placement <PLACEMENT>  top-level | desktop-background | desktop-foreground
                          (desktop-hosted spaces are opaque, with no blur;
-                         defaults to top-level, or desktop-hosted when the
-                         always_on_desktop setting is on)
+                         defaults to top-level)
 --reset                  Ignore the saved configuration and start fresh
 --hidden                 Start with spaces hidden
 --show                   Ask the running instance to show its spaces, or start

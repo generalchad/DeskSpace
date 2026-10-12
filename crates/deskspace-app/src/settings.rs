@@ -55,8 +55,6 @@ pub mod field {
     pub const HOTKEY_NOTE: u32 = 22;
     pub const START_HIDDEN: u32 = 23;
     pub const SNAP: u32 = 24;
-    pub const ALWAYS_ON_DESKTOP: u32 = 25;
-    pub const ALWAYS_ON_DESKTOP_NOTE: u32 = 26;
 
     pub const ABOUT_HEADING: u32 = 30;
     pub const ABOUT_SUMMARY: u32 = 31;
@@ -698,16 +696,6 @@ fn general_page(config: &Config) -> SettingsPage {
             )
             .suffix(" px"),
             Field::toggle(
-                field::ALWAYS_ON_DESKTOP,
-                "Keep spaces on the desktop",
-                config.window.always_on_desktop,
-            ),
-            Field::note(
-                field::ALWAYS_ON_DESKTOP_NOTE,
-                "Desktop-hosted spaces sit behind other windows and survive Show \
-                 Desktop, but have no blur. Takes effect next launch.",
-            ),
-            Field::toggle(
                 field::START_WITH_WINDOWS,
                 "Start DeskSpace when you sign in",
                 config.window.start_with_windows,
@@ -982,10 +970,6 @@ pub fn apply_field(
             }
             (field::SNAP, FieldValue::Slider(value)) => {
                 config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
-                Effect::Pending
-            }
-            (field::ALWAYS_ON_DESKTOP, FieldValue::Toggle(on)) => {
-                config.window.always_on_desktop = on;
                 Effect::Pending
             }
             (field::NEW_SPACE_TITLE, FieldValue::Text(text)) => {

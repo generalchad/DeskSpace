@@ -37,8 +37,8 @@ pub struct Cli {
     #[arg(
         long,
         value_enum,
-        help = "Where space windows live; defaults to top-level, or desktop-hosted \
-                when always_on_desktop is set (desktop-hosted spaces are opaque, no blur)"
+        help = "Where space windows live; defaults to top-level (desktop-hosted \
+                spaces are opaque, with no blur)"
     )]
     pub placement: Option<PlacementArg>,
 

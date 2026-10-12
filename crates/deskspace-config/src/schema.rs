@@ -25,9 +25,6 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowSettings {
-    /// Host spaces on the desktop (no blur) instead of top-level windows.
-    /// Applied when DeskSpace starts.
-    pub always_on_desktop: bool,
     pub toggle_hotkey: String,
     /// Creates a space at the pointer. Empty means unbound.
     pub new_space_hotkey: String,
@@ -53,7 +50,6 @@ pub struct WindowSettings {
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
-            always_on_desktop: false,
             toggle_hotkey: "Ctrl+Alt+D".to_string(),
             new_space_hotkey: String::new(),
             settings_hotkey: String::new(),
@@ -159,7 +155,6 @@ mod tests {
         "#;
         let parsed: Config = toml::from_str(text).unwrap();
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Shift+F");
-        assert!(!parsed.window.always_on_desktop);
         assert_eq!(parsed.desktop.layout.columns, 6);
         assert_eq!(
             parsed.desktop.layout.snap,

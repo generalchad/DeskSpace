@@ -372,7 +372,6 @@ blur and lets the tint reach 0 %. Enums serialize snake_case;
 Config { version, desktop: Desktop, theme: Theme, window: WindowSettings }
 
 WindowSettings {
-    always_on_desktop: bool,    // default false; hosted placement at startup
     toggle_hotkey: String,      // default "Ctrl+Alt+D"; show/hide spaces
     new_space_hotkey: String,   // default "" (unbound); create a space at the pointer
     settings_hotkey: String,    // default "" (unbound); open settings
@@ -878,8 +877,7 @@ WindowSettings {
 2. `app::run` enables DPI awareness, loads or creates `Config` (migrating
    older files), seeds a `Desktop` space from the desktop folder if there are
    none (unless `--no-icons`), and calls `deskspace_platform::run`. Placement
-   is `--placement` when given, else desktop-hosted when `always_on_desktop`
-   is set, else top-level.
+   is `--placement` when given, else top-level.
 3. On `Started`, the app registers the toggle hotkey, applies start-hidden,
    creates one window per space with its style and scene, and optionally opens
    settings (`--settings`).
@@ -1077,9 +1075,10 @@ WindowSettings {
   effect from the modifier keys, and the app performs the file move; an
   external shell source is told the move was already performed. Dragging out
   uses OLE too and now defaults to a move.
-- **`always_on_desktop` applies at next launch.** Switching placement recreates
+- **`--placement` applies at next launch.** Switching placement recreates
   every space window (and drops blur), so it is honored when DeskSpace starts
-  rather than live.
+  rather than live. Top-level is the only user-facing placement; desktop-hosted
+  is a hidden development flag.
 - **Icon cache is invalidated only after shell menu commands and renames.** It
   is keyed by path and pixel size, so an icon-size or DPI change reloads
   automatically; lens watchers will invalidate changed files.

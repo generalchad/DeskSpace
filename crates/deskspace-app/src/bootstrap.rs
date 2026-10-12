@@ -87,11 +87,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     // `--show` also forces them shown when it started a fresh instance, so a
     // stale desktop entry still works after an unclean exit.
     let hidden = !cli.show && (cli.hidden || config.window.start_hidden);
-    let placement = match cli.placement() {
-        Some(placement) => placement,
-        None if config.window.always_on_desktop => Placement::DesktopBackground,
-        None => Placement::TopLevel,
-    };
+    let placement = cli.placement().unwrap_or(Placement::TopLevel);
     let options = RunOptions {
         placement,
         click_through: cli.click_through,
