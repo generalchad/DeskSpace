@@ -14,7 +14,9 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 ## Prerequisites
 
 - Windows 10 or 11 (x64)
-- Rust stable (pinned in `rust-toolchain.toml`) with the MSVC toolchain
+- Rust stable with the MSVC toolchain. `rust-toolchain.toml` selects the
+  `stable` channel (not a fixed version); `Cargo.toml` sets
+  `rust-version = "1.85"` as the minimum.
 - No other system dependencies
 
 ## Commands
@@ -29,14 +31,52 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 | Format | `cargo fmt --all` |
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release` |
-| Dev loop | `./scripts/dev.ps1` (scratch config; `-Fresh`, `-OnTop`, `-Settings`, `-Check`, `-Release`; `Get-Help ./scripts/dev.ps1`) |
+| Dev loop | `./scripts/dev.ps1` (see below) |
 
 `scripts/dev.ps1` stops any DeskSpace running from `target\` before building,
-because the running executable is locked.
+because the running executable is locked, then runs the app with a scratch
+config at `%TEMP%\deskspace-dev\deskspace.toml`. Switches: `-Release`,
+`-Fresh` (delete the scratch config), `-RealConfig`, `-OnTop`, `-Settings`,
+`-NoIcons`, `-Check` (fmt, clippy `-D warnings`, tests first), `-NoRun`,
+`-Verbosity 0..2`; anything after `--` is passed to the app.
+`Get-Help ./scripts/dev.ps1` has examples.
 
-Always run `cargo fmt --all`, `cargo clippy --workspace --all-targets`, and
-`cargo test --workspace` before considering a change complete. CI should treat
-clippy warnings as failures.
+Always run `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D
+warnings`, and `cargo test --workspace` before considering a change complete.
+CI (`.github/workflows/ci.yml`) treats clippy warnings as failures and also
+runs `cargo deny check all`.
+
+## Design priorities
+
+Readability, maintainability, and extensibility come first, ahead of
+cleverness and ahead of saving a few lines. DeskSpace is built to be
+extended feature by feature (see the ROADMAP feature index) by contributors
+and models of varying strength, so every change should leave the code easier
+to read and to extend than it found it.
+
+- **Readable.** A reader should understand a function without scrolling or
+  jumping between files. Prefer small functions with descriptive names, early
+  returns, and named constants over magic numbers. Keep one concept per
+  module; when a file passes roughly 800 lines of non-test code, split it
+  along its existing seams (see `TASKS.md` section K) rather than adding to it.
+- **Maintainable.** One source of truth per fact: tables drive menus
+  (`OPACITY_PRESETS`, `SORT_PRESETS`), settings fields (`field::` ids,
+  `HOTKEY_BINDINGS`), and hotkeys, so adding an entry is one line, not edits
+  in several places. Delete dead code and dead branches instead of keeping
+  them "just in case". Keep pure logic (core, `settings.rs`, `scene.rs`,
+  helpers such as `next_in_direction`) separate from Win32 calls, so it can be
+  unit-tested. When code and docs disagree, fix the docs in the same commit.
+- **Extensible.** New behavior plugs into the existing extension points
+  instead of special-casing: a `Command` variant for model changes, an
+  `Event`/`SpaceEvent` variant for new input, a field on `SpaceScene` /
+  `SettingsForm` for new UI, a `#[serde(default)]` field for new settings,
+  and a `Surface` for anything that should work on both spaces and the
+  desktop layer. `TASKS.md` has a recipe for each. If a feature does not fit
+  any extension point, stop and design one rather than bolting it on.
+- **Consistent.** Copy the nearest existing pattern (naming, error handling,
+  module layout, test style) instead of inventing a new one. Ids that other
+  code or docs cite (`F-xx`, `Mx`, `Dx`, task ids, `field::` ids, timer and
+  message ids) are never renumbered.
 
 ## Tooling
 
@@ -68,14 +108,18 @@ and `vpk`.
 ## Workspace layout
 
 ```
-crates/deskspace-core      Domain model. No OS or IO dependencies.
+crates/deskspace-core      Domain model. No OS dependencies (one known
+                           exception: item.rs reads file metadata; TASKS R4).
 crates/deskspace-config    Serde/TOML configuration schema and persistence.
 crates/deskspace-platform  UI runtime, space windows, DWM, Direct2D painter,
                            tray, menus, settings window, shell, hotkeys.
-crates/deskspace-app       Application binary, CLI, event handler, scene and
-                           settings-form builders, and the `deskspace-watchdog`
-                           helper binary.
+crates/deskspace-app       The `deskspace` binary (CLI, the `App` event
+                           handler, scene and settings-form builders, managed
+                           storage) and the `deskspace-watchdog` helper binary.
 ```
+
+`TASKS.md` opens with a file map: where each kind of code lives, so a task
+can name a file instead of a search.
 
 Dependency direction: `app -> {config, platform} -> core`. `core` depends on
 nothing in the workspace. Do not introduce upward dependencies.
@@ -115,9 +159,10 @@ nothing in the workspace. Do not introduce upward dependencies.
 Commit after every change; never leave finished work uncommitted. Keep each
 commit one logical unit of work, and split unrelated edits into separate
 commits - do not batch them. When working from `TASKS.md`, make one commit per
-task (see its "How to work a task", rule 7) and tick the task's box in that
+task (see its "How to work a task", rule 8) and tick the task's box in that
 same commit. Follow the message style there: `feat: ...`, `fix: ...`,
-`refactor: ...`, `docs: ...`, imperative and lowercase. Run `cargo fmt --all`,
+`refactor: ...`, `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`,
+imperative and lowercase. Run `cargo fmt --all`,
 `cargo clippy --workspace --all-targets -- -D warnings`, and
 `cargo test --workspace` before committing.
 
@@ -188,7 +233,8 @@ Rust specifics:
   Find window rects by enumerating the `DeskSpaceSpace` and
   `DeskSpaceSettings` classes. Remove the scratch config afterwards.
 - Child windows get no DWM material or composited alpha. Desktop-hosted
-  placement is therefore opaque and uses a window region for rounding.
+  placement (`--placement desktop-*`, and the desktop layer when a host is
+  found) is therefore opaque and uses a window region for rounding.
 - `WS_EX_TRANSPARENT` only makes a window click-through when combined with
   `WS_EX_LAYERED`, and layering disables the blur. `--click-through` is a
   display-only mode.
@@ -196,23 +242,24 @@ Rust specifics:
   `Start-Process -WindowStyle Hidden`) hides the settings window: Windows
   applies the startup show command to the first `ShowWindow` on an overlapped
   window.
-- The keyboard hook (`win32/keyboard.rs`) has two modes: inline-edit capture
-  (consumes all editing keys) and a selection-key watch (`Ui::watch_selection_keys`):
-  Delete, F2, Alt+Enter, Enter, Shift+Delete, Esc, F5, the Menu key, Ctrl+C, and
-  Ctrl+X while an item is selected, and F2, Alt+Enter, F5, the Menu key, Ctrl+V,
-  Ctrl+A, Home, End, PageUp, PageDown, the arrow keys, and typed characters
-  (type-to-select) while a space is current (F2 renames the focused item or the
-  space title, Alt+Enter opens the item's Properties or DeskSpace Settings,
-  Enter opens the focused item, the Menu key or Shift+F10 opens the context
-  menu, Home/End/PageUp/PageDown scroll the space, and the arrows move the
-  selection across the grid, with Shift extending it and Ctrl moving the focus
-  only). The
-  watch only consumes those keys while the desktop shell has the foreground, so
-  other apps keep their own shortcuts. A popup menu owns every key while it is
-  open (`keyboard::set_menu_open`), so the hook passes keys through then. The
-  hook is installed only while a mode is active; every other key passes
-  through. New global key handling goes here, not in a window procedure,
-  because spaces are never activated.
+- The keyboard hook (`win32/keyboard.rs`, `fn handle`) is the only way
+  DeskSpace sees keys, because spaces are never activated. New key handling
+  goes there, not in a window procedure. It has three flags: `EDITING`
+  (inline rename; consumes every editing key, and an Alt or Win combination
+  cancels the rename and passes through), `WATCH_SELECTION` (an item is
+  selected), and `WATCH_PASTE` (a space is current; the name is historical).
+  `Ui::watch_selection_keys` sets the last two. Which key needs which flag:
+  - either watch flag: F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, and
+    Shift+F10;
+  - `WATCH_SELECTION`: Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X;
+  - `WATCH_PASTE`: Ctrl+V, the arrow keys (Shift extends, Ctrl moves the focus
+    only), Home, End, PageUp, PageDown, and typed characters (type-to-select).
+
+  The watch consumes keys only while the desktop shell has the foreground, so
+  other apps keep their own shortcuts, and passes everything through while a
+  popup menu is open (`keyboard::set_menu_open`). The hook is installed only
+  while a flag is set. The module header and the flag comments in
+  `keyboard.rs` still describe an older, narrower key set (`TASKS.md` A7).
 - Dragging an item inside its space rearranges it (`ReorderItem`); only once
   the pointer leaves the space does the app start an OLE shell drag, which is
   what moves the real file.
