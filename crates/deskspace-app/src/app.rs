@@ -56,8 +56,8 @@ const INFO_TIP_TIMER: usize = 3;
 /// How long the pointer must rest on an item before its info tip appears,
 /// matching Explorer's tooltip delay.
 const INFO_TIP_DELAY_MS: u32 = 600;
-/// Timer id for the deferred settings preview (id 4 is reserved by TASKS.md
-/// E10).
+/// Timer id for the deferred settings preview (id 4 is reserved by
+/// docs/TASKS.md E10).
 const PREVIEW_TIMER: usize = 6;
 /// How long a settings preview may lag the edit that caused it. `WM_TIMER`
 /// is only delivered once the queue is empty, so a burst of slider ticks

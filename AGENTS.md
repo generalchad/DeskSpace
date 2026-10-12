@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Guidance for automated agents and contributors working in this repository.
-For architecture and current state, read `CONTEXT.md` first. For the plan,
-see `ROADMAP.md`; for ready-to-do work items, see `TASKS.md`.
+The project documents live in `docs/`: read `docs/CONTEXT.md` for the
+architecture and current state first, then `docs/ROADMAP.md` for the plan and
+`docs/TASKS.md` for ready-to-do work items.
 
 ## Project
 
@@ -16,7 +17,7 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 - Windows 10 or 11 (x64)
 - Rust with the MSVC toolchain. `rust-toolchain.toml` selects the `stable`
   channel today; ROADMAP D9 decides to pin an exact version there, which
-  rustup installs automatically (`TASKS.md` E13). `Cargo.toml` sets
+  rustup installs automatically (`docs/TASKS.md` E13). `Cargo.toml` sets
   `rust-version = "1.85"` as the minimum supported version, a separate fact.
 - No other system dependencies
 
@@ -59,7 +60,7 @@ to read and to extend than it found it.
   jumping between files. Prefer small functions with descriptive names, early
   returns, and named constants over magic numbers. Keep one concept per
   module; when a file passes roughly 800 lines of non-test code, split it
-  along its existing seams (see `TASKS.md` section K) rather than adding to it.
+  along its existing seams (see `docs/TASKS.md` section K) rather than adding to it.
 - **Maintainable.** One source of truth per fact: tables drive menus
   (`OPACITY_PRESETS`, `SORT_PRESETS`), settings fields (`field::` ids,
   `HOTKEY_BINDINGS`), and hotkeys, so adding an entry is one line, not edits
@@ -72,7 +73,7 @@ to read and to extend than it found it.
   `Event`/`SpaceEvent` variant for new input, a field on `SpaceScene` /
   `SettingsForm` for new UI, a `#[serde(default)]` field for new settings,
   and a `Surface` for anything that should work on both spaces and the
-  desktop layer. `TASKS.md` has a recipe for each. If a feature does not fit
+  desktop layer. `docs/TASKS.md` has a recipe for each. If a feature does not fit
   any extension point, stop and design one rather than bolting it on.
 - **Consistent.** Copy the nearest existing pattern (naming, error handling,
   module layout, test style) instead of inventing a new one. Ids that other
@@ -103,7 +104,7 @@ The remaining cargo subcommands (`clean`, `update`, `package`, `expand`,
 A missing subcommand can be installed first with the matching helper
 (`cargo-deny-install`, `cargo-hack-install`, `cargo-machete-install`). These
 tools pass `--locked`, so keep `Cargo.lock` current first (see Gotchas).
-Release work (`TASKS.md` section E) also uses `gh`, `actionlint`, `dotnet`,
+Release work (`docs/TASKS.md` section E) also uses `gh`, `actionlint`, `dotnet`,
 and `vpk`.
 
 ## Workspace layout
@@ -119,7 +120,7 @@ crates/deskspace-app       The `deskspace` binary (CLI, the `App` event
                            storage) and the `deskspace-watchdog` helper binary.
 ```
 
-`TASKS.md` opens with a file map: where each kind of code lives, so a task
+`docs/TASKS.md` opens with a file map: where each kind of code lives, so a task
 can name a file instead of a search.
 
 Dependency direction: `app -> {config, platform} -> core`. `core` depends on
@@ -159,7 +160,7 @@ nothing in the workspace. Do not introduce upward dependencies.
 
 Commit after every change; never leave finished work uncommitted. Keep each
 commit one logical unit of work, and split unrelated edits into separate
-commits - do not batch them. When working from `TASKS.md`, make one commit per
+commits - do not batch them. When working from `docs/TASKS.md`, make one commit per
 task (see its "How to work a task", rule 8) and tick the task's box in that
 same commit. Follow the message style there: `feat: ...`, `fix: ...`,
 `refactor: ...`, `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`,

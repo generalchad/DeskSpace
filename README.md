@@ -8,7 +8,7 @@ service, and most importantly: No tracking or telemetry. DeskSpace never contact
 
 Currently, only desktop items and shortcuts are supported. Very soon, we intend to release *lenses*:
  Lenses are spaces that show the live contents of a folder. Other planned features include auto-hiding, multiple pages,
-and saved layouts. See [`ROADMAP.md`](ROADMAP.md) but be forewarned - it's a bit wordy right now!
+and saved layouts. See [`ROADMAP.md`](docs/ROADMAP.md) but be forewarned - it's a bit wordy right now!
 
 Status: early but usable. Spaces, desktop items, and the tray, menus, and
 settings window are in place; some behaviors are still being checked. This is
@@ -159,15 +159,15 @@ show and the platform turns that into windows and pixels.
 
 | File | Contents |
 |------|----------|
-| [`CONTEXT.md`](CONTEXT.md) | Architecture and current behavior (authoritative) |
-| [`ROADMAP.md`](ROADMAP.md) | The plan, milestones, and the feature index |
-| [`TASKS.md`](TASKS.md) | Concrete, one-commit work items |
+| [`CONTEXT.md`](docs/CONTEXT.md) | Architecture and current behavior (authoritative) |
+| [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
+| [`TASKS.md`](docs/TASKS.md) | Concrete, one-commit work items |
 | [`AGENTS.md`](AGENTS.md) | Engineering rules and the build/test workflow |
 
 ## Contributing
 
 Contributions are welcome. Read [`AGENTS.md`](AGENTS.md) first, then only the
-`CONTEXT.md` sections a change touches. Before considering a change complete,
+`docs/CONTEXT.md` sections a change touches. Before considering a change complete,
 run:
 
 ```
@@ -179,7 +179,7 @@ cargo deny check all
 
 Keep each commit one logical unit of work, and add tests for new behavior.
 Readability, maintainability, and extensibility come first: see "Design
-priorities" in `AGENTS.md`, and pick up a ready-made task from `TASKS.md`.
+priorities" in `AGENTS.md`, and pick up a ready-made task from `docs/TASKS.md`.
 
 ## License
 

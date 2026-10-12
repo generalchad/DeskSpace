@@ -5,7 +5,7 @@
 //! choice is what drives the move/copy cursor and tells the drag source whether
 //! to keep its original, so it replaces `WS_EX_ACCEPTFILES` entirely.
 //!
-//! Modifier meaning matches the rest of DeskSpace (see `CONTEXT.md`): a drop
+//! Modifier meaning matches the rest of DeskSpace (see `docs/CONTEXT.md`): a drop
 //! moves the file into the space, and Shift keeps the original in place (the
 //! space refers to it). This is intentionally the opposite of Explorer's
 //! Shift=move, but it matches the app's "Shift preserves the original"
