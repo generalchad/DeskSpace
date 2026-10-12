@@ -34,7 +34,7 @@ jobs:
         run: |
           $name = "deskspace-$env:GITHUB_REF_NAME-x86_64-pc-windows-msvc"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/deskspace.exe, LICENSE, NOTICE, README.md -Destination $name
+          Copy-Item target/release/deskspace.exe, target/release/deskspace-watchdog.exe, LICENSE, NOTICE, README.md -Destination $name
           Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
           (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" |
             Out-File -Encoding ascii "$name.zip.sha256"

@@ -154,9 +154,8 @@ A native, lightweight, offline Windows desktop organizer that:
     partial build never hides the desktop. Both have landed. **v0.2 ships it
     opt-in** (decided 2026-10-11, D9): it is an advertised General-page
     setting, off by default. The default may flip in a later release once the
-    on-screen checks pass, the release ships the watchdog (`TASKS.md` E12),
-    and v0.2 users have reported on it; that is a new decision, recorded
-    here when made.
+    on-screen checks pass and v0.2 users have reported on it; that is a new
+    decision, recorded here when made.
 
 - **D9. Interaction and build decisions (2026-10-11).**
   - *Takeover default:* opt-in for v0.2 (see D8).
@@ -576,10 +575,9 @@ Remaining:
    - M2 takeover may make it unnecessary by giving DeskSpace its own desktop
      menu.
 5. A release checklist, a versioning policy, and a reproducible build.
-   `.github/workflows/release.yml` already publishes a zip (exe, `LICENSE`,
-   `NOTICE`, `README.md`) and its SHA-256 to GitHub Releases on a `v*` tag
-   that matches the workspace version. The zip must also carry
-   `deskspace-watchdog.exe`, the takeover crash helper (`TASKS.md` E12).
+   `.github/workflows/release.yml` already publishes a zip (`deskspace.exe`,
+   `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its SHA-256
+   to GitHub Releases on a `v*` tag that matches the workspace version.
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
 7. Auto-update from GitHub Releases (F-45), following the policy in D6.
@@ -665,7 +663,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done (watchdog missing from the zip, E12) |
+| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |

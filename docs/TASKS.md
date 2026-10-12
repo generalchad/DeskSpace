@@ -700,7 +700,7 @@ SHA-256); "Publish" (`gh release create <tag> <zip> <zip>.sha256 --title
 "DeskSpace <tag>" --generate-notes`, plus `--prerelease` when the tag
 contains `-`). Read it before starting any E task.
 
-- [ ] **E12. Ship the watchdog in the release zip.**
+- [ ] **E12. Ship the watchdog in the release zip.** (awaiting check)
   - The takeover's crash restore needs `deskspace-watchdog.exe` beside
     `deskspace.exe` (`win32/watchdog.rs`, `arm_watchdog`), but the "Package"
     step copies only `deskspace.exe`, `LICENSE`, `NOTICE`, and `README.md`.

@@ -1276,10 +1276,9 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   flag), DeskSpace hides every desktop `SysListView32` and draws the loose
   items on its own layer; a clean exit and every startup restore the icons, and
   `TaskbarCreated` and a 5-second health timer re-hide them after Explorer
-  restarts. A watchdog helper (`deskspace-watchdog.exe`, which must sit beside
-  `deskspace.exe`) launched before the icons are hidden restores them if the
-  process crashes (I6). The release zip does not ship the watchdog yet
-  (`TASKS.md` E12), so a released build has no crash restore.
+  restarts. A watchdog helper (`deskspace-watchdog.exe`, shipped beside
+  `deskspace.exe` in the release zip) launched before the icons are hidden
+  restores them if the process crashes (I6).
 - **File moves have no undo yet.** "Move back to desktop" and deleting a space
   return stored files; files from another drive stay in place (a move there
   would copy). The Desktop folder is watched while the layer is drawn, so the
@@ -1377,12 +1376,12 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   clippy with `-D warnings`, tests, and `cargo deny check all`. Pushing a `v*`
   tag that matches the workspace version runs `release.yml`: it tests with
   `--locked`, builds `-p deskspace-app` in release, and publishes an unsigned
-  `deskspace-<tag>-x86_64-pc-windows-msvc.zip` (`deskspace.exe`, `LICENSE`,
-  `NOTICE`, `README.md`) and its `.sha256` to GitHub Releases, as a
-  pre-release when the tag contains `-`. The zip lacks
-  `deskspace-watchdog.exe` (`TASKS.md` E12). The build is not yet
-  reproducible (E3): the toolchain still follows `stable`; ROADMAP D9 pins
-  an exact version (E13). Auto-update is planned in M8 (F-45).
+  `deskspace-<tag>-x86_64-pc-windows-msvc.zip` (`deskspace.exe`,
+  `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its
+  `.sha256` to GitHub Releases, as a pre-release when the tag contains `-`.
+  The build is not yet reproducible (E3): the toolchain still follows
+  `stable`; ROADMAP D9 pins an exact version (E13). Auto-update is planned in
+  M8 (F-45).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 
