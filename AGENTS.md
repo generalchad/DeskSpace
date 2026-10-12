@@ -14,9 +14,10 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 ## Prerequisites
 
 - Windows 10 or 11 (x64)
-- Rust stable with the MSVC toolchain. `rust-toolchain.toml` selects the
-  `stable` channel (not a fixed version); `Cargo.toml` sets
-  `rust-version = "1.85"` as the minimum.
+- Rust with the MSVC toolchain. `rust-toolchain.toml` selects the `stable`
+  channel today; ROADMAP D9 decides to pin an exact version there, which
+  rustup installs automatically (`TASKS.md` E13). `Cargo.toml` sets
+  `rust-version = "1.85"` as the minimum supported version, a separate fact.
 - No other system dependencies
 
 ## Commands

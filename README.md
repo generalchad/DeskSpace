@@ -25,7 +25,8 @@ not a finished product yet.
   select; drag items in, out, and between spaces with a picture of what you are
   moving; cut, copy, and paste; delete to the Recycle Bin; rename in place; and
   hover for details. Icons keep their shortcut arrows and badges.
-- **Optional desktop takeover.** DeskSpace can hide Explorer's own desktop icons
+- **Optional desktop takeover** (off by default; turn on "Take over the
+  desktop" in Settings > General). DeskSpace can hide Explorer's own desktop icons
   and draw them itself for a consistent look. Closing DeskSpace puts them back,
   and a small helper (`deskspace-watchdog.exe`, kept beside `deskspace.exe`)
   puts them back if it crashes.
@@ -117,6 +118,8 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   `PageDown` scroll the space.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are.
+- Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
+  the desktop takeover on, your loose desktop icons stay visible.
 - The tray icon opens Settings on left-click and offers Settings, hide/show
   spaces, new space, and exit on right-click.
 - Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page

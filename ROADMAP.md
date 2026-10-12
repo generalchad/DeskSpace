@@ -151,10 +151,34 @@ A native, lightweight, offline Windows desktop organizer that:
     only acts on a crash.
   - *Opt-in during construction:* hiding is behind an off-by-default setting
     (and a hidden `--takeover` flag) until the layer and watchdog land, so a
-    partial build never hides the desktop. Both have landed; it stays off by
-    default until the pending on-screen checks pass and the release ships the
-    watchdog (`TASKS.md` E12). Turning it on by default is a maintainer
-    decision for v0.2.
+    partial build never hides the desktop. Both have landed. **v0.2 ships it
+    opt-in** (decided 2026-10-11, D9): it is an advertised General-page
+    setting, off by default. The default may flip in a later release once the
+    on-screen checks pass, the release ships the watchdog (`TASKS.md` E12),
+    and v0.2 users have reported on it; that is a new decision, recorded
+    here when made.
+
+- **D9. Interaction and build decisions (2026-10-11).**
+  - *Takeover default:* opt-in for v0.2 (see D8).
+  - *Ctrl+wheel under "Match Explorer's display":* it drives the desktop's
+    own icon size (`IFolderView2::SetViewModeAndIconSize`), exactly as
+    Ctrl+wheel on the desktop does, and spaces that match Explorer follow
+    it, so they stay 1:1 with the desktop. Under the `Custom` preset it keeps
+    changing DeskSpace's own global icon size. A customized space with its
+    own `Custom` look keeps its size either way. Work item: `TASKS.md` F13.
+  - *Rust toolchain:* pinned to an exact version in `rust-toolchain.toml`,
+    which CI and the release workflow both use, and bumped deliberately in
+    its own commit. `rust-version` in `Cargo.toml` stays the minimum
+    supported version. Work item: `TASKS.md` E13.
+  - *Right-button drag:* Explorer-style. A right drag on an item always
+    starts a shell drag (it never reorders inside the space). Dropping on
+    Explorer or the desktop shows the shell's own Move / Copy / Create
+    shortcut menu; dropping on a space shows DeskSpace's equivalent menu.
+    Work items: `TASKS.md` G5a-G5c.
+  - *Hiding spaces leaves the desktop layer visible:* "Hide spaces" (tray,
+    space menu, hotkey) hides spaces only. The takeover layer stands in for
+    Explorer's icons, which hiding spaces never hid. Hiding everything
+    (spaces and icons) is M5's hide-all (F-11), a separate command.
 
 ## 3. Guiding principles
 
@@ -199,11 +223,12 @@ A native, lightweight, offline Windows desktop organizer that:
    unit-tested or smoke-tested (`CONTEXT.md` section 2 lists them, and every
    "(awaiting check)" task in `TASKS.md`). Confirm them before more work
    builds on them.
-3. **Release readiness for v0.2:** ship the watchdog in the zip (E12), then
-   the reproducible build and release checklist (E3, E4).
+3. **Release readiness for v0.2:** ship the watchdog in the zip (E12), pin
+   the toolchain (E13), then the reproducible build and release checklist
+   (E3, E4).
 4. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-5. **Cut v0.2**, and decide whether takeover is on by default (D8).
+5. **Cut v0.2**, with takeover as an opt-in setting (D8, D9).
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -318,7 +343,10 @@ Remaining:
    startup. Lenses will reuse the same watcher (M4 phase 2).
 2. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
-3. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
+3. **Right-button drag** with Explorer's drop menu (D9; `TASKS.md`
+   G5a-G5c). Its "Create shortcuts here" shares the shortcut-creation code
+   with F-50.
+4. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
    carries a Shell ID List, not `CF_HDROP`, so a space shows the red no-drop
    cursor. It should create a shortcut in the space, as Explorer does, including
    packaged apps that have no filesystem path. Needs design; see F-50.
@@ -439,7 +467,8 @@ Goal: hide, reveal, and peek instantly; then animate it.
 Remaining:
 1. Roll-up policy: manual (done), automatic after idle, and roll up on
    mouse-out / expand on hover (F-04). Add a per-space roll-up button.
-2. Hide all: hide spaces and icons, and reveal them on a desktop click, a
+2. Hide all: hide spaces and icons (including the takeover layer, which
+   "Hide spaces" leaves visible, D9), and reveal them on a desktop click, a
    hotkey, or a peek (F-11, F-13). Double-clicking empty desktop toggles them,
    as in spaces (F-10).
 3. Hover opacity: idle spaces fade to a chosen opacity and become solid on
@@ -574,8 +603,8 @@ machine.
 ## 6. Release mapping
 
 - **v0.2 "Take the desktop"**: M0, M1, M2, M3. The first usable release, with
-  D2D rendering and the Windows 11 look, real desktop takeover, and the tray,
-  context menu, and settings.
+  D2D rendering and the Windows 11 look, desktop takeover as an opt-in
+  setting (D8, D9), and the tray, context menu, and settings.
 - **v0.3 "Lenses"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
@@ -616,7 +645,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
-| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look) |
+| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel under Match Explorer decided (D9), open (`TASKS.md` F13) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
@@ -627,7 +656,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-33 | Animations toggle | M5 | Open |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
-| F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending |
+| F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending. Right-button drag decided (D9), open (`TASKS.md` G5a-G5c) |
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
@@ -675,6 +704,8 @@ Resolved:
   a watchdog helper. See D8.
 - **Update policy (M8).** Velopack, opt-in, prompt then restart, and skip a
   version. See D6.
+- **Takeover default, Ctrl+wheel, toolchain, right drag, hide vs layer.**
+  See D9.
 
 ## 9. Risks
 
@@ -948,3 +979,7 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   (readability, maintainability, extensibility); `CONTEXT.md` gained module,
   message, timer, and id tables; `TASKS.md` gained a file map, extension
   recipes, and section K (file splits).
+- **Decisions D9.** Takeover stays opt-in for v0.2; Ctrl+wheel under Match
+  Explorer drives the desktop's icon size; the toolchain is pinned; right
+  drag follows Explorer's drop menu; hiding spaces leaves the desktop layer.
+  Work items F13, E13, and G5a-G5c.

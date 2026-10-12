@@ -594,7 +594,7 @@ is large.
 
 Listed so they are not attempted piecemeal. Each needs design work first.
 Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
-(`D1`-`D8`).
+(`D1`-`D9`).
 
 - **R1. Split `deskspace-app/src/app.rs`** (4,483 lines as of 2026-10-11) into
   `app/` submodules, each with its own `impl App` block: `persist`, `view`,
@@ -684,12 +684,12 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 ## E. Release engineering (ROADMAP M8)
 
 E1-E2 have landed (awaiting check). Do E12 first (it is small and fixes a
-shipped gap), then E3-E4 in order. E5-E11 have their own dependencies,
+shipped gap), then E13, then E3-E4 in order. E5-E11 have their own dependencies,
 stated in each task. Code signing (R10), the first dry run (R12), and winget
 (R13) are maintainer work.
 
 `.github/workflows/release.yml` runs on a `v*` tag. Its steps, in order:
-checkout; `dtolnay/rust-toolchain@stable`; "Check tag matches workspace
+checkout; `dtolnay/rust-toolchain@stable` (E13 replaces it); "Check tag matches workspace
 version" (compares `v<version>` of package `deskspace-app` from `cargo
 metadata` with `GITHUB_REF_NAME`); "Test" (`cargo test --workspace
 --locked`); "Build" (`cargo build --release --locked -p deskspace-app`, which
@@ -762,14 +762,35 @@ contains `-`). Read it before starting any E task.
     check: the tray, the settings title bar, and the Shift+right-click desktop
     menu entry show the icon at 100 % and 150 % scaling.
 
-- [ ] **E3. Reproducible release build (ROADMAP M8 item 5).**
-  - The toolchain is not pinned: `rust-toolchain.toml` says
-    `channel = "stable"` and both workflows use
-    `dtolnay/rust-toolchain@stable`, so a later rebuild may use a different
-    rustc. Do not pin it in this task. Instead, make the "Build" step print
-    `rustc -Vv` into the log, and say in `CONTEXT.md` that reproducing a
-    release needs that rustc version. If you think the channel should be
-    pinned, note it under **Found while working**.
+- [ ] **E13. Pin the Rust toolchain (ROADMAP D9).** Before E3.
+  - `rust-toolchain.toml`: change `channel = "stable"` to the exact current
+    stable version, written as `"1.MINOR.PATCH"` (run `rustc -V` with the
+    current stable; at the time of writing it was 1.98.1). Keep the
+    `components`, `targets`, and `profile` lines.
+  - `.github/workflows/ci.yml` and `release.yml`: replace each
+    `uses: dtolnay/rust-toolchain@stable` step with a step that installs the
+    toolchain the file names, so the file stays the single source of truth:
+    `run: rustup toolchain install` (with no argument, rustup 1.28 and newer
+    installs the toolchain from `rust-toolchain.toml`, with its components
+    and targets), followed by a `run: rustc -Vv` step so the log records the
+    version. If the runner's rustup is older and the command fails, use
+    `rustup show` instead, which installs it on older versions.
+  - Do not change `rust-version = "1.85"` in `Cargo.toml`; it is the
+    minimum supported version, a separate fact.
+  - Run `cargo clippy --workspace --all-targets -- -D warnings` with the
+    pinned version; it must pass unchanged.
+  - Docs: `AGENTS.md` Prerequisites (say the toolchain is pinned in
+    `rust-toolchain.toml` and installed automatically by rustup) and add a
+    short "Bumping the toolchain" note there: change the version in
+    `rust-toolchain.toml` alone, fix any new clippy lints in the same
+    commit, and commit as `ci: bump the Rust toolchain to 1.x.y`.
+    `README.md` Requirements: the pinned version is installed automatically
+    by rustup.
+  - Done when: CI runs show the pinned `rustc -Vv`, and
+    `rg "rust-toolchain@stable" .github` finds nothing.
+
+- [ ] **E3. Reproducible release build (ROADMAP M8 item 5).** After E13,
+  which pins the toolchain, so a rebuild uses the same rustc.
   - `.github/workflows/release.yml`: on the Build step, set
     `RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo`.
     Then confirm with `strings`/`Select-String` that no runner path is left
@@ -1119,15 +1140,49 @@ Small requests, one commit each.
   in a space and compare the box to Explorer's; change the Windows accent and
   confirm the box follows it.
 
-- [ ] **F13. Ctrl+wheel under "Match Explorer's display".** **[needs
-  decision]** `App::adjust_icon_size` (`app/pointer.rs`) changes the global
-  `Theme.icon_size`, but under the default `MatchExplorer` preset Explorer's
-  icon size replaces it (`App::space_scale`, `app/view.rs`), so Ctrl+wheel
-  visibly does nothing for most users. Options for the maintainer: (a) do
-  nothing while matching and say so; (b) switch the preset to `Custom` on the
-  first Ctrl+wheel; (c) change the desktop's own icon size through
-  `IFolderView2::SetViewModeAndIconSize`, as Explorer's Ctrl+wheel does, so
-  spaces follow it. Do not implement until one is chosen.
+- [ ] **F13. Ctrl+wheel under "Match Explorer's display" drives the
+  desktop's icon size (ROADMAP D9).**
+  - Today `App::adjust_icon_size` (`app/pointer.rs`) changes the global
+    `Theme.icon_size`, but under the default `MatchExplorer` preset
+    Explorer's icon size replaces it (`App::icon_scale` / `space_scale`,
+    `app/view.rs`), so Ctrl+wheel visibly does nothing. D9 decides it should
+    change the desktop's own icon size, as Ctrl+wheel on the desktop does.
+  - Platform, `crates/deskspace-platform/src/win32/display_settings.rs`:
+    1. Add `pub const DESKTOP_ICON_RANGE: (i32, i32) = (16, 256);` and
+       `pub const DESKTOP_ICON_STEP: i32 = 8;` with a `///` doc each (pixels;
+       16 is the smallest icon view, 256 the jumbo size).
+    2. Add a pure, tested `pub fn next_desktop_icon_size(current: i32,
+       notches: i32) -> i32`: `current + notches * DESKTOP_ICON_STEP`,
+       clamped to the range. Tests: one notch up, one down, both clamps.
+    3. Add `pub fn set_desktop_icon_size(pixels: i32) -> bool`. It gets the
+       view with `shell_view::desktop_shell_view()`, casts it to
+       `IFolderView2`, reads the current mode with `GetViewModeAndIconSize`,
+       and calls `SetViewModeAndIconSize(mode, pixels)`, keeping the mode.
+       Return `false` (with a `tracing::debug!`) on any failure. Copy the
+       shape and `// SAFETY:` wording of `view_icon_size` in the same file,
+       and link the Microsoft Learn page for
+       `IFolderView2::SetViewModeAndIconSize` beside the call.
+    4. Re-export both functions and both constants from `win32/mod.rs` and
+       `lib.rs` next to `desktop_display`.
+  - App, `App::adjust_icon_size` (`app/pointer.rs`):
+    1. Convert `delta` to notches (`delta / WHEEL_DELTA`); return if 0.
+    2. If `self.config.theme.match_explorer()` and
+       `self.shell_display.icon_size` is `Some(current)`: call
+       `set_desktop_icon_size(next_desktop_icon_size(current, notches))`;
+       if it returns true, call `self.refresh_shell_display(ui)`, which sees
+       the new size and re-flows the matching spaces. Return.
+    3. Otherwise keep today's behavior (change `Theme.icon_size`).
+    4. Update the method's doc comment to describe both branches.
+    Note the scope: the branch follows the *global* preset, as today's code
+    follows the global icon size. A space with its own `Custom` look is
+    unaffected either way.
+  - Docs: `CONTEXT.md` section 8 (the Ctrl+wheel bullet), `README.md`
+    Controls (the Ctrl+wheel sentence), and the F-25 row in the ROADMAP
+    feature index (drop "open (F13)").
+  - Done when: the tests pass. **[needs human]** check: with the default
+    preset, Ctrl+wheel over a space changes the desktop's icons and the
+    spaces together, both ways, and stops at the smallest and largest size;
+    with the preset set to Custom, Ctrl+wheel changes only the spaces.
 
 ## G. More Explorer-standard controls
 
@@ -1164,15 +1219,102 @@ Remaining gaps from the controls review. Do them in order.
   scroll it into view.
 - [x] **G4. Slow double-click renames.** Clicking an already-selected item's
   label again starts an inline rename, as Explorer does.
-- [ ] **G5. Right-button drag.** **[needs decision]** A right drag shows the
-  copy/move/create-shortcut menu on drop. Nothing exists yet. Where it would
-  touch: a right press only selects (`on_space_event`, `app/pointer.rs`) and
-  a right release opens the item or space menu; `space_window.rs` maps the
-  buttons (`MK_RBUTTON`); `drop_target.rs` `desired_effect` reads only
-  `MK_SHIFT`; `shell_items.rs` `drag_out` (`SHDoDragDrop`) already allows
-  move, copy, and link. Decide: does a right drag inside a space reorder (as
-  a left drag does) or always start a shell drag, and what does the drop
-  menu show on a DeskSpace target?
+- **G5. Right-button drag (ROADMAP D9).** A right drag on an item always
+  starts a shell drag (it never reorders inside the space). On drop,
+  Explorer and the desktop show their own Move / Copy / Create shortcut
+  menu; a space shows DeskSpace's. Three tasks, in order.
+
+- [ ] **G5a. A right drag starts a shell drag.**
+  - Today a right press only selects (`on_space_event`, `app/pointer.rs`,
+    the `MouseButton::Right` arm calls `select_at`) and a right release opens
+    the item or space menu.
+  - App, `app/pointer.rs`:
+    1. Add a field to `PointerState`: `right_press: Option<(Surface, ItemId,
+       Point)>`, with a `///` doc ("an item pressed with the right button,
+       not yet dragged").
+    2. In the right `MouseDown` arm, after `select_at`, set it when the
+       press hit an item (`self.surface_item_at(surface, point)`).
+    3. In the `MouseMove` arm, before `drag_to`: if `right_press` is set and
+       the pointer moved past `deskspace_platform::drag_threshold()` from
+       the press point (copy how the left-button drag decides it has
+       started), take `right_press` and call `self.drag_item_out(ui,
+       surface, item)` with the right button (step 5). Then return.
+    4. Add a second field, `right_dragged: bool` ("a right drag ran since
+       the last right press"); step 3 sets it. In the right `MouseUp` arm:
+       clear `right_press`; if `right_dragged` is set, clear it and open no
+       menu; otherwise open the item or space menu exactly as today. Clear
+       both fields on `CaptureLost` and in the right `MouseDown` arm.
+    5. `drag_item_out` itself needs no new argument: the platform does not
+       take a button.
+  - Platform: probably no change. `win32/shell_items.rs` `drag_out` calls
+    `SHDoDragDrop` with no drop source (`None`), and the shell's default
+    drop source follows whichever mouse button is held when the drag
+    starts, so a drag started while the right button is down ends on its
+    release and the target shows its menu. Two things to confirm while
+    testing, and fix only if they fail:
+    - `drag_out` calls `ReleaseCapture()` first; the right button must
+      still be down at that point (it is, since the drag starts on a
+      move);
+    - the right button's release is consumed by the drag loop, so the space
+      may never get its `MouseUp`; then `right_dragged` stays set until the
+      next right press clears it (step 4), which is harmless.
+    If the default drop source does not handle the right button, **stop and
+    ask**; a custom `IDropSource` is a larger change.
+  - Pure helper with a test: `fn right_drag_started(press: Point, now:
+    Point, threshold: Size) -> bool` in `app/pointer.rs`.
+  - Done when: tests pass. **[needs human]** check: right-drag an item from
+    a space onto the desktop and into an Explorer folder; the shell's
+    Move / Copy / Create shortcut menu appears and each choice works; a
+    right click without moving still opens the item menu.
+
+- [ ] **G5b. DeskSpace's drop menu on a space.** After G5a.
+  - The menu is shown by the drop target itself, inside `Drop`, because
+    `Drop` must return the chosen effect to the source synchronously. The
+    app then receives an ordinary `FilesDropped` describing the choice, so
+    no new re-entrancy is introduced.
+  - Model the choice explicitly. In `input.rs`, replace
+    `FilesDropped.keep_in_place: bool` with `action: DropAction`, a new
+    `pub enum DropAction { Move, KeepInPlace, Copy }` with a `///` doc per
+    variant (`Move`: into the store, the default; `KeepInPlace`: list the
+    file where it is, what Shift does today; `Copy`: put a copy in the
+    store). Re-export it from `lib.rs`. Update the one app caller (the
+    `FilesDropped` arm in `app/pointer.rs`) to map `Move` /
+    `KeepInPlace` onto today's `add_dropped(.., keep_in_place)`; this
+    first step is a pure refactor and can be its own commit.
+  - Platform, `win32/drop_target.rs`:
+    1. In `DragEnter`, remember whether `MK_RBUTTON` was down (a
+       `right_drag: Cell<bool>` on the drop target).
+    2. `desired_effect`: for a right drag, return `MOVE` (the menu decides
+       the rest), so the cursor does not flicker with the modifier keys.
+    3. In `Drop`, for a right drag, show a popup menu at the drop point
+       (the `POINTL` `Drop` receives is already in screen coordinates) with
+       `menu::track(owner, &entries, at)`, the function `Ui::popup_menu`
+       uses, owned by the space window; read no runtime state across the
+       call (AGENTS.md Gotchas). Entries:
+       "Move here", "Copy here", "Show here without moving", a separator,
+       and "Cancel". Map the choice with a pure, tested
+       `fn right_drop_choice(id: u32) -> Option<DropAction>` (`None` for
+       Cancel or a dismissed menu). On `None`, return `DROPEFFECT_NONE`
+       and raise no event. Otherwise raise `FilesDropped` with that action
+       and return `COPY` for `Copy` and `KeepInPlace`, `MOVE` for `Move`.
+       Keep the "Performed DropEffect" marking exactly as the left-drop
+       path does.
+  - App, `add_dropped` (`app/files.rs`): add the `Copy` case, copying the
+    files into the store through `ui.transfer_files` the way a Ctrl+C /
+    Ctrl+V paste does (`app/clipboard.rs`), then listing them. Change
+    `add_dropped` to take the `DropAction` instead of a bool.
+  - Done when: `right_drop_choice` has a test per entry. **[needs human]**
+    check: right-drag a file from Explorer onto a space; the menu appears;
+    each entry does what it says, the source file is left alone on Copy,
+    Show here, and Cancel, and a left drag still moves (Shift still keeps in
+    place).
+
+- [ ] **G5c. "Create shortcuts here".** After G5b and the F-50 design
+  (both need the same "create a `.lnk` in the store" helper, via
+  `IShellLinkW` + `IPersistFile`). The entry goes between "Copy here" and
+  "Show here without moving", and needs a fourth `DropAction` variant.
+  **[needs decision]** until F-50's design settles where shortcuts are
+  created and how packaged apps are handled.
 - [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP.md section 8, open
   question 3.
 
@@ -1632,14 +1774,11 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   `PointerDownOutside` as well as the layer's own `MouseDown`. Check whether
   that clears a layer selection before a Ctrl+click adds to it, and decide
   whether the layer should count as inside.
-- `deskspace-platform/src/win32/runtime.rs`: `set_spaces_visible` never hides
-  the desktop layer. Probably right (the layer stands in for Explorer's
-  icons, which Hide does not hide), but undocumented as a decision; confirm
-  with the maintainer and record it in `CONTEXT.md` section 6.
 - `deskspace-app/src/app/files.rs`: Delete and Shift+Delete do nothing for
   loose items on the desktop layer, although Explorer would delete them.
-  Suggested task once the takeover is on by default: route layer deletes
-  through the same `delete_files` path.
+  With takeover on, Explorer's icons are hidden, so this matters for any
+  user who opts in (D9 keeps takeover opt-in for v0.2). Suggested task:
+  route layer deletes through the same `delete_files` path.
 - `deskspace-platform/src/win32/dark_mode.rs`: the settings window's
   selection bar uses a fixed `UiColors.accent`, not the Windows accent the
   spaces' check boxes use. Consider `system_accent_color()` for consistency.

@@ -635,7 +635,9 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `--takeover`), or the hidden `--takeover-layer` flag is set. Only with
   `--takeover-layer` alone does Explorer keep drawing its own icons under it
   (a development view). The layer is created visible and is not hidden by
-  `Ui::set_spaces_visible`.
+  `Ui::set_spaces_visible`, by design (ROADMAP D9): it stands in for
+  Explorer's icons, which hiding spaces never hid. Hiding both is M5's
+  hide-all (F-11).
   - Item interaction is shared, not duplicated (ROADMAP D7): the app routes
     hit-testing, selection, hover, rubber-band, drag, drop, info tips, and the
     scene build through a `Surface` (`Space(id)` or `Desktop`) instead of a
@@ -1111,7 +1113,13 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
 - Drag a space edge or corner to resize it; the wheel scrolls overflowing
   content, and Ctrl+wheel changes the global icon size (10 % a notch). Under
   the default "Match Explorer's display" preset Explorer's icon size wins, so
-  Ctrl+wheel has no visible effect there (`TASKS.md` F13).
+  Ctrl+wheel has no visible effect there yet. ROADMAP D9 decides it should
+  change the desktop's own icon size instead, as Ctrl+wheel on the desktop
+  does (`TASKS.md` F13).
+- A right-button drag does nothing special yet: a right press selects and
+  the release opens the menu. ROADMAP D9 decides on Explorer's behavior (a
+  shell drag with a Move / Copy / Create shortcut menu on drop;
+  `TASKS.md` G5a-G5c).
 - Double-click a space title bar to roll it up or down.
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
@@ -1266,7 +1274,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
 ## 10. Known limitations and technical debt
 
 - **Desktop takeover is opt-in and new.** Explorer owns the desktop icon layer
-  by default. With "Take over the desktop" on (or the hidden `--takeover`
+  by default, and v0.2 keeps it that way (ROADMAP D8, D9). With "Take over the desktop" on (or the hidden `--takeover`
   flag), DeskSpace hides every desktop `SysListView32` and draws the loose
   items on its own layer; a clean exit and every startup restore the icons, and
   `TaskbarCreated` and a 5-second health timer re-hide them after Explorer
@@ -1375,8 +1383,8 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `NOTICE`, `README.md`) and its `.sha256` to GitHub Releases, as a
   pre-release when the tag contains `-`. The zip lacks
   `deskspace-watchdog.exe` (`TASKS.md` E12). The build is not yet
-  reproducible (E3): the toolchain follows `stable` rather than a pinned
-  version. Auto-update is planned in M8 (F-45).
+  reproducible (E3): the toolchain still follows `stable`; ROADMAP D9 pins
+  an exact version (E13). Auto-update is planned in M8 (F-45).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 
