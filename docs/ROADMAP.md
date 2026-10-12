@@ -74,23 +74,33 @@ A native, lightweight, offline Windows desktop organizer that:
   called a *lens* in the UI and docs. In code it is a space whose source is a
   folder (`SpaceSource::Folder`), which keeps the user-facing name out of the
   model.
-- **D6. Distribution and updates (2026-10-10).**
+- **D6. Distribution and updates (2026-10-10; installer moved to
+  cargo-packager 2026-10-12).**
   - *Channels:* GitHub Releases is the source of truth. Each release ships
-    a Velopack installer (the default), with its update feed, and a portable
-    zip. winget is added after the first stable release.
-  - *Installer and updater:* Velopack. It gives a per-user install with no
-    admin, shortcuts, an uninstaller, and delta updates fed from the release
-    assets.
-  - *Install root vs user data:* the Velopack pack id is `DeskSpace.App`, so
-    the install root is `%LocalAppData%\DeskSpace.App`. Velopack deletes the
-    whole install root on uninstall. The config and the item storage (under
+    an NSIS installer (the default), its update feed, and a portable zip.
+    winget is added after the first stable release.
+  - *Installer:* `cargo-packager` builds a per-user NSIS `setup.exe` with no
+    admin prompt, Start-menu and desktop shortcuts, and an uninstaller. It is
+    a CI-only tool (`cargo install cargo-packager`), so it adds no dependency
+    to the workspace. Chosen over Velopack on 2026-10-12 because Velopack's
+    Rust SDK pulled a TLS and advisory stack into the tightened `deny.toml`
+    and needed an app-side startup hook; see the progress log.
+  - *Updater:* `cargo-packager-updater` (opt-in). It reads a signed JSON feed
+    (`latest.json` plus a minisign `.sig`) published as a release asset and
+    installs the **full** package; there are no delta updates.
+  - *Install root vs user data:* the custom NSIS template
+    (`packaging/nsis/installer.nsi`) installs into
+    `%LocalAppData%\DeskSpace.App`. NSIS would otherwise default to
+    `%LocalAppData%\DeskSpace`, the parent of the item storage
+    (`%LocalAppData%\DeskSpace\DeskSpace\data`, via `ProjectDirs`); the two
+    must stay apart, or uninstalling would delete the user's stored files.
+    The config and the storage live under
     `%AppData%\DeskSpace\DeskSpace\config` and
-    `%LocalAppData%\DeskSpace\DeskSpace\data`, via `ProjectDirs`) must never be
-    inside it, or uninstalling would delete the user's stored files.
-  - *Uninstall:* removes the Run value (F-34) and the desktop "Show spaces"
-    verb by handling Velopack's uninstall callback. It never touches stored
-    files: the storage folder stays where it is, and a reinstall picks it up
-    again.
+    `%LocalAppData%\DeskSpace\DeskSpace\data`.
+  - *Uninstall:* the template's uninstall section removes the Run value (F-34)
+    and the desktop "Show spaces" verb and deletes the install root. It never
+    touches stored files: the storage folder stays where it is, and a reinstall
+    picks it up again.
   - *Check policy:* opt-in. "Check for updates automatically" on the General
     page is off by default, with no first-run prompt. When it is on, the app
     checks about a minute after start and then every 24 h while running. A
@@ -98,14 +108,15 @@ A native, lightweight, offline Windows desktop organizer that:
     traffic happens unless the user starts it or opts in.
   - *Apply:* prompt, then restart. The prompt shows the version and notes
     and offers Update / Later / Skip this version. Update downloads,
-    applies, and restarts DeskSpace with the same config. Later asks again
+    installs, and restarts DeskSpace with the same config. Later asks again
     at the next check. A skipped version is stored and not offered again.
   - *Channels within the updater:* stable by default. An opt-in setting
     receives pre-releases (`-alpha.N`, `-beta.N`, `-rc.N`).
   - *Portable zip:* the same opt-in check, but notify only. It offers to open
     the release page and never replaces its own files.
-   - *Signing:* SignPath Foundation (free for open source), wired into
-     `release.yml`. Signing ships before or together with auto-update.
+  - *Signing:* SignPath Foundation (free for open source), wired into
+    `release.yml` through `cargo-packager`'s `windows.signCommand`. Signing
+    ships before or together with auto-update.
 
 - **D7. Desktop takeover model (2026-10-10).**
   - The desktop's loose icons - the Desktop-folder files that are not in any
@@ -555,12 +566,12 @@ Decisions: D6. Work items: `TASKS.md` section E (ready to do) and R10-R13
 (maintainer work).
 
 Remaining:
-1. A Velopack installer (D6):
-   - a per-user install in `%LocalAppData%\DeskSpace.App`, separate from the
-     user data;
+1. A cargo-packager installer (D6):
+   - a per-user NSIS install in `%LocalAppData%\DeskSpace.App`, separate from
+     the user data;
    - an option to start with Windows (F-34);
    - an uninstaller that removes the Run value and the desktop verb, restores
-     the desktop (after M2), and leaves stored files in place.
+     the desktop if takeover was on, and leaves stored files in place.
 2. **[done]** An `.ico` resource for the executable (`assets/deskspace.ico`,
    embedded with version info by `winresource`), replacing the icon that was
    drawn in code (`TASKS.md` E1-E2; on-screen check pending).
@@ -582,13 +593,15 @@ Remaining:
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
 7. Auto-update from GitHub Releases (F-45), following the policy in D6.
-   - The Velopack SDK and the network IO live in a new `deskspace-update`
-     crate, driven by the app; never in `core` or `config`.
+   - The `cargo-packager-updater` SDK and the network IO live in a new
+     `deskspace-update` crate, driven by the app; never in `core` or `config`.
+   - It installs the **full** package only (no deltas), from a signed
+     `latest.json` plus a minisign `.sig` published as a release asset.
    - Settings live in `WindowSettings` as `#[serde(default)]` fields: the
      automatic check, the pre-release channel, the last check time, and the
      skipped version. The General page gets check boxes, and the tray gets a
      "Check for updates" entry.
-   - A portable build (not installed by Velopack) only notifies.
+   - A portable build only notifies.
    - New dependencies must pass `deny.toml`.
    - Ship it together with item 3: unsigned updates trigger SmartScreen on
      every version.
@@ -664,7 +677,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Open; policy decided (D6), release zip workflow done |
+| F-45 | Auto-update from GitHub Releases | M8 | Open; cargo-packager installer workflow decided (D6); in-app updater still open |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
@@ -701,8 +714,8 @@ Resolved:
 - **Takeover model (M2).** A `DesktopLayer` and a shared `Surface`. See D7.
 - **Takeover safety and placement (M2).** Hosted layer, top-level spaces, and
   a watchdog helper. See D8.
-- **Update policy (M8).** Velopack, opt-in, prompt then restart, and skip a
-  version. See D6.
+- **Update policy (M8).** cargo-packager, opt-in, prompt then restart, and
+  skip a version. See D6.
 - **Takeover default, Ctrl+wheel, toolchain, right drag, hide vs layer.**
   See D9.
 
@@ -714,9 +727,11 @@ Resolved:
 - **Data loss on relocation.** Moving real files is destructive. Mitigations:
   move into the store with undo, never overwrite, and snapshot the manifest
   before bulk operations.
-- **Uninstall deleting user data.** Velopack deletes its install root on
-  uninstall. Mitigation (D6): a distinct pack id (`DeskSpace.App`), and a test
-  that the storage and config paths are never inside the install root.
+- **Uninstall deleting user data.** The installer deletes its install root on
+  uninstall. Mitigation (D6): the custom NSIS template installs into
+  `%LocalAppData%\DeskSpace.App`, distinct from the data parent
+  `%LocalAppData%\DeskSpace`, and a test asserts the config and storage paths
+  are never inside the install root (`TASKS.md` E7).
 - **Composition complexity.** DirectComposition plus per-monitor DPI plus
   animation is the largest single technical investment.
 - **Undocumented blur API.** `SetWindowCompositionAttribute` could change in a
@@ -982,3 +997,22 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   Explorer drives the desktop's icon size; the toolchain is pinned; right
   drag follows Explorer's drop menu; hiding spaces leaves the desktop layer.
   Work items F13, E13, and G5a-G5c.
+
+### 2026-10-12
+
+- **Installer framework switch (D6 amended).** The Windows installer moves
+  from Velopack to `cargo-packager` 0.11.8, a CI-only tool rather than a
+  workspace dependency.
+  - Velopack's Rust SDK pulled a TLS and advisory stack (`ring`, `rustls`,
+    `derivative`) past the tightened `deny.toml` and needed an app-side startup
+    hook; `cargo-packager` is CI-only, so the dependency graph and `deny.toml`
+    are unchanged. Trade-off: no delta updates.
+  - A per-user NSIS installer and uninstaller are built from a vendored custom
+    template at `packaging/nsis/installer.nsi`, configured under
+    `[package.metadata.packager]` in `crates/deskspace-app/Cargo.toml`. The
+    artifact is `deskspace_<version>_x64-setup.exe`, published to the same
+    GitHub Release as the portable zip.
+  - The template installs into `%LocalAppData%\DeskSpace.App`, keeping the
+    install root apart from the user's stored files under
+    `%AppData%\DeskSpace\DeskSpace\config` and
+    `%LocalAppData%\DeskSpace\DeskSpace\data`.

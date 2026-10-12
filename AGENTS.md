@@ -108,8 +108,8 @@ The remaining cargo subcommands (`clean`, `update`, `package`, `expand`,
 A missing subcommand can be installed first with the matching helper
 (`cargo-deny-install`, `cargo-hack-install`, `cargo-machete-install`). These
 tools pass `--locked`, so keep `Cargo.lock` current first (see Gotchas).
-Release work (`docs/TASKS.md` section E) also uses `gh`, `actionlint`, `dotnet`,
-and `vpk`.
+Release work (`docs/TASKS.md` section E) also uses `gh`, `actionlint`, and
+`cargo-packager` (the NSIS installer, installed with `cargo install`).
 
 ## Workspace layout
 

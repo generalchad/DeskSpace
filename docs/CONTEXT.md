@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (283 tests) are green. Update this count whenever a
+  `cargo test --workspace` (285 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -118,8 +118,9 @@ context menus, and a settings window in the first usable release (v0.2).
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Not yet: lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
-  for file moves, mapping Explorer's view mode (list/details), and anything
-  from M8 beyond the release zip (installer, signing, auto-update).
+  for file moves, mapping Explorer's view mode (list/details), and, from M8,
+  the installer's first dry run (config and workflow landed), signing, and
+  auto-update.
   See the parity matrix in section 9.
 - Code health: `app.rs` was split into `app/` submodules (R1) and the
   selection, pointer, and edit state pulled out of `App` (R2). Files still
@@ -465,8 +466,8 @@ WindowSettings {
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (the quoted
   `current_exe()` path). The app writes it on Apply when the value changed and
   once at startup when enabled, so the stored path follows a moved install; a
-  failure is logged at `warn` and never blocks Apply. The planned uninstall
-  hook (`TASKS.md` E7) will remove it.
+  failure is logged at `warn` and never blocks Apply. The uninstaller removes
+  it through the custom NSIS template at `packaging/nsis/installer.nsi`.
 - `window.take_over_desktop` (M2 takeover, opt-in) hides Explorer's desktop
   icons and draws the loose items on DeskSpace's own layer. Turning it on (or
   the hidden `--takeover` flag) also draws the layer; a clean exit and every
@@ -1372,18 +1373,29 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   and signing (or Developer Mode) - deferred to M8 packaging. Its icon is the
   executable's embedded icon resource (`"{exe}",0`), not a file written beside
   the storage folder.
-- **No installer, no code signing, no auto-update.** CI (`ci.yml`) runs fmt,
-  clippy with `-D warnings`, tests, and `cargo deny check all`. Pushing a `v*`
-  tag that matches the workspace version runs `release.yml`: it tests with
-  `--locked`, builds `-p deskspace-app` in release, and publishes an unsigned
+- **Packaging, signing, and auto-update.** CI (`ci.yml`) runs fmt, clippy with
+  `-D warnings`, tests, and `cargo deny check all`. Pushing a `v*` tag that
+  matches the workspace version runs `release.yml`: it tests with `--locked`,
+  builds `-p deskspace-app` in release, and publishes an unsigned
   `deskspace-<tag>-x86_64-pc-windows-msvc.zip` (`deskspace.exe`,
   `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its
   `.sha256` to GitHub Releases, as a pre-release when the tag contains `-`.
-  The toolchain is pinned to an exact version in `rust-toolchain.toml` (E13),
-  and the release build is reproducible: `release.yml` sets the two
+  The same workflow builds an NSIS `setup.exe` with `cargo-packager` 0.11.8
+  (CI-only; `cargo install cargo-packager --locked --version 0.11.8`), a
+  per-user install (no admin, Start-menu and desktop shortcuts, an
+  uninstaller) configured under `[package.metadata.packager]` in
+  `crates/deskspace-app/Cargo.toml` with a vendored template at
+  `packaging/nsis/installer.nsi`. It installs to
+  `%LocalAppData%\DeskSpace.App` (the template overrides NSIS's default
+  `%LocalAppData%\DeskSpace`, the parent of the user's stored files) and ships
+  as `deskspace_<version>_x64-setup.exe`. The installer is unsigned until R10
+  (SignPath Foundation via cargo-packager's `windows.signCommand`).
+  Auto-update is planned in M8 (F-45) via `cargo-packager-updater`: opt-in,
+  full-package (no deltas), fed by a signed `latest.json` plus minisign
+  `.sig`. The toolchain is pinned to an exact version in `rust-toolchain.toml`
+  (E13), and the release build is reproducible: `release.yml` sets the two
   `--remap-path-prefix` values and `build.rs` passes `/Brepro`, so a rebuild
-  from the same sources and a different directory matches (E3). Auto-update
-  is planned in M8 (F-45).
+  from the same sources and a different directory matches (E3).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 

@@ -638,18 +638,21 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **R7. On-screen verification pass** (maintainer). The list is in
   `CONTEXT.md` section 2, "Pending on-screen checks".
-- **R8. Auto-update design.** Resolved: ROADMAP D6. The work is E5 and
-  E8-E11.
-- **R9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7.
+- **R8. Auto-update design.** Resolved: ROADMAP D6. The policy uses
+  `cargo-packager-updater` (FULL-package updates only, no deltas). The work
+  is E8-E11; E5 is the installer, already done.
+- **R9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7
+  (cargo-packager/NSIS), done and awaiting R12.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
   SignPath Foundation (the project must meet their OSS terms: an OSI
   license, which Apache-2.0 is, and a public repository and build). Then add
   their GitHub Actions integration to `release.yml`: sign `deskspace.exe`
-  before both the zip and `vpk pack`, and sign the Velopack `Setup.exe`
-  (see `vpk pack -h` for the signing options). Store the credentials as
-  Actions secrets. This must land before or with the first release that has
-  E9 (auto-update), because unsigned updates trigger SmartScreen on every
-  version.
+  before both the zip and the installer, and sign the installer
+  (`deskspace_<version>_x64-setup.exe`) through cargo-packager's
+  `windows.signCommand` (a shell command containing `%1` for the file path).
+  Store the credentials as Actions secrets. This must land before or with
+  the first release that has E9/E11 (auto-update), because unsigned updates
+  trigger SmartScreen on every version.
 - **R11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs R10,
   and M2 may make it unnecessary.
 - **R12. First release dry run (maintainer).** After E1-E6. Follow
@@ -657,15 +660,15 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   Check:
   - the zip contains `deskspace-watchdog.exe` beside `deskspace.exe` (E12);
   - the workflow publishes a pre-release with the zip, the `.sha256`, and
-    the Velopack assets (`DeskSpace.App-win-Setup.exe`, the full `.nupkg`,
-    `releases.win.json`);
+    the cargo-packager installer `deskspace_<version>_x64-setup.exe`;
   - on a clean Windows 10 VM and a clean Windows 11 VM: the extracted exe
     runs, shows its icon, and lists the version under Properties > Details;
-    `Setup.exe` installs into `%LocalAppData%\DeskSpace.App` with no admin
-    prompt and creates a Start menu shortcut;
+    `deskspace_<version>_x64-setup.exe` installs into
+    `%LocalAppData%\DeskSpace.App` with no admin prompt and creates a
+    Start-menu shortcut;
   - after E7: uninstalling removes the install root, the Run value, and the
     desktop verb, and leaves the storage folder and the config untouched;
-  - after E9: install `alpha.1`, publish `alpha.2`, and confirm that the
+  - after E10/E11: install `alpha.1`, publish `alpha.2`, and confirm that the
     manual tray check offers it and the update restarts into `alpha.2` with
     the same spaces;
   - what SmartScreen shows.
@@ -674,8 +677,8 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 - **R13. winget (maintainer, ROADMAP M8 item 8).** After the first stable
   (non-pre-release) version that has the installer.
   - Submit the first manifest to `microsoft/winget-pkgs` by hand (`wingetcreate
-    new` with the `Setup.exe` URL), with package identifier
-    `generalchad.DeskSpace`.
+    new` with the `deskspace_<version>_x64-setup.exe` URL), with package
+    identifier `generalchad.DeskSpace`.
   - Then add a `release.yml` job that runs only for non-pre-release tags and
     updates the manifest (`wingetcreate update --submit`, or the
     `winget-releaser` action), using a fine-grained PAT stored as an Actions
@@ -683,8 +686,9 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 
 ## E. Release engineering (ROADMAP M8)
 
-E1-E2 have landed (awaiting check), as have E12 and E13. Do E3, then E4, in
-order. E5-E11 have their own dependencies, stated in each task. Code signing
+E1-E4 have landed (awaiting check), as have E12 and E13. E5-E7 (the
+cargo-packager installer) have landed, awaiting the R12 dry run; E8-E11
+remain and have their own dependencies, stated in each task. Code signing
 (R10), the first dry run (R12), and winget (R13) are maintainer work.
 
 `.github/workflows/release.yml` runs on a `v*` tag. Its steps, in order:
@@ -693,12 +697,16 @@ checkout; `rustup toolchain install` (installs the pinned version from
 version" (compares `v<version>` of package `deskspace-app` from `cargo
 metadata` with `GITHUB_REF_NAME`); "Test" (`cargo test --workspace
 --locked`); "Build" (`cargo build --release --locked -p deskspace-app`, which
-builds both `deskspace.exe` and `deskspace-watchdog.exe`); "Package" (stages
-`deskspace.exe`, `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`
-into `deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
-SHA-256); "Publish" (`gh release create <tag> <zip> <zip>.sha256 --title
-"DeskSpace <tag>" --generate-notes`, plus `--prerelease` when the tag
-contains `-`). Read it before starting any E task.
+builds both `deskspace.exe` and `deskspace-watchdog.exe`); "Installer"
+(`cargo install cargo-packager --locked --version 0.11.8`, then `cargo
+packager -p deskspace-app --release --formats nsis`, producing
+`deskspace_<version>_x64-setup.exe`); "Package" (stages `deskspace.exe`,
+`deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md` into
+`deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
+SHA-256); "Publish" (`gh release create
+<tag> <zip> <zip>.sha256 <setup.exe> --title "DeskSpace <tag>"
+--generate-notes`, plus `--prerelease` when the tag contains `-`). Read it
+before starting any E task.
 
 - [ ] **E12. Ship the watchdog in the release zip.** (awaiting check)
   - The takeover's crash restore needs `deskspace-watchdog.exe` beside
@@ -835,93 +843,65 @@ contains `-`). Read it before starting any E task.
 ### Installer and auto-update (ROADMAP D6, F-45)
 
 Read ROADMAP D6 before any of E5-E11; it is the spec, and these tasks only
-say where things go. The Velopack Rust docs are thin. Confirm every API
-named below on docs.rs for the pinned crate version and at
-https://docs.velopack.io; if one differs, **stop and ask**.
+say where things go. Confirm every API named below on docs.rs for the pinned
+crate version: `https://docs.rs/cargo-packager-updater` for the updater and
+`https://github.com/crabnebula-dev/cargo-packager` for the packager; if one
+differs, **stop and ask**.
 
-- [ ] **E5. Add the `deskspace-update` crate and the Velopack startup hook.**
-  - New library crate `crates/deskspace-update` with
-    `#![forbid(unsafe_code)]`, `thiserror` errors, and `tracing`. It depends
-    on `velopack` (`rust_cargo-add`) and on nothing in the workspace. Add it
-    to `[workspace.dependencies]`, and make `deskspace-app` depend on it.
-  - `pub const PACK_ID: &str = "DeskSpace.App";`, documented as "must match
-    `--packId` in `release.yml`; never `DeskSpace`, see ROADMAP D6".
-  - `pub fn startup()` wraps `velopack::VelopackApp::build().run()`. Call it
-    as the **first** statement of `main` in
-    `crates/deskspace-app/src/main.rs`, before `Cli::parse()`. Velopack
-    starts the exe with its own arguments during install, update, and
-    uninstall, and may exit the process; clap would reject those arguments.
-    Add a comment saying so. Do not call it from `watchdog_main.rs` (the
-    `deskspace-watchdog` binary): only the main exe is Velopack's.
-  - `pub enum InstallKind { Installed, Portable }` and `pub fn
-    install_kind() -> InstallKind`: `Installed` when
-    `velopack::UpdateManager::new(...)` succeeds for this process, else
-    `Portable`. `cargo run` and the zip build are `Portable`. Log the kind at
-    `debug` on startup.
-  - Update `AGENTS.md` (workspace layout, dependency direction
-    `app -> {config, platform, update} -> core`; `update` depends on no
-    workspace crate) and `CONTEXT.md` section 3.
-  - If `cargo deny check` rejects `velopack` or anything it pulls in,
-    **stop and ask**; do not edit `deny.toml` on your own. Expect this:
-    `deny.toml` allows only `Apache-2.0`, `MIT`, `MPL-2.0`, and
-    `Unicode-3.0`, and an HTTP/TLS stack often needs more (ISC,
-    BSD-3-Clause, ...). Run `cargo deny check licenses` right after
-    `cargo add` and report the result before writing any code.
-  - `members = ["crates/*"]` picks the crate up; add
-    `deskspace-update = { path = "crates/deskspace-update" }` to
-    `[workspace.dependencies]` in the root `Cargo.toml`.
-  - Done when: `cargo run -p deskspace-app -- --no-icons` still starts
-    normally, and a test asserts `install_kind()` is `Portable` under
-    `cargo test`.
+- [x] **E5. Configure cargo-packager (installer + uninstaller).**
+  - In `crates/deskspace-app/Cargo.toml`, add a `[package.metadata.packager]`
+    table: `productName = "DeskSpace"`, `identifier =
+    "com.generalchad.despacespace"`, a publisher, description, and homepage,
+    `formats = ["nsis"]`, an explicit `binaries` list with `deskspace` marked
+    main and `deskspace-watchdog` (I6), and `resources = ["../../LICENSE",
+    "../../NOTICE", "../../README.md"]`.
+  - Add a `[package.metadata.packager.nsis]` table:
+    `installMode = "currentUser"`, `installerIcon =
+    "../../assets/deskspace.ico"`, and
+    `template = "../../packaging/nsis/installer.nsi"`. These paths are
+    `../../`-prefixed because cargo-packager changes into the package
+    directory before packaging, so they are relative to
+    `crates/deskspace-app`, not the repository root.
+  - The `deskspace-update` crate is not needed for the installer:
+    `cargo-packager` is a CI-only tool (installed in E6), never a workspace
+    dependency, so no dependency is added here and the dependency graph stays
+    unchanged. (E10 creates the update crate.)
+  - Vendor the custom NSIS template at `packaging/nsis/installer.nsi` (from
+    `cargo-packager` 0.11.8). It overrides the NSIS default install root, so
+    the installer writes to `%LocalAppData%\DeskSpace.App` instead of
+    `%LocalAppData%\DeskSpace`, the parent of the user's stored files (E7).
+  - Run from the repository root: `cargo build --release -p deskspace-app`,
+    then `cargo packager -p deskspace-app --release --formats nsis`. The
+    result is `deskspace_<version>_x64-setup.exe`, published beside the
+    portable zip in the same GitHub Release (E6).
+  - Done when: the command produces the installer and it installs per user
+    with no admin prompt. The real check is R12. **[needs human]**
 
-- [ ] **E6. Package with Velopack in `release.yml`.** After E1 and E5.
-  - After the Build step: `actions/setup-dotnet` (8.x), then `dotnet tool
-    install -g vpk --version <the velopack crate version in Cargo.lock>`.
-    The tool and the crate versions must match; read the crate version from
-    `cargo metadata` in the step instead of hard-coding it.
-  - `vpk download github --repoUrl <repo> --token ${{ github.token }}
-    --outputDir releases`, so `vpk pack` can build deltas. It must not fail
-    the job when there is no previous Velopack release (the first one).
-  - Stage `deskspace.exe`, `deskspace-watchdog.exe` (the I6 takeover
-    helper), `LICENSE`, and `NOTICE` into a directory and run
-    `vpk pack --packId DeskSpace.App --packVersion <version> --packDir
-    <stage> --mainExe deskspace.exe --packTitle DeskSpace --packAuthors
-    "Timothy W. Brown" --icon assets/deskspace.ico --noPortable --outputDir
-    releases`. `--noPortable` is required: D6 says the portable build is our
-    own zip, which only notifies and never self-updates.
-  - Keep the existing `gh release create` (zip and `.sha256`), then add the
-    Velopack assets to that same release with `vpk upload github --repoUrl
-    <repo> --token ${{ github.token }} --tag <tag> --merge`, plus `--pre` for
-    pre-release tags.
-  - Check every flag against `vpk pack -h` / `vpk upload github -h` for the
-    pinned version, and **stop and ask** if one is missing or renamed.
-  - Update `RELEASING.md` (the asset list and the pack id warning) and the
-    `CONTEXT.md` section 10 note.
+- [x] **E6. Build the installer in `release.yml`.** After the Build step:
+  `cargo install cargo-packager --locked --version 0.11.8` (a CI-only tool;
+  the version is pinned to match the vendored template), then `cargo packager
+  -p deskspace-app --release --formats nsis`. Find the built
+  `target/release/*-setup.exe` (`deskspace_<version>_x64-setup.exe`) and add
+  it to the `gh release create` assets alongside the portable zip and its
+  `.sha256`.
   - Done when: the workflow passes `actionlint` (or a careful read if it is
     not installed). The real check is R12. **[needs human]**
 
-- [ ] **E7. Uninstall cleanup and an install-root safety test.** After E5;
-  the Run-key part needs C4.
-  - Find the argument Velopack passes the main exe on uninstall (the
-    "hooks" / fast-callback docs and the crate's `app.rs`; the C# SDK calls
-    it `--veloapp-uninstall`). In `main.rs`, before `startup()`, if that
-    argument is present: call `deskspace_platform::set_desktop_show_entry(
-    false, "", "", "")`, `deskspace_platform::set_start_with_windows(false)`
-    (C4 has landed), and `deskspace_platform::restore_desktop_icons()` (so an
-    uninstall during takeover never leaves the desktop blank; ROADMAP M8
-    item 1), log any failures at `warn`, and return. Do not touch the config or the
-    storage folder (D6). If the SDK exposes a proper uninstall hook instead,
-    use that. If neither exists, **stop and ask**.
-  - Put the argument check in a pure, tested function (`fn
-    is_uninstall_hook(args: &[String]) -> bool`).
-  - Safety test in `deskspace-app` (it sees both `config` and `update`):
-    using `ConfigStore::discover()`, assert that neither the config path nor
-    the storage path is inside `%LOCALAPPDATA%\<PACK_ID>`. Add a pure helper
-    `fn is_inside(path, root) -> bool` with its own tests (case-insensitive,
-    and `DeskSpace.App` is not inside `DeskSpace`).
-  - Done when: both tests pass. **[needs human]** check during R12: uninstall
-    removes the Run value and the verb and leaves `%LOCALAPPDATA%\DeskSpace`
-    intact.
+- [x] **E7. Uninstall cleanup and an install-root safety test.** The Run-key
+  part needs C4 (landed).
+  - The custom NSIS template (`packaging/nsis/installer.nsi`, from E5)
+    installs into `%LocalAppData%\DeskSpace.App` and, in `Section Uninstall`,
+    deletes the `Run` value
+    (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DeskSpace`, F-34) and
+    the `HKCU\Software\Classes\DesktopBackground\Shell\DeskSpaceShowSpaces`
+    key, and never touches the stored files or the config (D6).
+  - Safety test in `deskspace-app`: using `ConfigStore::discover()`, assert
+    that neither the config path nor the storage path is inside
+    `%LOCALAPPDATA%\DeskSpace.App`. Add a pure helper `fn is_inside(path,
+    root) -> bool` with its own tests (case-insensitive, and `DeskSpace.App`
+    is not inside `DeskSpace`).
+  - Done when: the test passes; R12 checks the uninstall on a clean VM.
+    **[needs human]**
 
 - [ ] **E8. Cross-thread wake-up for the app (platform).** Independent of
   E5-E7.
@@ -967,7 +947,20 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     the temporary call before committing).
 
 - [ ] **E10. Update settings, schedule, check, and prompt (F-45).** After
-  E5, E8, and E9.
+  E8 and E9.
+  - New library crate `crates/deskspace-update` with
+    `#![forbid(unsafe_code)]`, `thiserror` errors, and `tracing`. It depends
+    on `cargo-packager-updater` (`rust_cargo-add`) and on nothing in the
+    workspace. Add it to `[workspace.dependencies]` in the root `Cargo.toml`
+    (`members = ["crates/*"]` picks the crate up) and make `deskspace-app`
+    depend on it. Update `AGENTS.md` (workspace layout, dependency direction
+    `app -> {config, platform, update} -> core`; `update` depends on no
+    workspace crate) and `CONTEXT.md` section 3.
+  - `cargo deny check` will need more licenses for `cargo-packager-updater`
+    and its TLS stack (ISC, BSD-3-Clause, CDLA-Permissive-2.0, Zlib, ...)
+    and may need an advisory ignore. Run `cargo deny check` right after
+    `cargo add` and **stop and ask** before editing `deny.toml`; do not
+    loosen it on your own.
   - Config, following "Recipe: a new global setting", all in
     `WindowSettings` with `#[serde(default)]`:
     `check_for_updates: bool` (false), `update_prereleases: bool` (false),
@@ -981,16 +974,15 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     - `pub struct Available { version: String, notes: String, page_url:
       String }`.
     - `pub fn check(prerelease: bool) -> Result<Option<Available>,
-      UpdateError>`. Installed: `UpdateManager` with
-      `sources::GithubSource::new(env!("CARGO_PKG_REPOSITORY"), None,
-      prerelease)`, then `check_for_updates()`. Portable: query
-      `https://api.github.com/repos/<owner>/<repo>/releases` with the HTTP
-      client Velopack already pulls in (`ureq`, same major version, so there
-      is no second copy in `Cargo.lock`), and pick the newest release
-      newer than `CARGO_PKG_VERSION`.
-    - Keep the choice in pure, tested functions: `fn newest(releases:
-      &[Release], current: &Version, prerelease: bool) -> Option<&Release>`,
-      parsed from fixture JSON in the test.
+      UpdateError>`, using
+      `cargo_packager_updater::check_update(current_version, Config {
+      endpoints, pubkey, .. })` with the feed endpoints and the minisign
+      public key compiled in (R10, F-45). It is FULL-package only; there are
+      no deltas.
+    - Keep the version choice in a pure, tested function `fn newest(...)`
+      adapted to the signed JSON feed: parse the feed in the test, pick the
+      newest release newer than `CARGO_PKG_VERSION`, and honour `prerelease`
+      (skip `-`-tagged versions unless it is on).
     - Blocking is fine here; the app calls it on a worker thread.
   - App. The code goes in a new `app/update.rs` (one `impl App` block, like
     the other `app/` modules; declare it in `app.rs`), except the constants
@@ -1028,15 +1020,17 @@ https://docs.velopack.io; if one differs, **stop and ask**.
   - Done when: the tests above pass and nothing contacts the network with
     the default config (check by reading the code path, then note it in the
     commit body). **[needs human]** check: a manual tray check on a portable
-    build against a repo with a newer pre-release, with "Include
+    build against a feed with a newer pre-release, with "Include
     pre-releases" on.
 
 - [ ] **E11. Download, apply, and restart (installed builds).** After E10.
   - `deskspace-update`: `pub fn download(&Pending) -> Result<(), _>` (call
     it on a worker thread) and `pub fn apply_and_restart(&Pending) -> !`
-    (or a `Result`, if the SDK returns one), wrapping `download_updates` and
-    `apply_updates_and_restart`. `Pending` holds the Velopack `UpdateInfo`
-    from the E10 check, so the app does not check twice.
+    (or a `Result`, if the API returns one), wrapping
+    `cargo-packager-updater`'s download and install. Confirm the exact API
+    (`Update::install()` / `download_and_install()`) on docs.rs at the pinned
+    crate version, and **stop and ask** if it differs. `Pending` holds the
+    update the E10 check found, so the app does not check twice.
   - App: "Update and restart" starts the download on a worker thread (same
     channel and `Waker` as E10, with a new wake id), and sets the tray
     tooltip to "Downloading update…" with `ui.set_tray_tooltip`. When the
@@ -1057,9 +1051,9 @@ https://docs.velopack.io; if one differs, **stop and ask**.
     icon restore and the watchdog signal in the update path only; on a normal
     close the platform teardown does them.
     On failure, restore the tooltip and report the error with `ui.choose`.
-  - Keep Velopack's default `set_auto_apply_on_startup(true)`: an update that
-    finished downloading but did not restart is applied on the next launch,
-    which matches D6 ("apply on restart").
+  - `cargo-packager-updater` is FULL-package only (no deltas), which matches
+    D6 ("apply on restart"): a downloaded update is applied on the next
+    launch, or at once by `apply_and_restart`.
   - Use the same channel as E10 and a new wake id (`UPDATE_DOWNLOADED_WAKE`
     next to `UPDATE_WAKE` in `app.rs`).
   - Remove the E10 `TODO`. Mark F-45 "Done; check pending" in the ROADMAP
@@ -1531,8 +1525,8 @@ until I5-I6 all land, so no partial build hides the desktop.
     no-op. Pure `watchdog_pid` / `is_watchdog` / `should_restore` are tested;
     the process wait and restore need the on-screen check.
     - Packaging note: the release must ship `deskspace-watchdog.exe` beside
-      `deskspace.exe` in both the Velopack installer and the portable zip (see
-      E6); without it the takeover silently loses crash safety.
+      `deskspace.exe` in both the cargo-packager installer and the portable zip
+      (see E6); without it the takeover silently loses crash safety.
 
 - [x] **I7. Win+D watcher - closed as not needed (2026-10-11).**
   - The premise did not reproduce. On Windows 11 build 26300, Show Desktop

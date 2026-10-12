@@ -26,8 +26,10 @@ and `docs/ROADMAP.md` section 6 maps versions to milestones.
 4. Commit as `release: vX.Y.Z`.
 5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 6. Watch the workflow: `gh run watch`.
-7. Download the zip from the release page, check its `.sha256`, and
-   smoke-test it with a scratch `--config`.
+7. Download the zip and the installer (`deskspace_<version>_x64-setup.exe`)
+   from the release page, check the zip's `.sha256`, and smoke-test the zip
+   with a scratch `--config` and the installer by installing and uninstalling
+   it.
 8. Edit the generated release notes on the GitHub release page.
 
 ## What the workflow does
@@ -49,9 +51,14 @@ and `docs/ROADMAP.md` section 6 maps versions to milestones.
   `NOTICE`, and `README.md` into
   `deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, and writes a lowercase
   `.sha256` beside it;
-- **Publish**: `gh release create <tag> <zip> <zip>.sha256 --title
-  "DeskSpace <tag>" --generate-notes`, adding `--prerelease` when the tag
-  contains `-`.
+- **Install cargo-packager**: `cargo install cargo-packager --locked
+  --version 0.11.8`, the CI-only installer tool (not a workspace dependency);
+- **Build installer**: `cargo packager -p deskspace-app --release --formats
+  nsis`, which writes `deskspace_<version>_x64-setup.exe`; it is unsigned
+  until R10;
+- **Publish**: `gh release create <tag> <zip> <zip>.sha256
+  deskspace_<version>_x64-setup.exe --title "DeskSpace <tag>"
+  --generate-notes`, adding `--prerelease` when the tag contains `-`.
 
 ## Recovering from a bad release
 
