@@ -789,7 +789,7 @@ contains `-`). Read it before starting any E task.
   - Done when: CI runs show the pinned `rustc -Vv`, and
     `rg "rust-toolchain@stable" .github` finds nothing.
 
-- [ ] **E3. Reproducible release build (ROADMAP M8 item 5).** After E13,
+- [x] **E3. Reproducible release build (ROADMAP M8 item 5).** After E13,
   which pins the toolchain, so a rebuild uses the same rustc.
   - `.github/workflows/release.yml`: on the Build step, set
     `RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo`.

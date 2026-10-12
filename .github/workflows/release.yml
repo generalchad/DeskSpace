@@ -31,6 +31,8 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
       - name: Build
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo
         run: cargo build --release --locked -p deskspace-app
       - name: Package
         shell: pwsh

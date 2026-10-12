@@ -12,6 +12,12 @@ fn main() {
              processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
         );
 
+        // /Brepro zeroes the PE timestamp and replaces it with a content hash,
+        // so two builds of the same sources differ less. It is one half of the
+        // reproducible release build (docs/TASKS.md E3); the other is
+        // --remap-path-prefix in release.yml.
+        println!("cargo:rustc-link-arg-bins=/Brepro");
+
         // Embed the application icon and its version block. winresource fills
         // FileVersion, ProductVersion, and ProductName from the Cargo package;
         // the two fields below are the ones it cannot infer.

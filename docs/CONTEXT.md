@@ -1379,9 +1379,11 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `deskspace-<tag>-x86_64-pc-windows-msvc.zip` (`deskspace.exe`,
   `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its
   `.sha256` to GitHub Releases, as a pre-release when the tag contains `-`.
-  The toolchain is pinned to an exact version in `rust-toolchain.toml` (E13);
-  the build is not yet reproducible (E3). Auto-update is planned in M8
-  (F-45).
+  The toolchain is pinned to an exact version in `rust-toolchain.toml` (E13),
+  and the release build is reproducible: `release.yml` sets the two
+  `--remap-path-prefix` values and `build.rs` passes `/Brepro`, so a rebuild
+  from the same sources and a different directory matches (E3). Auto-update
+  is planned in M8 (F-45).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 
