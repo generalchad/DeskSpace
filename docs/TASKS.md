@@ -74,7 +74,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
 | Space, item, and tray menus | `deskspace-app/src/app/menus.rs` |
 | Settings window behavior (open, preview, Apply, Cancel) | `deskspace-app/src/app/settings_session.rs` |
-| Settings pages, fields, `field::` ids (pure) | `deskspace-app/src/settings.rs` |
+| Settings pages, fields, `field::` ids (pure) | `deskspace-app/src/settings/` (`mod.rs`, `ids.rs`, `tables.rs`, `pages.rs`, `apply.rs`, `session.rs`) |
 | Show/hide, desktop verb, start with Windows | `deskspace-app/src/app/visibility.rs` |
 | Model → `SpaceScene` (pure) | `deskspace-app/src/scene.rs` |
 | Managed store for dropped files | `deskspace-app/src/storage.rs` |
@@ -104,15 +104,16 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
    `Default`, and rely on the struct-level `#[serde(default)]`. If it is a
    range, add `pub const NAME_RANGE`/`NAME_DEFAULT` like `OVERLAY_SIZE_RANGE`,
    and clamp it in `Theme::clamped` so a hand-edited file loads in range.
-2. `deskspace-app/src/settings.rs`: add a `field::` id (the next free number;
-   see the id tables) and a `Field` on the right page: a look setting goes in
-   `look_pages` (fed the theme being edited, which is a space's own while it
-   is customized), a Global-only one in `general_page` (or the page it
-   belongs on). Then add the match arm that clamps and returns the right
+2. `deskspace-app/src/settings/`: add a `field::` id in `ids.rs` (the next
+   free number; see the id tables), and a `Field` on the right page in
+   `pages.rs`: a look setting goes in `look_pages` (fed the theme being
+   edited, which is a space's own while it is customized), a Global-only one
+   in `general_page` (or the page it belongs on); an option table goes in
+   `tables.rs`. Then add the match arm that clamps and returns the right
    `Effect` (`None`, `Appearance` to restyle, `Layout` to re-flow, `Pending`
-   for apply-on-OK): in `apply_look_field` for a look setting, which makes it
-   per space with no further work, or in `apply_field`'s Global-only arms
-   otherwise.
+   for apply-on-OK) in `apply.rs`: in `apply_look_field` for a look setting,
+   which makes it per space with no further work, or in `apply_field`'s
+   Global-only arms otherwise.
 3. If Cancel must undo a re-flow or restyle, extend `settings::needs_relayout`
    or `needs_restyle` (`App::cancel_settings` in `app/settings_session.rs`
    calls them).
@@ -120,7 +121,7 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
    takeover), add it to `App::apply_settings` (`app/settings_session.rs`)
    next to `sync_start_with_windows`.
 5. Tests: a serde round-trip / missing-field default test in core or config,
-   and an `apply_field` test in `settings.rs` (copy
+   and an `apply_field` test in `settings/apply.rs` (copy
    `start_with_windows_is_pending`).
 
 ### Recipe: a new model change (`Command`)
@@ -1660,7 +1661,7 @@ Rules for every K task:
   - Callers outside the module use `d2d::{Painter, PreparedScene,
     PaintFrame, render_items, decode_bitmap, release_graphics}`; keep them.
 
-- [ ] **K3. Split `deskspace-app/src/settings.rs` (~1,820 lines, ~1,060
+- [x] **K3. Split `deskspace-app/src/settings.rs` (~1,820 lines, ~1,060
   without tests).** It is pure, so this is the easiest split to verify.
   - `settings/mod.rs` keeps: `Effect`, `build_form`, `scope_index`,
     `scope_at`, `scope_space`, `index_of`, `labels`, `LOOK_PAGE_COUNT`, and

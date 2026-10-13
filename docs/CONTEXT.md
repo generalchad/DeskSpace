@@ -124,11 +124,10 @@ context menus, and a settings window in the first usable release (v0.2).
   See the parity matrix in section 9.
 - Code health: `app.rs` was split into `app/` submodules (R1) and the
   selection, pointer, and edit state pulled out of `App` (R2),
-  `win32/settings_window.rs` into `win32/settings_window/` (K1), and
-  `render/d2d.rs` into `render/d2d/` (K2). Files still
-  over the ~800-line guideline (non-test code): `settings.rs` (~1,060),
-  `runtime.rs` (~940), and `app/pointer.rs` (~920).
-  `TASKS.md` section K splits them.
+  `win32/settings_window.rs` into `win32/settings_window/` (K1),
+  `render/d2d.rs` into `render/d2d/` (K2), and `settings.rs` into `settings/`
+  (K3). Files still over the ~800-line guideline (non-test code): `runtime.rs`
+  (~940) and `app/pointer.rs` (~920). `TASKS.md` section K splits them.
 
 ## 3. Architecture
 
@@ -172,7 +171,7 @@ windows and controls.
 - `deskspace-app`: two binaries. `deskspace` (`main.rs`) holds the `clap` CLI
   (`cli.rs`), startup and seeding (`bootstrap.rs`), the `EventHandler`
   (`App`, `app.rs`), model-to-scene conversion (`scene.rs`), the settings
-  form and its mapping onto `Config` (`settings.rs`, pure), and the managed
+  form and its mapping onto `Config` (`settings/`, pure), and the managed
   store for dropped files (`storage.rs`). `deskspace-watchdog`
   (`watchdog_main.rs`) is the takeover crash helper. `app.rs` keeps the
   `App` struct, `on_event`, the timer ids, the `menu` ids, and the preset
@@ -546,7 +545,7 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-11, 20-28, 30-36,
 41-44; next free 12, or 45 for a new group); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
-Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
+Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
 26 were freed by the removed placement setting and stay unused).
 
 ### Events
@@ -948,7 +947,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   outline just inside the frame in the space's `selected_fill` at full alpha.
   `HIGHLIGHT_TIMER` clears it; selecting another space moves it, and Cancel,
   OK, and closing the window clear it too.
-- The app's form (`settings.rs`): the scopes are Global, then every space
+- The app's form (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Global lists every page; a
   space lists only the five look pages and shows its values (from Global
   until customized) greyed unless the header's "Customize this space" switch
@@ -1153,7 +1152,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   Windows' 48 px desktop icon, and can also be typed as a percentage. The
   Layout page also has a "Fit to contents" button (grey unless a resized,
   unlocked space is selected), which commits at once like the menu entry.
-- The pages and their fields (`settings.rs`, one builder function per page):
+- The pages and their fields (`settings/pages.rs`, one builder function per page):
 
   | Page | Scope | Fields |
   |------|-------|--------|
