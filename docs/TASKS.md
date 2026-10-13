@@ -80,7 +80,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Managed store for dropped files | `deskspace-app/src/storage.rs` |
 | Events the platform raises | `deskspace-platform/src/input.rs` |
 | Menu and settings-form data types | `deskspace-platform/src/ui.rs` |
-| `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime.rs` |
+| `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime/` (`mod.rs`, `ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, `ui_chrome.rs`) |
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
@@ -613,7 +613,7 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   writes go through them.
 - **R3. Platform module layout.** The mechanical splits are now ready-to-do
   tasks in section K (`shell.rs`, `settings_window.rs`, `render/d2d.rs`,
-  `runtime.rs`). What remains needs design:
+  `runtime/`). What remains needs design:
   - one icon decoder instead of two: `shell::decode_icon_masked` (GDI
     `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
   - a `win32/messages.rs` owning every `WM_APP + n` (today in
@@ -937,7 +937,7 @@ differs, **stop and ask**.
     It returns the index of the button pressed, or `None` if the dialog was
     closed. The Common Controls v6 manifest in `build.rs` makes
     `TaskDialogIndirect` available.
-  - Follow `Ui::confirm` (`runtime.rs` ~726) for ownership, foreground
+  - Follow `Ui::confirm` (`runtime/ui_chrome.rs`) for ownership, foreground
     handling, and not holding a runtime borrow across the modal call: it
     reads the owner inside `with_runtime`, releases the borrow, then calls
     `SetForegroundWindow` and the modal API. `Win32_UI_Controls` is already a
@@ -1013,7 +1013,7 @@ differs, **stop and ask**.
       - "Skip" stores `skipped_version`. "Later" does nothing. "Open release
         page" opens `page_url`. `Ui::open_path` cannot open a URL (it turns
         `/` into `\` and uses the item verb), so add `Ui::open_url(&mut self,
-        url: &str)` in `runtime.rs` with a plain `ShellExecuteW` "open" in
+        url: &str)` in `runtime/ui_shell.rs` with a plain `ShellExecuteW` "open" in
         `win32/shell_items.rs`, keeping the `AllowSetForegroundWindow` step
         `open` already does.
       - "Update and restart" calls the E11 entry point. Until E11 lands,
@@ -1044,7 +1044,7 @@ differs, **stop and ask**.
     - call `deskspace_platform::restore_desktop_icons()` and
       `deskspace_platform::signal_watchdog_clean_exit()`, because
       `apply_and_restart` exits the process without running the platform
-      teardown (`runtime.rs`, end of `run`) that normally does both;
+      teardown (`runtime/mod.rs`, end of `run`) that normally does both;
     - call `apply_and_restart`.
     Put the first three steps (flush, hotkeys, verb) in one `fn
     release_for_exit(&mut self, ui)` in `app/persist.rs` and call it from the
@@ -1480,7 +1480,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     `desktop_icons::hide` / `restore`. Add the hidden `--takeover` flag that
     forces it on for development.
   - Wire: hide after the layer is drawn and the setting is on; restore before
-    `OleUninitialize` (add to the `run` teardown in `runtime.rs`); re-hide on
+    `OleUninitialize` (add to the `run` teardown in `runtime/mod.rs`); re-hide on
     `TaskbarCreated` (Explorer restart) and on a low-frequency health timer
     (next free timer id; E10 uses 4, HIGHLIGHT 5, PREVIEW 6).
   - Update `CONTEXT.md` sections 6 and 10 (the "No desktop icon
@@ -1683,7 +1683,7 @@ Rules for every K task:
     `settings::` in `crates/deskspace-app/src`), so no caller changes.
   - Update the recipe "a new global setting" above to name the new files.
 
-- [ ] **K4. Split `win32/runtime.rs` (~940 lines).** `Ui`'s methods move
+- [x] **K4. Split `win32/runtime.rs` (~940 lines).** `Ui`'s methods move
   into several `impl Ui` blocks, one file per area; the fields stay
   private (child modules can read them).
   - `runtime/mod.rs` keeps: `EventHandler`, `RunOptions`, `Runtime`, the
@@ -1764,7 +1764,7 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   desktop file whose icon changes in place keeps its old icon until restart.
   Suggested task: invalidate the paths whose `modified` changed during
   `resync_desktop_layer`.
-- `deskspace-platform/src/win32/runtime.rs`: `is_space_window` checks only
+- `deskspace-platform/src/win32/runtime/mod.rs`: `is_space_window` checks only
   the spaces map, so a press on the desktop layer is reported as
   `PointerDownOutside` as well as the layer's own `MouseDown`. Check whether
   that clears a layer selection before a Ctrl+click adds to it, and decide

@@ -1,0 +1,354 @@
+//! The UI-thread runtime: one `EventHandler` shared by every DeskSpace window
+//! (spaces, the settings window, and the hidden controller that owns the tray
+//! icon and hotkeys), plus the message loop.
+//!
+//! Re-entrancy: Win32 calls made by the handler (SetWindowPos, ShowWindow,
+//! DestroyWindow, TrackPopupMenu, ChooseColor) pump or send messages that
+//! re-enter window procedures synchronously. The handler is therefore moved
+//! out of the runtime while it runs; events raised meanwhile are queued and
+//! delivered by the outermost `dispatch` once the handler returns. Runtime
+//! state is only ever borrowed for short, non-re-entrant sections
+//! (`with_runtime`), never across a Win32 call that can send messages.
+
+mod ui_chrome;
+mod ui_input;
+mod ui_shell;
+mod ui_spaces;
+
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+
+use deskspace_core::geometry::{Point, Rect};
+use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Graphics::Gdi::MapWindowPoints;
+use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
+use windows::Win32::UI::Controls::{
+    ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX,
+    InitCommonControlsEx,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DestroyWindow, DispatchMessageW, GetMessageW, IsDialogMessageW, IsWindow, KillTimer, MSG,
+    PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SetTimer, ShowWindow, TranslateMessage, WM_CLOSE,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_YESNO, MessageBoxW, SetForegroundWindow,
+};
+use windows::core::PCWSTR;
+
+use crate::error::PlatformError;
+use crate::input::Event;
+use crate::render::{SpaceScene, SpaceStyle, d2d};
+use crate::ui::{CursorShape, MenuEntry, SettingsForm};
+use crate::win32::clipboard::ClipboardFiles;
+use crate::win32::drag_ghost::DragGhost;
+use crate::win32::drag_image::DragImage;
+use crate::win32::hotkey::{self, Hotkey, HotkeySpec};
+use crate::win32::info_tip::{self, InfoTip};
+use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
+use crate::win32::system::wide;
+use crate::win32::{
+    clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
+    folder_watch, menu, outside_click, settings_window, shell_selection, shell_view, space_window,
+    tray, watchdog,
+};
+
+pub trait EventHandler {
+    fn on_event(&mut self, event: Event, ui: &mut Ui);
+}
+
+#[derive(Debug, Clone)]
+pub struct RunOptions {
+    pub placement: desktop_shell::Placement,
+    pub click_through: bool,
+    /// Development aid: keep spaces above other windows so they can be
+    /// inspected without uncovering the desktop.
+    pub on_top: bool,
+    pub tray_tooltip: String,
+}
+
+struct Runtime {
+    /// `None` while `dispatch` has the handler checked out.
+    handler: Option<Box<dyn EventHandler>>,
+    pending: VecDeque<Event>,
+    controller: HWND,
+    host: Option<HWND>,
+    click_through: bool,
+    on_top: bool,
+    spaces_visible: bool,
+    spaces: HashMap<u64, HWND>,
+    settings: Option<HWND>,
+    /// The desktop layer window (ROADMAP D7), chrome-less and behind the
+    /// spaces. Created only when the app asks for it (`--takeover-layer`).
+    layer: Option<HWND>,
+    /// Dark menus and settings window; set by the app (`Ui::set_ui_dark`).
+    ui_dark: bool,
+    /// The menu theme last flushed, so an unchanged mode skips the flush.
+    menus_dark: Option<bool>,
+    tray_tooltip: String,
+    close_dispatched: bool,
+    /// Created on the first in-space item drag and kept for reuse.
+    drag_ghost: Option<DragGhost>,
+    /// Created on the first item hover and reused for every info tip.
+    info_tip: Option<InfoTip>,
+    /// The folder under watch and its worker, when `Ui::watch_folder` is on.
+    /// Dropped on teardown, which stops the worker.
+    folder_watch: Option<(PathBuf, folder_watch::FolderWatch)>,
+}
+
+thread_local! {
+    static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
+}
+
+/// Runs `f` with a short-lived borrow of the runtime. `f` must not call
+/// anything that can re-enter a window procedure.
+fn with_runtime<R>(f: impl FnOnce(&mut Runtime) -> R) -> Option<R> {
+    RUNTIME.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut slot) => slot.as_mut().map(f),
+        Err(_) => {
+            tracing::error!("UI runtime re-entered while borrowed; event dropped");
+            None
+        }
+    })
+}
+
+/// Delivers `event` to the handler, or queues it if the handler is already
+/// running further up the stack.
+pub(crate) fn dispatch(event: Event) {
+    let checked_out = with_runtime(|runtime| {
+        runtime.pending.push_back(event);
+        runtime.handler.take()
+    })
+    .flatten();
+    let Some(mut handler) = checked_out else {
+        return;
+    };
+    let mut ui = Ui {
+        _ui_thread_only: PhantomData,
+    };
+    while let Some(event) = with_runtime(|runtime| runtime.pending.pop_front()).flatten() {
+        handler.on_event(event, &mut ui);
+    }
+    with_runtime(|runtime| runtime.handler = Some(handler));
+}
+
+/// Sends `CloseRequested` the first time it is called; later calls (for
+/// example WM_ENDSESSION followed by WM_DESTROY) are ignored.
+pub(crate) fn dispatch_close_once() {
+    let first = with_runtime(|runtime| !std::mem::replace(&mut runtime.close_dispatched, true))
+        .unwrap_or(false);
+    if first {
+        dispatch(Event::CloseRequested);
+    }
+}
+
+pub(crate) fn tray_tooltip() -> String {
+    with_runtime(|runtime| runtime.tray_tooltip.clone()).unwrap_or_default()
+}
+
+/// Whether `window` is one of this runtime's space windows.
+pub(crate) fn is_space_window(window: HWND) -> bool {
+    with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
+}
+
+/// The DPI scale factor of a space window (`1.0` at 96 DPI), for per-monitor
+/// layout. Falls back to `1.0` before the window exists or outside the UI
+/// thread.
+pub fn space_dpi(id: u64) -> f32 {
+    with_runtime(|runtime| {
+        runtime
+            .spaces
+            .get(&id)
+            .copied()
+            .map(|hwnd| crate::win32::dpi::scale_for(crate::win32::dpi::window_dpi(hwnd)))
+    })
+    .flatten()
+    .unwrap_or(1.0)
+}
+
+pub(crate) fn settings_closed(window: HWND) {
+    with_runtime(|runtime| {
+        if runtime.settings == Some(window) {
+            runtime.settings = None;
+        }
+    });
+}
+
+/// Destroys every space window and the settings window. Called from the
+/// controller's WM_DESTROY, after `CloseRequested` has been delivered.
+pub(crate) fn destroy_ui_windows() {
+    // Stop the folder watch first: its worker posts to the controller, which
+    // could otherwise re-create the layer window while windows are tearing
+    // down. Dropped outside the borrow, because stopping joins the worker.
+    let watch = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
+    drop(watch);
+    let (windows, ghost, info_tip) = with_runtime(|runtime| {
+        let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
+        windows.extend(runtime.settings.take());
+        windows.extend(runtime.layer.take());
+        (windows, runtime.drag_ghost.take(), runtime.info_tip.take())
+    })
+    .unwrap_or_default();
+    // Dropped outside the borrow: destroying a window sends messages.
+    drop(ghost);
+    drop(info_tip);
+    for hwnd in windows {
+        // SAFETY: each HWND was created by this runtime on this thread.
+        unsafe {
+            let _ = DestroyWindow(hwnd);
+        }
+    }
+}
+
+/// Handle given to `EventHandler::on_event` for driving the UI.
+pub struct Ui {
+    _ui_thread_only: PhantomData<*const ()>,
+}
+
+/// Desktop coordinates (`Space::rect`'s system) are the host window's client
+/// coordinates for desktop-hosted spaces and screen coordinates otherwise.
+fn desktop_to_screen(at: Point) -> Point {
+    let Some(host) = with_runtime(|runtime| runtime.host).flatten() else {
+        return at;
+    };
+    let mut point = [POINT { x: at.x, y: at.y }];
+    // SAFETY: plain coordinate mapping from a live window to the screen.
+    unsafe { MapWindowPoints(Some(host), None, &mut point) };
+    Point::new(point[0].x, point[0].y)
+}
+
+fn space_hwnd(id: u64) -> Option<HWND> {
+    with_runtime(|runtime| runtime.spaces.get(&id).copied()).flatten()
+}
+
+fn settings_hwnd() -> Option<HWND> {
+    with_runtime(|runtime| runtime.settings).flatten()
+}
+
+/// Refreshes the settings window in place. A form whose page shape differs
+/// cannot be diffed onto the existing controls, so the update is skipped. That
+/// would leave the window showing stale values, so the invariant is asserted
+/// in debug builds and logged in release (every page is always built, so a
+/// shape change is a bug).
+fn warn_on_shape_change(hwnd: HWND, form: &SettingsForm) {
+    let updated = settings_window::update(hwnd, form);
+    debug_assert!(updated, "the settings form must not change shape");
+    if !updated {
+        tracing::warn!("the settings form changed shape; the update was skipped");
+    }
+}
+
+/// Creates the controller window, delivers `Event::Started`, and pumps
+/// messages until `Ui::quit`, console close, or session end.
+pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), PlatformError> {
+    // COM is needed by WIC (icon conversion) and the shell; OLE on top of it
+    // by drag and drop (SHDoDragDrop fails with CO_E_NOTINITIALIZED after
+    // only CoInitializeEx). OleInitialize enters a single-threaded apartment,
+    // which suits every COM object here: all are used on the UI thread.
+    // https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-oleinitialize
+    // SAFETY: called once on the UI thread, balanced below.
+    let com = unsafe { OleInitialize(None) };
+    init_common_controls();
+
+    let host = desktop_shell::find_host(options.placement);
+    if options.placement.is_desktop_hosted() && host.is_none() {
+        tracing::warn!("no desktop host window found; spaces will be top-level windows");
+    }
+
+    let controller = controller::create()?;
+    RUNTIME.with(|cell| {
+        *cell.borrow_mut() = Some(Runtime {
+            handler: Some(handler),
+            pending: VecDeque::new(),
+            controller,
+            host,
+            click_through: options.click_through,
+            on_top: options.on_top,
+            spaces_visible: true,
+            spaces: HashMap::new(),
+            settings: None,
+            layer: None,
+            ui_dark: false,
+            menus_dark: None,
+            tray_tooltip: options.tray_tooltip.clone(),
+            close_dispatched: false,
+            drag_ghost: None,
+            info_tip: None,
+            folder_watch: None,
+        });
+    });
+    tray::add(controller, &options.tray_tooltip);
+    console::install(controller);
+
+    dispatch(Event::Started);
+    let result = message_loop();
+    console::message_loop_finished();
+
+    // SAFETY: IsWindow guards against destroying an already-destroyed HWND. If
+    // the loop failed, this still delivers CloseRequested so the app saves.
+    unsafe {
+        if IsWindow(Some(controller)).as_bool() {
+            let _ = DestroyWindow(controller);
+        }
+    }
+    let runtime = RUNTIME.with(|cell| cell.borrow_mut().take());
+    drop(runtime);
+    d2d::release_graphics();
+    drop_target::release_image_helper();
+    shell_view::release();
+    // Takeover: show Explorer's icons again so a clean exit never leaves the
+    // desktop blank. Idempotent, so this is harmless when takeover was off.
+    desktop_icons::restore();
+    // Tell the takeover watchdog this was a clean exit, so it does not restore
+    // the icons again (it only acts when the process died without reaching
+    // here).
+    watchdog::signal_clean_exit();
+    if com.is_ok() {
+        // SAFETY: balances the successful OleInitialize above, after every
+        // COM object owned by this thread has been released.
+        unsafe { OleUninitialize() };
+    }
+    result
+}
+
+fn message_loop() -> Result<(), PlatformError> {
+    let mut message = MSG::default();
+    loop {
+        // SAFETY: `message` is a valid out-pointer for the whole loop.
+        let status = unsafe { GetMessageW(&mut message, None, 0, 0) };
+        // GetMessageW returns -1 on error, which `as_bool` would treat as
+        // "keep going" and spin forever.
+        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessagew
+        match status.0 {
+            0 => return Ok(()),
+            -1 => return Err(PlatformError::Win32(windows::core::Error::from_thread())),
+            _ => {}
+        }
+        // IsDialogMessage gives the settings window Tab/Shift+Tab focus
+        // movement, Enter for OK and Escape for Cancel, like a dialog box.
+        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-isdialogmessagew
+        if let Some(settings) = settings_hwnd() {
+            // SAFETY: `settings` is our live window and `message` is filled in.
+            if unsafe { IsDialogMessageW(settings, &message) }.as_bool() {
+                continue;
+            }
+        }
+        // SAFETY: `message` was just filled in by GetMessageW.
+        unsafe {
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+}
+
+fn init_common_controls() {
+    let controls = INITCOMMONCONTROLSEX {
+        dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
+        dwICC: ICC_STANDARD_CLASSES | ICC_TAB_CLASSES | ICC_BAR_CLASSES,
+    };
+    // SAFETY: `controls` is fully initialised.
+    if !unsafe { InitCommonControlsEx(&controls) }.as_bool() {
+        tracing::warn!("InitCommonControlsEx failed; settings controls may be unavailable");
+    }
+}

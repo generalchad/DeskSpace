@@ -125,9 +125,10 @@ context menus, and a settings window in the first usable release (v0.2).
 - Code health: `app.rs` was split into `app/` submodules (R1) and the
   selection, pointer, and edit state pulled out of `App` (R2),
   `win32/settings_window.rs` into `win32/settings_window/` (K1),
-  `render/d2d.rs` into `render/d2d/` (K2), and `settings.rs` into `settings/`
-  (K3). Files still over the ~800-line guideline (non-test code): `runtime.rs`
-  (~940) and `app/pointer.rs` (~920). `TASKS.md` section K splits them.
+  `render/d2d.rs` into `render/d2d/` (K2), `settings.rs` into `settings/`
+  (K3), and `win32/runtime.rs` into `win32/runtime/` (K4). The last file over
+  the ~800-line guideline (non-test code) is `app/pointer.rs` (~920); it moves
+  in K5. `TASKS.md` section K splits them.
 
 ## 3. Architecture
 
@@ -563,7 +564,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
 `Cancel`, and `Apply`. A new input source adds a variant here and one arm in
 `App::on_event`.
 
-### Runtime (`win32/runtime.rs`)
+### Runtime (`win32/runtime/`)
 
 - `run(RunOptions, Box<dyn EventHandler>)` initialises OLE (single-threaded apartment) and
   common controls, finds the desktop host for the placement, creates the
