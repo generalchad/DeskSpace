@@ -1104,18 +1104,20 @@ Small requests, one commit each.
   type with Shift, Caps Lock on, Caps Lock off, Caps+Shift, and toggling Caps
   mid-name; Shift+digit gives the symbol; no case gets stuck.
 
-- [x] **F9. Fit a resized space to whole columns.** (awaiting check) A
+- [ ] **F9. Fit a resized space to whole columns.** (awaiting check) A
   user-sized space kept its dragged width, so `position_items` left-aligned the
   grid and the remainder landed on the right (the "Email" space: left padding
   12, right 24). `ResizeSpace` now rounds a horizontal resize down to whole
   columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
   put), so both side paddings match. **[needs human]** check: drag a space's
   right edge and see it settle on whole columns with even left/right padding.
-  **Result (2026-10-12):** checked; the row gap led to the follow-up below.
-  Now both axes fit (`fit_rect_height` / `GridSpec::fit_height`) behind the
-  General page's "Snap resized spaces to whole columns and rows"
-  (`GridSpec.fit_to_grid`, default on), and the grid it fits to is the
-  existing `snap` / icon-spacing / edge-padding settings.
+  **Result (2026-10-12):** the width fits whole columns with even side padding.
+  The height is now fit to whole rows too, behind the General page's "Snap
+  resized spaces to whole columns and rows" (`GridSpec.fit_to_grid`, default
+  on); the grid it fits to is the existing `snap` / icon-spacing /
+  edge-padding settings. **[needs human]** re-check: drag a right/bottom edge
+  and see even padding on all sides; turn the toggle off and confirm a resize
+  keeps the dragged size (still snapped to `snap`).
 - [x] **F10. "Fit to contents" in the space settings.** (awaiting check) The
   space menu already offered "Fit to contents" (user-sized, unlocked spaces);
   the settings window now offers the same as a button on a space's Layout page.
