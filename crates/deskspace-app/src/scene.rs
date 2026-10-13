@@ -147,6 +147,8 @@ pub fn space_scene(
         item_text,
         hover_fill: palette.hover_fill,
         selected_fill: palette.selected_fill,
+        marquee_color: palette.marquee,
+        show_marquee_border: theme.show_marquee_border,
         check_fill: palette.check_fill,
         border: palette.border,
         text_shadow,
@@ -238,6 +240,8 @@ pub fn desktop_layer_scene(
         item_text: palette.item_text,
         hover_fill: palette.hover_fill,
         selected_fill: palette.selected_fill,
+        marquee_color: palette.marquee,
+        show_marquee_border: theme.show_marquee_border,
         check_fill: palette.check_fill,
         border: Color::TRANSPARENT,
         text_shadow,
@@ -651,6 +655,27 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn the_selection_box_color_and_border_reach_the_scene() {
+        let space = space();
+        let theme = Theme {
+            marquee_color: Color::rgb(10, 20, 30),
+            show_marquee_border: false,
+            ..Theme::default()
+        };
+        let scene = space_scene(
+            &space,
+            &theme,
+            &theme.palette(true),
+            GridSpec::default(),
+            ItemMetrics::for_scale(1.0),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert_eq!(scene.marquee_color, Color::rgb(10, 20, 30));
+        assert!(!scene.show_marquee_border);
     }
 
     #[test]

@@ -207,6 +207,12 @@ pub struct Theme {
     pub custom_colors: bool,
     pub tint: Color,
     pub text: Color,
+    /// The rubber-band selection box color. Explorer draws the box in the
+    /// system highlight color; this defaults to Windows blue and follows the
+    /// accent while `use_accent` is on.
+    pub marquee_color: Color,
+    /// Whether the rubber-band selection box draws its border.
+    pub show_marquee_border: bool,
     /// The item-display preset. `MatchExplorer` mirrors Explorer's icon size,
     /// spacing, check boxes, and extensions; `Custom` uses the settings above.
     /// Also reads the older `match_explorer = true|false` setting.
@@ -234,6 +240,8 @@ impl Default for Theme {
             custom_colors: false,
             tint: DARK_TINT,
             text: DARK_TEXT,
+            marquee_color: MARQUEE_COLOR_DEFAULT,
+            show_marquee_border: true,
             preset: Preset::MatchExplorer,
             use_accent: false,
         }
@@ -283,6 +291,10 @@ const LIGHT_TEXT: Color = Color::rgb(26, 26, 26);
 /// is the fallback.
 pub const CHECK_ACCENT: Color = Color::rgb(0x00, 0x78, 0xD4);
 
+/// The default rubber-band selection box color. Explorer draws the box in the
+/// system highlight color; Windows blue is what it resolves to by default.
+pub const MARQUEE_COLOR_DEFAULT: Color = Color::rgb(0x00, 0x78, 0xD4);
+
 /// Colors of an inline rename field, matching the box Explorer puts over the
 /// name it is editing: an opaque system-window fill, a border, and the system
 /// highlight for the selected text.
@@ -330,6 +342,9 @@ pub struct Palette {
     pub item_text: Color,
     pub hover_fill: Color,
     pub selected_fill: Color,
+    /// The rubber-band selection box's color, opaque; the painter derives the
+    /// translucent fill and the border alpha from it.
+    pub marquee: Color,
     pub border: Color,
     /// The fill of a checked item check box, the way Explorer fills it with the
     /// Windows accent regardless of the space's colors.
@@ -339,9 +354,11 @@ pub struct Palette {
 
 impl Palette {
     /// Replaces the selection highlight and border with `accent` at the alpha
-    /// each one already has, leaving every other color alone.
+    /// each one already has, leaving every other color alone. The selection box
+    /// follows too, since Explorer draws it in the same highlight color.
     pub fn with_accent(mut self, accent: Color) -> Self {
         self.selected_fill = accent.with_alpha(self.selected_fill.a);
+        self.marquee = accent.with_alpha(255);
         self.border = accent.with_alpha(self.border.a);
         self
     }
@@ -432,6 +449,7 @@ impl Theme {
             item_text: text,
             hover_fill: highlight.with_alpha(0x18),
             selected_fill: highlight.with_alpha(0x2C),
+            marquee: self.marquee_color.with_alpha(255),
             border: highlight.with_alpha(0x30),
             check_fill: CHECK_ACCENT,
             // The rename field follows Windows' app theme, as Explorer's does,
@@ -585,8 +603,19 @@ mod tests {
         assert_eq!(accented.border, accent.with_alpha(palette.border.a));
         assert_eq!(accented.tint, palette.tint);
         assert_eq!(accented.hover_fill, palette.hover_fill);
+        // The selection box follows the accent too, opaque.
+        assert_eq!(accented.marquee, accent.with_alpha(255));
         // The check box always uses its own accent, not `with_accent`.
         assert_eq!(accented.check_fill, palette.check_fill);
+    }
+
+    #[test]
+    fn the_selection_box_defaults_to_windows_blue_with_a_border() {
+        let theme = Theme::default();
+        assert_eq!(theme.marquee_color, MARQUEE_COLOR_DEFAULT);
+        assert_eq!(theme.marquee_color, Color::rgb(0x00, 0x78, 0xD4));
+        assert!(theme.show_marquee_border);
+        assert_eq!(theme.palette(false).marquee, MARQUEE_COLOR_DEFAULT);
     }
 
     #[test]

@@ -5,20 +5,29 @@ use super::edit::{EDIT_MAX_HEIGHT, draw_edit_buffer};
 use super::geometry::{color_f, draw_text, inset, rect_f, to_rect_f};
 use super::*;
 
+/// The selection box fill's alpha, a translucent shade of its color like
+/// Explorer's rubber band.
+const MARQUEE_FILL_ALPHA: u8 = 70;
+/// The selection box border's alpha, close to solid.
+const MARQUEE_BORDER_ALPHA: u8 = 200;
+
 /// Draws the rubber-band selection rectangle over empty space.
 pub(super) fn draw_marquee(
     target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     marquee: Rect,
-    fill: Color,
+    color: Color,
+    border: bool,
 ) {
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
         let rect = to_rect_f(marquee);
-        brush.SetColor(&color_f(fill.fade(70)));
+        brush.SetColor(&color_f(color.with_alpha(MARQUEE_FILL_ALPHA)));
         target.FillRectangle(&rect, brush);
-        brush.SetColor(&color_f(fill.with_alpha(200)));
-        target.DrawRectangle(&rect, brush, 1.0, None);
+        if border {
+            brush.SetColor(&color_f(color.with_alpha(MARQUEE_BORDER_ALPHA)));
+            target.DrawRectangle(&rect, brush, 1.0, None);
+        }
     }
 }
 

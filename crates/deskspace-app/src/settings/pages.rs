@@ -153,6 +153,17 @@ pub(super) fn look_pages(
                 "Use Windows accent color for the selection and border",
                 theme.use_accent,
             ),
+            Field::color(
+                field::MARQUEE_COLOR,
+                "Selection box color",
+                theme.marquee_color.with_alpha(255),
+            )
+            .enabled(!theme.use_accent),
+            Field::toggle(
+                field::MARQUEE_BORDER,
+                "Show selection box border",
+                theme.show_marquee_border,
+            ),
             Field::button(field::RESET, "", reset),
             Field::note(
                 field::COMPATIBILITY_NOTE,

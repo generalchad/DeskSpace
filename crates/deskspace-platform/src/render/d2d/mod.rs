@@ -221,7 +221,13 @@ impl Painter {
                 );
                 self.draw_items(&graphics, &target, &brush, prepared);
                 if let Some(marquee) = scene.marquee {
-                    draw_marquee(&target, &brush, marquee, scene.selected_fill);
+                    draw_marquee(
+                        &target,
+                        &brush,
+                        marquee,
+                        scene.marquee_color,
+                        scene.show_marquee_border,
+                    );
                 }
                 target.PopAxisAlignedClip();
                 if scene.chrome

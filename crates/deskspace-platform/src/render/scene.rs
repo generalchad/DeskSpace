@@ -44,6 +44,11 @@ pub struct SpaceScene {
     pub item_text: Color,
     pub hover_fill: Color,
     pub selected_fill: Color,
+    /// The rubber-band selection box's color, opaque; the painter derives the
+    /// translucent fill and the border alpha from it.
+    pub marquee_color: Color,
+    /// Whether the rubber-band selection box draws its border.
+    pub show_marquee_border: bool,
     /// The fill of a checked item check box, the Windows accent.
     pub check_fill: Color,
     /// Drawn only where DWM does not draw the border (desktop-hosted spaces

@@ -111,6 +111,14 @@ fn apply_look_field(
             theme.use_accent = *on;
             Effect::Appearance
         }
+        (field::MARQUEE_COLOR, FieldValue::Color(color)) => {
+            theme.marquee_color = color.with_alpha(255);
+            Effect::Appearance
+        }
+        (field::MARQUEE_BORDER, FieldValue::Toggle(on)) => {
+            theme.show_marquee_border = *on;
+            Effect::Appearance
+        }
         _ => return None,
     })
 }
@@ -384,6 +392,33 @@ mod tests {
         );
         assert_eq!(config.theme.tint, Color::rgb(243, 243, 243));
         assert_eq!(config.theme.text, Color::rgb(26, 26, 26));
+    }
+
+    #[test]
+    fn selection_box_color_and_border_apply_live() {
+        let (mut config, mut session) = setup();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::MARQUEE_COLOR,
+                FieldValue::Color(Color::rgba(10, 20, 30, 0)),
+                true,
+            ),
+            Effect::Appearance
+        );
+        assert_eq!(config.theme.marquee_color, Color::rgb(10, 20, 30));
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::MARQUEE_BORDER,
+                FieldValue::Toggle(false),
+                true,
+            ),
+            Effect::Appearance
+        );
+        assert!(!config.theme.show_marquee_border);
     }
 
     #[test]

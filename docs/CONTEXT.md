@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (285 tests) are green. Update this count whenever a
+  `cargo test --workspace` (294 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -390,6 +390,8 @@ Theme {
     label_shadow: LabelShadow,// Auto (default) | On | Off
     custom_colors: bool,      // default false
     tint: Color, text: Color, // used only when custom_colors
+    marquee_color: Color,     // default Windows blue; the selection box color
+    show_marquee_border: bool,// default true; the selection box border
     preset: Preset,           // Custom | MatchExplorer (default); item display
     use_accent: bool,         // default false; accent for selection and border
 }
@@ -410,14 +412,16 @@ live in `layout.rs`, and `NEW_SPACE_SIZE_RANGE` in `deskspace-config`'s
 
 `Theme::palette(system_dark) -> Palette` resolves concrete colors (`dark`,
 tint with alpha, title fill, title and item text, hover/selected fills,
-border, `check_fill`, and `edit: EditColors` for the rename field, which
+`marquee` (the opaque selection box color), border, `check_fill`, and
+`edit: EditColors` for the rename field, which
 follows the system mode rather than the space's) from the Windows 11
 dark (`#202020` / white) or light (`#F3F3F3` / `#1A1A1A`) base, or the custom
 colors. `ThemeMode::resolve(system_dark)` decides dark/light for a mode.
 `ui_mode` drives `App::ui_dark` and `Ui::set_ui_dark` for DeskSpace's own
 chrome; `mode` (through `Theme::is_dark`) colors the spaces.
-`Palette::with_accent(accent)` replaces only `selected_fill` and
-`border` with the accent at their current alphas; the app applies it in
+`Palette::with_accent(accent)` replaces only `selected_fill`, `marquee`, and
+`border` with the accent at their current alphas (the selection box becomes the
+opaque accent); the app applies it in
 `App::surface_palette` (`app/hit.rs`, reached through `palette_for`) when
 `use_accent` is on and `deskspace_platform::system_accent_color()` (the DWM
 `AccentColor` registry value, `0xAABBGGRR`) is known. Whenever an accent is
@@ -879,7 +883,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
   `SpaceScene` carries: `chrome`, `title`, `title_height`, the colors (`tint`,
   `title_fill`, `title_text`, `item_text`, `hover_fill`, `selected_fill`,
-  `border`, `check_fill`, `edit`), optional `text_shadow`, label lines/size,
+  `marquee_color` with `show_marquee_border`, `border`, `check_fill`, `edit`), optional `text_shadow`, label lines/size,
   `metrics: ItemMetrics`, `locked`, `rolled_up`, the `ItemVisual`s in
   window-local coordinates (id, rect, label, icon, state, hovered, checked,
   cut, `label_color`), optional `scroll_thumb` and rubber-band `marquee`,
@@ -1152,7 +1156,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   be found.
 - Settings previews live across its Appearance, Labels, Layout, Colors, and
   Advanced pages: material, corners, tint, custom colors, the Windows accent for
-  the selection and border, label lines/size/shadow,
+  the selection and border, the selection box color and border, label lines/size/shadow,
   icon size/spacing/edge padding (which re-flow every space; icon size scales
   the icon and the grid cell around it), and the shell overlay size (the shortcut
   arrow badge, as a percent of the icon; default 80 %, 100 % matches Explorer).
@@ -1167,7 +1171,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Item preset |
   | Labels | look | Label lines, Label size, Label shadow |
   | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
-  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent, Restore default / Match global appearance |
+  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent, Selection box color, Show selection box border, Restore default / Match global appearance |
   | Advanced | look | Shortcut overlay size |
   | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme) |
   | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |

@@ -375,6 +375,26 @@ mod tests {
     }
 
     #[test]
+    fn selection_box_defaults_and_parses_when_set() {
+        let parsed: Config = toml::from_str("version = 2\n[theme]\n").unwrap();
+        assert_eq!(
+            parsed.theme.marquee_color,
+            deskspace_core::theme::MARQUEE_COLOR_DEFAULT
+        );
+        assert!(parsed.theme.show_marquee_border);
+        let parsed: Config = toml::from_str(
+            "version = 2\n[theme]\nmarquee_color = { r = 1, g = 2, b = 3, a = 255 }\n\
+             show_marquee_border = false\n",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.theme.marquee_color,
+            deskspace_core::Color::rgb(1, 2, 3)
+        );
+        assert!(!parsed.theme.show_marquee_border);
+    }
+
+    #[test]
     fn preset_defaults_to_match_explorer_and_reads_the_legacy_flag() {
         let parsed: Config = toml::from_str("version = 2\n[theme]\n").unwrap();
         assert_eq!(parsed.theme.preset, deskspace_core::Preset::MatchExplorer);
