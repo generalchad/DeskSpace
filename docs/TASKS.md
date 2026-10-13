@@ -1190,17 +1190,20 @@ Small requests, one commit each.
     preset, so the branch never fires (see **Found while working**).
     Deprioritized.
 
-- [ ] **F14. A modern color picker (ROADMAP F-51).** [needs decision]
-  - The Colors page and the space menu's Appearance submenu open the system
-    `ChooseColorW` dialog (`Ui::pick_color`), which looks dated next to
-    Windows 11. Replace it with a native-feeling, themed picker. The maintainer
-    wants this soon.
-  - Needs a design first: an owner-drawn picker in the settings window (a new
-    `FieldKind`/`FieldValue` path) reused by the space menu as a popup; a
-    saturation/value area with a hue strip and an alpha slider; and how the
-    chosen color is reported. Fit the existing data-driven UI rather than
-    special-casing the color fields.
-  - Do not start until the design is settled.
+- [ ] **F14. A modern color picker (ROADMAP F-51).** (awaiting check) Landed as
+  `feat: add a modern color picker (F-51)`. The Colors page and the space
+  menu's Appearance submenu open DeskSpace's own popup
+  (`win32/color_picker.rs`) instead of the system `ChooseColor` dialog: a
+  rounded, themed window with a saturation/value square, hue and alpha strips,
+  a preview, a hex readout, and OK/Cancel. `deskspace-core` gained `Hsv`,
+  `Color::to_hsv`, and `Hsv::to_color`; `Ui::pick_color` and the settings
+  window both route through the new picker.
+  - **[needs human]** check, over a high-contrast window (`--on-top`) and in
+    light and dark mode: the popup is rounded and bordered; dragging in the
+    square, the hue strip, and the alpha strip updates the preview live; OK
+    returns the color (custom tint/text, and the Colors page fields) and Cancel
+    leaves it unchanged; Enter accepts and Esc cancels; the scale is right at
+    100 % and 150 %.
 
 ## G. More Explorer-standard controls
 

@@ -4,16 +4,21 @@
 use super::*;
 
 impl Ui {
-    /// Opens the system color picker and returns the chosen color. Blocks in a
+    /// Opens DeskSpace's color picker and returns the chosen color. Blocks in a
     /// modal loop; other events are queued meanwhile.
     pub fn pick_color(
         &mut self,
         initial: deskspace_core::theme::Color,
     ) -> Option<deskspace_core::theme::Color> {
-        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))?;
+        let (owner, dark) = with_runtime(|runtime| {
+            (
+                runtime.settings.unwrap_or(runtime.controller),
+                runtime.ui_dark,
+            )
+        })?;
         // SAFETY: `owner` is a live window owned by this thread, and the picker
         // is modal for the duration of the call.
-        unsafe { settings_window::pick_color(owner, initial) }
+        unsafe { crate::win32::color_picker::pick(owner, initial, dark) }
     }
 
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen

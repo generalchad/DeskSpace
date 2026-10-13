@@ -401,6 +401,10 @@ Done:
     and conflict reporting: show/hide, new space, and open settings (F-18);
   - snapping, now `GridSpec.snap`.
 - **[done]** Dark mode for the settings window and menus, following Windows.
+- **[done]** A modern color picker (F-51): the settings Colors page and the
+  space menu's Appearance submenu open DeskSpace's own themed popup (a
+  saturation/value square, hue and alpha strips, a preview, OK/Cancel) instead
+  of the system `ChooseColor` dialog (`TASKS.md` F14; check pending).
 
 Remaining:
 1. Tray and menu entries:
@@ -411,10 +415,6 @@ Remaining:
 2. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
-3. A modern color picker (F-51). The Colors page and the space menu's
-   Appearance submenu use the dated system `ChooseColorW` dialog; replace it
-   with a native-feeling, themed picker (`TASKS.md` F14). The maintainer wants
-   this soon.
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -687,7 +687,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Open; a space shows the no-drop cursor for them (drop target accepts `CF_HDROP` only) |
-| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Open; the Colors page and the Appearance menu use `ChooseColorW`, which looks out of place on Windows 11 |
+| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the
@@ -1021,3 +1021,9 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     install root apart from the user's stored files under
     `%AppData%\DeskSpace\DeskSpace\config` and
     `%LocalAppData%\DeskSpace\DeskSpace\data`.
+- **A modern color picker (F-51; `TASKS.md` F14).** The Colors page and the
+  space menu's Appearance submenu open DeskSpace's own themed popup
+  (`win32/color_picker.rs`) instead of the dated system `ChooseColor` dialog: a
+  rounded window with a saturation/value square, hue and alpha strips, a
+  preview, a hex readout, and OK/Cancel. `deskspace-core` gained `Hsv`,
+  `Color::to_hsv`, and `Hsv::to_color`. On-screen check pending.

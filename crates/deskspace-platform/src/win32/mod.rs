@@ -1,5 +1,6 @@
 pub mod autostart;
 mod clipboard;
+mod color_picker;
 mod console;
 mod controller;
 mod dark_mode;

@@ -3,7 +3,7 @@
 //! icon and hotkeys), plus the message loop.
 //!
 //! Re-entrancy: Win32 calls made by the handler (SetWindowPos, ShowWindow,
-//! DestroyWindow, TrackPopupMenu, ChooseColor) pump or send messages that
+//! DestroyWindow, TrackPopupMenu, the color picker) pump or send messages that
 //! re-enter window procedures synchronously. The handler is therefore moved
 //! out of the runtime while it runs; events raised meanwhile are queued and
 //! delivered by the outermost `dispatch` once the handler returns. Runtime

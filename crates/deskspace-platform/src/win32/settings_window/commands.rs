@@ -3,17 +3,10 @@
 
 use super::update::{Update, set_swatch};
 use super::*;
+use windows::Win32::Foundation::COLORREF;
 
-pub(super) fn colorref(color: Color) -> COLORREF {
+pub(crate) fn colorref(color: Color) -> COLORREF {
     COLORREF(color.r as u32 | ((color.g as u32) << 8) | ((color.b as u32) << 16))
-}
-
-fn from_colorref(value: COLORREF) -> Color {
-    Color::rgb(
-        (value.0 & 0xFF) as u8,
-        ((value.0 >> 8) & 0xFF) as u8,
-        ((value.0 >> 16) & 0xFF) as u8,
-    )
 }
 
 pub(super) unsafe fn window_text(control: HWND) -> String {
@@ -104,7 +97,8 @@ pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, contro
                 EN_CHANGE,
             ) => Some(FieldValue::Text(window_text(control))),
             (FieldKind::Color { .. }, BN_CLICKED) => {
-                pick_color(window, color).map(FieldValue::Color)
+                let dark = with_state(window, |state| state.colors.dark).unwrap_or(false);
+                crate::win32::color_picker::pick(window, color, dark).map(FieldValue::Color)
             }
             (FieldKind::Button { .. }, BN_CLICKED) => {
                 settings_event(SettingsEvent::Button { field: field.id });
@@ -143,24 +137,6 @@ pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, contro
             value,
         });
     }
-}
-
-/// Opens the system color picker. Modal: messages for other windows keep
-/// flowing while it is open.
-pub(crate) unsafe fn pick_color(owner: HWND, initial: Color) -> Option<Color> {
-    let mut custom = CUSTOM_COLORS.with(|colors| *colors.borrow());
-    let mut choose = CHOOSECOLORW {
-        lStructSize: std::mem::size_of::<CHOOSECOLORW>() as u32,
-        hwndOwner: owner,
-        rgbResult: colorref(initial),
-        lpCustColors: custom.as_mut_ptr(),
-        Flags: CC_RGBINIT | CC_FULLOPEN,
-        ..Default::default()
-    };
-    // SAFETY: `choose` and `custom` outlive the modal call.
-    let picked = unsafe { ChooseColorW(&mut choose) }.as_bool();
-    CUSTOM_COLORS.with(|colors| *colors.borrow_mut() = custom);
-    picked.then(|| from_colorref(choose.rgbResult))
 }
 
 pub(super) unsafe fn on_scroll(window: HWND, control: HWND) {
@@ -231,9 +207,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn colorref_round_trips() {
+    fn colorref_packs_bgr() {
         let color = Color::rgb(0x12, 0x34, 0x56);
         assert_eq!(colorref(color).0, 0x0056_3412);
-        assert_eq!(from_colorref(colorref(color)), color);
     }
 }

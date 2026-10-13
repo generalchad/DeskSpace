@@ -14,15 +14,14 @@ mod nav;
 mod paint;
 mod update;
 
-pub(crate) use commands::pick_color;
+pub(crate) use commands::colorref;
 pub(crate) use update::update;
 
-use std::cell::RefCell;
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use deskspace_core::theme::Color;
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute,
 };
@@ -35,7 +34,6 @@ use windows::Win32::Graphics::Gdi::{
     TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::Dialogs::{CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW, ChooseColorW};
 use windows::Win32::UI::Controls::{
     DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ,
     TBS_NOTICKS, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW, WC_LISTBOXW, WC_STATICW,
@@ -74,7 +72,7 @@ use crate::win32::system::{wide, work_area_at};
 use crate::win32::{runtime, tray};
 
 use build::build;
-use commands::{colorref, on_field_command, on_scroll};
+use commands::{on_field_command, on_scroll};
 use nav::{NavRow, on_header_switch, on_nav_changed, on_scope_changed};
 use paint::{erase_body, on_draw_header_button, on_draw_item, on_draw_scope, on_paint};
 
@@ -132,12 +130,6 @@ const MARK_LABEL_HEIGHT: i32 = 16;
 
 static REGISTER_CLASSES: Once = Once::new();
 static CLASSES_REGISTERED: AtomicBool = AtomicBool::new(false);
-
-thread_local! {
-    /// The 16 "custom colors" slots of the color picker, kept for the session.
-    static CUSTOM_COLORS: RefCell<[COLORREF; 16]> =
-        const { RefCell::new([COLORREF(0x00FF_FFFF); 16]) };
-}
 
 /// The controls created for one field.
 pub(super) struct FieldControls {

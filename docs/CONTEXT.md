@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (294 tests) are green. Update this count whenever a
+  `cargo test --workspace` (304 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -509,7 +509,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `dark_mode` |
+| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -589,7 +589,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   timers, sets the tray tooltip, and quits.
 - Re-entrancy: the handler is moved out of the thread-local runtime while it
   runs. Win32 calls it makes (SetWindowPos, DestroyWindow, TrackPopupMenu,
-  ChooseColor, MessageBox) re-enter window procedures; events raised then are
+  the color picker, MessageBox) re-enter window procedures; events raised then are
   queued and delivered by the outermost `dispatch`. Runtime state is only
   borrowed in short sections (`with_runtime`) that never call into Win32.
 
@@ -932,10 +932,12 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   window lays the pages out with common controls v6 (pages are container
   windows that forward notifications), uses Mica in the caption, reports edits
   as `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
-  `Apply` (plus the pane events below), and opens `ChooseColorW` for color
-  fields (`Ui::pick_color`); that dialog looks dated on Windows 11, and
-  replacing it with a modern picker is planned (ROADMAP F-51).
-  `Ui::update_settings`
+  `Apply` (plus the pane events below), and opens DeskSpace's own color picker
+  for color fields (`Ui::pick_color`). The picker (`win32/color_picker.rs`) is
+  a rounded, themed popup with a saturation/value square, hue and alpha
+  strips, a preview, and OK/Cancel, replacing the dated system `ChooseColor`
+  dialog (ROADMAP F-51). It is modal: it disables its owner and services only
+  its own messages until it closes. `Ui::update_settings`
   diffs a new form of the same shape into the existing controls, and touches
   the panes and header only when they change, since a slider drag sends an
   update per tick.
@@ -1314,10 +1316,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   If a future Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.
 - **Dark mode relies on undocumented uxtheme exports** for menus and on
-  Explorer's dark control styles. The confirmation message box and the color
-  picker stay light; neither has a dark mode. The system color picker
-  (`ChooseColorW`) also looks dated next to Windows 11; a modern, themed
-  replacement is planned (ROADMAP F-51).
+  Explorer's dark control styles. The confirmation message box stays light; it
+  has no dark mode. The color picker is DeskSpace's own themed popup
+  (`win32/color_picker.rs`), so it follows the dark/light mode (F-51).
 - **Some files are too large to read comfortably.** See the code-health
   bullet in section 2 and `TASKS.md` section K. Until they are split, find
   code by function name rather than by scrolling.
