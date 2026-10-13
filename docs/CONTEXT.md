@@ -104,7 +104,12 @@ context menus, and a settings window in the first usable release (v0.2).
   double-click to open; 2026-10-11), and the desktop takeover (`--takeover`:
   the icons hide, return on exit, re-hide after an Explorer restart, and come
   back when the process is killed, so the watchdog restores them after a crash;
-  2026-10-11). Pending on-screen checks: the move/copy
+  2026-10-11). Also passed (2026-10-12): inline-rename Shift/Caps (F8),
+  whole-column width fit with even side padding and the resize dead zone
+  (F9/F11), "Fit to contents" in the settings window (F10), and the
+  Windows-accurate check-box coloring (F12, follows the accent). Ctrl+wheel
+  over a space still does nothing under any preset (F13/G2). Pending on-screen
+  checks: the move/copy
   cursor, the `- Copy` fix, the drag image over Explorer and over spaces, the
   in-space ghost, the space-click focus/deselect, the check-box display and
   both check-box modes, rubber-band/Ctrl+A selection, the clipboard

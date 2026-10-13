@@ -1093,7 +1093,7 @@ Small requests, one commit each.
 - [x] **F7. The Menu key or Shift+F10 opens the context menu.** Anchored at the
   focused item's cell center, or the space center with no item selected.
 
-- [ ] **F8. Shift and Caps Lock decode predictably in inline rename.**
+- [x] **F8. Shift and Caps Lock decode predictably in inline rename.**
   (awaiting check) `win32/keyboard.rs` `char_for` read Caps Lock from
   `GetAsyncKeyState`'s low bit, which is an unreliable "pressed since the last
   call" flag rather than the toggle, and only ever set modifier bits, so a
@@ -1111,7 +1111,10 @@ Small requests, one commit each.
   columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
   put), so both side paddings match. **[needs human]** check: drag a space's
   right edge and see it settle on whole columns with even left/right padding.
-- [ ] **F10. "Fit to contents" in the space settings.** (awaiting check) The
+  **Result (2026-10-12):** the width fits whole columns with even side
+  padding. The height is not fit to whole rows; that was not in this task's
+  scope (see **Found while working**).
+- [x] **F10. "Fit to contents" in the space settings.** (awaiting check) The
   space menu already offered "Fit to contents" (user-sized, unlocked spaces);
   the settings window now offers the same as a button on a space's Layout page.
   It is grey unless the space is resized and unlocked, and runs
@@ -1119,7 +1122,7 @@ Small requests, one commit each.
   **[needs human]** check: select a resized space in Settings, open Layout,
   press "Fit to contents", and confirm the space grows to fit its items with
   even padding.
-- [ ] **F11. A dead zone before a border drag resizes a space.** (awaiting
+- [x] **F11. A dead zone before a border drag resizes a space.** (awaiting
   check) A press on a border started a resize at once, so a click or tiny
   jitter changed the size (and a corner grab changed both axes). The resize now
   waits until the pointer leaves a half-cell dead zone around the grab
@@ -1127,7 +1130,7 @@ Small requests, one commit each.
   horizontal move on a corner resizes only the width. **[needs human]** check:
   click a border without moving (no resize); drag a side past half a cell (only
   that axis resizes); drag a corner horizontally (only the width changes).
-- [ ] **F12. Check box coloring matches Windows.** (awaiting check) A checked
+- [x] **F12. Check box coloring matches Windows.** (awaiting check) A checked
   item check box was a white box with a black tick. It is now filled with the
   Windows accent and shows a white tick, like Explorer: `Palette.check_fill`
   (default `theme::CHECK_ACCENT`, Windows blue) is set to the system accent in
@@ -1179,6 +1182,9 @@ Small requests, one commit each.
     preset, Ctrl+wheel over a space changes the desktop's icons and the
     spaces together, both ways, and stops at the smallest and largest size;
     with the preset set to Custom, Ctrl+wheel changes only the spaces.
+    **Result (2026-10-12):** Ctrl+wheel over a space does nothing under any
+    preset, so the branch never fires (see **Found while working**).
+    Deprioritized.
 
 ## G. More Explorer-standard controls
 
@@ -1785,3 +1791,13 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   Group the scene builders into a `ViewState`-like struct, and the `d2d`
   draw helpers, so the allows can go. Suggested task: a `ViewState`-style
   scene-args struct plus a `d2d` arguments struct.
+- `deskspace-core/src/{layout,command}.rs`: a user-sized space fits its width
+  to whole columns but its height is left unrounded, so the bottom edge padding
+  can differ from the top after a vertical resize. F9 covered width only.
+  Suggested task: a `fit_height` / `fit_rect_height` mirroring `fit_width`, if
+  the asymmetry is unwanted.
+- `deskspace-app/src/app/pointer.rs` `adjust_icon_size` (`SpaceEvent::Wheel`):
+  the maintainer reports (2026-10-12) that Ctrl+wheel over a space does nothing
+  under any preset, so even the `Custom` branch that should change
+  `Theme.icon_size` never runs. The G2 check was therefore premature. Find out
+  why the Ctrl+wheel event does not reach `adjust_icon_size` (before doing F13).

@@ -635,7 +635,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
-| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column fit and the resize dead zone: check pending |
+| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column width fit and the resize dead zone checked 2026-10-12 (height does not snap to rows) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); check pending for the layer |
@@ -657,7 +657,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
-| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel under Match Explorer decided (D9), open (`TASKS.md` F13) |
+| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel does nothing over a space under any preset (2026-10-12); Match Explorer behavior is `TASKS.md` F13 |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
