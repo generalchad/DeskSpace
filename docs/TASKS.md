@@ -433,7 +433,7 @@ Each is independent. None changes behavior.
     remove the scratch config afterwards). Update `CONTEXT.md` section 6
     (the `SettingsForm.nav` and dark-mode bullets mention B8).
 
-- [ ] **B9. Remove stale `too_many_arguments` allows.**
+- [x] **B9. Remove stale `too_many_arguments` allows.**
   - `#[allow(clippy::too_many_arguments)]` sits on functions in
     `deskspace-app/src/scene.rs` (`space_scene`, `desktop_layer_scene`,
     `desktop_layer_drag_scene`, `drag_scene`), `render/d2d.rs` (`draw_item`,
@@ -1776,3 +1776,10 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
 - `deskspace-platform/src/win32/dark_mode.rs`: the settings window's
   selection bar uses a fixed `UiColors.accent`, not the Windows accent the
   spaces' check boxes use. Consider `system_accent_color()` for consistency.
+- `too_many_arguments` allows that are still needed (B9 removed only the stale
+  ones): `scene.rs` `desktop_layer_scene` (8), `desktop_layer_drag_scene` (9),
+  `drag_scene` (8); `render/d2d.rs` `draw_item` (8), `draw_check_box` (8),
+  `draw_edit_buffer` (9); `win32/settings_window.rs` `Builder::control` (8).
+  Group the scene builders into a `ViewState`-like struct, and the `d2d`
+  draw helpers, so the allows can go. Suggested task: a `ViewState`-style
+  scene-args struct plus a `d2d` arguments struct.

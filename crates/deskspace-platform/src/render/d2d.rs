@@ -1063,7 +1063,6 @@ unsafe fn fill_rounded(
 }
 
 /// Draws clipped text, first offset by one pixel in `shadow` when given.
-#[allow(clippy::too_many_arguments)]
 unsafe fn draw_text(
     target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,

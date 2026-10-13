@@ -72,7 +72,6 @@ pub fn layer_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
 /// window, which starts at the space's top-left corner. Only items at least
 /// partly inside the content area are included, so icons of scrolled-away
 /// items are neither drawn nor loaded.
-#[allow(clippy::too_many_arguments)]
 pub fn space_scene(
     space: &Space,
     theme: &Theme,
