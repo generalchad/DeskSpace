@@ -1104,16 +1104,18 @@ Small requests, one commit each.
   type with Shift, Caps Lock on, Caps Lock off, Caps+Shift, and toggling Caps
   mid-name; Shift+digit gives the symbol; no case gets stuck.
 
-- [ ] **F9. Fit a resized space to whole columns.** (awaiting check) A
+- [x] **F9. Fit a resized space to whole columns.** (awaiting check) A
   user-sized space kept its dragged width, so `position_items` left-aligned the
   grid and the remainder landed on the right (the "Email" space: left padding
   12, right 24). `ResizeSpace` now rounds a horizontal resize down to whole
   columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
   put), so both side paddings match. **[needs human]** check: drag a space's
   right edge and see it settle on whole columns with even left/right padding.
-  **Result (2026-10-12):** the width fits whole columns with even side
-  padding. The height is not fit to whole rows; that was not in this task's
-  scope (see **Found while working**).
+  **Result (2026-10-12):** checked; the row gap led to the follow-up below.
+  Now both axes fit (`fit_rect_height` / `GridSpec::fit_height`) behind the
+  General page's "Snap resized spaces to whole columns and rows"
+  (`GridSpec.fit_to_grid`, default on), and the grid it fits to is the
+  existing `snap` / icon-spacing / edge-padding settings.
 - [x] **F10. "Fit to contents" in the space settings.** (awaiting check) The
   space menu already offered "Fit to contents" (user-sized, unlocked spaces);
   the settings window now offers the same as a button on a space's Layout page.
@@ -1791,11 +1793,6 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   Group the scene builders into a `ViewState`-like struct, and the `d2d`
   draw helpers, so the allows can go. Suggested task: a `ViewState`-style
   scene-args struct plus a `d2d` arguments struct.
-- `deskspace-core/src/{layout,command}.rs`: a user-sized space fits its width
-  to whole columns but its height is left unrounded, so the bottom edge padding
-  can differ from the top after a vertical resize. F9 covered width only.
-  Suggested task: a `fit_height` / `fit_rect_height` mirroring `fit_width`, if
-  the asymmetry is unwanted.
 - `deskspace-app/src/app/pointer.rs` `adjust_icon_size` (`SpaceEvent::Wheel`):
   the maintainer reports (2026-10-12) that Ctrl+wheel over a space does nothing
   under any preset, so even the `Custom` branch that should change

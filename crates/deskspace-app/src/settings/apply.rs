@@ -163,6 +163,10 @@ pub fn apply_field(
                 config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
                 Effect::Pending
             }
+            (field::FIT_TO_GRID, FieldValue::Toggle(on)) => {
+                config.desktop.layout.fit_to_grid = on;
+                Effect::Pending
+            }
             (field::NEW_SPACE_TITLE, FieldValue::Text(text)) => {
                 config.window.new_space_title = text;
                 Effect::Pending
@@ -291,6 +295,21 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.start_with_windows);
+    }
+
+    #[test]
+    fn fit_to_grid_is_pending() {
+        let (mut config, mut session) = setup();
+        assert!(config.desktop.layout.fit_to_grid);
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::FIT_TO_GRID,
+            FieldValue::Toggle(false),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(!config.desktop.layout.fit_to_grid);
     }
 
     #[test]

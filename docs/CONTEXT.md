@@ -105,8 +105,8 @@ context menus, and a settings window in the first usable release (v0.2).
   the icons hide, return on exit, re-hide after an Explorer restart, and come
   back when the process is killed, so the watchdog restores them after a crash;
   2026-10-11). Also passed (2026-10-12): inline-rename Shift/Caps (F8),
-  whole-column width fit with even side padding and the resize dead zone
-  (F9/F11), "Fit to contents" in the settings window (F10), and the
+  whole-column and whole-row resize fit with even padding, and the resize dead
+  zone (F9/F11), "Fit to contents" in the settings window (F10), and the
   Windows-accurate check-box coloring (F12, follows the accent). Ctrl+wheel
   over a space still does nothing under any preset (F13/G2). Pending on-screen
   checks: the move/copy
@@ -306,7 +306,7 @@ virtual-desktop coordinates. `layer()` / `layer_mut()` reach it; the layer has
 ```
 GridSpec {
     cell_width: 96, cell_height: 104, gap: 10, padding: 12,
-    title_height: 28, columns: 4, snap: 16,
+    title_height: 28, columns: 4, snap: 16, fit_to_grid: true,
 }
 ```
 
@@ -331,9 +331,11 @@ GridSpec {
   cell and gap outright.
 - `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
   edges fixed, at least `min_space_size()` (one cell plus padding) and inside
-  the work area. A left/right resize then rounds the width to whole columns
-  (`fit_rect_width` / `GridSpec::fit_width`), so a user-sized space keeps equal
-  padding on both sides instead of the remainder landing on the right; the
+  the work area. When `fit_to_grid` is on (the default), a left/right resize
+  then rounds the width to whole columns (`fit_rect_width` /
+  `GridSpec::fit_width`) and a top/bottom resize rounds the height to whole
+  rows (`fit_rect_height` / `GridSpec::fit_height`), so a user-sized space
+  keeps equal padding on both sides and above and below the remainder; the
   grabbed edge stays put. `scroll_step()` is one row per wheel notch.
 - `snap_to_grid` / `snap_rect` snap positions to the grid.
 - `clamp_to_bounds` keeps rects inside the work area.
@@ -357,7 +359,8 @@ the stored base grid. Variants:
 not snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
 reject locked spaces and snap to the grid; `SnapAll` skips locked spaces.
 `ResizeSpace` also rejects rolled-up spaces and an empty edge set, marks the
-space user-sized, and fits the dragged width to whole columns, and
+space user-sized, and (with `fit_to_grid`) fits the dragged width to whole
+columns and the height to whole rows, and
 `FitToContents` clears the user size again (so the space grows to fit its
 items). `SortSpace { id, key: SortKey, descending }` sorts by `Name`
 (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
@@ -550,7 +553,7 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-11, 20-28, 30-36,
 41-44; next free 12, or 45 for a new group); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
-Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
+Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
 26 were freed by the removed placement setting and stay unused).
 
 ### Events
@@ -1166,7 +1169,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
   | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
   | Colors | look | Use custom colors, Background tint, Text, Use Windows accent, Restore default / Match global appearance |
   | Advanced | look | Shortcut overlay size |
-  | General | Global | Start with spaces hidden, Snap to grid, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme) |
+  | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme) |
   | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |
   | Hotkeys | Global | Show or hide spaces, Create a new space, Open settings |
   | About | Global | Version, summary, license, configuration file path |

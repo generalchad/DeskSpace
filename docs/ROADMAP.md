@@ -635,7 +635,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
-| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column width fit and the resize dead zone checked 2026-10-12 (height does not snap to rows) |
+| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); check pending for the layer |

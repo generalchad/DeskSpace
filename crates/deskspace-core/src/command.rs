@@ -6,8 +6,8 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemKind};
 use crate::layout::{
-    GridSpec, arrange_space, clamp_to_bounds, fit_rect_width, position_items, resize_rect,
-    resolve_collisions, snap_rect,
+    GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
+    resize_rect, resolve_collisions, snap_rect,
 };
 use crate::space::{ResizeEdges, SpaceLook};
 
@@ -233,10 +233,20 @@ impl Desktop {
                 }
                 let min = layout.min_space_size();
                 let resized = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
-                // A width drag lands on whole columns, so the padding is equal
-                // on both sides instead of the remainder sitting on the right.
-                space.rect = if edges.left || edges.right {
-                    fit_rect_width(resized, edges, &layout)
+                // With `fit_to_grid`, a drag lands on whole columns and rows,
+                // so the padding is even all round instead of the remainder
+                // sitting on one edge.
+                space.rect = if layout.fit_to_grid {
+                    let resized = if edges.left || edges.right {
+                        fit_rect_width(resized, edges, &layout)
+                    } else {
+                        resized
+                    };
+                    if edges.top || edges.bottom {
+                        fit_rect_height(resized, edges, &layout)
+                    } else {
+                        resized
+                    }
                 } else {
                     resized
                 };
@@ -670,9 +680,9 @@ mod tests {
         );
         assert_eq!(outcome, CommandOutcome::Applied);
         let sized = desktop.space(id).unwrap().rect;
-        // Width 480 fits four columns of 106; it rounds down to 438 so the
-        // padding is equal, while the height is left as dragged.
-        assert_eq!(sized, Rect::new(0, 0, 438, 320));
+        // Width 480 fits four columns of 106 and rounds down to 438; height
+        // 320 fits two rows and rounds down to 270, so the padding is even.
+        assert_eq!(sized, Rect::new(0, 0, 438, 270));
         for index in 0..20 {
             desktop.apply(
                 Command::AddItem {
@@ -732,6 +742,64 @@ mod tests {
             layout.padding,
             "left and right padding match"
         );
+    }
+
+    #[test]
+    fn a_resized_space_has_equal_top_and_bottom_padding() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 300, 300));
+        let layout = desktop.layout;
+        let edges = ResizeEdges {
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            desktop.apply(
+                Command::ResizeSpace {
+                    id,
+                    edges,
+                    to: Point::new(300, 320),
+                },
+                bounds(),
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.rect.height, layout.fit_height(space.rect.height));
+        let rows = layout.rows_for(space.rect.height);
+        let last_row_y =
+            layout.title_height + layout.padding + (rows - 1) * (layout.cell_height + layout.gap);
+        assert_eq!(
+            space.rect.height - (last_row_y + layout.cell_height),
+            layout.padding,
+            "top and bottom padding match"
+        );
+    }
+
+    #[test]
+    fn fit_to_grid_can_be_turned_off() {
+        let mut desktop = Desktop::new();
+        desktop.layout.fit_to_grid = false;
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let edges = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        desktop.apply(
+            Command::ResizeSpace {
+                id,
+                edges,
+                to: Point::new(480, 320),
+            },
+            bounds(),
+        );
+        // Without the fit the size keeps the dragged dimensions (snapped to
+        // `snap`), not whole columns and rows.
+        let rect = desktop.space(id).unwrap().rect;
+        assert_eq!(rect, Rect::new(0, 0, 480, 320));
+        assert_ne!(rect.width, desktop.layout.fit_width(rect.width));
+        assert_ne!(rect.height, desktop.layout.fit_height(rect.height));
     }
 
     #[test]

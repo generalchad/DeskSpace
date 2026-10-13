@@ -56,6 +56,7 @@ pub mod field {
     pub const NEW_SPACE_LOCKED: u32 = 60;
     pub const NEW_SPACES_NOTE: u32 = 61;
     pub const FIT_CONTENTS: u32 = 62;
+    pub const FIT_TO_GRID: u32 = 63;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,

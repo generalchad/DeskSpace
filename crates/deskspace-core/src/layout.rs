@@ -18,6 +18,10 @@ pub struct GridSpec {
     pub title_height: i32,
     pub columns: i32,
     pub snap: i32,
+    /// Round a user-sized space's width and height to whole grid columns and
+    /// rows when it is resized, so its edge padding stays even. Off keeps the
+    /// exact dragged size (still snapped to `snap`).
+    pub fit_to_grid: bool,
 }
 
 impl Default for GridSpec {
@@ -30,6 +34,7 @@ impl Default for GridSpec {
             title_height: DEFAULT_TITLE_HEIGHT,
             columns: 4,
             snap: 16,
+            fit_to_grid: true,
         }
     }
 }
@@ -50,6 +55,7 @@ impl GridSpec {
             title_height: scaled(self.title_height),
             columns: self.columns,
             snap: scaled(self.snap),
+            fit_to_grid: self.fit_to_grid,
         }
     }
 
@@ -99,6 +105,26 @@ impl GridSpec {
     /// same padding on both sides instead of the remainder on the right.
     pub fn fit_width(&self, width: i32) -> i32 {
         self.width_for_columns(self.columns_for(width))
+    }
+
+    /// How many cell rows fit in a space `height` pixels tall, below the title
+    /// bar (at least 1).
+    pub fn rows_for(&self, height: i32) -> i32 {
+        let step = (self.cell_height + self.gap).max(1);
+        ((height - self.title_height - self.padding * 2 + self.gap) / step).max(1)
+    }
+
+    /// The height that holds `rows` whole rows below the title bar with equal
+    /// top and bottom padding.
+    pub fn height_for_rows(&self, rows: i32) -> i32 {
+        let rows = rows.max(1);
+        self.title_height + self.padding * 2 + rows * (self.cell_height + self.gap) - self.gap
+    }
+
+    /// `height` rounded down to whole rows, so a user-sized space has the same
+    /// padding above and below the grid instead of the remainder at the bottom.
+    pub fn fit_height(&self, height: i32) -> i32 {
+        self.height_for_rows(self.rows_for(height))
     }
 
     /// The smallest space a user can resize to: one cell plus padding.
@@ -162,6 +188,18 @@ pub fn fit_rect_width(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect {
         Rect::new(rect.right() - width, rect.y, width, rect.height)
     } else {
         Rect::new(rect.x, rect.y, width, rect.height)
+    }
+}
+
+/// Rounds `rect`'s height down to whole rows below the title bar, keeping equal
+/// top and bottom padding. The grabbed edge stays put, so a top resize moves
+/// the top edge and any other resize moves the bottom one.
+pub fn fit_rect_height(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect {
+    let height = spec.fit_height(rect.height);
+    if edges.top {
+        Rect::new(rect.x, rect.bottom() - height, rect.width, height)
+    } else {
+        Rect::new(rect.x, rect.y, rect.width, height)
     }
 }
 
@@ -384,6 +422,42 @@ mod tests {
         );
         assert_eq!(left.right(), rect.right(), "the far edge stays put");
         assert_eq!(left.width, 438);
+    }
+
+    #[test]
+    fn height_fits_whole_rows() {
+        let spec = GridSpec::default();
+        // Title bar and padding, then rows of 114; the last row has no gap.
+        assert_eq!(spec.height_for_rows(1), spec.min_space_size().height);
+        assert_eq!(spec.height_for_rows(2), 28 + 24 + 2 * 114 - 10);
+        assert_eq!(spec.fit_height(320), 270);
+        assert_eq!(spec.fit_height(270), 270, "already exact");
+        assert_eq!(spec.fit_height(100), spec.min_space_size().height);
+    }
+
+    #[test]
+    fn fit_rect_height_keeps_the_grabbed_edge() {
+        let spec = GridSpec::default();
+        let rect = Rect::new(100, 20, 438, 320);
+        let bottom = fit_rect_height(
+            rect,
+            ResizeEdges {
+                bottom: true,
+                ..ResizeEdges::NONE
+            },
+            &spec,
+        );
+        assert_eq!(bottom, Rect::new(100, 20, 438, 270));
+        let top = fit_rect_height(
+            rect,
+            ResizeEdges {
+                top: true,
+                ..ResizeEdges::NONE
+            },
+            &spec,
+        );
+        assert_eq!(top.bottom(), rect.bottom(), "the far edge stays put");
+        assert_eq!(top.height, 270);
     }
 
     #[test]

@@ -219,6 +219,11 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
             )
             .suffix(" px"),
             Field::toggle(
+                field::FIT_TO_GRID,
+                "Snap resized spaces to whole columns and rows",
+                config.desktop.layout.fit_to_grid,
+            ),
+            Field::toggle(
                 field::START_WITH_WINDOWS,
                 "Start DeskSpace when you sign in",
                 config.window.start_with_windows,
