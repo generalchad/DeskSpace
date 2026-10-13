@@ -45,6 +45,16 @@ pub struct WindowSettings {
     /// Whether a new space starts locked (kept at its size, scrolling instead
     /// of growing).
     pub new_space_locked: bool,
+    /// Check for a newer release in the background, about once a day. Off by
+    /// default: no network traffic happens unless the user turns this on or
+    /// starts a check from the tray.
+    pub check_for_updates: bool,
+    /// Unix seconds of the last completed update check, so an automatic check
+    /// runs at most once a day.
+    pub last_update_check: Option<u64>,
+    /// A version the user chose to skip; an automatic check does not offer it
+    /// again.
+    pub skipped_version: Option<String>,
 }
 
 impl Default for WindowSettings {
@@ -60,6 +70,9 @@ impl Default for WindowSettings {
             new_space_width: 240,
             new_space_height: 120,
             new_space_locked: false,
+            check_for_updates: false,
+            last_update_check: None,
+            skipped_version: None,
         }
     }
 }
@@ -464,6 +477,22 @@ mod tests {
         let parsed: Config =
             toml::from_str("version = 2\n[window]\ntake_over_desktop = true\n").unwrap();
         assert!(parsed.window.take_over_desktop);
+    }
+
+    #[test]
+    fn update_settings_default_and_parse() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert!(!parsed.window.check_for_updates);
+        assert_eq!(parsed.window.last_update_check, None);
+        assert_eq!(parsed.window.skipped_version, None);
+
+        let parsed: Config = toml::from_str(
+            "version = 2\n[window]\ncheck_for_updates = true\nlast_update_check = 42\nskipped_version = \"0.3.0\"\n",
+        )
+        .unwrap();
+        assert!(parsed.window.check_for_updates);
+        assert_eq!(parsed.window.last_update_check, Some(42));
+        assert_eq!(parsed.window.skipped_version.as_deref(), Some("0.3.0"));
     }
 
     #[test]

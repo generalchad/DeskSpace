@@ -23,12 +23,14 @@ mod pointer;
 mod rename;
 mod selection;
 mod settings_session;
+mod update;
 mod view;
 mod visibility;
 
 use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
+use update::UpdateState;
 
 const TOGGLE_HOTKEY: i32 = 0;
 /// Registration indices for the global hotkeys. `settings::HOTKEY_BINDINGS`
@@ -57,13 +59,18 @@ const INFO_TIP_TIMER: usize = 3;
 /// How long the pointer must rest on an item before its info tip appears,
 /// matching Explorer's tooltip delay.
 const INFO_TIP_DELAY_MS: u32 = 600;
-/// Timer id for the deferred settings preview (id 4 is reserved by
-/// docs/TASKS.md E10).
+/// Timer id for the deferred settings preview (id 4 is the update timer).
 const PREVIEW_TIMER: usize = 6;
 /// How long a settings preview may lag the edit that caused it. `WM_TIMER`
 /// is only delivered once the queue is empty, so a burst of slider ticks
 /// collapses into one restyle or re-flow.
 const PREVIEW_DELAY_MS: u32 = 15;
+/// Timer id for the periodic update check (`app/update.rs`).
+const UPDATE_TIMER: usize = 4;
+/// Wake ids passed to `Ui::waker` by the update worker threads: the check
+/// result, then the download-and-install result.
+const UPDATE_WAKE: usize = 0;
+const UPDATE_INSTALLED_WAKE: usize = 1;
 /// Timer id for the settings-window highlight on a space.
 const HIGHLIGHT_TIMER: usize = 5;
 /// How long the space selected in the settings window stays highlighted.
@@ -90,6 +97,7 @@ mod menu {
     pub const REMOVE_ITEM: u32 = 9;
     pub const RENAME: u32 = 10;
     pub const RENAME_ITEM: u32 = 11;
+    pub const CHECK_UPDATES: u32 = 12;
     pub const OPACITY_100: u32 = 20;
     pub const OPACITY_80: u32 = 21;
     pub const OPACITY_60: u32 = 22;
@@ -336,6 +344,8 @@ pub struct App {
     /// Hide Explorer's icons and draw the loose items on the layer (hidden
     /// `--takeover`, M2 takeover). Implies the layer.
     pub(crate) takeover: bool,
+    /// Update checking and installation state (`app/update.rs`).
+    update: UpdateState,
 }
 
 impl App {
@@ -365,6 +375,7 @@ impl App {
             open_settings_on_start: open_settings,
             takeover_layer: false,
             takeover: false,
+            update: UpdateState::default(),
         }
     }
 
@@ -484,6 +495,7 @@ impl EventHandler for App {
                 if std::mem::take(&mut self.open_settings_on_start) {
                     self.open_settings(ui);
                 }
+                self.start_auto_update_checks(ui);
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
@@ -531,7 +543,12 @@ impl EventHandler for App {
             // The type-to-select prefix expired; the next key starts fresh.
             Event::Timer { id } if id == TYPE_TIMER => self.type_buffer.clear(),
             Event::Timer { id } if id == HEALTH_TIMER => self.health_tick(),
+            Event::Timer { id } if id == UPDATE_TIMER => self.on_update_timer(ui),
             Event::Timer { .. } => {}
+            // Worker threads hand their result back through the waker.
+            Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
+            Event::Wake { id } if id == UPDATE_INSTALLED_WAKE => self.on_update_installed(ui),
+            Event::Wake { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 self.system_accent = system_accent_color();
@@ -667,6 +684,7 @@ mod tests {
             menu::SPACE_TEXT,
             menu::RESET_APPEARANCE,
             menu::SPACE_SETTINGS,
+            menu::CHECK_UPDATES,
         ];
         let mut ids: Vec<u32> = other.to_vec();
         ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));

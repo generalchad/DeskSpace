@@ -134,15 +134,15 @@ impl App {
 
         let store = self.storage.root().to_path_buf();
         let mut created: Vec<PathBuf> = Vec::new();
-        if !external_moves.is_empty() {
-            if let Some(paths) = ui.transfer_files(&external_moves, &store, true) {
-                created.extend(paths);
-            }
+        if !external_moves.is_empty()
+            && let Some(paths) = ui.transfer_files(&external_moves, &store, true)
+        {
+            created.extend(paths);
         }
-        if !copies.is_empty() {
-            if let Some(paths) = ui.transfer_files(&copies, &store, false) {
-                created.extend(paths);
-            }
+        if !copies.is_empty()
+            && let Some(paths) = ui.transfer_files(&copies, &store, false)
+        {
+            created.extend(paths);
         }
         for path in &created {
             // Guard against a shell result that no longer exists; listing it

@@ -78,10 +78,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     if config
         .desktop
         .fold_legacy_overrides(&theme, system_uses_dark_mode())
+        && let Err(error) = store.save(&config)
     {
-        if let Err(error) = store.save(&config) {
-            tracing::warn!(%error, "could not save the converted space appearance");
-        }
+        tracing::warn!(%error, "could not save the converted space appearance");
     }
 
     // `--show` also forces them shown when it started a fresh instance, so a

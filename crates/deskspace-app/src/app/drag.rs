@@ -113,10 +113,10 @@ impl App {
                     space.rect.width,
                     space.rect.height,
                 );
-                if self.dispatch(Command::SetSpaceRect { id, rect }, point) {
-                    if let Some(space) = self.config.desktop.space(id) {
-                        ui.set_space_rect(id.0, space.visible_rect());
-                    }
+                if self.dispatch(Command::SetSpaceRect { id, rect }, point)
+                    && let Some(space) = self.config.desktop.space(id)
+                {
+                    ui.set_space_rect(id.0, space.visible_rect());
                 }
                 true
             }

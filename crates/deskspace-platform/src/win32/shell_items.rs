@@ -123,6 +123,27 @@ pub(crate) fn open(owner: Option<HWND>, path: &Path) -> Result<(), PlatformError
     Ok(())
 }
 
+/// Opens `url` (for example the release page) in the default browser.
+pub(crate) fn open_url(owner: Option<HWND>, url: &str) -> Result<(), PlatformError> {
+    let url = wide(url);
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC,
+        hwnd: owner.unwrap_or_default(),
+        lpFile: PCWSTR(url.as_ptr()),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
+    };
+    // SAFETY: `info` is fully initialised and `url` outlives the call. As for
+    // `open`, DeskSpace is not the foreground process, so it passes its
+    // foreground right on so the browser comes to the front.
+    unsafe {
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+        ShellExecuteExW(&mut info)?;
+    }
+    Ok(())
+}
+
 /// Shows the shell's Properties dialog for `path`, as Alt+Enter does in
 /// Explorer. `owner` parents the dialog.
 pub(crate) fn properties(owner: Option<HWND>, path: &Path) -> Result<(), PlatformError> {
@@ -512,7 +533,9 @@ mod tests {
 
     fn points(bytes: &[u8]) -> Vec<(i32, i32)> {
         bytes
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|pair| {
                 (
                     i32::from_le_bytes(pair[..4].try_into().unwrap()),

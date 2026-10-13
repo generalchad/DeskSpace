@@ -360,14 +360,14 @@ pub fn drag_scene(
 /// forms come from the path, so toggling the option is reflected live and a
 /// label captured while extensions were on does not keep its extension.
 pub(crate) fn item_label(item: &Item, show_extensions: bool) -> String {
-    if item.kind == ItemKind::File {
-        if let Some(name) = item.file_name() {
-            if show_extensions {
-                return name.to_string();
-            }
-            if let Some(stem) = item.path.file_stem().and_then(|stem| stem.to_str()) {
-                return stem.to_string();
-            }
+    if item.kind == ItemKind::File
+        && let Some(name) = item.file_name()
+    {
+        if show_extensions {
+            return name.to_string();
+        }
+        if let Some(stem) = item.path.file_stem().and_then(|stem| stem.to_str()) {
+            return stem.to_string();
         }
     }
     item.label.clone()

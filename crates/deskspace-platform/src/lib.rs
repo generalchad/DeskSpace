@@ -46,6 +46,6 @@ pub use win32::watchdog::{
     arm as arm_watchdog, is_watchdog, run_watchdog,
     signal_clean_exit as signal_watchdog_clean_exit, watchdog_pid,
 };
-pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, run, space_dpi};
+pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, Waker, run, space_dpi};
 
 pub type Result<T, E = PlatformError> = std::result::Result<T, E>;

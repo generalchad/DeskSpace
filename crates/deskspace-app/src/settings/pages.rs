@@ -250,6 +250,17 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 &labels(&MODES),
                 index_of(&MODES, config.theme.ui_mode),
             ),
+            Field::heading(field::UPDATES_HEADING, "Updates"),
+            Field::toggle(
+                field::CHECK_UPDATES,
+                "Check for updates automatically",
+                config.window.check_for_updates,
+            ),
+            Field::note(
+                field::CHECK_UPDATES_NOTE,
+                "The automatic check contacts GitHub about once a day. You can always check now.",
+            ),
+            Field::button(field::CHECK_UPDATES_NOW, "", "Check for updates now"),
         ],
     }
 }

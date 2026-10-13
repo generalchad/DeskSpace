@@ -200,6 +200,11 @@ pub enum Event {
     Timer {
         id: usize,
     },
+    /// A worker thread asked the UI thread to wake up, tagging the reason with
+    /// its own `id` (see `Ui::waker`). Used to hand an async result back.
+    Wake {
+        id: usize,
+    },
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
     /// is on.

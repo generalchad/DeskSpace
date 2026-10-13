@@ -59,6 +59,11 @@ pub mod field {
     pub const FIT_TO_GRID: u32 = 63;
     pub const MARQUEE_COLOR: u32 = 64;
     pub const MARQUEE_BORDER: u32 = 65;
+
+    pub const UPDATES_HEADING: u32 = 66;
+    pub const CHECK_UPDATES: u32 = 67;
+    pub const CHECK_UPDATES_NOTE: u32 = 68;
+    pub const CHECK_UPDATES_NOW: u32 = 69;
 }
 
 /// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,

@@ -44,6 +44,35 @@ jobs:
           $setup = Get-ChildItem target/release/*-setup.exe | Select-Object -First 1
           if (-not $setup) { throw "cargo-packager produced no NSIS setup.exe" }
           "SETUP=$($setup.FullName)" >> $env:GITHUB_ENV
+      # Signs the installer with the minisign key and writes the update feed
+      # (`latest.json`) the in-app updater reads. Skipped until the
+      # DESKSPACE_MINISIGN_KEY secret exists, so releases still work without it.
+      # The public half goes in `crates/deskspace-update/src/lib.rs`
+      # (`UPDATE_PUBKEY`), base64-encoded like the secret.
+      - name: Sign installer and build the update feed
+        if: ${{ secrets.DESKSPACE_MINISIGN_KEY != '' }}
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.DESKSPACE_MINISIGN_KEY }}
+        shell: pwsh
+        run: |
+          cargo packager signer sign "$env:SETUP"
+          $signature = (Get-Content "$env:SETUP.sig" -Raw).Trim()
+          $name = Split-Path $env:SETUP -Leaf
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$name"
+          $feed = [ordered]@{
+            version   = $env:GITHUB_REF_NAME
+            notes     = "See the release notes on the release page."
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = $signature
+                url       = $url
+                format    = "nsis"
+              }
+            }
+          }
+          $feed | ConvertTo-Json -Depth 6 | Out-File -Encoding utf8 update.json
+          "FEED=update.json" >> $env:GITHUB_ENV
       - name: Package
         shell: pwsh
         run: |
@@ -66,5 +95,7 @@ jobs:
           gh release delete $env:GITHUB_REF_NAME --yes 2>$null
           $extra = @()
           if ($env:GITHUB_REF_NAME -match '-') { $extra += '--prerelease' }
-          gh release create $env:GITHUB_REF_NAME "$env:ASSET.zip" "$env:ASSET.zip.sha256" "$env:SETUP" `
+          $assets = @("$env:ASSET.zip", "$env:ASSET.zip.sha256", "$env:SETUP")
+          if ($env:FEED) { $assets += $env:FEED }
+          gh release create $env:GITHUB_REF_NAME @assets `
             --title "DeskSpace $env:GITHUB_REF_NAME" --generate-notes @extra

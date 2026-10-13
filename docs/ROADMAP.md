@@ -596,19 +596,22 @@ Remaining:
    to GitHub Releases on a `v*` tag that matches the workspace version.
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
-7. Auto-update from GitHub Releases (F-45), following the policy in D6.
+7. **[done]** Auto-update from GitHub Releases (F-45), following the policy in D6.
    - The `cargo-packager-updater` SDK and the network IO live in a new
      `deskspace-update` crate, driven by the app; never in `core` or `config`.
    - It installs the **full** package only (no deltas), from a signed
      `latest.json` plus a minisign `.sig` published as a release asset.
    - Settings live in `WindowSettings` as `#[serde(default)]` fields: the
-     automatic check, the pre-release channel, the last check time, and the
-     skipped version. The General page gets check boxes, and the tray gets a
-     "Check for updates" entry.
-   - A portable build only notifies.
-   - New dependencies must pass `deny.toml`.
-   - Ship it together with item 3: unsigned updates trigger SmartScreen on
-     every version.
+     automatic check, the last check time, and the skipped version. The General
+     page has a toggle and a "Check for updates now" button, and the tray has a
+     "Check for updates…" entry. (The pre-release channel is deferred: the
+     GitHub "latest" feed never serves a pre-release.)
+   - A portable build only notifies (opens the release page).
+   - `cargo deny` passes (the updater's `time` dependency moved the minimum
+     Rust version to 1.88).
+   - Still to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the
+     public `UPDATE_PUBKEY`; then sign before shipping (item 3), because
+     unsigned updates trigger SmartScreen on every version.
 8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
    per stable release by a workflow step, after the first stable release.
 
@@ -681,7 +684,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Open; cargo-packager installer workflow decided (D6); in-app updater still open |
+| F-45 | Auto-update from GitHub Releases | M8 | Done; check pending. The in-app updater (`deskspace-update`) reads a signed `latest.json`, opt-in and manual, and installs the full NSIS package (`TASKS.md` E8-E11); the minisign key is a maintainer setup step |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
@@ -1036,3 +1039,23 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   flicker-free DIB back buffer with per-pixel anti-aliased markers and an
   anti-aliased glyph check mark, and fixed a modal-loop stall. On-screen check
   pending.
+
+### 2026-10-13
+
+- **In-app updates (F-45; `TASKS.md` E8-E11).** A new `deskspace-update` crate
+  wraps `cargo-packager-updater`: it checks a minisign-signed `latest.json`
+  published as a release asset and installs the full NSIS package (no deltas).
+  The app exposes an opt-in "Check for updates automatically" toggle and a
+  "Check for updates now" button on the General page, and a "Check for
+  updates…" tray entry; a portable build only opens the release page. The
+  platform gained `Ui::open_url` and a cross-thread `Waker` (`Event::Wake`).
+  `release.yml` signs the installer and builds the feed when the
+  `DESKSPACE_MINISIGN_KEY` secret is set. The updater's `time` dependency moved
+  the minimum Rust version to 1.88.
+- **No console window in release.** Both binaries are built with the Windows
+  subsystem in release (`#![windows_subsystem = "windows"]`), so an installed
+  or launched copy no longer flashes a console; debug builds keep it for logs.
+- **First public release (v0.2.0).** The repository was made public and
+  `v0.2.0` published as a normal (non-pre-release) release, so it appears as
+  the repository's Latest release. The release workflow's Publish step is now
+  idempotent (it replaces an existing release for the tag).

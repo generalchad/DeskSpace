@@ -88,16 +88,13 @@ unsafe extern "system" fn find_worker(window: HWND, _param: LPARAM) -> BOOL {
     // lookups only read it and store the result atomically.
     unsafe {
         let def_view = FindWindowExW(Some(window), None, w!("SHELLDLL_DefView"), PCWSTR::null());
-        if let Ok(def_view) = def_view {
-            if !def_view.is_invalid() {
-                if let Ok(worker) = FindWindowExW(None, Some(window), w!("WorkerW"), PCWSTR::null())
-                {
-                    if !worker.is_invalid() {
-                        FOUND_WORKER.store(worker.0 as isize, Ordering::SeqCst);
-                        return FALSE;
-                    }
-                }
-            }
+        if let Ok(def_view) = def_view
+            && !def_view.is_invalid()
+            && let Ok(worker) = FindWindowExW(None, Some(window), w!("WorkerW"), PCWSTR::null())
+            && !worker.is_invalid()
+        {
+            FOUND_WORKER.store(worker.0 as isize, Ordering::SeqCst);
+            return FALSE;
         }
     }
     TRUE

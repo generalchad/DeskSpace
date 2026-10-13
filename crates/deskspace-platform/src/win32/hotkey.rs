@@ -76,12 +76,11 @@ fn key_code(token: &str) -> Option<u32> {
             return Some(ch as u32);
         }
     }
-    if let Some(rest) = token.strip_prefix('F') {
-        if let Ok(number) = rest.parse::<u32>() {
-            if (1..=24).contains(&number) {
-                return Some(VK_F1.0 as u32 + number - 1);
-            }
-        }
+    if let Some(rest) = token.strip_prefix('F')
+        && let Ok(number) = rest.parse::<u32>()
+        && (1..=24).contains(&number)
+    {
+        return Some(VK_F1.0 as u32 + number - 1);
     }
     match token {
         "SPACE" => Some(VK_SPACE.0 as u32),

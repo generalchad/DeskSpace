@@ -16,6 +16,27 @@ and `docs/ROADMAP.md` section 6 maps versions to milestones.
   independent of the app version and is bumped only by a breaking config
   change, with a `Config::migrate` step.
 
+## Update feed and signing (F-45)
+
+The in-app updater reads a `latest.json` asset served from the latest release.
+`release.yml` signs the NSIS installer with `cargo packager signer sign` and
+builds the feed from that signature, but only when the `DESKSPACE_MINISIGN_KEY`
+Actions secret is set. Without it a release ships no feed, and the app reports
+that no update channel is configured.
+
+One-time setup (maintainer):
+
+1. `cargo install cargo-packager --locked --version 0.11.8` (matches CI), then
+   `cargo packager signer generate` (add `--ci` to skip prompts). It writes a
+   private key file and a `.pub` file beside it.
+2. Store the **private** key file's contents as the repository secret
+   `DESKSPACE_MINISIGN_KEY` (Settings -> Secrets and variables -> Actions).
+3. Paste the **public** key file's contents (one base64 line) into
+   `crates/deskspace-update/src/lib.rs` as `UPDATE_PUBKEY`.
+
+Never commit the private key. The updater verifies the feed with the compiled
+public key, so both halves must be rotated together.
+
 ## Checklist
 
 1. `main` is green in CI.
@@ -54,11 +75,15 @@ and `docs/ROADMAP.md` section 6 maps versions to milestones.
 - **Install cargo-packager**: `cargo install cargo-packager --locked
   --version 0.11.8`, the CI-only installer tool (not a workspace dependency);
 - **Build installer**: `cargo packager -p deskspace-app --release --formats
-  nsis`, which writes `deskspace_<version>_x64-setup.exe`; it is unsigned
-  until R10;
-- **Publish**: `gh release create <tag> <zip> <zip>.sha256
-  deskspace_<version>_x64-setup.exe --title "DeskSpace <tag>"
-  --generate-notes`, adding `--prerelease` when the tag contains `-`.
+  nsis`, which writes `deskspace_<version>_x64-setup.exe` (unsigned until R10);
+- **Sign installer and build the update feed**: only when the
+  `DESKSPACE_MINISIGN_KEY` secret is set. `cargo packager signer sign` the
+  installer, then write `latest.json` from its `.sig`. This is the feed the
+  in-app updater reads;
+- **Publish**: `gh release create <tag> <zip> <zip>.sha256 <setup.exe>
+  [latest.json] --title "DeskSpace <tag>" --generate-notes`, adding
+  `--prerelease` when the tag contains `-`. Any existing release for the tag is
+  deleted first, so re-running after moving a tag is idempotent.
 
 ## Recovering from a bad release
 

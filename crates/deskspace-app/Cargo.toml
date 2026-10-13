@@ -20,6 +20,7 @@ path = "src/watchdog_main.rs"
 deskspace-core.workspace = true
 deskspace-config.workspace = true
 deskspace-platform.workspace = true
+deskspace-update.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 thiserror.workspace = true

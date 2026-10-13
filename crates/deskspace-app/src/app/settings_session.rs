@@ -131,6 +131,9 @@ impl App {
                 }
                 self.refresh_settings(ui);
             }
+            SettingsEvent::Button {
+                field: settings::field::CHECK_UPDATES_NOW,
+            } => self.start_update_check(ui, true),
             SettingsEvent::Button { .. } => {}
             SettingsEvent::HeaderSwitch { on } => {
                 let command = settings::customize_space(&self.config, session, on);

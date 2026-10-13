@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (312 tests) are green. Update this count whenever a
+  `cargo test --workspace` (321 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -167,6 +167,9 @@ windows and controls.
   layout engine, command layer, theme and palette. `#![forbid(unsafe_code)]`.
 - `deskspace-config`: persisted schema (`Config`, `WindowSettings`),
   versioning/migration, and an atomic `ConfigStore` over TOML.
+  `#![forbid(unsafe_code)]`.
+- `deskspace-update`: update checking and installation (ROADMAP F-45), built on
+  `cargo-packager-updater`; it depends on no workspace crate.
   `#![forbid(unsafe_code)]`.
 - `deskspace-platform`: the UI runtime and message loop, space windows, DWM
   styling, Direct2D painter, tray icon, popup menus, the data-driven settings
@@ -446,6 +449,9 @@ WindowSettings {
     new_space_width: i32,       // default 240; clamped to NEW_SPACE_SIZE_RANGE
     new_space_height: i32,      // default 120
     new_space_locked: bool,     // default false
+    check_for_updates: bool,        // default false; opt-in, about once a day
+    last_update_check: Option<u64>, // Unix seconds of the last completed check
+    skipped_version: Option<String>, // a version the user chose to skip
 }
 ```
 
@@ -530,7 +536,7 @@ registered message, not in this range):
 | 7 | `SELECT_ALL_KEY` | `keyboard.rs` |
 | 8 | `SHOW_SPACES` | `controller.rs` |
 | 9 | `PROPERTIES_KEY` | `keyboard.rs` |
-| 10 | reserved for `TASKS.md` E8 (`Event::Wake`) | `controller.rs` (comment) |
+| 10 | `WAKE` | `controller.rs` |
 | 11 | `SELECTION_KEY` | `keyboard.rs` |
 | 12 | `TYPE_KEY` | `keyboard.rs` |
 | 13 | `NAV_KEY` | `keyboard.rs` |
@@ -545,16 +551,16 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 1 | `AUTOSAVE_TIMER` | 700 ms | debounced config save |
 | 2 | `CARET_TIMER` | 530 ms | rename caret blink |
 | 3 | `INFO_TIP_TIMER` | 600 ms | hover delay before an info tip |
-| 4 | reserved for `TASKS.md` E10 (`UPDATE_TIMER`) | | |
+| 4 | `UPDATE_TIMER` | 60 s, then hourly | periodic update check (F-45) |
 | 5 | `HIGHLIGHT_TIMER` | 1200 ms | settings-window highlight on a space |
 | 6 | `PREVIEW_TIMER` | 15 ms | deferred settings preview (fires when the queue is idle) |
 | 7 | `TYPE_TIMER` | 900 ms | type-to-select prefix buffer |
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 
-Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-11, 20-28, 30-36,
-41-44; next free 12, or 45 for a new group); item-menu app ids must stay below
+Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
+41-44; next free 13, or 45 for a new group); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
-Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
+Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 26 were freed by the removed placement setting and stay unused).
 
 ### Events
@@ -1423,9 +1429,17 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   `%LocalAppData%\DeskSpace`, the parent of the user's stored files) and ships
   as `deskspace_<version>_x64-setup.exe`. The installer is unsigned until R10
   (SignPath Foundation via cargo-packager's `windows.signCommand`).
-  Auto-update is planned in M8 (F-45) via `cargo-packager-updater`: opt-in,
-  full-package (no deltas), fed by a signed `latest.json` plus minisign
-  `.sig`. The toolchain is pinned to an exact version in `rust-toolchain.toml`
+  Auto-update (F-45) is built: `deskspace-update` checks a
+  `latest.json` feed published as a release asset, verifies it with a minisign
+  public key compiled in, and installs the full NSIS package (no deltas). It is
+  opt-in ("Check for updates automatically" on the General page, plus a button
+  and a tray entry for a manual check); a check runs about once a day, and a
+  portable build only opens the release page. The minisign keypair is a
+  maintainer setup step (`release.yml` signs with the `DESKSPACE_MINISIGN_KEY`
+  secret; the public half goes in `deskspace-update`'s `UPDATE_PUBKEY`), so
+  until it is set a release ships without a feed and the check reports that no
+  channel is configured. The toolchain is pinned to an exact version in
+  `rust-toolchain.toml`
   (E13), and the release build is reproducible: `release.yml` sets the two
   `--remap-path-prefix` values and `build.rs` passes `/Brepro`, so a rebuild
   from the same sources and a different directory matches (E3).

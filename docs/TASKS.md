@@ -785,8 +785,9 @@ before starting any E task.
     and targets), followed by a `run: rustc -Vv` step so the log records the
     version. If the runner's rustup is older and the command fails, use
     `rustup show` instead, which installs it on older versions.
-  - Do not change `rust-version = "1.85"` in `Cargo.toml`; it is the
-    minimum supported version, a separate fact.
+  - Do not change `rust-version` in `Cargo.toml`; it is the
+    minimum supported version, a separate fact. (It moved from 1.85 to 1.88
+    when the updater's `time` dependency needed a patched release, `F-45`.)
   - Run `cargo clippy --workspace --all-targets -- -D warnings` with the
     pinned version; it must pass unchanged.
   - Docs: `AGENTS.md` Prerequisites (say the toolchain is pinned in
@@ -905,7 +906,9 @@ differs, **stop and ask**.
   - Done when: the test passes; R12 checks the uninstall on a clean VM.
     **[needs human]**
 
-- [ ] **E8. Cross-thread wake-up for the app (platform).** Independent of
+- [x] **E8. Cross-thread wake-up for the app (platform).** Landed:
+  `Ui::waker` -> `Waker` in `runtime/mod.rs`, `controller::WAKE`
+  (`WM_APP + 10`), and `Event::Wake { id }` in `input.rs`. Independent of
   E5-E7.
   - The update check (E10) runs on a worker thread and has to hand its
     result to the UI thread. Add a generic mechanism that knows nothing
@@ -930,7 +933,8 @@ differs, **stop and ask**.
   - Done when: `Event::Wake` is in `CONTEXT.md` section 6 (the Events list,
     and `WM_APP + 10` in the message table). No behavior change.
 
-- [ ] **E9. A three-button question dialog (platform).** Independent.
+- [x] **E9. A three-button question dialog (platform).** Landed: `Ui::choose`
+  uses `TaskDialogIndirect`. Independent.
   - `Ui::choose(&mut self, title: &str, text: &str, buttons: &[&str],
     default: usize) -> Option<usize>`: a modal `TaskDialogIndirect` owned by
     the same window as `Ui::confirm` (the settings window when it is open,
@@ -948,7 +952,11 @@ differs, **stop and ask**.
     temporary call shows three buttons and returns the right index (remove
     the temporary call before committing).
 
-- [ ] **E10. Update settings, schedule, check, and prompt (F-45).** After
+- [ ] **E10. Update settings, schedule, check, and prompt (F-45).** (awaiting
+  check) Landed: `deskspace-update` wraps `cargo-packager-updater`; the
+  `WindowSettings` fields, the General-page toggle and button, the tray entry,
+  and `app/update.rs` (check, prompt via `Ui::choose`, skip). The pre-release
+  channel is deferred (the GitHub "latest" feed never serves a pre-release). After
   E8 and E9.
   - New library crate `crates/deskspace-update` with
     `#![forbid(unsafe_code)]`, `thiserror` errors, and `tracing`. It depends
@@ -1025,7 +1033,10 @@ differs, **stop and ask**.
     build against a feed with a newer pre-release, with "Include
     pre-releases" on.
 
-- [ ] **E11. Download, apply, and restart (installed builds).** After E10.
+- [ ] **E11. Download, apply, and restart (installed builds).** (awaiting check)
+  Landed as `deskspace_update::download_and_install`, run on a worker thread
+  after the config is flushed; a portable build opens the release page instead.
+  After E10.
   - `deskspace-update`: `pub fn download(&Pending) -> Result<(), _>` (call
     it on a worker thread) and `pub fn apply_and_restart(&Pending) -> !`
     (or a `Result`, if the API returns one), wrapping

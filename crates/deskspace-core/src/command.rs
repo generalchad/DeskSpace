@@ -457,11 +457,10 @@ impl Desktop {
             Command::SnapAll => {
                 let ids: Vec<SpaceId> = self.spaces.iter().map(|space| space.id).collect();
                 for id in ids {
-                    if let Some(space) = self.space_mut(id) {
-                        if !space.locked {
-                            space.rect =
-                                clamp_to_bounds(snap_rect(space.rect, layout.snap), bounds);
-                        }
+                    if let Some(space) = self.space_mut(id)
+                        && !space.locked
+                    {
+                        space.rect = clamp_to_bounds(snap_rect(space.rect, layout.snap), bounds);
                     }
                 }
                 resolve_collisions(&mut self.spaces, layout.gap, bounds);

@@ -17,7 +17,7 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 - Windows 10 or 11 (x64)
 - Rust with the MSVC toolchain. `rust-toolchain.toml` pins the exact stable
   version, which rustup installs automatically (with the components and
-  targets it lists). `Cargo.toml` sets `rust-version = "1.85"` as the minimum
+  targets it lists). `Cargo.toml` sets `rust-version = "1.88"` as the minimum
   supported version, a separate fact.
 - No other system dependencies
 
@@ -117,6 +117,9 @@ Release work (`docs/TASKS.md` section E) also uses `gh`, `actionlint`, and
 crates/deskspace-core      Domain model. No OS dependencies (one known
                            exception: item.rs reads file metadata; TASKS R4).
 crates/deskspace-config    Serde/TOML configuration schema and persistence.
+crates/deskspace-update    Update checking and installation (ROADMAP F-45);
+                           wraps `cargo-packager-updater` and has no workspace
+                           dependency.
 crates/deskspace-platform  UI runtime, space windows, DWM, Direct2D painter,
                            tray, menus, settings window, shell, hotkeys.
 crates/deskspace-app       The `deskspace` binary (CLI, the `App` event
@@ -127,7 +130,7 @@ crates/deskspace-app       The `deskspace` binary (CLI, the `App` event
 `docs/TASKS.md` opens with a file map: where each kind of code lives, so a task
 can name a file instead of a search.
 
-Dependency direction: `app -> {config, platform} -> core`. `core` depends on
+Dependency direction: `app -> {config, platform, update} -> core`. `core` depends on
 nothing in the workspace. Do not introduce upward dependencies.
 
 ## Architectural rules

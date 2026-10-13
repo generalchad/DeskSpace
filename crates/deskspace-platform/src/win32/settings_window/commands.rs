@@ -50,30 +50,29 @@ pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, contro
                 editable: true,
                 ..
             } = &field.kind
+                && code == EN_KILLFOCUS
             {
-                if code == EN_KILLFOCUS {
-                    let stored = *stored;
-                    let typed = window_text(control).trim().parse::<i32>().unwrap_or(stored);
-                    let value = typed.clamp(*min, *max);
-                    if value != stored {
-                        with_state(window, |state| {
-                            if let Some((field, _)) = state.fields.get_mut(index) {
-                                if let FieldKind::Slider { value: slot, .. } = &mut field.kind {
-                                    *slot = value;
-                                }
-                            }
-                        });
-                        settings_event(SettingsEvent::Changed {
-                            field: field.id,
-                            value: FieldValue::Slider(value),
-                        });
-                    } else {
-                        // Reject invalid or out-of-range text.
-                        with_state(window, |state| state.updating = true);
-                        let text = wide(&value.to_string());
-                        let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
-                        with_state(window, |state| state.updating = false);
-                    }
+                let stored = *stored;
+                let typed = window_text(control).trim().parse::<i32>().unwrap_or(stored);
+                let value = typed.clamp(*min, *max);
+                if value != stored {
+                    with_state(window, |state| {
+                        if let Some((field, _)) = state.fields.get_mut(index)
+                            && let FieldKind::Slider { value: slot, .. } = &mut field.kind
+                        {
+                            *slot = value;
+                        }
+                    });
+                    settings_event(SettingsEvent::Changed {
+                        field: field.id,
+                        value: FieldValue::Slider(value),
+                    });
+                } else {
+                    // Reject invalid or out-of-range text.
+                    with_state(window, |state| state.updating = true);
+                    let text = wide(&value.to_string());
+                    let _ = SetWindowTextW(control, PCWSTR(text.as_ptr()));
+                    with_state(window, |state| state.updating = false);
                 }
             }
             return;
@@ -169,10 +168,10 @@ pub(super) unsafe fn on_scroll(window: HWND, control: HWND) {
             return;
         }
         with_state(window, |state| {
-            if let Some((field, _)) = state.fields.get_mut(index) {
-                if let FieldKind::Slider { value: stored, .. } = &mut field.kind {
-                    *stored = value;
-                }
+            if let Some((field, _)) = state.fields.get_mut(index)
+                && let FieldKind::Slider { value: stored, .. } = &mut field.kind
+            {
+                *stored = value;
             }
         });
         if let Some(edit) = value_edit {

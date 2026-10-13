@@ -66,17 +66,13 @@ unsafe extern "system" fn visit_top_level(window: HWND, param: LPARAM) -> BOOL {
     unsafe {
         if let Ok(def_view) =
             FindWindowExW(Some(window), None, w!("SHELLDLL_DefView"), PCWSTR::null())
+            && !def_view.is_invalid()
+            && let Ok(view) =
+                FindWindowExW(Some(def_view), None, w!("SysListView32"), PCWSTR::null())
+            && !view.is_invalid()
         {
-            if !def_view.is_invalid() {
-                if let Ok(view) =
-                    FindWindowExW(Some(def_view), None, w!("SysListView32"), PCWSTR::null())
-                {
-                    if !view.is_invalid() {
-                        let command = if visible { SW_SHOW } else { SW_HIDE };
-                        let _ = ShowWindow(view, command);
-                    }
-                }
-            }
+            let command = if visible { SW_SHOW } else { SW_HIDE };
+            let _ = ShowWindow(view, command);
         }
     }
     TRUE

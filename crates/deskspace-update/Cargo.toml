@@ -1,0 +1,18 @@
+[package]
+name = "deskspace-update"
+description = "Update checking and installation for DeskSpace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The updater itself. Native TLS on Windows is SChannel, which keeps the
+# dependency graph (and deny.toml's advisory surface) smaller than rustls.
+cargo-packager-updater = { version = "0.2.3", default-features = false, features = [
+    "native-tls",
+] }
+thiserror.workspace = true
+tracing.workspace = true

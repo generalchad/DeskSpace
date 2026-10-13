@@ -99,6 +99,65 @@ impl Ui {
         answer == IDYES
     }
 
+    /// Asks a question with `buttons` labels, returning the index of the button
+    /// the user chose, or `None` if the dialog was dismissed (Escape, the close
+    /// button). `default` marks the default button. Blocks in a modal loop.
+    /// https://learn.microsoft.com/en-us/windows/win32/api/commctrl/nf-commctrl-taskdialogindirect
+    pub fn choose(
+        &mut self,
+        title: &str,
+        text: &str,
+        buttons: &[&str],
+        default: usize,
+    ) -> Option<usize> {
+        use windows::Win32::UI::Controls::{
+            TASKDIALOG_BUTTON, TASKDIALOGCONFIG, TDF_ALLOW_DIALOG_CANCELLATION,
+            TDF_POSITION_RELATIVE_TO_WINDOW, TDF_SIZE_TO_CONTENT, TaskDialogIndirect,
+        };
+        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller));
+        let title = wide(title);
+        let text = wide(text);
+        let labels: Vec<Vec<u16>> = buttons.iter().map(|label| wide(label)).collect();
+        let entries: Vec<TASKDIALOG_BUTTON> = labels
+            .iter()
+            .enumerate()
+            .map(|(index, label)| TASKDIALOG_BUTTON {
+                nButtonID: index as i32,
+                pszButtonText: PCWSTR(label.as_ptr()),
+            })
+            .collect();
+        let config = TASKDIALOGCONFIG {
+            cbSize: std::mem::size_of::<TASKDIALOGCONFIG>() as u32,
+            hwndParent: owner.unwrap_or_default(),
+            dwFlags: TDF_ALLOW_DIALOG_CANCELLATION
+                | TDF_POSITION_RELATIVE_TO_WINDOW
+                | TDF_SIZE_TO_CONTENT,
+            pszWindowTitle: PCWSTR(title.as_ptr()),
+            pszMainInstruction: PCWSTR(title.as_ptr()),
+            pszContent: PCWSTR(text.as_ptr()),
+            cButtons: entries.len() as u32,
+            pButtons: entries.as_ptr(),
+            nDefaultButton: default as i32,
+            ..Default::default()
+        };
+        let mut pressed = -1i32;
+        // SAFETY: the wide strings and `entries` outlive the modal call; a
+        // failure (for example comctl32 v6 missing) returns an error.
+        let result = unsafe {
+            if let Some(owner) = owner {
+                // The settings window or controller is a background window, so
+                // the dialog would otherwise open behind the active app.
+                let _ = SetForegroundWindow(owner);
+            }
+            TaskDialogIndirect(&config, Some(&mut pressed), None, None)
+        };
+        if result.is_err() || pressed < 0 {
+            None
+        } else {
+            Some(pressed as usize)
+        }
+    }
+
     pub fn is_settings_open(&self) -> bool {
         settings_hwnd().is_some()
     }

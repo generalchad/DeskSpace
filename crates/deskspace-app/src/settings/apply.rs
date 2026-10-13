@@ -167,6 +167,10 @@ pub fn apply_field(
                 config.window.start_hidden = on;
                 Effect::Pending
             }
+            (field::CHECK_UPDATES, FieldValue::Toggle(on)) => {
+                config.window.check_for_updates = on;
+                Effect::Pending
+            }
             (field::SNAP, FieldValue::Slider(value)) => {
                 config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
                 Effect::Pending
@@ -332,6 +336,20 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.take_over_desktop);
+    }
+
+    #[test]
+    fn check_for_updates_is_pending() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::CHECK_UPDATES,
+            FieldValue::Toggle(true),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(config.window.check_for_updates);
     }
 
     #[test]

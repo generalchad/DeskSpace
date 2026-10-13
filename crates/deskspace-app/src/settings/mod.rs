@@ -267,19 +267,31 @@ mod tests {
     }
 
     #[test]
+    fn the_general_page_offers_update_controls() {
+        let (mut config, session) = setup();
+        config.window.check_for_updates = true;
+        let form = build_form(&config, &session, true, Path::new("x"));
+        assert!(matches!(
+            form.field(field::CHECK_UPDATES).unwrap().kind,
+            FieldKind::Toggle { on: true }
+        ));
+        assert!(form.field(field::CHECK_UPDATES_NOW).is_some());
+    }
+
+    #[test]
     fn overlay_slider_marks_the_default_and_explorer_sizes() {
         let (config, session) = setup();
         let form = build_form(&config, &session, true, Path::new("x"));
         match &form.field(field::OVERLAY_SIZE).unwrap().kind {
             FieldKind::Slider { value, marks, .. } => {
-                assert_eq!(*value, OVERLAY_SIZE_DEFAULT.into());
-                assert!(marks.iter().any(
-                    |mark| mark.value == OVERLAY_SIZE_DEFAULT.into() && mark.label == "Default"
-                ));
+                assert_eq!(*value, i32::from(OVERLAY_SIZE_DEFAULT));
+                assert!(marks.iter().any(|mark| {
+                    mark.value == i32::from(OVERLAY_SIZE_DEFAULT) && mark.label == "Default"
+                }));
                 assert!(
                     marks
                         .iter()
-                        .any(|mark| mark.value == OVERLAY_SIZE_RANGE.1.into())
+                        .any(|mark| mark.value == i32::from(OVERLAY_SIZE_RANGE.1))
                 );
             }
             other => panic!("expected a slider, got {other:?}"),

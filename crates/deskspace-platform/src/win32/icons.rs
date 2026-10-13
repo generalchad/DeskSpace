@@ -245,7 +245,7 @@ fn decode_icon_masked(hicon: HICON) -> Option<Icon> {
         if !color_ok {
             return None;
         }
-        let has_alpha = color.chunks_exact(4).any(|pixel| pixel[3] != 0);
+        let has_alpha = color.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0);
         let mut pixels = vec![0u8; color.len()];
         for y in 0..height as usize {
             for x in 0..width as usize {
@@ -428,8 +428,10 @@ fn resample(icon: &Icon, size: u32) -> Icon {
 fn composite_overlay(base: &Icon, overlay: &Icon) -> Icon {
     let mut out = base.pixels().to_vec();
     for (destination, source) in out
-        .chunks_exact_mut(4)
-        .zip(overlay.pixels().chunks_exact(4))
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(overlay.pixels().as_chunks::<4>().0.iter())
     {
         let alpha = source[3] as u16;
         if alpha == 0 {

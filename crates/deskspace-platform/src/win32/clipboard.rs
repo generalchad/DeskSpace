@@ -242,8 +242,10 @@ mod tests {
         }
         expected.push(0);
         let list: Vec<u16> = bytes[header..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         assert_eq!(list, expected);
     }

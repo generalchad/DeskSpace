@@ -82,6 +82,15 @@ impl Ui {
         }
     }
 
+    /// A `Send + Sync` handle a worker thread can use to wake the UI thread
+    /// with `Event::Wake { id }`.
+    pub fn waker(&self) -> Waker {
+        let controller = with_runtime(|runtime| runtime.controller).unwrap_or_default();
+        Waker {
+            controller: controller.0 as isize,
+        }
+    }
+
     /// Watches the selection keys while `selection` is true, and the keys that
     /// need a current space while `paste` is true, since spaces are never
     /// focused. Call with `false` when nothing applies; only the watched keys

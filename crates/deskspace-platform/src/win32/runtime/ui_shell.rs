@@ -13,6 +13,14 @@ impl Ui {
         }
     }
 
+    /// Opens `url` (for example the release page) in the default browser.
+    pub fn open_url(&mut self, url: &str) {
+        let owner = with_runtime(|runtime| runtime.controller);
+        if let Err(error) = shell_items::open_url(owner, url) {
+            tracing::warn!(%error, url, "could not open the URL");
+        }
+    }
+
     /// Shows the shell's Properties dialog for `path`, as Alt+Enter does in
     /// Explorer.
     pub fn show_properties(&mut self, path: &Path) {

@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::UI::Controls::{
@@ -204,6 +204,32 @@ pub(crate) fn destroy_ui_windows() {
 /// Handle given to `EventHandler::on_event` for driving the UI.
 pub struct Ui {
     _ui_thread_only: PhantomData<*const ()>,
+}
+
+/// A `Send + Sync` handle that wakes the UI thread, delivering
+/// `Event::Wake { id }`. Worker threads (the update check and download) hold one
+/// to hand their result back. The controller is stored as an `isize` because
+/// `HWND` is not `Send`.
+#[derive(Clone)]
+pub struct Waker {
+    controller: isize,
+}
+
+impl Waker {
+    /// Asks the UI thread to deliver `Event::Wake { id }`. A wake after the
+    /// runtime is gone just fails silently.
+    pub fn wake(&self, id: usize) {
+        // SAFETY: posting to our own window; a post to a destroyed window just
+        // fails and is ignored.
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(self.controller as *mut core::ffi::c_void)),
+                controller::WAKE,
+                WPARAM(id),
+                LPARAM(0),
+            );
+        }
+    }
 }
 
 /// Desktop coordinates (`Space::rect`'s system) are the host window's client
