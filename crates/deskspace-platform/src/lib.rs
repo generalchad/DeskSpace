@@ -2,7 +2,6 @@ pub mod edit;
 pub mod error;
 pub mod input;
 pub mod render;
-pub mod shell;
 pub mod ui;
 pub mod win32;
 
@@ -16,9 +15,6 @@ pub use render::{
     ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
     item_check_box, item_check_box_hit,
 };
-pub use shell::{
-    DesktopEntry, IconCache, desktop_directory, enumerate_desktop_items, notify_moved,
-};
 pub use ui::{
     CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsButton, SettingsForm,
     SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope,
@@ -31,12 +27,16 @@ pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,
     restore as restore_desktop_icons,
 };
+pub use win32::desktop_items::{
+    DesktopEntry, desktop_directory, enumerate_desktop_items, notify_moved,
+};
 pub use win32::display_settings::{
     CheckBoxMode, ShellDisplay, desktop_display, desktop_display_since,
 };
 pub use win32::dpi::enable_per_monitor_awareness;
 pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
+pub use win32::icons::IconCache;
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::system::{
     cursor_pos, drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect,

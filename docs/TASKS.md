@@ -88,7 +88,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
-| Desktop enumeration, icons | `deskspace-platform/src/shell.rs` |
+| Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
 
@@ -612,10 +612,10 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   three copies of "forget this item everywhere". Landed: each owns its state
   behind its own methods, and the pointer, hover, marquee, and selection
   writes go through them.
-- **R3. Platform module layout.** The mechanical splits are now ready-to-do
-  tasks in section K (`shell.rs`, `settings_window.rs`, `render/d2d.rs`,
-  `runtime/`). What remains needs design:
-  - one icon decoder instead of two: `shell::decode_icon_masked` (GDI
+- **R3. Platform module layout.** The mechanical splits have landed in
+  section K (`win32/settings_window.rs`, `render/d2d.rs`, `settings.rs`,
+  `win32/runtime.rs`, `shell.rs`). What remains needs design:
+  - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
     `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
   - a `win32/messages.rs` owning every `WM_APP + n` (today in
     `controller.rs`, `keyboard.rs`, and `outside_click.rs`; see the table in
@@ -1724,7 +1724,7 @@ Rules for every K task:
     `PointerState`.
   - Add `drag` to the module table in `CONTEXT.md` section 3.
 
-- [ ] **K6. Move `shell.rs` under `win32/` and split it (~820 lines).** It
+- [x] **K6. Move `shell.rs` under `win32/` and split it (~820 lines).** It
   holds `unsafe` Win32 code, which AGENTS.md keeps under `win32/`.
   - `win32/desktop_items.rs`: `DesktopEntry`, `enumerate_desktop_items`,
     `enumerate_via_view`, `enumerate_via_folder`, `listed_by_explorer`,

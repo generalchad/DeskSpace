@@ -489,9 +489,8 @@ WindowSettings {
 Crate root (`src/`): `lib.rs` (re-exports; the app imports only from here),
 `input.rs` (`Event`, `SpaceEvent`, `SettingsEvent`, `TrayEvent`, `NavKey`,
 `SelectionKey`, `ClipboardAction`), `ui.rs` (`MenuEntry`, `SettingsForm` and
-its parts, `CursorShape`), `edit.rs` (`TextEdit`), `error.rs`
-(`PlatformError`), and `shell.rs` (desktop enumeration and `IconCache`; still
-at the root, `TASKS.md` R3 moves it). `render/`: `mod.rs` (`Icon`,
+its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
+(`PlatformError`). `render/`: `mod.rs` (`Icon`,
 `ItemMetrics`, check-box geometry), `scene.rs` (`SpaceScene`, `SpaceStyle`),
 `d2d/` (the painter). Everything with `unsafe` is under `win32/`:
 
@@ -500,7 +499,7 @@ at the root, `TASKS.md` R3 moves it). `render/`: `mod.rs` (`Icon`,
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
 | Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `dark_mode` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
-| Shell | `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch` |
+| Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
 | System | `system`, `dpi`, `autostart` |
 
@@ -893,7 +892,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
 - `Icon` is an `Arc` of owned premultiplied-BGRA pixels with a never-reused
   id. The main path decodes the `IShellItemImageFactory` HBITMAP through WIC
   (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
-  (`shell::decode_icon_masked`), destroyed right away. Scenes therefore never
+  (`icons::decode_icon_masked`), destroyed right away. Scenes therefore never
   point at freed handles.
 - `Painter` owns an `ID2D1HwndRenderTarget` (premultiplied alpha, 96 DPI so
   one DIP is one pixel), a brush, and a per-target bitmap cache keyed by
@@ -1012,8 +1011,8 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 63; 25 and
   watchdog acts only on a crash. A named mutex keeps a stray watchdog a no-op,
   and the pure `watchdog_pid` / `is_watchdog` and `should_restore` decide the
   argument and the restore.
-- `shell.rs` (crate root, not `win32/`): `enumerate_desktop_items` and
-  `IconCache`.
+- `win32/desktop_items.rs`: `enumerate_desktop_items` and the folder-walk
+  fallback; `win32/icons.rs`: `IconCache`.
   `enumerate_desktop_items` reads the desktop view's items and their positions
   (`IFolderView::ItemCount`/`Item`/`GetItemPosition`) once OLE is up, and
   falls back to a name-sorted walk of the user's Desktop folder, without
