@@ -1031,5 +1031,6 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   alpha strips behind a "Custom colors…" toggle, plus a preview, a hex readout,
   and OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
   `Hsv::to_color`. The popup paints opaque GDI and does not extend the DWM
-  frame into the client, which had made it transparent. On-screen check
-  pending.
+  frame into the client, which had made it transparent; it uses the system
+  message font, and its swatches and the settings window's color previews are
+  slightly rounded boxes. On-screen check pending.

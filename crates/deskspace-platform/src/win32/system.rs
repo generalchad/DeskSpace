@@ -2,12 +2,13 @@ use deskspace_core::Color;
 use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    GetMonitorInfoW, LOGFONTW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetCursorPos, GetSystemMetrics, NONCLIENTMETRICSW, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETNONCLIENTMETRICS,
 };
 use windows::core::w;
 
@@ -137,6 +138,27 @@ pub fn virtual_desktop_rect() -> Rect {
 
 pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// The system message font (`Segoe UI 9pt` on Windows 11) at `dpi`, from
+/// `SPI_GETNONCLIENTMETRICS`. The settings window and the color picker build
+/// their fonts from it, so both match native windows.
+pub(crate) fn message_logfont(dpi: u32) -> LOGFONTW {
+    let mut metrics = NONCLIENTMETRICSW {
+        cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: `metrics` is sized for SPI_GETNONCLIENTMETRICS.
+    unsafe {
+        let _ = SystemParametersInfoForDpi(
+            SPI_GETNONCLIENTMETRICS.0,
+            metrics.cbSize,
+            Some(&mut metrics as *mut _ as *mut core::ffi::c_void),
+            0,
+            dpi,
+        );
+    }
+    metrics.lfMessageFont
 }
 
 /// Equivalent of GET_X_LPARAM / GET_Y_LPARAM: the `as i16` sign-extends, so

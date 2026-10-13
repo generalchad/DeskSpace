@@ -5,6 +5,8 @@ use super::commands::show_page;
 use super::nav::{NavRow, entry_row, nav_rows};
 use super::update::{apply_enabled, apply_header};
 use super::*;
+use crate::win32::system::message_logfont;
+use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
 
 /// Converts 96-DPI layout units to pixels at `dpi`.
 pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
@@ -14,25 +16,12 @@ pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
 /// The UI font (Segoe UI 9pt on Windows 11) at `dpi`, plus a larger semibold
 /// variant for section headings.
 unsafe fn create_fonts(dpi: u32) -> (HFONT, HFONT) {
-    let mut metrics = NONCLIENTMETRICSW {
-        cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32,
-        ..Default::default()
-    };
-    // SAFETY: `metrics` is sized for SPI_GETNONCLIENTMETRICS.
-    unsafe {
-        let _ = SystemParametersInfoForDpi(
-            SPI_GETNONCLIENTMETRICS.0,
-            metrics.cbSize,
-            Some(&mut metrics as *mut _ as *mut core::ffi::c_void),
-            0,
-            dpi,
-        );
-        let body = metrics.lfMessageFont;
-        let mut heading = body;
-        heading.lfWeight = 600;
-        heading.lfHeight = body.lfHeight * 4 / 3;
-        (CreateFontIndirectW(&body), CreateFontIndirectW(&heading))
-    }
+    let body = message_logfont(dpi);
+    let mut heading = body;
+    heading.lfWeight = 600;
+    heading.lfHeight = body.lfHeight * 4 / 3;
+    // SAFETY: both LOGFONTs are fully initialised locals.
+    unsafe { (CreateFontIndirectW(&body), CreateFontIndirectW(&heading)) }
 }
 
 struct Builder {
@@ -231,7 +220,6 @@ impl Builder {
             value_text: None,
             value_edit: None,
             swatch: None,
-            swatch_brush: None,
             marks: Vec::new(),
         };
         let row = self.s(28);
@@ -395,8 +383,8 @@ impl Builder {
                         page,
                         WC_STATICW,
                         "",
-                        0,
-                        WS_EX_CLIENTEDGE,
+                        SS_OWNERDRAW,
+                        WINDOW_EX_STYLE(0),
                         (
                             control_x,
                             y + (row - swatch_size) / 2,
@@ -405,7 +393,6 @@ impl Builder {
                         ),
                         id_secondary,
                     );
-                    controls.swatch_brush = Some(CreateSolidBrush(colorref(*color)));
                     controls.value_text = self.label(
                         page,
                         &color.to_rgb_hex(),

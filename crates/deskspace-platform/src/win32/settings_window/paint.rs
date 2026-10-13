@@ -5,6 +5,7 @@ use super::build::scaled;
 use super::commands::{colorref, window_text};
 use super::nav::NavRow;
 use super::*;
+use deskspace_core::geometry::Rect;
 
 /// Paints one row of the scopes pane like a rail entry: an accent bar when
 /// selected, indented rows moved right, and dimmed rows (scopes that only
@@ -249,6 +250,48 @@ pub(super) unsafe fn on_draw_header_button(window: HWND, item: &DRAWITEMSTRUCT) 
             };
             let _ = DrawFocusRect(item.hDC, &focus);
         }
+    }
+}
+
+/// Paints a color field's preview: a slightly rounded box with a subtle border,
+/// matching the color picker's swatches. The control is an owner-draw static
+/// (`SS_OWNERDRAW`).
+pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
+    // SAFETY: `item.hDC` is a live DC owned by the static during WM_DRAWITEM;
+    // the borrowed state is copied out before any GDI call.
+    unsafe {
+        let id = item.CtlID as usize;
+        if id < CONTROL_BASE || (id - CONTROL_BASE) % 4 != PART_SECONDARY {
+            return;
+        }
+        let index = (id - CONTROL_BASE) / 4;
+        let Some((color, colors, body, dpi)) = with_state(window, |state| {
+            let (field, _) = state.fields.get(index)?;
+            let color = match &field.kind {
+                FieldKind::Color { color } => *color,
+                _ => return None,
+            };
+            Some((color, state.colors, state.body_brush, state.dpi))
+        })
+        .flatten() else {
+            return;
+        };
+        // The static is rectangular; clear it to the body so the rounded fill's
+        // corners do not show the control's default background.
+        FillRect(item.hDC, &item.rcItem, body);
+        let rect = Rect::new(
+            item.rcItem.left,
+            item.rcItem.top,
+            item.rcItem.right - item.rcItem.left,
+            item.rcItem.bottom - item.rcItem.top,
+        );
+        crate::win32::color_picker::draw_color_box(
+            item.hDC,
+            rect,
+            color,
+            scaled(SWATCH_RADIUS, dpi),
+            colors.divider,
+        );
     }
 }
 

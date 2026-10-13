@@ -26,21 +26,18 @@ use windows::Win32::Graphics::Dwm::{
     DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontIndirectW, CreatePen, CreateSolidBrush, DT_CALCRECT, DT_CENTER,
-    DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject,
-    DrawFocusRect, DrawTextW, Ellipse, EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ,
-    InvalidateRect, PAINTSTRUCT, PS_SOLID, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE,
-    RedrawWindow, ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor,
-    TRANSPARENT,
+    BeginPaint, CreatePen, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS, DT_NOPREFIX,
+    DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW, Ellipse,
+    EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT, PS_SOLID,
+    RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, RoundRect,
+    SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
     DRAWITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, TBM_SETPOS, TBM_SETRANGEMIN, TBS_HORZ,
     TBS_NOTICKS, TRACKBAR_CLASSW, WC_BUTTONW, WC_COMBOBOXW, WC_EDITW, WC_LISTBOXW, WC_STATICW,
 };
-use windows::Win32::UI::HiDpi::{
-    AdjustWindowRectExForDpi, GetDpiForWindow, SystemParametersInfoForDpi,
-};
+use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
@@ -50,14 +47,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW, GetWindowTextLengthW,
     GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL,
     LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY,
-    LBS_OWNERDRAWFIXED, NONCLIENTMETRICSW, RegisterClassW, SPI_GETNONCLIENTMETRICS, SW_HIDE,
-    SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
-    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT,
-    WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
-    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    LBS_OWNERDRAWFIXED, RegisterClassW, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
+    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED,
+    WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -74,7 +70,9 @@ use crate::win32::{runtime, tray};
 use build::build;
 use commands::{on_field_command, on_scroll};
 use nav::{NavRow, on_header_switch, on_nav_changed, on_scope_changed};
-use paint::{erase_body, on_draw_header_button, on_draw_item, on_draw_scope, on_paint};
+use paint::{
+    erase_body, on_draw_header_button, on_draw_item, on_draw_scope, on_draw_swatch, on_paint,
+};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSettings");
 const PAGE_CLASS: PCWSTR = w!("DeskSpaceSettingsPage");
@@ -115,6 +113,8 @@ const PART_SECONDARY: usize = 1;
 const SS_LEFT: u32 = 0x0000;
 const SS_CENTER: u32 = 0x0001;
 const SS_RIGHT: u32 = 0x0002;
+/// The color preview is drawn by the settings window (`on_draw_swatch`).
+const SS_OWNERDRAW: u32 = 0x000B;
 const SS_NOPREFIX: u32 = 0x0080;
 const SS_CENTERIMAGE: u32 = 0x0200;
 /// Trackbar messages are WM_USER-based: TBM_GETPOS is WM_USER, TBM_SETTIC
@@ -127,6 +127,8 @@ const TBM_GETTHUMBRECT: u32 = 0x0419;
 const TBM_SETRANGEMAX: u32 = TBM_SETRANGEMIN + 1;
 /// Height of the labels under a slider's tick marks, at 96 DPI.
 const MARK_LABEL_HEIGHT: i32 = 16;
+/// Corner radius of a color field's preview swatch, at 96 DPI.
+const SWATCH_RADIUS: i32 = 4;
 
 static REGISTER_CLASSES: Once = Once::new();
 static CLASSES_REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -140,7 +142,6 @@ pub(super) struct FieldControls {
     /// An editable slider value box, in place of `value_text`.
     value_edit: Option<HWND>,
     swatch: Option<HWND>,
-    swatch_brush: Option<HBRUSH>,
     /// Labels under a slider's tick marks.
     marks: Vec<HWND>,
 }
@@ -236,11 +237,6 @@ impl Drop for SettingsState {
         // controls using them are already destroyed (children are destroyed
         // before the parent's WM_NCDESTROY).
         unsafe {
-            for (_, controls) in &self.fields {
-                if let Some(brush) = controls.swatch_brush {
-                    let _ = DeleteObject(HGDIOBJ(brush.0));
-                }
-            }
             let _ = DeleteObject(HGDIOBJ(self.font.0));
             let _ = DeleteObject(HGDIOBJ(self.heading_font.0));
             let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
@@ -490,28 +486,17 @@ unsafe extern "system" fn wndproc(
             }
             WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
                 let control = HWND(lparam.0 as *mut core::ffi::c_void);
-                let Some((swatch, colors, body, field, disabled, rail)) =
-                    with_state(window, |state| {
-                        let swatch = state
-                            .fields
-                            .iter()
-                            .find(|(_, controls)| controls.swatch == Some(control))
-                            .and_then(|(_, controls)| controls.swatch_brush);
-                        (
-                            swatch,
-                            state.colors,
-                            state.body_brush,
-                            state.command_bar_brush,
-                            state.is_disabled_label(control),
-                            [state.list, state.scopes_list].contains(&Some(control)),
-                        )
-                    })
-                else {
+                let Some((colors, body, field, disabled, rail)) = with_state(window, |state| {
+                    (
+                        state.colors,
+                        state.body_brush,
+                        state.command_bar_brush,
+                        state.is_disabled_label(control),
+                        [state.list, state.scopes_list].contains(&Some(control)),
+                    )
+                }) else {
                     return DefWindowProcW(window, message, wparam, lparam);
                 };
-                if let Some(brush) = swatch {
-                    return LRESULT(brush.0 as isize);
-                }
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);
                 // The rail panes are part of the window body, not input
                 // fields: below their rows they show the body color too.
@@ -551,6 +536,7 @@ unsafe extern "system" fn wndproc(
                     ID_LIST => on_draw_item(window, &*item),
                     ID_SCOPES => on_draw_scope(window, &*item),
                     ID_HEADER_BUTTON => on_draw_header_button(window, &*item),
+                    id if id >= CONTROL_BASE => on_draw_swatch(window, &*item),
                     _ => return DefWindowProcW(window, message, wparam, lparam),
                 }
                 LRESULT(1)
@@ -595,8 +581,8 @@ unsafe extern "system" fn page_wndproc(
     // SAFETY: forwarding a message with its original arguments to our parent.
     unsafe {
         match message {
-            WM_COMMAND | WM_HSCROLL | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT
-            | WM_CTLCOLORLISTBOX => match GetParent(window) {
+            WM_COMMAND | WM_HSCROLL | WM_DRAWITEM | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN
+            | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => match GetParent(window) {
                 Ok(parent) => SendMessageW(parent, message, Some(wparam), Some(lparam)),
                 Err(_) => DefWindowProcW(window, message, wparam, lparam),
             },

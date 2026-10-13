@@ -1200,7 +1200,10 @@ Small requests, one commit each.
   OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
   `Hsv::to_color`; `Ui::pick_color` and the settings window both route through
   it. The popup paints opaque GDI and does not extend the DWM frame into the
-  client, which had made it transparent.
+  client, which had made it transparent. It draws text with the system message
+  font (`system::message_logfont`), and both its swatches and the settings
+  window's color previews are slightly rounded boxes
+  (`color_picker::draw_color_box`, `settings_window::paint::on_draw_swatch`).
   - **[needs human]** check, over a high-contrast window (`--on-top`) and in
     light and dark mode: the popup is opaque, rounded, and bordered; the
     palette highlights the selected swatch and a double-click confirms; the

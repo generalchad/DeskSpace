@@ -1,7 +1,7 @@
 //! Refreshes an open settings window in place from a new SettingsForm.
 
 use super::build::fill_list;
-use super::commands::{colorref, show_page, window_text};
+use super::commands::{show_page, window_text};
 use super::nav::{NavRow, entry_row, nav_rows};
 use super::*;
 
@@ -286,16 +286,6 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
 }
 
 pub(super) fn set_swatch(controls: &mut FieldControls, color: Color, updates: &mut Vec<Update>) {
-    // SAFETY: brush creation/deletion does not send messages; the old brush is
-    // no longer selected anywhere once the swatch repaints with the new one.
-    unsafe {
-        if let Some(old) = controls
-            .swatch_brush
-            .replace(CreateSolidBrush(colorref(color)))
-        {
-            let _ = DeleteObject(HGDIOBJ(old.0));
-        }
-    }
     if let Some(swatch) = controls.swatch {
         updates.push(Update::Repaint(swatch));
     }

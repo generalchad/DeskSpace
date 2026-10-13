@@ -27,10 +27,10 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection,
-    CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteDC,
-    DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetStockObject, HDC, HGDIOBJ,
-    InvalidateRect, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, Polyline, RoundRect, SRCCOPY, SelectObject,
-    SetBkMode, SetTextColor, TRANSPARENT,
+    CreateFontIndirectW, CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_LEFT, DT_SINGLELINE,
+    DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetStockObject,
+    HDC, HFONT, HGDIOBJ, InvalidateRect, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, Polyline, RoundRect,
+    SRCCOPY, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -49,7 +49,7 @@ use windows::core::{PCWSTR, w};
 
 use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
-use crate::win32::system::work_area_at;
+use crate::win32::system::{message_logfont, work_area_at};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
 
@@ -69,8 +69,11 @@ const PREVIEW_WIDTH: i32 = 44;
 const PREVIEW_HEIGHT: i32 = 22;
 const BUTTON_WIDTH: i32 = 70;
 const BUTTON_HEIGHT: i32 = 30;
-const TOGGLE_WIDTH: i32 = 122;
+const BUTTON_GAP: i32 = 6;
+const TOGGLE_WIDTH: i32 = 128;
 const BUTTON_ROUND: i32 = 8;
+/// Corner radius of a color swatch.
+const SWATCH_RADIUS: i32 = 4;
 /// Size of one checkerboard square behind the alpha strip and the preview.
 const CHECKER: i32 = 8;
 /// Radius of the marker on the saturation/value square.
@@ -196,6 +199,7 @@ struct PickerLayout {
     cancel: Rect,
     swatch: i32,
     swatch_gap: i32,
+    swatch_radius: i32,
 }
 
 impl PickerLayout {
@@ -206,38 +210,55 @@ impl PickerLayout {
         let swatch = s(SWATCH);
         let swatch_gap = s(SWATCH_GAP);
         let label = s(LABEL_HEIGHT);
+        let button_gap = s(BUTTON_GAP);
+        let button_w = s(BUTTON_WIDTH);
+        let toggle_w = s(TOGGLE_WIDTH);
         let grid_width = COLS as i32 * swatch + (COLS as i32 - 1) * swatch_gap;
-        let width = grid_width + pad * 2;
+        // The bar of three buttons is wider than the grid, so the window fits
+        // both and the grid is centered in the extra width.
+        let buttons_width = toggle_w + button_gap + button_w + button_gap + button_w;
+        let content_width = grid_width.max(buttons_width);
+        let width = content_width + pad * 2;
+        let grid_x = pad + (content_width - grid_width) / 2;
 
-        let recent_label = Rect::new(pad, pad, grid_width, label);
-        let recent_grid = Rect::new(pad, recent_label.y + label + s(4), grid_width, swatch);
+        let recent_label = Rect::new(grid_x, pad, grid_width, label);
+        let recent_grid = Rect::new(grid_x, recent_label.y + label + s(4), grid_width, swatch);
         let windows_label = Rect::new(
-            pad,
+            grid_x,
             recent_grid.y + swatch + s(SECTION_GAP),
             grid_width,
             label,
         );
         let grid_height = ROWS as i32 * swatch + (ROWS as i32 - 1) * swatch_gap;
-        let windows_grid = Rect::new(pad, windows_label.y + label + s(4), grid_width, grid_height);
+        let windows_grid = Rect::new(
+            grid_x,
+            windows_label.y + label + s(4),
+            grid_width,
+            grid_height,
+        );
 
         let button_y = windows_grid.y + grid_height + s(16);
-        let toggle = Rect::new(pad, button_y, s(TOGGLE_WIDTH), s(BUTTON_HEIGHT));
-        let button_w = s(BUTTON_WIDTH);
+        let toggle = Rect::new(pad, button_y, toggle_w, s(BUTTON_HEIGHT));
         let ok = Rect::new(width - pad - button_w, button_y, button_w, s(BUTTON_HEIGHT));
-        let cancel = Rect::new(ok.x - s(6) - button_w, button_y, button_w, s(BUTTON_HEIGHT));
+        let cancel = Rect::new(
+            ok.x - button_gap - button_w,
+            button_y,
+            button_w,
+            s(BUTTON_HEIGHT),
+        );
         let size = (width, button_y + s(BUTTON_HEIGHT) + pad);
 
-        let saturation = Rect::new(pad, pad, grid_width, s(SQUARE_HEIGHT));
+        let saturation = Rect::new(pad, pad, content_width, s(SQUARE_HEIGHT));
         let hue = Rect::new(
             pad,
             saturation.y + saturation.height + s(FIELD_GAP),
-            grid_width,
+            content_width,
             s(STRIP_HEIGHT),
         );
         let alpha = Rect::new(
             pad,
             hue.y + hue.height + s(FIELD_GAP),
-            grid_width,
+            content_width,
             s(STRIP_HEIGHT),
         );
         let preview = Rect::new(
@@ -250,7 +271,7 @@ impl PickerLayout {
         let hex = Rect::new(
             hex_x,
             preview.y,
-            (grid_width - (hex_x - pad)).max(0),
+            (content_width - (hex_x - pad)).max(0),
             preview.height,
         );
 
@@ -270,6 +291,7 @@ impl PickerLayout {
             cancel,
             swatch,
             swatch_gap,
+            swatch_radius: s(SWATCH_RADIUS),
         }
     }
 
@@ -381,6 +403,8 @@ struct PickerState {
     initial: Color,
     dark: bool,
     layout: PickerLayout,
+    /// The UI font (the system message font at the owner's DPI), owned here.
+    font: HFONT,
     /// The palette's selected color, when one is picked or the initial matches.
     selected: Option<Color>,
     /// The recently used colors, read once at open.
@@ -396,8 +420,20 @@ struct PickerState {
     hover: Option<Region>,
 }
 
+impl Drop for PickerState {
+    fn drop(&mut self) {
+        // SAFETY: the font is owned by this state; a null handle (tests) is
+        // ignored.
+        unsafe {
+            if !self.font.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ(self.font.0));
+            }
+        }
+    }
+}
+
 impl PickerState {
-    fn new(initial: Color, dark: bool, layout: PickerLayout) -> Self {
+    fn new(initial: Color, dark: bool, layout: PickerLayout, font: HFONT) -> Self {
         let hsv = initial.to_hsv();
         let recent = RECENT.with(|recent| recent.borrow().clone());
         let selected = WINDOWS_COLORS
@@ -409,6 +445,7 @@ impl PickerState {
             initial,
             dark,
             layout,
+            font,
             selected,
             recent,
             hue: hsv.h,
@@ -494,8 +531,10 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
         if !ensure_class(instance) {
             return None;
         }
-        let layout = PickerLayout::compute(dpi_scale(owner));
-        let mut state = Box::new(PickerState::new(initial, dark, layout));
+        let dpi = dpi_of(owner);
+        let layout = PickerLayout::compute(dpi as f32 / 96.0);
+        let font = CreateFontIndirectW(&message_logfont(dpi));
+        let mut state = Box::new(PickerState::new(initial, dark, layout, font));
         let state_pointer = &mut *state as *mut PickerState;
 
         let (x, y) = picker_position(layout.size);
@@ -555,11 +594,11 @@ fn picker_position(size: (i32, i32)) -> (i32, i32) {
     )
 }
 
-/// The DPI scale of the owner's monitor (`1.0` at 96 DPI).
-fn dpi_scale(owner: HWND) -> f32 {
+/// The DPI of the owner's monitor (96 when it cannot be read).
+fn dpi_of(owner: HWND) -> u32 {
     // SAFETY: `owner` is a live window.
     let dpi = unsafe { GetDpiForWindow(owner) };
-    if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
+    if dpi == 0 { 96 } else { dpi }
 }
 
 /// Rounds the popup and gives it a captionless dark/light frame. The frame is
@@ -798,6 +837,7 @@ unsafe fn paint_content(hdc: HDC, state: &PickerState) {
     // selected out and deleted before this function returns.
     unsafe {
         fill_solid(hdc, whole, colors.body);
+        let previous_font = SelectObject(hdc, HGDIOBJ(state.font.0));
         match state.panel {
             Panel::Palette => paint_palette(hdc, state, colors),
             Panel::Custom => paint_custom(hdc, state, colors),
@@ -830,6 +870,7 @@ unsafe fn paint_content(hdc: HDC, state: &PickerState) {
             true,
             state.hover == Some(Region::Ok),
         );
+        SelectObject(hdc, previous_font);
     }
 }
 
@@ -846,7 +887,7 @@ unsafe fn paint_palette(hdc: HDC, state: &PickerState, colors: UiColors) {
                 state.recent[index],
                 selected,
                 colors,
-                state.layout.swatch,
+                state.layout,
             );
         }
         draw_label(hdc, state.layout.windows_label, "Windows colors", colors);
@@ -858,7 +899,7 @@ unsafe fn paint_palette(hdc: HDC, state: &PickerState, colors: UiColors) {
                 *color,
                 state.selected == Some(*color),
                 colors,
-                state.layout.swatch,
+                state.layout,
             );
         }
     }
@@ -957,54 +998,76 @@ unsafe fn frame(hdc: HDC, rect: Rect, color: Color) {
     }
 }
 
-/// Draws one palette swatch: its color, a defining outline, and, when selected,
-/// a thicker accent border and a check mark.
+/// Draws a color preview: a slightly rounded fill with a one-pixel border.
+/// Shared by the picker's swatches and the settings window's color fields.
+pub(crate) unsafe fn draw_color_box(
+    hdc: HDC,
+    rect: Rect,
+    color: Color,
+    radius: i32,
+    border: Color,
+) {
+    // SAFETY: the brush and pen are selected out and deleted before returning.
+    unsafe {
+        let brush = CreateSolidBrush(colorref(color));
+        let pen = CreatePen(PS_SOLID, 1, colorref(border));
+        let old_brush = SelectObject(hdc, HGDIOBJ(brush.0));
+        let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+        let _ = RoundRect(
+            hdc,
+            rect.x,
+            rect.y,
+            rect.x + rect.width,
+            rect.y + rect.height,
+            radius * 2,
+            radius * 2,
+        );
+        SelectObject(hdc, old_pen);
+        SelectObject(hdc, old_brush);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+    }
+}
+
+/// Draws a hollow rounded outline of `width` just inside `rect`.
+unsafe fn draw_ring(hdc: HDC, rect: Rect, color: Color, width: i32, radius: i32) {
+    // SAFETY: the pen is selected out and deleted; the stock null brush fills
+    // nothing.
+    unsafe {
+        let pen = CreatePen(PS_SOLID, width, colorref(color));
+        let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+        let _ = RoundRect(
+            hdc,
+            rect.x,
+            rect.y,
+            rect.x + rect.width,
+            rect.y + rect.height,
+            radius * 2,
+            radius * 2,
+        );
+        SelectObject(hdc, old_pen);
+        SelectObject(hdc, old_brush);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+    }
+}
+
+/// Draws one palette swatch: its color in a slightly rounded box, a defining
+/// outline, and, when selected, an accent ring and a check mark.
 unsafe fn draw_swatch(
     hdc: HDC,
     rect: Rect,
     color: Color,
     selected: bool,
     colors: UiColors,
-    swatch: i32,
+    layout: PickerLayout,
 ) {
     // SAFETY: caller holds a live paint DC.
     unsafe {
-        fill_solid(hdc, rect, color);
+        draw_color_box(hdc, rect, color, layout.swatch_radius, colors.divider);
         if selected {
-            let thickness = 2;
-            fill_solid(
-                hdc,
-                Rect::new(rect.x, rect.y, rect.width, thickness),
-                colors.accent,
-            );
-            fill_solid(
-                hdc,
-                Rect::new(
-                    rect.x,
-                    rect.y + rect.height - thickness,
-                    rect.width,
-                    thickness,
-                ),
-                colors.accent,
-            );
-            fill_solid(
-                hdc,
-                Rect::new(rect.x, rect.y, thickness, rect.height),
-                colors.accent,
-            );
-            fill_solid(
-                hdc,
-                Rect::new(
-                    rect.x + rect.width - thickness,
-                    rect.y,
-                    thickness,
-                    rect.height,
-                ),
-                colors.accent,
-            );
-            draw_check(hdc, rect, color, swatch);
-        } else {
-            frame(hdc, rect, colors.divider);
+            draw_ring(hdc, rect, colors.accent, 2, layout.swatch_radius);
+            draw_check(hdc, rect, color, layout.swatch);
         }
     }
 }
@@ -1254,6 +1317,21 @@ mod tests {
     }
 
     #[test]
+    fn the_button_bar_fits_without_overlap() {
+        let layout = PickerLayout::compute(1.0);
+        assert!(
+            layout.toggle.x + layout.toggle.width <= layout.cancel.x,
+            "the toggle must not overlap Cancel"
+        );
+        assert!(layout.cancel.x + layout.cancel.width <= layout.ok.x);
+        assert!(layout.ok.x + layout.ok.width <= layout.size.0);
+        // The narrow grid is centered in the wider button bar.
+        let left = layout.windows_grid.x;
+        let right = layout.size.0 - (layout.windows_grid.x + layout.windows_grid.width);
+        assert!((left - right).abs() <= 1);
+    }
+
+    #[test]
     fn swatch_rects_tile_the_grid() {
         let layout = PickerLayout::compute(1.0);
         let first = layout.swatch_rect(layout.windows_grid, 0);
@@ -1364,7 +1442,8 @@ mod tests {
             Color::rgba(0xAB, 0xCD, 0xEF, 128),
             Color::rgb(255, 0, 0),
         ] {
-            let mut state = PickerState::new(color, true, PickerLayout::compute(1.0));
+            let mut state =
+                PickerState::new(color, true, PickerLayout::compute(1.0), HFONT::default());
             state.panel = Panel::Custom;
             assert_eq!(state.color(), color);
         }
@@ -1372,7 +1451,12 @@ mod tests {
 
     #[test]
     fn selecting_a_swatch_changes_the_result() {
-        let mut state = PickerState::new(Color::rgb(0, 0, 0), true, PickerLayout::compute(1.0));
+        let mut state = PickerState::new(
+            Color::rgb(0, 0, 0),
+            true,
+            PickerLayout::compute(1.0),
+            HFONT::default(),
+        );
         assert_eq!(state.color(), Color::rgb(0, 0, 0));
         state.select_swatch(0);
         assert_eq!(state.color(), WINDOWS_COLORS[0]);
@@ -1384,6 +1468,7 @@ mod tests {
             Color::rgb(0x10, 0x7C, 0x10),
             true,
             PickerLayout::compute(1.0),
+            HFONT::default(),
         );
         let custom = state.color();
         state.toggle_panel();
