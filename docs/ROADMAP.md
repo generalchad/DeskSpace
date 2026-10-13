@@ -403,8 +403,10 @@ Done:
 - **[done]** Dark mode for the settings window and menus, following Windows.
 - **[done]** A modern color picker (F-51): the settings Colors page and the
   space menu's Appearance submenu open DeskSpace's own themed popup (a
-  saturation/value square, hue and alpha strips, a preview, OK/Cancel) instead
-  of the system `ChooseColor` dialog (`TASKS.md` F14; check pending).
+  "Recent colors" row and a "Windows colors" grid, with the saturation/value
+  square, hue and alpha strips behind a "Custom colors…" toggle, plus a
+  preview, hex readout, and OK/Cancel) instead of the system `ChooseColor`
+  dialog (`TASKS.md` F14; check pending).
 
 Remaining:
 1. Tray and menu entries:
@@ -1023,7 +1025,11 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
     `%LocalAppData%\DeskSpace\DeskSpace\data`.
 - **A modern color picker (F-51; `TASKS.md` F14).** The Colors page and the
   space menu's Appearance submenu open DeskSpace's own themed popup
-  (`win32/color_picker.rs`) instead of the dated system `ChooseColor` dialog: a
-  rounded window with a saturation/value square, hue and alpha strips, a
-  preview, a hex readout, and OK/Cancel. `deskspace-core` gained `Hsv`,
-  `Color::to_hsv`, and `Hsv::to_color`. On-screen check pending.
+  (`win32/color_picker.rs`) instead of the dated system `ChooseColor` dialog.
+  It opens on a palette (a "Recent colors" row and a "Windows colors" grid)
+  after the Windows color dialog, with the saturation/value square, hue and
+  alpha strips behind a "Custom colors…" toggle, plus a preview, a hex readout,
+  and OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
+  `Hsv::to_color`. The popup paints opaque GDI and does not extend the DWM
+  frame into the client, which had made it transparent. On-screen check
+  pending.

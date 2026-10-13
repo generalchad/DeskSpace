@@ -41,7 +41,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (304 tests) are green. Update this count whenever a
+  `cargo test --workspace` (310 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -934,10 +934,15 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   as `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
   `Apply` (plus the pane events below), and opens DeskSpace's own color picker
   for color fields (`Ui::pick_color`). The picker (`win32/color_picker.rs`) is
-  a rounded, themed popup with a saturation/value square, hue and alpha
-  strips, a preview, and OK/Cancel, replacing the dated system `ChooseColor`
-  dialog (ROADMAP F-51). It is modal: it disables its owner and services only
-  its own messages until it closes. `Ui::update_settings`
+  a rounded, themed popup that opens on a palette grid after the Windows color
+  dialog (a "Recent colors" row and a "Windows colors" grid), with the full
+  saturation/value square, hue and alpha strips one toggle away ("Custom
+  colors…"), a preview, a hex readout, and OK/Cancel. It replaces the dated
+  system `ChooseColor` dialog (ROADMAP F-51). It is modal: it disables its
+  owner and services only its own messages until it closes. It paints opaque
+  GDI and deliberately does not extend the DWM frame into the client, which
+  would make DWM read GDI's zero alpha and render the popup as glass.
+  `Ui::update_settings`
   diffs a new form of the same shape into the existing controls, and touches
   the panes and header only when they change, since a slider drag sends an
   update per tick.

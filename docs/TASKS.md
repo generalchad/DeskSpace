@@ -1191,19 +1191,23 @@ Small requests, one commit each.
     Deprioritized.
 
 - [ ] **F14. A modern color picker (ROADMAP F-51).** (awaiting check) Landed as
-  `feat: add a modern color picker (F-51)`. The Colors page and the space
-  menu's Appearance submenu open DeskSpace's own popup
-  (`win32/color_picker.rs`) instead of the system `ChooseColor` dialog: a
-  rounded, themed window with a saturation/value square, hue and alpha strips,
-  a preview, a hex readout, and OK/Cancel. `deskspace-core` gained `Hsv`,
-  `Color::to_hsv`, and `Hsv::to_color`; `Ui::pick_color` and the settings
-  window both route through the new picker.
+  `feat: add a modern color picker (F-51)`, then redesigned on the Windows
+  color dialog: the Colors page and the space menu's Appearance submenu open
+  DeskSpace's own popup (`win32/color_picker.rs`) instead of the system
+  `ChooseColor` dialog. It opens on a palette (a "Recent colors" row and a
+  "Windows colors" grid), with the full saturation/value square, hue and alpha
+  strips behind a "Custom colors…" toggle, plus a preview, a hex readout, and
+  OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
+  `Hsv::to_color`; `Ui::pick_color` and the settings window both route through
+  it. The popup paints opaque GDI and does not extend the DWM frame into the
+  client, which had made it transparent.
   - **[needs human]** check, over a high-contrast window (`--on-top`) and in
-    light and dark mode: the popup is rounded and bordered; dragging in the
-    square, the hue strip, and the alpha strip updates the preview live; OK
-    returns the color (custom tint/text, and the Colors page fields) and Cancel
-    leaves it unchanged; Enter accepts and Esc cancels; the scale is right at
-    100 % and 150 %.
+    light and dark mode: the popup is opaque, rounded, and bordered; the
+    palette highlights the selected swatch and a double-click confirms; the
+    "Custom colors…" toggle reaches the square, hue, and alpha controls with a
+    live preview; OK returns the color (custom tint/text and the Colors page
+    fields) and Cancel leaves it unchanged; Enter accepts and Esc cancels; the
+    scale is right at 100 % and 150 %.
 
 ## G. More Explorer-standard controls
 

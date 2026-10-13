@@ -1,25 +1,36 @@
 //! A modern color picker popup (ROADMAP F-51), replacing the dated system
-//! `ChooseColor` dialog. It draws a saturation/value square, hue and alpha
-//! strips, a preview, and OK/Cancel in DeskSpace's own style, and returns the
-//! chosen color from a short modal loop.
+//! `ChooseColor` dialog. It opens on a palette grid inspired by the Windows
+//! color dialog: a row of recent colors and a grid of standard colors, with the
+//! full saturation/value picker one toggle away ("Custom colors"). It returns
+//! the chosen color from a short modal loop.
+//!
+//! The window is opaque GDI (the settings window's model): it does not extend
+//! the DWM frame into the client, because DWM would then read the client's
+//! alpha channel, which GDI leaves at zero, and composite the whole popup as
+//! glass. Rounded corners and the border come from DWM window attributes.
 //!
 //! `pick` owns the `PickerState` box; the window only points at it through
 //! `GWLP_USERDATA` for the duration of the loop, which ends when the window is
 //! destroyed. The loop reads only messages addressed to the picker, so the
 //! owner (the settings window or the controller) is frozen while it is open.
 
+use std::cell::RefCell;
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::theme::{Backdrop, Color, Hsv};
+use deskspace_core::theme::{Color, Hsv};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    DwmSetWindowAttribute,
+};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection,
-    CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_CENTER, DT_SINGLELINE, DT_VCENTER, DeleteDC,
-    DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, HDC, HGDIOBJ,
-    InvalidateRect, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, RoundRect, SRCCOPY, SelectObject, SetBkMode,
-    SetTextColor, TRANSPARENT,
+    CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_LEFT, DT_SINGLELINE, DT_VCENTER, DeleteDC,
+    DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetStockObject, HDC, HGDIOBJ,
+    InvalidateRect, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, Polyline, RoundRect, SRCCOPY, SelectObject,
+    SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -27,72 +38,164 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, ReleaseCapture, SetCapture, VK_ESCAPE, VK_RETURN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA,
-    GetCursorPos, GetMessageW, GetWindowLongPtrW, IsWindow, MSG, RegisterClassW, SW_SHOW,
-    SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_CLOSE, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SYSKEYDOWN, WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
+    CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, IsWindow, MSG, RegisterClassW,
+    SW_SHOW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_CLOSE,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN, WNDCLASSW, WS_CLIPCHILDREN,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
-use crate::render::SpaceStyle;
-use crate::win32::dark_mode::UiColors;
+use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::work_area_at;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
 
 // Layout metrics at 96 DPI; `PickerLayout::compute` scales them per monitor.
-const PAD: i32 = 14;
-const SQUARE_WIDTH: i32 = 252;
+const PAD: i32 = 16;
+const SWATCH: i32 = 26;
+const SWATCH_GAP: i32 = 4;
+const COLS: usize = 8;
+const ROWS: usize = 6;
+const LABEL_HEIGHT: i32 = 18;
+const SECTION_GAP: i32 = 14;
+const FIELD_GAP: i32 = 10;
+const ROW_GAP: i32 = 12;
 const SQUARE_HEIGHT: i32 = 150;
 const STRIP_HEIGHT: i32 = 16;
-const GAP: i32 = 10;
-const ROW_GAP: i32 = 12;
 const PREVIEW_WIDTH: i32 = 44;
 const PREVIEW_HEIGHT: i32 = 22;
-const BUTTON_WIDTH: i32 = 72;
-const BUTTON_HEIGHT: i32 = 28;
+const BUTTON_WIDTH: i32 = 70;
+const BUTTON_HEIGHT: i32 = 30;
+const TOGGLE_WIDTH: i32 = 122;
+const BUTTON_ROUND: i32 = 8;
 /// Size of one checkerboard square behind the alpha strip and the preview.
 const CHECKER: i32 = 8;
 /// Radius of the marker on the saturation/value square.
 const MARKER: i32 = 6;
 /// Radius of the marker on the hue and alpha strips.
 const STRIP_MARKER: i32 = 7;
-/// Corner radius of the buttons.
-const BUTTON_ROUND: i32 = 8;
+
+/// The standard color grid, eight per row, after the Windows 11 palette: vivid
+/// hues, then pastels, then neutrals and earth tones.
+const WINDOWS_COLORS: [Color; COLS * ROWS] = [
+    Color::rgb(0xC4, 0x2B, 0x1C),
+    Color::rgb(0xCA, 0x50, 0x10),
+    Color::rgb(0xC1, 0x9C, 0x00),
+    Color::rgb(0x10, 0x7C, 0x10),
+    Color::rgb(0x03, 0x83, 0x87),
+    Color::rgb(0x00, 0x63, 0xB1),
+    Color::rgb(0x4F, 0x6B, 0xED),
+    Color::rgb(0x74, 0x4D, 0xA9),
+    Color::rgb(0xE7, 0x48, 0x56),
+    Color::rgb(0xF7, 0x63, 0x0C),
+    Color::rgb(0xFF, 0xB9, 0x00),
+    Color::rgb(0x10, 0x7C, 0x10),
+    Color::rgb(0x00, 0xB7, 0xC3),
+    Color::rgb(0x00, 0x78, 0xD4),
+    Color::rgb(0x6B, 0x69, 0xD6),
+    Color::rgb(0x87, 0x64, 0xB8),
+    Color::rgb(0xFF, 0x43, 0x43),
+    Color::rgb(0xFF, 0x8C, 0x00),
+    Color::rgb(0xFF, 0xD7, 0x00),
+    Color::rgb(0x16, 0xC6, 0x0C),
+    Color::rgb(0x00, 0xCC, 0xCC),
+    Color::rgb(0x00, 0x99, 0xBC),
+    Color::rgb(0x8A, 0x8A, 0xFF),
+    Color::rgb(0xB1, 0x46, 0xC2),
+    Color::rgb(0xFF, 0xB3, 0xB3),
+    Color::rgb(0xFF, 0xCC, 0x99),
+    Color::rgb(0xFF, 0xE6, 0x99),
+    Color::rgb(0xB3, 0xE6, 0xB3),
+    Color::rgb(0xB3, 0xEC, 0xEC),
+    Color::rgb(0xB3, 0xD9, 0xF2),
+    Color::rgb(0xC5, 0xC5, 0xF5),
+    Color::rgb(0xE0, 0xB3, 0xE6),
+    Color::rgb(0x00, 0x00, 0x00),
+    Color::rgb(0x40, 0x40, 0x40),
+    Color::rgb(0x60, 0x60, 0x60),
+    Color::rgb(0x80, 0x80, 0x80),
+    Color::rgb(0xA0, 0xA0, 0xA0),
+    Color::rgb(0xC0, 0xC0, 0xC0),
+    Color::rgb(0xE0, 0xE0, 0xE0),
+    Color::rgb(0xFF, 0xFF, 0xFF),
+    Color::rgb(0x5A, 0x3A, 0x1A),
+    Color::rgb(0x8A, 0x6B, 0x3A),
+    Color::rgb(0xB3, 0x9A, 0x6A),
+    Color::rgb(0x4A, 0x5A, 0x3A),
+    Color::rgb(0x6A, 0x7A, 0x5A),
+    Color::rgb(0x3A, 0x4A, 0x5A),
+    Color::rgb(0x5A, 0x6A, 0x7A),
+    Color::rgb(0x8F, 0xA0, 0xB0),
+];
+
+/// How many recent colors are kept and shown (one row).
+const RECENT_LIMIT: usize = COLS;
 
 static REGISTER_CLASS: Once = Once::new();
 static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 
+thread_local! {
+    /// The colors picked recently, most recent first, kept for the session.
+    static RECENT: RefCell<Vec<Color>> = const { RefCell::new(Vec::new()) };
+}
+
+fn remember(color: Color) {
+    RECENT.with(|recent| {
+        let mut recent = recent.borrow_mut();
+        recent.retain(|existing| *existing != color);
+        recent.insert(0, color);
+        recent.truncate(RECENT_LIMIT);
+    });
+}
+
+/// Which page of the picker is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Panel {
+    Palette,
+    Custom,
+}
+
 /// Which interactive part of the picker a point falls in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Region {
+    /// A swatch in the palette, by index into the recent-then-standard list.
+    Swatch(usize),
     Saturation,
     Hue,
     Alpha,
+    Toggle,
     Ok,
     Cancel,
 }
 
 impl Region {
-    /// Whether the region is one of the color controls (as opposed to a button).
     fn is_value(self) -> bool {
         matches!(self, Region::Saturation | Region::Hue | Region::Alpha)
     }
 }
 
-/// The picker's rectangles, in window-local coordinates.
+/// The picker's rectangles, in window-local coordinates. Both panels share one
+/// window size, so toggling does not resize.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PickerLayout {
     size: (i32, i32),
+    recent_label: Rect,
+    recent_grid: Rect,
+    windows_label: Rect,
+    windows_grid: Rect,
     saturation: Rect,
     hue: Rect,
     alpha: Rect,
     preview: Rect,
     hex: Rect,
+    toggle: Rect,
     ok: Rect,
     cancel: Rect,
+    swatch: i32,
+    swatch_gap: i32,
 }
 
 impl PickerLayout {
@@ -100,57 +203,133 @@ impl PickerLayout {
     fn compute(scale: f32) -> Self {
         let s = |value: i32| ((value as f32) * scale).round() as i32;
         let pad = s(PAD);
-        let square_w = s(SQUARE_WIDTH);
-        let square_h = s(SQUARE_HEIGHT);
-        let strip_h = s(STRIP_HEIGHT);
-        let gap = s(GAP);
-        let row_gap = s(ROW_GAP);
-        let preview_w = s(PREVIEW_WIDTH);
-        let preview_h = s(PREVIEW_HEIGHT);
-        let button_w = s(BUTTON_WIDTH);
-        let button_h = s(BUTTON_HEIGHT);
-        let width = square_w + pad * 2;
+        let swatch = s(SWATCH);
+        let swatch_gap = s(SWATCH_GAP);
+        let label = s(LABEL_HEIGHT);
+        let grid_width = COLS as i32 * swatch + (COLS as i32 - 1) * swatch_gap;
+        let width = grid_width + pad * 2;
 
-        let saturation = Rect::new(pad, pad, square_w, square_h);
+        let recent_label = Rect::new(pad, pad, grid_width, label);
+        let recent_grid = Rect::new(pad, recent_label.y + label + s(4), grid_width, swatch);
+        let windows_label = Rect::new(
+            pad,
+            recent_grid.y + swatch + s(SECTION_GAP),
+            grid_width,
+            label,
+        );
+        let grid_height = ROWS as i32 * swatch + (ROWS as i32 - 1) * swatch_gap;
+        let windows_grid = Rect::new(pad, windows_label.y + label + s(4), grid_width, grid_height);
+
+        let button_y = windows_grid.y + grid_height + s(16);
+        let toggle = Rect::new(pad, button_y, s(TOGGLE_WIDTH), s(BUTTON_HEIGHT));
+        let button_w = s(BUTTON_WIDTH);
+        let ok = Rect::new(width - pad - button_w, button_y, button_w, s(BUTTON_HEIGHT));
+        let cancel = Rect::new(ok.x - s(6) - button_w, button_y, button_w, s(BUTTON_HEIGHT));
+        let size = (width, button_y + s(BUTTON_HEIGHT) + pad);
+
+        let saturation = Rect::new(pad, pad, grid_width, s(SQUARE_HEIGHT));
         let hue = Rect::new(
             pad,
-            saturation.y + saturation.height + gap,
-            square_w,
-            strip_h,
+            saturation.y + saturation.height + s(FIELD_GAP),
+            grid_width,
+            s(STRIP_HEIGHT),
         );
-        let alpha = Rect::new(pad, hue.y + hue.height + gap, square_w, strip_h);
-        let preview = Rect::new(pad, alpha.y + alpha.height + row_gap, preview_w, preview_h);
-        let hex_x = preview.x + preview.width + row_gap;
-        let hex = Rect::new(hex_x, preview.y, (width - pad - hex_x).max(0), preview_h);
-        let buttons_y = preview.y + preview.height + row_gap;
-        let ok = Rect::new(width - pad - button_w, buttons_y, button_w, button_h);
-        let cancel = Rect::new(ok.x - row_gap - button_w, buttons_y, button_w, button_h);
+        let alpha = Rect::new(
+            pad,
+            hue.y + hue.height + s(FIELD_GAP),
+            grid_width,
+            s(STRIP_HEIGHT),
+        );
+        let preview = Rect::new(
+            pad,
+            alpha.y + alpha.height + s(ROW_GAP),
+            s(PREVIEW_WIDTH),
+            s(PREVIEW_HEIGHT),
+        );
+        let hex_x = preview.x + preview.width + s(ROW_GAP);
+        let hex = Rect::new(
+            hex_x,
+            preview.y,
+            (grid_width - (hex_x - pad)).max(0),
+            preview.height,
+        );
+
         Self {
-            size: (width, buttons_y + button_h + pad),
+            size,
+            recent_label,
+            recent_grid,
+            windows_label,
+            windows_grid,
             saturation,
             hue,
             alpha,
             preview,
             hex,
+            toggle,
             ok,
             cancel,
+            swatch,
+            swatch_gap,
         }
     }
 
-    fn region_at(&self, point: Point) -> Option<Region> {
-        if self.saturation.contains(point) {
-            Some(Region::Saturation)
-        } else if self.hue.contains(point) {
-            Some(Region::Hue)
-        } else if self.alpha.contains(point) {
-            Some(Region::Alpha)
-        } else if self.ok.contains(point) {
-            Some(Region::Ok)
-        } else if self.cancel.contains(point) {
-            Some(Region::Cancel)
-        } else {
-            None
+    /// The rectangle of swatch `index` in `grid`.
+    fn swatch_rect(&self, grid: Rect, index: usize) -> Rect {
+        let col = (index % COLS) as i32;
+        let row = (index / COLS) as i32;
+        Rect::new(
+            grid.x + col * (self.swatch + self.swatch_gap),
+            grid.y + row * (self.swatch + self.swatch_gap),
+            self.swatch,
+            self.swatch,
+        )
+    }
+
+    fn region_at(&self, panel: Panel, recent_len: usize, point: Point) -> Option<Region> {
+        if self.ok.contains(point) {
+            return Some(Region::Ok);
         }
+        if self.cancel.contains(point) {
+            return Some(Region::Cancel);
+        }
+        if self.toggle.contains(point) {
+            return Some(Region::Toggle);
+        }
+        match panel {
+            Panel::Palette => {
+                for index in 0..recent_len.min(COLS) {
+                    if self.swatch_rect(self.recent_grid, index).contains(point) {
+                        return Some(Region::Swatch(index));
+                    }
+                }
+                for index in 0..WINDOWS_COLORS.len() {
+                    if self.swatch_rect(self.windows_grid, index).contains(point) {
+                        return Some(Region::Swatch(recent_len + index));
+                    }
+                }
+                None
+            }
+            Panel::Custom => {
+                if self.saturation.contains(point) {
+                    Some(Region::Saturation)
+                } else if self.hue.contains(point) {
+                    Some(Region::Hue)
+                } else if self.alpha.contains(point) {
+                    Some(Region::Alpha)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// The color of the swatch with `index` in the recent-then-standard list.
+fn swatch_color(recent: &[Color], index: usize) -> Option<Color> {
+    if index < recent.len() {
+        recent.get(index).copied()
+    } else {
+        WINDOWS_COLORS.get(index - recent.len()).copied()
     }
 }
 
@@ -171,8 +350,8 @@ fn fraction_x(rect: Rect, point: Point) -> f32 {
     ((point.x - rect.x) as f32 / width).clamp(0.0, 1.0)
 }
 
-/// Blends `over` onto `base` by `alpha` (`0.0..=1.0`), used to draw a
-/// translucent color over the checkerboard.
+/// Blends `over` onto `base` by `alpha` (`0.0..=1.0`), to draw a translucent
+/// color over the checkerboard.
 fn blend(base: Color, over: Color, alpha: f32) -> Color {
     let a = alpha.clamp(0.0, 1.0);
     let mix = |b: u8, o: u8| ((b as f32 * (1.0 - a)) + (o as f32 * a)).round() as u8;
@@ -198,36 +377,59 @@ fn checker_color(x: i32, y: i32, colors: UiColors) -> Color {
 }
 
 struct PickerState {
+    panel: Panel,
+    initial: Color,
+    dark: bool,
+    layout: PickerLayout,
+    /// The palette's selected color, when one is picked or the initial matches.
+    selected: Option<Color>,
+    /// The recently used colors, read once at open.
+    recent: Vec<Color>,
+    // The custom panel's HSV state, kept so hue survives saturation and value
+    // edits.
     hue: f32,
     saturation: f32,
     value: f32,
     alpha: u8,
-    dark: bool,
-    layout: PickerLayout,
     result: Option<Color>,
-    /// The value control the pointer is dragging, if any.
     drag: Option<Region>,
-    /// The button the pointer is over, for the hover highlight.
     hover: Option<Region>,
 }
 
 impl PickerState {
     fn new(initial: Color, dark: bool, layout: PickerLayout) -> Self {
         let hsv = initial.to_hsv();
+        let recent = RECENT.with(|recent| recent.borrow().clone());
+        let selected = WINDOWS_COLORS
+            .iter()
+            .copied()
+            .find(|color| *color == initial);
         Self {
+            panel: Panel::Palette,
+            initial,
+            dark,
+            layout,
+            selected,
+            recent,
             hue: hsv.h,
             saturation: hsv.s,
             value: hsv.v,
             alpha: initial.a,
-            dark,
-            layout,
             result: None,
             drag: None,
             hover: None,
         }
     }
 
+    /// The color OK would return right now.
     fn color(&self) -> Color {
+        match self.panel {
+            Panel::Palette => self.selected.unwrap_or(self.initial),
+            Panel::Custom => self.custom_color(),
+        }
+    }
+
+    fn custom_color(&self) -> Color {
         Hsv {
             h: self.hue,
             s: self.saturation,
@@ -247,8 +449,34 @@ impl PickerState {
             Region::Alpha => {
                 self.alpha = (fraction_x(self.layout.alpha, point) * 255.0).round() as u8;
             }
-            Region::Ok | Region::Cancel => {}
+            _ => {}
         }
+    }
+
+    /// Switches panels, carrying the current color across.
+    fn toggle_panel(&mut self) {
+        match self.panel {
+            Panel::Palette => {
+                let hsv = self.color().to_hsv();
+                self.hue = hsv.h;
+                self.saturation = hsv.s;
+                self.value = hsv.v;
+                self.alpha = self.color().a;
+                self.panel = Panel::Custom;
+            }
+            Panel::Custom => {
+                let current = self.color();
+                self.selected = WINDOWS_COLORS
+                    .iter()
+                    .copied()
+                    .find(|color| *color == current);
+                self.panel = Panel::Palette;
+            }
+        }
+    }
+
+    fn select_swatch(&mut self, index: usize) {
+        self.selected = swatch_color(&self.recent, index);
     }
 }
 
@@ -292,7 +520,7 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
             }
         };
 
-        crate::win32::dwm::apply_style(hwnd, picker_style(dark));
+        style_window(hwnd, dark);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let _ = EnableWindow(owner, false);
@@ -334,20 +562,34 @@ fn dpi_scale(owner: HWND) -> f32 {
     if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
 }
 
-/// A solid, rounded popup with a DWM border and the app's dark/light mode.
-fn picker_style(dark: bool) -> SpaceStyle {
-    SpaceStyle {
-        backdrop: Backdrop::Solid,
-        corner_radius: 8,
-        dark,
-        border: true,
-        chrome: true,
+/// Rounds the popup and gives it a captionless dark/light frame. The frame is
+/// deliberately not extended over the client: that would make DWM read the
+/// client's alpha, which GDI leaves at zero, and the popup would be invisible.
+fn style_window(hwnd: HWND, dark: bool) {
+    dark_mode::set_caption_dark(hwnd, dark);
+    let corner = DWMWCP_ROUND;
+    let border = DWMWA_COLOR_DEFAULT;
+    // SAFETY: `hwnd` is our live window; both values outlive the calls.
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&corner) as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &border as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&border) as u32,
+        );
     }
 }
 
 fn ensure_class(instance: windows::Win32::Foundation::HINSTANCE) -> bool {
     REGISTER_CLASS.call_once(|| {
         let class = WNDCLASSW {
+            style: CS_DBLCLKS,
             lpfnWndProc: Some(wndproc),
             hInstance: instance,
             lpszClassName: CLASS_NAME,
@@ -375,6 +617,13 @@ fn mouse_point(lparam: LPARAM) -> Point {
         (lparam.0 & 0xFFFF) as u16 as i16 as i32,
         ((lparam.0 >> 16) & 0xFFFF) as u16 as i16 as i32,
     )
+}
+
+/// Records the current color as the result and remembers it as recent.
+fn confirm(state: &mut PickerState) {
+    let color = state.color();
+    state.result = Some(color);
+    remember(color);
 }
 
 unsafe extern "system" fn wndproc(
@@ -407,14 +656,18 @@ unsafe extern "system" fn wndproc(
                 let point = mouse_point(lparam);
                 let redraw = with_state(window, |state| {
                     let mut redraw = false;
-                    if let Some(region) = state.drag {
+                    if let Some(region) = state.drag
+                        && region.is_value()
+                    {
                         state.set_from_point(region, point);
                         redraw = true;
                     }
                     let hover = state
                         .layout
-                        .region_at(point)
-                        .filter(|region| !region.is_value());
+                        .region_at(state.panel, state.recent.len(), point)
+                        .filter(|region| {
+                            matches!(region, Region::Ok | Region::Cancel | Region::Toggle)
+                        });
                     if hover != state.hover {
                         state.hover = hover;
                         redraw = true;
@@ -429,30 +682,68 @@ unsafe extern "system" fn wndproc(
             }
             WM_LBUTTONDOWN => {
                 let point = mouse_point(lparam);
-                with_state(window, |state| {
-                    if let Some(region) = state.layout.region_at(point)
-                        && region.is_value()
+                let redraw = with_state(window, |state| {
+                    match state
+                        .layout
+                        .region_at(state.panel, state.recent.len(), point)
                     {
-                        state.drag = Some(region);
-                        state.set_from_point(region, point);
+                        Some(Region::Swatch(index)) => {
+                            state.select_swatch(index);
+                            true
+                        }
+                        Some(region) if region.is_value() => {
+                            state.drag = Some(region);
+                            state.set_from_point(region, point);
+                            true
+                        }
+                        _ => false,
                     }
-                });
+                })
+                .unwrap_or(false);
                 SetCapture(window);
-                let _ = InvalidateRect(Some(window), None, false);
+                if redraw {
+                    let _ = InvalidateRect(Some(window), None, false);
+                }
+                LRESULT(0)
+            }
+            WM_LBUTTONDBLCLK => {
+                let point = mouse_point(lparam);
+                let finish = with_state(window, |state| {
+                    match state
+                        .layout
+                        .region_at(state.panel, state.recent.len(), point)
+                    {
+                        Some(Region::Swatch(index)) => {
+                            state.select_swatch(index);
+                            confirm(state);
+                            true
+                        }
+                        _ => false,
+                    }
+                })
+                .unwrap_or(false);
+                let _ = ReleaseCapture();
+                if finish {
+                    let _ = DestroyWindow(window);
+                }
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
                 let point = mouse_point(lparam);
                 let finish = with_state(window, |state| {
                     state.drag = None;
-                    match state.layout.region_at(point) {
+                    match state
+                        .layout
+                        .region_at(state.panel, state.recent.len(), point)
+                    {
                         Some(Region::Ok) => {
-                            state.result = Some(state.color());
+                            confirm(state);
                             true
                         }
-                        Some(Region::Cancel) => {
-                            state.result = None;
-                            true
+                        Some(Region::Cancel) => true,
+                        Some(Region::Toggle) => {
+                            state.toggle_panel();
+                            false
                         }
                         _ => false,
                     }
@@ -471,7 +762,7 @@ unsafe extern "system" fn wndproc(
                 if key == VK_ESCAPE.0 {
                     let _ = DestroyWindow(window);
                 } else if key == VK_RETURN.0 {
-                    with_state(window, |state| state.result = Some(state.color()));
+                    with_state(window, confirm);
                     let _ = DestroyWindow(window);
                 }
                 LRESULT(0)
@@ -502,16 +793,83 @@ unsafe fn paint(window: HWND) {
 
 unsafe fn paint_content(hdc: HDC, state: &PickerState) {
     let colors = UiColors::new(state.dark);
-    let current = state.color();
     let whole = Rect::new(0, 0, state.layout.size.0, state.layout.size.1);
     // SAFETY: `hdc` is a live paint DC; every GDI object created here is
     // selected out and deleted before this function returns.
     unsafe {
         fill_solid(hdc, whole, colors.body);
+        match state.panel {
+            Panel::Palette => paint_palette(hdc, state, colors),
+            Panel::Custom => paint_custom(hdc, state, colors),
+        }
+        let toggle = match state.panel {
+            Panel::Palette => "Custom colors\u{2026}",
+            Panel::Custom => "Colors",
+        };
+        draw_button(
+            hdc,
+            state.layout.toggle,
+            toggle,
+            colors,
+            false,
+            state.hover == Some(Region::Toggle),
+        );
+        draw_button(
+            hdc,
+            state.layout.cancel,
+            "Cancel",
+            colors,
+            false,
+            state.hover == Some(Region::Cancel),
+        );
+        draw_button(
+            hdc,
+            state.layout.ok,
+            "OK",
+            colors,
+            true,
+            state.hover == Some(Region::Ok),
+        );
+    }
+}
 
-        // Saturation falls to the right, value rises upward.
-        let square = state.layout.saturation;
-        let hue = state.hue;
+unsafe fn paint_palette(hdc: HDC, state: &PickerState, colors: UiColors) {
+    // SAFETY: caller holds a live paint DC.
+    unsafe {
+        draw_label(hdc, state.layout.recent_label, "Recent colors", colors);
+        for index in 0..state.recent.len().min(COLS) {
+            let rect = state.layout.swatch_rect(state.layout.recent_grid, index);
+            let selected = state.selected == Some(state.recent[index]);
+            draw_swatch(
+                hdc,
+                rect,
+                state.recent[index],
+                selected,
+                colors,
+                state.layout.swatch,
+            );
+        }
+        draw_label(hdc, state.layout.windows_label, "Windows colors", colors);
+        for (index, color) in WINDOWS_COLORS.iter().enumerate() {
+            let rect = state.layout.swatch_rect(state.layout.windows_grid, index);
+            draw_swatch(
+                hdc,
+                rect,
+                *color,
+                state.selected == Some(*color),
+                colors,
+                state.layout.swatch,
+            );
+        }
+    }
+}
+
+unsafe fn paint_custom(hdc: HDC, state: &PickerState, colors: UiColors) {
+    let current = state.custom_color();
+    let square = state.layout.saturation;
+    let hue = state.hue;
+    // SAFETY: caller holds a live paint DC.
+    unsafe {
         fill_image(hdc, square, |x, y| {
             let s = x as f32 / (square.width - 1).max(1) as f32;
             let v = 1.0 - y as f32 / (square.height - 1).max(1) as f32;
@@ -543,37 +901,29 @@ unsafe fn paint_content(hdc: HDC, state: &PickerState) {
             square.x + (state.saturation * (square.width - 1) as f32).round() as i32,
             square.y + ((1.0 - state.value) * (square.height - 1) as f32).round() as i32,
             marker,
+            true,
         );
         let strip = scaled_marker(state.layout, STRIP_MARKER);
         let hue_cx = hue_rect.x + (state.hue / 360.0 * (hue_rect.width - 1) as f32).round() as i32;
-        draw_marker(hdc, hue_cx, hue_rect.y + hue_rect.height / 2, strip);
+        draw_marker(hdc, hue_cx, hue_rect.y + hue_rect.height / 2, strip, false);
         let alpha_cx = alpha_rect.x
             + (state.alpha as f32 / 255.0 * (alpha_rect.width - 1) as f32).round() as i32;
-        draw_marker(hdc, alpha_cx, alpha_rect.y + alpha_rect.height / 2, strip);
+        draw_marker(
+            hdc,
+            alpha_cx,
+            alpha_rect.y + alpha_rect.height / 2,
+            strip,
+            false,
+        );
 
         draw_hex(hdc, state.layout.hex, current, colors);
-        draw_button(
-            hdc,
-            state.layout.ok,
-            "OK",
-            colors,
-            true,
-            state.hover == Some(Region::Ok),
-        );
-        draw_button(
-            hdc,
-            state.layout.cancel,
-            "Cancel",
-            colors,
-            false,
-            state.hover == Some(Region::Cancel),
-        );
     }
 }
 
 /// The marker radius scaled with the rest of the layout.
 fn scaled_marker(layout: PickerLayout, base: i32) -> i32 {
-    (base as f32 * layout.size.0 as f32 / (SQUARE_WIDTH + PAD * 2) as f32).round() as i32
+    let reference = COLS as i32 * SWATCH + (COLS as i32 - 1) * SWATCH_GAP + PAD * 2;
+    (base as f32 * layout.size.0 as f32 / reference as f32).round() as i32
 }
 
 fn rect_to_win(rect: Rect) -> RECT {
@@ -593,6 +943,213 @@ unsafe fn fill_solid(hdc: HDC, rect: Rect, color: Color) {
         let win = rect_to_win(rect);
         let _ = FillRect(hdc, &win, brush);
         let _ = DeleteObject(HGDIOBJ(brush.0));
+    }
+}
+
+unsafe fn frame(hdc: HDC, rect: Rect, color: Color) {
+    // SAFETY: a one-pixel outline drawn with a temporary brush, deleted before
+    // returning.
+    unsafe {
+        let brush = CreateSolidBrush(colorref(color));
+        let win = rect_to_win(rect);
+        let _ = FrameRect(hdc, &win, brush);
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+    }
+}
+
+/// Draws one palette swatch: its color, a defining outline, and, when selected,
+/// a thicker accent border and a check mark.
+unsafe fn draw_swatch(
+    hdc: HDC,
+    rect: Rect,
+    color: Color,
+    selected: bool,
+    colors: UiColors,
+    swatch: i32,
+) {
+    // SAFETY: caller holds a live paint DC.
+    unsafe {
+        fill_solid(hdc, rect, color);
+        if selected {
+            let thickness = 2;
+            fill_solid(
+                hdc,
+                Rect::new(rect.x, rect.y, rect.width, thickness),
+                colors.accent,
+            );
+            fill_solid(
+                hdc,
+                Rect::new(
+                    rect.x,
+                    rect.y + rect.height - thickness,
+                    rect.width,
+                    thickness,
+                ),
+                colors.accent,
+            );
+            fill_solid(
+                hdc,
+                Rect::new(rect.x, rect.y, thickness, rect.height),
+                colors.accent,
+            );
+            fill_solid(
+                hdc,
+                Rect::new(
+                    rect.x + rect.width - thickness,
+                    rect.y,
+                    thickness,
+                    rect.height,
+                ),
+                colors.accent,
+            );
+            draw_check(hdc, rect, color, swatch);
+        } else {
+            frame(hdc, rect, colors.divider);
+        }
+    }
+}
+
+/// Draws a check mark scaled to a `swatch`-sized box, in black or white to
+/// contrast with `color`.
+unsafe fn draw_check(hdc: HDC, rect: Rect, color: Color, swatch: i32) {
+    let unit = swatch as f32 / SWATCH as f32;
+    let at = |x: f32, y: f32| POINT {
+        x: rect.x + (x * unit).round() as i32,
+        y: rect.y + (y * unit).round() as i32,
+    };
+    let points = [at(6.0, 13.0), at(11.0, 18.0), at(20.0, 7.0)];
+    let ink = if color.luminance() < 0.5 {
+        Color::rgb(255, 255, 255)
+    } else {
+        Color::rgb(0, 0, 0)
+    };
+    // SAFETY: the pen is selected out and deleted before returning.
+    unsafe {
+        let pen = CreatePen(PS_SOLID, 2, colorref(ink));
+        let previous = SelectObject(hdc, HGDIOBJ(pen.0));
+        let _ = Polyline(hdc, &points);
+        SelectObject(hdc, previous);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+    }
+}
+
+unsafe fn draw_marker(hdc: HDC, cx: i32, cy: i32, radius: i32, filled: bool) {
+    // SAFETY: a hollow ellipse outline drawn with stock brushes and temporary
+    // pens, all restored or deleted before returning.
+    unsafe {
+        let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        let black = CreatePen(PS_SOLID, 2, colorref(Color::rgb(0, 0, 0)));
+        let white = CreatePen(PS_SOLID, 2, colorref(Color::rgb(255, 255, 255)));
+        let old_pen = SelectObject(hdc, HGDIOBJ(black.0));
+        let _ = windows::Win32::Graphics::Gdi::Ellipse(
+            hdc,
+            cx - radius - 1,
+            cy - radius - 1,
+            cx + radius + 1,
+            cy + radius + 1,
+        );
+        let _ = SelectObject(hdc, HGDIOBJ(white.0));
+        let _ = windows::Win32::Graphics::Gdi::Ellipse(
+            hdc,
+            cx - radius,
+            cy - radius,
+            cx + radius,
+            cy + radius,
+        );
+        if filled {
+            // A small dot at the center makes the point easier to read on a
+            // saturated square.
+            let dot = CreateSolidBrush(colorref(Color::rgb(255, 255, 255)));
+            let old = SelectObject(hdc, HGDIOBJ(dot.0));
+            let _ = windows::Win32::Graphics::Gdi::Ellipse(hdc, cx - 2, cy - 2, cx + 2, cy + 2);
+            SelectObject(hdc, old);
+            let _ = DeleteObject(HGDIOBJ(dot.0));
+        }
+        SelectObject(hdc, old_pen);
+        SelectObject(hdc, old_brush);
+        let _ = DeleteObject(HGDIOBJ(black.0));
+        let _ = DeleteObject(HGDIOBJ(white.0));
+    }
+}
+
+unsafe fn draw_label(hdc: HDC, rect: Rect, text: &str, colors: UiColors) {
+    // SAFETY: the text buffer and rectangle outlive the call.
+    unsafe {
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, colorref(colors.text));
+        let mut wide: Vec<u16> = text.encode_utf16().collect();
+        let mut text_rect = rect_to_win(rect);
+        let _ = DrawTextW(
+            hdc,
+            &mut wide,
+            &mut text_rect,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+    }
+}
+
+unsafe fn draw_hex(hdc: HDC, rect: Rect, color: Color, colors: UiColors) {
+    // SAFETY: the text buffer and rectangle outlive the call.
+    unsafe {
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, colorref(colors.text));
+        let text = format!(
+            "#{:02X}{:02X}{:02X}{:02X}",
+            color.r, color.g, color.b, color.a
+        );
+        let mut wide: Vec<u16> = text.encode_utf16().collect();
+        let mut text_rect = rect_to_win(rect);
+        text_rect.left += 2;
+        let _ = DrawTextW(hdc, &mut wide, &mut text_rect, DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
+unsafe fn draw_button(
+    hdc: HDC,
+    rect: Rect,
+    label: &str,
+    colors: UiColors,
+    accent: bool,
+    hovered: bool,
+) {
+    let (fill, text) = if accent {
+        (colors.accent, Color::rgb(255, 255, 255))
+    } else if hovered {
+        (colors.divider, colors.text)
+    } else {
+        (colors.command_bar, colors.text)
+    };
+    // SAFETY: the brush and pen are selected out and deleted before returning;
+    // the text buffer lives for the call.
+    unsafe {
+        let brush = CreateSolidBrush(colorref(fill));
+        let pen = CreatePen(PS_SOLID, 1, colorref(fill));
+        let old_brush = SelectObject(hdc, HGDIOBJ(brush.0));
+        let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+        let _ = RoundRect(
+            hdc,
+            rect.x,
+            rect.y,
+            rect.x + rect.width,
+            rect.y + rect.height,
+            BUTTON_ROUND * 2,
+            BUTTON_ROUND * 2,
+        );
+        SelectObject(hdc, old_pen);
+        SelectObject(hdc, old_brush);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, colorref(text));
+        let mut wide: Vec<u16> = label.encode_utf16().collect();
+        let mut text_rect = rect_to_win(rect);
+        let _ = DrawTextW(
+            hdc,
+            &mut wide,
+            &mut text_rect,
+            windows::Win32::Graphics::Gdi::DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
     }
 }
 
@@ -654,131 +1211,38 @@ unsafe fn fill_image(hdc: HDC, dest: Rect, color_at: impl Fn(i32, i32) -> Color)
     }
 }
 
-unsafe fn frame(hdc: HDC, rect: Rect, color: Color) {
-    // SAFETY: a one-pixel rectangle outline drawn with a temporary frame
-    // brush; it is deleted before returning.
-    unsafe {
-        let brush = CreateSolidBrush(colorref(color));
-        let win = rect_to_win(rect);
-        let _ = windows::Win32::Graphics::Gdi::FrameRect(hdc, &win, brush);
-        let _ = DeleteObject(HGDIOBJ(brush.0));
-    }
-}
-
-unsafe fn draw_marker(hdc: HDC, cx: i32, cy: i32, radius: i32) {
-    // SAFETY: a hollow ellipse outline drawn with stock brushes and temporary
-    // pens, all restored or deleted before returning.
-    unsafe {
-        let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        let black = CreatePen(PS_SOLID, 2, colorref(Color::rgb(0, 0, 0)));
-        let white = CreatePen(PS_SOLID, 2, colorref(Color::rgb(255, 255, 255)));
-        let old_pen = SelectObject(hdc, HGDIOBJ(black.0));
-        let _ = Ellipse(
-            hdc,
-            cx - radius - 1,
-            cy - radius - 1,
-            cx + radius + 1,
-            cy + radius + 1,
-        );
-        let _ = SelectObject(hdc, HGDIOBJ(white.0));
-        let _ = Ellipse(hdc, cx - radius, cy - radius, cx + radius, cy + radius);
-        SelectObject(hdc, old_pen);
-        SelectObject(hdc, old_brush);
-        let _ = DeleteObject(HGDIOBJ(black.0));
-        let _ = DeleteObject(HGDIOBJ(white.0));
-    }
-}
-
-unsafe fn draw_button(
-    hdc: HDC,
-    rect: Rect,
-    label: &str,
-    colors: UiColors,
-    accent: bool,
-    hovered: bool,
-) {
-    let (fill, text) = if accent {
-        (colors.accent, Color::rgb(255, 255, 255))
-    } else if hovered {
-        (colors.divider, colors.text)
-    } else {
-        (colors.command_bar, colors.text)
-    };
-    // SAFETY: the brush and pen are selected out and deleted before returning;
-    // the text buffer lives for the call.
-    unsafe {
-        let brush = CreateSolidBrush(colorref(fill));
-        let pen = CreatePen(PS_SOLID, 1, colorref(fill));
-        let old_brush = SelectObject(hdc, HGDIOBJ(brush.0));
-        let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
-        let _ = RoundRect(
-            hdc,
-            rect.x,
-            rect.y,
-            rect.x + rect.width,
-            rect.y + rect.height,
-            BUTTON_ROUND * 2,
-            BUTTON_ROUND * 2,
-        );
-        SelectObject(hdc, old_pen);
-        SelectObject(hdc, old_brush);
-        let _ = DeleteObject(HGDIOBJ(pen.0));
-        let _ = DeleteObject(HGDIOBJ(brush.0));
-
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, colorref(text));
-        let mut wide: Vec<u16> = label.encode_utf16().collect();
-        let mut text_rect = rect_to_win(rect);
-        let _ = DrawTextW(
-            hdc,
-            &mut wide,
-            &mut text_rect,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-        );
-    }
-}
-
-unsafe fn draw_hex(hdc: HDC, rect: Rect, color: Color, colors: UiColors) {
-    // SAFETY: the text buffer and rectangle outlive the call.
-    unsafe {
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, colorref(colors.text));
-        let text = format!(
-            "#{:02X}{:02X}{:02X}{:02X}",
-            color.r, color.g, color.b, color.a
-        );
-        let mut wide: Vec<u16> = text.encode_utf16().collect();
-        let mut text_rect = rect_to_win(rect);
-        text_rect.left += 2;
-        let _ = DrawTextW(hdc, &mut wide, &mut text_rect, DT_VCENTER | DT_SINGLELINE);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn palette_has_one_swatch_per_cell() {
+        assert_eq!(WINDOWS_COLORS.len(), COLS * ROWS);
+    }
+
+    #[test]
     fn layout_places_every_part_inside_the_window() {
         let layout = PickerLayout::compute(1.0);
-        assert_eq!(layout.size, (280, 304));
         for rect in [
+            layout.recent_label,
+            layout.recent_grid,
+            layout.windows_label,
+            layout.windows_grid,
             layout.saturation,
             layout.hue,
             layout.alpha,
             layout.preview,
             layout.hex,
+            layout.toggle,
             layout.ok,
             layout.cancel,
         ] {
-            assert!(rect.x >= 0 && rect.y >= 0);
-            assert!(rect.x + rect.width <= layout.size.0);
-            assert!(rect.y + rect.height <= layout.size.1);
+            assert!(rect.x >= 0 && rect.y >= 0, "{rect:?}");
+            assert!(rect.x + rect.width <= layout.size.0, "{rect:?}");
+            assert!(rect.y + rect.height <= layout.size.1, "{rect:?}");
         }
-        assert!(layout.saturation.y < layout.hue.y);
-        assert!(layout.hue.y < layout.alpha.y);
-        assert!(layout.alpha.y < layout.preview.y);
-        assert!(layout.preview.y < layout.ok.y);
+        assert!(layout.recent_grid.y < layout.windows_grid.y);
+        assert!(layout.windows_grid.y < layout.ok.y);
     }
 
     #[test]
@@ -786,25 +1250,85 @@ mod tests {
         let one = PickerLayout::compute(1.0);
         let two = PickerLayout::compute(2.0);
         assert_eq!(two.size, (one.size.0 * 2, one.size.1 * 2));
-        assert_eq!(two.ok.width, one.ok.width * 2);
+        assert_eq!(two.swatch, one.swatch * 2);
     }
 
     #[test]
-    fn region_at_maps_points_to_parts() {
+    fn swatch_rects_tile_the_grid() {
+        let layout = PickerLayout::compute(1.0);
+        let first = layout.swatch_rect(layout.windows_grid, 0);
+        let next = layout.swatch_rect(layout.windows_grid, 1);
+        assert_eq!(next.x, first.x + layout.swatch + layout.swatch_gap);
+        assert_eq!(next.y, first.y);
+        let second_row = layout.swatch_rect(layout.windows_grid, COLS);
+        assert_eq!(second_row.x, first.x);
+        assert_eq!(second_row.y, first.y + layout.swatch + layout.swatch_gap);
+    }
+
+    #[test]
+    fn region_at_maps_the_palette_and_buttons() {
+        let layout = PickerLayout::compute(1.0);
+        let center = |rect: Rect| Point::new(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        let recent = 2;
+        assert_eq!(
+            layout.region_at(
+                Panel::Palette,
+                recent,
+                center(layout.swatch_rect(layout.recent_grid, 0))
+            ),
+            Some(Region::Swatch(0))
+        );
+        assert_eq!(
+            layout.region_at(
+                Panel::Palette,
+                recent,
+                center(layout.swatch_rect(layout.windows_grid, 3))
+            ),
+            Some(Region::Swatch(recent + 3))
+        );
+        assert_eq!(
+            layout.region_at(Panel::Palette, recent, center(layout.ok)),
+            Some(Region::Ok)
+        );
+        assert_eq!(
+            layout.region_at(Panel::Palette, recent, center(layout.cancel)),
+            Some(Region::Cancel)
+        );
+        assert_eq!(
+            layout.region_at(Panel::Palette, recent, center(layout.toggle)),
+            Some(Region::Toggle)
+        );
+        assert_eq!(
+            layout.region_at(Panel::Palette, recent, Point::new(0, 0)),
+            None
+        );
+    }
+
+    #[test]
+    fn region_at_maps_the_custom_controls() {
         let layout = PickerLayout::compute(1.0);
         let center = |rect: Rect| Point::new(rect.x + rect.width / 2, rect.y + rect.height / 2);
         assert_eq!(
-            layout.region_at(center(layout.saturation)),
+            layout.region_at(Panel::Custom, 0, center(layout.saturation)),
             Some(Region::Saturation)
         );
-        assert_eq!(layout.region_at(center(layout.hue)), Some(Region::Hue));
-        assert_eq!(layout.region_at(center(layout.alpha)), Some(Region::Alpha));
-        assert_eq!(layout.region_at(center(layout.ok)), Some(Region::Ok));
         assert_eq!(
-            layout.region_at(center(layout.cancel)),
-            Some(Region::Cancel)
+            layout.region_at(Panel::Custom, 0, center(layout.hue)),
+            Some(Region::Hue)
         );
-        assert_eq!(layout.region_at(Point::new(0, 0)), None);
+        assert_eq!(
+            layout.region_at(Panel::Custom, 0, center(layout.alpha)),
+            Some(Region::Alpha)
+        );
+    }
+
+    #[test]
+    fn swatch_color_reads_recent_then_standard() {
+        let recent = vec![Color::rgb(1, 2, 3), Color::rgb(4, 5, 6)];
+        assert_eq!(swatch_color(&recent, 0), Some(Color::rgb(1, 2, 3)));
+        assert_eq!(swatch_color(&recent, 1), Some(Color::rgb(4, 5, 6)));
+        assert_eq!(swatch_color(&recent, 2), Some(WINDOWS_COLORS[0]));
+        assert_eq!(swatch_color(&recent, 999), None);
     }
 
     #[test]
@@ -812,7 +1336,6 @@ mod tests {
         let rect = Rect::new(10, 20, 201, 101);
         assert_eq!(saturation_value(rect, Point::new(10, 20)), (0.0, 1.0));
         assert_eq!(saturation_value(rect, Point::new(210, 120)), (1.0, 0.0));
-        // Out-of-bounds points clamp.
         assert_eq!(saturation_value(rect, Point::new(-50, -50)), (0.0, 1.0));
         assert_eq!(saturation_value(rect, Point::new(9999, 9999)), (1.0, 0.0));
     }
@@ -841,8 +1364,33 @@ mod tests {
             Color::rgba(0xAB, 0xCD, 0xEF, 128),
             Color::rgb(255, 0, 0),
         ] {
-            let state = PickerState::new(color, true, PickerLayout::compute(1.0));
+            let mut state = PickerState::new(color, true, PickerLayout::compute(1.0));
+            state.panel = Panel::Custom;
             assert_eq!(state.color(), color);
         }
+    }
+
+    #[test]
+    fn selecting_a_swatch_changes_the_result() {
+        let mut state = PickerState::new(Color::rgb(0, 0, 0), true, PickerLayout::compute(1.0));
+        assert_eq!(state.color(), Color::rgb(0, 0, 0));
+        state.select_swatch(0);
+        assert_eq!(state.color(), WINDOWS_COLORS[0]);
+    }
+
+    #[test]
+    fn toggling_panels_carries_the_color_across() {
+        let mut state = PickerState::new(
+            Color::rgb(0x10, 0x7C, 0x10),
+            true,
+            PickerLayout::compute(1.0),
+        );
+        let custom = state.color();
+        state.toggle_panel();
+        assert_eq!(state.panel, Panel::Custom);
+        assert_eq!(state.custom_color(), custom);
+        state.toggle_panel();
+        assert_eq!(state.panel, Panel::Palette);
+        assert_eq!(state.selected, Some(Color::rgb(0x10, 0x7C, 0x10)));
     }
 }
