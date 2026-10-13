@@ -59,6 +59,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A forced tag update re-runs this workflow. Replace any release that
+          # already exists for the tag so the publish is idempotent; the assets
+          # are rebuilt by the steps above.
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release delete $env:GITHUB_REF_NAME --yes 2>$null
           $extra = @()
           if ($env:GITHUB_REF_NAME -match '-') { $extra += '--prerelease' }
           gh release create $env:GITHUB_REF_NAME "$env:ASSET.zip" "$env:ASSET.zip.sha256" "$env:SETUP" `
