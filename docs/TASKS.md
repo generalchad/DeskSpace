@@ -84,7 +84,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
-| Drawing | `deskspace-platform/src/render/{scene,d2d}.rs` |
+| Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/shell.rs` |
@@ -169,7 +169,7 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
 2. `deskspace-app/src/scene.rs`: fill it in `space_scene` (and
    `desktop_layer_scene` if the layer needs it). Add a scene test (copy
    `the_settings_highlight_reaches_the_scene`).
-3. `render/d2d.rs`: draw it in `Painter`'s paint path. Do not allocate there;
+3. `render/d2d/`: draw it in `Painter`'s paint path. Do not allocate there;
    pre-compute in `PreparedScene` if needed.
 
 ### Recipe: behavior on both spaces and the desktop layer
@@ -1364,7 +1364,7 @@ day; do not re-open without asking):
 
 - [ ] **H4. Flash the selected space.** After H5. (awaiting check)
   - `render/scene.rs`: add `SpaceScene.highlight: bool` (default false).
-    When it is set, `d2d.rs` draws a 2 px outline just inside the frame,
+    When it is set, `d2d/` draws a 2 px outline just inside the frame,
     following the corner radius.
   - Color: the space's `palette_for(id).selected_fill` at full alpha, so it
     follows the Windows accent when the space uses it.
@@ -1644,7 +1644,7 @@ Rules for every K task:
   - `runtime.rs` calls `settings_window::{create, update, set_dark,
     bring_to_front, pick_color}`; keep those paths working.
 
-- [ ] **K2. Split `render/d2d.rs` (~1,475 lines).**
+- [x] **K2. Split `render/d2d.rs` (~1,475 lines).**
   - `d2d/mod.rs` keeps: the drawing constants, `PreparedScene`, `Painter`
     and its impl, `PaintFrame`, `release_graphics`, `render_items`.
   - `graphics.rs`: `Graphics` and its impl, `graphics`,
@@ -1778,7 +1778,7 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   spaces' check boxes use. Consider `system_accent_color()` for consistency.
 - `too_many_arguments` allows that are still needed (B9 removed only the stale
   ones): `scene.rs` `desktop_layer_scene` (8), `desktop_layer_drag_scene` (9),
-  `drag_scene` (8); `render/d2d.rs` `draw_item` (8), `draw_check_box` (8),
+  `drag_scene` (8); `render/d2d/` `draw_item` (8), `draw_check_box` (8),
   `draw_edit_buffer` (9); `win32/settings_window/build.rs` `Builder::control` (8).
   Group the scene builders into a `ViewState`-like struct, and the `d2d`
   draw helpers, so the allows can go. Suggested task: a `ViewState`-style

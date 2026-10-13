@@ -1,0 +1,177 @@
+//! Shared Direct2D, DirectWrite, and WIC factories and the text formats
+//! built from them, cached per UI thread.
+
+use super::*;
+
+/// Device-independent resources shared by every painter on the UI thread.
+pub(super) struct Graphics {
+    pub(super) d2d: ID2D1Factory,
+    pub(super) dwrite: IDWriteFactory,
+    pub(super) wic: IWICImagingFactory,
+    pub(super) title_format: IDWriteTextFormat,
+    /// Like `title_format` but without ellipsis trimming, so the caret and
+    /// selection positions match the text while renaming.
+    pub(super) edit_format: IDWriteTextFormat,
+    pub(super) label_format: IDWriteTextFormat,
+    /// Label formats keyed by size percent, so scaling does not create a
+    /// format on every paint.
+    pub(super) label_formats: HashMap<u8, IDWriteTextFormat>,
+    pub(super) glyph_format: Option<IDWriteTextFormat>,
+    /// A dotted stroke for the keyboard focus rectangle.
+    pub(super) focus_stroke: ID2D1StrokeStyle,
+}
+
+thread_local! {
+    pub(super) static GRAPHICS: RefCell<Option<Rc<Graphics>>> = const { RefCell::new(None) };
+}
+
+pub(super) fn graphics() -> Result<Rc<Graphics>, PlatformError> {
+    if let Some(existing) = GRAPHICS.with(|cell| cell.borrow().clone()) {
+        return Ok(existing);
+    }
+    let created = Rc::new(Graphics::new()?);
+    GRAPHICS.with(|cell| *cell.borrow_mut() = Some(created.clone()));
+    Ok(created)
+}
+
+impl Graphics {
+    pub(super) fn new() -> Result<Self, PlatformError> {
+        // SAFETY: plain factory creation; COM is initialised on this thread by
+        // `runtime::run` before any window paints.
+        unsafe {
+            let d2d: ID2D1Factory = D2D1CreateFactory(
+                D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                Some(&D2D1_FACTORY_OPTIONS::default()),
+            )?;
+            let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+            let wic: IWICImagingFactory =
+                CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+
+            let mut fonts = None;
+            dwrite.GetSystemFontCollection(&mut fonts, false)?;
+            let fonts = fonts.ok_or(PlatformError::InvalidFormat("system font collection"))?;
+            let text_family =
+                first_installed(&fonts, &[w!("Segoe UI Variable Text"), w!("Segoe UI")])
+                    .unwrap_or(w!("Segoe UI"));
+            let glyph_family =
+                first_installed(&fonts, &[w!("Segoe Fluent Icons"), w!("Segoe MDL2 Assets")]);
+
+            let title_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?;
+            title_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            title_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            title_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            let title_sign = dwrite.CreateEllipsisTrimmingSign(&title_format)?;
+            title_format.SetTrimming(&character_trimming(), &title_sign)?;
+
+            let edit_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.0)?;
+            edit_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            edit_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            edit_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+
+            let label_format = make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+            label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+            label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+            let label_sign = dwrite.CreateEllipsisTrimmingSign(&label_format)?;
+            label_format.SetTrimming(&character_trimming(), &label_sign)?;
+
+            // One label format per size step; the painter rounds a configured
+            // percent to the nearest step so it never formats during a paint.
+            let mut label_formats = HashMap::new();
+            for scale in (LABEL_SIZE_RANGE.0..=LABEL_SIZE_RANGE.1).step_by(10) {
+                let format = make_format(
+                    &dwrite,
+                    text_family,
+                    DWRITE_FONT_WEIGHT_NORMAL,
+                    12.0 * scale as f32 / 100.0,
+                )?;
+                format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+                format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+                format.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+                let sign = dwrite.CreateEllipsisTrimmingSign(&format)?;
+                format.SetTrimming(&character_trimming(), &sign)?;
+                label_formats.insert(scale, format);
+            }
+
+            let glyph_format = match glyph_family {
+                Some(family) => {
+                    let format = make_format(&dwrite, family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+                    format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+                    format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+                    Some(format)
+                }
+                None => None,
+            };
+
+            let focus_stroke = d2d.CreateStrokeStyle(
+                &D2D1_STROKE_STYLE_PROPERTIES {
+                    dashStyle: D2D1_DASH_STYLE_DOT,
+                    ..Default::default()
+                },
+                None,
+            )?;
+
+            Ok(Self {
+                d2d,
+                dwrite,
+                wic,
+                title_format,
+                edit_format,
+                label_format,
+                label_formats,
+                glyph_format,
+                focus_stroke,
+            })
+        }
+    }
+
+    /// The label format for a size percent, rounded to the nearest cached
+    /// step, falling back to the default size.
+    pub(super) fn label_format_for(&self, scale: u8) -> IDWriteTextFormat {
+        let rounded = (scale.clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) + 5) / 10 * 10;
+        self.label_formats
+            .get(&rounded)
+            .unwrap_or(&self.label_format)
+            .clone()
+    }
+}
+
+fn character_trimming() -> DWRITE_TRIMMING {
+    DWRITE_TRIMMING {
+        granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+        delimiter: 0,
+        delimiterCount: 0,
+    }
+}
+
+unsafe fn make_format(
+    dwrite: &IDWriteFactory,
+    family: PCWSTR,
+    weight: DWRITE_FONT_WEIGHT,
+    size: f32,
+) -> Result<IDWriteTextFormat, PlatformError> {
+    // SAFETY: `family` is a static wide string; the locale is a literal.
+    unsafe {
+        Ok(dwrite.CreateTextFormat(
+            family,
+            None,
+            weight,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            size,
+            w!(""),
+        )?)
+    }
+}
+
+unsafe fn first_installed(fonts: &IDWriteFontCollection, families: &[PCWSTR]) -> Option<PCWSTR> {
+    families.iter().copied().find(|family| {
+        let mut index = 0;
+        let mut exists = BOOL::default();
+        // SAFETY: out-pointers are valid locals.
+        unsafe { fonts.FindFamilyName(*family, &mut index, &mut exists) }.is_ok()
+            && exists.as_bool()
+    })
+}

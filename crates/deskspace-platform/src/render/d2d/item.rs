@@ -1,0 +1,209 @@
+//! Draws one item cell (highlight, icon, label, and check box) and the
+//! rubber-band marquee.
+
+use super::edit::{EDIT_MAX_HEIGHT, draw_edit_buffer};
+use super::geometry::{color_f, draw_text, inset, rect_f, to_rect_f};
+use super::*;
+
+/// Draws the rubber-band selection rectangle over empty space.
+pub(super) fn draw_marquee(
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    marquee: Rect,
+    fill: Color,
+) {
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        let rect = to_rect_f(marquee);
+        brush.SetColor(&color_f(fill.fade(70)));
+        target.FillRectangle(&rect, brush);
+        brush.SetColor(&color_f(fill.with_alpha(200)));
+        target.DrawRectangle(&rect, brush, 1.0, None);
+    }
+}
+
+/// Draws one item cell: highlight, icon, and label. Shared by the space
+/// painter and `render_items`, so a drag image is exactly what the space shows.
+#[allow(clippy::too_many_arguments)]
+pub(super) unsafe fn draw_item(
+    graphics: &Graphics,
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    scene: &SpaceScene,
+    item: &ItemVisual,
+    label: &[u16],
+    icon: Option<&ID2D1Bitmap>,
+    edit: Option<&[u16]>,
+) {
+    let cell = to_rect_f(item.rect);
+    let metrics = scene.metrics;
+    let icon_size = metrics.icon_size as f32;
+    let icon_top = metrics.icon_top as f32;
+    let highlight = match item.state {
+        ItemState::Normal | ItemState::Dragged => None,
+        ItemState::Hovered => Some(scene.hover_fill),
+        ItemState::Selected => Some(scene.selected_fill),
+    };
+    let alpha = if item.state == ItemState::Dragged {
+        DRAGGED_ALPHA
+    } else if item.cut {
+        CUT_ALPHA
+    } else {
+        255
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if let Some(color) = highlight {
+            brush.SetColor(&color_f(color));
+            target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: inset(cell, 2.0),
+                    radiusX: 4.0,
+                    radiusY: 4.0,
+                },
+                brush,
+            );
+        }
+
+        let center_x = (cell.left + cell.right) / 2.0;
+        let icon_left = (center_x - icon_size / 2.0).round();
+        if let Some(bitmap) = icon {
+            let top = cell.top + icon_top;
+            target.DrawBitmap(
+                bitmap,
+                Some(&rect_f(
+                    icon_left,
+                    top,
+                    icon_left + icon_size,
+                    top + icon_size,
+                )),
+                alpha as f32 / 255.0,
+                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                None,
+            );
+        }
+        // Explorer shows a check box while pointing at the item, and keeps it
+        // while the item stays selected (independent item check boxes are
+        // shown always); a dragged slot is faded and shows no box.
+        let show_box = item.state != ItemState::Dragged
+            && (scene.check_boxes_persistent || item.checked || item.hovered);
+        if scene.show_check_boxes && show_box {
+            draw_check_box(
+                target,
+                brush,
+                icon_left,
+                cell.top + icon_top,
+                metrics.check_box_size as f32,
+                metrics.check_box_margin as f32,
+                item.checked,
+                scene.check_fill,
+            );
+        }
+        let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
+        let scale = scene
+            .label_size
+            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32
+            / 100.0;
+        let lines = scene.label_lines.clamp(1, 2) as f32;
+        let line_height = LABEL_LINE_HEIGHT * scale;
+        let label_bottom = (label_top + lines * line_height).min(cell.bottom);
+        if label_bottom > label_top {
+            let format = graphics.label_format_for(scene.label_size);
+            if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
+                // Explorer's rename box wraps the whole name and grows downward
+                // over the items below it, so lay it out in the label's width
+                // but a tall box; `draw_edit_buffer` hugs the measured lines.
+                draw_edit_buffer(
+                    graphics,
+                    target,
+                    brush,
+                    text_edit,
+                    buffer,
+                    &format,
+                    rect_f(
+                        cell.left + 4.0,
+                        label_top,
+                        cell.right - 4.0,
+                        label_top + EDIT_MAX_HEIGHT,
+                    ),
+                    scene.edit,
+                    scene.caret_visible,
+                );
+            } else {
+                let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &format,
+                    label_rect,
+                    item.label_color.unwrap_or(scene.item_text).fade(alpha),
+                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+                );
+            }
+        }
+
+        // A dotted rectangle marks the item with keyboard focus, as Explorer
+        // draws on a focused view item. A faded dragged slot keeps none.
+        if scene.focused_item == Some(item.id) && item.state != ItemState::Dragged {
+            brush.SetColor(&color_f(scene.item_text.with_alpha(220)));
+            target.DrawRectangle(&inset(cell, 2.0), brush, 1.0, Some(&graphics.focus_stroke));
+        }
+    }
+}
+
+/// Draws Explorer's item check box at the top-left of an icon. Checked, it is
+/// filled with the accent (`check_fill`) and shows a white tick, as Windows
+/// draws a checked box; unchecked, it is a light box with a dark border that
+/// stays visible on any backdrop.
+#[allow(clippy::too_many_arguments)]
+unsafe fn draw_check_box(
+    target: &ID2D1RenderTarget,
+    brush: &ID2D1SolidColorBrush,
+    icon_left: f32,
+    icon_top: f32,
+    size: f32,
+    margin: f32,
+    checked: bool,
+    check_fill: Color,
+) {
+    let left = icon_left + margin;
+    let top = icon_top + margin;
+    let rect = rect_f(left, top, left + size, top + size);
+    let radius = (size * 0.19).max(1.0);
+    let rounded = D2D1_ROUNDED_RECT {
+        rect,
+        radiusX: radius,
+        radiusY: radius,
+    };
+    // SAFETY: caller is inside BeginDraw/EndDraw.
+    unsafe {
+        if checked {
+            // Explorer fills a checked box with the accent and no border.
+            brush.SetColor(&color_f(check_fill.with_alpha(255)));
+            target.FillRoundedRectangle(&rounded, brush);
+            brush.SetColor(&color_f(Color::rgb(255, 255, 255)));
+            let s = size;
+            let stroke = (size * 0.12).max(1.0);
+            target.DrawLine(
+                Vector2::new(left + s * 0.22, top + s * 0.52),
+                Vector2::new(left + s * 0.43, top + s * 0.74),
+                brush,
+                stroke,
+                None,
+            );
+            target.DrawLine(
+                Vector2::new(left + s * 0.43, top + s * 0.74),
+                Vector2::new(left + s * 0.80, top + s * 0.26),
+                brush,
+                stroke,
+                None,
+            );
+        } else {
+            brush.SetColor(&color_f(Color::rgba(255, 255, 255, 210)));
+            target.FillRoundedRectangle(&rounded, brush);
+            brush.SetColor(&color_f(Color::rgba(0, 0, 0, 150)));
+            target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
+        }
+    }
+}

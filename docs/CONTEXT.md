@@ -123,10 +123,11 @@ context menus, and a settings window in the first usable release (v0.2).
   auto-update.
   See the parity matrix in section 9.
 - Code health: `app.rs` was split into `app/` submodules (R1) and the
-  selection, pointer, and edit state pulled out of `App` (R2), and
-  `win32/settings_window.rs` into `win32/settings_window/` (K1). Files still
-  over the ~800-line guideline (non-test code): `render/d2d.rs` (~1,430),
-  `settings.rs` (~1,060), `runtime.rs` (~940), and `app/pointer.rs` (~920).
+  selection, pointer, and edit state pulled out of `App` (R2),
+  `win32/settings_window.rs` into `win32/settings_window/` (K1), and
+  `render/d2d.rs` into `render/d2d/` (K2). Files still
+  over the ~800-line guideline (non-test code): `settings.rs` (~1,060),
+  `runtime.rs` (~940), and `app/pointer.rs` (~920).
   `TASKS.md` section K splits them.
 
 ## 3. Architecture
@@ -492,7 +493,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), `error.rs`
 (`PlatformError`), and `shell.rs` (desktop enumeration and `IconCache`; still
 at the root, `TASKS.md` R3 moves it). `render/`: `mod.rs` (`Icon`,
 `ItemMetrics`, check-box geometry), `scene.rs` (`SpaceScene`, `SpaceStyle`),
-`d2d.rs` (the painter). Everything with `unsafe` is under `win32/`:
+`d2d/` (the painter). Everything with `unsafe` is under `win32/`:
 
 | Area | Modules |
 |------|---------|
@@ -866,7 +867,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
 - `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
   checked without uncovering the desktop.
 
-### Rendering (`render/scene.rs`, `render/d2d.rs`)
+### Rendering (`render/scene.rs`, `render/d2d/`)
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
   `SpaceScene` carries: `chrome`, `title`, `title_height`, the colors (`tint`,
@@ -879,7 +880,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `check_boxes_persistent` (Independent vs Selection display),
   `focused_item`, and `highlight`. `SpaceStyle` is backdrop, corner radius,
   dark, border, and `chrome`. A new visual is one field here, filled in
-  `deskspace-app/src/scene.rs` and drawn in `d2d.rs`; a `SpaceStyle` field
+  `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field
   is for window-level attributes only (it re-applies DWM state). The app scrolls by offsetting item rects and includes only
   items that intersect the content area; the renderer clips items below the
   title bar. Scenes are pushed only when something changes; the window stores
