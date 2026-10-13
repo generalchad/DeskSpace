@@ -579,6 +579,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   controller window, adds the tray icon, installs the console handler,
   delivers `Event::Started`, and pumps messages until quit. It routes
   `IsDialogMessageW` to the settings window for Tab/Enter/Escape handling.
+  Release builds are GUI-subsystem (`#![windows_subsystem = "windows"]` on both
+  binaries), so launching the installed app never shows a console window; debug
+  builds keep the console so `-v` logging and Ctrl+C work while developing.
 - `EventHandler::on_event(Event, &mut Ui)` is the app's single entry point for
   every window. `Ui` creates/destroys space windows, pushes rects, scenes and
   styles, shows/hides spaces, shows popup menus and confirmation boxes, opens/
@@ -608,7 +611,8 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   spaces. Spaces are never activated, so this is the only way to see clicks
   on the desktop or other apps.
 - `Ui::quit`, console Ctrl+C/close (`console.rs` posts `WM_CLOSE` and waits up
-  to 4.5 s), and `WM_ENDSESSION` all lead to exactly one
+  to 4.5 s; only meaningful when a console is attached, as in debug builds),
+  and `WM_ENDSESSION` all lead to exactly one
   `Event::CloseRequested`, then space and settings windows are destroyed, the
   tray icon removed, and the loop ends.
 - Desktop integration (`win32/desktop_entry.rs`): while spaces are hidden, the

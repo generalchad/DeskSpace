@@ -1,3 +1,8 @@
+// The released app is a GUI program, so no console window flashes when it is
+// started from the installer, a shortcut, or a terminal. Debug builds keep the
+// console so `-v` logging and Ctrl+C work while developing.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod bootstrap;
 mod cli;

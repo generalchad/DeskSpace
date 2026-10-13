@@ -6,6 +6,8 @@
 //! it waits on that process and re-shows Explorer's icons unless the app
 //! signaled a clean exit. See `deskspace_platform::arm_watchdog`.
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
