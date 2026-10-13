@@ -85,7 +85,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
 | Drawing | `deskspace-platform/src/render/{scene,d2d}.rs` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window.rs` |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/shell.rs` |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
@@ -1625,7 +1625,7 @@ Rules for every K task:
   count; `git diff --stat` shows mostly moved lines; and `CONTEXT.md`
   section 2 (code health) and the file map above are updated.
 
-- [ ] **K1. Split `win32/settings_window.rs` (~2,600 lines).** Do B8 first;
+- [x] **K1. Split `win32/settings_window.rs` (~2,600 lines).** Do B8 first;
   it deletes the tab code, so there is less to move.
   - `settings_window/mod.rs` keeps: the constants, `FieldControls`,
     `SettingsState` and its impls, `create`, `set_dark`, `theme_controls`,
@@ -1779,7 +1779,7 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
 - `too_many_arguments` allows that are still needed (B9 removed only the stale
   ones): `scene.rs` `desktop_layer_scene` (8), `desktop_layer_drag_scene` (9),
   `drag_scene` (8); `render/d2d.rs` `draw_item` (8), `draw_check_box` (8),
-  `draw_edit_buffer` (9); `win32/settings_window.rs` `Builder::control` (8).
+  `draw_edit_buffer` (9); `win32/settings_window/build.rs` `Builder::control` (8).
   Group the scene builders into a `ViewState`-like struct, and the `d2d`
   draw helpers, so the allows can go. Suggested task: a `ViewState`-style
   scene-args struct plus a `d2d` arguments struct.

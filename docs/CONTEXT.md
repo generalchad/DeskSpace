@@ -123,10 +123,11 @@ context menus, and a settings window in the first usable release (v0.2).
   auto-update.
   See the parity matrix in section 9.
 - Code health: `app.rs` was split into `app/` submodules (R1) and the
-  selection, pointer, and edit state pulled out of `App` (R2). Files still
-  over the ~800-line guideline (non-test code): `settings_window.rs` (~2,500),
-  `render/d2d.rs` (~1,430), `settings.rs` (~1,060), `runtime.rs` (~940), and
-  `app/pointer.rs` (~920). `TASKS.md` section K splits them.
+  selection, pointer, and edit state pulled out of `App` (R2), and
+  `win32/settings_window.rs` into `win32/settings_window/` (K1). Files still
+  over the ~800-line guideline (non-test code): `render/d2d.rs` (~1,430),
+  `settings.rs` (~1,060), `runtime.rs` (~940), and `app/pointer.rs` (~920).
+  `TASKS.md` section K splits them.
 
 ## 3. Architecture
 
@@ -905,7 +906,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   one (label shadow mode `Auto` below 25 % tint alpha, or `On`). `D2DERR_RECREATE_TARGET` drops
   device resources for recreation on the next paint.
 
-### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window.rs`)
+### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
 
 - `MenuEntry` lists become `TrackPopupMenuEx` menus (`Ui::popup_menu` returns
   the chosen id).
@@ -914,7 +915,7 @@ Settings field ids are in `settings.rs`'s `mod field` (next free 63; 25 and
   `editable`, a number box that commits on focus loss instead of a static
   value), `Color`, `Text` (optionally `read_only`), `Button`). A new kind of
   control is a `FieldKind` variant plus its builder, `plan_field` diff, and
-  command handling in `settings_window.rs`; prefer composing existing kinds. Appearance is split across Appearance, Labels, Layout,
+  command handling in `settings_window/commands.rs`; prefer composing existing kinds. Appearance is split across Appearance, Labels, Layout,
   Colors, and Advanced so no page clips on a 1080-pixel display. The settings
   window lays the pages out with common controls v6 (pages are container
   windows that forward notifications), uses Mica in the caption, reports edits
