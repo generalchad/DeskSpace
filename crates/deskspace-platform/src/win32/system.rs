@@ -1,8 +1,11 @@
 use deskspace_core::Color;
 use deskspace_core::geometry::{Point, Rect, Size};
-use windows::Win32::Foundation::{ERROR_SUCCESS, POINT};
+use windows::Win32::Foundation::{ERROR_SUCCESS, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, LOGFONTW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    CreateFontIndirectW, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject,
+    DrawTextW, GetDC, GetMonitorInfoW, GetTextFaceW, HDC, HFONT, HGDIOBJ, LOGFONTW,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, ReleaseDC, SelectObject, SetBkMode,
+    SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
@@ -10,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, NONCLIENTMETRICSW, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG,
     SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETNONCLIENTMETRICS,
 };
-use windows::core::w;
+use windows::core::{PCWSTR, w};
 
 /// The work area (screen minus taskbar and docked bars) of the monitor
 /// nearest `point`.
@@ -159,6 +162,93 @@ pub(crate) fn message_logfont(dpi: u32) -> LOGFONTW {
         );
     }
     metrics.lfMessageFont
+}
+
+/// A symbol font (`Segoe Fluent Icons`, or `Segoe MDL2 Assets` on older
+/// Windows) at the message font's size, for glyphs such as the check mark and
+/// the eyedropper. Returns a null font when neither is installed. Callers
+/// should still check a glyph exists (`glyph_present`) before drawing it,
+/// because not every symbol is in both fonts.
+pub(crate) fn glyph_font(dpi: u32) -> HFONT {
+    let height = message_logfont(dpi).lfHeight;
+    for face in [w!("Segoe Fluent Icons"), w!("Segoe MDL2 Assets")] {
+        // SAFETY: creating a font from an initialised LOGFONT.
+        let font = unsafe { create_symbol_font(face, height) };
+        if font.is_invalid() {
+            continue;
+        }
+        // SAFETY: `font` is a live font of this thread.
+        if unsafe { face_is(font, face) } {
+            return font;
+        }
+        // SAFETY: the substituted font is ours to delete.
+        unsafe {
+            let _ = DeleteObject(HGDIOBJ(font.0));
+        }
+    }
+    HFONT::default()
+}
+
+unsafe fn create_symbol_font(face: PCWSTR, height: i32) -> HFONT {
+    let mut logfont = LOGFONTW {
+        lfHeight: height,
+        ..Default::default()
+    };
+    // SAFETY: `face` is a static, NUL-terminated wide string.
+    let name = unsafe { face.as_wide() };
+    for (slot, ch) in logfont.lfFaceName.iter_mut().zip(name) {
+        *slot = *ch;
+    }
+    // SAFETY: `logfont` is fully initialised and lives for the call.
+    unsafe { CreateFontIndirectW(&logfont) }
+}
+
+/// Whether `font` actually resolved to `expected` (GDI substitutes a default
+/// face for a missing family instead of failing).
+unsafe fn face_is(font: HFONT, expected: PCWSTR) -> bool {
+    // SAFETY: a screen DC is used only to query the selected face.
+    let dc = unsafe { GetDC(None) };
+    if dc.is_invalid() {
+        return false;
+    }
+    let previous = unsafe { SelectObject(dc, HGDIOBJ(font.0)) };
+    let mut name = [0u16; 32];
+    let length = unsafe { GetTextFaceW(dc, Some(&mut name[..])) };
+    unsafe {
+        SelectObject(dc, previous);
+        ReleaseDC(None, dc);
+    }
+    let length = (length.max(0) as usize).saturating_sub(1);
+    // SAFETY: `expected` is a static, NUL-terminated wide string.
+    let expected = unsafe { expected.as_wide() };
+    &name[..length.min(name.len())] == expected
+}
+
+/// Draws symbol `glyph` from `font` centered in `rect`, in `color`. The font
+/// rendering is anti-aliased, so this is used for the picker's check mark and
+/// the settings window's eyedropper. Does nothing if `font` is null.
+pub(crate) unsafe fn draw_glyph(hdc: HDC, font: HFONT, glyph: u16, rect: RECT, color: Color) {
+    if font.is_invalid() {
+        return;
+    }
+    // SAFETY: `hdc` is a live DC; the state is restored before returning.
+    unsafe {
+        SetBkMode(hdc, TRANSPARENT);
+        let cref = windows::Win32::Foundation::COLORREF(
+            color.r as u32 | ((color.g as u32) << 8) | ((color.b as u32) << 16),
+        );
+        SetTextColor(hdc, cref);
+        let previous = SelectObject(hdc, HGDIOBJ(font.0));
+        let mut text = [glyph];
+        let mut rect = rect;
+        let _ = DrawTextW(
+            hdc,
+            &mut text,
+            &mut rect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        SelectObject(hdc, previous);
+    }
 }
 
 /// Equivalent of GET_X_LPARAM / GET_Y_LPARAM: the `as i16` sign-extends, so

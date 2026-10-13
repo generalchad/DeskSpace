@@ -1033,4 +1033,8 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   `Hsv::to_color`. The popup paints opaque GDI and does not extend the DWM
   frame into the client, which had made it transparent; it uses the system
   message font, and its swatches and the settings window's color previews are
-  slightly rounded boxes. On-screen check pending.
+  slightly rounded boxes. A later polish pass made the color field's swatch
+  itself the button (with an eyedropper glyph), moved the picker to a
+  flicker-free DIB back buffer with per-pixel anti-aliased markers and an
+  anti-aliased glyph check mark, and fixed a modal-loop stall. On-screen check
+  pending.

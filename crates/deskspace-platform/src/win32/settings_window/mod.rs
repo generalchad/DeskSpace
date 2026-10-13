@@ -87,6 +87,9 @@ const ID_HEADER_BUTTON: usize = 8;
 /// A muted Windows critical red: the wash and edge of the destructive header
 /// button (a space's "Delete space").
 const DELETE_RED: Color = Color::rgb(0xC4, 0x2B, 0x1C);
+/// Segoe Fluent Icons / Segoe MDL2 Assets "Eyedropper" (`\u{EF3C}`), drawn on
+/// a color field's swatch button.
+const GLYPH_EYEDROPPER: u16 = 0xEF3C;
 /// Height of one navigation-rail row, at 96 DPI.
 const NAV_ROW_HEIGHT: i32 = 30;
 /// Width of the navigation rail, at 96 DPI.
@@ -113,8 +116,6 @@ const PART_SECONDARY: usize = 1;
 const SS_LEFT: u32 = 0x0000;
 const SS_CENTER: u32 = 0x0001;
 const SS_RIGHT: u32 = 0x0002;
-/// The color preview is drawn by the settings window (`on_draw_swatch`).
-const SS_OWNERDRAW: u32 = 0x000B;
 const SS_NOPREFIX: u32 = 0x0080;
 const SS_CENTERIMAGE: u32 = 0x0200;
 /// Trackbar messages are WM_USER-based: TBM_GETPOS is WM_USER, TBM_SETTIC
@@ -167,6 +168,8 @@ pub(super) struct SettingsState {
     apply: Option<HWND>,
     font: HFONT,
     heading_font: HFONT,
+    /// The symbol font for the color field's eyedropper glyph.
+    glyph_font: HFONT,
     /// The layout DPI, for scaling the rail's paint metrics.
     dpi: u32,
     command_bar_top: i32,
@@ -239,6 +242,7 @@ impl Drop for SettingsState {
         unsafe {
             let _ = DeleteObject(HGDIOBJ(self.font.0));
             let _ = DeleteObject(HGDIOBJ(self.heading_font.0));
+            let _ = DeleteObject(HGDIOBJ(self.glyph_font.0));
             let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.command_bar_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.accent_brush.0));
@@ -267,6 +271,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             apply: None,
             font: HFONT::default(),
             heading_font: HFONT::default(),
+            glyph_font: HFONT::default(),
             dpi: 0,
             command_bar_top: 0,
             updating: true,

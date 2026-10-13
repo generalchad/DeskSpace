@@ -28,9 +28,9 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection,
     CreateFontIndirectW, CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_LEFT, DT_SINGLELINE,
-    DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetStockObject,
-    HDC, HFONT, HGDIOBJ, InvalidateRect, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, Polyline, RoundRect,
-    SRCCOPY, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GdiFlush,
+    GetStockObject, HBITMAP, HDC, HFONT, HGDIOBJ, InvalidateRect, NULL_BRUSH, PAINTSTRUCT,
+    PS_SOLID, RoundRect, SRCCOPY, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -39,17 +39,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, IsWindow, MSG, RegisterClassW,
-    SW_SHOW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_CLOSE,
-    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN, WNDCLASSW, WS_CLIPCHILDREN,
+    GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, IsWindow, MSG, PostQuitMessage,
+    RegisterClassW, SW_SHOW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage,
+    WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN, WNDCLASSW, WS_CLIPCHILDREN,
     WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
-use crate::win32::system::{message_logfont, work_area_at};
+use crate::win32::system::{draw_glyph, glyph_font, message_logfont, work_area_at};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
 
@@ -80,6 +80,8 @@ const CHECKER: i32 = 8;
 const MARKER: i32 = 6;
 /// Radius of the marker on the hue and alpha strips.
 const STRIP_MARKER: i32 = 7;
+/// Segoe Fluent Icons / Segoe MDL2 Assets "CheckMark" (`\u{E73E}`).
+const GLYPH_CHECK: u16 = 0xE73E;
 
 /// The standard color grid, eight per row, after the Windows 11 palette: vivid
 /// hues, then pastels, then neutrals and earth tones.
@@ -398,6 +400,69 @@ fn checker_color(x: i32, y: i32, colors: UiColors) -> Color {
     }
 }
 
+/// A device-independent back buffer. It makes painting flicker-free, and its
+/// pixels are written directly for the marker circles, which need their own
+/// anti-aliasing (GDI draws ellipses and lines without any).
+struct Buffer {
+    dc: HDC,
+    bitmap: HBITMAP,
+    previous: HGDIOBJ,
+    bits: *mut u32,
+    size: (i32, i32),
+}
+
+impl Buffer {
+    /// Creates a top-down 32bpp back buffer of `size`, compatible with `reference`.
+    unsafe fn new(reference: HDC, size: (i32, i32)) -> Option<Self> {
+        let (width, height) = (size.0.max(1), size.1.max(1));
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // SAFETY: `info` is fully initialised; `bits` receives the pixel
+        // pointer of the created section.
+        unsafe {
+            let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+            let dc = CreateCompatibleDC(Some(reference));
+            let bitmap =
+                CreateDIBSection(Some(reference), &info, DIB_RGB_COLORS, &mut bits, None, 0)
+                    .ok()?;
+            if bits.is_null() {
+                let _ = DeleteObject(HGDIOBJ(bitmap.0));
+                let _ = DeleteDC(dc);
+                return None;
+            }
+            let previous = SelectObject(dc, HGDIOBJ(bitmap.0));
+            Some(Self {
+                dc,
+                bitmap,
+                previous,
+                bits: bits as *mut u32,
+                size: (width, height),
+            })
+        }
+    }
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        // SAFETY: the bitmap is ours and currently selected into this DC.
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            let _ = DeleteObject(HGDIOBJ(self.bitmap.0));
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
 struct PickerState {
     panel: Panel,
     initial: Color,
@@ -405,6 +470,10 @@ struct PickerState {
     layout: PickerLayout,
     /// The UI font (the system message font at the owner's DPI), owned here.
     font: HFONT,
+    /// The symbol font used for the selected-swatch check mark.
+    glyph_font: HFONT,
+    /// The back buffer, created on the first paint.
+    buffer: Option<Buffer>,
     /// The palette's selected color, when one is picked or the initial matches.
     selected: Option<Color>,
     /// The recently used colors, read once at open.
@@ -422,18 +491,26 @@ struct PickerState {
 
 impl Drop for PickerState {
     fn drop(&mut self) {
-        // SAFETY: the font is owned by this state; a null handle (tests) is
+        // SAFETY: both fonts are owned by this state; a null handle (tests) is
         // ignored.
         unsafe {
-            if !self.font.is_invalid() {
-                let _ = DeleteObject(HGDIOBJ(self.font.0));
+            for font in [self.font, self.glyph_font] {
+                if !font.is_invalid() {
+                    let _ = DeleteObject(HGDIOBJ(font.0));
+                }
             }
         }
     }
 }
 
 impl PickerState {
-    fn new(initial: Color, dark: bool, layout: PickerLayout, font: HFONT) -> Self {
+    fn new(
+        initial: Color,
+        dark: bool,
+        layout: PickerLayout,
+        font: HFONT,
+        glyph_font: HFONT,
+    ) -> Self {
         let hsv = initial.to_hsv();
         let recent = RECENT.with(|recent| recent.borrow().clone());
         let selected = WINDOWS_COLORS
@@ -446,6 +523,8 @@ impl PickerState {
             dark,
             layout,
             font,
+            glyph_font,
+            buffer: None,
             selected,
             recent,
             hue: hsv.h,
@@ -534,7 +613,8 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
         let dpi = dpi_of(owner);
         let layout = PickerLayout::compute(dpi as f32 / 96.0);
         let font = CreateFontIndirectW(&message_logfont(dpi));
-        let mut state = Box::new(PickerState::new(initial, dark, layout, font));
+        let glyph = glyph_font(dpi);
+        let mut state = Box::new(PickerState::new(initial, dark, layout, font, glyph));
         let state_pointer = &mut *state as *mut PickerState;
 
         let (x, y) = picker_position(layout.size);
@@ -566,8 +646,16 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
 
         let mut message = MSG::default();
         while IsWindow(Some(hwnd)).as_bool() {
-            let status = GetMessageW(&mut message, Some(hwnd), 0, 0);
-            if status.0 <= 0 {
+            // Pump every message, not just the picker's: the owner is disabled,
+            // so it cannot be driven, but a thread that stops retrieving its
+            // own windows' messages is marked "not responding" by Windows.
+            let status = GetMessageW(&mut message, None, 0, 0);
+            if status.0 == 0 {
+                // Another window asked to quit; hand it back to the outer loop.
+                PostQuitMessage(message.wParam.0 as i32);
+                break;
+            }
+            if status.0 == -1 {
                 break;
             }
             let _ = TranslateMessage(&message);
@@ -825,9 +913,146 @@ unsafe fn paint(window: HWND) {
     // messages, so the state borrow inside is safe.
     unsafe {
         let hdc = BeginPaint(window, &mut ps);
-        let _ = with_state(window, |state| paint_content(hdc, state));
+        let _ = with_state(window, |state| {
+            ensure_buffer(state, hdc);
+            match state.buffer.as_ref() {
+                Some(buffer) => {
+                    paint_content(buffer.dc, state);
+                    paint_markers(buffer, state);
+                    let _ = BitBlt(
+                        hdc,
+                        0,
+                        0,
+                        buffer.size.0,
+                        buffer.size.1,
+                        Some(buffer.dc),
+                        0,
+                        0,
+                        SRCCOPY,
+                    );
+                }
+                // Without a back buffer, paint straight to the window; the
+                // marker circles are skipped.
+                None => paint_content(hdc, state),
+            }
+        });
         let _ = EndPaint(window, &ps);
     }
+}
+
+/// Creates `state.buffer` at the layout size when it is missing or stale.
+unsafe fn ensure_buffer(state: &mut PickerState, reference: HDC) {
+    if state
+        .buffer
+        .as_ref()
+        .is_some_and(|buffer| buffer.size == state.layout.size)
+    {
+        return;
+    }
+    // SAFETY: creating a DIB section and a memory DC on this thread.
+    state.buffer = unsafe { Buffer::new(reference, state.layout.size) };
+}
+
+/// Composites the anti-aliased marker circles into the back buffer's pixels,
+/// over the already-drawn gradients.
+unsafe fn paint_markers(buffer: &Buffer, state: &PickerState) {
+    if state.panel != Panel::Custom {
+        return;
+    }
+    // SAFETY: GdiFlush completes the batched drawing into the buffer so the
+    // pixels written below start from the finished image.
+    unsafe {
+        let _ = GdiFlush();
+    }
+    let center = |rect: Rect, fx: f32, fy: f32| {
+        (
+            rect.x + (fx * (rect.width - 1) as f32).round() as i32,
+            rect.y + (fy * (rect.height - 1) as f32).round() as i32,
+        )
+    };
+    let square = state.layout.saturation;
+    let (sx, sy) = center(square, state.saturation, 1.0 - state.value);
+    let hue = state.layout.hue;
+    let (hx, hy) = center(hue, state.hue / 360.0, 0.5);
+    let alpha = state.layout.alpha;
+    let (ax, ay) = center(alpha, state.alpha as f32 / 255.0, 0.5);
+    // SAFETY: the buffer's pixels are owned by this thread and every index is
+    // bounds-checked inside `composite_marker`.
+    unsafe {
+        composite_marker(
+            buffer.bits,
+            buffer.size,
+            sx,
+            sy,
+            scaled_marker(state.layout, MARKER),
+        );
+        composite_marker(
+            buffer.bits,
+            buffer.size,
+            hx,
+            hy,
+            scaled_marker(state.layout, STRIP_MARKER),
+        );
+        composite_marker(
+            buffer.bits,
+            buffer.size,
+            ax,
+            ay,
+            scaled_marker(state.layout, STRIP_MARKER),
+        );
+    }
+}
+
+/// Composites a black-and-white bullseye marker centered at (`cx`, `cy`) over
+/// the buffer's pixels, anti-aliased by per-pixel coverage (`GDI` draws
+/// ellipses with no anti-aliasing at all).
+unsafe fn composite_marker(bits: *mut u32, size: (i32, i32), cx: i32, cy: i32, radius: i32) {
+    const BLACK: f32 = 2.0;
+    const WHITE: f32 = 2.0;
+    let (width, height) = size;
+    let outer = radius as f32;
+    let middle = outer - BLACK;
+    let inner = middle - WHITE;
+    let min_x = (cx - radius - 2).max(0);
+    let max_x = (cx + radius + 2).min(width - 1);
+    let min_y = (cy - radius - 2).max(0);
+    let max_y = (cy + radius + 2).min(height - 1);
+    // SAFETY: every index is within `0..width * height`.
+    unsafe {
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let dx = (x as f32 + 0.5) - (cx as f32 + 0.5);
+                let dy = (y as f32 + 0.5) - (cy as f32 + 0.5);
+                let distance = (dx * dx + dy * dy).sqrt();
+                let black =
+                    (coverage(distance, outer) - coverage(distance, middle)).clamp(0.0, 1.0);
+                let white =
+                    (coverage(distance, middle) - coverage(distance, inner)).clamp(0.0, 1.0);
+                if black == 0.0 && white == 0.0 {
+                    continue;
+                }
+                let index = (y * width + x) as usize;
+                let pixel = *bits.add(index);
+                let mut r = ((pixel >> 16) & 0xFF) as f32;
+                let mut g = ((pixel >> 8) & 0xFF) as f32;
+                let mut b = (pixel & 0xFF) as f32;
+                r *= 1.0 - black;
+                g *= 1.0 - black;
+                b *= 1.0 - black;
+                r += (255.0 - r) * white;
+                g += (255.0 - g) * white;
+                b += (255.0 - b) * white;
+                *bits.add(index) =
+                    ((r.round() as u32) << 16) | ((g.round() as u32) << 8) | b.round() as u32;
+            }
+        }
+    }
+}
+
+/// Coverage of a half-open disc edge at `edge`: 1 fully inside, 0 fully
+/// outside, a one-pixel-wide ramp across the boundary.
+fn coverage(distance: f32, edge: f32) -> f32 {
+    (edge + 0.5 - distance).clamp(0.0, 1.0)
 }
 
 unsafe fn paint_content(hdc: HDC, state: &PickerState) {
@@ -888,6 +1113,7 @@ unsafe fn paint_palette(hdc: HDC, state: &PickerState, colors: UiColors) {
                 selected,
                 colors,
                 state.layout,
+                state.glyph_font,
             );
         }
         draw_label(hdc, state.layout.windows_label, "Windows colors", colors);
@@ -900,6 +1126,7 @@ unsafe fn paint_palette(hdc: HDC, state: &PickerState, colors: UiColors) {
                 state.selected == Some(*color),
                 colors,
                 state.layout,
+                state.glyph_font,
             );
         }
     }
@@ -935,27 +1162,6 @@ unsafe fn paint_custom(hdc: HDC, state: &PickerState, colors: UiColors) {
             blend(checker_color(x, y, colors), current, preview_alpha)
         });
         frame(hdc, preview, colors.divider);
-
-        let marker = scaled_marker(state.layout, MARKER);
-        draw_marker(
-            hdc,
-            square.x + (state.saturation * (square.width - 1) as f32).round() as i32,
-            square.y + ((1.0 - state.value) * (square.height - 1) as f32).round() as i32,
-            marker,
-            true,
-        );
-        let strip = scaled_marker(state.layout, STRIP_MARKER);
-        let hue_cx = hue_rect.x + (state.hue / 360.0 * (hue_rect.width - 1) as f32).round() as i32;
-        draw_marker(hdc, hue_cx, hue_rect.y + hue_rect.height / 2, strip, false);
-        let alpha_cx = alpha_rect.x
-            + (state.alpha as f32 / 255.0 * (alpha_rect.width - 1) as f32).round() as i32;
-        draw_marker(
-            hdc,
-            alpha_cx,
-            alpha_rect.y + alpha_rect.height / 2,
-            strip,
-            false,
-        );
 
         draw_hex(hdc, state.layout.hex, current, colors);
     }
@@ -1061,78 +1267,28 @@ unsafe fn draw_swatch(
     selected: bool,
     colors: UiColors,
     layout: PickerLayout,
+    glyph_font: HFONT,
 ) {
     // SAFETY: caller holds a live paint DC.
     unsafe {
         draw_color_box(hdc, rect, color, layout.swatch_radius, colors.divider);
         if selected {
             draw_ring(hdc, rect, colors.accent, 2, layout.swatch_radius);
-            draw_check(hdc, rect, color, layout.swatch);
+            draw_check(hdc, rect, color, glyph_font);
         }
     }
 }
 
-/// Draws a check mark scaled to a `swatch`-sized box, in black or white to
-/// contrast with `color`.
-unsafe fn draw_check(hdc: HDC, rect: Rect, color: Color, swatch: i32) {
-    let unit = swatch as f32 / SWATCH as f32;
-    let at = |x: f32, y: f32| POINT {
-        x: rect.x + (x * unit).round() as i32,
-        y: rect.y + (y * unit).round() as i32,
-    };
-    let points = [at(6.0, 13.0), at(11.0, 18.0), at(20.0, 7.0)];
+/// Draws the selection check mark as an anti-aliased icon-font glyph, in black
+/// or white to contrast with `color`.
+unsafe fn draw_check(hdc: HDC, rect: Rect, color: Color, glyph_font: HFONT) {
     let ink = if color.luminance() < 0.5 {
         Color::rgb(255, 255, 255)
     } else {
         Color::rgb(0, 0, 0)
     };
-    // SAFETY: the pen is selected out and deleted before returning.
-    unsafe {
-        let pen = CreatePen(PS_SOLID, 2, colorref(ink));
-        let previous = SelectObject(hdc, HGDIOBJ(pen.0));
-        let _ = Polyline(hdc, &points);
-        SelectObject(hdc, previous);
-        let _ = DeleteObject(HGDIOBJ(pen.0));
-    }
-}
-
-unsafe fn draw_marker(hdc: HDC, cx: i32, cy: i32, radius: i32, filled: bool) {
-    // SAFETY: a hollow ellipse outline drawn with stock brushes and temporary
-    // pens, all restored or deleted before returning.
-    unsafe {
-        let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        let black = CreatePen(PS_SOLID, 2, colorref(Color::rgb(0, 0, 0)));
-        let white = CreatePen(PS_SOLID, 2, colorref(Color::rgb(255, 255, 255)));
-        let old_pen = SelectObject(hdc, HGDIOBJ(black.0));
-        let _ = windows::Win32::Graphics::Gdi::Ellipse(
-            hdc,
-            cx - radius - 1,
-            cy - radius - 1,
-            cx + radius + 1,
-            cy + radius + 1,
-        );
-        let _ = SelectObject(hdc, HGDIOBJ(white.0));
-        let _ = windows::Win32::Graphics::Gdi::Ellipse(
-            hdc,
-            cx - radius,
-            cy - radius,
-            cx + radius,
-            cy + radius,
-        );
-        if filled {
-            // A small dot at the center makes the point easier to read on a
-            // saturated square.
-            let dot = CreateSolidBrush(colorref(Color::rgb(255, 255, 255)));
-            let old = SelectObject(hdc, HGDIOBJ(dot.0));
-            let _ = windows::Win32::Graphics::Gdi::Ellipse(hdc, cx - 2, cy - 2, cx + 2, cy + 2);
-            SelectObject(hdc, old);
-            let _ = DeleteObject(HGDIOBJ(dot.0));
-        }
-        SelectObject(hdc, old_pen);
-        SelectObject(hdc, old_brush);
-        let _ = DeleteObject(HGDIOBJ(black.0));
-        let _ = DeleteObject(HGDIOBJ(white.0));
-    }
+    // SAFETY: `hdc` is a live paint DC.
+    unsafe { draw_glyph(hdc, glyph_font, GLYPH_CHECK, rect_to_win(rect), ink) };
 }
 
 unsafe fn draw_label(hdc: HDC, rect: Rect, text: &str, colors: UiColors) {
@@ -1436,14 +1592,26 @@ mod tests {
     }
 
     #[test]
+    fn coverage_ramps_across_a_one_pixel_edge() {
+        assert_eq!(coverage(0.0, 5.0), 1.0);
+        assert_eq!(coverage(5.0, 5.0), 0.5);
+        assert_eq!(coverage(5.5, 5.0), 0.0);
+    }
+
+    #[test]
     fn a_picked_color_round_trips_through_the_state() {
         for color in [
             Color::rgb(0x12, 0x34, 0x56),
             Color::rgba(0xAB, 0xCD, 0xEF, 128),
             Color::rgb(255, 0, 0),
         ] {
-            let mut state =
-                PickerState::new(color, true, PickerLayout::compute(1.0), HFONT::default());
+            let mut state = PickerState::new(
+                color,
+                true,
+                PickerLayout::compute(1.0),
+                HFONT::default(),
+                HFONT::default(),
+            );
             state.panel = Panel::Custom;
             assert_eq!(state.color(), color);
         }
@@ -1455,6 +1623,7 @@ mod tests {
             Color::rgb(0, 0, 0),
             true,
             PickerLayout::compute(1.0),
+            HFONT::default(),
             HFONT::default(),
         );
         assert_eq!(state.color(), Color::rgb(0, 0, 0));
@@ -1468,6 +1637,7 @@ mod tests {
             Color::rgb(0x10, 0x7C, 0x10),
             true,
             PickerLayout::compute(1.0),
+            HFONT::default(),
             HFONT::default(),
         );
         let custom = state.color();

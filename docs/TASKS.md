@@ -1204,13 +1204,22 @@ Small requests, one commit each.
   font (`system::message_logfont`), and both its swatches and the settings
   window's color previews are slightly rounded boxes
   (`color_picker::draw_color_box`, `settings_window::paint::on_draw_swatch`).
+  Polish pass: the color field's swatch is itself the button, with an
+  eyedropper glyph (`system::glyph_font`, `system::draw_glyph`) and no separate
+  "Choose…" button; the picker paints into a DIB back buffer (no flicker) and
+  composites its marker circles with per-pixel anti-aliasing; the check mark is
+  an anti-aliased glyph; and the modal loop pumps every message so the owner is
+  not marked "not responding".
   - **[needs human]** check, over a high-contrast window (`--on-top`) and in
     light and dark mode: the popup is opaque, rounded, and bordered; the
-    palette highlights the selected swatch and a double-click confirms; the
-    "Custom colors…" toggle reaches the square, hue, and alpha controls with a
-    live preview; OK returns the color (custom tint/text and the Colors page
-    fields) and Cancel leaves it unchanged; Enter accepts and Esc cancels; the
-    scale is right at 100 % and 150 %.
+    palette highlights the selected swatch (smooth check mark) and a
+    double-click confirms; the "Custom colors…" toggle reaches the square, hue,
+    and alpha controls with a live, flicker-free preview and smooth marker
+    rings; the Colors page's swatch button shows the color and an eyedropper
+    and opens the picker; OK returns the color (custom tint/text and the Colors
+    page fields) and Cancel leaves it unchanged; Enter accepts and Esc cancels;
+    the scale is right at 100 % and 150 %; opening the picker does not hang the
+    settings window.
 
 ## G. More Explorer-standard controls
 

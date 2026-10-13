@@ -252,31 +252,37 @@ pub(super) unsafe fn on_draw_header_button(window: HWND, item: &DRAWITEMSTRUCT) 
         }
     }
 }
-
-/// Paints a color field's preview: a slightly rounded box with a subtle border,
-/// matching the color picker's swatches. The control is an owner-draw static
-/// (`SS_OWNERDRAW`).
+/// Paints a color field's control: the color as a rounded box with an
+/// eyedropper glyph. It replaces the old flat swatch and "Choose…" button, so
+/// clicking the swatch itself opens the picker.
 pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
-    // SAFETY: `item.hDC` is a live DC owned by the static during WM_DRAWITEM;
+    // SAFETY: `item.hDC` is a live DC owned by the button during WM_DRAWITEM;
     // the borrowed state is copied out before any GDI call.
     unsafe {
         let id = item.CtlID as usize;
-        if id < CONTROL_BASE || (id - CONTROL_BASE) % 4 != PART_SECONDARY {
+        if id < CONTROL_BASE {
             return;
         }
         let index = (id - CONTROL_BASE) / 4;
-        let Some((color, colors, body, dpi)) = with_state(window, |state| {
+        let Some((color, colors, body, dpi, glyph_font)) = with_state(window, |state| {
             let (field, _) = state.fields.get(index)?;
             let color = match &field.kind {
                 FieldKind::Color { color } => *color,
                 _ => return None,
             };
-            Some((color, state.colors, state.body_brush, state.dpi))
+            Some((
+                color,
+                state.colors,
+                state.body_brush,
+                state.dpi,
+                state.glyph_font,
+            ))
         })
         .flatten() else {
             return;
         };
-        // The static is rectangular; clear it to the body so the rounded fill's
+        let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
+        // The button is rectangular; clear it to the body so the rounded fill's
         // corners do not show the control's default background.
         FillRect(item.hDC, &item.rcItem, body);
         let rect = Rect::new(
@@ -285,13 +291,36 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
             item.rcItem.right - item.rcItem.left,
             item.rcItem.bottom - item.rcItem.top,
         );
+        let fill = if disabled {
+            blend(color, colors.body, 0.5)
+        } else {
+            color
+        };
         crate::win32::color_picker::draw_color_box(
             item.hDC,
             rect,
-            color,
+            fill,
             scaled(SWATCH_RADIUS, dpi),
             colors.divider,
         );
+        let ink = if disabled {
+            colors.disabled_text
+        } else if fill.luminance() < 0.5 {
+            Color::rgb(255, 255, 255)
+        } else {
+            Color::rgb(0, 0, 0)
+        };
+        crate::win32::system::draw_glyph(item.hDC, glyph_font, GLYPH_EYEDROPPER, item.rcItem, ink);
+        if item.itemState.0 & ODS_FOCUS.0 != 0 {
+            let inset = scaled(2, dpi);
+            let focus = RECT {
+                left: item.rcItem.left + inset,
+                top: item.rcItem.top + inset,
+                right: item.rcItem.right - inset,
+                bottom: item.rcItem.bottom - inset,
+            };
+            let _ = DrawFocusRect(item.hDC, &focus);
+        }
     }
 }
 

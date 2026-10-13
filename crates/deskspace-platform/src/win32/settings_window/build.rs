@@ -13,15 +13,19 @@ pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
     (value as i64 * dpi as i64 / 96) as i32
 }
 
-/// The UI font (Segoe UI 9pt on Windows 11) at `dpi`, plus a larger semibold
-/// variant for section headings.
-unsafe fn create_fonts(dpi: u32) -> (HFONT, HFONT) {
+/// The UI font (Segoe UI 9pt on Windows 11) at `dpi`, a larger semibold
+/// variant for section headings, and the symbol font for glyphs such as the
+/// color eyedropper.
+unsafe fn create_fonts(dpi: u32) -> (HFONT, HFONT, HFONT) {
     let body = message_logfont(dpi);
     let mut heading = body;
     heading.lfWeight = 600;
     heading.lfHeight = body.lfHeight * 4 / 3;
     // SAFETY: both LOGFONTs are fully initialised locals.
-    unsafe { (CreateFontIndirectW(&body), CreateFontIndirectW(&heading)) }
+    let (body_font, heading_font) =
+        unsafe { (CreateFontIndirectW(&body), CreateFontIndirectW(&heading)) };
+    let glyph_font = crate::win32::system::glyph_font(dpi);
+    (body_font, heading_font, glyph_font)
 }
 
 struct Builder {
@@ -378,12 +382,14 @@ impl Builder {
                 }
                 FieldKind::Color { color } => {
                     controls.label = self.label(page, &field.label, label_bounds);
-                    let swatch_size = self.s(24);
-                    controls.swatch = self.control(
+                    let swatch_size = self.s(26);
+                    // The swatch is the button: an owner-draw control that
+                    // draws the color box and an eyedropper glyph.
+                    let swatch = self.control(
                         page,
-                        WC_STATICW,
+                        WC_BUTTONW,
                         "",
-                        SS_OWNERDRAW,
+                        BS_OWNERDRAW as u32 | tab,
                         WINDOW_EX_STYLE(0),
                         (
                             control_x,
@@ -391,21 +397,14 @@ impl Builder {
                             swatch_size,
                             swatch_size,
                         ),
-                        id_secondary,
+                        id_main,
                     );
+                    controls.main = swatch;
+                    controls.swatch = swatch;
                     controls.value_text = self.label(
                         page,
                         &color.to_rgb_hex(),
-                        (control_x + swatch_size + self.s(10), y, self.s(76), row),
-                    );
-                    controls.main = self.control(
-                        page,
-                        WC_BUTTONW,
-                        "Choose\u{2026}",
-                        BS_PUSHBUTTON as u32 | tab,
-                        WINDOW_EX_STYLE(0),
-                        (control_x + swatch_size + self.s(92), y, self.s(100), row),
-                        id_main,
+                        (control_x + swatch_size + self.s(12), y, self.s(96), row),
                     );
                     self.s(38)
                 }
@@ -455,7 +454,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) {
     // borrow is held while controls are created.
     unsafe {
         let dpi = GetDpiForWindow(hwnd).max(96);
-        let (font, heading_font) = create_fonts(dpi);
+        let (font, heading_font, glyph_font) = create_fonts(dpi);
         let builder = Builder {
             instance: HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0),
             dpi,
@@ -669,6 +668,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.apply = apply;
             state.font = font;
             state.heading_font = heading_font;
+            state.glyph_font = glyph_font;
             state.dpi = dpi;
             state.command_bar_top = command_bar_top;
             state.updating = false;
