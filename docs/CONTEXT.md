@@ -122,13 +122,12 @@ context menus, and a settings window in the first usable release (v0.2).
   the installer's first dry run (config and workflow landed), signing, and
   auto-update.
   See the parity matrix in section 9.
-- Code health: `app.rs` was split into `app/` submodules (R1) and the
-  selection, pointer, and edit state pulled out of `App` (R2),
-  `win32/settings_window.rs` into `win32/settings_window/` (K1),
-  `render/d2d.rs` into `render/d2d/` (K2), `settings.rs` into `settings/`
-  (K3), and `win32/runtime.rs` into `win32/runtime/` (K4). The last file over
-  the ~800-line guideline (non-test code) is `app/pointer.rs` (~920); it moves
-  in K5. `TASKS.md` section K splits them.
+- Code health: the large files are split. `app.rs` into `app/` submodules
+  (R1) and the selection, pointer, and edit state pulled out of `App` (R2),
+  and `win32/settings_window.rs` (K1), `render/d2d.rs` (K2), `settings.rs`
+  (K3), `win32/runtime.rs` (K4), and the drag methods of `app/pointer.rs` (K5)
+  each into their own module tree. No non-test file is over the ~800-line
+  guideline any more.
 
 ## 3. Architecture
 
@@ -185,7 +184,8 @@ windows and controls.
   | `view` | resolving a space's look (`theme_for`, `grid_for`, `palette_for`, `layout_for`), `refresh_space`, `reflow_space`, the desktop layer and takeover |
   | `hit` | surface lookups (`surface_item_at`, `surface_palette`, `find_item_by_file`) |
   | `selection` | `Selection`, keyboard selection (`on_navigate`, `on_typed`), `active_items` |
-  | `pointer` | `PointerState`, mouse events, drag, resize, hover, marquee |
+  | `pointer` | `PointerState`, mouse events, resize, hover, marquee |
+  | `drag` | `Drag`, drag-to-rearrange, the drag image, and drag out |
   | `rename` | `EditState`, inline rename of titles and items |
   | `files` | drops, delete, prune, `resync_desktop_layer` |
   | `clipboard` | cut / copy / paste |

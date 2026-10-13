@@ -13,6 +13,7 @@ use crate::settings::{self, Session};
 use crate::storage::ItemStore;
 
 mod clipboard;
+mod drag;
 mod files;
 mod hit;
 mod info_tip;

@@ -67,7 +67,8 @@ Where each kind of code lives. Paths are under `crates/`.
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
-| Mouse, drag, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
 | Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
@@ -1710,7 +1711,7 @@ Rules for every K task:
   - Keep each method's doc comment with it. The module header (the borrow
     rules) stays in `mod.rs`.
 
-- [ ] **K5. Move drag out of `app/pointer.rs` (~1,080 lines, ~920 without
+- [x] **K5. Move drag out of `app/pointer.rs` (~1,080 lines, ~920 without
   tests).**
   - New `app/drag.rs` (declare it in `app.rs` next to `mod pointer;`) with
     one `impl App` block holding `drag_to`, `end_drag`, `begin_drag_visual`,
