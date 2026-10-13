@@ -48,7 +48,7 @@ A native, lightweight, offline Windows desktop organizer that:
     because child windows get no DWM material.
 - **D3. Item storage model.** There are two mechanisms, kept strictly
   separate:
-  - *Lenses* (comparable tools calls them "Folder Portals") are views over a
+  - *Lenses* (comparable tools call them "Folder Portals") are views over a
     real folder. They read its contents live and never move, copy, or
     duplicate data on their own, whatever the folder's size. Dropping files
     onto a lens is a move into the bound folder that the user starts. It uses
@@ -68,12 +68,10 @@ A native, lightweight, offline Windows desktop organizer that:
       desktop.
 - **D4. v0.2 scope.** The first usable release must have a tray icon,
   right-click context menus, and a settings window.
-- **D5. Naming.** Containers are called *spaces* (spaces calls them spaces)
-  in the UI, the docs, and the code (`Space`, `SpaceId`). Config files that
-  still use the old `spaces` key load unchanged. The folder-mirror feature is
-  called a *lens* in the UI and docs. In code it is a space whose source is a
-  folder (`SpaceSource::Folder`), which keeps the user-facing name out of the
-  model.
+- **D5. Naming.** Containers are called *spaces* in the UI, the docs, and the
+  code (`Space`, `SpaceId`). The folder-mirror feature is called a *lens* in
+  the UI and docs. In code it is a space whose source is a folder
+  (`SpaceSource::Folder`), which keeps the user-facing name out of the model.
 - **D6. Distribution and updates (2026-10-10; installer moved to
   cargo-packager 2026-10-12).**
   - *Channels:* GitHub Releases is the source of truth. Each release ships
@@ -471,7 +469,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - A kept sort rule for lenses and normal spaces (F-08, F-31).
   - A Lenses settings page with defaults (F-17).
 - **Later.** Browse into subfolders inside the lens, with a back control (as
-  spaces does). Until then, subfolders open in Explorer.
+  comparable tools do). Until then, subfolders open in Explorer.
 
 Exit criteria: creating, renaming, or deleting a file in a lens's folder
 updates the lens within about 150 ms, and the sort and view settings persist.
@@ -486,7 +484,7 @@ Remaining:
 2. Hide all: hide spaces and icons (including the takeover layer, which
    "Hide spaces" leaves visible, D9), and reveal them on a desktop click, a
    hotkey, or a peek (F-11, F-13). Double-clicking empty desktop toggles them,
-   as in spaces (F-10).
+   as in comparable tools (F-10).
 3. Hover opacity: idle spaces fade to a chosen opacity and become solid on
    hover (F-32).
 4. Title bar style: hidden, hover-only, or always shown, with alignment and
@@ -630,7 +628,7 @@ machine.
 
 ## 7. Feature index
 
-This is the single list of features, which also serves as the spaces parity
+This is the single list of features, which also serves as the feature parity
 checklist. "Check pending" means the feature is implemented and unit-tested
 or smoke-tested, but has not yet been confirmed on screen. Global settings
 belong in `Theme` / `WindowSettings` (a look setting in `Theme` is per space too,
@@ -645,7 +643,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); check pending for the layer |
-| F-07 | Lenses (spaces: Folder Portals) | M4 | Open |
+| F-07 | Lenses (folder portals) | M4 | Open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
 | F-10 | Hide all on desktop double-click | M5 | Open |
@@ -774,7 +772,7 @@ change landed. `CONTEXT.md` is authoritative for current behavior.
   - Only visible items go into the scene, so icons load lazily.
   - The icon cache is LRU-bounded. This closed F-03.
 - **Spaces, item interaction, clear glass.**
-  - "spaces" renamed to "spaces" throughout (D5).
+  - Containers renamed to "spaces" throughout (D5).
   - Items open on double-click and show Explorer's own context menu, with
     "Move back to desktop" at the top.
   - Items drag out like Explorer items (`SHDoDragDrop`).

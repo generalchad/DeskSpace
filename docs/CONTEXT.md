@@ -5,15 +5,14 @@ Project context for DeskSpace. Read this before making changes.
 
 ## 1. What DeskSpace is
 
-DeskSpace is a free and open-source desktop space organizer for Windows: a FOSS
-alternative to comparable tools. It groups desktop items into movable containers
-("spaces") and, eventually, mirrors folders as live "lenses" (the vendor calls
-these Folder Portals), with roll-up,
-auto-hide, and per-space appearance control.
+DeskSpace is a free and open-source desktop space organizer for Windows. It
+groups desktop items into movable containers ("spaces") and, eventually,
+mirrors folders as live "lenses" (comparable tools call these Folder Portals),
+with roll-up, auto-hide, and per-space appearance control.
 
-The long-term goal is to match spaces feature-for-feature while remaining
-native, lightweight, and offline. The current tree is an early but usable
-framework, not a finished product.
+The long-term goal is to match comparable tools feature-for-feature while
+remaining native, lightweight, and offline. The current tree is an early but
+usable framework, not a finished product.
 
 ### Goals
 
@@ -278,8 +277,6 @@ up; corners are twice as wide as edges), item lookup/insert/remove, and
 ```
 Desktop { spaces: Vec<Space>, layer: DesktopLayer, layout: GridSpec }
 ```
-
-`spaces` also reads the pre-rename key `spaces`, so older config files load.
 
 Operations: add/remove space, add/remove/move item, `space_item_count`,
 `space_at(point)` (topmost hit test on `visible_rect`), `sort_by_id`.
@@ -1272,9 +1269,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   the hidden development flags `--on-top`, `--takeover-layer`, and
   `--takeover`.
 
-## 9. spaces feature parity matrix
+## 9. Feature parity matrix
 
-| spaces feature | Status |
+| Feature | Status |
 |---|---|
 | Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in) |
 | Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
@@ -1433,11 +1430,10 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
 
 ## 11. Glossary
 
-- **Space**: a movable container window that groups items on the desktop
-  (comparable tools: "space").
+- **Space**: a movable container window that groups items on the desktop.
 - **Storage**: the folder files dropped into spaces are moved to.
-- **Lens**: a space whose contents mirror a folder live (comparable tools:
-  "Folder Portal"). In code, a space with a folder source.
+- **Lens**: a space whose contents mirror a folder live (comparable tools
+  call it a Folder Portal). In code, a space with a folder source.
 - **User-sized**: a space the user resized; it keeps its size, reflows items
   to its width, and scrolls instead of growing.
 - **Roll-up**: collapsing a space to its title bar.

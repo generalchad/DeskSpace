@@ -7,8 +7,8 @@ architecture and current state first, then `docs/ROADMAP.md` for the plan and
 
 ## Project
 
-DeskSpace is a free and open-source desktop space organizer for Windows, a
-FOSS alternative to comparable tools, written in Rust with native Win32.
+DeskSpace is a free and open-source desktop space organizer for Windows,
+written in Rust with native Win32.
 The workspace is Windows-only: `deskspace-platform` links the `windows` crate
 under `cfg(windows)`, so the workspace does not build on other platforms.
 

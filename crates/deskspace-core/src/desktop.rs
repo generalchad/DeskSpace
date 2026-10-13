@@ -10,8 +10,7 @@ use crate::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Desktop {
-    /// Files written before spaces were renamed from "spaces" use `spaces`.
-    #[serde(default, alias = "spaces")]
+    #[serde(default)]
     pub spaces: Vec<Space>,
     /// The desktop's loose items, outside any space (ROADMAP D7).
     #[serde(default)]

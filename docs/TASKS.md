@@ -349,10 +349,10 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
   - Done when: every `pub const` in `mod menu` appears either in `other` or
     in a preset table. Test-only change (`test: ...`).
 
-- [x] **A11. Say "spaces", not "spaces", in `scripts/dev.ps1`.**
-  - The help text and parameter comments still say "spaces" (examples at
-    ~17 and ~21, parameters at ~39 and ~43). Replace with "spaces". Comments
-    and help text only; no behavior change.
+- [x] **A11. Say "spaces", not the old container name, in `scripts/dev.ps1`.**
+  - The help text and parameter comments still used the old container name
+    (examples at ~17 and ~21, parameters at ~39 and ~43). Replace it with
+    "spaces". Comments and help text only; no behavior change.
 
 ## B. Small cleanups
 
