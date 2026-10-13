@@ -81,6 +81,67 @@ impl Default for Color {
     }
 }
 
+/// A color in HSV: hue in degrees `0..360`, saturation and value in `0.0..=1.0`.
+/// The color picker edits in this space so dragging saturation or value keeps
+/// the hue.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hsv {
+    pub h: f32,
+    pub s: f32,
+    pub v: f32,
+}
+
+impl Color {
+    /// Converts to HSV, dropping alpha.
+    /// https://en.wikipedia.org/wiki/HSL_and_HSV#From_RGB
+    pub fn to_hsv(self) -> Hsv {
+        let r = self.r as f32 / 255.0;
+        let g = self.g as f32 / 255.0;
+        let b = self.b as f32 / 255.0;
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let delta = max - min;
+        let hue = if delta == 0.0 {
+            0.0
+        } else if max == r {
+            60.0 * (((g - b) / delta) % 6.0)
+        } else if max == g {
+            60.0 * ((b - r) / delta + 2.0)
+        } else {
+            60.0 * ((r - g) / delta + 4.0)
+        };
+        Hsv {
+            h: if hue < 0.0 { hue + 360.0 } else { hue },
+            s: if max == 0.0 { 0.0 } else { delta / max },
+            v: max,
+        }
+    }
+}
+
+impl Hsv {
+    /// Converts back to RGB with the given alpha. Out-of-range components are
+    /// clamped so a pointer mapping at the edge of a control is safe.
+    /// https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB
+    pub fn to_color(self, a: u8) -> Color {
+        let h = self.h.rem_euclid(360.0);
+        let s = self.s.clamp(0.0, 1.0);
+        let v = self.v.clamp(0.0, 1.0);
+        let c = v * s;
+        let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+        let m = v - c;
+        let (r, g, b) = match h as u32 / 60 {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+        let channel = |value: f32| ((value + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+        Color::rgba(channel(r), channel(g), channel(b), a)
+    }
+}
+
 /// Converts a percentage (clamped to 100) into an alpha byte.
 pub const fn percent_to_alpha(percent: u8) -> u8 {
     let percent = if percent > 100 { 100 } else { percent };
@@ -622,6 +683,76 @@ mod tests {
     fn a_checked_check_box_defaults_to_windows_blue() {
         assert_eq!(Theme::default().palette(false).check_fill, CHECK_ACCENT);
         assert_eq!(CHECK_ACCENT.a, 255, "opaque");
+    }
+
+    #[test]
+    fn hsv_round_trips_rgb() {
+        for color in [
+            Color::rgb(0x12, 0x34, 0x56),
+            Color::rgb(255, 0, 0),
+            Color::rgb(0, 255, 0),
+            Color::rgb(0, 0, 255),
+            Color::rgb(200, 200, 200),
+            Color::rgb(0, 0, 0),
+            Color::rgb(255, 255, 255),
+        ] {
+            assert_eq!(color.to_hsv().to_color(color.a), color);
+        }
+    }
+
+    #[test]
+    fn hsv_maps_the_primaries() {
+        assert_eq!(
+            Color::rgb(255, 0, 0).to_hsv(),
+            Hsv {
+                h: 0.0,
+                s: 1.0,
+                v: 1.0
+            }
+        );
+        assert_eq!(
+            Color::rgb(0, 255, 0).to_hsv(),
+            Hsv {
+                h: 120.0,
+                s: 1.0,
+                v: 1.0
+            }
+        );
+        assert_eq!(
+            Color::rgb(0, 0, 255).to_hsv(),
+            Hsv {
+                h: 240.0,
+                s: 1.0,
+                v: 1.0
+            }
+        );
+        assert_eq!(
+            Color::rgb(0, 0, 0).to_hsv(),
+            Hsv {
+                h: 0.0,
+                s: 0.0,
+                v: 0.0
+            }
+        );
+        assert_eq!(
+            Color::rgb(255, 255, 255).to_hsv(),
+            Hsv {
+                h: 0.0,
+                s: 0.0,
+                v: 1.0
+            }
+        );
+    }
+
+    #[test]
+    fn hsv_from_out_of_range_components_is_clamped() {
+        let color = Hsv {
+            h: 480.0,
+            s: 2.0,
+            v: 2.0,
+        }
+        .to_color(255);
+        assert_eq!(color, Color::rgb(0, 255, 0));
     }
 
     #[test]
