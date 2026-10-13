@@ -411,6 +411,10 @@ Remaining:
 2. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
+3. A modern color picker (F-51). The Colors page and the space menu's
+   Appearance submenu use the dated system `ChooseColorW` dialog; replace it
+   with a native-feeling, themed picker (`TASKS.md` F14). The maintainer wants
+   this soon.
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -683,6 +687,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Open; a space shows the no-drop cursor for them (drop target accepts `CF_HDROP` only) |
+| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Open; the Colors page and the Appearance menu use `ChooseColorW`, which looks out of place on Windows 11 |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the

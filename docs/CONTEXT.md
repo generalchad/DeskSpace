@@ -933,7 +933,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   windows that forward notifications), uses Mica in the caption, reports edits
   as `SettingsEvent::Changed { field, value }` / `Button` / `Ok` / `Cancel` /
   `Apply` (plus the pane events below), and opens `ChooseColorW` for color
-  fields (`Ui::pick_color`). `Ui::update_settings`
+  fields (`Ui::pick_color`); that dialog looks dated on Windows 11, and
+  replacing it with a modern picker is planned (ROADMAP F-51).
+  `Ui::update_settings`
   diffs a new form of the same shape into the existing controls, and touches
   the panes and header only when they change, since a slider drag sends an
   update per tick.
@@ -1313,7 +1315,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 64; 25 and
   without blur. Rounded corners need Windows 11.
 - **Dark mode relies on undocumented uxtheme exports** for menus and on
   Explorer's dark control styles. The confirmation message box and the color
-  picker stay light; neither has a dark mode.
+  picker stay light; neither has a dark mode. The system color picker
+  (`ChooseColorW`) also looks dated next to Windows 11; a modern, themed
+  replacement is planned (ROADMAP F-51).
 - **Some files are too large to read comfortably.** See the code-health
   bullet in section 2 and `TASKS.md` section K. Until they are split, find
   code by function name rather than by scrolling.

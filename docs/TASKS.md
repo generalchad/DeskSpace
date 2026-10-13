@@ -1190,6 +1190,18 @@ Small requests, one commit each.
     preset, so the branch never fires (see **Found while working**).
     Deprioritized.
 
+- [ ] **F14. A modern color picker (ROADMAP F-51).** [needs decision]
+  - The Colors page and the space menu's Appearance submenu open the system
+    `ChooseColorW` dialog (`Ui::pick_color`), which looks dated next to
+    Windows 11. Replace it with a native-feeling, themed picker. The maintainer
+    wants this soon.
+  - Needs a design first: an owner-drawn picker in the settings window (a new
+    `FieldKind`/`FieldValue` path) reused by the space menu as a popup; a
+    saturation/value area with a hue strip and an alpha slider; and how the
+    chosen color is reported. Fit the existing data-driven UI rather than
+    special-casing the color fields.
+  - Do not start until the design is settled.
+
 ## G. More Explorer-standard controls
 
 Remaining gaps from the controls review. Do them in order.
