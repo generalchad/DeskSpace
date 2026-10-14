@@ -14,7 +14,7 @@ fn main() {
 
         // /Brepro zeroes the PE timestamp and replaces it with a content hash,
         // so two builds of the same sources differ less. It is one half of the
-        // reproducible release build (docs/TASKS.md E3); the other is
+        // reproducible release build (task E3 in docs/archive/TASKS-done.md); the other is
         // --remap-path-prefix in release.yml.
         println!("cargo:rustc-link-arg-bins=/Brepro");
 

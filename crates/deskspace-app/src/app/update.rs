@@ -1,4 +1,5 @@
-//! Update checking and installation (ROADMAP F-45, `TASKS.md` E10/E11).
+//! Update checking and installation (ROADMAP F-45; tasks E10/E11 in
+//! `docs/archive/TASKS-done.md`).
 //!
 //! The work runs on a worker thread and hands its result back through the
 //! platform's `Waker` (`Event::Wake`); the app never blocks on the network

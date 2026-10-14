@@ -4,15 +4,15 @@ Concrete, self-contained work items. `ROADMAP.md` says *what* to build and in
 what order; this file says *how*, one task per commit. Tasks are written so a
 contributor (human or model) can do one without designing anything new.
 
-Ticked tasks are kept for the record. Their file and line pointers describe
-the code when they landed, often before `app.rs` was split into `app/`
-modules (R1); use the file map below, not those pointers, to find code today.
-Unticked tasks were re-checked against the code on 2026-10-11.
+Only open work lives here. Finished tasks are moved, verbatim, to
+`archive/TASKS-done.md`; read it only for history (its file and line pointers
+describe the code when each task landed, often before the R1 and K splits).
+Work that is built but not yet confirmed on screen is listed in section V.
 
-**Pick a task:** start with section A (comment and small correctness fixes),
-then B (cleanups) and K (file splits). These are the safest and make every
-later task easier. Tasks marked **[needs decision]** or in section D are not
-ready; skip them.
+**Pick a task:** section L (adding items to spaces) is the current priority;
+start with L1. G5a-G5c are ready, in order. F13 first needs the Ctrl+wheel bug
+under **Found while working** explained. Tasks marked **[needs decision]** or
+in section D are not ready; skip them.
 
 ## How to work a task
 
@@ -43,10 +43,13 @@ ready; skip them.
 8. Commit with the repo's style: `feat: ...`, `fix: ...`, `refactor: ...`,
    `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`, `release: ...`,
    imperative and lowercase, with the task id in parentheses (`refactor: split d2d.rs (K2)`).
-   Tick the task's box here in the same commit.
+   In the same commit, tick the task's box and move the task, verbatim, to
+   the end of `archive/TASKS-done.md`, so this file holds only open work.
 9. Tasks marked **[needs human]** need an on-screen check you cannot do.
-   Implement, then list exactly what to check in the commit body and leave the
-   box unticked with "(awaiting check)".
+   Implement, list exactly what to check in the commit body, and add a
+   one-row summary of the check to section V; then archive the task as in
+   rule 8. Anything only a human can record (for example L1's findings) stays
+   here until it is recorded.
 10. Tasks in section D are **not** for routine work. Skip them.
 
 ## File map
@@ -194,359 +197,185 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 
 ---
 
-## A. Fix the bad examples (do these first)
+## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
-- [x] **A1. Do not hold the runtime borrow across info-tip calls.**
-  - File: `crates/deskspace-platform/src/win32/runtime.rs`,
-    `Ui::show_info_tip` and `Ui::hide_info_tip` (~line 482-514).
-  - Problem: `tip.show(...)` / `tip.hide()` send window messages while
-    `with_runtime` holds the borrow, which the module header forbids.
-  - Fix: copy the check-out pattern in `show_drag_ghost` and `with_ghost`
-    right above: `take()` the `InfoTip` out of the runtime, call it, put it
-    back. Add a small `with_info_tip(&mut self, f)` helper like `with_ghost`.
-  - Done when: no `with_runtime` closure in `runtime.rs` calls a method that
-    sends messages. Behavior unchanged.
+Today an item reaches a space by a file drag, a paste, or (F-50) a drag that
+carries shell items. The maintainer reports that dragging an app from the
+Start menu onto a space still does not work, so users drag it to the desktop
+first and then into the space. These tasks fix that drop and add menu-driven
+ways to add items. Do them in order; L3-L6 do not depend on L1-L2.
 
-- [x] **A2. Add the missing `// SAFETY:` comments.**
-  - Locations (from a heuristic scan; re-scan, there may be a few more or
-    fewer): `win32/clipboard.rs` 132, 133, 135, 143, 146, 198;
-    `win32/desktop_shell.rs` 46, 68, 80; `win32/dpi.rs` 8, 16;
-    `win32/drop_target.rs` 299, 301; `win32/hotkey.rs` 27, 34;
-    `win32/keyboard.rs` 197, 209, 229, 239, 246, 278.
-  - Each comment states why the call's invariants hold, in one or two lines,
-    in the style of the existing ones (for example "the hook must pass the
-    event on" or "`hwnd` is a live window owned by this thread").
-  - Also: `win32/drop_target.rs` ~384 uses `/// SAFETY:` on an `unsafe fn`;
-    change it to a `/// # Safety` section. `win32/drag_image.rs` ~147 refers to
-    `pixels.len()`, which does not exist; reword it to the real variable.
-  - Comments only. No code changes.
+Shared code, already in place (F-50, commit `01043e8`):
 
-- [x] **A3. Fix stale and misleading comments.** Comments only.
-  - `deskspace-app/src/scene.rs` ~238: the doc for the scroll thumb ("A thin
-    bar along the right edge...") sits on `auto_text_shadow`. Move it to the
-    scroll-thumb function it describes, or delete it if that one already has
-    a doc.
-  - `deskspace-platform/src/edit.rs` line 1: says it is for renaming a space
-    title; it also renames item labels.
-  - `win32/info_tip.rs` ~123: `send` says "Posts"; it sends.
-  - `win32/tray.rs` ~101: `shared_icon` says "A copy"; it returns the same
-    handle.
-  - `render/d2d.rs` ~621: mentions `render_item`; the function is
-    `render_items`.
-  - `win32/keyboard.rs` ~137: `stop` says "clears both modes"; it clears all
-    three flags. Line ~8 lists the watched keys; add F2 and Ctrl+A. Line ~173
-    `is_key`'s doc restates the code; delete it.
-  - `deskspace-app/src/app.rs` ~179: the `edit` field says "The space being
-    renamed inline"; it is a space title or an item label.
+- `win32/drop_target.rs`: `DragKind`, `drag_kind`, `shell_items`,
+  `shell_item`, `display_name`, `shell_drop_effect`, and `log_formats`.
+- `input.rs`: `ShellItem { name, id_list }` and
+  `SpaceEvent::ShellItemsDropped`.
+- `win32/shortcuts.rs` `create_shortcut(item, path)`; `app/files.rs`
+  `App::add_shortcuts(ui, space, at, items)` and `shortcut_file_name`;
+  `storage.rs` `ItemStore::unique_path`.
 
-- [x] **A4. Explain the magic constants AGENTS.md calls out.**
-  - `win32/desktop_shell.rs` ~9 `SPAWN_WORKER_MESSAGE = 0x052C`: add a short
-    comment that this undocumented Progman message makes Explorer create the
-    wallpaper WorkerW, and why the timeout value is what it is.
-  - `win32/keyboard.rs` ~76 `VK_A_CODE = 0x41`: replace with
-    `windows::Win32::UI::Input::KeyboardAndMouse::VK_A` and `is_key`.
-  - `win32/hotkey.rs`: replace raw key codes (`0x70`, `0x20`, `0x09`,
-    `0x0D`, `0x1B`) with `VK_F1`, `VK_SPACE`, `VK_TAB`, `VK_RETURN`,
-    `VK_ESCAPE`; document `HOTKEY_BASE_ID`.
-  - `win32/data_object.rs` ~192 `0x8007000E`: use `E_OUTOFMEMORY`.
-  - Done when: existing hotkey parsing tests still pass unchanged.
+Every way of adding a shortcut must end in `App::add_shortcuts`; never add a
+second shortcut writer.
 
-- [x] **A5. Route space re-flow through a `Command`.**
-  - Add `Command::Reflow { id }` in `deskspace-core/src/command.rs`. Its arm
-    does exactly what `App::reflow_space` does today: for a locked space set
-    `title_height` from the layout and call `position_items`; otherwise call
-    `arrange_space`. Return `NotFound` for a missing id, else `Applied`.
-  - In `App::reflow_space`, replace the `space_mut` block with
-    `self.config.desktop.apply_with_layout(Command::Reflow { id }, layout,
-    bounds)`. Get `bounds` the way `App::dispatch` does (look at it; use the
-    space's center as the point).
-  - Tests in `command.rs`: a locked space keeps its rect but gets the new
-    title height; an unlocked auto-sized space resizes to fit.
-  - Done when: `reflow_space` contains no `space_mut`. Update the Commands
-    list in `CONTEXT.md` section 4.
+- [ ] **L1. Log what a drag offers, then diagnose the Start-menu drop.**
+  **[needs human]**
+  - Likely cause (unconfirmed): a desktop app in Start is a real `.lnk` under
+    `Start Menu\Programs`, so its drag may carry `CF_HDROP` as well as a Shell
+    ID List. `drag_kind` lets files win, and `desired_effect` asks for `MOVE`
+    or `COPY`. If Start offers only `DROPEFFECT_LINK`, the result is
+    `DROPEFFECT_NONE` (the no-drop cursor). If it offers `COPY`, the space
+    lists Start's own `.lnk` in place, so a later Delete would remove the
+    user's Start entry; if it offers `MOVE`, the shortcut leaves Start.
+  - Code, `win32/drop_target.rs` `DragEnter`: log every drag at `debug`, not
+    only refused ones: one line with `allowed.0`, `keys.0`, and the chosen
+    `DragKind` (derive `Debug` on it), then call `log_formats(data)` whatever
+    the kind. `DragEnter` runs once per drag, so this is not a hot path.
+    Update `log_formats`' doc comment, which says it only runs on a refusal.
+  - Check (maintainer): with DeskSpace **not elevated** (UIPI silently blocks
+    drops from Start or Explorer into an elevated window), run
+    `./scripts/dev.ps1 -Verbosity 1` and drag onto a space: a desktop app
+    from Start's "Pinned" grid, one from "All apps", a Store app (for example
+    Calculator), a taskbar-pinned app, and a plain file from Explorer. Record
+    per source the allowed effects, the formats, the cursor shown, and the
+    result, here under this task (replace this bullet).
+  - Done when: the log line lands (`fix: log every drag a space sees (L1)`)
+    and the findings are recorded. If they contradict L2's plan, **stop and
+    ask** before L2.
 
-- [x] **A6. Cancel after toggling "Match Explorer" must re-flow.**
-  - Bug: `field::MATCH_EXPLORER` returns `Effect::Layout`, but
-    `App::cancel_settings` only re-flows when `layout` or `icon_size`
-    changed, so cancelling a match toggle leaves spaces on the wrong grid.
-  - Fix: add `|| session.saved_theme.match_explorer !=
-    self.config.theme.match_explorer` to the `relayout` condition.
-  - Prefer a small pure helper `fn needs_relayout(saved: &Session, config:
-    &Config) -> bool` in `settings.rs` with a test, used by `cancel_settings`.
+- [ ] **L2. Decide a drop by what the source allows; a link makes a
+  shortcut.** After L1's findings.
+  - Rule, matching Explorer: a drop whose effect is `LINK` creates a
+    shortcut, whatever formats the drag carries. A space picks `LINK` when the
+    source offers neither `MOVE` nor `COPY` (Start, the taskbar), or when Alt
+    is held and `LINK` is allowed (Explorer's create-shortcut modifier;
+    Explorer also uses Ctrl+Shift, but Shift means keep-in-place on a space,
+    so use Alt alone). Otherwise files move (Shift keeps them) as today, and a
+    drag with only shell items prefers `LINK` as `shell_drop_effect` does.
+  - Pure, tested helper in `drop_target.rs`, replacing the three copies of the
+    `match kind { .. }` effect choice in `DragEnter`, `DragOver`, and `Drop`:
 
-- [x] **A7. Bring the keyboard comments up to date.** Comments only.
-  - `crates/deskspace-platform/src/win32/keyboard.rs`:
-    - the module header (lines ~1-14) lists an old, narrow key set. Rewrite
-      it to say the hook has an edit mode and two watch flags, and point to
-      `fn handle` for the keys, instead of listing them (a list goes stale);
-    - the `WATCH_SELECTION` / `WATCH_PASTE` comments in `thread_local!`
-      (~116-119) say "Delete, Ctrl+C, and Ctrl+X" and "Ctrl+V". Reword to
-      "an item is selected" and "a space is current (the name is
-      historical)";
-    - the doc of `watch_selection` (~138) repeats the old key list; reword it
-      the same way;
-    - `RENAME_KEY` (~48) says "while an item is selected"; F2 also fires with
-      only a current space.
-  - `crates/deskspace-platform/src/win32/runtime.rs`, the doc of
-    `Ui::watch_selection_keys` (~439-443): same fix.
-  - Use the flag-by-key table in `AGENTS.md` (Gotchas) as the source of
-    truth, and do not copy the table into the code.
-  - Done when: no comment in either file lists keys that `fn handle` does not
-    match. Then delete the "(`TASKS.md` A7)" sentence from the AGENTS.md
-    Gotchas entry.
+    ```rust
+    /// What a drop onto a space does.
+    enum DropPlan { None, MoveFiles, KeepFiles, Shortcuts }
 
-- [x] **A8. Keep the check-box mode when the desktop view cannot be read.**
-  - Bug: `crates/deskspace-platform/src/win32/display_settings.rs`,
-    `desktop_display` starts from `global_display()`, whose `check_boxes` is
-    `CheckBoxMode::Hidden`, and only overrides it when the view read
-    succeeds. So a failed read (the view is briefly unavailable, for example
-    while Explorer restarts) hides the boxes, while the comment in
-    `desktop_display` claims it does not. The app then stores that snapshot
-    (`App::refresh_shell_display`, `app/view.rs`) and, because the mode left
-    `Independent`, clears the independent ticks.
-  - Fix:
-    1. Add `pub fn desktop_display_since(previous: CheckBoxMode) ->
-       ShellDisplay` beside `desktop_display`. It does the same reads, but
-       when the view is unavailable or `view_check_boxes` returns `None` it
-       uses `previous`. Have `desktop_display()` call it with
-       `CheckBoxMode::Hidden`, so its behavior is unchanged for
-       `shell.rs` (`enumerate_desktop_items`, which reads only the hidden-file
-       flags).
-    2. Put the choice in a pure function `fn check_box_mode(read:
-       Option<CheckBoxMode>, previous: CheckBoxMode) -> CheckBoxMode` with a
-       test for both cases.
-    3. Re-export it from `win32/mod.rs` and `lib.rs` next to
-       `desktop_display`. In the app, the two callers (`app.rs` in the
-       `Started` arm and `App::refresh_shell_display` in `app/view.rs`) call
-       `desktop_display_since(self.shell_display.check_boxes)`.
-    4. Move the "a failed read must not hide check boxes" comment onto
-       `desktop_display_since`, where it is true.
-  - Leave `icon_size` and `icon_spacing` as they are (their `None` also means
-    "not in icon mode", so they need a separate design).
-  - Then delete the "(`TASKS.md` A8)" sentence in `CONTEXT.md` section 6 and
-    describe the new behavior there.
-  - Done when: the new test passes and both app callers pass the stored mode.
+    fn drop_plan(kind: DragKind, keys: MODIFIERKEYS_FLAGS, allowed: DROPEFFECT)
+        -> (DropPlan, DROPEFFECT)
+    ```
 
-- [x] **A9. Clamp the grid and new-space size when the config loads.**
-  - Today `Config::migrate` (`crates/deskspace-config/src/schema.rs`, ~109)
-    clamps the theme and every space look, but not `desktop.layout.gap`,
-    `padding`, or `snap`, nor `window.new_space_width` / `new_space_height`.
-    They are clamped only where used, so a hand-edited value is wrong in the
-    settings window until it is edited.
-  - Add `pub fn clamped(self) -> Self` to `GridSpec`
-    (`crates/deskspace-core/src/layout.rs`): `gap` and `padding` to
-    `GAP_RANGE`, `snap` to `SNAP_RANGE`. Copy the shape of `Theme::clamped`.
-  - Add `pub fn clamped(self) -> Self` to `WindowSettings` (`schema.rs`):
-    width and height to `NEW_SPACE_SIZE_RANGE`.
-  - Call both in `Config::migrate`, next to the theme clamp.
-  - Tests: one per `clamped` (out-of-range in, in-range out), and one
-    `Config` load test with an out-of-range `gap` in the TOML.
-  - Then delete "(`TASKS.md` A9)" from `CONTEXT.md` section 5 and say the
-    grid and new-space size are clamped on load too.
+    `DragKind` keeps meaning "what the drag carries"; `drop_plan` decides.
+    Tests: files with every effect allowed (move), files with Shift (keep),
+    files with only `LINK` (shortcuts), files with Alt and `LINK` allowed
+    (shortcuts), shell items only (shortcuts, `LINK` preferred), nothing
+    allowed (none). `desired_effect` and `shell_drop_effect` either become
+    private helpers of `drop_plan` or go; keep their tests passing or move
+    them onto `drop_plan`.
+  - `Drop`: for `DropPlan::Shortcuts`, read the items with `shell_items(data)`
+    whether or not the drag carries `CF_HDROP`
+    (`SHCreateShellItemArrayFromDataObject` reads either), raise
+    `ShellItemsDropped`, and do **not** set "Performed DropEffect" (nothing
+    was moved). `MoveFiles` / `KeepFiles` keep today's `FilesDropped` path.
+  - Copy a shortcut instead of linking to it. A `.lnk` pointing at another
+    `.lnk` is what Explorer avoids; it copies the link. Add
+    `pub path: Option<PathBuf>` to `ShellItem` with a `///` doc (filled from
+    `SIGDN_FILESYSPATH` in `shell_item`; `None` for virtual items). In
+    `App::add_shortcuts`, when `path` has a `lnk` or `url` extension (a pure
+    `fn is_link_file(path: &Path) -> bool`, case-insensitive, with a test),
+    `std::fs::copy` it to the unique store path instead of calling
+    `create_shortcut`. The source file is never moved or deleted.
+  - Docs: `CONTEXT.md` section 6 (the file-drops bullet) and section 8 (the
+    drop bullet), `README.md` Controls (Alt-drag creates a shortcut), and the
+    F-50 row in the ROADMAP feature index.
+  - Done when: the tests pass. **[needs human]** check: every source from L1
+    lands in a space as a working shortcut, with the link cursor; the Start
+    entry is still in Start afterwards; Alt-dragging a file from Explorer
+    makes a shortcut and leaves the file; a plain drag still moves the file
+    and Shift still keeps it in place.
 
-- [x] **A10. Make the menu-id test cover every id.**
-  - `crates/deskspace-app/src/app.rs`, test `menu_ids_are_unique`: the
-    `other` list omits `menu::SPACE_SETTINGS`. Add it.
-  - Done when: every `pub const` in `mod menu` appears either in `other` or
-    in a preset table. Test-only change (`test: ...`).
+- [ ] **L3. A picker for apps (platform).** Independent of L1-L2.
+  - New `win32/pickers.rs` (add it to the file map above and to the module
+    table in `CONTEXT.md` section 6, under Shell) with
+    `pub(crate) fn pick_apps(owner: HWND) -> Vec<ShellItem>`, exposed as
+    `Ui::pick_apps(&mut self) -> Vec<ShellItem>` in `runtime/ui_shell.rs`. An
+    empty Vec means the user cancelled.
+  - Spike first: an `IFileOpenDialog` (`FileOpenDialog` CLSID) with
+    `FOS_ALLNONSTORAGEITEMS | FOS_ALLOWMULTISELECT | FOS_NOVALIDATE`, titled
+    "Add apps", opened on the Applications folder
+    (`SHGetKnownFolderItem(&FOLDERID_AppsFolder, ..)`, then `SetFolder`), and
+    `GetResults` for the chosen items. If the dialog cannot show or return
+    Applications-folder items (try a Store app and a desktop app), **stop and
+    ask**: the fallback is a DeskSpace list window over the Applications
+    folder, which needs design.
+  - A chosen `IShellItem` becomes a `ShellItem` the way `drop_target.rs`'s
+    `shell_item` already does it: move `shell_item` and `display_name` into
+    `win32/shortcuts.rs` as `pub(crate)` and call them from both places (a
+    pure move, never a second copy).
+  - Modal rules: copy `Ui::confirm` (`runtime/ui_chrome.rs`): read the owner
+    (the settings window when open, else the controller) inside
+    `with_runtime`, release the borrow, then show the dialog. Link the
+    Microsoft Learn pages for `IFileOpenDialog` and `FILEOPENDIALOGOPTIONS`
+    beside the calls; every `unsafe` block gets a `// SAFETY:` comment.
+  - Done when: it compiles, clippy is clean, and a temporary call (removed
+    before committing) returns names and ID lists. **[needs human]**
 
-- [x] **A11. Say "spaces", not the old container name, in `scripts/dev.ps1`.**
-  - The help text and parameter comments still used the old container name
-    (examples at ~17 and ~21, parameters at ~39 and ~43). Replace it with
-    "spaces". Comments and help text only; no behavior change.
+- [ ] **L4. "Add ▸ Apps…" in the space menu (F-53).** After L3. Follow
+  "Recipe: a new menu entry".
+  - `app.rs` `mod menu`: `ADD_APPS = 45` (it opens a new group at 45; update
+    the next-free note in `CONTEXT.md` section 6), and add it to
+    `menu_ids_are_unique`.
+  - `app/menus.rs` `show_space_menu`: an "Add" submenu right after "Fit to
+    contents", built by one small helper `space_add_menu` like
+    `space_sort_menu`. It holds "Apps…" now; L5 adds "Paste shortcut" and L6
+    "Files…". Leave it enabled for a locked space: locking fixes the
+    position, not the contents, and `Command::AddItem` accepts a locked space.
+  - The arm: `let items = ui.pick_apps();` and, when it is not empty,
+    `self.add_shortcuts(ui, id, at, items)`, with `at` the point
+    `show_space_menu` already receives.
+  - Docs: `CONTEXT.md` section 8 (the space-menu bullet), `README.md`
+    Controls, and the F-53 row in the ROADMAP feature index.
+  - Done when: tests pass. **[needs human]** check: "Add ▸ Apps…" on a space;
+    pick a Store app and two desktop apps at once; three working shortcuts
+    appear in that space, and Cancel adds nothing.
 
-## B. Small cleanups
+- [ ] **L5. "Add ▸ Paste shortcut" (F-54).** After L4. Explorer's "Paste
+  shortcut": copy anything in Explorer, then make a shortcut to it in a space.
+  - Platform: `Ui::clipboard_shell_items(&mut self) -> Vec<ShellItem>` in
+    `runtime/ui_shell.rs`, implemented in `win32/clipboard.rs`:
+    `OleGetClipboard`, then the same path as drops (make
+    `drop_target::shell_items` `pub(crate)`, or move it beside `shell_item`
+    in `shortcuts.rs`; do not copy it). Reuse the retry the clipboard file
+    reader already has for a clipboard another process holds.
+  - App: `menu::PASTE_SHORTCUT = 46` in the "Add" submenu after a separator,
+    greyed when `ui.clipboard_shell_items()` is empty (read it once while
+    building the menu). The arm calls `add_shortcuts`; L2's copy-a-`.lnk`
+    rule applies because it lives there. Paste shortcut never moves or
+    deletes the clipboard's files and leaves the clipboard and any cut
+    ghosting alone.
+  - No key: Explorer has no default key for it, and Ctrl+V keeps meaning
+    paste.
+  - Docs as in L4, and the F-54 row.
+  - Done when: tests pass. **[needs human]** check: copy a file and a folder
+    in Explorer; "Paste shortcut" in a space makes two shortcuts and the
+    originals stay; with nothing on the clipboard the entry is grey.
 
-Each is independent. None changes behavior.
+- [ ] **L6. "Add ▸ Files…" (F-55).** After L4. **[needs decision]**: does a
+  file picked in a dialog move into the space (as a drop does, D3), stay in
+  place, or become a shortcut? Recommendation: move, like a drop, because one
+  rule for "add a file" is easiest to learn; but a dialog that relocates files
+  may surprise users, so the maintainer decides first.
+  - Platform: `pickers::pick_files(owner) -> Vec<PathBuf>` and
+    `Ui::pick_files`, an `IFileOpenDialog` with
+    `FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM`, opened on the Desktop
+    folder. One dialog cannot pick files and folders together, so folders
+    stay drag-only for now.
+  - App: `menu::ADD_FILES = 47` in the "Add" submenu; the arm calls
+    `add_dropped(ui, id, at, paths, keep_in_place)` per the decision, so it
+    shares the drop path exactly.
+  - Docs as in L4, and the F-55 row.
+  - Done when: tests pass. **[needs human]** check: pick two files; they land
+    in the space as decided, and Cancel adds nothing.
 
-- [x] **B1. Remove clearly dead code.** For each item, `grep` the whole
-  workspace first; delete only if nothing outside its own tests uses it.
-  - `deskspace-core/src/id.rs` `IdGenerator` (and its tests).
-  - `deskspace-core/src/space.rs` `Space::required_size` and
-    `Space::resize_to_fit` (duplicates of `arrange_space`).
-  - `deskspace-core/src/desktop.rs` `Desktop::item_with_path` (the app uses
-    `App::find_item_by_file`).
-  - `deskspace-platform/src/error.rs` `PlatformError::NoDesktopWindow`.
-  - Keep `Command::{MoveSpace, AutoArrange, SnapAll}`: the M3 Arrange
-    submenu will use them.
-
-- [x] **B2. Name the repeated clamp ranges.**
-  - The ranges `50..=200` (icon size), `60..=160` (label size), `0..=24`
-    (grid gap/padding), and `0..=64` (snap) are repeated in
-    `deskspace-app/src/settings.rs` (`build_form`, `apply_field`),
-    `deskspace-app/src/app.rs` (`icon_scale`), `deskspace-app/src/scene.rs`,
-    and `render/d2d.rs`.
-  - Add `ICON_SIZE_RANGE` and `LABEL_SIZE_RANGE` next to
-    `OVERLAY_SIZE_RANGE` in `theme.rs`, and `GAP_RANGE` / `SNAP_RANGE` in
-    `layout.rs`. Use them everywhere.
-
-- [x] **B3. Drive the opacity and sort menus from one table each.**
-  - `deskspace-app/src/app.rs`: the opacity values appear both in
-    `space_appearance_menu`'s `OPACITIES` and in `show_space_menu`'s match;
-    the sort ids are mapped both in `space_sort_menu` and in the match.
-  - Move both tables to module-level `const`s. Build the menus from them, and
-    in `show_space_menu` look the chosen id up in the table instead of
-    matching each id.
-  - Test: every table id is unique and does not collide with other `menu::`
-    ids.
-
-- [x] **B4. Merge `pick_space_tint` and `pick_space_text`.**
-  - One `fn pick_space_color(&mut self, ui, id, at, which: SpaceColor)` with
-    a small private `enum SpaceColor { Tint, Text }` choosing the current
-    value and the `Command`.
-
-- [x] **B5. One helper for "dispatch, repaint, schedule a save".**
-  - `fn apply_to_space(&mut self, ui: &mut Ui, id: SpaceId, command: Command,
-    at: Point) -> bool` in `app.rs`. Use it in `set_space_opacity`,
-    `sort_space`, the `FIT` and `LOCK` arms, `toggle_rollup`, and wherever
-    else the three-line pattern appears. Keep any extra step (like
-    `self.scroll.remove(&id)` for `FIT`) at the call site.
-
-- [x] **B6. Use the shared `wide` helper.**
-  - `win32/info_tip.rs` ~69 re-implements UTF-16 conversion; use
-    `crate::win32::system::wide`. Replace fully qualified
-    `crate::win32::system::wide(...)` calls with a `use` at the top of each
-    file.
-
-- [x] **B7. Simplify the keyboard hook's pass-through.**
-  - `win32/keyboard.rs` `hook_proc` calls `CallNextHookEx` in seven places.
-    Move the body into `fn handle(code, wparam, event) -> bool` (true =
-    consumed) and have `hook_proc` call `CallNextHookEx` once when it returns
-    false. No behavior change; keep the comments that explain each branch.
-
-- [x] **B8. Remove the settings window's unused tab layout.**
-  - `SettingsForm.nav` (`crates/deskspace-platform/src/ui.rs`) is an
-    `Option<SettingsNav>`; `None` builds the old top-tab layout. The app
-    always passes `Some` (`build_form` in `deskspace-app/src/settings.rs`),
-    so the tab code is dead.
-  - Make the field `pub nav: SettingsNav` and update its doc. Fix the
-    constructors and tests in `ui.rs` (a test that used `nav: None` can use a
-    small `SettingsNav` with one group, like `nav_entry` already builds).
-  - In `crates/deskspace-platform/src/win32/settings_window.rs`, delete what
-    only the tab layout used: `ID_TAB`, `TAB_SUBCLASS_ID`, `tab_proc`,
-    `paint_tab`, `on_tab_changed`, the `None` branch in `build` (it creates a
-    `WC_TABCONTROLW`), and any `match`/`if let` on `nav` that only existed for
-    `None`. Search for each name after deleting to be sure nothing still uses
-    it.
-  - In `win32/dark_mode.rs`, reword the `UiColors` field comments that
-    describe tabs (~128-135) to describe the panes.
-  - Done when: `rg -i "tab_proc|paint_tab|WC_TABCONTROL|ID_TAB" crates`
-    finds nothing, and the settings window still opens (check with
-    `cargo run -p deskspace-app -- --config <scratch.toml> --settings`;
-    remove the scratch config afterwards). Update `CONTEXT.md` section 6
-    (the `SettingsForm.nav` and dark-mode bullets mention B8).
-
-- [x] **B9. Remove stale `too_many_arguments` allows.**
-  - `#[allow(clippy::too_many_arguments)]` sits on functions in
-    `deskspace-app/src/scene.rs` (`space_scene`, `desktop_layer_scene`,
-    `desktop_layer_drag_scene`, `drag_scene`), `render/d2d.rs` (`draw_item`,
-    `draw_check_box`, `draw_text`, `draw_edit_buffer`), and
-    `win32/settings_window.rs` (one `Builder` method). `space_scene` takes 7
-    arguments, which clippy allows, so at least that one is stale.
-  - Remove each allow, one at a time, and run
-    `cargo clippy --workspace --all-targets -- -D warnings`. Put it back only
-    if clippy then fails for that function.
-  - Do not restructure arguments in this task. List the allows that had to
-    stay under **Found while working** with their argument counts, so a later
-    task can group them into a struct (as `ViewState` does for scenes).
-
-## C. Features (ROADMAP M3, remaining items 1-4)
-
-Do them in order. Each is one commit plus a `docs:` commit if the docs change
-is large.
-
-- [x] **C1. Per-space icon size (rest of F-25).** Superseded: a space's icon
-  size is now part of its look (section H), and this field is folded into it
-  on load. Kept for the record.
-  - `Space.icon_size: Option<u8>`, a percent; `None` follows the global
-    setting.
-  - `Command::SetSpaceIconSize { id, icon_size: Option<u8> }`, clamped to
-    `ICON_SIZE_RANGE` (from B2; if B2 is not done, use `(50, 200)` and leave a
-    note).
-  - Menu: an "Icon size" submenu in `space_appearance_menu` with "Default"
-    (None), "Small" 75, "Medium" 100, "Large" 150, "Extra large" 200; the
-    current one checked.
-  - `App::space_scale(id)`: when the space has an override, return
-    `percent / 100 * space_dpi(id.0)`, ignoring Explorer's icon size and the
-    global setting. Leave the other paths unchanged.
-  - After the command, call `reflow_space` (not just `refresh_space`) and
-    `schedule_save`. `reset_space_appearance` also clears it.
-  - Tests: command clamps and sets/clears; serde default is `None`.
-  - **[needs human]** check: a Large space next to a Default space, both
-    crisp, hit-testing correct.
-
-- [ ] **C2. Windows accent color (F-29).** Follow "Recipe: a new global
-  setting". (awaiting check)
-  - Platform: `pub fn system_accent_color() -> Option<Color>` in
-    `win32/system.rs`, reading `HKCU\Software\Microsoft\Windows\DWM` value
-    `AccentColor` (a DWORD laid out `0xAABBGGRR`). Return `None` on any
-    failure. Copy the registry-call style from `win32/desktop_entry.rs`. Add
-    a pure, tested `fn color_from_abgr(u32) -> Color`. Re-export from
-    `lib.rs`.
-  - Core: `Theme.use_accent: bool` (default false), and
-    `Palette::with_accent(self, accent: Color) -> Palette` that replaces
-    `selected_fill` and `border` with the accent at their current alphas.
-    Test it.
-  - App: store `system_accent: Option<Color>` on `App`, read at start and on
-    `Event::SystemThemeChanged` (Windows sends it when the accent changes).
-    Wherever a scene palette is built (`refresh_space`, and the drag scene),
-    apply `with_accent` when `use_accent` is on and an accent is known. Add
-    one helper `fn palette(&self) -> Palette` and use it at every
-    `self.config.theme.palette(self.system_dark)` call site.
-  - Settings: a "Use Windows accent color" toggle on the Colors page,
-    `Effect::Appearance`.
-  - **[needs human]** check: selection and border pick up the accent, and
-    change live when the accent changes in Windows Settings.
-
-- [ ] **C3. Theme override for settings and menus (F-30).** Follow "Recipe:
-  a new global setting". (awaiting check)
-  - Core: `Theme.ui_mode: ThemeMode` (default `System`). It is separate from
-    `Theme.mode`, which only colors the spaces.
-  - App: `fn ui_dark(&self) -> bool` returning `self.config.theme.ui_mode
-    .is_dark(...)`-style logic (reuse `Theme::is_dark`'s match; add a
-    `ThemeMode::resolve(system_dark) -> bool` in core if that is cleaner, and
-    make `Theme::is_dark` use it). Replace both `ui.set_ui_dark(self
-    .system_dark)` calls in `on_event` with `ui.set_ui_dark(self.ui_dark())`.
-  - Settings: a "Settings and menus" choice on the General page reusing the
-    `MODES` table. In `on_settings_event`, after an `Effect::Appearance`, also
-    call `ui.set_ui_dark(self.ui_dark())` so it previews live; Cancel must
-    restore it (extend `cancel_settings`).
-  - **[needs human]** check: switching to Dark/Light repaints the open
-    settings window and the next popup menu.
-
-- [ ] **C4. Start with Windows (F-34).** Follow "Recipe: a new global
-  setting". (awaiting check)
-  - Config: `WindowSettings.start_with_windows: bool` (default false).
-  - Platform: `pub fn set_start_with_windows(enabled: bool) -> Result<()>`
-    in a new `win32/autostart.rs`, writing or deleting value `DeskSpace`
-    under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The value is
-    the quoted path of `std::env::current_exe()`. Copy registry handling and
-    error mapping (`PlatformError::Registry`) from `win32/desktop_entry.rs`.
-    Put the command-line string in a pure, tested function. Re-export from
-    `lib.rs`.
-  - App: apply it in `apply_settings` when the value changed, and once at
-    startup when enabled (so the stored path follows a moved executable).
-    Log failures with `tracing::warn!`; do not block Apply.
-  - Settings: a toggle on the General page, `Effect::Pending`.
-  - Tests must not touch the registry.
-  - **[needs human]** check: the value appears/disappears in the Run key and
-    DeskSpace starts at sign-in.
-
-- [ ] **C5. The item preset dropdown (F-48).** (awaiting check)
-  - Core: `Theme.match_explorer: bool` became `Theme.preset: Preset`
-    (`Custom | MatchExplorer`), with `Theme::match_explorer()` and a
-    `match_explorer` serde alias so older files load. `preset` is a look
-    setting, so it is per space through `SpaceLook` too.
-  - Settings: the Appearance page's "Match Explorer's display" toggle became
-    the "Item preset" choice (`field::PRESET`, options `PRESETS`); a chosen
-    preset returns `Effect::Layout`. The Layout page's icon-size,
-    icon-spacing, and edge-padding fields are greyed under `MatchExplorer`.
-  - Tests: core `match_explorer()`; config default, snake_case, and the legacy
-    bool; `app::view` resolution parity; the settings choice and the disabled
-    fields.
-  - **[needs human]** check: the dropdown shows "Match Explorer's display" /
-    "Custom"; "Custom" enables the Layout fields and the icon size takes
-    effect; "Match Explorer's display" greys them.
+## C. Features (ROADMAP M3)
 
 - [ ] **C6. More item presets, and preset import/export (F-48).** Later; needs
   design first.
@@ -559,39 +388,6 @@ is large.
     Keep `Preset` forward-compatible (`#[serde(default)]`).
   - The preset grows to cover the remaining Explorer-equivalent item settings
     as they land (hidden/protected files once F-22 exists).
-
-- [ ] **C7. The Hotkeys page (F-18, M3 remaining item 1).** (awaiting check)
-  - Config: `WindowSettings.new_space_hotkey` and `settings_hotkey` strings
-    (default empty = unbound), `#[serde(default)]`.
-  - `settings.rs`: a `HOTKEY_BINDINGS` table (field, note field, label, index)
-    drives both the page and the app's registration. Move the existing
-    `HOTKEY` field here; a `hotkey_texts` / `hotkey_errors` pair on `Session`
-    stages each binding until Apply.
-  - App: register every binding on `Started` and on Apply (empty unregisters),
-    unregister all on `CloseRequested`; `NEW_SPACE_HOTKEY` creates a space at
-    `cursor_pos()`, `SETTINGS_HOTKEY` opens settings. A test keeps the app's
-    indices in step with the table.
-  - **[needs human]** check: bind each hotkey, confirm it fires; a conflicting
-    binding is reported next to its field and the window stays open; clearing
-    a binding stops it firing.
-  - Landed as `feat: add the Hotkeys settings page (C7)`. The platform gained
-    `cursor_pos()` (`win32/system.rs`).
-
-- [ ] **C8. The New spaces page (F-17, M3 remaining item 1).** (awaiting check)
-  - Config: `WindowSettings.new_space_title` (default "New space"),
-    `new_space_width` / `new_space_height` (default 240x120, clamped to
-    `NEW_SPACE_SIZE_RANGE`), and `new_space_locked` (default false), all
-    `#[serde(default)]`.
-  - Core: `Command::CreateSpace` carries `size` and `locked`; the app supplies
-    the configured defaults in `App::create_space`, clamped, with a fallback
-    title when the configured one is blank.
-  - Settings: a "New spaces" page with the title, the width and height
-    (`editable` sliders), and the lock toggle, all `Effect::Pending` (they
-    affect future spaces only).
-  - **[needs human]** check: create a space from the space menu, the tray, and
-    the hotkey; it uses the configured title, size, and lock state, and a
-    locked new space keeps its size and scrolls.
-   - Landed as `feat: add the New spaces settings page (C8)`.
 
 - [ ] **C9. Spaces entries on the desktop background menu (F-52).**
   The desktop's right-click background menu already carries the "Show
@@ -630,20 +426,6 @@ Listed so they are not attempted piecemeal. Each needs design work first.
 Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
 (`D1`-`D9`).
 
-- **R1. Split `deskspace-app/src/app.rs`** (4,483 lines as of 2026-10-11) into
-  `app/` submodules, each with its own `impl App` block: `persist`, `view`,
-  `hit`, `selection`, `visibility`, `rename`, `pointer` (drag), `info_tip`,
-  `files`, `clipboard`, `menus`, `settings_session`. Move `app::run` into
-  `bootstrap.rs`. Pure moves, no behavior change. The scaffold (the `app/`
-  module tree plus the `run` move) landed first; each group then moves into
-  place in its own commit. Landed: every group is in place, and `app.rs` is
-  down to about 775 lines (about 600 without tests). The resulting layout is
-  in `CONTEXT.md` section 3 and the file map above.
-- **R2. Extract `Selection`, `PointerState`, and `EditState` from `App`.**
-  After R1. Collapses the five copies of "select only this item" and the
-  three copies of "forget this item everywhere". Landed: each owns its state
-  behind its own methods, and the pointer, hover, marquee, and selection
-  writes go through them.
 - **R3. Platform module layout.** The mechanical splits have landed in
   section K (`win32/settings_window.rs`, `render/d2d.rs`, `settings.rs`,
   `win32/runtime.rs`, `shell.rs`). What remains needs design:
@@ -665,18 +447,11 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   Move the reads to the app or platform, add an `ItemFacts { kind, size,
   modified, compressed, encrypted }` (name to be decided) that the caller
   fills, and pass it into `AddItem` and `Item::new`. Callers:
-  `app/files.rs` (`add_dropped`) and `bootstrap.rs` (seeding). Needs a
+  `app/files.rs` (`add_dropped`, `add_shortcuts`), `app/clipboard.rs`
+  (paste), and `bootstrap.rs` (seeding). Needs a
   decision on where the reads live (the app's `storage.rs` is a candidate).
-- **R5. M2 desktop takeover design.** Resolved: ROADMAP D7 (model) and D8
-  (placement and safety). The work is I1-I8.
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
-- **R7. On-screen verification pass** (maintainer). The list is in
-  `CONTEXT.md` section 2, "Pending on-screen checks".
-- **R8. Auto-update design.** Resolved: ROADMAP D6. The policy uses
-  `cargo-packager-updater` (FULL-package updates only, no deltas). The work
-  is E8-E11; E5 is the installer, already done.
-- **R9. Installer design.** Resolved: ROADMAP D6. The work is E5-E7
-  (cargo-packager/NSIS), done and awaiting R12.
+- **R7. On-screen verification pass** (maintainer). The list is section V.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
   SignPath Foundation (the project must meet their OSS terms: an OSI
   license, which Apache-2.0 is, and a public repository and build). Then add
@@ -684,13 +459,15 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   before both the zip and the installer, and sign the installer
   (`deskspace_<version>_x64-setup.exe`) through cargo-packager's
   `windows.signCommand` (a shell command containing `%1` for the file path).
-  Store the credentials as Actions secrets. This must land before or with
-  the first release that has E9/E11 (auto-update), because unsigned updates
-  trigger SmartScreen on every version.
+  Store the credentials as Actions secrets. The updater shipped in v0.2.1
+  with no feed (the feed waits for the `DESKSPACE_MINISIGN_KEY` secret); sign
+  before turning the feed on, because unsigned updates trigger SmartScreen on
+  every version.
 - **R11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs R10,
   and M2 may make it unnecessary.
-- **R12. First release dry run (maintainer).** After E1-E6. Follow
-  `RELEASING.md` with a pre-release version (for example `0.2.0-alpha.1`).
+- **R12. Release dry run on clean machines (maintainer).** v0.2.0 and v0.2.1
+  were published without it; do it before the next release. Follow
+  `RELEASING.md` with a pre-release version (for example `0.3.0-alpha.1`).
   Check:
   - the zip contains `deskspace-watchdog.exe` beside `deskspace.exe` (E12);
   - the workflow publishes a pre-release with the zip, the `.sha256`, and
@@ -718,473 +495,7 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
     `winget-releaser` action), using a fine-grained PAT stored as an Actions
     secret.
 
-## E. Release engineering (ROADMAP M8)
-
-E1-E4 have landed (awaiting check), as have E12 and E13. E5-E7 (the
-cargo-packager installer) have landed, awaiting the R12 dry run; E8-E11
-remain and have their own dependencies, stated in each task. Code signing
-(R10), the first dry run (R12), and winget (R13) are maintainer work.
-
-`.github/workflows/release.yml` runs on a `v*` tag. Its steps, in order:
-checkout; `rustup toolchain install` (installs the pinned version from
-`rust-toolchain.toml`) and `rustc -Vv`; "Check tag matches workspace
-version" (compares `v<version>` of package `deskspace-app` from `cargo
-metadata` with `GITHUB_REF_NAME`); "Test" (`cargo test --workspace
---locked`); "Build" (`cargo build --release --locked -p deskspace-app`, which
-builds both `deskspace.exe` and `deskspace-watchdog.exe`); "Installer"
-(`cargo install cargo-packager --locked --version 0.11.8`, then `cargo
-packager -p deskspace-app --release --formats nsis`, producing
-`deskspace_<version>_x64-setup.exe`); "Package" (stages `deskspace.exe`,
-`deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md` into
-`deskspace-<tag>-x86_64-pc-windows-msvc/`, zips it, writes a lowercase
-SHA-256); "Publish" (`gh release create
-<tag> <zip> <zip>.sha256 <setup.exe> --title "DeskSpace <tag>"
---generate-notes`, plus `--prerelease` when the tag contains `-`). Read it
-before starting any E task.
-
-- [ ] **E12. Ship the watchdog in the release zip.** (awaiting check)
-  - The takeover's crash restore needs `deskspace-watchdog.exe` beside
-    `deskspace.exe` (`win32/watchdog.rs`, `arm_watchdog`), but the "Package"
-    step copies only `deskspace.exe`, `LICENSE`, `NOTICE`, and `README.md`.
-  - In `.github/workflows/release.yml`, "Package" step: add
-    `target/release/deskspace-watchdog.exe` to the files copied into the
-    staging folder, exactly like `deskspace.exe`. Change nothing else.
-  - Done when: the workflow passes `actionlint` (or a careful read if it is
-    not installed), and `CONTEXT.md` section 10 (the takeover and "No
-    installer" bullets) and `ROADMAP.md` (M8 item 5, F-45, D8) no longer say
-    the watchdog is missing. The real check is R12. **[needs human]**
-
-- [ ] **E1. Commit an `.ico` asset and embed it, with version info, in the
-  executable (ROADMAP M8 item 2).** (awaiting check) Landed as
-  `feat: embed the app icon and version info (E1)`; `winresource` passed
-  `cargo deny check`.
-  - Asset: `assets/deskspace.ico` at the repository root. Generate it once
-    from the existing drawing in `win32/icon.rs`, using `write_icon`'s ICO
-    layout at sizes 16, 20, 24, 32, 40, 48, 64, and 256. Use a throwaway
-    local change (for example a temporarily widened `FILE_SIZES` and a
-    scratch test). Commit only the `.ico`, not the scratch code. From now on
-    the `.ico` is the source of truth.
-  - Build: add `winresource` as a build-dependency of `deskspace-app`
-    (`rust_cargo-add` with `dependency_type = "build"`, so `Cargo.lock` stays
-    current). In `crates/deskspace-app/build.rs`, inside the existing
-    `windows` + `msvc` branch, compile a resource with
-    `set_icon_with_id("../../assets/deskspace.ico", "1")`. `winresource`
-    fills `FileVersion`, `ProductVersion`, and `ProductName` from Cargo
-    metadata. Set `FileDescription` to "DeskSpace" and `LegalCopyright` to the
-    line in the About page (`settings.rs`, `field::ABOUT_LICENSE`). Keep the
-    manifest link args as they are. Add
-    `cargo:rerun-if-changed=../../assets/deskspace.ico`.
-  - If `rc.exe` is not found locally, or `cargo deny check` rejects
-    `winresource` or its dependencies, **stop and ask**.
-  - Do not change any runtime code; E2 does that.
-  - Done when: `cargo build --release` produces a `deskspace.exe` that shows
-    the icon in Explorer, and Properties > Details shows the workspace
-    version. `cargo deny check` passes. **[needs human]** check: the icon at
-    Explorer's small, medium, and extra-large views.
-
-- [ ] **E2. Use the embedded icon at runtime and delete the drawn one.**
-  (awaiting check) After E1. Landed as
-  `refactor: use the embedded icon at runtime and delete the drawn one (E2)`;
-  the desktop verb's icon and one leftover cleanup moved into
-  `app/visibility.rs` (the entry is no longer in `app.rs`).
-  - `win32/tray.rs`: build `tray_icon` / `shared_icon` from the resource
-    with `LoadImageW(GetModuleHandleW(None), MAKEINTRESOURCE(1), IMAGE_ICON,
-    cx, cy, LR_DEFAULTCOLOR)`. Use `GetSystemMetrics(SM_CXSMICON)` for the
-    tray size. Keep the existing destroy-once rule (see `tray.rs` ~94).
-    `settings_window.rs` ~247 already uses `shared_icon`; leave it unchanged.
-  - `deskspace-app/src/app.rs` (the desktop "Show spaces" entry, ~620): drop
-    the `write_icon` call and pass `"{exe}",0` as the icon. Delete a
-    `deskspace.ico` left over beside the storage folder by older versions,
-    ignoring errors.
-  - Delete `win32/icon.rs`, the `write_icon` re-exports in `win32/mod.rs` and
-    `lib.rs`, and the `TODO(deskspace)` there.
-  - Update `CONTEXT.md` section 6 (icon) and section 10 (the "Show spaces"
-    verb note that mentions `icon::write_icon`).
-  - Done when: `grep -r write_icon crates` finds nothing. **[needs human]**
-    check: the tray, the settings title bar, and the Shift+right-click desktop
-    menu entry show the icon at 100 % and 150 % scaling.
-
-- [x] **E13. Pin the Rust toolchain (ROADMAP D9).** Before E3.
-  - `rust-toolchain.toml`: change `channel = "stable"` to the exact current
-    stable version, written as `"1.MINOR.PATCH"` (run `rustc -V` with the
-    current stable; at the time of writing it was 1.98.1). Keep the
-    `components`, `targets`, and `profile` lines.
-  - `.github/workflows/ci.yml` and `release.yml`: replace each
-    `uses: dtolnay/rust-toolchain@stable` step with a step that installs the
-    toolchain the file names, so the file stays the single source of truth:
-    `run: rustup toolchain install` (with no argument, rustup 1.28 and newer
-    installs the toolchain from `rust-toolchain.toml`, with its components
-    and targets), followed by a `run: rustc -Vv` step so the log records the
-    version. If the runner's rustup is older and the command fails, use
-    `rustup show` instead, which installs it on older versions.
-  - Do not change `rust-version` in `Cargo.toml`; it is the
-    minimum supported version, a separate fact. (It moved from 1.85 to 1.88
-    when the updater's `time` dependency needed a patched release, `F-45`.)
-  - Run `cargo clippy --workspace --all-targets -- -D warnings` with the
-    pinned version; it must pass unchanged.
-  - Docs: `AGENTS.md` Prerequisites (say the toolchain is pinned in
-    `rust-toolchain.toml` and installed automatically by rustup) and add a
-    short "Bumping the toolchain" note there: change the version in
-    `rust-toolchain.toml` alone, fix any new clippy lints in the same
-    commit, and commit as `ci: bump the Rust toolchain to 1.x.y`.
-    `README.md` Requirements: the pinned version is installed automatically
-    by rustup.
-  - Done when: CI runs show the pinned `rustc -Vv`, and
-    `rg "rust-toolchain@stable" .github` finds nothing.
-
-- [x] **E3. Reproducible release build (ROADMAP M8 item 5).** After E13,
-  which pins the toolchain, so a rebuild uses the same rustc.
-  - `.github/workflows/release.yml`: on the Build step, set
-    `RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=. --remap-path-prefix=C:\Users\runneradmin\.cargo=cargo`.
-    Then confirm with `strings`/`Select-String` that no runner path is left
-    in the exe.
-  - Make the linker deterministic: in `crates/deskspace-app/build.rs`, inside
-    the msvc branch, add `cargo:rustc-link-arg-bins=/Brepro`. It zeroes the
-    PE timestamp and replaces it with a content hash.
-  - Check locally: build twice, from two clones in different directories,
-    with the same `--remap-path-prefix` (relative to each clone), and compare
-    `Get-FileHash` of both `deskspace.exe`. If they differ, compare the two
-    `dumpbin /headers` outputs, record what differs under **Found while
-    working**, and **stop and ask**.
-  - Done when: the two hashes match. Add one line on how to reproduce a
-    release build to the "No installer, no code signing, no auto-update" note
-    in `CONTEXT.md` section 10.
-
-- [x] **E4. Release checklist and versioning policy (ROADMAP M8 item 5).**
-  - New `RELEASING.md` at the repository root. Link it from `AGENTS.md`
-    (extend the existing "Release" row of the Commands table), from the
-    `README.md` Documentation table, and from `ROADMAP.md` M8 item 5. Add
-    `release:` to the commit types in rule 8 above and in `AGENTS.md`
-    (Commits). Contents:
-    - Versioning: SemVer on `workspace.package.version`. While below 1.0, the
-      minor version follows ROADMAP section 6 (v0.2, v0.3, ...) and patch
-      versions are fixes. Pre-releases use `-alpha.N` / `-beta.N` / `-rc.N`,
-      which `release.yml` marks as pre-releases. The config schema version
-      (`CURRENT_VERSION`) is independent of the app version.
-    - Checklist: `main` is green in CI; bump the version in `Cargo.toml`
-      and refresh `Cargo.lock` (`cargo check --workspace`); move the
-      finished items in `ROADMAP.md` / `CONTEXT.md`; commit as
-      `release: vX.Y.Z`; `git tag vX.Y.Z && git push origin vX.Y.Z`; watch
-      the run with `gh run watch`; download the zip, check the `.sha256`, and
-      smoke-test it with a scratch `--config`; edit the generated notes on
-      the release page.
-    - Recovering from a bad release: delete the release and the tag
-      (`gh release delete vX.Y.Z --cleanup-tag`), fix, and publish the next
-      patch version. Never re-use a published version number.
-  - Done when: the checklist matches `release.yml` step for step (the tag
-    check, `--locked`, the asset names; the step list is at the top of this
-    section).
-
-### Installer and auto-update (ROADMAP D6, F-45)
-
-Read ROADMAP D6 before any of E5-E11; it is the spec, and these tasks only
-say where things go. Confirm every API named below on docs.rs for the pinned
-crate version: `https://docs.rs/cargo-packager-updater` for the updater and
-`https://github.com/crabnebula-dev/cargo-packager` for the packager; if one
-differs, **stop and ask**.
-
-- [x] **E5. Configure cargo-packager (installer + uninstaller).**
-  - In `crates/deskspace-app/Cargo.toml`, add a `[package.metadata.packager]`
-    table: `productName = "DeskSpace"`, `identifier =
-    "com.generalchad.despacespace"`, a publisher, description, and homepage,
-    `formats = ["nsis"]`, an explicit `binaries` list with `deskspace` marked
-    main and `deskspace-watchdog` (I6), and `resources = ["../../LICENSE",
-    "../../NOTICE", "../../README.md"]`.
-  - Add a `[package.metadata.packager.nsis]` table:
-    `installMode = "currentUser"`, `installerIcon =
-    "../../assets/deskspace.ico"`, and
-    `template = "../../packaging/nsis/installer.nsi"`. These paths are
-    `../../`-prefixed because cargo-packager changes into the package
-    directory before packaging, so they are relative to
-    `crates/deskspace-app`, not the repository root.
-  - The `deskspace-update` crate is not needed for the installer:
-    `cargo-packager` is a CI-only tool (installed in E6), never a workspace
-    dependency, so no dependency is added here and the dependency graph stays
-    unchanged. (E10 creates the update crate.)
-  - Vendor the custom NSIS template at `packaging/nsis/installer.nsi` (from
-    `cargo-packager` 0.11.8). It overrides the NSIS default install root, so
-    the installer writes to `%LocalAppData%\DeskSpace.App` instead of
-    `%LocalAppData%\DeskSpace`, the parent of the user's stored files (E7).
-  - Run from the repository root: `cargo build --release -p deskspace-app`,
-    then `cargo packager -p deskspace-app --release --formats nsis`. The
-    result is `deskspace_<version>_x64-setup.exe`, published beside the
-    portable zip in the same GitHub Release (E6).
-  - Done when: the command produces the installer and it installs per user
-    with no admin prompt. The real check is R12. **[needs human]**
-
-- [x] **E6. Build the installer in `release.yml`.** After the Build step:
-  `cargo install cargo-packager --locked --version 0.11.8` (a CI-only tool;
-  the version is pinned to match the vendored template), then `cargo packager
-  -p deskspace-app --release --formats nsis`. Find the built
-  `target/release/*-setup.exe` (`deskspace_<version>_x64-setup.exe`) and add
-  it to the `gh release create` assets alongside the portable zip and its
-  `.sha256`.
-  - Done when: the workflow passes `actionlint` (or a careful read if it is
-    not installed). The real check is R12. **[needs human]**
-
-- [x] **E7. Uninstall cleanup and an install-root safety test.** The Run-key
-  part needs C4 (landed).
-  - The custom NSIS template (`packaging/nsis/installer.nsi`, from E5)
-    installs into `%LocalAppData%\DeskSpace.App` and, in `Section Uninstall`,
-    deletes the `Run` value
-    (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DeskSpace`, F-34) and
-    the `HKCU\Software\Classes\DesktopBackground\Shell\DeskSpaceShowSpaces`
-    key, and never touches the stored files or the config (D6).
-  - Safety test in `deskspace-app`: using `ConfigStore::discover()`, assert
-    that neither the config path nor the storage path is inside
-    `%LOCALAPPDATA%\DeskSpace.App`. Add a pure helper `fn is_inside(path,
-    root) -> bool` with its own tests (case-insensitive, and `DeskSpace.App`
-    is not inside `DeskSpace`).
-  - Done when: the test passes; R12 checks the uninstall on a clean VM.
-    **[needs human]**
-
-- [x] **E8. Cross-thread wake-up for the app (platform).** Landed:
-  `Ui::waker` -> `Waker` in `runtime/mod.rs`, `controller::WAKE`
-  (`WM_APP + 10`), and `Event::Wake { id }` in `input.rs`. Independent of
-  E5-E7.
-  - The update check (E10) runs on a worker thread and has to hand its
-    result to the UI thread. Add a generic mechanism that knows nothing
-    about updates:
-    - `#[derive(Clone)] pub struct Waker` (`Send + Sync`), obtained from
-      `Ui::waker()`. `Waker::wake(&self, id: usize)` posts `WAKE`
-      (`WM_APP + 10`, already reserved by a comment in `controller.rs`; turn
-      that comment into `pub(crate) const WAKE: u32 = WM_APP + 10;`) to the
-      controller window with `id` in `wparam`.
-    - Get the controller handle with `with_runtime(|runtime|
-      runtime.controller)` in `Ui::waker`. `HWND` is not `Send`, so store it
-      as an `isize`, the way `win32/folder_watch.rs` does.
-    - The controller's window procedure (`controller.rs`, `wndproc`)
-      dispatches it as a new `Event::Wake { id: usize }` in `input.rs`,
-      documented like `Event::Timer`. Copy the `FOLDER_CHANGE =>` arm.
-  - Copy the worker-thread `PostMessageW` call and its `// SAFETY:` wording
-    from `win32/folder_watch.rs` ("a post to a destroyed window just
-    fails"). A wake after the window is gone must just fail silently.
-  - Re-export `Waker` from `win32/mod.rs` and `lib.rs`.
-  - The app pairs it with a `std::sync::mpsc` channel it owns; the platform
-    carries only the id.
-  - Done when: `Event::Wake` is in `CONTEXT.md` section 6 (the Events list,
-    and `WM_APP + 10` in the message table). No behavior change.
-
-- [x] **E9. A three-button question dialog (platform).** Landed: `Ui::choose`
-  uses `TaskDialogIndirect`. Independent.
-  - `Ui::choose(&mut self, title: &str, text: &str, buttons: &[&str],
-    default: usize) -> Option<usize>`: a modal `TaskDialogIndirect` owned by
-    the same window as `Ui::confirm` (the settings window when it is open,
-    else the controller), with custom buttons (`TDF_USE_COMMAND_LINKS` off).
-    It returns the index of the button pressed, or `None` if the dialog was
-    closed. The Common Controls v6 manifest in `build.rs` makes
-    `TaskDialogIndirect` available.
-  - Follow `Ui::confirm` (`runtime/ui_chrome.rs`) for ownership, foreground
-    handling, and not holding a runtime borrow across the modal call: it
-    reads the owner inside `with_runtime`, releases the borrow, then calls
-    `SetForegroundWindow` and the modal API. `Win32_UI_Controls` is already a
-    `windows` feature of the platform crate.
-  - Link the `TaskDialogIndirect` page on Microsoft Learn beside the call.
-  - Done when: it compiles and clippy is clean. **[needs human]** check: a
-    temporary call shows three buttons and returns the right index (remove
-    the temporary call before committing).
-
-- [ ] **E10. Update settings, schedule, check, and prompt (F-45).** (awaiting
-  check) Landed: `deskspace-update` wraps `cargo-packager-updater`; the
-  `WindowSettings` fields, the General-page toggle and button, the tray entry,
-  and `app/update.rs` (check, prompt via `Ui::choose`, skip). The pre-release
-  channel is deferred (the GitHub "latest" feed never serves a pre-release). After
-  E8 and E9.
-  - New library crate `crates/deskspace-update` with
-    `#![forbid(unsafe_code)]`, `thiserror` errors, and `tracing`. It depends
-    on `cargo-packager-updater` (`rust_cargo-add`) and on nothing in the
-    workspace. Add it to `[workspace.dependencies]` in the root `Cargo.toml`
-    (`members = ["crates/*"]` picks the crate up) and make `deskspace-app`
-    depend on it. Update `AGENTS.md` (workspace layout, dependency direction
-    `app -> {config, platform, update} -> core`; `update` depends on no
-    workspace crate) and `CONTEXT.md` section 3.
-  - `cargo deny check` will need more licenses for `cargo-packager-updater`
-    and its TLS stack (ISC, BSD-3-Clause, CDLA-Permissive-2.0, Zlib, ...)
-    and may need an advisory ignore. Run `cargo deny check` right after
-    `cargo add` and **stop and ask** before editing `deny.toml`; do not
-    loosen it on your own.
-  - Config, following "Recipe: a new global setting", all in
-    `WindowSettings` with `#[serde(default)]`:
-    `check_for_updates: bool` (false), `update_prereleases: bool` (false),
-    `last_update_check: Option<u64>` (Unix seconds),
-    `skipped_version: Option<String>`. Serde default tests for each.
-  - Settings: on the General page, a "Check for updates automatically" toggle
-    and an "Include pre-releases" toggle, both `Effect::Pending`. Under them,
-    a note saying the check contacts GitHub, and only when enabled or when
-    started from the tray.
-  - `deskspace-update`:
-    - `pub struct Available { version: String, notes: String, page_url:
-      String }`.
-    - `pub fn check(prerelease: bool) -> Result<Option<Available>,
-      UpdateError>`, using
-      `cargo_packager_updater::check_update(current_version, Config {
-      endpoints, pubkey, .. })` with the feed endpoints and the minisign
-      public key compiled in (R10, F-45). It is FULL-package only; there are
-      no deltas.
-    - Keep the version choice in a pure, tested function `fn newest(...)`
-      adapted to the signed JSON feed: parse the feed in the test, pick the
-      newest release newer than `CARGO_PKG_VERSION`, and honour `prerelease`
-      (skip `-`-tagged versions unless it is on).
-    - Blocking is fine here; the app calls it on a worker thread.
-  - App. The code goes in a new `app/update.rs` (one `impl App` block, like
-    the other `app/` modules; declare it in `app.rs`), except the constants
-    and the `on_event` arms, which stay in `app.rs`:
-    - `UPDATE_TIMER = 4` (reserved by the comment on `PREVIEW_TIMER` in
-      `app.rs`; remove that note). On `Started`, when `check_for_updates` is
-      on, arm it for 60 s, then hourly. When it fires and `fn check_due(last:
-      Option<u64>, now: u64) -> bool` (24 h, tested) is true, start a check.
-    - A check runs on `std::thread::spawn`, sends the result over the
-      channel, and calls `waker.wake(UPDATE_WAKE)`. On
-      `Event::Wake { id: UPDATE_WAKE }`, take the result, set
-      `last_update_check`, and `schedule_save`. Keep one check in flight at
-      a time (an `update_in_flight` flag).
-    - Tray: a "Check for updates…" entry (new `menu::CHECK_UPDATES = 12`,
-      the lowest free id; add it to `menu_ids_are_unique`) above the
-      separator in `App::show_tray_menu` (`app/menus.rs`), always shown, and
-      its arm there (not in `run_common_menu`, which the space menu shares).
-      Follow "Recipe: a new menu entry". A
-      manual check ignores `check_for_updates` and `skipped_version`, and
-      reports "DeskSpace is up to date" or the error through `ui.choose`
-      with one "OK" button.
-    - On an available version (automatic checks skip `skipped_version`),
-      show `ui.choose` with the version and the first ~600 characters of the
-      notes:
-      - Installed: "Update and restart" / "Later" / "Skip this version".
-      - Portable: "Open release page" / "Later" / "Skip this version".
-      - "Skip" stores `skipped_version`. "Later" does nothing. "Open release
-        page" opens `page_url`. `Ui::open_path` cannot open a URL (it turns
-        `/` into `\` and uses the item verb), so add `Ui::open_url(&mut self,
-        url: &str)` in `runtime/ui_shell.rs` with a plain `ShellExecuteW` "open" in
-        `win32/shell_items.rs`, keeping the `AllowSetForegroundWindow` step
-        `open` already does.
-      - "Update and restart" calls the E11 entry point. Until E11 lands,
-        open the release page there and leave a `// TODO(deskspace): E11`.
-  - Done when: the tests above pass and nothing contacts the network with
-    the default config (check by reading the code path, then note it in the
-    commit body). **[needs human]** check: a manual tray check on a portable
-    build against a feed with a newer pre-release, with "Include
-    pre-releases" on.
-
-- [ ] **E11. Download, apply, and restart (installed builds).** (awaiting check)
-  Landed as `deskspace_update::download_and_install`, run on a worker thread
-  after the config is flushed; a portable build opens the release page instead.
-  After E10.
-  - `deskspace-update`: `pub fn download(&Pending) -> Result<(), _>` (call
-    it on a worker thread) and `pub fn apply_and_restart(&Pending) -> !`
-    (or a `Result`, if the API returns one), wrapping
-    `cargo-packager-updater`'s download and install. Confirm the exact API
-    (`Update::install()` / `download_and_install()`) on docs.rs at the pinned
-    crate version, and **stop and ask** if it differs. `Pending` holds the
-    update the E10 check found, so the app does not check twice.
-  - App: "Update and restart" starts the download on a worker thread (same
-    channel and `Waker` as E10, with a new wake id), and sets the tray
-    tooltip to "Downloading update…" with `ui.set_tray_tooltip`. When the
-    download finishes:
-    - flush the configuration synchronously with `self.flush_save(ui)`
-      (`app/persist.rs`; a pending autosave must not be lost);
-    - unregister every hotkey (loop over `self.hotkeys`, as the
-      `CloseRequested` arm in `app.rs` does);
-    - remove the desktop verb (`remove_desktop_show_entry`);
-    - call `deskspace_platform::restore_desktop_icons()` and
-      `deskspace_platform::signal_watchdog_clean_exit()`, because
-      `apply_and_restart` exits the process without running the platform
-      teardown (`runtime/mod.rs`, end of `run`) that normally does both;
-    - call `apply_and_restart`.
-    Put the first three steps (flush, hotkeys, verb) in one `fn
-    release_for_exit(&mut self, ui)` in `app/persist.rs` and call it from the
-    `CloseRequested` arm too, so the two exit paths cannot drift. Keep the
-    icon restore and the watchdog signal in the update path only; on a normal
-    close the platform teardown does them.
-    On failure, restore the tooltip and report the error with `ui.choose`.
-  - `cargo-packager-updater` is FULL-package only (no deltas), which matches
-    D6 ("apply on restart"): a downloaded update is applied on the next
-    launch, or at once by `apply_and_restart`.
-  - Use the same channel as E10 and a new wake id (`UPDATE_DOWNLOADED_WAKE`
-    next to `UPDATE_WAKE` in `app.rs`).
-  - Remove the E10 `TODO`. Mark F-45 "Done; check pending" in the ROADMAP
-    feature index, and update `CONTEXT.md` (sections 6, 7, and 10).
-  - **[needs human]** check during R12: an `alpha.1` install updates to
-    `alpha.2` and comes back with the same spaces and settings.
-
 ## F. Ad-hoc features
-
-Small requests, one commit each.
-
-- [x] **F1. F2 renames the space title when no item is selected.** The
-  selection-key watch (`win32/keyboard.rs`) now watches F2 whenever a space is
-  current, and `App::begin_f2_rename` renames the focused item, or the current
-  space's title (`begin_rename`) when the selection is empty. **[needs human]**
-  check: click a space with no item selected and press F2 (title rename); with
-  an item selected, F2 still renames the file.
-- [x] **F2. Alt+Enter opens item Properties or DeskSpace Settings.** Added
-  `Event::ShowProperties`, `Ui::show_properties` (the shell `properties` verb
-  through `ShellExecuteExW`), and the `Alt+Enter` watch. Alt+Enter opens the
-  focused item's Properties, or DeskSpace Settings when no item is selected.
-  **[needs human]** check: with an item selected, Alt+Enter shows its
-  Properties; with a space current and nothing selected, it opens Settings.
-- [x] **F3. Enter opens the focused item.** Added the `SELECTION_KEY` message
-  and `SelectionKey` event (with a `keyboard::set_menu_open` guard so an open
-  popup keeps its own keys). **[needs human]** check: select an item and press
-  Enter; it opens.
-- [x] **F4. Escape clears the selection.** **[needs human]** check: with items
-  selected, Escape clears them; Escape still closes an open menu.
-- [x] **F5. Shift+Delete deletes permanently.** `Ui::delete_files` and
-  `file_op::delete` take a `permanent` flag that drops `FOF_ALLOWUNDO`.
-  **[needs human]** check: Shift+Delete does not go to the Recycle Bin.
-- [x] **F6. F5 refreshes the spaces.** Re-reads Explorer's display options and
-  re-flows every space.
-- [x] **F7. The Menu key or Shift+F10 opens the context menu.** Anchored at the
-  focused item's cell center, or the space center with no item selected.
-
-- [x] **F8. Shift and Caps Lock decode predictably in inline rename.**
-  (awaiting check) `win32/keyboard.rs` `char_for` read Caps Lock from
-  `GetAsyncKeyState`'s low bit, which is an unreliable "pressed since the last
-  call" flag rather than the toggle, and only ever set modifier bits, so a
-  stale `GetKeyboardState` bit (frozen, because the thread never removes
-  keyboard messages) could stick and force uppercase. It now reads each
-  modifier's live state and sets or clears the bit, and reads Caps Lock's
-  toggle from `GetKeyState`'s low bit. **[needs human]** check: in a rename,
-  type with Shift, Caps Lock on, Caps Lock off, Caps+Shift, and toggling Caps
-  mid-name; Shift+digit gives the symbol; no case gets stuck.
-
-- [ ] **F9. Fit a resized space to whole columns.** (awaiting check) A
-  user-sized space kept its dragged width, so `position_items` left-aligned the
-  grid and the remainder landed on the right (the "Email" space: left padding
-  12, right 24). `ResizeSpace` now rounds a horizontal resize down to whole
-  columns (`GridSpec::fit_width` / `fit_rect_width`; the grabbed edge stays
-  put), so both side paddings match. **[needs human]** check: drag a space's
-  right edge and see it settle on whole columns with even left/right padding.
-  **Result (2026-10-12):** the width fits whole columns with even side padding.
-  The height is now fit to whole rows too, behind the General page's "Snap
-  resized spaces to whole columns and rows" (`GridSpec.fit_to_grid`, default
-  on); the grid it fits to is the existing `snap` / icon-spacing /
-  edge-padding settings. **[needs human]** re-check: drag a right/bottom edge
-  and see even padding on all sides; turn the toggle off and confirm a resize
-  keeps the dragged size (still snapped to `snap`).
-- [x] **F10. "Fit to contents" in the space settings.** (awaiting check) The
-  space menu already offered "Fit to contents" (user-sized, unlocked spaces);
-  the settings window now offers the same as a button on a space's Layout page.
-  It is grey unless the space is resized and unlocked, and runs
-  `Command::FitToContents` (immediate, like the menu; Cancel does not undo it).
-  **[needs human]** check: select a resized space in Settings, open Layout,
-  press "Fit to contents", and confirm the space grows to fit its items with
-  even padding.
-- [x] **F11. A dead zone before a border drag resizes a space.** (awaiting
-  check) A press on a border started a resize at once, so a click or tiny
-  jitter changed the size (and a corner grab changed both axes). The resize now
-  waits until the pointer leaves a half-cell dead zone around the grab
-  (`pointer::resize_edges_now`), and each axis joins on its own, so a
-  horizontal move on a corner resizes only the width. **[needs human]** check:
-  click a border without moving (no resize); drag a side past half a cell (only
-  that axis resizes); drag a corner horizontally (only the width changes).
-- [x] **F12. Check box coloring matches Windows.** (awaiting check) A checked
-  item check box was a white box with a black tick. It is now filled with the
-  Windows accent and shows a white tick, like Explorer: `Palette.check_fill`
-  (default `theme::CHECK_ACCENT`, Windows blue) is set to the system accent in
-  `surface_palette` and carried on `SpaceScene.check_fill`; the unchecked box
-  keeps its light fill and border. **[needs human]** check: tick a desktop item
-  in a space and compare the box to Explorer's; change the Windows accent and
-  confirm the box follows it.
 
 - [ ] **F13. Ctrl+wheel under "Match Explorer's display" drives the
   desktop's icon size (ROADMAP D9).**
@@ -1233,72 +544,10 @@ Small requests, one commit each.
     preset, so the branch never fires (see **Found while working**).
     Deprioritized.
 
-- [ ] **F14. A modern color picker (ROADMAP F-51).** (awaiting check) Landed as
-  `feat: add a modern color picker (F-51)`, then redesigned on the Windows
-  color dialog: the Colors page and the space menu's Appearance submenu open
-  DeskSpace's own popup (`win32/color_picker.rs`) instead of the system
-  `ChooseColor` dialog. It opens on a palette (a "Recent colors" row and a
-  "Windows colors" grid), with the full saturation/value square, hue and alpha
-  strips behind a "Custom colors…" toggle, plus a preview, a hex readout, and
-  OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
-  `Hsv::to_color`; `Ui::pick_color` and the settings window both route through
-  it. The popup paints opaque GDI and does not extend the DWM frame into the
-  client, which had made it transparent. It draws text with the system message
-  font (`system::message_logfont`), and both its swatches and the settings
-  window's color previews are slightly rounded boxes
-  (`color_picker::draw_color_box`, `settings_window::paint::on_draw_swatch`).
-  Polish pass: the color field's swatch is itself the button, with an
-  eyedropper glyph (`system::glyph_font`, `system::draw_glyph`) and no separate
-  "Choose…" button; the picker paints into a DIB back buffer (no flicker) and
-  composites its marker circles with per-pixel anti-aliasing; the check mark is
-  an anti-aliased glyph; and the modal loop pumps every message so the owner is
-  not marked "not responding".
-  - **[needs human]** check, over a high-contrast window (`--on-top`) and in
-    light and dark mode: the popup is opaque, rounded, and bordered; the
-    palette highlights the selected swatch (smooth check mark) and a
-    double-click confirms; the "Custom colors…" toggle reaches the square, hue,
-    and alpha controls with a live, flicker-free preview and smooth marker
-    rings; the Colors page's swatch button shows the color and an eyedropper
-    and opens the picker; OK returns the color (custom tint/text and the Colors
-    page fields) and Cancel leaves it unchanged; Enter accepts and Esc cancels;
-    the scale is right at 100 % and 150 %; opening the picker does not hang the
-    settings window.
-
 ## G. More Explorer-standard controls
 
 Remaining gaps from the controls review. Do them in order.
 
-- [x] **G1. Type-to-select, and Home/End/Page scroll.** Typing a letter moves
-  the selection to the next item whose name starts with it (a short timeout
-  buffer, as Explorer uses); Home/End/PageUp/PageDown scroll the space. Extend
-  the selection-key watch and add a pure prefix-match helper with tests.
-  Landed as `feat: type-to-select and Home/End/Page scrolling (G1)`.
-  **[needs human]** check: on the desktop shell, type a letter to jump to an
-  item and watch the buffer expire and start fresh; press Home/End/PageUp/
-  PageDown over a scrolled space.
-- [x] **G2. Ctrl+wheel changes the icon size.** Add `ctrl` to
-  `SpaceEvent::Wheel` and adjust the icon size the way Explorer's desktop does,
-  clamped to `ICON_SIZE_RANGE`. Landed as
-  `feat: change the icon size with Ctrl+wheel (G2)`. The standard behavior was
-  chosen: it changes the global `Theme.icon_size` (10 % a notch), so spaces
-  that follow Global resize together while a customized space keeps its own
-  size; it re-lays out the spaces and saves. **[needs human]** check: Ctrl+wheel
-  over a space resizes the icons of every non-customized space, clamped at
-  50 %/200 %.
-- [x] **G3. Arrow-key selection navigation.** Grid-aware Left/Right/Up/Down with
-  Shift to extend and Ctrl to move focus, scroll the focused item into view, and
-  draw a focus rectangle. Needs its own movement model; the largest item here.
-  Landed as `feat: arrow-key selection navigation (G3)`. The hook posts
-  `NAV_KEY` (yielding `Event::Navigate`); `next_in_direction` (a pure helper
-  with tests) picks the nearest item by primary-axis distance, tie-broken by the
-  cross axis; the app moves the selection, extends it (Shift, in item order like
-  Shift+click), or moves a `focused` item (Ctrl); `SpaceScene.focused_item`
-  draws a dotted focus rectangle. **[needs human]** check: with the desktop
-  shell foreground and a space holding a few items, arrow around the grid,
-  Shift+arrow to extend, Ctrl+arrow to move only the dotted focus rectangle and
-  scroll it into view.
-- [x] **G4. Slow double-click renames.** Clicking an already-selected item's
-  label again starts an inline rename, as Explorer does.
 - **G5. Right-button drag (ROADMAP D9).** A right drag on an item always
   starts a shell drag (it never reorders inside the space). On drop,
   Explorer and the desktop show their own Move / Copy / Create shortcut
@@ -1364,8 +613,9 @@ Remaining gaps from the controls review. Do them in order.
   - Platform, `win32/drop_target.rs`:
     1. In `DragEnter`, remember whether `MK_RBUTTON` was down (a
        `right_drag: Cell<bool>` on the drop target).
-    2. `desired_effect`: for a right drag, return `MOVE` (the menu decides
-       the rest), so the cursor does not flicker with the modifier keys.
+    2. `desired_effect` (or `drop_plan`, once L2 has replaced it): for a
+       right drag, return `MOVE` (the menu decides the rest), so the cursor
+       does not flicker with the modifier keys.
     3. In `Drop`, for a right drag, show a popup menu at the drop point
        (the `POINTL` `Drop` receives is already in screen coordinates) with
        `menu::track(owner, &entries, at)`, the function `Ui::popup_menu`
@@ -1389,285 +639,14 @@ Remaining gaps from the controls review. Do them in order.
     Show here, and Cancel, and a left drag still moves (Shift still keeps in
     place).
 
-- [ ] **G5c. "Create shortcuts here".** After G5b. The `.lnk` helper now
-  exists (`win32/shortcuts.rs` `create_shortcut`; F-50 settled that shortcuts
-  are created in the space storage under a clash-free name,
-  `storage::ItemStore::unique_path`). Build a `ShellItem` for the dropped
-  file's path (rebuild it as an ID list, as `shell_items::Pidl::from_path`
-  does) and call the same `create_shortcut`. The entry goes between "Copy
-  here" and "Show here without moving", and needs a fourth `DropAction`
-  variant.
+- [ ] **G5c. "Create shortcuts here".** After G5b and L2. The entry goes
+  between "Copy here" and "Show here without moving". Choosing it takes L2's
+  `DropPlan::Shortcuts` path: read the items with `shell_items(data)`, raise
+  `ShellItemsDropped`, and return `LINK`, so `App::add_shortcuts` writes the
+  shortcuts (or copies a dropped `.lnk`). No new `DropAction` variant and no
+  second shortcut writer.
 - [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP.md section 8, open
   question 3.
-- [ ] **G7. Accept non-file shell drags as shortcuts (F-50).** (awaiting check)
-  Landed: a space's drop target accepts a `CFSTR_SHELLIDLIST` drag in addition
-  to `CF_HDROP` (`win32/drop_target.rs`, `DragKind`), reads the CIDA into
-  absolute ID lists with Explorer names, and raises
-  `SpaceEvent::ShellItemsDropped` (`input.rs`, `ShellItem`). The app writes a
-  `.lnk` per item into the space storage via the new `win32/shortcuts.rs`
-  `create_shortcut` (`IShellLinkW::SetIDList` + `IPersistFile::Save`) under a
-  clash-free name (`ItemStore::unique_path`) and lists it
-  (`App::add_shortcuts`, `app/files.rs`). Files take precedence when a drag
-  carries both formats. **[needs human]** check: drag a Start-menu tile and a
-  taskbar app onto a space; each appears as a shortcut and opening it launches
-  the app (including a packaged app with no file path), the cursor is not the
-  red no-drop one, and dragging a normal file still moves the file.
-
-## H. Per-space looks in the settings window (ROADMAP M3, F-46)
-
-The settings window has three panes: the **scopes** (Global, then every
-space indented under it, dimmed while it follows Global), the **pages** of the
-selected scope, and the **page**, under a header with the scope's name and,
-for a space, a "Customize this space" switch. A space shows only the look
-pages (Appearance, Labels, Layout, Colors, Advanced), greyed with the global
-values until the switch is on. CONTEXT.md sections 4 and 6 describe it.
-
-Design rules (decided 2026-10-10, replacing the first rail design the same
-day; do not re-open without asking):
-
-- **A customized space has its own copy of every look setting** (`SpaceLook`:
-  the theme plus icon spacing and edge padding), seeded from Global the first
-  time. Turning the switch off keeps the copy, and turning it on again
-  restores it.
-- **The page shape never changes.** Every page (nine today) is always built; the app
-  chooses which ones the pages pane lists and fills them with the scope's
-  values, so the in-place update machinery keeps working.
-- **The platform knows nothing about spaces.** It draws the scopes, pages,
-  and header from `SettingsNav` and reports `ScopeChanged`, `NavChanged`, and
-  `HeaderSwitch`; the app maps indices back to spaces.
-- **Space edits go through `Command`s** (`SetSpaceLook`, `CustomizeSpace`);
-  `settings.rs` stays pure and returns them. Global edits write `Config`
-  directly, as before.
-- **Context-menu edits commit immediately.** Each one customizes the space,
-  starting from what it shows now. If one lands while the window is open, it
-  also updates that space's Cancel snapshot, so Cancel never undoes it.
-- ROADMAP M3's planned page of defaults for new spaces must be titled "New
-  spaces", so it is not confused with the scopes pane.
-
-- [x] **H1-H3. The first design (a rail with a Spaces group of customized
-  spaces and one shared Space page with four overrides).** Built, then
-  replaced by the three-pane design above at the user's request, because the
-  Spaces entries read as more global pages. Commits `08c6ec9`..`a35ee61`,
-  replaced by `283b7fb` and `38eac47`.
-- [ ] **H5. Three panes, the Customize switch, and per-space looks.**
-  (awaiting check) Landed as `283b7fb` (platform) and `38eac47` (model and
-  app). **[needs human]** check, with two spaces and the window open on a
-  high-contrast background (`--on-top`):
-  - light and dark mode: the panes, the hairlines, the dimmed rows, and Tab
-    and the arrow keys moving through both panes;
-  - a space greyed until "Customize this space" is ticked; an edit then
-    changes that space alone, live; Cancel puts it back;
-  - turning the switch off and on again restores the space's custom values;
-  - a menu edit (for example Opacity 60%) with the window open customizes the
-    space, un-dims its row, and survives Cancel;
-  - an older config with per-space `icon_size`/`tint` opens with that space
-    customized and looking the same.
-
-- [ ] **H4. Flash the selected space.** After H5. (awaiting check)
-  - `render/scene.rs`: add `SpaceScene.highlight: bool` (default false).
-    When it is set, `d2d/` draws a 2 px outline just inside the frame,
-    following the corner radius.
-  - Color: the space's `palette_for(id).selected_fill` at full alpha, so it
-    follows the Windows accent when the space uses it.
-  - Landed: `watch_highlight` / `clear_highlight` in
-    `app/settings_session.rs`.
-  - App: `highlighted: Option<SpaceId>`, and `HIGHLIGHT_TIMER = 5` (E10
-    reserves 4 for `UPDATE_TIMER`; `PREVIEW_TIMER` is 6) at about 1200 ms.
-    `SettingsEvent::ScopeChanged` to a space, and `open_settings_with` on a
-    space, start it: set the flag and refresh that space. The timer clears it
-    and refreshes again. Selecting another space moves the highlight. Cancel,
-    OK, and closing the window clear it.
-  - Done when: a scene test shows the flag reaching the scene (it does,
-    `the_settings_highlight_reaches_the_scene`). **[needs human]** check: a
-    space behind other windows is hard to see, so check with `--on-top` that
-    the outline is visible on Acrylic (checked, visible), Clear, and Solid
-    backdrops.
-
-## I. M2 desktop takeover (ROADMAP M2, D7/D8)
-
-Design is in `ROADMAP.md` D7 (model) and D8 (placement and safety); these
-tasks only say where things go. Do them in order. Hiding Explorer's icons
-(I5) stays behind an off-by-default setting and the hidden `--takeover` flag
-until I5-I6 all land, so no partial build hides the desktop.
-
-- [x] **I1. Read the desktop's items and positions through the shell.**
-  - `crates/deskspace-platform/src/shell.rs`: `DesktopEntry` gained
-    `position: Option<Point>`. `enumerate_desktop_items` now prefers the
-    desktop view (`crate::win32::shell_view::desktop_shell_view()` cast to
-    `IFolderView`): `ItemCount(SVGIO_ALLVIEW)`, then per index
-    `IFolderView::Item(index)` for the child PIDL and
-    `IFolderView::GetItemPosition(pidl)` for the point (`Item`, not
-    `ItemPosition`; the PIDL comes from `Item`, so no
-    `SHGetIDListFromObject`). The `IShellItem` for the label and kind is built
-    with `SHCreateItemWithParent`, its path read with `SIGDN_FILESYSPATH`
-    (virtual items such as This PC are skipped, per D1). Falls back to the
-    existing name-sorted folder walk with `position: None` when the view is
-    unavailable (for example before OLE is up). The fallback filter is the
-    pure `keep_attributes`.
-  - `crates/deskspace-app/src/app.rs`: `App` caches the entries in
-    `desktop_entries`, refreshed on `Started` (after OLE) with a `debug` line;
-    the M2 layer consumes them in I3.
-  - Tests: `keep_attributes_filters_hidden_protected_and_desktop_ini`. The COM
-    path is exercised at runtime (the `debug` line), since CI has no desktop.
-  - Done when: every entry carries a position when the view is readable, and
-    a normal config behaves as before apart from item order. Landed in
-    `feat: read desktop items and positions through the shell (I1)`.
-
-- [x] **I2. Add `DesktopLayer` to the model (core).**
-  - New `crates/deskspace-core/src/desktop_layer.rs`:
-    `DesktopLayer { items: Vec<Item> }`, `#[serde(default)]`, `Default`, with
-    `item`, `item_at(position, cell)`, `push_item`, `remove_item`,
-    `replace_items`, `item_count`, `items`. Document that a layer item's
-    `position` is **absolute** (virtual-desktop coordinates), unlike a space
-    item's content-relative position.
-  - `crates/deskspace-core/src/desktop.rs`: add
-    `#[serde(default)] pub layer: DesktopLayer`; make `next_item_id` and
-    `item` cover both spaces and the layer; add `layer()` / `layer_mut()`.
-    `space_containing`, `space_at`, and the space helpers stay space-only.
-  - `crates/deskspace-core/src/command.rs`: add `SyncDesktop { items:
-    Vec<Item> }` (reconcile by path: reuse an existing id for a path, allocate
-    one for a new path, drop gone paths; order follows `items`),
-    `MoveToDesktop { item: ItemId }`, and `SetDesktopItemPosition { item,
-    position }`. `AddItem` / `MoveItem` (into a space) are unchanged.
-  - Tests: `SyncDesktop` keeps ids by path across a reorder; serde default is
-    empty; `next_item_id` spans spaces and the layer; `MoveToDesktop` moves
-    from a space to the layer and returns `NotFound` for a missing id.
-  - Update the Commands list in `CONTEXT.md` section 4.
-
-- [ ] **I3. Draw the desktop layer on a chrome-less hosted window.** (awaiting check)
-  - `render/scene.rs`: give `SpaceScene` / `SpaceStyle` a `chrome: bool`
-    (title bar and border on or off) so the painter needs no new path; the
-    desktop layer's scene has no title, no border, and no scroll.
-  - Platform: `Ui::create_desktop_layer(rect)`, `set_desktop_layer_rect`,
-    `set_desktop_layer_scene`, `destroy_desktop_layer`; a `WS_CHILD` of the
-    host (reuse `space_window` with `chrome: false`), opaque, spanning the
-    virtual desktop, behind the spaces.
-  - App: build the layer scene from `config.desktop.layer` (items that
-    intersect the virtual desktop, no scroll) and push it when it changes;
-    rebuild after a `SyncDesktop` and on a display or DPI change.
-  - Gate with a hidden `--takeover-layer` flag. Additive: Explorer still
-    draws its icons, so the layer is only for an on-screen look.
-  - Tests: a layer scene-builder test showing items reach the scene.
-  - **[needs human]** check: `--on-top --takeover-layer` over a high-contrast
-    window shows the loose icons at the right positions.
-    Clean up the scratch config afterwards.
-
-- [x] **I4. Generalize item interaction to a `Surface` (app refactor).**
-  - `crates/deskspace-app/src/app.rs`: add
-    `enum Surface { Space(SpaceId), Desktop }`; replace `selected_space:
-    Option<SpaceId>` with `selected_surface: Option<Surface>`; route
-    `item_at`, `select_at`, `update_hover`, `active_items`,
-    `select_all_in_space`, the pointer / drag / drop paths, and the scene
-    build through `Surface`. Resolve each surface's items, rect, layout, and
-    scene through one accessor rather than `config.desktop.space(id)`
-    directly.
-  - Keep spaces behavior identical; this is the R2-style refactor, done as
-    pure moves where possible.
-  - Done when: all existing tests pass unchanged and the desktop layer
-    responds to click, rubber-band, drag, drop, and open.
-  - **[needs human]** check: on the layer, select and drag an icon; drop a
-    loose item onto a space and confirm the file moves.
-
-- [x] **I5. Hide and restore Explorer's icon layer (platform).**
-  - New `crates/deskspace-platform/src/win32/desktop_icons.rs`: `hide()`
-    finds every `SHELLDLL_DefView` (enumerate `Progman` and the wallpaper
-    `WorkerW` children, plus top-level windows) and hides its `SysListView32`
-    child (`ShowWindow(SW_HIDE)`); `restore()` shows them again. Track the
-    handles; both are idempotent.
-  - Config: a `WindowSettings.take_over_desktop: bool` (default false),
-    following "Recipe: a new global setting": a General-page toggle with
-    `Effect::Pending` and a serde default, applied through
-    `desktop_icons::hide` / `restore`. Add the hidden `--takeover` flag that
-    forces it on for development.
-  - Wire: hide after the layer is drawn and the setting is on; restore before
-    `OleUninitialize` (add to the `run` teardown in `runtime/mod.rs`); re-hide on
-    `TaskbarCreated` (Explorer restart) and on a low-frequency health timer
-    (next free timer id; E10 uses 4, HIGHLIGHT 5, PREVIEW 6).
-  - Update `CONTEXT.md` sections 6 and 10 (the "No desktop icon
-    integration" limitation) and the `ROADMAP.md` F-01 row.
-  - Done when: clean exit restores the icons, and restarting Explorer brings
-    them back.
-  - **[needs human]** check: enable takeover, confirm the strip; exit and
-    confirm the icons return; kill and restart Explorer and confirm the strip
-    re-hides.
-  - Implemented as decided during the work: `hide`/`restore` re-enumerate on
-    every call instead of tracking handles, so a listview Explorer recreates is
-    restored rather than a stale handle being shown; enabling takeover also
-    draws the layer (no blank desktop); the health timer is the app's id 8,
-    armed only while takeover is on.
-
-- [x] **I6. Crash-safe restore (watchdog helper).** After I5.
-  - A helper process started before the icons are hidden. Either
-    `deskspace.exe --watchdog <pid>` handled in `main`, or a small dedicated
-    bin. It waits on the main process and, if the main process exits without
-    the clean-exit signal, re-shows every `SHELLDLL_DefView` listview and
-    exits.
-  - Clean-exit signal: the main process sets a named event (or passes an exit
-    code) on a clean shutdown; the watchdog restores only when it is absent.
-    Keep the check a pure, tested function (`fn is_watchdog(args) -> bool`
-    and the clean/crash decision). Add a single-instance guard so two
-    watchdogs do not fight.
-  - The watchdog needs no workspace dependency; it may reuse
-    `desktop_icons::restore` if it links the platform crate, otherwise carry
-    a minimal copy.
-  - Update `CONTEXT.md` section 6.
-  - **[needs human]** check: enable takeover, kill `deskspace.exe` from Task
-    Manager, and confirm the desktop icons come back.
-  - Landed in `crates/deskspace-platform/src/win32/watchdog.rs` and the
-    `deskspace-watchdog` binary (`crates/deskspace-app/src/watchdog_main.rs`):
-    a separate executable with a distinct name, launched detached, so a bulk
-    kill of `deskspace.exe` by image name or a closed console leaves it
-    running. It re-parents itself once (`respawn_reparented`) so ending the
-    app's process tree cannot reach it either. The app calls `arm_watchdog`
-    (per-pid clean-exit event) just before hiding the icons, and the runtime
-    teardown signals the event right after `desktop_icons::restore`. The
-    watchdog polls the event once the parent exits and restores the icons only
-    when it was never signaled; a per-pid named mutex keeps a stray watchdog a
-    no-op. Pure `watchdog_pid` / `is_watchdog` / `should_restore` are tested;
-    the process wait and restore need the on-screen check.
-    - Packaging note: the release must ship `deskspace-watchdog.exe` beside
-      `deskspace.exe` in both the cargo-packager installer and the portable zip
-      (see E6); without it the takeover silently loses crash safety.
-
-- [x] **I7. Win+D watcher - closed as not needed (2026-10-11).**
-  - The premise did not reproduce. On Windows 11 build 26300, Show Desktop
-    (`MinimizeAll`) skips `WS_EX_TOOLWINDOW` windows, and a space is
-    `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, so a top-level space is
-    left visible. Verified with the running app (top-level, `--on-top`,
-    `--takeover`, `--takeover-layer`, and both hosted placements, on both
-    monitors) and with an isolated style matrix; a normal window in the same
-    run was minimized (foreground went to `Progman`). A watcher would have been
-    a no-op, so no watcher and no config toggle were added. A later commit
-    (`996a939`) made spaces ignore `WM_SYSCOMMAND`/`SC_MINIMIZE`
-    (`space_window.rs`), so survival no longer depends on the tool-window
-    exclusion.
-  - Done: the finding is recorded in `ROADMAP.md` D8 and the 2026-10-11
-    progress entry, and in `CONTEXT.md` sections 2, 9, and 10. No `[needs
-    human]` check remains.
-
-- [ ] **I8. Watch the Desktop folder (platform).** Shared with M4 phase 2.
-  (awaiting check)
-  - `ReadDirectoryChangesW` on the Desktop folder, debounced about 100-150 ms,
-    off the UI thread. Post a wake to the controller (reuse E8's `Event::Wake`
-    if it has landed, else a new `WM_APP` id) and, on the app side,
-    re-enumerate and `SyncDesktop`.
-  - Build it so lenses can reuse it (M4 phase 2 watches a bound folder the
-    same way). Note the reuse in `CONTEXT.md` section 6.
-  - Tests: the debounce / coalesce helper as a pure function.
-  - Done when: creating or deleting a file on the desktop updates the layer
-    within about 150 ms.
-  - Landed in `crates/deskspace-platform/src/win32/folder_watch.rs`: a
-    reusable `FolderWatch` over `ReadDirectoryChangesW` (overlapped, one
-    worker thread), with the debounce in a pure `Coalescer`; it posts
-    `WM_APP + 14` (`controller::FOLDER_CHANGE`), which dispatches
-    `Event::FolderChanged`. The app watches the Desktop folder while the
-    layer is drawn (`App::watch_desktop_folder`) and re-runs
-    `resync_desktop_layer` on the event. `Win32_System_IO` joined the
-    `windows` features. It took its own message id (14), so E8's `Event::Wake`
-    is not needed for it.
-  - **[needs human]** check: with takeover on, create, rename, and delete a
-    file on the desktop from Explorer or a terminal; the layer follows within
-    about 150 ms.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
@@ -1701,10 +680,13 @@ design work; the split is a starting point, not a spec. Do them in order.
 
 ## K. Split the large files (readability)
 
-AGENTS.md asks for files under about 800 lines of non-test code. These are
-over it. Each task is a **pure move**: no renames, no logic changes, no
-signature changes beyond visibility. That keeps them safe for any
-contributor and easy to review (the diff should be almost all moved lines).
+AGENTS.md asks for files under about 800 lines of non-test code. No file is
+over it today; K1-K6 (archived) split the last ones. When a file grows past
+it, add a K task here naming what stays in `mod.rs` and what moves where
+(the archived K tasks are the model). Each K task is a **pure move**: no
+renames, no logic changes, no signature changes beyond visibility. That keeps
+them safe for any contributor and easy to review (the diff should be almost
+all moved lines).
 
 Rules for every K task:
 
@@ -1726,123 +708,36 @@ Rules for every K task:
   count; `git diff --stat` shows mostly moved lines; and `CONTEXT.md`
   section 2 (code health) and the file map above are updated.
 
-- [x] **K1. Split `win32/settings_window.rs` (~2,600 lines).** Do B8 first;
-  it deletes the tab code, so there is less to move.
-  - `settings_window/mod.rs` keeps: the constants, `FieldControls`,
-    `SettingsState` and its impls, `create`, `set_dark`, `theme_controls`,
-    `bring_to_front`, `window_style`, `ensure_classes`, `state_of`,
-    `with_state`, `settings_event`, `wndproc`, and `page_wndproc`.
-  - `build.rs`: `Builder` and its impl, `build`, `rail_list`, `fill_list`,
-    `scaled`, `create_fonts`.
-  - `update.rs`: `Update`, `update`, `plan_field`, `set_swatch`,
-    `apply_header`, `apply_enabled`, `sync_selection`.
-  - `nav.rs`: `NavRow` and its impl, `nav_rows`, `row_entry`, `entry_row`,
-    `on_nav_changed`, `on_scope_changed`, `on_header_switch`.
-  - `paint.rs`: `on_paint`, `erase_body`, `on_draw_scope`, `on_draw_item`,
-    `on_draw_header_button`, `blend`.
-  - `commands.rs`: `on_field_command`, `pick_color`, `on_scroll`,
-    `show_page`, `window_text`, `colorref`, `from_colorref`.
-  - `runtime.rs` calls `settings_window::{create, update, set_dark,
-    bring_to_front, pick_color}`; keep those paths working.
+## V. Awaiting on-screen check
 
-- [x] **K2. Split `render/d2d.rs` (~1,475 lines).**
-  - `d2d/mod.rs` keeps: the drawing constants, `PreparedScene`, `Painter`
-    and its impl, `PaintFrame`, `release_graphics`, `render_items`.
-  - `graphics.rs`: `Graphics` and its impl, `graphics`,
-    `character_trimming`, `make_format`, `first_installed`, and the
-    thread-local that holds `Graphics`.
-  - `item.rs`: `draw_item`, `draw_check_box`, `draw_marquee`.
-  - `edit.rs`: `draw_edit_title`, the `EDIT_*` constants, `EditLine`,
-    `edit_lines`, `draw_edit_buffer`, `edit_field`, `draw_edit_text`,
-    `utf16_index`.
-  - `bitmap.rs`: `decode_bitmap`, `to_icon`.
-  - `geometry.rs`: `fill_rounded`, `draw_text`, `color_f`, `rect_f`,
-    `to_rect_f`, `inset`.
-  - Callers outside the module use `d2d::{Painter, PreparedScene,
-    PaintFrame, render_items, decode_bitmap, release_graphics}`; keep them.
+Built and unit-tested, but not yet confirmed on screen. This is the list for
+the maintainer's verification pass (R7). Check with a scratch `--config`
+(`./scripts/dev.ps1`), with `--on-top` over a high-contrast window for
+anything visual, in light and dark mode where it matters. When a row passes,
+delete it (and say so in the commit); when it fails, replace it with a task
+or a **Found while working** line. The task text for each id is in
+`archive/TASKS-done.md`.
 
-- [x] **K3. Split `deskspace-app/src/settings.rs` (~1,820 lines, ~1,060
-  without tests).** It is pure, so this is the easiest split to verify.
-  - `settings/mod.rs` keeps: `Effect`, `build_form`, `scope_index`,
-    `scope_at`, `scope_space`, `index_of`, `labels`, `LOOK_PAGE_COUNT`, and
-    the `pub use` lines below.
-  - `ids.rs`: `pub mod field` and `pub mod page` (re-exported from
-    `mod.rs` as `pub use ids::{field, page};` so `settings::field::X` still
-    works).
-  - `tables.rs`: `MODES`, `BACKDROPS`, `LABEL_LINES_OPTIONS`,
-    `LABEL_SHADOW_OPTIONS`, `PRESETS`, `preset_index`, `corner_marks`,
-    `HOTKEY_HINT`, `HotkeyBinding`, `HOTKEY_BINDINGS`, `hotkey_setting`,
-    `set_hotkey_setting`, `is_hotkey_field`.
-  - `pages.rs`: `look_pages`, `general_page`, `new_spaces_page`,
-    `hotkeys_page`, `about_page`.
-  - `apply.rs`: `apply_look_field`, `apply_field`, `space_edit`,
-    `customize_space`, `match_global`, `reset_appearance`.
-  - `session.rs`: `SpaceSnapshot`, `Session`, `snapshot_spaces`,
-    `needs_relayout`, `needs_restyle`.
-  - Re-export every item the app uses from `mod.rs` (search
-    `settings::` in `crates/deskspace-app/src`), so no caller changes.
-  - Update the recipe "a new global setting" above to name the new files.
-
-- [x] **K4. Split `win32/runtime.rs` (~940 lines).** `Ui`'s methods move
-  into several `impl Ui` blocks, one file per area; the fields stay
-  private (child modules can read them).
-  - `runtime/mod.rs` keeps: `EventHandler`, `RunOptions`, `Runtime`, the
-    thread-local, `with_runtime`, `dispatch`, `dispatch_close_once`,
-    `tray_tooltip`, `is_space_window`, `space_dpi`, `settings_closed`,
-    `destroy_ui_windows`, the `Ui` struct, `desktop_to_screen`,
-    `space_hwnd`, `settings_hwnd`, `warn_on_shape_change`, `run`,
-    `message_loop`, `init_common_controls`.
-  - `ui_spaces.rs`: `create_space` through `destroy_desktop_layer`
-    (`destroy_space`, `space_ids`, `set_space_rect`, `set_space_scene`,
-    `set_space_cursor`, `set_space_style`, `set_spaces_visible`, the four
-    desktop-layer methods), plus `show_drag_ghost`, `move_drag_ghost`,
-    `hide_drag_ghost`, `with_ghost`.
-  - `ui_input.rs`: `watch_outside_clicks`, `watch_folder`,
-    `unwatch_folder`, `set_timer`, `clear_timer`, `capture_text_input`,
-    `watch_selection_keys`, `register_hotkey`, `unregister_hotkey`.
-  - `ui_shell.rs`: `open_path`, `show_properties`, `item_menu`, `drag_out`,
-    `set_clipboard_files`, `clipboard_files`, `clear_clipboard`,
-    `transfer_files`, `delete_files`, `rename_path`, `show_info_tip`,
-    `hide_info_tip`, `with_info_tip`, `on_desktop_click`.
-  - `ui_chrome.rs`: `pick_color`, `popup_menu`, `set_ui_dark`,
-    `open_settings`, `update_settings`, `close_settings`, `confirm`,
-    `is_settings_open`, `set_tray_tooltip`, `quit`.
-  - Keep each method's doc comment with it. The module header (the borrow
-    rules) stays in `mod.rs`.
-
-- [x] **K5. Move drag out of `app/pointer.rs` (~1,080 lines, ~920 without
-  tests).**
-  - New `app/drag.rs` (declare it in `app.rs` next to `mod pointer;`) with
-    one `impl App` block holding `drag_to`, `end_drag`, `begin_drag_visual`,
-    `end_drag_visual`, `reorder_item_at`, `drag_item_out`, and
-    `move_desktop_item`, plus the `Drag` enum (make it `pub(super)`;
-    `PointerState` keeps its field of that type).
-  - `pointer.rs` keeps mouse dispatch (`on_space_event`,
-    `begin_interaction`), `select_at`, hover, double-click, marquee,
-    scrolling, `adjust_icon_size`, the cursor and resize helpers, and
-    `PointerState`.
-  - Add `drag` to the module table in `CONTEXT.md` section 3.
-
-- [x] **K6. Move `shell.rs` under `win32/` and split it (~820 lines).** It
-  holds `unsafe` Win32 code, which AGENTS.md keeps under `win32/`.
-  - `win32/desktop_items.rs`: `DesktopEntry`, `enumerate_desktop_items`,
-    `enumerate_via_view`, `enumerate_via_folder`, `listed_by_explorer`,
-    `keep_attributes`, `filesystem_path`, `display_name`, `fallback_label`,
-    `desktop_directory`, `notify_moved`.
-  - `win32/icons.rs`: `IconCache`, `CachedIcon`, `load_icon`,
-    `is_shortcut`, `load_classic_icon`, `load_base_icon`,
-    `decode_icon_masked`, `overlay_index`, `load_overlay_image`,
-    `scale_overlay_to_corner`, `system_image_list`, `resample`,
-    `composite_overlay`.
-  - Delete `shell.rs` and `pub mod shell` in `lib.rs`; change the `lib.rs`
-    re-exports (`DesktopEntry`, `IconCache`, `desktop_directory`,
-    `enumerate_desktop_items`, `notify_moved`) to point at the new modules.
-    The app uses only those re-exports, so it does not change. Check with
-    `rg "crate::shell" crates` that nothing in the platform crate still uses
-    the old path (nothing did when this task was written).
-  - `shell.rs` calls `crate::render::d2d::decode_bitmap`; keep that call
-    as it is (R3 decides about the two decoders).
-  - Update the module map in `CONTEXT.md` section 6 and the R3 entry above.
+| Id | What to check |
+|----|---------------|
+| C2 (F-29) | With "Use Windows accent" on, selection and border take the accent and follow it live when it changes in Windows Settings (watch for the `WM_DWMCOLORIZATIONCOLORCHANGED` note under **Found while working**). |
+| C3 (F-30) | Switching "Settings and menus" between Dark and Light repaints the open settings window and the next popup menu. |
+| C4 (F-34) | "Start DeskSpace when you sign in" adds and removes the `Run` value, and DeskSpace starts at sign-in. |
+| C5 (F-48) | The "Item preset" dropdown shows both entries; "Custom" enables the Layout fields and the icon size takes effect; "Match Explorer's display" greys them. |
+| C7 (F-18) | Each hotkey fires once bound; a conflicting binding is reported beside its field and the window stays open; clearing a binding stops it. |
+| C8 (F-17) | A space created from the space menu, the tray, and the hotkey uses the configured title, size, and lock state; a locked new space keeps its size and scrolls. |
+| E1, E2 | `deskspace.exe` shows the icon in Explorer's small, medium, and extra-large views and the version under Properties > Details; the tray, settings title bar, and Shift+right-click desktop verb show the icon at 100 % and 150 %. |
+| E5-E7, E10-E12 | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one pre-release to the next). |
+| F1-F5 | F2 with no item selected renames the space title, with one selected the file; Alt+Enter opens Properties, or Settings with nothing selected; Enter opens the item; Esc clears the selection and still closes an open menu; Shift+Delete bypasses the Recycle Bin. |
+| F9 | With "Snap resized spaces to whole columns and rows" off, a resize keeps the dragged size (still snapped to `snap`). The on state passed 2026-10-12. |
+| F14 (F-51) | The color picker is opaque, rounded, and bordered; palette selection and double-click confirm; "Custom colors…" shows a flicker-free live preview; the Colors-page swatch opens it; OK and Cancel, Enter and Esc behave; the scale is right at 100 % and 150 %; the settings window does not hang. |
+| G1, G3 | On the desktop shell: typing selects by prefix and the buffer expires; Home/End/PageUp/PageDown scroll; arrows move the selection, Shift extends, Ctrl moves only the dotted focus rectangle and scrolls it into view. |
+| H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid (Acrylic passed). |
+| I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
+| Drag and drop (F-36, F-37) | The move/copy cursor; no `- Copy` left on the desktop after a drag out; the drag image over Explorer and over spaces; the in-space ghost. |
+| Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
+| Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
+| Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
 
 ## Found while working
 

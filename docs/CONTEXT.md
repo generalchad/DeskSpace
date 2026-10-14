@@ -42,96 +42,46 @@ context menus, and a settings window in the first usable release (v0.2).
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
   `cargo test --workspace` (325 tests) are green. Update this count whenever a
   test is added or removed.
+- Released: v0.2.0 (the first public release) and v0.2.1 (update checking),
+  each as an NSIS installer and a portable zip on GitHub Releases (section 10,
+  "Packaging").
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
   dark/light mode following Windows, Direct2D/DirectWrite content, hover and
-  selection highlights. Verified visually on Windows 11 build 26300.
-- A tray icon, a space right-click menu, and a native settings window in three
-  panes: the scopes (Global, then every space indented under it), the pages
-  (Appearance, Labels, Layout, Colors, Advanced, plus General, New spaces, and
-  Hotkeys for Global, and About), and the page, with live preview and
-  OK/Cancel/Apply.
-- Every space follows the global look until it is customized ("Customize
-  this space" in the settings window, or any Appearance edit in its menu);
-  it then has its own copy of every look setting (section 4, `SpaceLook`).
-- Spaces can be created, deleted (with confirmation), moved by the title bar,
-  resized from any edge or corner, scrolled with the mouse wheel, rolled up
-  (double-click the title bar), renamed inline, given their own look, sorted,
-  and locked; their items can be rearranged by dragging.
-- Items have Explorer-style multi-selection (plain click selects one, Ctrl+click
-  toggles, Shift+click ranges, rubber-band over empty space with Ctrl/Shift to
-  add, Ctrl+A for all, Delete removes all selected). Item check boxes follow
-  Explorer's mode: auto-check-select mirrors the selection, or independent item
-  check boxes keep a separate session tick set that becomes the operand for
-  delete/copy/cut/drag. Labels honor Explorer's extension and
-  compressed/encrypted color settings, and icons carry shell overlays. See
-  section 6 and the display-settings bullet.
-- Files dropped onto a space are moved into the space storage (Shift keeps
-  them in place); items open on double-click, show Explorer's context menu on
-  right-click, and drag out like Explorer items with a drag image, dragging the
-  whole selection as one shell drag. A drag out
-  defaults to a move and spaces are OLE drop targets, so the shell shows the
-  move/copy cursor. Selected items can be cut, copied, and pasted with
-  Ctrl+X/C/V through the shell clipboard, and cut items are ghosted until
-  pasted. Delete sends the selection to the Recycle Bin (Shift+Delete removes
-  it for good), F2 renames the focused item, or the current space's title when no
-  item is selected, inline, Alt+Enter opens the focused item's Properties, or
-  DeskSpace Settings when no item is selected, Enter opens the focused item, Esc
-  clears the selection, F5 refreshes the spaces, and the Menu key or Shift+F10
-  opens the context menu.
-  Clicking a space also focuses the desktop and clears its
-  icon selection, like a desktop click.
-- Spaces mirror the desktop's look: item check boxes (both Explorer modes),
-  filename extensions, hidden/protected files, and compressed/encrypted label
-  colors. With the "Match Explorer's display" item preset (the default), the
-  desktop's own icon size (`IFolderView2::GetViewModeAndIconSize`) and item
-  spacing (`IFolderView::GetSpacing`) replace the DeskSpace sliders, so spaces
-  are 1:1 with the desktop, and the Layout page's icon-size, icon-spacing, and
-  edge-padding fields are greyed while it is selected. Icons are rendered by
-  `IShellItemImageFactory` at the
-  effective pixel size (crisp at large sizes) with shell overlays composited on
-  top, and layouts scale to each monitor's DPI. Hovering an item reveals
-  Explorer's info tip.
-- Verification: the blur, corners, space content, and settings layout were
-  checked on screen. Many behaviors are covered by unit tests of the app logic
-  but have not been exercised interactively; confirm them before building on
-  them. On screen were checked: inline rename, in-space rearranging, the
-  Delete key, per-space appearance, sort, grid/label settings, cross-space
-  moves (2026-10-03), a multi-item drag out (the group image and the
-  desktop placement; 2026-10-10), the desktop layer's item interaction
-  (`--takeover-layer`: select, drag, drop a loose item onto a space, and
-  double-click to open; 2026-10-11), and the desktop takeover (`--takeover`:
-  the icons hide, return on exit, re-hide after an Explorer restart, and come
-  back when the process is killed, so the watchdog restores them after a crash;
-  2026-10-11). Also passed (2026-10-12): inline-rename Shift/Caps (F8),
-  whole-column and whole-row resize fit with even padding, and the resize dead
-  zone (F9/F11), "Fit to contents" in the settings window (F10), and the
-  Windows-accurate check-box coloring (F12, follows the accent). Ctrl+wheel
-  over a space still does nothing under any preset (F13/G2). Pending on-screen
-  checks: the move/copy
-  cursor, the `- Copy` fix, the drag image over Explorer and over spaces, the
-  in-space ghost, the space-click focus/deselect, the check-box display and
-  both check-box modes, rubber-band/Ctrl+A selection, the clipboard
-  cut/copy/paste with its ghosting and external sync, F2 item rename, the
-  compressed/encrypted label colors, the info tips, jumbo icons,
-  per-monitor DPI on a mixed-DPI setup, and the desktop folder watch (a file
-  created or removed on the desktop reaches the layer within about 150 ms).
-  The
-  offscreen item render and a synthetic check-box click were probed on the dev
-  machine.
+  selection highlights. Verified on Windows 11 build 26300.
+- Spaces can be created, deleted, moved, resized, scrolled, rolled up,
+  renamed, customized, sorted, and locked. Their items behave like Explorer
+  items (selection, rubber-band, keyboard navigation, open, Explorer's context
+  menu, drag in and out, cut/copy/paste, delete, rename, info tips) and mirror
+  the desktop's display settings. Section 8 lists every control.
+- A tray icon, a space right-click menu, and a native three-pane settings
+  window (section 6, "Native UI"). Every space follows the global look until
+  it is customized (section 4, `SpaceLook`).
+- Desktop takeover (Explorer's icons hidden, the loose items drawn on
+  DeskSpace's own layer) is built and opt-in (section 6; ROADMAP D7, D8).
+- Dragging an app from the Start menu onto a space does not work yet, so
+  users drag it to the desktop first and then into the space (`TASKS.md`
+  L1-L2).
+- Verification: many behaviors are covered by unit tests but not confirmed on
+  screen; `TASKS.md` section V lists them. Confirm one before building on it.
+  Checked on screen so far: the blur, corners, space content, and settings
+  layout; inline rename, in-space rearranging, the Delete key, per-space
+  appearance, sort, grid and label settings, and cross-space moves
+  (2026-10-03); a multi-item drag out (2026-10-10); the desktop layer's item
+  interaction (`--takeover-layer`) and the takeover (`--takeover`: the icons
+  hide, return on exit, re-hide after an Explorer restart, and come back after
+  a kill through the watchdog; 2026-10-11); inline-rename Shift/Caps, the
+  whole-column and whole-row resize fit, the resize dead zone, "Fit to
+  contents" in the settings window, and the accent-colored check boxes
+  (2026-10-12). Ctrl+wheel over a space does nothing under any preset
+  (`TASKS.md` **Found while working**).
+- Not yet: lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
+  undo for file moves, Explorer's list/details view modes, code signing, and
+  a live update feed. `ROADMAP.md` section 7 is the full feature list.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Not yet: lenses (phase 0 of M4, resize and scroll, is done), auto-hide, undo
-  for file moves, mapping Explorer's view mode (list/details), and, from M8,
-  the installer's first dry run (config and workflow landed), signing, and
-  auto-update.
-  See the parity matrix in section 9.
-- Code health: the large files are split. `app.rs` into `app/` submodules
-  (R1) and the selection, pointer, and edit state pulled out of `App` (R2),
-  and `win32/settings_window.rs` (K1), `render/d2d.rs` (K2), `settings.rs`
-  (K3), `win32/runtime.rs` (K4), and the drag methods of `app/pointer.rs` (K5)
-  each into their own module tree. No non-test file is over the ~800-line
-  guideline any more.
+- Code health: no non-test file is over the ~800-line guideline (the R1 and
+  K1-K6 splits; section 3 lists the `app/` modules).
 
 ## 3. Architecture
 
@@ -573,6 +523,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 `Timer { .. }`, `PointerDownOutside { on_desktop }`, `ShowSpaces`, `FolderChanged`, `SystemThemeChanged`, and
 `CloseRequested`. `SpaceEvent` is `MouseMove`, `MouseDown { ctrl, shift }`,
 `MouseUp`, `DoubleClick`, `MouseLeave`, `Wheel`, `FilesDropped`,
+`ShellItemsDropped`,
 `CaptureLost`, and `DpiChanged`. `SettingsEvent` is `Changed`, `Button`,
 `NavChanged`, `ScopeChanged`, `HeaderSwitch { on }`, `HeaderButton`, `Ok`,
 `Cancel`, and `Apply`. A new input source adds a variant here and one arm in
@@ -722,15 +673,18 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   hint over the item image. `Drop` marks the source's data object with the
   "Performed DropEffect" format so a shell source does not move the files a
   second time after DeskSpace has. A drag that carries neither `CF_HDROP` nor a
-  Shell ID List reports `DROPEFFECT_NONE`. A Start-menu tile or taskbar app
-  carries a `CFSTR_SHELLIDLIST` instead of files, including packaged apps with
-  no filesystem path; the space accepts it (`shell_drop_effect` prefers a copy)
-  and raises `SpaceEvent::ShellItemsDropped` with each item's absolute ID list
-  and Explorer display name. The app writes a `.lnk` per item into the space
+  Shell ID List reports `DROPEFFECT_NONE`. A drag that carries shell items
+  but no files (any form `SHCreateShellItemArrayFromDataObject` reads,
+  including a packaged app with no filesystem path) is accepted
+  (`shell_drop_effect` prefers `LINK`, then `COPY`, then `MOVE`) and raises
+  `SpaceEvent::ShellItemsDropped` with each item's absolute ID list and
+  Explorer display name. The app writes a `.lnk` per item into the space
   storage (`win32/shortcuts.rs` `create_shortcut`, `IShellLinkW::SetIDList` +
   `IPersistFile::Save`) under a clash-free name and lists it, as Explorer does
   when such an item is dropped on a folder (F-50). A drag with both formats is
-  treated as files, so a real file still moves rather than becoming a shortcut.
+  treated as files, so a real file still moves rather than becoming a
+  shortcut; this is also why a Start-menu drag fails today (section 10,
+  `TASKS.md` L1-L2).
 - Dragging an item out (`shell_items::drag_out`) sets the source data object's
   "Preferred DropEffect" to `MOVE`, so dropping it on the desktop takes the file
   out of the space instead of leaving a `- Copy` behind. The drop target alone
@@ -1220,9 +1174,10 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   while spaces are hidden shows them.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
-  Dropping a Start-menu tile or taskbar app creates a shortcut in the space
-  instead, as Explorer does when one is dropped on a folder; a packaged app
-  with no file path works the same way.
+  A drag that carries only shell items (for example a packaged app with no
+  file path) creates a shortcut in the space instead, as Explorer does when
+  one is dropped on a folder. A drag from the Start menu does not work yet;
+  drag the app to the desktop first (`TASKS.md` L1-L2).
 - Click an item to select it; Ctrl+click adds or removes it from the
   selection, and Shift+click selects the range from the last click. Drag from
   empty space to rubber-band select (Ctrl or Shift adds to the selection), and
@@ -1291,34 +1246,11 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   the hidden development flags `--on-top`, `--takeover-layer`, and
   `--takeover`.
 
-## 9. Feature parity matrix
+## 9. Feature parity
 
-| Feature | Status |
-|---|---|
-| Spaces (icon groups) | Partial: per-space windows; dropped files move into storage; the desktop icon layer can be taken over (opt-in) |
-| Folder portals (DeskSpace: lenses) | Not implemented; resize and scroll groundwork done |
-| Roll-up spaces | Implemented (title-bar double-click, context menu) |
-| Auto-hide / hide all on desktop double-click | Not implemented; hotkey and tray hide/show |
-| Drag icons in / out / between spaces | Implemented (OLE drag-out of the whole selection and multi-item rearrange; spaces are OLE `IDropTarget`s) |
-| Drag files onto a space to add them | Implemented; files move into storage, Shift keeps them in place |
-| Create / rename / delete space | Implemented (create/delete via menus, inline rename) |
-| Resize space | Implemented (edges/corners, scrolling, fit to contents) |
-| Lock space | Implemented (context menu, lock glyph) |
-| Snap to grid / auto-arrange | Implemented in core |
-| Per-lens sort rules | Not implemented |
-| Appearance (color, translucency, blur, corners) | Implemented globally and per space (a customized space has its own copy of every look setting) |
-| Multiple pages / virtual desktops | Not implemented |
-| Backup / restore / layout snapshots | Config file only |
-| Right-click context menu | Space menu; item menu is Explorer's with DeskSpace's Rename and Move back / Remove on top |
-| System tray icon | Implemented |
-| Settings UI | Appearance (+ Labels, Layout, Colors, Advanced), General, New spaces, Hotkeys, About |
-| Multi-monitor | Spaces can sit on any monitor; work area of the nearest monitor bounds moves |
-| Per-monitor DPI | Implemented (per-space layout, icons, and hit tests; `WM_DPICHANGED` reflows) |
-| Explorer icon size / spacing / info tips | Implemented under match; jumbo icons at any size |
-| Auto-consolidate new desktop icons | Not implemented |
-| Exclude rules / filters | Not implemented |
-| Keyboard navigation | Partial: within a space (arrows, type-to-select, Home/End/Page, Enter, F2, Delete, Menu key); moving between spaces is not implemented |
-| Quick peek / transparency toggle | Not implemented |
+The feature list and its status live in one place: `ROADMAP.md` section 7
+(the feature index). This section is kept so the section numbers cited
+elsewhere stay stable.
 
 ## 10. Known limitations and technical debt
 
@@ -1337,14 +1269,6 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   outside DeskSpace stays listed until an item action or the next startup
   notices it is gone, and an item's `size`/`modified` (used by sorting) are
   read once at creation, so they can go stale.
-- **Spaces survive Show Desktop (Win+D).** Show Desktop (`MinimizeAll`) skips
-  `WS_EX_TOOLWINDOW` windows, and a space is
-  `WS_POPUP | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, so a top-level space is
-  left visible (verified on Windows 11 build 26300; a planned watcher was
-  dropped). A space also ignores `WM_SYSCOMMAND`/`SC_MINIMIZE`, so survival
-  does not depend on that undocumented exclusion and the accent blur is never
-  torn down by a minimize. Desktop-hosted spaces survive as children of the
-  host.
 - **Blur relies on an undocumented API** (`SetWindowCompositionAttribute`).
   If a future Windows build removes it, spaces fall back to a translucent tint
   without blur. Rounded corners need Windows 11.
@@ -1352,19 +1276,17 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   Explorer's dark control styles. The confirmation message box stays light; it
   has no dark mode. The color picker is DeskSpace's own themed popup
   (`win32/color_picker.rs`), so it follows the dark/light mode (F-51).
-- **Some files are too large to read comfortably.** See the code-health
-  bullet in section 2 and `TASKS.md` section K. Until they are split, find
-  code by function name rather than by scrolling.
 - **Per-monitor DPI is scaled, with caveats.** Space layout, icons, and hit
   tests scale to each monitor's DPI and `WM_DPICHANGED` reflows a moved space.
   The settings window is still laid out for the DPI at creation, and an item
   moved between monitors of different DPI is positioned from the destination
   space's grid (correct, but not yet verified on screen).
-- **Drops use an OLE `IDropTarget`** (`win32/drop_target.rs`), which shows the
-  move/copy cursor and replaced `WM_DROPFILES`. `DragOver` recomputes the
-  effect from the modifier keys, and the app performs the file move; an
-  external shell source is told the move was already performed. Dragging out
-  uses OLE too and now defaults to a move.
+- **A Start-menu drag does not land in a space.** A drag that carries only
+  shell items becomes a shortcut (F-50), but a drop decides by format and lets
+  a file list win, so a Start-menu desktop app (a real `.lnk`, probably
+  offered for a link only) is refused or treated as a file. Until `TASKS.md`
+  L1-L2 land, users drag it to the desktop first. If DeskSpace runs elevated,
+  Windows blocks every drop from Explorer and Start (UIPI).
 - **Placement is fixed for a run.** Only `--placement` chooses it (the
   config setting was removed); there is no live switch, because recreating
   every space window would drop the blur. Top-level is the default and the
@@ -1424,37 +1346,25 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   and signing (or Developer Mode) - deferred to M8 packaging. Its icon is the
   executable's embedded icon resource (`"{exe}",0`), not a file written beside
   the storage folder.
-- **Packaging, signing, and auto-update.** CI (`ci.yml`) runs fmt, clippy with
-  `-D warnings`, tests, and `cargo deny check all`. Pushing a `v*` tag that
-  matches the workspace version runs `release.yml`: it tests with `--locked`,
-  builds `-p deskspace-app` in release, and publishes an unsigned
-  `deskspace-<tag>-x86_64-pc-windows-msvc.zip` (`deskspace.exe`,
-  `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its
-  `.sha256` to GitHub Releases, as a pre-release when the tag contains `-`.
-  The same workflow builds an NSIS `setup.exe` with `cargo-packager` 0.11.8
-  (CI-only; `cargo install cargo-packager --locked --version 0.11.8`), a
-  per-user install (no admin, Start-menu and desktop shortcuts, an
-  uninstaller) configured under `[package.metadata.packager]` in
-  `crates/deskspace-app/Cargo.toml` with a vendored template at
-  `packaging/nsis/installer.nsi`. It installs to
-  `%LocalAppData%\DeskSpace.App` (the template overrides NSIS's default
-  `%LocalAppData%\DeskSpace`, the parent of the user's stored files) and ships
-  as `deskspace_<version>_x64-setup.exe`. The installer is unsigned until R10
-  (SignPath Foundation via cargo-packager's `windows.signCommand`).
-  Auto-update (F-45) is built: `deskspace-update` checks a
-  `latest.json` feed published as a release asset, verifies it with a minisign
-  public key compiled in, and installs the full NSIS package (no deltas). It is
-  opt-in ("Check for updates automatically" on the General page, plus a button
-  and a tray entry for a manual check); a check runs about once a day, and a
-  portable build only opens the release page. The minisign keypair is a
-  maintainer setup step (`release.yml` signs with the `DESKSPACE_MINISIGN_KEY`
-  secret; the public half goes in `deskspace-update`'s `UPDATE_PUBKEY`), so
-  until it is set a release ships without a feed and the check reports that no
-  channel is configured. The toolchain is pinned to an exact version in
-  `rust-toolchain.toml`
-  (E13), and the release build is reproducible: `release.yml` sets the two
-  `--remap-path-prefix` values and `build.rs` passes `/Brepro`, so a rebuild
-  from the same sources and a different directory matches (E3).
+- **Packaging, signing, and auto-update.** The policy is ROADMAP D6 and the
+  release steps are `RELEASING.md`; the facts that matter in the code:
+  - CI (`ci.yml`) runs fmt, clippy with `-D warnings`, tests, and
+    `cargo deny check all`. A `v*` tag matching the workspace version runs
+    `release.yml`, which publishes `deskspace_<version>_x64-setup.exe` (NSIS,
+    built by the CI-only `cargo-packager` 0.11.8 from
+    `[package.metadata.packager]` in `crates/deskspace-app/Cargo.toml` and the
+    vendored `packaging/nsis/installer.nsi`), a portable zip with the
+    watchdog, and its `.sha256`.
+  - The installer is per user, installs to `%LocalAppData%\DeskSpace.App`
+    (apart from the stored files under `%LocalAppData%\DeskSpace`), and is
+    unsigned until R10.
+  - Auto-update (F-45, `deskspace-update`) is opt-in and installs the full
+    package from a minisign-signed `latest.json`. Until the maintainer sets
+    the `DESKSPACE_MINISIGN_KEY` secret and `UPDATE_PUBKEY`, releases ship
+    without a feed and a check reports that no channel is configured.
+  - The toolchain is pinned in `rust-toolchain.toml`, and the release build
+    is reproducible (`--remap-path-prefix` in `release.yml`, `/Brepro` in
+    `build.rs`).
 - **License is Apache-2.0** (copyright Timothy W. Brown; `LICENSE`,
   `NOTICE`). Release packaging must ship both files.
 

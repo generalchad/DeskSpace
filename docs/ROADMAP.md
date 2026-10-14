@@ -15,7 +15,10 @@ How to read this file:
 - Section 7 is the single index of features. Feature ids (`F-xx`), milestone
   ids (`Mx`), and decision ids (`Dx`) are stable and are cited from code and
   other docs, so never renumber them.
-- Appendix A is the history of what landed, in order.
+- The history of what landed up to v0.2.0 is in
+  `archive/ROADMAP-progress-log.md`; read it only for background. A task id
+  cited here (`E7`, `L2`, ...) is in `TASKS.md` while open and in
+  `archive/TASKS-done.md` once finished.
 
 ## 1. Vision
 
@@ -82,7 +85,8 @@ A native, lightweight, offline Windows desktop organizer that:
     a CI-only tool (`cargo install cargo-packager`), so it adds no dependency
     to the workspace. Chosen over Velopack on 2026-10-12 because Velopack's
     Rust SDK pulled a TLS and advisory stack into the tightened `deny.toml`
-    and needed an app-side startup hook; see the progress log.
+    and needed an app-side startup hook; see the archived progress log
+    (2026-10-12).
   - *Updater:* `cargo-packager-updater` (opt-in). It reads a signed JSON feed
     (`latest.json` plus a minisign `.sig`) published as a release asset and
     installs the **full** package; there are no delta updates.
@@ -108,8 +112,9 @@ A native, lightweight, offline Windows desktop organizer that:
     and offers Update / Later / Skip this version. Update downloads,
     installs, and restarts DeskSpace with the same config. Later asks again
     at the next check. A skipped version is stored and not offered again.
-  - *Channels within the updater:* stable by default. An opt-in setting
-    receives pre-releases (`-alpha.N`, `-beta.N`, `-rc.N`).
+  - *Channels within the updater:* stable only. An opt-in pre-release
+    channel (`-alpha.N`, `-beta.N`, `-rc.N`) is deferred, because GitHub's
+    "latest" feed never serves a pre-release.
   - *Portable zip:* the same opt-in check, but notify only. It offers to open
     the release page and never replaces its own files.
   - *Signing:* SignPath Foundation (free for open source), wired into
@@ -212,31 +217,33 @@ A native, lightweight, offline Windows desktop organizer that:
 
 ## 4. Where we are
 
+**Released:** v0.2.0 (2026-10-13, the first public release) and v0.2.1
+(in-app update checking, F-45). Takeover ships opt-in (D8, D9).
+
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
 **In progress:**
 - *M2:* spaces and their items are complete and behave like Explorer.
   Desktop takeover is built and opt-in (the layer, hide, restore,
   Explorer-restart re-hide, the crash watchdog, and the Desktop-folder watch
-  are in); undo remains. Non-file shell drags (F-50) are done.
+  are in); undo remains. Non-file shell drags (F-50) are built, but a drag
+  from the Start menu still does not land in a space.
 - *M3:* the tray, menus, and settings window work, with all nine pages.
-  What remains depends on later milestones (lens and snapshot entries) or on
-  design (more item presets).
+  What remains is the "Add" menu (F-53..F-55), desktop verbs (F-52), and
+  entries that depend on later milestones or on design.
 
 **Next, in order:**
 
-1. **Readability fixes and file splits** (`TASKS.md` sections A, B, and K).
-   Small, safe, and they make every later task easier for any contributor.
-2. **On-screen verification pass.** Many behaviors have only been
-   unit-tested or smoke-tested (`CONTEXT.md` section 2 lists them, and every
-   "(awaiting check)" task in `TASKS.md`). Confirm them before more work
-   builds on them.
-3. **Release readiness for v0.2:** ship the watchdog in the zip (E12), pin
-   the toolchain (E13), then the reproducible build and release checklist
-   (E3, E4).
-4. **M2 undo** for file moves and space deletion. First settle open
+1. **Adding items to spaces** (`TASKS.md` section L): make Start-menu and
+   taskbar drags create shortcuts (F-50), then "Add ▸ Apps…" (F-53) and
+   "Paste shortcut" (F-54), and "Add ▸ Files…" once decided (F-55).
+2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
+   built-but-unchecked behaviors before more work builds on them.
+3. **Release dry run on clean machines** (R12) and **code signing** (R10),
+   before turning on the update feed.
+4. **Right-button drag** (`TASKS.md` G5a-G5c).
+5. **M2 undo** for file moves and space deletion. First settle open
    question 3.
-5. **Cut v0.2**, with takeover as an opt-in setting (D8, D9).
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -344,20 +351,26 @@ Done:
     ignore `SC_MINIMIZE`);
   - the Desktop folder is watched while the layer is drawn, so loose items
     follow outside changes (I8).
-- **[done]** Non-file shell drags (F-50). A space accepts a
-  `CFSTR_SHELLIDLIST` drag (a Start-menu tile or taskbar app), including a
-  packaged app with no filesystem path, and writes a shortcut into the space
-  storage, matching Explorer's drop-a-shortcut-on-a-folder behavior.
+- **[partial]** Non-file shell drags (F-50). A space accepts a drag that
+  carries only shell items, including a packaged app with no filesystem
+  path, and writes a shortcut into the space storage, as Explorer does when
+  one is dropped on a folder. A drag from the Start menu is still refused or
+  mishandled, probably because it also carries a file list (`TASKS.md`
+  L1-L2).
 
 Remaining:
-1. **Watch stored files.** Only the Desktop folder is watched; a change to a
+1. **Start-menu and taskbar drags make shortcuts** (F-50; `TASKS.md`
+   L1-L2): decide a drop by the effects the source allows, so a link drop
+   (Start, the taskbar, Alt+drag) always creates a shortcut and never moves or
+   lists the source's own `.lnk`.
+2. **Watch stored files.** Only the Desktop folder is watched; a change to a
    stored file made outside DeskSpace is noticed only by an item action or at
    startup. Lenses will reuse the same watcher (M4 phase 2).
-2. **Undo** for file moves, item removal, and space deletion (open question
+3. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
-3. **Right-button drag** with Explorer's drop menu (D9; `TASKS.md`
-   G5a-G5c). Its "Create shortcuts here" shares the shortcut-creation code
-   (`win32/shortcuts.rs`) F-50 added.
+4. **Right-button drag** with Explorer's drop menu (D9; `TASKS.md`
+   G5a-G5c). Its "Create shortcuts here" takes the same shortcut path as
+   F-50 (`App::add_shortcuts`).
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -407,7 +420,14 @@ Done:
   dialog (`TASKS.md` F14; check pending).
 
 Remaining:
-1. Tray and menu entries:
+1. An "Add" submenu on the space menu, so items can be added without a drag
+   (`TASKS.md` L3-L6), every entry ending in the F-50 shortcut path:
+   - "Apps…": a picker over the Applications folder, which lists every
+     installed app, Store apps included (F-53);
+   - "Paste shortcut", as in Explorer (F-54);
+   - "Files…", once it is decided whether a picked file moves, stays in
+     place, or becomes a shortcut (F-55).
+2. Tray and menu entries:
    - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
@@ -415,7 +435,11 @@ Remaining:
    - spaces entries on the desktop's own background menu - "New space",
      "DeskSpace Settings", and the like - beside the existing "Show spaces"
      verb, so the desktop is a control surface like the tray (F-52).
-2. More item presets and preset import/export (F-48). The "Item preset"
+3. An Explorer "Send to" or right-click "Add to a DeskSpace space" entry
+   (F-56). Deferred: it needs a hand-off to the running instance (the
+   `--show` verb is the model) and, for the Windows 11 top-level menu, the
+   M8 item 4 packaging.
+4. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
 
@@ -569,11 +593,12 @@ workflow is possible without a mouse.
 
 Goal: a signed installer that works on a fresh machine.
 
-Decisions: D6. Work items: `TASKS.md` section E (ready to do) and R10-R13
-(maintainer work).
+Decisions: D6. Work items: R10-R13 in `TASKS.md` section D (maintainer
+work); the finished E tasks are archived.
 
 Remaining:
-1. A cargo-packager installer (D6):
+1. **[done]** A cargo-packager installer (D6), built by `release.yml` since
+   v0.2.0; the clean-machine check is R12:
    - a per-user NSIS install in `%LocalAppData%\DeskSpace.App`, separate from
      the user data;
    - an option to start with Windows (F-34);
@@ -592,11 +617,11 @@ Remaining:
      signing.
    - M2 takeover may make it unnecessary by giving DeskSpace its own desktop
      menu.
-5. A release checklist, a versioning policy, and a reproducible build.
-   `RELEASING.md` documents the checklist and the versioning policy.
-   `.github/workflows/release.yml` already publishes a zip (`deskspace.exe`,
-   `deskspace-watchdog.exe`, `LICENSE`, `NOTICE`, `README.md`) and its SHA-256
-   to GitHub Releases on a `v*` tag that matches the workspace version.
+5. **[done]** A release checklist and versioning policy (`RELEASING.md`) and
+   a reproducible build. `.github/workflows/release.yml` publishes the
+   installer, a zip (`deskspace.exe`, `deskspace-watchdog.exe`, `LICENSE`,
+   `NOTICE`, `README.md`), and its SHA-256 on a `v*` tag that matches the
+   workspace version.
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
 7. **[done]** Auto-update from GitHub Releases (F-45), following the policy in D6.
@@ -624,9 +649,12 @@ machine.
 
 ## 6. Release mapping
 
-- **v0.2 "Take the desktop"**: M0, M1, M2, M3. The first usable release, with
-  D2D rendering and the Windows 11 look, desktop takeover as an opt-in
-  setting (D8, D9), and the tray, context menu, and settings.
+- **v0.2 "Take the desktop"** (released 2026-10-13 as v0.2.0; v0.2.1 added
+  update checking): M0, M1, most of M2 and M3. D2D rendering and the Windows
+  11 look, desktop takeover as an opt-in setting (D8, D9), and the tray,
+  context menu, and settings. The rest of M2 and M3 (section L, undo, the
+  desktop verbs) ships in a v0.2.x release or with v0.3, as the maintainer
+  decides.
 - **v0.3 "Lenses"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
@@ -692,44 +720,29 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
-| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending. A space accepts a `CFSTR_SHELLIDLIST` drag and writes a `.lnk` into the space storage (`win32/shortcuts.rs`), including packaged apps with no file path |
+| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Partial: a drag with only shell items becomes a `.lnk` in the space storage (`win32/shortcuts.rs`, `App::add_shortcuts`); Start-menu drags still fail (`TASKS.md` L1-L2) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
-| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open; the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
+| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
+| F-53 | "Add ▸ Apps…": pick installed apps (Store apps included) to add as shortcuts | M3 | Open (`TASKS.md` L3-L4) |
+| F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Open (`TASKS.md` L5) |
+| F-55 | "Add ▸ Files…": pick files to add to a space | M3 | Open; needs a decision on move vs keep vs shortcut (`TASKS.md` L6) |
+| F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 
-The polled customization backlog (2026-10-03) is F-24..F-35. The
-item-interaction session (2026-10-03) is F-36..F-39, and the
-native-appearance follow-ups are F-40..F-43. Each has been placed in the
-milestone that builds what it depends on.
 
 ## 8. Open questions
 
 Resolve each one during the milestone that raises it.
 
-1. **Takeover safety (M2).** *Resolved (D8):* a watchdog helper process
-   re-shows the icon layer after a crash, and DeskSpace re-hides it after an
-   Explorer restart and on a health timer.
-2. **Desktop layer vs blur (M2).** *Resolved (D8):* the desktop layer is
-   desktop-hosted and spaces stay top-level and blurred. (A planned Win+D
-   watcher to re-show the spaces was dropped; Show Desktop already leaves
-   `WS_EX_TOOLWINDOW` windows alone. See D8 and the 2026-10-11 progress
-   entry.)
+1. **Takeover safety (M2).** *Resolved:* D8.
+2. **Desktop layer vs blur (M2).** *Resolved:* D8.
 3. **Undo model (M2).** Should the undo stack be single-level or
    multi-level? Should it cover file moves, which are destructive? Explorer
    can already undo the shell operations (paste, delete, rename) through
    `FOF_ALLOWUNDO`. Moves into the store are plain renames with no undo
    record.
 
-Resolved:
-- **Blur fallback (M1).** See D2.
-- **Store layout (M2).** One shared folder, and deleting a space moves its
-  stored files back to the desktop. See D3.
-- **Takeover model (M2).** A `DesktopLayer` and a shared `Surface`. See D7.
-- **Takeover safety and placement (M2).** Hosted layer, top-level spaces, and
-  a watchdog helper. See D8.
-- **Update policy (M8).** cargo-packager, opt-in, prompt then restart, and
-  skip a version. See D6.
-- **Takeover default, Ctrl+wheel, toolchain, right drag, hide vs layer.**
-  See D9.
+Every other question raised so far is answered by a decision in section 2
+(D2, D3, D6-D9).
 
 ## 9. Risks
 
@@ -749,317 +762,14 @@ Resolved:
 - **Undocumented blur API.** `SetWindowCompositionAttribute` could change in a
   future Windows release. If it does, spaces simply lose their blur, and the
   code is isolated in `win32/dwm.rs`.
+- **Undocumented drag sources.** What the Start menu and the taskbar put in a
+  drag (formats and allowed effects) is not documented and may change between
+  Windows builds. Mitigation: decide a drop by the allowed effects rather than
+  by format (`TASKS.md` L2), and offer a non-drag path ("Add ▸ Apps…", F-53).
 - **Scope.** The parity checklist covers a lot of ground. The milestone gates
   exist to keep each release shippable.
 
 ## Appendix A. Progress log
 
-What landed, oldest first. The details here describe the state when each
-change landed. `CONTEXT.md` is authoritative for current behavior.
-
-### 2026-10-02
-
-- **Windows 11 look and control center.**
-  - Per-space windows with acrylic/blur and rounded corners.
-  - D2D/DirectWrite rendering, with hover and selection highlights.
-  - A tray icon and a space context menu.
-  - A data-driven settings window with Appearance, General, and About pages
-    and live preview.
-  - Delete space, and file drops onto spaces.
-  - Config v2 with migration.
-  - Item positions relative to their space, which fixed items being left
-    behind when a space moved.
-
-  This covered most of M1 and parts of M0, M2, and M3.
-- **Resize and scroll (M4 phase 0).**
-  - Spaces resize from any edge or corner: snapped, at least one cell, with
-    resize cursors.
-  - A resized space keeps its size, reflows its items into as many columns as
-    fit, and scrolls with the mouse wheel, showing a thin indicator.
-  - Only visible items go into the scene, so icons load lazily.
-  - The icon cache is LRU-bounded. This closed F-03.
-- **Spaces, item interaction, clear glass.**
-  - Containers renamed to "spaces" throughout (D5).
-  - Items open on double-click and show Explorer's own context menu, with
-    "Move back to desktop" at the top.
-  - Items drag out like Explorer items (`SHDoDragDrop`).
-  - Dropped files move into the store (D3).
-  - A corner-radius slider (0-24 px).
-  - A Clear backdrop that can be fully invisible apart from the items, with
-    label shadows to keep labels readable.
-
-### 2026-10-03
-
-- **Guardrails (M0).** CI, `cargo deny`, and binary errors with context for
-  each step.
-- **Debounced autosave.** `Ui::set_timer`/`clear_timer` deliver `Event::Timer`.
-  Layout changes defer their write by about 700 ms.
-- **Dark mode** for menus and the settings window.
-- **Inline rename (F-02).**
-  - Spaces are never activated, so a low-level keyboard hook turns key presses
-    into an edit stream.
-  - The app owns the edit buffer, and the painter draws the selection and
-    caret.
-  - IME composition is not supported.
-- **Per-space appearance and menu submenus (F-24).**
-  - An Appearance submenu with opacity presets, plus the system color picker
-    for a tint or text color, and a reset.
-  - `MenuEntry` gained submenus.
-- **Sort a space (F-31).** Sort by name, type, size, or modified date, in
-  either direction. `Item` gained `size`/`modified`, read when the item is
-  created.
-- **Grid density and label style (F-26, F-27).**
-  - Icon spacing and edge padding sliders, which re-flow every space live.
-  - Label lines, size, and shadow mode.
-- **Window settings wired (M3).** `snap_grid` folded into `GridSpec.snap`, and
-  `always_on_desktop` picks desktop-hosted placement at startup.
-- **Rearranging items and the Delete key.**
-  - Dragging an item within its space reorders it (`ReorderItem`).
-  - The keyboard hook gained a watch on the selection keys.
-- **Cross-space drag identity fix.**
-  - Before: moving an item between spaces re-adopted a `(2)` copy instead of
-    moving it.
-  - Dropped files are now matched by canonical path, and
-    `ItemStore::contains` compares canonical parents.
-  - Verified by manual testing.
-- **Explorer-parity drag (F-36).**
-  - Spaces became OLE `IDropTarget`s, replacing `WM_DROPFILES`. They move by
-    default and copy with Shift.
-  - An empty drop description suppresses the shell's "Move"/"Copy" hint.
-  - "Performed DropEffect" stops a shell source from moving the files a second
-    time.
-  - Drag-out sets "Preferred DropEffect" to move, so no `- Copy` is left
-    behind.
-- **Drag image (F-37).**
-  - The item is rendered offscreen exactly as its space draws it, and made
-    slightly translucent.
-  - Inside the space, a layered ghost window shows it. Outside the space,
-    `IDragSourceHelper2` shows it with no drop description.
-  - Space drop targets forward to `IDropTargetHelper`, so the image stays
-    visible over spaces.
-- **Space click acts like a desktop click.** It focuses the desktop and clears
-  the desktop icon selection through its `IShellView`.
-- **Match Explorer's display.**
-  - Check boxes, extensions, hidden/protected files, and shell overlays.
-  - `SIGDN_NORMALDISPLAY` labels.
-  - Multi-selection in the auto-check-select style.
-- **Shortcut labels match Explorer.** No `.lnk`/`.url` extension, and both
-  label forms are derived from the path.
-- **Desktop round-trip fix.**
-  - Before: desktop moves were unreliable, and items appeared with a label but
-    no icon.
-  - Every move is now announced with `SHChangeNotify`, and missing dropped
-    paths are ignored.
-  - A drag-out only removes the item once its file is gone.
-- **Clipboard (F-38).**
-  - Ctrl+C/X put `CF_HDROP` on the shell clipboard, and cut items are drawn
-    ghosted.
-  - Ctrl+V re-points items that are already in a space, and pastes anything
-    else through `IFileOperation` (`FOF_RENAMEONCOLLISION | FOF_ALLOWUNDO`).
-- **Recycle-Bin delete (F-39).**
-  - Delete uses `IFileOperation` (undoable, no prompt).
-  - "Remove from space" stays a separate action.
-  - A clipboard listener clears the cut ghosting.
-- **Item rename and clipboard polish.**
-  - F2 renames the focused item through `IFileOperation::RenameItem`.
-  - Cut ghosting clears correctly.
-  - Clipboard reads retry while another process holds the clipboard.
-- **Shell-operation and check-box polish.**
-  - Paste ignores paths that do not exist, and missing items are pruned.
-  - A `FileOperation` with nothing queued no longer fails.
-  - Check boxes keep Explorer's hover and selection behavior.
-- **Rubber-band selection, Ctrl+A, multi-item drag (F-42).** A custom
-  `IDataObject` serves a multi-file `CF_HDROP`, and `active_items()` gathers
-  the items an operation acts on.
-- **Independent item check boxes (F-41).** A `CheckBoxMode` with a tick set
-  that lasts only for the session, separate from the selection.
-- **Compressed/encrypted label colors (F-43, part).**
-- **Multi-selection drag fix.** Pressing an already-selected item no longer
-  collapses the selection, and a group reorders as a block
-  (`Command::ReorderItems`).
-
-### After 2026-10-03
-
-- **Show spaces from the desktop.**
-  - While spaces are hidden, a per-user `DesktopBackground\Shell` verb runs
-    the executable with `--show`. That posts `SHOW_SPACES` to the running
-    instance.
-  - On Windows 11 the verb sits under "Show more options" (see M8).
-- **Realtime icon size (F-25, part).**
-  - A 50-200 % slider with an editable percentage box. The default of 100 % is
-    Windows' 48 px desktop icon.
-  - `GridSpec::scaled` derives the effective grid, and commands use it through
-    `Desktop::apply_with_layout`.
-  - The Appearance tab was split into Appearance, Labels, Layout, and Colors.
-- **Explorer icon size, item spacing, and info tips (F-40, F-43).**
-  - The desktop view supplies its icon size and item spacing, which replace
-    DeskSpace's sliders under "Match Explorer".
-  - Native tracking tooltips show info tips.
-- **Jumbo icons and per-monitor DPI (F-25, M1).**
-  - `IShellItemImageFactory` renders icons at the effective size.
-  - Overlays come from the system image list and are scaled to the Advanced
-    page's overlay size.
-  - Each space scales to its own monitor's DPI, and `WM_DPICHANGED` reflows
-    it.
-
-### 2026-10-10
-
-- **Per-space looks (F-46).**
-  - A first design listed only spaces with one of four overrides (opacity,
-    tint, text, icon size) in a rail group beside the global pages. It read
-    as more global pages and was replaced the same day.
-  - Now the settings window has three panes: the scopes (Global, then every
-    space indented, dimmed while it follows Global), the pages of the
-    selected scope, and the page under a header with a "Customize this
-    space" switch.
-  - A customized space keeps its own copy of every look setting
-    (`SpaceLook`), kept when the switch is turned off. The context menu's
-    Appearance edits customize the space. The old four overrides are folded
-    into a look at startup.
-  - Selecting a space in the scopes pane (or opening the window on one)
-    highlights it on the desktop for about 1.2 s, so it can be found.
-- **Explorer-standard controls (`TASKS.md` G1-G4).**
-  - A typed letter selects the next item whose label starts with it (a short
-    timeout buffer, like typing on the desktop).
-  - Home/End/PageUp/PageDown scroll the current space.
-  - Ctrl+wheel changes the global icon size, as on the desktop, so spaces
-    that follow Global resize together.
-  - The arrow keys move the selection across the grid (Shift extends it, Ctrl
-    moves a dotted focus rectangle on its own), scrolling the item into view.
-  - Clicking an already-selected item's label a second time (a slow
-    double-click) starts an inline rename, as Explorer does.
-- **Settings performance.** A slider drag used to restyle and re-flow every
-  space, re-apply DWM attributes, flush the menu themes, and repaint the
-  rail on every tick. Unchanged styles, rects, scenes, menu modes, and rail
-  selections are now skipped, and space previews wait for an idle message
-  queue (`PREVIEW_TIMER`), so a drag collapses into one pass per pause.
-
-### 2026-10-11
-
-- **M2 desktop takeover (`TASKS.md` I1-I5).**
-  - The desktop's loose items and their positions are read through the shell
-    (`IFolderView::Item`/`GetItemPosition`), with the folder walk as a
-    fallback, and cached in a `DesktopLayer`: absolute virtual-desktop
-    positions, reconciled by path so ids survive with `Command::SyncDesktop`
-    (I1-I2).
-  - A chrome-less desktop-hosted layer window draws the loose items through
-    the same item code as the spaces (I3).
-  - Item hit-testing, hover, selection, rubber-band, drag, drop, info tips,
-    and the scene build go through a `Surface` (`Space` or `Desktop`) instead
-    of a space id, so one path serves spaces and the desktop layer (I4).
-  - `desktop_icons::hide`/`restore` hide and show Explorer's `SysListView32`
-    icon listviews, re-enumerating on each call; the icons re-hide after an
-    Explorer restart (`TaskbarCreated`) and on a health timer, and are
-    restored before `OleUninitialize` (I5).
-  - The takeover is opt-in (`take_over_desktop`, and the hidden `--takeover`
-    flag).
-- **I7 closed as not needed (Win+D watcher).**
-  - Show Desktop (`MinimizeAll`) skips `WS_EX_TOOLWINDOW` windows, so the
-    top-level, never-activated spaces are already left visible across Win+D.
-    Verified with the running app (top-level, `--on-top`, `--takeover`,
-    `--takeover-layer`, and both hosted placements; a normal window was
-    minimized in the same run) and with an isolated style matrix, on Windows 11
-    build 26300. The planned watcher would have been a no-op, so it was
-    dropped along with its config toggle.
-- **M2 crash-safe restore (`TASKS.md` I6).**
-  - Before the icons are hidden the app launches a dedicated watchdog
-    (`deskspace-watchdog.exe`, a second binary of `deskspace-app`) detached,
-    and the watchdog re-parents itself so killing the app by name or by process
-    tree leaves it running. It waits on the main process and re-shows every
-    listview unless a clean-exit event was signaled.
-  - The runtime teardown signals that event right after it restores the icons,
-    so the watchdog acts only on a crash; a named mutex keeps a stray watchdog
-    a no-op.
-- **A space's Delete button in the settings window (F-02).** A space's scope
-  header now carries a "Delete space" button beside the "Customize this space"
-  switch. It runs the same delete (with its confirmation for a non-empty
-  space) as the context menu, then the window falls back to Global; deletion is
-  immediate, so Cancel does not bring the space back. It is tinted red to mark
-  it as destructive.
-- **Desktop folder watch (`TASKS.md` I8).** A reusable `FolderWatch`
-  (`ReadDirectoryChangesW` on a worker thread, debounced to 150 ms) re-syncs
-  the desktop layer when files change outside DeskSpace.
-- **Item preset (F-48, C5).** "Match Explorer's display" became the
-  Appearance page's "Item preset" dropdown (`Match Explorer's display` /
-  `Custom`); the Layout page greys the fields Explorer supplies.
-- **Hotkeys and New spaces pages (F-17, F-18; C7, C8).** Three editable
-  global hotkeys (show/hide, new space, open settings), table-driven by
-  `HOTKEY_BINDINGS`, and the defaults a new space is created with.
-- **App split (`TASKS.md` R1, R2).** `app.rs` (about 4,500 lines) became
-  `app/` submodules with one `impl App` each, and `Selection`, `EditState`,
-  and `PointerState` were pulled out of `App`. Pure moves.
-- **Space polish (F8-F12).** Shift and Caps Lock decode predictably in
-  rename; a horizontal resize fits whole columns; "Fit to contents" joined a
-  space's Layout page; a border press waits out a dead zone before resizing;
-  checked item boxes use the Windows accent with a white tick.
-- **Embedded icon (`TASKS.md` E1, E2).** `assets/deskspace.ico` and version
-  info are compiled into the executable; the tray, the settings window, and
-  the desktop verb use it, and the icon drawn in code is gone.
-- **Show Desktop hardening.** Spaces ignore `WM_SYSCOMMAND`/`SC_MINIMIZE`, so
-  survival across Win+D no longer depends on the tool-window exclusion.
-- **Placement setting removed.** The General page's "Keep spaces on the
-  desktop" (`always_on_desktop`) is gone; desktop-hosted placement is only
-  the `--placement` CLI option. Old config files still load (the key is
-  ignored).
-- **Docs review.** `AGENTS.md` gained "Design priorities"
-  (readability, maintainability, extensibility); `CONTEXT.md` gained module,
-  message, timer, and id tables; `TASKS.md` gained a file map, extension
-  recipes, and section K (file splits).
-- **Decisions D9.** Takeover stays opt-in for v0.2; Ctrl+wheel under Match
-  Explorer drives the desktop's icon size; the toolchain is pinned; right
-  drag follows Explorer's drop menu; hiding spaces leaves the desktop layer.
-  Work items F13, E13, and G5a-G5c.
-
-### 2026-10-12
-
-- **Installer framework switch (D6 amended).** The Windows installer moves
-  from Velopack to `cargo-packager` 0.11.8, a CI-only tool rather than a
-  workspace dependency.
-  - Velopack's Rust SDK pulled a TLS and advisory stack (`ring`, `rustls`,
-    `derivative`) past the tightened `deny.toml` and needed an app-side startup
-    hook; `cargo-packager` is CI-only, so the dependency graph and `deny.toml`
-    are unchanged. Trade-off: no delta updates.
-  - A per-user NSIS installer and uninstaller are built from a vendored custom
-    template at `packaging/nsis/installer.nsi`, configured under
-    `[package.metadata.packager]` in `crates/deskspace-app/Cargo.toml`. The
-    artifact is `deskspace_<version>_x64-setup.exe`, published to the same
-    GitHub Release as the portable zip.
-  - The template installs into `%LocalAppData%\DeskSpace.App`, keeping the
-    install root apart from the user's stored files under
-    `%AppData%\DeskSpace\DeskSpace\config` and
-    `%LocalAppData%\DeskSpace\DeskSpace\data`.
-- **A modern color picker (F-51; `TASKS.md` F14).** The Colors page and the
-  space menu's Appearance submenu open DeskSpace's own themed popup
-  (`win32/color_picker.rs`) instead of the dated system `ChooseColor` dialog.
-  It opens on a palette (a "Recent colors" row and a "Windows colors" grid)
-  after the Windows color dialog, with the saturation/value square, hue and
-  alpha strips behind a "Custom colors…" toggle, plus a preview, a hex readout,
-  and OK/Cancel. `deskspace-core` gained `Hsv`, `Color::to_hsv`, and
-  `Hsv::to_color`. The popup paints opaque GDI and does not extend the DWM
-  frame into the client, which had made it transparent; it uses the system
-  message font, and its swatches and the settings window's color previews are
-  slightly rounded boxes. A later polish pass made the color field's swatch
-  itself the button (with an eyedropper glyph), moved the picker to a
-  flicker-free DIB back buffer with per-pixel anti-aliased markers and an
-  anti-aliased glyph check mark, and fixed a modal-loop stall. On-screen check
-  pending.
-
-### 2026-10-13
-
-- **In-app updates (F-45; `TASKS.md` E8-E11).** A new `deskspace-update` crate
-  wraps `cargo-packager-updater`: it checks a minisign-signed `latest.json`
-  published as a release asset and installs the full NSIS package (no deltas).
-  The app exposes an opt-in "Check for updates automatically" toggle and a
-  "Check for updates now" button on the General page, and a "Check for
-  updates…" tray entry; a portable build only opens the release page. The
-  platform gained `Ui::open_url` and a cross-thread `Waker` (`Event::Wake`).
-  `release.yml` signs the installer and builds the feed when the
-  `DESKSPACE_MINISIGN_KEY` secret is set. The updater's `time` dependency moved
-  the minimum Rust version to 1.88.
-- **No console window in release.** Both binaries are built with the Windows
-  subsystem in release (`#![windows_subsystem = "windows"]`), so an installed
-  or launched copy no longer flashes a console; debug builds keep it for logs.
-- **First public release (v0.2.0).** The repository was made public and
-  `v0.2.0` published as a normal (non-pre-release) release, so it appears as
-  the repository's Latest release. The release workflow's Publish step is now
-  idempotent (it replaces an existing release for the tag).
+Moved to `archive/ROADMAP-progress-log.md` (history up to v0.2.0). The git log
+and the GitHub release notes record what landed since.
