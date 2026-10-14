@@ -94,7 +94,7 @@ mod menu {
     pub const EXIT: u32 = 6;
     pub const DELETE: u32 = 7;
     pub const FIT: u32 = 8;
-    pub const REMOVE_ITEM: u32 = 9;
+    // 9 was the item menu's "Remove from space"; it stays unused.
     pub const RENAME: u32 = 10;
     pub const RENAME_ITEM: u32 = 11;
     pub const CHECK_UPDATES: u32 = 12;
@@ -677,7 +677,6 @@ mod tests {
             menu::EXIT,
             menu::DELETE,
             menu::FIT,
-            menu::REMOVE_ITEM,
             menu::RENAME,
             menu::RENAME_ITEM,
             menu::SPACE_TINT,

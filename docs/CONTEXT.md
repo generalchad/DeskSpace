@@ -507,7 +507,8 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
-41-44; next free 13, or 45 for a new group); item-menu app ids must stay below
+41-44; next free 13, or 45 for a new group; 9, the removed "Remove from
+space", stays unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
 Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 26 were freed by the removed placement setting and stay unused).
@@ -841,8 +842,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   (`Ui::delete_files(paths, permanent)` → `IFileOperation::DeleteItem` with
   `FOF_ALLOWUNDO | FOF_NOCONFIRMATION`, no prompt, undoable; Shift+Delete
   passes `permanent`, which drops `FOF_ALLOWUNDO`) and drops the items whose
-  files are gone; the item menu's
-  "Remove from space" stays a distinct action. The controller registers
+  files are gone. The controller registers
   `AddClipboardFormatListener`; `Event::ClipboardChanged` clears cut ghosting
   when another app or the desktop replaces the clipboard and prunes items whose
   files a paste elsewhere moved away. A clipboard read that fails (another
@@ -1201,8 +1201,8 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 - Double-click an item to open it. Clicking an already-selected item a second
   time (a slow double-click) starts an inline rename of it, as Explorer does.
   Right-click it for Explorer's context
-  menu, with DeskSpace's "Rename" and "Move back to desktop" (or "Remove from
-  space" for items left in place) on top; right-clicking an item already in a
+  menu, with DeskSpace's "Rename" on top (Explorer's own Delete in it sends the
+  file to the Recycle Bin; ROADMAP D3); right-clicking an item already in a
   multi-selection keeps it. A loose item on the desktop layer gets Explorer's
   menu alone.
   Rest the pointer on an item for a moment to see Explorer's info tip.
@@ -1226,8 +1226,8 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   the grabbed item is part of the selection, the whole selection drags.
 - Press Delete with items selected to send their files to the Recycle Bin
   (undoable, no prompt), as Explorer does; Shift+Delete removes them for good.
-  The item menu's "Remove from space" / "Move back to desktop" is separate and
-  returns a stored file to the desktop.
+  The only ways a stored file goes back to the desktop are dragging it there
+  and deleting its space.
 - Cut, copy, and paste items with Ctrl+X, Ctrl+C, and Ctrl+V. Cut items are
   ghosted until pasted; paste goes into the current space, moving (cut) or
   duplicating (copy) the files through the shell's file operation.
@@ -1272,8 +1272,9 @@ elsewhere stay stable.
   restarts. A watchdog helper (`deskspace-watchdog.exe`, shipped beside
   `deskspace.exe` in the release zip) launched before the icons are hidden
   restores them if the process crashes (I6).
-- **File moves have no undo yet.** "Move back to desktop" and deleting a space
-  return stored files; files from another drive stay in place (a move there
+- **File moves have no undo yet.** Deleting a space returns its stored
+  files to the desktop (deleting an item recycles it, which the Recycle Bin
+  can undo); files from another drive stay in place (a move there
   would copy). The Desktop folder is watched while the layer is drawn, so the
   loose items follow outside changes; a stored file is not, so one deleted
   outside DeskSpace stays listed until an item action or the next startup
@@ -1384,7 +1385,8 @@ elsewhere stay stable.
 - **Space**: a movable container window that groups items on the desktop.
 - **Storage**: the folder files dropped into spaces are moved to.
 - **Lens**: a space whose contents mirror a folder live (comparable tools
-  call it a Folder Portal). In code, a space with a folder source.
+  call it a Folder Portal). In code, a space with a folder source. Deleting
+  a lens removes only the view, never the folder (ROADMAP D3).
 - **User-sized**: a space the user resized; it keeps its size, reflows items
   to its width, and scrolls instead of growing.
 - **Roll-up**: collapsing a space to its title bar.

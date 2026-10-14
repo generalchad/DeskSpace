@@ -67,8 +67,18 @@ A native, lightweight, offline Windows desktop organizer that:
     - Two kinds of file stay in place: one dropped with Shift held, and one on
       another drive, where a move would be a copy.
     - Name clashes get " (2)" as in Explorer, and nothing is overwritten.
-    - Removing an item, or deleting its space, moves stored files back to the
-      desktop.
+    - Deleting a space moves its stored files back to the desktop.
+    - Removing a single item is a delete (amended 2026-10-13): a stored file
+      goes to the Recycle Bin, as the Delete key and Explorer's Delete do, and
+      an item listed in place (Shift-dropped, or on another drive) is only
+      unlisted, so the user's original is never deleted. The one way to take
+      an item out of a space onto the desktop is to drag it there. The item
+      menu's old "Remove from space" / "Move back to desktop" entry is gone.
+  - *Deleting a lens never deletes its folder.* A lens is only a view, so
+    deleting the lens removes the view and leaves the bound folder and every
+    file in it untouched. Removing a single item from a lens is a delete of
+    that file in the folder (through the shell, to the Recycle Bin), the same
+    as deleting it in Explorer.
 - **D4. v0.2 scope.** The first usable release must have a tray icon,
   right-click context menus, and a settings window.
 - **D5. Naming.** Containers are called *spaces* in the UI, the docs, and the
@@ -490,6 +500,8 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - A lens menu: Open folder, Change folder..., Sort by, Folders first, and
     Show hidden files.
   - A placeholder when the folder is unavailable.
+  - Deleting a lens removes only the view; its folder and the files in it
+    are never deleted or moved (D3). The delete confirmation says so.
   - Double-click to open already works through `Ui::open_path`.
 - **Phase 4 - views and kept sort rules.**
   - List and details views and icon sizes (F-09). Map Explorer's

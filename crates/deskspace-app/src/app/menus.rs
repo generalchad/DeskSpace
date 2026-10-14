@@ -158,34 +158,18 @@ impl App {
         let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) else {
             return;
         };
-        // A loose desktop item has no space to remove it from, so only
-        // Explorer's own menu is offered for it.
+        // Removing an item is Explorer's own Delete in the same menu (to the
+        // Recycle Bin, as the Delete key does), and taking one back to the
+        // desktop is a drag, so DeskSpace adds only its inline Rename. A loose
+        // desktop item gets Explorer's menu alone.
         let entries = match surface {
-            Surface::Space(_) => {
-                let remove_label = if self.storage.contains(&path) {
-                    "Move back to desktop"
-                } else {
-                    "Remove from space"
-                };
-                vec![
-                    MenuEntry::item(menu::RENAME_ITEM, "Rename"),
-                    MenuEntry::item(menu::REMOVE_ITEM, remove_label),
-                ]
-            }
+            Surface::Space(_) => vec![MenuEntry::item(menu::RENAME_ITEM, "Rename")],
             Surface::Desktop => Vec::new(),
         };
         match ui.item_menu(&path, &entries, at) {
             Some(ItemMenuChoice::App(menu::RENAME_ITEM)) => {
                 if let Surface::Space(id) = surface {
                     self.begin_item_rename(ui, id, item);
-                }
-            }
-            Some(ItemMenuChoice::App(menu::REMOVE_ITEM)) => {
-                if self.release_item(item) {
-                    self.forget_item(item);
-                    self.refresh_surface(ui, surface);
-                    self.refresh_tray(ui);
-                    self.save();
                 }
             }
             Some(ItemMenuChoice::Shell) => {

@@ -103,7 +103,8 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   rearrange it in a space, or out to another space, a folder, an app, or the
   desktop.
 - Double-click an item to open it; right-click for Explorer's context menu,
-  with DeskSpace's Rename and Move back to desktop on top. Click a selected
+  with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
+  and dragging an item onto the desktop takes it out of the space. Click a selected
   item again (slowly) to rename it.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).

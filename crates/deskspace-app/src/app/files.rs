@@ -150,10 +150,10 @@ impl App {
         }
     }
 
-    /// Takes an item out of its space. A file that was moved into the space
-    /// storage goes back to the desktop first, so nothing is left behind in
-    /// a folder the user never sees. Returns false if that move failed; the
-    /// item then stays.
+    /// Takes an item out of its space when the space is deleted. A file that
+    /// was moved into the space storage goes back to the desktop first, so
+    /// nothing is left behind in a folder the user never sees. Returns false
+    /// if that move failed; the item then stays.
     pub(super) fn release_item(&mut self, id: ItemId) -> bool {
         let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
             return false;
@@ -190,8 +190,8 @@ impl App {
     /// Bin, as Explorer's Delete key does; `permanent` is Shift+Delete. A file
     /// the shell could not delete (for example one in use) stays listed. An item
     /// whose file is already missing is dropped without a shell operation. This
-    /// is distinct from the item menu's "Remove from space", which returns a
-    /// stored file to the desktop.
+    /// is distinct from deleting a space, which returns its stored files to
+    /// the desktop.
     pub(super) fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
         // Deleting a loose desktop item would need a way to drop it from the
         // layer, so only a space's items are deleted here.
