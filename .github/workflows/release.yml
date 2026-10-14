@@ -14,6 +14,10 @@ jobs:
   release:
     name: build and publish
     runs-on: windows-latest
+    env:
+      # Empty until the DESKSPACE_MINISIGN_KEY secret is set. The feed step is
+      # gated on this, because `secrets` cannot be used in an `if` expression.
+      MINISIGN_KEY: ${{ secrets.DESKSPACE_MINISIGN_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -50,7 +54,7 @@ jobs:
       # The public half goes in `crates/deskspace-update/src/lib.rs`
       # (`UPDATE_PUBKEY`), base64-encoded like the secret.
       - name: Sign installer and build the update feed
-        if: ${{ secrets.DESKSPACE_MINISIGN_KEY != '' }}
+        if: ${{ env.MINISIGN_KEY != '' }}
         env:
           CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.DESKSPACE_MINISIGN_KEY }}
         shell: pwsh
