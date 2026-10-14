@@ -227,8 +227,9 @@ A native, lightweight, offline Windows desktop organizer that:
 
 ## 4. Where we are
 
-**Released:** v0.2.0 (2026-10-13, the first public release) and v0.2.1
-(in-app update checking, F-45). Takeover ships opt-in (D8, D9).
+**Released:** v0.2.0 (2026-10-13, the first public release), v0.2.1 (in-app
+update checking, F-45), and v0.2.2 (adding shortcuts to spaces, F-50/F-53).
+Takeover ships opt-in (D8, D9).
 
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
@@ -673,7 +674,8 @@ machine.
 ## 6. Release mapping
 
 - **v0.2 "Take the desktop"** (released 2026-10-13 as v0.2.0; v0.2.1 added
-  update checking): M0, M1, most of M2 and M3. D2D rendering and the Windows
+  update checking; v0.2.2 added shortcuts to spaces): M0, M1, most of M2 and
+  M3. D2D rendering and the Windows
   11 look, desktop takeover as an opt-in setting (D8, D9), and the tray,
   context menu, and settings. The rest of M2 and M3 (section L, undo, the
   desktop verbs) ships in a v0.2.x release or with v0.3, as the maintainer
