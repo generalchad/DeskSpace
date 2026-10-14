@@ -1,7 +1,7 @@
 //! `App` files: drops, storage, deletion, and desktop reconciliation (R1).
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, SpaceId};
@@ -60,11 +60,13 @@ impl App {
         self.save();
     }
 
-    /// Creates a shortcut in the store for each virtual shell item dropped on
-    /// a space (a Start-menu tile or taskbar app, F-50) and lists it in
+    /// Creates a shortcut in the store for each shell item dropped on a space
+    /// (a Start-menu or taskbar app, or an Alt-drag; F-50) and lists it in
     /// `target`. Explorer writes a `.lnk` when such an item is dropped on a
     /// folder, and the store is the space's folder, so the shortcut moves,
-    /// opens, and releases like any other item.
+    /// opens, and releases like any other item. A dropped shortcut file is
+    /// copied instead, as Explorer does, so no shortcut points at a shortcut;
+    /// the original is never moved or deleted.
     pub(super) fn add_shortcuts(
         &mut self,
         ui: &mut Ui,
@@ -78,9 +80,8 @@ impl App {
             return;
         }
         for item in items {
-            let path = self.storage.unique_path(&shortcut_file_name(&item.name));
-            match create_shortcut(&item, &path) {
-                Ok(()) => {
+            match self.write_shortcut(&item) {
+                Ok(path) => {
                     tracing::info!(name = %item.name, path = %path.display(), "created a shortcut in the store");
                     self.dispatch(
                         Command::AddItem {
@@ -97,6 +98,20 @@ impl App {
         }
         self.refresh_space(ui, target);
         self.save();
+    }
+
+    /// Writes one dropped item's shortcut into the store under a clash-free
+    /// name and returns its path: a copy of a dropped shortcut file, or a new
+    /// `.lnk` to anything else.
+    fn write_shortcut(&self, item: &ShellItem) -> anyhow::Result<PathBuf> {
+        if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
+            let path = self.storage.unique_path(&link_copy_name(link, &item.name));
+            std::fs::copy(link, &path)?;
+            return Ok(path);
+        }
+        let path = self.storage.unique_path(&shortcut_file_name(&item.name));
+        create_shortcut(item, &path)?;
+        Ok(path)
     }
 
     /// Re-reads the shell's loose desktop items and reconciles the layer. Used
@@ -317,6 +332,25 @@ impl App {
     }
 }
 
+/// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
+/// drop copies rather than links to.
+fn is_link_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("lnk") || extension.eq_ignore_ascii_case("url")
+        })
+}
+
+/// The store name for a copied shortcut file: its own file name, which keeps
+/// the `.lnk` or `.url` extension, or a name built from `display` when the
+/// path has none.
+fn link_copy_name(link: &Path, display: &str) -> String {
+    link.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| shortcut_file_name(display))
+}
+
 /// A `.lnk` file name for a shell item's display name (F-50). Characters that
 /// are illegal in a Windows file name become `_`, trailing dots and spaces are
 /// trimmed (Windows ignores them), and an empty result falls back to
@@ -355,5 +389,22 @@ mod tests {
         assert_eq!(shortcut_file_name("Report..."), "Report.lnk");
         assert_eq!(shortcut_file_name("   "), "Shortcut.lnk");
         assert_eq!(shortcut_file_name(""), "Shortcut.lnk");
+    }
+
+    #[test]
+    fn shortcut_files_are_recognized_in_any_case() {
+        assert!(is_link_file(Path::new(r"C:\Start\Notepad.lnk")));
+        assert!(is_link_file(Path::new(r"C:\Links\Docs.URL")));
+        assert!(!is_link_file(Path::new(r"C:\Desktop\notes.txt")));
+        assert!(!is_link_file(Path::new(r"C:\Desktop\lnk")));
+    }
+
+    #[test]
+    fn a_copied_shortcut_keeps_its_file_name() {
+        assert_eq!(
+            link_copy_name(Path::new(r"C:\Start\Notepad.lnk"), "Notepad"),
+            "Notepad.lnk"
+        );
+        assert_eq!(link_copy_name(Path::new(""), "Docs"), "Docs.lnk");
     }
 }

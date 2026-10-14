@@ -1347,3 +1347,57 @@ until I5-I6 all land, so no partial build hides the desktop.
   - `shell.rs` calls `crate::render::d2d::decode_bitmap`; keep that call
     as it is (R3 decides about the two decoders).
   - Update the module map in `CONTEXT.md` section 6 and the R3 entry above.
+
+- [x] **L2. Decide a drop by what the source allows; a link makes a
+  shortcut.** After L1's findings.
+  - Rule, matching Explorer: a drop whose effect is `LINK` creates a
+    shortcut, whatever formats the drag carries. A space picks `LINK` when the
+    source offers neither `MOVE` nor `COPY` (Start, the taskbar), or when Alt
+    is held and `LINK` is allowed (Explorer's create-shortcut modifier;
+    Explorer also uses Ctrl+Shift, but Shift means keep-in-place on a space,
+    so use Alt alone). Otherwise files move (Shift keeps them) as today, and a
+    drag with only shell items prefers `LINK` as `shell_drop_effect` does.
+  - Pure, tested helper in `drop_target.rs`, replacing the three copies of the
+    `match kind { .. }` effect choice in `DragEnter`, `DragOver`, and `Drop`:
+
+    ```rust
+    /// What a drop onto a space does.
+    enum DropPlan { None, MoveFiles, KeepFiles, Shortcuts }
+
+    fn drop_plan(kind: DragKind, keys: MODIFIERKEYS_FLAGS, allowed: DROPEFFECT)
+        -> (DropPlan, DROPEFFECT)
+    ```
+
+    `DragKind` keeps meaning "what the drag carries"; `drop_plan` decides.
+    Tests: files with every effect allowed (move), files with Shift (keep),
+    files with only `LINK` (shortcuts), files with Alt and `LINK` allowed
+    (shortcuts), shell items only (shortcuts, `LINK` preferred), nothing
+    allowed (none). `desired_effect` and `shell_drop_effect` either become
+    private helpers of `drop_plan` or go; keep their tests passing or move
+    them onto `drop_plan`.
+  - `Drop`: for `DropPlan::Shortcuts`, read the items with `shell_items(data)`
+    whether or not the drag carries `CF_HDROP`
+    (`SHCreateShellItemArrayFromDataObject` reads either), raise
+    `ShellItemsDropped`, and do **not** set "Performed DropEffect" (nothing
+    was moved). `MoveFiles` / `KeepFiles` keep today's `FilesDropped` path.
+  - Copy a shortcut instead of linking to it. A `.lnk` pointing at another
+    `.lnk` is what Explorer avoids; it copies the link. Add
+    `pub path: Option<PathBuf>` to `ShellItem` with a `///` doc (filled from
+    `SIGDN_FILESYSPATH` in `shell_item`; `None` for virtual items). In
+    `App::add_shortcuts`, when `path` has a `lnk` or `url` extension (a pure
+    `fn is_link_file(path: &Path) -> bool`, case-insensitive, with a test),
+    `std::fs::copy` it to the unique store path instead of calling
+    `create_shortcut`. The source file is never moved or deleted.
+  - Docs: `CONTEXT.md` section 6 (the file-drops bullet) and section 8 (the
+    drop bullet), `README.md` Controls (Alt-drag creates a shortcut), and the
+    F-50 row in the ROADMAP feature index.
+  - Done when: the tests pass. **[needs human]** check: every source from L1
+    lands in a space as a working shortcut, with the link cursor; the Start
+    entry is still in Start afterwards; Alt-dragging a file from Explorer
+    makes a shortcut and leaves the file; a plain drag still moves the file
+    and Shift still keeps it in place.
+  - Amended (maintainer, 2026-10-14, after L1's first finding): a
+    `CF_HDROP` counts as files only when every entry is an absolute path
+    (`is_file_list`), because the Start menu offered `MOVE` with a file list
+    of AppUserModelIDs; such a drag is shell items. Landed in
+    `fix: make start-menu drags into spaces shortcuts (L2)`.

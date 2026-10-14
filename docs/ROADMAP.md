@@ -226,8 +226,8 @@ A native, lightweight, offline Windows desktop organizer that:
 - *M2:* spaces and their items are complete and behave like Explorer.
   Desktop takeover is built and opt-in (the layer, hide, restore,
   Explorer-restart re-hide, the crash watchdog, and the Desktop-folder watch
-  are in); undo remains. Non-file shell drags (F-50) are built, but a drag
-  from the Start menu still does not land in a space.
+  are in); undo remains. Non-file shell drags (F-50), including Start-menu
+  apps, become shortcuts; the Start-menu drop awaits an on-screen check.
 - *M3:* the tray, menus, and settings window work, with all nine pages.
   What remains is the "Add" menu (F-53..F-55), desktop verbs (F-52), and
   entries that depend on later milestones or on design.
@@ -354,15 +354,17 @@ Done:
 - **[partial]** Non-file shell drags (F-50). A space accepts a drag that
   carries only shell items, including a packaged app with no filesystem
   path, and writes a shortcut into the space storage, as Explorer does when
-  one is dropped on a folder. A drag from the Start menu is still refused or
-  mishandled, probably because it also carries a file list (`TASKS.md`
-  L1-L2).
+  one is dropped on a folder. A drop decides by the effect (`LINK` makes
+  shortcuts, as does Alt) and treats a file list of AppUserModelIDs, which
+  the Start menu sends, as shell items (`TASKS.md` L1-L2); the Start-menu
+  drop awaits an on-screen check.
 
 Remaining:
 1. **Start-menu and taskbar drags make shortcuts** (F-50; `TASKS.md`
    L1-L2): decide a drop by the effects the source allows, so a link drop
    (Start, the taskbar, Alt+drag) always creates a shortcut and never moves or
-   lists the source's own `.lnk`.
+   lists the source's own `.lnk`. Built; awaits the on-screen check and the
+   rest of L1's per-source findings.
 2. **Watch stored files.** Only the Desktop folder is watched; a change to a
    stored file made outside DeskSpace is noticed only by an item action or at
    startup. Lenses will reuse the same watcher (M4 phase 2).
@@ -720,7 +722,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
-| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Partial: a drag with only shell items becomes a `.lnk` in the space storage (`win32/shortcuts.rs`, `App::add_shortcuts`); Start-menu drags still fail (`TASKS.md` L1-L2) |
+| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Built: shell-item, link-only, and Alt drags become a `.lnk` in the space storage, and a dropped shortcut file is copied (`drop_target.rs` `drop_plan`, `App::add_shortcuts`); awaits the on-screen check (`TASKS.md` section V, L1 findings) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
 | F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
 | F-53 | "Add ▸ Apps…": pick installed apps (Store apps included) to add as shortcuts | M3 | Open (`TASKS.md` L3-L4) |

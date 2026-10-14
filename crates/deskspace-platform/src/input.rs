@@ -27,14 +27,18 @@ pub struct NavKey {
     pub focus: bool,
 }
 
-/// A shell item dragged as data rather than as a file: a Start-menu tile or a
-/// taskbar app. Such a drag carries a Shell ID List, not `CF_HDROP`, and a
-/// packaged app has no filesystem path at all, so a space creates a shortcut
-/// to it, as Explorer does when one is dropped on a folder (ROADMAP F-50).
+/// A shell item dropped to become a shortcut: a Start-menu or taskbar app
+/// (which often has no filesystem path at all), or any item dragged with Alt
+/// held. A space creates a shortcut to it, as Explorer does when one is
+/// dropped on a folder (ROADMAP F-50).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellItem {
     /// Explorer's display name, used for the shortcut's file name.
     pub name: String,
+    /// The item's filesystem path, or `None` for a virtual item such as an
+    /// app in the Applications folder. A dropped `.lnk` or `.url` is copied
+    /// rather than linked to, as Explorer does.
+    pub path: Option<std::path::PathBuf>,
     /// The item's absolute shell ID list, as the raw bytes of an
     /// `ITEMIDLIST` (the `ILGetSize` bytes of the `ILCombine`'d IDs). Rebuilt
     /// into a PIDL by `create_shortcut`.

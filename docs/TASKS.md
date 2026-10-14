@@ -200,20 +200,22 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
 Today an item reaches a space by a file drag, a paste, or (F-50) a drag that
-carries shell items. The maintainer reports that dragging an app from the
-Start menu onto a space still does not work, so users drag it to the desktop
-first and then into the space. These tasks fix that drop and add menu-driven
-ways to add items. Do them in order; L3-L6 do not depend on L1-L2.
+carries shell items, which includes Start-menu and taskbar apps since L2
+(awaiting its on-screen check, section V). L1 still needs the per-source
+findings; L3-L6 add menu-driven ways to add items. Do them in order; L3-L6 do
+not depend on L1-L2.
 
-Shared code, already in place (F-50, commit `01043e8`):
+Shared code, already in place (F-50, commit `01043e8`, and L2):
 
-- `win32/drop_target.rs`: `DragKind`, `drag_kind`, `shell_items`,
-  `shell_item`, `display_name`, `shell_drop_effect`, and `log_formats`.
-- `input.rs`: `ShellItem { name, id_list }` and
+- `win32/drop_target.rs`: `DragKind`, `drag_kind`, `is_file_list`,
+  `DropPlan`, `drop_plan`, `shell_items`, `shell_item`, `display_name`,
+  `shell_drop_effect`, and `log_formats`.
+- `input.rs`: `ShellItem { name, path, id_list }` and
   `SpaceEvent::ShellItemsDropped`.
 - `win32/shortcuts.rs` `create_shortcut(item, path)`; `app/files.rs`
-  `App::add_shortcuts(ui, space, at, items)` and `shortcut_file_name`;
-  `storage.rs` `ItemStore::unique_path`.
+  `App::add_shortcuts(ui, space, at, items)` (copies a dropped `.lnk` or
+  `.url`, `is_link_file`), `shortcut_file_name`; `storage.rs`
+  `ItemStore::unique_path`.
 
 Every way of adding a shortcut must end in `App::add_shortcuts`; never add a
 second shortcut writer.
@@ -248,57 +250,9 @@ second shortcut writer.
     Other Start apps showed no "Link" cursor, so the allowed effects vary by
     item. Start entries are Applications-folder items, whose parsing name is
     an AUMID, not the `.lnk` under `Start Menu\Programs` assumed above.
-  - Done when: the log line lands and the findings are recorded. If they contradict L2's plan, **stop and
-    ask** before L2.
-
-- [ ] **L2. Decide a drop by what the source allows; a link makes a
-  shortcut.** After L1's findings.
-  - Rule, matching Explorer: a drop whose effect is `LINK` creates a
-    shortcut, whatever formats the drag carries. A space picks `LINK` when the
-    source offers neither `MOVE` nor `COPY` (Start, the taskbar), or when Alt
-    is held and `LINK` is allowed (Explorer's create-shortcut modifier;
-    Explorer also uses Ctrl+Shift, but Shift means keep-in-place on a space,
-    so use Alt alone). Otherwise files move (Shift keeps them) as today, and a
-    drag with only shell items prefers `LINK` as `shell_drop_effect` does.
-  - Pure, tested helper in `drop_target.rs`, replacing the three copies of the
-    `match kind { .. }` effect choice in `DragEnter`, `DragOver`, and `Drop`:
-
-    ```rust
-    /// What a drop onto a space does.
-    enum DropPlan { None, MoveFiles, KeepFiles, Shortcuts }
-
-    fn drop_plan(kind: DragKind, keys: MODIFIERKEYS_FLAGS, allowed: DROPEFFECT)
-        -> (DropPlan, DROPEFFECT)
-    ```
-
-    `DragKind` keeps meaning "what the drag carries"; `drop_plan` decides.
-    Tests: files with every effect allowed (move), files with Shift (keep),
-    files with only `LINK` (shortcuts), files with Alt and `LINK` allowed
-    (shortcuts), shell items only (shortcuts, `LINK` preferred), nothing
-    allowed (none). `desired_effect` and `shell_drop_effect` either become
-    private helpers of `drop_plan` or go; keep their tests passing or move
-    them onto `drop_plan`.
-  - `Drop`: for `DropPlan::Shortcuts`, read the items with `shell_items(data)`
-    whether or not the drag carries `CF_HDROP`
-    (`SHCreateShellItemArrayFromDataObject` reads either), raise
-    `ShellItemsDropped`, and do **not** set "Performed DropEffect" (nothing
-    was moved). `MoveFiles` / `KeepFiles` keep today's `FilesDropped` path.
-  - Copy a shortcut instead of linking to it. A `.lnk` pointing at another
-    `.lnk` is what Explorer avoids; it copies the link. Add
-    `pub path: Option<PathBuf>` to `ShellItem` with a `///` doc (filled from
-    `SIGDN_FILESYSPATH` in `shell_item`; `None` for virtual items). In
-    `App::add_shortcuts`, when `path` has a `lnk` or `url` extension (a pure
-    `fn is_link_file(path: &Path) -> bool`, case-insensitive, with a test),
-    `std::fs::copy` it to the unique store path instead of calling
-    `create_shortcut`. The source file is never moved or deleted.
-  - Docs: `CONTEXT.md` section 6 (the file-drops bullet) and section 8 (the
-    drop bullet), `README.md` Controls (Alt-drag creates a shortcut), and the
-    F-50 row in the ROADMAP feature index.
-  - Done when: the tests pass. **[needs human]** check: every source from L1
-    lands in a space as a working shortcut, with the link cursor; the Start
-    entry is still in Start afterwards; Alt-dragging a file from Explorer
-    makes a shortcut and leaves the file; a plain drag still moves the file
-    and Shift still keeps it in place.
+    L2 was amended for this (archived) and has landed; record the remaining
+    sources from the check above, including the Start-menu result now.
+  - Done when: the log line lands and the findings are recorded.
 
 - [ ] **L3. A picker for apps (platform).** Independent of L1-L2.
   - New `win32/pickers.rs` (add it to the file map above and to the module
@@ -742,6 +696,7 @@ or a **Found while working** line. The task text for each id is in
 | G1, G3 | On the desktop shell: typing selects by prefix and the buffer expires; Home/End/PageUp/PageDown scroll; arrows move the selection, Shift extends, Ctrl moves only the dotted focus rectangle and scrolls it into view. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid (Acrylic passed). |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
+| L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
 | Drag and drop (F-36, F-37) | The move/copy cursor; no `- Copy` left on the desktop after a drag out; the drag image over Explorer and over spaces; the in-space ghost. |
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |

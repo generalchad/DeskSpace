@@ -116,7 +116,8 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.
 - Drag files from Explorer or the desktop onto a space to move them into it;
-  hold Shift to leave them where they are.
+  hold Shift to leave them where they are, or Alt to add a shortcut instead.
+  Apps dragged from the Start menu or the taskbar become shortcuts.
 - Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
   the desktop takeover on, your loose desktop icons stay visible.
 - The tray icon opens Settings on left-click and offers Settings, hide/show

@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (325 tests) are green. Update this count whenever a
+  `cargo test --workspace` (331 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release) and v0.2.1 (update checking),
   each as an NSIS installer and a portable zip on GitHub Releases (section 10,
@@ -59,9 +59,8 @@ context menus, and a settings window in the first usable release (v0.2).
   it is customized (section 4, `SpaceLook`).
 - Desktop takeover (Explorer's icons hidden, the loose items drawn on
   DeskSpace's own layer) is built and opt-in (section 6; ROADMAP D7, D8).
-- Dragging an app from the Start menu onto a space does not work yet, so
-  users drag it to the desktop first and then into the space (`TASKS.md`
-  L1-L2).
+- Dragging an app from the Start menu onto a space makes a shortcut
+  (`TASKS.md` L2); it awaits an on-screen check (section V).
 - Verification: many behaviors are covered by unit tests but not confirmed on
   screen; `TASKS.md` section V lists them. Confirm one before building on it.
   Checked on screen so far: the blur, corners, space content, and settings
@@ -665,26 +664,37 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 - File drops (`win32/drop_target.rs`): every space is an OLE `IDropTarget`
   (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
   window, so it chooses the drop effect and the shell shows the move/copy
-  cursor. A `CF_HDROP` drop becomes `SpaceEvent::FilesDropped`; the effect is
-  `MOVE` by default and `COPY` while Shift is down, so `keep_in_place` is set
-  only for the latter. On `DragEnter` it also stores an empty "DropDescription"
+  cursor. `drag_kind` says what a drag carries (`DragKind`: real files,
+  shell items, or nothing) and the pure `drop_plan` decides what a drop does
+  (`DropPlan`) and which effect to report. A file drop becomes
+  `SpaceEvent::FilesDropped`; the effect is `MOVE` by default and `COPY`
+  while Shift is down, so `keep_in_place` is set only for the latter. As in
+  Explorer, a `LINK` drop always makes shortcuts: a file list links when Alt
+  is held and the source allows a link, or when the source offers neither
+  `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is
+  an absolute path: the Start menu puts AppUserModelIDs there (for example
+  `com.squirrel.element-desktop.Element`), so its drags are shell items.
+  Every `DragEnter` logs the allowed effects, keys, kind, and offered
+  formats at `debug`. On `DragEnter` it also stores an empty "DropDescription"
   (`DROPIMAGE_NOIMAGE`, no text) on the source's data object, so a shell source
   such as Explorer or the desktop does not draw its default "Move"/"Copy" action
   hint over the item image. `Drop` marks the source's data object with the
   "Performed DropEffect" format so a shell source does not move the files a
-  second time after DeskSpace has. A drag that carries neither `CF_HDROP` nor a
-  Shell ID List reports `DROPEFFECT_NONE`. A drag that carries shell items
-  but no files (any form `SHCreateShellItemArrayFromDataObject` reads,
-  including a packaged app with no filesystem path) is accepted
-  (`shell_drop_effect` prefers `LINK`, then `COPY`, then `MOVE`) and raises
-  `SpaceEvent::ShellItemsDropped` with each item's absolute ID list and
-  Explorer display name. The app writes a `.lnk` per item into the space
-  storage (`win32/shortcuts.rs` `create_shortcut`, `IShellLinkW::SetIDList` +
-  `IPersistFile::Save`) under a clash-free name and lists it, as Explorer does
-  when such an item is dropped on a folder (F-50). A drag with both formats is
-  treated as files, so a real file still moves rather than becoming a
-  shortcut; this is also why a Start-menu drag fails today (section 10,
-  `TASKS.md` L1-L2).
+  second time after DeskSpace has; a shortcut drop never sets it, since
+  nothing moved. A drag that carries neither files nor shell items reports
+  `DROPEFFECT_NONE`. A shell-item drag (any form
+  `SHCreateShellItemArrayFromDataObject` reads, including a packaged app with
+  no filesystem path) is accepted (`shell_drop_effect` prefers `LINK`, then
+  `COPY`, then `MOVE`). A shortcut drop raises
+  `SpaceEvent::ShellItemsDropped` with each item's absolute ID list, Explorer
+  display name, and filesystem path (`None` for a virtual item). The app
+  (`App::add_shortcuts`) copies a dropped `.lnk` or `.url` into the space
+  storage, so no shortcut points at a shortcut, and writes a new `.lnk` for
+  anything else (`win32/shortcuts.rs` `create_shortcut`,
+  `IShellLinkW::SetIDList` + `IPersistFile::Save`), under a clash-free name,
+  as Explorer does when such an item is dropped on a folder (F-50). The
+  source is never moved or deleted. A drag with real files and shell items
+  is treated as files, so a real file still moves unless Alt is held.
 - Dragging an item out (`shell_items::drag_out`) sets the source data object's
   "Preferred DropEffect" to `MOVE`, so dropping it on the desktop takes the file
   out of the space instead of leaving a `- Copy` behind. The drop target alone
@@ -1173,11 +1183,11 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   from the tray goes to the center of the work area, and creating a space
   while spaces are hidden shows them.
 - Drop files from Explorer or the desktop onto a space to move them into it;
-  hold Shift to leave them where they are and only show them in the space.
-  A drag that carries only shell items (for example a packaged app with no
-  file path) creates a shortcut in the space instead, as Explorer does when
-  one is dropped on a folder. A drag from the Start menu does not work yet;
-  drag the app to the desktop first (`TASKS.md` L1-L2).
+  hold Shift to leave them where they are and only show them in the space,
+  or Alt to add a shortcut to them instead. An app dragged from the Start
+  menu or the taskbar (or any drag that offers only a link) creates a
+  shortcut in the space, as Explorer does when one is dropped on a folder; a
+  dropped shortcut file is copied, and its original stays where it was.
 - Click an item to select it; Ctrl+click adds or removes it from the
   selection, and Shift+click selects the range from the last click. Drag from
   empty space to rubber-band select (Ctrl or Shift adds to the selection), and
@@ -1281,12 +1291,13 @@ elsewhere stay stable.
   The settings window is still laid out for the DPI at creation, and an item
   moved between monitors of different DPI is positioned from the destination
   space's grid (correct, but not yet verified on screen).
-- **A Start-menu drag does not land in a space.** A drag that carries only
-  shell items becomes a shortcut (F-50), but a drop decides by format and lets
-  a file list win, so a Start-menu desktop app (a real `.lnk`, probably
-  offered for a link only) is refused or treated as a file. Until `TASKS.md`
-  L1-L2 land, users drag it to the desktop first. If DeskSpace runs elevated,
-  Windows blocks every drop from Explorer and Start (UIPI).
+- **Start-menu and taskbar drags are undocumented.** What they carry was
+  found by observation (`TASKS.md` L1): Start offered `MOVE` and a
+  `CF_HDROP` holding an AppUserModelID rather than a path, and the effects
+  it offers vary by item. `drop_plan` and `is_file_list` handle what has
+  been seen; a future Windows build may differ, and the L1 debug log is the
+  way to find out. If DeskSpace runs elevated, Windows blocks every drop
+  from Explorer and Start (UIPI).
 - **Placement is fixed for a run.** Only `--placement` chooses it (the
   config setting was removed); there is no live switch, because recreating
   every space window would drop the blur. Top-level is the default and the
