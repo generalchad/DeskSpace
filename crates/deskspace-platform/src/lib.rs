@@ -16,9 +16,9 @@ pub use render::{
     item_check_box, item_check_box_hit,
 };
 pub use ui::{
-    CursorShape, CustomShortcut, Field, FieldKind, FieldValue, MenuEntry, SettingsButton,
-    SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage,
-    SettingsScope, SettingsSwitch, ShortcutTarget, SliderMark,
+    CursorShape, CustomShortcut, Field, FieldKind, FieldValue, MenuEntry, PreviewItem,
+    SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup,
+    SettingsPage, SettingsScope, SettingsSwitch, ShortcutTarget, SliderMark, SpacePreview,
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;

@@ -26,14 +26,15 @@ use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, Command, GridSpec, LabelShadow, Preset, Space, SpaceId, SpaceLook, Theme, ThemeMode,
+    Backdrop, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId, SpaceLook,
+    Theme, ThemeMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
-    SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
+    SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark, SpacePreview,
 };
 
-use pages::{about_page, general_page, hotkeys_page, look_pages, new_spaces_page};
+use pages::{about_page, general_page, hotkeys_page, look_pages, new_spaces_page, shortcuts_page};
 
 /// How many pages hold look settings (Appearance through Advanced).
 pub const LOOK_PAGE_COUNT: usize = 5;
@@ -77,11 +78,48 @@ pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
         .map(|space| space.id)
 }
 
+/// The pages the categories pane lists for `scope`, in order: every Global
+/// page for Global (`None`), or a space's look pages and its Shortcuts page.
+pub fn listed_pages(scope: Option<SpaceId>) -> Vec<usize> {
+    match scope {
+        None => (0..=page::ABOUT).collect(),
+        Some(_) => (0..LOOK_PAGE_COUNT)
+            .chain(std::iter::once(page::SHORTCUTS))
+            .collect(),
+    }
+}
+
+/// The opaque colors a settings preview draws a space with: the tint over a
+/// stand-in for the backdrop (Windows 11's dark or light base), and the title
+/// shading over that. The blur cannot be shown, so this is an approximation.
+pub fn space_preview_colors(palette: &Palette) -> (Color, Color, Color) {
+    let base = if palette.dark {
+        Color::rgb(0x20, 0x20, 0x20)
+    } else {
+        Color::rgb(0xF3, 0xF3, 0xF3)
+    };
+    let fill = over(base, palette.tint);
+    let title = over(fill, palette.title_fill);
+    (fill, title, palette.title_text.with_alpha(255))
+}
+
+/// `top` composited over the opaque `base` by `top`'s alpha.
+fn over(base: Color, top: Color) -> Color {
+    let alpha = u32::from(top.a);
+    let mix =
+        |b: u8, t: u8| ((u32::from(b) * (255 - alpha) + u32::from(t) * alpha + 127) / 255) as u8;
+    Color::rgb(mix(base.r, top.r), mix(base.g, top.g), mix(base.b, top.b))
+}
+
+/// Builds the settings form. `preview` is what the Shortcuts page shows for
+/// the selected space (it is built for every scope, so the form keeps its
+/// shape; Global never lists the page).
 pub fn build_form(
     config: &Config,
     session: &Session,
     system_dark: bool,
     config_path: &Path,
+    preview: SpacePreview,
 ) -> SettingsForm {
     let space = scope_space(config, session);
     let global = &config.theme;
@@ -112,18 +150,18 @@ pub fn build_form(
     pages.push(new_spaces_page(config));
     pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
-    debug_assert_eq!(pages.len(), page::ABOUT + 1);
+    pages.push(shortcuts_page(preview));
+    debug_assert_eq!(pages.len(), page::SHORTCUTS + 1);
 
-    let page_count = if space.is_some() {
-        LOOK_PAGE_COUNT
-    } else {
-        pages.len()
-    };
-    let entries = pages[..page_count]
+    let listed = listed_pages(space.map(|space| space.id));
+    let selected = listed
         .iter()
-        .enumerate()
-        .map(|(index, page)| SettingsNavEntry {
-            label: page.title.clone(),
+        .position(|page| *page == session.page)
+        .unwrap_or(0);
+    let entries = listed
+        .iter()
+        .map(|&index| SettingsNavEntry {
+            label: pages[index].title.clone(),
             page: index,
             marked: false,
         })
@@ -174,7 +212,7 @@ pub fn build_form(
                 title: String::new(),
                 entries,
             }],
-            selected: session.page.min(page_count - 1),
+            selected,
             header: Some(header),
         },
     }
@@ -225,7 +263,13 @@ mod tests {
     fn form_reflects_the_theme_and_disables_dependent_fields() {
         let (mut config, session) = setup();
         config.theme.backdrop = Backdrop::Solid;
-        let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("C:/cfg.toml"),
+            SpacePreview::default(),
+        );
         let opacity = form.field(field::TINT_OPACITY).unwrap();
         assert!(!opacity.enabled);
         assert!(!form.field(field::TINT).unwrap().enabled);
@@ -241,12 +285,24 @@ mod tests {
         let (mut config, session) = setup();
         // `match_explorer` defaults on, so Explorer owns the icon size and
         // spacing and the Layout controls are inert.
-        let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("C:/cfg.toml"),
+            SpacePreview::default(),
+        );
         for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
             assert!(!form.field(id).unwrap().enabled);
         }
         config.theme.preset = Preset::Custom;
-        let form = build_form(&config, &session, true, Path::new("C:/cfg.toml"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("C:/cfg.toml"),
+            SpacePreview::default(),
+        );
         for id in [field::ICON_SIZE, field::GRID_GAP, field::GRID_PADDING] {
             assert!(form.field(id).unwrap().enabled);
         }
@@ -257,7 +313,13 @@ mod tests {
         let (mut config, session) = setup();
         config.window.new_space_title = "Inbox".into();
         config.window.new_space_width = 300;
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(form.field(field::NEW_SPACE_TITLE).unwrap().enabled);
         assert_eq!(slider_value(&form, field::NEW_SPACE_WIDTH), 300);
         assert_eq!(
@@ -270,7 +332,13 @@ mod tests {
     fn the_general_page_offers_update_controls() {
         let (mut config, session) = setup();
         config.window.check_for_updates = true;
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(matches!(
             form.field(field::CHECK_UPDATES).unwrap().kind,
             FieldKind::Toggle { on: true }
@@ -281,7 +349,13 @@ mod tests {
     #[test]
     fn overlay_slider_marks_the_default_and_explorer_sizes() {
         let (config, session) = setup();
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         match &form.field(field::OVERLAY_SIZE).unwrap().kind {
             FieldKind::Slider { value, marks, .. } => {
                 assert_eq!(*value, i32::from(OVERLAY_SIZE_DEFAULT));
@@ -301,7 +375,13 @@ mod tests {
     #[test]
     fn corner_radius_is_a_marked_slider() {
         let (mut config, mut session) = setup();
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         match &form.field(field::CORNERS).unwrap().kind {
             FieldKind::Slider {
                 value, max, marks, ..
@@ -327,7 +407,13 @@ mod tests {
         let (config, mut session) = setup();
         session.hotkey_errors[0] = Some("bad".into());
         session.hotkey_errors[2] = Some("worse".into());
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert_eq!(form.field(field::HOTKEY_NOTE).unwrap().label, "bad");
         assert_eq!(
             form.field(field::HOTKEY_SETTINGS_NOTE).unwrap().label,
@@ -341,7 +427,13 @@ mod tests {
         let games = config.desktop.add_space("Games", Rect::new(0, 0, 200, 200));
         config.desktop.space_mut(games).unwrap().custom = true;
         let session = Session::new(&config);
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         let nav = nav(&form);
         let scopes: Vec<(&str, bool, bool)> = nav
             .scopes
@@ -371,13 +463,26 @@ mod tests {
         session.page = page::ABOUT;
         session.select_scope(Some(id));
         assert_eq!(session.page, page::APPEARANCE, "About is Global only");
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         let nav = nav(&form);
         assert_eq!(nav.selected_scope, 1);
         let labels: Vec<&str> = nav.entries().map(|entry| entry.label.as_str()).collect();
         assert_eq!(
             labels,
-            ["Appearance", "Labels", "Layout", "Colors", "Advanced"]
+            [
+                "Appearance",
+                "Labels",
+                "Layout",
+                "Colors",
+                "Advanced",
+                "Shortcuts"
+            ]
         );
         let switch = nav.header.as_ref().unwrap().switch.as_ref().unwrap();
         assert_eq!(switch.label, "Customize this space");
@@ -385,7 +490,49 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(form.pages.len(), page::ABOUT + 1);
+        assert_eq!(form.pages.len(), page::SHORTCUTS + 1);
+    }
+
+    #[test]
+    fn only_a_space_lists_its_shortcuts_page() {
+        let (config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        assert!(!listed_pages(None).contains(&page::SHORTCUTS));
+        assert!(listed_pages(Some(id)).contains(&page::SHORTCUTS));
+
+        // The sixth entry of a space is its Shortcuts page, which stays
+        // selected while the space is, is always enabled, and is left for
+        // Appearance when the scope returns to Global.
+        session.select_scope(Some(id));
+        session.select_entry(5);
+        assert_eq!(session.page, page::SHORTCUTS);
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
+        assert_eq!(form.nav.selected, 5);
+        assert_eq!(form.nav.page_of(5), Some(page::SHORTCUTS));
+        assert!(form.field(field::SPACE_PREVIEW).unwrap().enabled);
+        session.select_scope(None);
+        assert_eq!(session.page, page::APPEARANCE);
+    }
+
+    #[test]
+    fn preview_colors_composite_the_tint_over_the_base() {
+        let mut palette = Theme::default().palette(true);
+        palette.tint = Color::rgba(0xFF, 0xFF, 0xFF, 0);
+        palette.title_fill = Color::rgba(0, 0, 0, 255);
+        let (fill, title, text) = space_preview_colors(&palette);
+        assert_eq!(
+            fill,
+            Color::rgb(0x20, 0x20, 0x20),
+            "a clear tint shows the base"
+        );
+        assert_eq!(title, Color::rgb(0, 0, 0), "an opaque shade covers it");
+        assert_eq!(text.a, 255);
     }
 
     #[test]
@@ -398,13 +545,25 @@ mod tests {
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
 
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert_eq!(slider_value(&form, field::TINT_OPACITY), 70);
         assert!(!form.field(field::TINT_OPACITY).unwrap().enabled);
         assert!(!form.field(field::MODE).unwrap().enabled);
 
         config.desktop.space_mut(id).unwrap().custom = true;
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert_eq!(slider_value(&form, field::TINT_OPACITY), 10, "its own look");
         assert!(form.field(field::TINT_OPACITY).unwrap().enabled);
     }
@@ -416,7 +575,13 @@ mod tests {
         session.select_scope(Some(id));
 
         // An auto-sized space already fits, so the button is present but grey.
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(
             form.pages[page::LAYOUT]
                 .fields
@@ -426,12 +591,24 @@ mod tests {
         assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
 
         config.desktop.space_mut(id).unwrap().user_sized = true;
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(form.field(field::FIT_CONTENTS).unwrap().enabled);
 
         // A locked space cannot be fit, matching the space menu.
         config.desktop.space_mut(id).unwrap().locked = true;
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
     }
 
@@ -439,7 +616,13 @@ mod tests {
     fn global_fit_to_contents_is_present_but_disabled() {
         let (config, _) = config_with_space("Work");
         let session = Session::new(&config);
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         // Present for Global too, so the page shape does not change with the
         // scope, but greyed because no space is being edited.
         let field = form.field(field::FIT_CONTENTS).expect("present");
@@ -452,10 +635,22 @@ mod tests {
         // panics if the page shape changes, so Global and a space must build
         // the same pages and fields (selecting a space must not add a field).
         let (config, id) = config_with_space("Work");
-        let global = build_form(&config, &Session::new(&config), true, Path::new("x"));
+        let global = build_form(
+            &config,
+            &Session::new(&config),
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
-        let space = build_form(&config, &session, true, Path::new("x"));
+        let space = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(global.same_shape(&space));
     }
 

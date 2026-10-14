@@ -173,6 +173,18 @@ pub enum SettingsEvent {
     },
     /// The header button (`SettingsHeader::button`) was pressed.
     HeaderButton,
+    /// The X on item `index` of the space preview `field` was clicked.
+    PreviewRemove {
+        field: u32,
+        index: usize,
+    },
+    /// The + tile of the space preview `field` was clicked. `x`, `y` is the
+    /// screen point at the tile's bottom-left corner, where a menu can open.
+    PreviewAdd {
+        field: u32,
+        x: i32,
+        y: i32,
+    },
     Ok,
     /// Cancel button, Escape, or the window's close button.
     Cancel,

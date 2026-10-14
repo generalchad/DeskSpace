@@ -1,3 +1,4 @@
+mod app_catalog;
 mod app_picker;
 pub mod autostart;
 mod clipboard;

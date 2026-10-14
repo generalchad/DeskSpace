@@ -89,10 +89,10 @@ Where each kind of code lives. Paths are under `crates/`.
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
-| The installed-apps picker, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,shortcut_dialog,dialog}.rs` |
+| The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
@@ -205,8 +205,8 @@ carries shell items, which includes Start-menu and taskbar apps since L2
 (awaiting its on-screen check, section V). L1 still needs the per-source
 findings. The space menu's "New shortcut ▸" (L3-L4, archived; landed as a
 DeskSpace list window and a "New shortcut" submenu with a Custom shortcut
-dialog, decided with the maintainer) is in; L7, L5, and L6 add the rest. They
-do not depend on L1-L2.
+dialog, decided with the maintainer) and a space's Settings page "Shortcuts"
+(L7, archived) are in; L5 and L6 add the rest. They do not depend on L1-L2.
 
 Shared code, already in place (F-50, commit `01043e8`, L2, and F-53):
 
@@ -218,13 +218,15 @@ Shared code, already in place (F-50, commit `01043e8`, L2, and F-53):
   `ShortcutTarget`.
 - `win32/shortcuts.rs`: `create_shortcut(item, path)`,
   `create_custom_shortcut`, `shell_item`, `display_name`, `resolve_path`;
-  `win32/app_picker.rs` (`Ui::pick_apps`), `win32/shortcut_dialog.rs`
-  (`Ui::custom_shortcut`), `win32/dialog.rs` (shared modal plumbing).
+  `win32/app_picker.rs` (`Ui::pick_apps`) over the `win32/app_catalog.rs`
+  cache (`Ui::prefetch_apps`), `win32/shortcut_dialog.rs`
+  (`Ui::custom_shortcut`), `win32/dialog.rs` (shared modal plumbing);
+  `settings_window/preview.rs` (`FieldKind::SpacePreview`).
 - `app/files.rs` `App::add_shortcuts(ui, space, at, sources)` with
   `ShortcutSource { Shell, Custom }` (copies a dropped `.lnk` or `.url`,
   `is_link_file`), `shortcut_file_name`; `app/menus.rs` `new_shortcut`,
-  `new_shortcut_menu`; `app.rs` `NEW_SHORTCUT_ENTRIES`; `storage.rs`
-  `ItemStore::unique_path`.
+  `offer_new_shortcut`; `app/files.rs` `delete_space_item`; `app.rs`
+  `NEW_SHORTCUT_ENTRIES`; `storage.rs` `ItemStore::unique_path`.
 
 Every way of adding a shortcut must end in `App::add_shortcuts`; never add a
 second shortcut writer.
@@ -262,24 +264,6 @@ second shortcut writer.
     L2 was amended for this (archived) and has landed; record the remaining
     sources from the check above, including the Start-menu result now.
   - Done when: the log line lands and the findings are recorded.
-
-- [ ] **L7. A per-space Shortcuts page in the settings window (F-53).**
-  Decided with the maintainer (2026-10-13).
-  - A sixth page, listed only when a space is selected in the scopes pane
-    (never for Global), always enabled (adding and removing items is not a
-    look setting, so it ignores "Customize this space").
-  - It shows a styled preview of the space: its title bar, its tint, and
-    every item's real icon and label in grid order, scrolling when there are
-    many. Not pixel-exact (no blur, approximate spacing).
-  - Each item carries a small X in its upper-right corner. Clicking it asks
-    first, then deletes the item as the Delete key does: a stored file goes
-    to the Recycle Bin, an item listed in place is only unlisted (ROADMAP
-    D3). It commits at once, like "Fit to contents"; Cancel does not bring it
-    back.
-  - A last tile shows a +; clicking it opens the same "New shortcut ▸"
-    choices as the space menu (`NEW_SHORTCUT_ENTRIES`) at the tile.
-  - Platform: a new `FieldKind` for the preview, drawn by an owner-drawn
-    child window of the page, reporting `SettingsEvent`s for the X and the +.
 
 - [ ] **L5. "Paste shortcut" in the New shortcut submenu (F-54).** After
   F-53. Explorer's "Paste shortcut": copy anything in Explorer, then make a
@@ -723,6 +707,11 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   Group the scene builders into a `ViewState`-like struct, and the `d2d`
   draw helpers, so the allows can go. Suggested task: a `ViewState`-style
   scene-args struct plus a `d2d` arguments struct.
+- `deskspace-platform/src/win32/settings_window/preview.rs`: the Shortcuts
+  page's space preview has no keyboard support (it is not a Tab stop, and
+  its X and + are mouse-only), so the page cannot be used without a mouse.
+  Suggested task: make it focusable with arrow-key focus, Delete for the X,
+  and Enter on the + tile (ROADMAP M7 accessibility).
 - `deskspace-app/src/app/pointer.rs` `adjust_icon_size` (`SpaceEvent::Wheel`):
   the maintainer reports (2026-10-12) that Ctrl+wheel over a space does nothing
   under any preset, so even the `Custom` branch that should change

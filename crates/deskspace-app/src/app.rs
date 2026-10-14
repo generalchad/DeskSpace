@@ -522,6 +522,9 @@ impl EventHandler for App {
                     self.open_settings(ui);
                 }
                 self.start_auto_update_checks(ui);
+                // Warm the installed-apps list, so "New shortcut ▸ From
+                // installed apps…" opens at once.
+                ui.prefetch_apps();
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),

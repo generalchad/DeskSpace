@@ -12,6 +12,7 @@ mod build;
 mod commands;
 mod nav;
 mod paint;
+mod preview;
 mod update;
 
 pub(crate) use commands::colorref;
@@ -76,6 +77,7 @@ use paint::{
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSettings");
 const PAGE_CLASS: PCWSTR = w!("DeskSpaceSettingsPage");
+const PREVIEW_CLASS: PCWSTR = w!("DeskSpaceSettingsPreview");
 
 const ID_OK: usize = 1;
 const ID_CANCEL: usize = 2;
@@ -413,7 +415,15 @@ fn ensure_classes(instance: HINSTANCE) -> Result<(), PlatformError> {
                 lpszClassName: PAGE_CLASS,
                 ..Default::default()
             };
-            let registered = RegisterClassW(&main) != 0 && RegisterClassW(&page) != 0;
+            let preview = WNDCLASSW {
+                lpfnWndProc: Some(preview::preview_wndproc),
+                hInstance: instance,
+                lpszClassName: PREVIEW_CLASS,
+                ..Default::default()
+            };
+            let registered = RegisterClassW(&main) != 0
+                && RegisterClassW(&page) != 0
+                && RegisterClassW(&preview) != 0;
             CLASSES_REGISTERED.store(registered, Ordering::SeqCst);
         }
     });

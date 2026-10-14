@@ -64,13 +64,18 @@ pub mod field {
     pub const CHECK_UPDATES: u32 = 67;
     pub const CHECK_UPDATES_NOTE: u32 = 68;
     pub const CHECK_UPDATES_NOW: u32 = 69;
+
+    pub const SHORTCUTS_NOTE: u32 = 70;
+    pub const SPACE_PREVIEW: u32 = 71;
 }
 
-/// The pages, in rail order. The first `LOOK_PAGE_COUNT` hold look settings,
+/// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
 /// which a space can override; General, New spaces, Hotkeys, and About are
-/// Global only.
+/// Global only; Shortcuts is a space's only (`listed_pages` says which a
+/// scope lists).
 pub mod page {
     pub const APPEARANCE: usize = 0;
     pub const LAYOUT: usize = 2;
     pub const ABOUT: usize = 8;
+    pub const SHORTCUTS: usize = 9;
 }

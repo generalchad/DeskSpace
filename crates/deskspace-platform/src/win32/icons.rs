@@ -395,7 +395,7 @@ fn system_image_list(size: u32) -> Option<IImageList> {
 /// `icon` scaled to `size` square by area averaging, which keeps a downscaled
 /// glyph's thin outline instead of dropping rows as nearest-neighbor does.
 /// Returns `icon` itself when it is already that size.
-fn resample(icon: &Icon, size: u32) -> Icon {
+pub(crate) fn resample(icon: &Icon, size: u32) -> Icon {
     let (width, height) = (icon.width(), icon.height());
     if (width, height) == (size, size) || width == 0 || height == 0 {
         return icon.clone();

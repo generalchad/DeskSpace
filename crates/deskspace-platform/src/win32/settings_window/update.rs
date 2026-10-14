@@ -281,6 +281,11 @@ fn plan_field(old: &Field, controls: &mut FieldControls, new: &Field, updates: &
         (FieldKind::Button { caption: a }, FieldKind::Button { caption: b }) if a != b => {
             updates.push(Update::Text(main, b.clone()));
         }
+        // The preview paints from the field, which the caller replaces with
+        // the new one, so a repaint shows the change.
+        (FieldKind::SpacePreview(a), FieldKind::SpacePreview(b)) if a != b => {
+            updates.push(Update::Repaint(main));
+        }
         _ => {}
     }
 }

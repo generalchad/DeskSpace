@@ -46,7 +46,7 @@ pub struct Session {
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
-    /// The selected page, an index into the form's pages.
+    /// The selected page, an index into the form's pages (`page::*`).
     pub page: usize,
     /// Every space's customization when the window opened or was last
     /// applied, which Cancel restores.
@@ -106,12 +106,20 @@ impl Session {
         }
     }
 
-    /// Switches to `scope`. A space has only the look pages, so a Global-only
-    /// page moves back to the first one.
+    /// Switches to `scope`. A page the new scope does not list (a Global-only
+    /// page for a space, a space's Shortcuts page for Global) moves back to
+    /// the first one.
     pub fn select_scope(&mut self, scope: Option<SpaceId>) {
         self.scope = scope;
-        if scope.is_some() && self.page >= LOOK_PAGE_COUNT {
+        if !listed_pages(scope).contains(&self.page) {
             self.page = page::APPEARANCE;
+        }
+    }
+
+    /// Selects the `entry`-th page the categories pane lists for the scope.
+    pub fn select_entry(&mut self, entry: usize) {
+        if let Some(page) = listed_pages(self.scope).get(entry) {
+            self.page = *page;
         }
     }
 

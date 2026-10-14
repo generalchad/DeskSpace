@@ -304,6 +304,43 @@ pub enum FieldKind {
     Button {
         caption: String,
     },
+    /// A styled picture of one space whose items can be deleted (an X on
+    /// each) and added to (a trailing + tile). Clicks are reported as
+    /// `SettingsEvent::PreviewRemove` and `SettingsEvent::PreviewAdd`.
+    SpacePreview(SpacePreview),
+}
+
+/// What a `FieldKind::SpacePreview` shows: the space's title bar and colors,
+/// approximated as opaque fills, and its items in grid order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpacePreview {
+    pub title: String,
+    /// The space's body, opaque.
+    pub fill: Color,
+    /// The title bar, opaque.
+    pub title_fill: Color,
+    /// Title and label text.
+    pub text: Color,
+    pub items: Vec<PreviewItem>,
+}
+
+/// One item in a `SpacePreview`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewItem {
+    pub label: String,
+    pub icon: Option<crate::render::Icon>,
+}
+
+impl Default for SpacePreview {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            fill: Color::rgb(0x20, 0x20, 0x20),
+            title_fill: Color::rgb(0x18, 0x18, 0x18),
+            text: Color::rgb(0xFF, 0xFF, 0xFF),
+            items: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -436,6 +473,10 @@ impl Field {
                 caption: caption.into(),
             },
         )
+    }
+
+    pub fn space_preview(id: u32, preview: SpacePreview) -> Self {
+        Self::new(id, "", FieldKind::SpacePreview(preview))
     }
 
     pub fn enabled(mut self, enabled: bool) -> Self {

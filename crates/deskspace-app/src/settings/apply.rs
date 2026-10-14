@@ -452,7 +452,13 @@ mod tests {
         assert_eq!(effect, Effect::Pending);
         assert_eq!(config.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(session.hotkey_texts[0], "Ctrl+Shift+F");
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            deskspace_platform::SpacePreview::default(),
+        );
         assert!(form.apply_enabled);
     }
 

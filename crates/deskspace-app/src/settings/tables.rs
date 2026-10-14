@@ -119,7 +119,13 @@ mod tests {
     #[test]
     fn every_hotkey_binding_has_an_editable_field() {
         let (config, session) = setup();
-        let form = build_form(&config, &session, true, Path::new("x"));
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            deskspace_platform::SpacePreview::default(),
+        );
         assert_eq!(session.hotkey_texts.len(), HOTKEY_BINDINGS.len());
         for binding in HOTKEY_BINDINGS {
             let field = form.field(binding.field).expect("its text field");

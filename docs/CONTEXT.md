@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (340 tests) are green. Update this count whenever a
+  `cargo test --workspace` (347 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release) and v0.2.1 (update checking),
   each as an NSIS installer and a portable zip on GitHub Releases (section 10,
@@ -61,8 +61,9 @@ context menus, and a settings window in the first usable release (v0.2).
   DeskSpace's own layer) is built and opt-in (section 6; ROADMAP D7, D8).
 - Dragging an app from the Start menu onto a space makes a shortcut
   (`TASKS.md` L2); it awaits an on-screen check (section V). The space
-  menu's "New shortcut ▸" picks installed apps or takes a custom target
-  (F-53); both dialogs were checked on screen on 2026-10-13.
+  menu's "New shortcut ▸" picks installed apps or takes a custom target, and
+  a space's Settings page "Shortcuts" previews it with an X per item and a +
+  tile (F-53); all of it was checked on screen on 2026-10-13.
 - Verification: many behaviors are covered by unit tests but not confirmed on
   screen; `TASKS.md` section V lists them. Confirm one before building on it.
   Checked on screen so far: the blur, corners, space content, and settings
@@ -463,7 +464,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `shortcut_dialog` |
+| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -512,8 +513,10 @@ Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
 41-46; next free 13, or 47; 9, the removed "Remove from space", stays
 unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
-Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
-26 were freed by the removed placement setting and stay unused).
+Settings field ids are in `settings/ids.rs`'s `mod field` (next free 72; 25 and
+26 were freed by the removed placement setting and stay unused). Page indices
+(`mod page`) are build positions; a new page goes at the end (Shortcuts is 9,
+after About) and `settings::listed_pages` says which pages a scope lists.
 
 ### Events
 
@@ -527,7 +530,8 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 `MouseUp`, `DoubleClick`, `MouseLeave`, `Wheel`, `FilesDropped`,
 `ShellItemsDropped`,
 `CaptureLost`, and `DpiChanged`. `SettingsEvent` is `Changed`, `Button`,
-`NavChanged`, `ScopeChanged`, `HeaderSwitch { on }`, `HeaderButton`, `Ok`,
+`NavChanged`, `ScopeChanged`, `HeaderSwitch { on }`, `HeaderButton`,
+`PreviewRemove { field, index }`, `PreviewAdd { field, x, y }`, `Ok`,
 `Cancel`, and `Apply`. A new input source adds a variant here and one arm in
 `App::on_event`.
 
@@ -907,7 +911,17 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 - `SettingsForm` → pages → `Field`s (`Heading`, `Note`, `Choice`, `Toggle`,
   `Slider` (with a unit `suffix`, optionally labeled `SliderMark`s and, when
   `editable`, a number box that commits on focus loss instead of a static
-  value), `Color`, `Text` (optionally `read_only`), `Button`). A new kind of
+  value), `Color`, `Text` (optionally `read_only`), `Button`, and
+  `SpacePreview`). A `SpacePreview` (`settings_window/preview.rs`) is a
+  child window of its page that paints a styled picture of a space with GDI
+  into a back buffer: the title bar and body as opaque fills
+  (`settings::space_preview_colors` approximates the tint over the blur),
+  each item's icon and label in grid order with an X in its upper-right
+  corner, and a trailing + tile; it scrolls with the wheel and reports
+  `PreviewRemove` and `PreviewAdd`. Its data stays with the field in the
+  settings state (found by control id), so an update only repaints it; its
+  pure `PreviewLayout` serves both painting and hit-testing. It has no
+  keyboard support yet. A new kind of
   control is a `FieldKind` variant plus its builder, `plan_field` diff, and
   command handling in `settings_window/commands.rs`; prefer composing existing kinds. Appearance is split across Appearance, Labels, Layout,
   Colors, and Advanced so no page clips on a 1080-pixel display. The settings
@@ -960,10 +974,15 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   `HIGHLIGHT_TIMER` clears it; selecting another space moves it, and Cancel,
   OK, and closing the window clear it too.
 - The app's form (`settings/`): the scopes are Global, then every space
-  indented, dimmed while it follows Global. Global lists every page; a
-  space lists only the five look pages and shows its values (from Global
-  until customized) greyed unless the header's "Customize this space" switch
-  is on. Global edits write `Config` directly; a space's edits become
+  indented, dimmed while it follows Global. Global lists every page but
+  Shortcuts; a space lists the five look pages, which show its values (from
+  Global until customized) greyed unless the header's "Customize this space"
+  switch is on, and its Shortcuts page, which is always enabled. The
+  Shortcuts page's X deletes an item after a confirmation
+  (`App::delete_space_item`: a stored file goes to the Recycle Bin, an item
+  listed in place is only unlisted; ROADMAP D3) and its + opens the New
+  shortcut choices (`App::offer_new_shortcut`); both commit at once, so
+  Cancel does not undo them. Global edits write `Config` directly; a space's edits become
   `SetSpaceLook` commands, the switch becomes `CustomizeSpace`, and the Colors
   page's reset becomes "Match global appearance". A space's header also carries
   a "Delete space" button, which runs the same delete (with its confirmation)
@@ -994,8 +1013,14 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   controller, disable their owner, and pump every message while open
   (`IsDialogMessageW` gives them Tab, Enter, and Escape). The picker
   enumerates `FOLDERID_AppsFolder` (`BHID_EnumItems`) into a report-view list
-  view with check boxes and renders each icon lazily on `LVN_GETDISPINFOW`
-  (`icons::shell_item_icon`). Picked apps become `ShellItem`s through
+  view with check boxes. The list and its icons come from
+  `win32/app_catalog.rs`, a cache the app fills on a background thread (its
+  own COM apartment) on `Started` (`Ui::prefetch_apps`) and that the picker
+  refreshes in the background after each use, so the picker opens at once and
+  newly installed apps appear next time; before the first listing finishes
+  the picker lists synchronously without icons and renders them lazily. Each
+  row's icon enters the image list on `LVN_GETDISPINFOW`, resampled from the
+  cache (`icons::resample`) or rendered (`icons::shell_item_icon`). Picked apps become `ShellItem`s through
   `shortcuts::shell_item`, the function drops use; the dialog's result is a
   `CustomShortcut` (`ui.rs`; `ShortcutTarget::parse` reads typed text),
   written by `shortcuts::create_custom_shortcut`.
@@ -1171,7 +1196,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   bare program name on the search path), and a target that does not exist is
   reported in the dialog. A web address becomes a `.url`; everything else a
   `.lnk`. Both end in `App::add_shortcuts`, which writes into the space
-  storage and lists the shortcuts at the end of the space.
+  storage and lists the shortcuts at the end of the space. The same choices
+  open from the + tile on a space's Settings page "Shortcuts", whose preview
+  also deletes an item from its X (after asking).
 - In Settings, pick Global or a space in the left pane. Global edits apply to
   every space that is not customized. A space's pages are greyed, showing the
   global values, until "Customize this space" is ticked; its edits then apply
@@ -1201,9 +1228,10 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |
   | Hotkeys | Global | Show or hide spaces, Create a new space, Open settings |
   | About | Global | Version, summary, license, configuration file path |
+  | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
 
-  "Look" pages appear for Global and for every space; the rest only for
-  Global.
+  "Look" pages appear for Global and for every space; Shortcuts only for a
+  space; the rest only for Global.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click for
   Settings…, Hide/Show spaces, New space, Exit DeskSpace. A space created
   from the tray goes to the center of the work area, and creating a space

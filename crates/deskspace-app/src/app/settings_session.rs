@@ -1,11 +1,22 @@
 //! `App` settings session: the settings window, its edits, and previews (R1).
 
-use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{FieldValue, SettingsEvent, Ui};
+use std::path::PathBuf;
 
+use deskspace_core::geometry::Point;
+use deskspace_core::{Command, SpaceId};
+use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui};
+
+use crate::scene::item_label;
 use crate::settings::{self, Effect, Session, SpaceSnapshot};
 
-use super::{App, HIGHLIGHT_MS, HIGHLIGHT_TIMER, PREVIEW_DELAY_MS, PREVIEW_TIMER, Preview};
+use super::{
+    App, HIGHLIGHT_MS, HIGHLIGHT_TIMER, PREVIEW_DELAY_MS, PREVIEW_TIMER, Preview, Surface,
+};
+
+/// The pixel size of the icons rendered for the Shortcuts page preview. The
+/// preview draws them at 40 px at 100 % scaling, so 64 px stays sharp up to
+/// 150 %.
+const PREVIEW_ICON_SIZE: i32 = 64;
 
 impl App {
     /// Deletes the space shown in the settings window, from the header's
@@ -27,10 +38,52 @@ impl App {
         self.refresh_settings(ui);
     }
 
-    fn settings_form(&self) -> Option<deskspace_platform::SettingsForm> {
+    fn settings_form(&mut self) -> Option<deskspace_platform::SettingsForm> {
+        let scope = self.settings.as_ref()?.scope;
+        let preview = self.space_preview(scope);
         self.settings.as_ref().map(|session| {
-            settings::build_form(&self.config, session, self.system_dark, self.store.path())
+            settings::build_form(
+                &self.config,
+                session,
+                self.system_dark,
+                self.store.path(),
+                preview,
+            )
         })
+    }
+
+    /// What the Shortcuts page shows for the space `scope`: its title, its
+    /// colors as opaque fills, and its items' labels and icons as the space
+    /// draws them. Empty for Global, which never lists the page.
+    fn space_preview(&mut self, scope: Option<SpaceId>) -> SpacePreview {
+        let Some(space) = scope.and_then(|id| self.config.desktop.space(id)) else {
+            return SpacePreview::default();
+        };
+        let id = space.id;
+        let show_extensions =
+            self.surface_match_explorer(Surface::Space(id)) && self.shell_display.show_extensions;
+        let overlay_size = space.theme(&self.config.theme).overlay_size;
+        let title = space.title.clone();
+        let entries: Vec<(PathBuf, String)> = space
+            .items
+            .iter()
+            .map(|item| (item.path.clone(), item_label(item, show_extensions)))
+            .collect();
+        let (fill, title_fill, text) = settings::space_preview_colors(&self.palette_for(id));
+        let items = entries
+            .into_iter()
+            .map(|(path, label)| PreviewItem {
+                label,
+                icon: self.icons.icon_for(&path, PREVIEW_ICON_SIZE, overlay_size),
+            })
+            .collect();
+        SpacePreview {
+            title,
+            fill,
+            title_fill,
+            text,
+            items,
+        }
     }
 
     pub(super) fn open_settings(&mut self, ui: &mut Ui) {
@@ -74,7 +127,7 @@ impl App {
         }
     }
 
-    pub(super) fn refresh_settings(&self, ui: &mut Ui) {
+    pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
         if let Some(form) = self.settings_form() {
             ui.update_settings(&form);
         }
@@ -154,9 +207,18 @@ impl App {
                 }
             }
             SettingsEvent::NavChanged { entry } => {
-                // The categories pane lists the pages in order, one entry each.
-                session.page = entry;
+                session.select_entry(entry);
                 self.refresh_settings(ui);
+            }
+            SettingsEvent::PreviewRemove { index, .. } => {
+                if let Some(id) = session.scope {
+                    self.delete_space_item(ui, id, index);
+                }
+            }
+            SettingsEvent::PreviewAdd { x, y, .. } => {
+                if let Some(id) = session.scope {
+                    self.offer_new_shortcut(ui, id, Point::new(x, y));
+                }
             }
             SettingsEvent::Apply => {
                 self.apply_settings(ui);

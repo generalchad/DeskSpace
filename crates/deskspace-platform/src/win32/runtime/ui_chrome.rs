@@ -40,6 +40,13 @@ impl Ui {
         unsafe { crate::win32::app_picker::pick_apps(owner, title, dark) }
     }
 
+    /// Lists the installed apps and renders their icons on a background
+    /// thread, so the installed-apps picker opens at once later. Call once at
+    /// startup; the picker refreshes the list itself after each use.
+    pub fn prefetch_apps(&mut self) {
+        crate::win32::app_catalog::refresh_in_background();
+    }
+
     /// Opens the "Custom shortcut" dialog titled `title` and returns the
     /// shortcut the user described, or `None` when they cancelled. A path
     /// target is already resolved to something that exists. Blocks in a modal

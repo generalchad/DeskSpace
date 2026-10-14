@@ -443,6 +443,20 @@ impl Builder {
                     );
                     self.s(40)
                 }
+                FieldKind::SpacePreview(_) => {
+                    // The preview reads its data from this field in the
+                    // window's state, found through the control id.
+                    controls.main = self.control(
+                        page,
+                        PREVIEW_CLASS,
+                        "",
+                        0,
+                        WINDOW_EX_STYLE(0),
+                        (x, y, full, self.s(super::preview::PREVIEW_HEIGHT)),
+                        id_main,
+                    );
+                    self.s(super::preview::PREVIEW_HEIGHT + 10)
+                }
             }
         };
         (controls, height)

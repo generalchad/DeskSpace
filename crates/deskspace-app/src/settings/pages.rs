@@ -355,3 +355,20 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
         ],
     }
 }
+
+/// A space's Shortcuts page: a preview of the space whose items can be
+/// deleted (the X on each) and added to (the + tile; F-53).
+pub(super) fn shortcuts_page(preview: SpacePreview) -> SettingsPage {
+    SettingsPage {
+        title: "Shortcuts".into(),
+        fields: vec![
+            Field::note(
+                field::SHORTCUTS_NOTE,
+                "Click \u{2715} to delete an item: a file in the space goes to the Recycle \
+                 Bin, and an item shown in place is only removed from the space. Click + to \
+                 add a shortcut to an installed app or to anything else.",
+            ),
+            Field::space_preview(field::SPACE_PREVIEW, preview),
+        ],
+    }
+}

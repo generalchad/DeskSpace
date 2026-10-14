@@ -3,9 +3,11 @@
 //! apps as well as desktop programs), with a check box per row, a search box
 //! that filters as you type, and Add / Cancel.
 //!
-//! The list is a standard report-view list view. Icons are rendered lazily,
-//! the first time a row is drawn (`LVN_GETDISPINFOW`), because rendering a few
-//! hundred icons up front would delay the window.
+//! The apps come from `app_catalog`, which the app fills in the background at
+//! startup, so the window opens at once. The list is a standard report-view
+//! list view; a row's icon is added to its image list the first time the row
+//! is drawn (`LVN_GETDISPINFOW`), from the catalog's cached icon or, when the
+//! catalog was listed without icons, rendered then.
 
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,10 +25,8 @@ use windows::Win32::UI::Controls::{
     LVSCW_AUTOSIZE_USEHEADER, LVSIL_SMALL, NMHDR, NMLISTVIEW, NMLVDISPINFOW, WC_LISTVIEWW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
-use windows::Win32::UI::Shell::{
-    BHID_EnumItems, FOLDERID_AppsFolder, IEnumShellItems, IShellItem, KF_FLAG_DEFAULT,
-    SHGetKnownFolderItem,
-};
+use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+use windows::Win32::UI::Shell::{IShellItem, SHCreateItemFromIDList};
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CREATESTRUCTW, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL,
     GWLP_USERDATA, GetClientRect, GetWindowLongPtrW, RegisterClassW, SendMessageW,
@@ -37,11 +37,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::input::ShellItem;
+use crate::render::Icon;
+use crate::win32::app_catalog;
 use crate::win32::dialog::{self, DialogChrome, ID_CANCEL, ID_OK, window_text};
 use crate::win32::drag_image::dib;
-use crate::win32::icons::shell_item_icon;
+use crate::win32::icons::{resample, shell_item_icon};
 use crate::win32::settings_window::colorref;
-use crate::win32::shortcuts::shell_item;
 use crate::win32::system::wide;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceAppPicker");
@@ -64,7 +65,8 @@ static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 /// One app in the list.
 struct AppRow {
     item: ShellItem,
-    shell: IShellItem,
+    /// The catalog's icon, resampled to the row size when first drawn.
+    cached_icon: Option<Icon>,
     checked: bool,
     /// Its icon's index in the image list, once rendered.
     image: Option<i32>,
@@ -107,16 +109,16 @@ pub(crate) unsafe fn pick_apps(owner: HWND, title: &str, dark: bool) -> Vec<Shel
         }
         let chrome = DialogChrome::new(dialog::dpi_of(owner), dark);
         let icon_px = chrome.s(ICON_SIZE);
-        let mut apps: Vec<AppRow> = installed_apps()
-            .into_iter()
-            .map(|(item, shell)| AppRow {
-                item,
-                shell,
+        let catalog = app_catalog::cached().unwrap_or_else(app_catalog::list_now);
+        let apps: Vec<AppRow> = catalog
+            .iter()
+            .map(|app| AppRow {
+                item: app.item.clone(),
+                cached_icon: app.icon.clone(),
                 checked: false,
                 image: None,
             })
             .collect();
-        apps.sort_by_cached_key(|app| app.item.name.to_lowercase());
         let client = (chrome.s(CLIENT_WIDTH), chrome.s(CLIENT_HEIGHT));
         let mut state = Box::new(PickerState {
             owner,
@@ -145,43 +147,23 @@ pub(crate) unsafe fn pick_apps(owner: HWND, title: &str, dark: bool) -> Vec<Shel
             let _ = SetFocus(Some(search));
         }
         dialog::run_modal(owner, window);
+        // Re-list in the background so an app installed meanwhile is there
+        // the next time.
+        app_catalog::refresh_in_background();
         std::mem::take(&mut state.result)
     }
 }
 
-/// Every app in the Applications folder, with its shell item.
-/// https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid (FOLDERID_AppsFolder)
-fn installed_apps() -> Vec<(ShellItem, IShellItem)> {
-    let mut apps = Vec::new();
-    // SAFETY: OLE is initialized on this thread; every interface is released
-    // when it goes out of scope.
-    unsafe {
-        let Ok(folder) =
-            SHGetKnownFolderItem::<IShellItem>(&FOLDERID_AppsFolder, KF_FLAG_DEFAULT, None)
-        else {
-            tracing::warn!("cannot open the Applications folder");
-            return apps;
-        };
-        let Ok(items) = folder.BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems) else {
-            tracing::warn!("cannot enumerate the Applications folder");
-            return apps;
-        };
-        loop {
-            let mut batch = [None];
-            let mut fetched = 0u32;
-            if items.Next(&mut batch, Some(&mut fetched)).is_err() || fetched == 0 {
-                break;
-            }
-            if let Some(shell) = batch[0].take()
-                && let Some(item) = shell_item(&shell)
-                && !item.name.trim().is_empty()
-            {
-                apps.push((item, shell));
-            }
-        }
+/// A row's icon at `size` pixels: the catalog's, resampled, or rendered now
+/// from the app's ID list when the catalog has none.
+fn row_icon(cached: Option<&Icon>, id_list: &[u8], size: u32) -> Option<Icon> {
+    if let Some(icon) = cached {
+        return Some(resample(icon, size));
     }
-    tracing::debug!(count = apps.len(), "listed installed apps");
-    apps
+    // SAFETY: `id_list` holds a complete absolute ITEMIDLIST (`ShellItem`).
+    let shell: IShellItem =
+        unsafe { SHCreateItemFromIDList(id_list.as_ptr().cast::<ITEMIDLIST>()) }.ok()?;
+    shell_item_icon(&shell, size)
 }
 
 /// Creates the search box, the list, and the buttons.
@@ -396,14 +378,15 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
         return;
     }
     let index = info.item.lParam.0 as usize;
-    // SAFETY: the shell item is cloned out under the borrow, rendered after
+    // SAFETY: the row's data is cloned out under the borrow, rendered after
     // it, and the image list only stores the bitmap's copy.
     unsafe {
-        let Some(Some((known, shell, images, size))) = with_state(window, |state| {
+        let Some(Some((known, cached, id_list, images, size))) = with_state(window, |state| {
             let app = state.apps.get(index)?;
             Some((
                 app.image,
-                app.shell.clone(),
+                app.cached_icon.clone(),
+                app.item.id_list.clone(),
                 state.images,
                 state.chrome.s(ICON_SIZE),
             ))
@@ -413,7 +396,7 @@ unsafe fn on_display_info(window: HWND, info: &mut NMLVDISPINFOW) {
         let image = match known {
             Some(image) => image,
             None => {
-                let image = shell_item_icon(&shell, size as u32)
+                let image = row_icon(cached.as_ref(), &id_list, size as u32)
                     .and_then(|icon| dib(&icon, false))
                     .map_or(-1, |bitmap| {
                         let image = ImageList_Add(images, bitmap, None);
@@ -631,19 +614,6 @@ mod tests {
         assert_eq!(matching_apps(&names, "visual"), [0, 2]);
         assert_eq!(matching_apps(&names, "studio CODE"), [0]);
         assert!(matching_apps(&names, "paint").is_empty());
-    }
-
-    #[test]
-    fn the_applications_folder_lists_apps_with_id_lists() {
-        use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-        // SAFETY: initializes COM for this test thread only.
-        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-        let apps = installed_apps();
-        assert!(!apps.is_empty(), "every Windows install has some apps");
-        assert!(apps.iter().all(|(item, _)| !item.id_list.is_empty()));
-        // Store apps have no filesystem path; they must still be listed.
-        let virtual_apps = apps.iter().filter(|(item, _)| item.path.is_none()).count();
-        assert!(virtual_apps > 0, "Store apps are listed");
     }
 
     #[test]

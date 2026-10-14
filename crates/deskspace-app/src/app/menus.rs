@@ -301,6 +301,18 @@ impl App {
         }
     }
 
+    /// Shows the "New shortcut" choices at `at` (the settings window's +
+    /// tile) and makes the chosen kind of shortcut in space `id`.
+    pub(super) fn offer_new_shortcut(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let choice = ui
+            .popup_menu(&new_shortcut_entries(), at)
+            .and_then(new_shortcut_choice);
+        if let Some(kind) = choice {
+            let near = self.space_center(id);
+            self.new_shortcut(ui, id, kind, near);
+        }
+    }
+
     pub(super) fn show_tray_menu(&mut self, ui: &mut Ui, at: Point) {
         let entries = [
             MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
@@ -403,18 +415,21 @@ fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
 }
 
 /// The "New shortcut" submenu (F-53), from `NEW_SHORTCUT_ENTRIES`.
-pub(super) fn new_shortcut_menu() -> MenuEntry {
-    MenuEntry::submenu(
-        "New shortcut",
-        NEW_SHORTCUT_ENTRIES
-            .iter()
-            .map(|(id, label, _)| MenuEntry::item(*id, *label))
-            .collect(),
-    )
+fn new_shortcut_menu() -> MenuEntry {
+    MenuEntry::submenu("New shortcut", new_shortcut_entries())
+}
+
+/// The New shortcut choices themselves, for the submenu and the settings
+/// window's + tile.
+fn new_shortcut_entries() -> Vec<MenuEntry> {
+    NEW_SHORTCUT_ENTRIES
+        .iter()
+        .map(|(id, label, _)| MenuEntry::item(*id, *label))
+        .collect()
 }
 
 /// What a "New shortcut" menu id makes, if it is one.
-pub(super) fn new_shortcut_choice(choice: u32) -> Option<NewShortcut> {
+fn new_shortcut_choice(choice: u32) -> Option<NewShortcut> {
     NEW_SHORTCUT_ENTRIES
         .iter()
         .find(|(id, ..)| *id == choice)

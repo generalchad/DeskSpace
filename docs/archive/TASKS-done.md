@@ -1458,3 +1458,29 @@ until I5-I6 all land, so no partial build hides the desktop.
     name dialog, `win32/shortcut_dialog.rs`), table-driven by
     `NEW_SHORTCUT_ENTRIES`. `add_shortcuts` takes `ShortcutSource`s so the
     custom shortcut ends there too. Checked on screen 2026-10-13.
+
+- [x] **L7. A per-space Shortcuts page in the settings window (F-53).**
+  Decided with the maintainer (2026-10-13).
+  - A sixth page, listed only when a space is selected in the scopes pane
+    (never for Global), always enabled (adding and removing items is not a
+    look setting, so it ignores "Customize this space").
+  - It shows a styled preview of the space: its title bar, its tint, and
+    every item's real icon and label in grid order, scrolling when there are
+    many. Not pixel-exact (no blur, approximate spacing).
+  - Each item carries a small X in its upper-right corner. Clicking it asks
+    first, then deletes the item as the Delete key does: a stored file goes
+    to the Recycle Bin, an item listed in place is only unlisted (ROADMAP
+    D3). It commits at once, like "Fit to contents"; Cancel does not bring it
+    back.
+  - A last tile shows a +; clicking it opens the same "New shortcut ▸"
+    choices as the space menu (`NEW_SHORTCUT_ENTRIES`) at the tile.
+  - Platform: a new `FieldKind` for the preview, drawn by an owner-drawn
+    child window of the page, reporting `SettingsEvent`s for the X and the +.
+  - Landed (2026-10-13): `FieldKind::SpacePreview` in
+    `settings_window/preview.rs`, `SettingsEvent::PreviewRemove` /
+    `PreviewAdd`, `page::SHORTCUTS` (9) with `settings::listed_pages`,
+    `App::delete_space_item` and `App::offer_new_shortcut`. The
+    installed-apps list is now cached at startup (`win32/app_catalog.rs`,
+    `Ui::prefetch_apps`) after the maintainer found the picker slow to open.
+    Checked on screen 2026-10-13 (hover, X with confirmation, +, and a fast
+    picker).

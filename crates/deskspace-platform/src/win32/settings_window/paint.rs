@@ -325,7 +325,7 @@ pub(super) unsafe fn on_draw_swatch(window: HWND, item: &DRAWITEMSTRUCT) {
 }
 
 /// Mixes `amount` of `over` into `base` (0 = base, 1 = over).
-fn blend(base: Color, over: Color, amount: f32) -> Color {
+pub(super) fn blend(base: Color, over: Color, amount: f32) -> Color {
     let mix = |a: u8, b: u8| (a as f32 * (1.0 - amount) + b as f32 * amount).round() as u8;
     Color::rgb(
         mix(base.r, over.r),

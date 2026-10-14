@@ -251,6 +251,42 @@ impl App {
         self.save();
     }
 
+    /// Deletes the `index`-th item of space `space` after asking, from the X
+    /// on the settings window's Shortcuts page (ROADMAP D3): a file in the
+    /// space storage goes to the Recycle Bin, and an item listed in place is
+    /// only removed from the space, so the user's original is never deleted.
+    /// If the shell cannot delete the file (for example it is in use), the
+    /// item stays.
+    pub(super) fn delete_space_item(&mut self, ui: &mut Ui, space: SpaceId, index: usize) {
+        let Some((item, path, label)) = self
+            .config
+            .desktop
+            .space(space)
+            .and_then(|space| space.items.get(index))
+            .map(|item| (item.id, item.path.clone(), item.label.clone()))
+        else {
+            return;
+        };
+        let stored = self.storage.contains(&path);
+        if !ui.confirm("Delete item", &delete_item_question(&label, stored)) {
+            return;
+        }
+        if stored && path.exists() {
+            ui.delete_files(std::slice::from_ref(&path), false);
+            if path.exists() {
+                tracing::warn!(path = %path.display(), "the item's file could not be deleted; it stays");
+                return;
+            }
+        }
+        self.forget_item(item);
+        let near = self.space_center(space);
+        self.dispatch(Command::RemoveItem { id: item }, near);
+        self.refresh_space(ui, space);
+        self.refresh_tray(ui);
+        self.save();
+        self.refresh_settings(ui);
+    }
+
     /// Forgets an item's transient per-item state (the selection, cut
     /// ghosting, any independent check, and the hover) after it is removed or
     /// its file is gone.
@@ -351,6 +387,18 @@ impl App {
     }
 }
 
+/// The confirmation for deleting one item, saying what happens to its file:
+/// a stored file goes to the Recycle Bin, an item shown in place keeps its
+/// file where it is.
+fn delete_item_question(label: &str, stored: bool) -> String {
+    let consequence = if stored {
+        "It will be moved to the Recycle Bin."
+    } else {
+        "It will be removed from this space. The file itself stays where it is."
+    };
+    format!("Delete \u{201C}{label}\u{201D}?\n\n{consequence}")
+}
+
 /// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
 /// drop copies rather than links to.
 fn is_link_file(path: &Path) -> bool {
@@ -428,6 +476,16 @@ mod tests {
         assert_eq!(shortcut_file_name("Report...", "lnk"), "Report.lnk");
         assert_eq!(shortcut_file_name("   ", "lnk"), "Shortcut.lnk");
         assert_eq!(shortcut_file_name("", "lnk"), "Shortcut.lnk");
+    }
+
+    #[test]
+    fn deleting_an_item_says_where_its_file_goes() {
+        let stored = delete_item_question("Notes", true);
+        assert!(stored.starts_with("Delete \u{201C}Notes\u{201D}?"));
+        assert!(stored.contains("Recycle Bin"));
+        let in_place = delete_item_question("Notes", false);
+        assert!(in_place.contains("stays where it is"));
+        assert!(!in_place.contains("Recycle Bin"));
     }
 
     #[test]
