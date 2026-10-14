@@ -5,9 +5,10 @@ use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
 use deskspace_platform::{ItemMenuChoice, MenuEntry, Ui, work_area_at};
 
+use super::files::ShortcutSource;
 use super::{
-    App, ICON_SIZE_PRESETS, OPACITY_PRESETS, SORT_PRESETS, SpaceColor, Surface,
-    delete_needs_confirmation, menu,
+    App, ICON_SIZE_PRESETS, NEW_SHORTCUT_ENTRIES, NewShortcut, OPACITY_PRESETS, SORT_PRESETS,
+    SpaceColor, Surface, delete_needs_confirmation, menu,
 };
 
 impl App {
@@ -204,6 +205,9 @@ impl App {
             entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);
+        // Locking fixes a space's position, not its contents, so a locked
+        // space still takes new shortcuts.
+        entries.push(new_shortcut_menu());
         entries.push(space_appearance_menu(
             space,
             space.theme(&self.config.theme),
@@ -256,11 +260,44 @@ impl App {
                     SORT_PRESETS.iter().find(|(preset, ..)| *preset == choice)
                 {
                     self.sort_space(ui, id, *key, *descending, at);
+                } else if let Some(kind) = new_shortcut_choice(choice) {
+                    self.new_shortcut(ui, id, kind, at);
                 } else {
                     self.run_common_menu(ui, choice, at);
                 }
             }
             None => {}
+        }
+    }
+
+    /// Makes new shortcuts in space `id` the way `kind` says: apps checked in
+    /// the installed-apps picker, or one described in the "Custom shortcut"
+    /// dialog. Cancelling either adds nothing. The shortcuts are listed at
+    /// the end of the space; `at` only picks the monitor whose work area
+    /// bounds the space.
+    pub(super) fn new_shortcut(&mut self, ui: &mut Ui, id: SpaceId, kind: NewShortcut, at: Point) {
+        let Some(title) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| space.title.clone())
+        else {
+            return;
+        };
+        let sources: Vec<ShortcutSource> = match kind {
+            NewShortcut::Apps => ui
+                .pick_apps(&format!("Add apps to \u{201C}{title}\u{201D}"))
+                .into_iter()
+                .map(ShortcutSource::Shell)
+                .collect(),
+            NewShortcut::Custom => ui
+                .custom_shortcut(&format!("New shortcut in \u{201C}{title}\u{201D}"))
+                .map(ShortcutSource::Custom)
+                .into_iter()
+                .collect(),
+        };
+        if !sources.is_empty() {
+            self.add_shortcuts(ui, id, at, sources);
         }
     }
 
@@ -365,6 +402,25 @@ fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
     MenuEntry::submenu("Appearance", entries)
 }
 
+/// The "New shortcut" submenu (F-53), from `NEW_SHORTCUT_ENTRIES`.
+pub(super) fn new_shortcut_menu() -> MenuEntry {
+    MenuEntry::submenu(
+        "New shortcut",
+        NEW_SHORTCUT_ENTRIES
+            .iter()
+            .map(|(id, label, _)| MenuEntry::item(*id, *label))
+            .collect(),
+    )
+}
+
+/// What a "New shortcut" menu id makes, if it is one.
+pub(super) fn new_shortcut_choice(choice: u32) -> Option<NewShortcut> {
+    NEW_SHORTCUT_ENTRIES
+        .iter()
+        .find(|(id, ..)| *id == choice)
+        .map(|(.., kind)| *kind)
+}
+
 /// The "Sort by" submenu; a one-off reorder of the space's items.
 fn space_sort_menu() -> MenuEntry {
     MenuEntry::submenu(
@@ -382,6 +438,31 @@ mod tests {
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::{Item, Rect};
+
+    #[test]
+    fn the_new_shortcut_menu_maps_each_entry_back() {
+        let MenuEntry::Submenu { label, entries, .. } = new_shortcut_menu() else {
+            panic!("expected a submenu");
+        };
+        assert_eq!(label, "New shortcut");
+        let ids: Vec<u32> = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                MenuEntry::Item { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, [menu::NEW_SHORTCUT_APPS, menu::NEW_SHORTCUT_CUSTOM]);
+        assert_eq!(
+            new_shortcut_choice(menu::NEW_SHORTCUT_APPS),
+            Some(NewShortcut::Apps)
+        );
+        assert_eq!(
+            new_shortcut_choice(menu::NEW_SHORTCUT_CUSTOM),
+            Some(NewShortcut::Custom)
+        );
+        assert_eq!(new_shortcut_choice(menu::ROLL), None);
+    }
 
     #[test]
     fn keyboard_menu_anchor_follows_the_focus() {

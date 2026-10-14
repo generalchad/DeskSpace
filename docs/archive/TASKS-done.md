@@ -1401,3 +1401,60 @@ until I5-I6 all land, so no partial build hides the desktop.
     (`is_file_list`), because the Start menu offered `MOVE` with a file list
     of AppUserModelIDs; such a drag is shell items. Landed in
     `fix: make start-menu drags into spaces shortcuts (L2)`.
+
+- [x] **L3. A picker for apps (platform).** Independent of L1-L2.
+  - New `win32/pickers.rs` (add it to the file map above and to the module
+    table in `CONTEXT.md` section 6, under Shell) with
+    `pub(crate) fn pick_apps(owner: HWND) -> Vec<ShellItem>`, exposed as
+    `Ui::pick_apps(&mut self) -> Vec<ShellItem>` in `runtime/ui_shell.rs`. An
+    empty Vec means the user cancelled.
+  - Spike first: an `IFileOpenDialog` (`FileOpenDialog` CLSID) with
+    `FOS_ALLNONSTORAGEITEMS | FOS_ALLOWMULTISELECT | FOS_NOVALIDATE`, titled
+    "Add apps", opened on the Applications folder
+    (`SHGetKnownFolderItem(&FOLDERID_AppsFolder, ..)`, then `SetFolder`), and
+    `GetResults` for the chosen items. If the dialog cannot show or return
+    Applications-folder items (try a Store app and a desktop app), **stop and
+    ask**: the fallback is a DeskSpace list window over the Applications
+    folder, which needs design.
+  - A chosen `IShellItem` becomes a `ShellItem` the way `drop_target.rs`'s
+    `shell_item` already does it: move `shell_item` and `display_name` into
+    `win32/shortcuts.rs` as `pub(crate)` and call them from both places (a
+    pure move, never a second copy).
+  - Modal rules: copy `Ui::confirm` (`runtime/ui_chrome.rs`): read the owner
+    (the settings window when open, else the controller) inside
+    `with_runtime`, release the borrow, then show the dialog. Link the
+    Microsoft Learn pages for `IFileOpenDialog` and `FILEOPENDIALOGOPTIONS`
+    beside the calls; every `unsafe` block gets a `// SAFETY:` comment.
+  - Done when: it compiles, clippy is clean, and a temporary call (removed
+    before committing) returns names and ID lists. **[needs human]**
+  - Landed differently (maintainer, 2026-10-13): no spike; the maintainer
+    chose the DeskSpace list window up front (`win32/app_picker.rs`: check
+    boxes, a search box, Add / Cancel), with shared modal plumbing in
+    `win32/dialog.rs`. `Ui::pick_apps(title)` lives in
+    `runtime/ui_chrome.rs` beside the color picker. Checked on screen
+    2026-10-13 (three apps picked and added).
+
+- [x] **L4. "Add ▸ Apps…" in the space menu (F-53).** After L3. Follow
+  "Recipe: a new menu entry".
+  - `app.rs` `mod menu`: `ADD_APPS = 45` (it opens a new group at 45; update
+    the next-free note in `CONTEXT.md` section 6), and add it to
+    `menu_ids_are_unique`.
+  - `app/menus.rs` `show_space_menu`: an "Add" submenu right after "Fit to
+    contents", built by one small helper `space_add_menu` like
+    `space_sort_menu`. It holds "Apps…" now; L5 adds "Paste shortcut" and L6
+    "Files…". Leave it enabled for a locked space: locking fixes the
+    position, not the contents, and `Command::AddItem` accepts a locked space.
+  - The arm: `let items = ui.pick_apps();` and, when it is not empty,
+    `self.add_shortcuts(ui, id, at, items)`, with `at` the point
+    `show_space_menu` already receives.
+  - Docs: `CONTEXT.md` section 8 (the space-menu bullet), `README.md`
+    Controls, and the F-53 row in the ROADMAP feature index.
+  - Done when: tests pass. **[needs human]** check: "Add ▸ Apps…" on a space;
+    pick a Store app and two desktop apps at once; three working shortcuts
+    appear in that space, and Cancel adds nothing.
+  - Landed differently (maintainer, 2026-10-13): the submenu is "New
+    shortcut ▸" with "From installed apps…" (`NEW_SHORTCUT_APPS = 45`) and
+    "Custom shortcut…" (`NEW_SHORTCUT_CUSTOM = 46`, a target / arguments /
+    name dialog, `win32/shortcut_dialog.rs`), table-driven by
+    `NEW_SHORTCUT_ENTRIES`. `add_shortcuts` takes `ShortcutSource`s so the
+    custom shortcut ends there too. Checked on screen 2026-10-13.

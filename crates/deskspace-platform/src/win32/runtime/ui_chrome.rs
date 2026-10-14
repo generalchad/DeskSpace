@@ -2,6 +2,8 @@
 //! menus, dark mode, the settings window, the tray tooltip, and quitting.
 
 use super::*;
+use crate::input::ShellItem;
+use crate::ui::CustomShortcut;
 
 impl Ui {
     /// Opens DeskSpace's color picker and returns the chosen color. Blocks in a
@@ -19,6 +21,39 @@ impl Ui {
         // SAFETY: `owner` is a live window owned by this thread, and the picker
         // is modal for the duration of the call.
         unsafe { crate::win32::color_picker::pick(owner, initial, dark) }
+    }
+
+    /// Opens the installed-apps picker titled `title` and returns the apps the
+    /// user checked, or an empty list when they cancelled. Blocks in a modal
+    /// loop; other events are queued meanwhile.
+    pub fn pick_apps(&mut self, title: &str) -> Vec<ShellItem> {
+        let Some((owner, dark)) = with_runtime(|runtime| {
+            (
+                runtime.settings.unwrap_or(runtime.controller),
+                runtime.ui_dark,
+            )
+        }) else {
+            return Vec::new();
+        };
+        // SAFETY: `owner` is a live window owned by this thread, and the
+        // picker is modal for the duration of the call.
+        unsafe { crate::win32::app_picker::pick_apps(owner, title, dark) }
+    }
+
+    /// Opens the "Custom shortcut" dialog titled `title` and returns the
+    /// shortcut the user described, or `None` when they cancelled. A path
+    /// target is already resolved to something that exists. Blocks in a modal
+    /// loop; other events are queued meanwhile.
+    pub fn custom_shortcut(&mut self, title: &str) -> Option<CustomShortcut> {
+        let (owner, dark) = with_runtime(|runtime| {
+            (
+                runtime.settings.unwrap_or(runtime.controller),
+                runtime.ui_dark,
+            )
+        })?;
+        // SAFETY: `owner` is a live window owned by this thread, and the
+        // dialog is modal for the duration of the call.
+        unsafe { crate::win32::shortcut_dialog::custom_shortcut(owner, title, dark) }
     }
 
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen

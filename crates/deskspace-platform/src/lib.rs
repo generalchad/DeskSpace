@@ -16,9 +16,9 @@ pub use render::{
     item_check_box, item_check_box_hit,
 };
 pub use ui::{
-    CursorShape, Field, FieldKind, FieldValue, MenuEntry, SettingsButton, SettingsForm,
-    SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope,
-    SettingsSwitch, SliderMark,
+    CursorShape, CustomShortcut, Field, FieldKind, FieldValue, MenuEntry, SettingsButton,
+    SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage,
+    SettingsScope, SettingsSwitch, ShortcutTarget, SliderMark,
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;
@@ -38,7 +38,7 @@ pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
-pub use win32::shortcuts::create_shortcut;
+pub use win32::shortcuts::{create_custom_shortcut, create_shortcut};
 pub use win32::system::{
     cursor_pos, drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,

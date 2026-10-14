@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, SpaceId};
-use deskspace_platform::{ShellItem, Ui, create_shortcut, desktop_directory, notify_moved};
+use deskspace_platform::{
+    CustomShortcut, ShellItem, Ui, create_custom_shortcut, create_shortcut, desktop_directory,
+    notify_moved,
+};
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 
@@ -60,29 +63,31 @@ impl App {
         self.save();
     }
 
-    /// Creates a shortcut in the store for each shell item dropped on a space
-    /// (a Start-menu or taskbar app, or an Alt-drag; F-50) and lists it in
-    /// `target`. Explorer writes a `.lnk` when such an item is dropped on a
-    /// folder, and the store is the space's folder, so the shortcut moves,
-    /// opens, and releases like any other item. A dropped shortcut file is
-    /// copied instead, as Explorer does, so no shortcut points at a shortcut;
-    /// the original is never moved or deleted.
+    /// Creates a shortcut in the store for each source and lists it in
+    /// `target`: shell items dropped on a space (a Start-menu or taskbar app,
+    /// or an Alt-drag; F-50), apps picked from the Applications folder, and
+    /// custom shortcuts (F-53). Explorer writes a `.lnk` when a shell item is
+    /// dropped on a folder, and the store is the space's folder, so the
+    /// shortcut moves, opens, and deletes like any other item. A dropped
+    /// shortcut file is copied instead, as Explorer does, so no shortcut
+    /// points at a shortcut; the original is never moved or deleted. Every
+    /// way of adding a shortcut ends here.
     pub(super) fn add_shortcuts(
         &mut self,
         ui: &mut Ui,
         target: SpaceId,
         at: Point,
-        items: Vec<ShellItem>,
+        sources: Vec<ShortcutSource>,
     ) {
         let root = self.storage.root();
         if let Err(error) = std::fs::create_dir_all(root) {
             tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
             return;
         }
-        for item in items {
-            match self.write_shortcut(&item) {
+        for source in sources {
+            match self.write_shortcut(&source) {
                 Ok(path) => {
-                    tracing::info!(name = %item.name, path = %path.display(), "created a shortcut in the store");
+                    tracing::info!(name = source.name(), path = %path.display(), "created a shortcut in the store");
                     self.dispatch(
                         Command::AddItem {
                             space: target,
@@ -92,26 +97,40 @@ impl App {
                     );
                 }
                 Err(error) => {
-                    tracing::warn!(%error, name = %item.name, "could not create a shortcut");
+                    tracing::warn!(%error, name = source.name(), "could not create a shortcut");
                 }
             }
         }
         self.refresh_space(ui, target);
+        self.refresh_tray(ui);
         self.save();
+        self.refresh_settings(ui);
     }
 
-    /// Writes one dropped item's shortcut into the store under a clash-free
-    /// name and returns its path: a copy of a dropped shortcut file, or a new
-    /// `.lnk` to anything else.
-    fn write_shortcut(&self, item: &ShellItem) -> anyhow::Result<PathBuf> {
-        if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
-            let path = self.storage.unique_path(&link_copy_name(link, &item.name));
-            std::fs::copy(link, &path)?;
-            return Ok(path);
+    /// Writes one shortcut into the store under a clash-free name and returns
+    /// its path: a copy of a dropped shortcut file, a new `.lnk` to a shell
+    /// item, or the `.lnk` or `.url` a custom shortcut describes.
+    fn write_shortcut(&self, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
+        match source {
+            ShortcutSource::Shell(item) => {
+                if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
+                    let path = self.storage.unique_path(&link_copy_name(link, &item.name));
+                    std::fs::copy(link, &path)?;
+                    return Ok(path);
+                }
+                let path = self
+                    .storage
+                    .unique_path(&shortcut_file_name(&item.name, "lnk"));
+                create_shortcut(item, &path)?;
+                Ok(path)
+            }
+            ShortcutSource::Custom(shortcut) => {
+                let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
+                let path = self.storage.unique_path(&name);
+                create_custom_shortcut(shortcut, &path)?;
+                Ok(path)
+            }
         }
-        let path = self.storage.unique_path(&shortcut_file_name(&item.name));
-        create_shortcut(item, &path)?;
-        Ok(path)
     }
 
     /// Re-reads the shell's loose desktop items and reconciles the layer. Used
@@ -348,14 +367,14 @@ fn is_link_file(path: &Path) -> bool {
 fn link_copy_name(link: &Path, display: &str) -> String {
     link.file_name()
         .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| shortcut_file_name(display))
+        .unwrap_or_else(|| shortcut_file_name(display, "lnk"))
 }
 
-/// A `.lnk` file name for a shell item's display name (F-50). Characters that
-/// are illegal in a Windows file name become `_`, trailing dots and spaces are
-/// trimmed (Windows ignores them), and an empty result falls back to
-/// "Shortcut", as Explorer does.
-fn shortcut_file_name(display: &str) -> String {
+/// A shortcut file name with `extension` (`lnk` or `url`) for a display name
+/// (F-50, F-53). Characters that are illegal in a Windows file name become
+/// `_`, trailing dots and spaces are trimmed (Windows ignores them), and an
+/// empty result falls back to "Shortcut", as Explorer does.
+fn shortcut_file_name(display: &str, extension: &str) -> String {
     let mut name: String = display
         .chars()
         .map(|c| match c {
@@ -370,8 +389,28 @@ fn shortcut_file_name(display: &str) -> String {
     if name.is_empty() {
         name.push_str("Shortcut");
     }
-    name.push_str(".lnk");
+    name.push('.');
+    name.push_str(extension);
     name
+}
+
+/// Something a shortcut is made from; see `App::add_shortcuts`.
+#[derive(Debug, Clone)]
+pub(super) enum ShortcutSource {
+    /// A dropped or picked shell item.
+    Shell(ShellItem),
+    /// A shortcut described in the "Custom shortcut" dialog.
+    Custom(CustomShortcut),
+}
+
+impl ShortcutSource {
+    /// The name the shortcut is listed under, for logging.
+    fn name(&self) -> &str {
+        match self {
+            Self::Shell(item) => &item.name,
+            Self::Custom(shortcut) => &shortcut.name,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -380,15 +419,20 @@ mod tests {
 
     #[test]
     fn shortcut_names_make_illegal_characters_safe() {
-        assert_eq!(shortcut_file_name("Minesweeper"), "Minesweeper.lnk");
-        assert_eq!(shortcut_file_name("A/B:C?D"), "A_B_C_D.lnk");
+        assert_eq!(shortcut_file_name("Minesweeper", "lnk"), "Minesweeper.lnk");
+        assert_eq!(shortcut_file_name("A/B:C?D", "lnk"), "A_B_C_D.lnk");
     }
 
     #[test]
     fn shortcut_names_trim_trailing_dots_and_fall_back_when_empty() {
-        assert_eq!(shortcut_file_name("Report..."), "Report.lnk");
-        assert_eq!(shortcut_file_name("   "), "Shortcut.lnk");
-        assert_eq!(shortcut_file_name(""), "Shortcut.lnk");
+        assert_eq!(shortcut_file_name("Report...", "lnk"), "Report.lnk");
+        assert_eq!(shortcut_file_name("   ", "lnk"), "Shortcut.lnk");
+        assert_eq!(shortcut_file_name("", "lnk"), "Shortcut.lnk");
+    }
+
+    #[test]
+    fn a_web_shortcut_name_takes_the_url_extension() {
+        assert_eq!(shortcut_file_name("example.com", "url"), "example.com.url");
     }
 
     #[test]

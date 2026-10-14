@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (331 tests) are green. Update this count whenever a
+  `cargo test --workspace` (340 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release) and v0.2.1 (update checking),
   each as an NSIS installer and a portable zip on GitHub Releases (section 10,
@@ -60,7 +60,9 @@ context menus, and a settings window in the first usable release (v0.2).
 - Desktop takeover (Explorer's icons hidden, the loose items drawn on
   DeskSpace's own layer) is built and opt-in (section 6; ROADMAP D7, D8).
 - Dragging an app from the Start menu onto a space makes a shortcut
-  (`TASKS.md` L2); it awaits an on-screen check (section V).
+  (`TASKS.md` L2); it awaits an on-screen check (section V). The space
+  menu's "New shortcut ▸" picks installed apps or takes a custom target
+  (F-53); both dialogs were checked on screen on 2026-10-13.
 - Verification: many behaviors are covered by unit tests but not confirmed on
   screen; `TASKS.md` section V lists them. Confirm one before building on it.
   Checked on screen so far: the blur, corners, space content, and settings
@@ -461,7 +463,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode` |
+| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `shortcut_dialog` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -507,8 +509,8 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
-41-44; next free 13, or 45 for a new group; 9, the removed "Remove from
-space", stays unused); item-menu app ids must stay below
+41-46; next free 13, or 47; 9, the removed "Remove from space", stays
+unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
 Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
 26 were freed by the removed placement setting and stay unused).
@@ -984,6 +986,19 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   `UiColors.accent`, not the Windows accent. Static labels are never disabled (Windows
   embosses disabled static text); disabled fields grey them through
   `WM_CTLCOLORSTATIC`. The spaces follow their own `mode` setting.
+- DeskSpace's own modal dialogs (`win32/dialog.rs`: the frame, fonts,
+  colors, control helper, and modal pump) are the installed-apps picker
+  (`win32/app_picker.rs`, `Ui::pick_apps`) and the custom shortcut dialog
+  (`win32/shortcut_dialog.rs`, `Ui::custom_shortcut`). Like the color picker
+  they are owned by the settings window when it is open, else the
+  controller, disable their owner, and pump every message while open
+  (`IsDialogMessageW` gives them Tab, Enter, and Escape). The picker
+  enumerates `FOLDERID_AppsFolder` (`BHID_EnumItems`) into a report-view list
+  view with check boxes and renders each icon lazily on `LVN_GETDISPINFOW`
+  (`icons::shell_item_icon`). Picked apps become `ShellItem`s through
+  `shortcuts::shell_item`, the function drops use; the dialog's result is a
+  `CustomShortcut` (`ui.rs`; `ShortcutTarget::parse` reads typed text),
+  written by `shortcuts::create_custom_shortcut`.
 - The app embeds the common-controls v6 manifest dependency via
   `crates/deskspace-app/build.rs`.
 
@@ -1135,7 +1150,7 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   (Enter commits, Escape cancels, clicking away commits).
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Roll up/down,
   Rename, Lock position, Fit to contents (resized, unlocked spaces only);
-  Appearance ▸, Sort by ▸; Delete space (asks first unless the space is
+  New shortcut ▸, Appearance ▸, Sort by ▸; Delete space (asks first unless the space is
   empty); New space; Settings…, Hide/Show spaces, Exit DeskSpace.
 - The space menu's Appearance submenu sets a tint-opacity preset (100/80/60/
   40/20 %), an icon size (Small 75, Medium 100, Large 150, Extra large 200 %),
@@ -1146,6 +1161,17 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   by reorders items by name (A–Z or Z–A), type, size (smallest or largest),
   or date (oldest or newest). All three submenus are built from tables in
   `app.rs` (`OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `SORT_PRESETS`).
+- The space menu's New shortcut submenu (F-53; `NEW_SHORTCUT_ENTRIES` in
+  `app.rs`, also enabled for a locked space) offers "From installed
+  apps…", a picker listing every app in the Applications folder (Store apps
+  included) with a check box per row and a search box, and "Custom
+  shortcut…", a dialog for a target (file, folder, program, or web address,
+  with Browse…), optional arguments, and a name that follows the target until
+  edited. A typed path is resolved as the Run dialog does (`%VARIABLES%`, a
+  bare program name on the search path), and a target that does not exist is
+  reported in the dialog. A web address becomes a `.url`; everything else a
+  `.lnk`. Both end in `App::add_shortcuts`, which writes into the space
+  storage and lists the shortcuts at the end of the space.
 - In Settings, pick Global or a space in the left pane. Global edits apply to
   every space that is not customized. A space's pages are greyed, showing the
   global values, until "Customize this space" is ticked; its edits then apply

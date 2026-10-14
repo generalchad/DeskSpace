@@ -96,8 +96,11 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   icon size (when the item preset is "Custom"; "Match Explorer's display"
   follows the desktop's own icon size).
 - Double-click a space title bar to roll it up or down. Right-click a space for
-  roll up, rename, lock, fit to contents, appearance, sort, delete, new space,
-  settings, hide/show spaces, and exit.
+  roll up, rename, lock, fit to contents, new shortcut, appearance, sort,
+  delete, new space, settings, hide/show spaces, and exit. "New shortcut"
+  either lists your installed apps (Store apps included) to tick and add, or
+  opens "Custom shortcut…" to type or browse to any file, folder, program, or
+  web address.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the

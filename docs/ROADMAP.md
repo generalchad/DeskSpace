@@ -239,14 +239,17 @@ A native, lightweight, offline Windows desktop organizer that:
   are in); undo remains. Non-file shell drags (F-50), including Start-menu
   apps, become shortcuts; the Start-menu drop awaits an on-screen check.
 - *M3:* the tray, menus, and settings window work, with all nine pages.
-  What remains is the "Add" menu (F-53..F-55), desktop verbs (F-52), and
-  entries that depend on later milestones or on design.
+  The space menu's "New shortcut ▸" is in (F-53). What remains is the
+  settings Shortcuts page (F-53), Paste shortcut and Files… (F-54, F-55),
+  desktop verbs (F-52), and entries that depend on later milestones or on
+  design.
 
 **Next, in order:**
 
-1. **Adding items to spaces** (`TASKS.md` section L): make Start-menu and
-   taskbar drags create shortcuts (F-50), then "Add ▸ Apps…" (F-53) and
-   "Paste shortcut" (F-54), and "Add ▸ Files…" once decided (F-55).
+1. **Adding items to spaces** (`TASKS.md` section L): Start-menu and
+   taskbar drags create shortcuts (F-50) and "New shortcut ▸" is in (F-53);
+   next the settings Shortcuts page (L7), "Paste shortcut" (F-54), and
+   "Files…" once decided (F-55).
 2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
    built-but-unchecked behaviors before more work builds on them.
 3. **Release dry run on clean machines** (R12) and **code signing** (R10),
@@ -432,11 +435,16 @@ Done:
   dialog (`TASKS.md` F14; check pending).
 
 Remaining:
-1. An "Add" submenu on the space menu, so items can be added without a drag
-   (`TASKS.md` L3-L6), every entry ending in the F-50 shortcut path:
-   - "Apps…": a picker over the Applications folder, which lists every
-     installed app, Store apps included (F-53);
-   - "Paste shortcut", as in Explorer (F-54);
+1. Ways to add items without a drag (`TASKS.md` section L), every shortcut
+   ending in the F-50 shortcut path (`App::add_shortcuts`):
+   - **[done]** "New shortcut ▸" on the space menu: "From installed apps…",
+     a DeskSpace list over the Applications folder with check boxes and
+     search (Store apps included), and "Custom shortcut…", a target,
+     arguments, and name dialog (F-53);
+   - a per-space Shortcuts page in the settings window: a preview of the
+     space whose items each carry an X (delete, after a confirmation), and a
+     + tile that offers the same New shortcut choices (F-53, L7);
+   - "Paste shortcut", as in Explorer, in the New shortcut submenu (F-54);
    - "Files…", once it is decided whether a picked file moves, stays in
      place, or becomes a shortcut (F-55).
 2. Tray and menu entries:
@@ -737,7 +745,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Built: shell-item, link-only, and Alt drags become a `.lnk` in the space storage, and a dropped shortcut file is copied (`drop_target.rs` `drop_plan`, `App::add_shortcuts`); awaits the on-screen check (`TASKS.md` section V, L1 findings) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
 | F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
-| F-53 | "Add ▸ Apps…": pick installed apps (Store apps included) to add as shortcuts | M3 | Open (`TASKS.md` L3-L4) |
+| F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done in the space menu (checked on screen 2026-10-13: both dialogs); the settings window's per-space Shortcuts page is open (`TASKS.md` L7) |
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Open (`TASKS.md` L5) |
 | F-55 | "Add ▸ Files…": pick files to add to a space | M3 | Open; needs a decision on move vs keep vs shortcut (`TASKS.md` L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
@@ -779,7 +787,8 @@ Every other question raised so far is answered by a decision in section 2
 - **Undocumented drag sources.** What the Start menu and the taskbar put in a
   drag (formats and allowed effects) is not documented and may change between
   Windows builds. Mitigation: decide a drop by the allowed effects rather than
-  by format (`TASKS.md` L2), and offer a non-drag path ("Add ▸ Apps…", F-53).
+  by format (`TASKS.md` L2), and offer a non-drag path ("New shortcut ▸ From
+  installed apps…", F-53).
 - **Scope.** The parity checklist covers a lot of ground. The milestone gates
   exist to keep each release shippable.
 

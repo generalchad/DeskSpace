@@ -162,10 +162,19 @@ fn load_classic_icon(path: &Path) -> Option<Icon> {
 
 fn load_base_icon(path: &Path, size: u32) -> Option<Icon> {
     let wide = wide(&path.to_string_lossy());
-    // SAFETY: `wide` is NUL-terminated and outlives the parse; the image
-    // factory and its bitmap are released below, after the pixels are copied.
+    // SAFETY: `wide` is NUL-terminated and outlives the parse.
+    let item: IShellItem =
+        unsafe { SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None) }.ok()?;
+    shell_item_icon(&item, size)
+}
+
+/// Renders a shell item's icon `size` pixels square with the shell's image
+/// factory, without overlays. Works for virtual items with no path, such as
+/// apps in the Applications folder.
+pub(crate) fn shell_item_icon(item: &IShellItem, size: u32) -> Option<Icon> {
+    // SAFETY: `item` is live; the image factory and its bitmap are released
+    // below, after the pixels are copied.
     unsafe {
-        let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None).ok()?;
         let factory: IShellItemImageFactory = item.cast().ok()?;
         let bitmap: HBITMAP = factory
             .GetImage(

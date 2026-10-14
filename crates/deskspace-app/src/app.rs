@@ -118,7 +118,33 @@ mod menu {
     pub const SORT_SIZE_DESC: u32 = 34;
     pub const SORT_DATE_ASC: u32 = 35;
     pub const SORT_DATE_DESC: u32 = 36;
+    pub const NEW_SHORTCUT_APPS: u32 = 45;
+    pub const NEW_SHORTCUT_CUSTOM: u32 = 46;
 }
+
+/// A way to make a new shortcut in a space (F-53).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NewShortcut {
+    /// Pick apps from the Applications folder.
+    Apps,
+    /// Describe the target by hand.
+    Custom,
+}
+
+/// The "New shortcut" submenu: menu id, label, and what it makes. Shared by
+/// the space menu and the settings window's Shortcuts page.
+const NEW_SHORTCUT_ENTRIES: [(u32, &str, NewShortcut); 2] = [
+    (
+        menu::NEW_SHORTCUT_APPS,
+        "From installed apps\u{2026}",
+        NewShortcut::Apps,
+    ),
+    (
+        menu::NEW_SHORTCUT_CUSTOM,
+        "Custom shortcut\u{2026}",
+        NewShortcut::Custom,
+    ),
+];
 
 /// The tint-opacity presets the Appearance submenu offers: menu id, label, and
 /// the space's tint opacity in percent. Drives both the submenu and how a
@@ -689,6 +715,7 @@ mod tests {
         ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));
         ids.extend(ICON_SIZE_PRESETS.iter().map(|(id, ..)| *id));
         ids.extend(SORT_PRESETS.iter().map(|(id, ..)| *id));
+        ids.extend(NEW_SHORTCUT_ENTRIES.iter().map(|(id, ..)| *id));
         let mut unique = ids.clone();
         unique.sort_unstable();
         unique.dedup();

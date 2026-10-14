@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use windows::Win32::Foundation::{GlobalFree, HWND, POINT, POINTL};
 use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree, DATADIR_GET, DVASPECT_CONTENT,
-    FORMATETC, IDataObject, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+    CLSCTX_INPROC_SERVER, CoCreateInstance, DATADIR_GET, DVASPECT_CONTENT, FORMATETC, IDataObject,
+    STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
 };
 use windows::Win32::System::DataExchange::{GetClipboardFormatNameW, RegisterClipboardFormatW};
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
@@ -32,9 +32,7 @@ use windows::Win32::System::Ole::{
 use windows::Win32::System::SystemServices::{MK_SHIFT, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Shell::{
     CLSID_DragDropHelper, DROPDESCRIPTION, DROPIMAGE_NOIMAGE, DROPIMAGETYPE, DragQueryFileW, HDROP,
-    IDropTargetHelper, ILGetSize, IShellItem, IShellItemArray,
-    SHCreateShellItemArrayFromDataObject, SHGetIDListFromObject, SIGDN, SIGDN_FILESYSPATH,
-    SIGDN_NORMALDISPLAY,
+    IDropTargetHelper, IShellItemArray, SHCreateShellItemArrayFromDataObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetParent;
 use windows::core::{PCWSTR, Ref, Result as WinResult};
@@ -42,6 +40,7 @@ use windows::core::{PCWSTR, Ref, Result as WinResult};
 use crate::error::PlatformError;
 use crate::input::{Event, ShellItem, SpaceEvent};
 use crate::win32::runtime;
+use crate::win32::shortcuts::shell_item;
 use crate::win32::system::wide;
 
 /// Clipboard format naming the effect a drag source would like the target to
@@ -515,38 +514,6 @@ fn shell_items(data: &IDataObject) -> Option<Vec<ShellItem>> {
         }
     }
     (!items.is_empty()).then_some(items)
-}
-
-/// One `ShellItem` from a live shell item, or `None` when its ID list cannot be
-/// read.
-fn shell_item(item: &IShellItem) -> Option<ShellItem> {
-    // SAFETY: the ID list is copied before it is freed with the shell
-    // allocator the API documents.
-    let id_list = unsafe {
-        let pidl = SHGetIDListFromObject(item).ok()?;
-        let size = ILGetSize(Some(pidl)) as usize;
-        let id_list = std::slice::from_raw_parts(pidl.cast::<u8>(), size).to_vec();
-        CoTaskMemFree(Some(pidl.cast::<core::ffi::c_void>()));
-        id_list
-    };
-    Some(ShellItem {
-        name: display_name(item, SIGDN_NORMALDISPLAY).unwrap_or_default(),
-        path: display_name(item, SIGDN_FILESYSPATH).map(PathBuf::from),
-        id_list,
-    })
-}
-
-/// A shell item's name in the `form` asked for, or `None` when the shell
-/// cannot give one (`SIGDN_FILESYSPATH` fails for a virtual item).
-fn display_name(item: &IShellItem, form: SIGDN) -> Option<String> {
-    // SAFETY: the returned string is copied before it is freed with the shell
-    // allocator the API documents.
-    unsafe {
-        let name = item.GetDisplayName(form).ok()?;
-        let text = name.to_string().ok();
-        CoTaskMemFree(Some(name.0 as *const core::ffi::c_void));
-        text
-    }
 }
 
 /// Logs the formats a data object offers, so a drag source's behavior can be

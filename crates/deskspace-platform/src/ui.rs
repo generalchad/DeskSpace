@@ -19,6 +19,90 @@ pub enum CursorShape {
     SizeNorthEastSouthWest,
 }
 
+/// What a custom shortcut opens (the "Custom shortcut" dialog, F-53).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShortcutTarget {
+    /// A file, folder, or program; written as a `.lnk`.
+    Path(std::path::PathBuf),
+    /// A web address or other URL (`https:`, `mailto:`, `steam:`, ...);
+    /// written as a `.url` Internet shortcut.
+    Url(String),
+}
+
+/// A shortcut described by hand: the target, its command-line arguments
+/// (ignored for a URL), and the name it is listed under.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomShortcut {
+    pub target: ShortcutTarget,
+    pub arguments: String,
+    pub name: String,
+}
+
+impl ShortcutTarget {
+    /// Reads what the user typed as a target: a URL when it starts with a
+    /// scheme (two or more letters, so `C:` stays a drive) or with `www.`,
+    /// otherwise a path, still unresolved. Surrounding quotes and spaces are
+    /// dropped. `None` for empty text.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim().trim_matches('"').trim();
+        if text.is_empty() {
+            return None;
+        }
+        if has_url_scheme(text) {
+            return Some(Self::Url(text.to_string()));
+        }
+        if text.len() > 4 && text[..4].eq_ignore_ascii_case("www.") {
+            return Some(Self::Url(format!("https://{text}")));
+        }
+        Some(Self::Path(std::path::PathBuf::from(text)))
+    }
+
+    /// The name a shortcut to this target gets unless the user types one:
+    /// a path's file stem (a folder's or drive's own name), or a URL's host.
+    pub fn suggested_name(&self) -> String {
+        match self {
+            Self::Path(path) => path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().trim_end_matches('\\').to_string()),
+            Self::Url(url) => {
+                let rest = match url.split_once("://") {
+                    Some((_, rest)) => rest,
+                    None => url.split_once(':').map_or(url.as_str(), |(_, rest)| rest),
+                };
+                let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+                let host = host.trim_start_matches("www.");
+                if host.is_empty() {
+                    url.clone()
+                } else {
+                    host.to_string()
+                }
+            }
+        }
+    }
+
+    /// The shortcut file's extension: `url` for a URL, else `lnk`.
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::Path(_) => "lnk",
+            Self::Url(_) => "url",
+        }
+    }
+}
+
+/// Whether `text` starts with a URL scheme (RFC 3986 section 3.1: a letter,
+/// then letters, digits, `+`, `-`, or `.`, then `:`). One letter is a drive.
+fn has_url_scheme(text: &str) -> bool {
+    let Some((scheme, _)) = text.split_once(':') else {
+        return false;
+    };
+    scheme.len() >= 2
+        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuEntry {
     Item {
@@ -505,6 +589,54 @@ mod tests {
             submenu.enabled(false),
             MenuEntry::Submenu { enabled: false, .. }
         ));
+    }
+
+    #[test]
+    fn typed_targets_are_urls_or_paths() {
+        use std::path::PathBuf;
+        assert_eq!(ShortcutTarget::parse("   "), None);
+        assert_eq!(
+            ShortcutTarget::parse("https://example.com/a"),
+            Some(ShortcutTarget::Url("https://example.com/a".into()))
+        );
+        assert_eq!(
+            ShortcutTarget::parse("www.example.com"),
+            Some(ShortcutTarget::Url("https://www.example.com".into()))
+        );
+        assert_eq!(
+            ShortcutTarget::parse("mailto:me@example.com"),
+            Some(ShortcutTarget::Url("mailto:me@example.com".into()))
+        );
+        // A drive letter is not a scheme, and quotes are dropped.
+        assert_eq!(
+            ShortcutTarget::parse("\"C:\\Tools\\app.exe\""),
+            Some(ShortcutTarget::Path(PathBuf::from(r"C:\Tools\app.exe")))
+        );
+        assert_eq!(
+            ShortcutTarget::parse("notepad"),
+            Some(ShortcutTarget::Path(PathBuf::from("notepad")))
+        );
+    }
+
+    #[test]
+    fn suggested_names_come_from_the_stem_or_the_host() {
+        use std::path::PathBuf;
+        let name = |target: ShortcutTarget| target.suggested_name();
+        assert_eq!(
+            name(ShortcutTarget::Path(PathBuf::from(r"C:\Tools\app.exe"))),
+            "app"
+        );
+        assert_eq!(name(ShortcutTarget::Path(PathBuf::from(r"D:\"))), "D:");
+        assert_eq!(
+            name(ShortcutTarget::Url("https://www.example.com/x?y".into())),
+            "example.com"
+        );
+        assert_eq!(
+            name(ShortcutTarget::Url("mailto:me@example.com".into())),
+            "me@example.com"
+        );
+        assert_eq!(ShortcutTarget::Url("a:".into()).extension(), "url");
+        assert_eq!(ShortcutTarget::Path(PathBuf::new()).extension(), "lnk");
     }
 
     #[test]

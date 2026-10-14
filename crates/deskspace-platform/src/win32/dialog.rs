@@ -1,0 +1,297 @@
+//! Shared plumbing for DeskSpace's own modal dialogs (the installed-apps
+//! picker and the custom shortcut dialog): the themed frame, fonts, colors,
+//! control creation, and the modal message pump.
+//!
+//! A dialog is an ordinary top-level window built from standard controls, so
+//! it follows the dark/light setting the way the settings window does
+//! (`dark_mode`). Each dialog owns its state; the window points at it through
+//! `GWLP_USERDATA` only while it exists.
+
+use deskspace_core::geometry::Point;
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontIndirectW, CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor,
+    SetTextColor,
+};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DestroyWindow, DispatchMessageW, EnumChildWindows, GetClassNameW,
+    GetCursorPos, GetMessageW, GetWindowTextLengthW, GetWindowTextW, HMENU, IsDialogMessageW,
+    IsWindow, MSG, PostQuitMessage, SW_SHOW, SendMessageW, SetForegroundWindow, ShowWindow,
+    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX,
+    WM_SETFONT, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_EX_DLGMODALFRAME,
+    WS_POPUP, WS_SYSMENU, WS_VISIBLE,
+};
+use windows::core::{BOOL, PCWSTR};
+
+use crate::win32::dark_mode::{self, ControlTheme, UiColors};
+use crate::win32::settings_window::colorref;
+use crate::win32::system::{message_logfont, wide, work_area_at};
+
+/// The dialog-manager ids `IsDialogMessageW` sends for Enter and Escape, so
+/// the dialogs give their OK and Cancel buttons these ids.
+/// https://learn.microsoft.com/en-us/windows/win32/dlgbox/dialog-box-programming-considerations
+pub(crate) const ID_OK: usize = 1;
+pub(crate) const ID_CANCEL: usize = 2;
+
+/// The font, colors, and brushes one dialog paints with, at its DPI.
+pub(crate) struct DialogChrome {
+    pub dpi: u32,
+    pub font: HFONT,
+    pub colors: UiColors,
+    /// The dialog body.
+    pub body_brush: HBRUSH,
+    /// Editable fields in dark mode (the settings window's field color).
+    pub field_brush: HBRUSH,
+}
+
+impl DialogChrome {
+    pub(crate) fn new(dpi: u32, dark: bool) -> Self {
+        let colors = UiColors::new(dark);
+        // SAFETY: plain GDI object creation; the objects are owned by the
+        // chrome and deleted in `Drop`.
+        unsafe {
+            Self {
+                dpi,
+                font: CreateFontIndirectW(&message_logfont(dpi)),
+                colors,
+                body_brush: CreateSolidBrush(colorref(colors.body)),
+                field_brush: CreateSolidBrush(colorref(colors.command_bar)),
+            }
+        }
+    }
+
+    /// Converts 96-DPI layout units to pixels at the dialog's DPI.
+    pub(crate) fn s(&self, value: i32) -> i32 {
+        (value as i64 * self.dpi as i64 / 96) as i32
+    }
+
+    /// Answers a `WM_CTLCOLOR*` message: labels and buttons sit on the body,
+    /// and in dark mode edits and lists use the darker field color. Light
+    /// edits keep the system colors (`None`, so the caller defers to
+    /// `DefWindowProcW`).
+    pub(crate) fn control_color(&self, message: u32, wparam: WPARAM) -> Option<LRESULT> {
+        let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
+        if editable && !self.colors.dark {
+            return None;
+        }
+        let (background, brush) = if editable {
+            (self.colors.command_bar, self.field_brush)
+        } else {
+            (self.colors.body, self.body_brush)
+        };
+        let dc = HDC(wparam.0 as *mut core::ffi::c_void);
+        // SAFETY: `dc` is the control's DC for the duration of the message.
+        unsafe {
+            SetTextColor(dc, colorref(self.colors.text));
+            SetBkColor(dc, colorref(background));
+        }
+        Some(LRESULT(brush.0 as isize))
+    }
+}
+
+impl Drop for DialogChrome {
+    fn drop(&mut self) {
+        // SAFETY: the objects are owned here, and the dialog's controls are
+        // destroyed before its state (and so the chrome) is dropped.
+        unsafe {
+            let _ = DeleteObject(HGDIOBJ(self.font.0));
+            let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
+            let _ = DeleteObject(HGDIOBJ(self.field_brush.0));
+        }
+    }
+}
+
+/// The module instance, for window creation.
+pub(crate) fn instance() -> Option<HINSTANCE> {
+    // SAFETY: querying our own module handle.
+    unsafe {
+        GetModuleHandleW(None)
+            .ok()
+            .map(|module| HINSTANCE(module.0))
+    }
+}
+
+/// The DPI of `window`'s monitor (96 when it cannot be read).
+pub(crate) fn dpi_of(window: HWND) -> u32 {
+    // SAFETY: `window` is a live window.
+    let dpi = unsafe { GetDpiForWindow(window) };
+    if dpi == 0 { 96 } else { dpi }
+}
+
+/// Creates a dialog frame of class `class` owned by `owner`, with a client
+/// area of `client` pixels, centered on the monitor under the pointer. `state`
+/// is handed to `WM_NCCREATE` in `CREATESTRUCTW::lpCreateParams`. The window
+/// is created hidden; `show` makes it visible once its controls exist.
+pub(crate) unsafe fn create_frame(
+    class: PCWSTR,
+    title: &str,
+    owner: HWND,
+    client: (i32, i32),
+    dpi: u32,
+    state: *const core::ffi::c_void,
+) -> Option<HWND> {
+    let style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN;
+    let ex_style = WS_EX_CONTROLPARENT | WS_EX_DLGMODALFRAME;
+    let mut frame = RECT {
+        left: 0,
+        top: 0,
+        right: client.0,
+        bottom: client.1,
+    };
+    let title = wide(title);
+    // SAFETY: plain window creation on the UI thread; `title` outlives it.
+    unsafe {
+        let _ = AdjustWindowRectExForDpi(&mut frame, style, false, ex_style, dpi);
+        let (width, height) = (frame.right - frame.left, frame.bottom - frame.top);
+        let mut cursor = Default::default();
+        let _ = GetCursorPos(&mut cursor);
+        let work = work_area_at(Point::new(cursor.x, cursor.y));
+        CreateWindowExW(
+            ex_style,
+            class,
+            PCWSTR(title.as_ptr()),
+            style,
+            work.x + (work.width - width) / 2,
+            work.y + (work.height - height) / 2,
+            width,
+            height,
+            Some(owner),
+            None,
+            instance(),
+            Some(state),
+        )
+        .ok()
+    }
+}
+
+/// Themes a finished dialog for `dark` and shows it in front.
+pub(crate) unsafe fn show(dialog: HWND, dark: bool) {
+    dark_mode::set_caption_dark(dialog, dark);
+    // SAFETY: `dialog` is our live window.
+    unsafe {
+        theme_children(dialog, dark);
+        let _ = ShowWindow(dialog, SW_SHOW);
+        let _ = SetForegroundWindow(dialog);
+    }
+}
+
+/// Creates a child control of `parent` with the dialog's font.
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn control(
+    chrome: &DialogChrome,
+    parent: HWND,
+    class: PCWSTR,
+    text: &str,
+    style: u32,
+    ex_style: WINDOW_EX_STYLE,
+    bounds: (i32, i32, i32, i32),
+    id: usize,
+) -> Option<HWND> {
+    let text = wide(text);
+    // SAFETY: creating a child of our own window; `text` outlives the call.
+    unsafe {
+        let hwnd = CreateWindowExW(
+            ex_style,
+            class,
+            PCWSTR(text.as_ptr()),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(style),
+            bounds.0,
+            bounds.1,
+            bounds.2,
+            bounds.3,
+            Some(parent),
+            Some(HMENU(id as *mut core::ffi::c_void)),
+            instance(),
+            None,
+        )
+        .ok()?;
+        SendMessageW(
+            hwnd,
+            WM_SETFONT,
+            Some(WPARAM(chrome.font.0 as usize)),
+            Some(LPARAM(1)),
+        );
+        Some(hwnd)
+    }
+}
+
+/// Gives every child control the dark or light visual style for its class.
+unsafe fn theme_children(window: HWND, dark: bool) {
+    unsafe extern "system" fn visit(control: HWND, dark: LPARAM) -> BOOL {
+        let mut class = [0u16; 32];
+        // SAFETY: `control` is a live descendant being enumerated; the buffer
+        // is sized for the call.
+        let length = unsafe { GetClassNameW(control, &mut class) } as usize;
+        let theme = match String::from_utf16_lossy(&class[..length]).as_str() {
+            "Button" | "SysListView32" => Some(ControlTheme::Explorer),
+            "Edit" => Some(ControlTheme::FileDialog),
+            _ => None,
+        };
+        if let Some(theme) = theme {
+            dark_mode::theme_control(control, theme, dark.0 != 0);
+        }
+        BOOL::from(true)
+    }
+    // SAFETY: the callback only themes the enumerated controls.
+    unsafe {
+        let _ = EnumChildWindows(Some(window), Some(visit), LPARAM(dark as isize));
+    }
+}
+
+/// Runs a modal loop for `dialog` until it is destroyed, with `owner`
+/// disabled meanwhile. `IsDialogMessageW` gives the dialog Tab focus movement
+/// and turns Enter and Escape into `ID_OK` / `ID_CANCEL`. Every message is
+/// pumped, not just the dialog's: a thread that stops retrieving its other
+/// windows' messages is marked "not responding" (as in `color_picker::pick`).
+pub(crate) unsafe fn run_modal(owner: HWND, dialog: HWND) {
+    // SAFETY: both windows belong to this thread; the loop ends when the
+    // dialog is gone, and the owner is re-enabled whichever way it ends.
+    unsafe {
+        let _ = EnableWindow(owner, false);
+        let mut message = MSG::default();
+        while IsWindow(Some(dialog)).as_bool() {
+            let status = GetMessageW(&mut message, None, 0, 0);
+            if status.0 == 0 {
+                // Another window asked to quit; hand it back to the outer loop.
+                PostQuitMessage(message.wParam.0 as i32);
+                break;
+            }
+            if status.0 == -1 {
+                break;
+            }
+            if IsDialogMessageW(dialog, &message).as_bool() {
+                continue;
+            }
+            let _ = TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        let _ = EnableWindow(owner, true);
+        if IsWindow(Some(dialog)).as_bool() {
+            let _ = DestroyWindow(dialog);
+        }
+    }
+}
+
+/// A control's text.
+pub(crate) unsafe fn window_text(control: HWND) -> String {
+    // SAFETY: the buffer is sized from GetWindowTextLengthW plus the NUL.
+    unsafe {
+        let length = GetWindowTextLengthW(control).max(0) as usize;
+        let mut buffer = vec![0u16; length + 1];
+        let copied = GetWindowTextW(control, &mut buffer).max(0) as usize;
+        String::from_utf16_lossy(&buffer[..copied])
+    }
+}
+
+/// Ends a modal dialog: re-enables `owner` first, so Windows activates it
+/// rather than another app when the dialog goes, then destroys the dialog.
+pub(crate) unsafe fn close(owner: HWND, dialog: HWND) {
+    // SAFETY: both windows belong to this thread.
+    unsafe {
+        let _ = EnableWindow(owner, true);
+        let _ = DestroyWindow(dialog);
+    }
+}

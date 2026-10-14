@@ -91,7 +91,8 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
-| Shortcuts from dropped shell items | `deskspace-platform/src/win32/shortcuts.rs` |
+| Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
+| The installed-apps picker, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,shortcut_dialog,dialog}.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
@@ -202,19 +203,27 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 Today an item reaches a space by a file drag, a paste, or (F-50) a drag that
 carries shell items, which includes Start-menu and taskbar apps since L2
 (awaiting its on-screen check, section V). L1 still needs the per-source
-findings; L3-L6 add menu-driven ways to add items. Do them in order; L3-L6 do
-not depend on L1-L2.
+findings. The space menu's "New shortcut ▸" (L3-L4, archived; landed as a
+DeskSpace list window and a "New shortcut" submenu with a Custom shortcut
+dialog, decided with the maintainer) is in; L7, L5, and L6 add the rest. They
+do not depend on L1-L2.
 
-Shared code, already in place (F-50, commit `01043e8`, and L2):
+Shared code, already in place (F-50, commit `01043e8`, L2, and F-53):
 
 - `win32/drop_target.rs`: `DragKind`, `drag_kind`, `is_file_list`,
-  `DropPlan`, `drop_plan`, `shell_items`, `shell_item`, `display_name`,
-  `shell_drop_effect`, and `log_formats`.
+  `DropPlan`, `drop_plan`, `shell_items`, `shell_drop_effect`, and
+  `log_formats`.
 - `input.rs`: `ShellItem { name, path, id_list }` and
-  `SpaceEvent::ShellItemsDropped`.
-- `win32/shortcuts.rs` `create_shortcut(item, path)`; `app/files.rs`
-  `App::add_shortcuts(ui, space, at, items)` (copies a dropped `.lnk` or
-  `.url`, `is_link_file`), `shortcut_file_name`; `storage.rs`
+  `SpaceEvent::ShellItemsDropped`; `ui.rs`: `CustomShortcut`,
+  `ShortcutTarget`.
+- `win32/shortcuts.rs`: `create_shortcut(item, path)`,
+  `create_custom_shortcut`, `shell_item`, `display_name`, `resolve_path`;
+  `win32/app_picker.rs` (`Ui::pick_apps`), `win32/shortcut_dialog.rs`
+  (`Ui::custom_shortcut`), `win32/dialog.rs` (shared modal plumbing).
+- `app/files.rs` `App::add_shortcuts(ui, space, at, sources)` with
+  `ShortcutSource { Shell, Custom }` (copies a dropped `.lnk` or `.url`,
+  `is_link_file`), `shortcut_file_name`; `app/menus.rs` `new_shortcut`,
+  `new_shortcut_menu`; `app.rs` `NEW_SHORTCUT_ENTRIES`; `storage.rs`
   `ItemStore::unique_path`.
 
 Every way of adding a shortcut must end in `App::add_shortcuts`; never add a
@@ -254,86 +263,63 @@ second shortcut writer.
     sources from the check above, including the Start-menu result now.
   - Done when: the log line lands and the findings are recorded.
 
-- [ ] **L3. A picker for apps (platform).** Independent of L1-L2.
-  - New `win32/pickers.rs` (add it to the file map above and to the module
-    table in `CONTEXT.md` section 6, under Shell) with
-    `pub(crate) fn pick_apps(owner: HWND) -> Vec<ShellItem>`, exposed as
-    `Ui::pick_apps(&mut self) -> Vec<ShellItem>` in `runtime/ui_shell.rs`. An
-    empty Vec means the user cancelled.
-  - Spike first: an `IFileOpenDialog` (`FileOpenDialog` CLSID) with
-    `FOS_ALLNONSTORAGEITEMS | FOS_ALLOWMULTISELECT | FOS_NOVALIDATE`, titled
-    "Add apps", opened on the Applications folder
-    (`SHGetKnownFolderItem(&FOLDERID_AppsFolder, ..)`, then `SetFolder`), and
-    `GetResults` for the chosen items. If the dialog cannot show or return
-    Applications-folder items (try a Store app and a desktop app), **stop and
-    ask**: the fallback is a DeskSpace list window over the Applications
-    folder, which needs design.
-  - A chosen `IShellItem` becomes a `ShellItem` the way `drop_target.rs`'s
-    `shell_item` already does it: move `shell_item` and `display_name` into
-    `win32/shortcuts.rs` as `pub(crate)` and call them from both places (a
-    pure move, never a second copy).
-  - Modal rules: copy `Ui::confirm` (`runtime/ui_chrome.rs`): read the owner
-    (the settings window when open, else the controller) inside
-    `with_runtime`, release the borrow, then show the dialog. Link the
-    Microsoft Learn pages for `IFileOpenDialog` and `FILEOPENDIALOGOPTIONS`
-    beside the calls; every `unsafe` block gets a `// SAFETY:` comment.
-  - Done when: it compiles, clippy is clean, and a temporary call (removed
-    before committing) returns names and ID lists. **[needs human]**
+- [ ] **L7. A per-space Shortcuts page in the settings window (F-53).**
+  Decided with the maintainer (2026-10-13).
+  - A sixth page, listed only when a space is selected in the scopes pane
+    (never for Global), always enabled (adding and removing items is not a
+    look setting, so it ignores "Customize this space").
+  - It shows a styled preview of the space: its title bar, its tint, and
+    every item's real icon and label in grid order, scrolling when there are
+    many. Not pixel-exact (no blur, approximate spacing).
+  - Each item carries a small X in its upper-right corner. Clicking it asks
+    first, then deletes the item as the Delete key does: a stored file goes
+    to the Recycle Bin, an item listed in place is only unlisted (ROADMAP
+    D3). It commits at once, like "Fit to contents"; Cancel does not bring it
+    back.
+  - A last tile shows a +; clicking it opens the same "New shortcut ▸"
+    choices as the space menu (`NEW_SHORTCUT_ENTRIES`) at the tile.
+  - Platform: a new `FieldKind` for the preview, drawn by an owner-drawn
+    child window of the page, reporting `SettingsEvent`s for the X and the +.
 
-- [ ] **L4. "Add ▸ Apps…" in the space menu (F-53).** After L3. Follow
-  "Recipe: a new menu entry".
-  - `app.rs` `mod menu`: `ADD_APPS = 45` (it opens a new group at 45; update
-    the next-free note in `CONTEXT.md` section 6), and add it to
-    `menu_ids_are_unique`.
-  - `app/menus.rs` `show_space_menu`: an "Add" submenu right after "Fit to
-    contents", built by one small helper `space_add_menu` like
-    `space_sort_menu`. It holds "Apps…" now; L5 adds "Paste shortcut" and L6
-    "Files…". Leave it enabled for a locked space: locking fixes the
-    position, not the contents, and `Command::AddItem` accepts a locked space.
-  - The arm: `let items = ui.pick_apps();` and, when it is not empty,
-    `self.add_shortcuts(ui, id, at, items)`, with `at` the point
-    `show_space_menu` already receives.
-  - Docs: `CONTEXT.md` section 8 (the space-menu bullet), `README.md`
-    Controls, and the F-53 row in the ROADMAP feature index.
-  - Done when: tests pass. **[needs human]** check: "Add ▸ Apps…" on a space;
-    pick a Store app and two desktop apps at once; three working shortcuts
-    appear in that space, and Cancel adds nothing.
-
-- [ ] **L5. "Add ▸ Paste shortcut" (F-54).** After L4. Explorer's "Paste
-  shortcut": copy anything in Explorer, then make a shortcut to it in a space.
+- [ ] **L5. "Paste shortcut" in the New shortcut submenu (F-54).** After
+  F-53. Explorer's "Paste shortcut": copy anything in Explorer, then make a
+  shortcut to it in a space.
   - Platform: `Ui::clipboard_shell_items(&mut self) -> Vec<ShellItem>` in
     `runtime/ui_shell.rs`, implemented in `win32/clipboard.rs`:
     `OleGetClipboard`, then the same path as drops (make
     `drop_target::shell_items` `pub(crate)`, or move it beside `shell_item`
     in `shortcuts.rs`; do not copy it). Reuse the retry the clipboard file
     reader already has for a clipboard another process holds.
-  - App: `menu::PASTE_SHORTCUT = 46` in the "Add" submenu after a separator,
-    greyed when `ui.clipboard_shell_items()` is empty (read it once while
-    building the menu). The arm calls `add_shortcuts`; L2's copy-a-`.lnk`
-    rule applies because it lives there. Paste shortcut never moves or
+  - App: `menu::PASTE_SHORTCUT = 47` in the "New shortcut" submenu after a
+    separator (a row in `NEW_SHORTCUT_ENTRIES` with a new `NewShortcut`
+    variant), greyed when `ui.clipboard_shell_items()` is empty (read it once
+    while building the menu). It calls `add_shortcuts` with
+    `ShortcutSource::Shell`; L2's copy-a-`.lnk` rule applies because it lives
+    there. Paste shortcut never moves or
     deletes the clipboard's files and leaves the clipboard and any cut
     ghosting alone.
   - No key: Explorer has no default key for it, and Ctrl+V keeps meaning
     paste.
-  - Docs as in L4, and the F-54 row.
+  - Docs: `CONTEXT.md` section 8 (the New shortcut bullet), `README.md`
+    Controls, and the F-54 row.
   - Done when: tests pass. **[needs human]** check: copy a file and a folder
     in Explorer; "Paste shortcut" in a space makes two shortcuts and the
     originals stay; with nothing on the clipboard the entry is grey.
 
-- [ ] **L6. "Add ▸ Files…" (F-55).** After L4. **[needs decision]**: does a
+- [ ] **L6. "Add files…" in the space menu (F-55).** **[needs decision]**: does a
   file picked in a dialog move into the space (as a drop does, D3), stay in
   place, or become a shortcut? Recommendation: move, like a drop, because one
   rule for "add a file" is easiest to learn; but a dialog that relocates files
   may surprise users, so the maintainer decides first.
-  - Platform: `pickers::pick_files(owner) -> Vec<PathBuf>` and
-    `Ui::pick_files`, an `IFileOpenDialog` with
+  - Platform: `Ui::pick_files`, an `IFileOpenDialog` with
     `FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM`, opened on the Desktop
-    folder. One dialog cannot pick files and folders together, so folders
-    stay drag-only for now.
-  - App: `menu::ADD_FILES = 47` in the "Add" submenu; the arm calls
+    folder (copy `shortcut_dialog::browse_for_file`). One dialog cannot pick
+    files and folders together, so folders stay drag-only for now.
+  - App: `menu::ADD_FILES = 48`, an entry after "New shortcut ▸" (it adds
+    files, not shortcuts); the arm calls
     `add_dropped(ui, id, at, paths, keep_in_place)` per the decision, so it
     shares the drop path exactly.
-  - Docs as in L4, and the F-55 row.
+  - Docs: `CONTEXT.md` section 8, `README.md` Controls, and the F-55 row.
   - Done when: tests pass. **[needs human]** check: pick two files; they land
     in the space as decided, and Cancel adds nothing.
 

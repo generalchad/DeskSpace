@@ -7,6 +7,7 @@ use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
 use deskspace_platform::{CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui};
 
 use super::drag::Drag;
+use super::files::ShortcutSource;
 use super::selection::marquee_selection;
 
 use super::{
@@ -230,7 +231,8 @@ impl App {
             }
             SpaceEvent::ShellItemsDropped { x, y, items } => {
                 if let Surface::Space(space) = surface {
-                    self.add_shortcuts(ui, space, Point::new(x, y), items);
+                    let sources = items.into_iter().map(ShortcutSource::Shell).collect();
+                    self.add_shortcuts(ui, space, Point::new(x, y), sources);
                 }
             }
             SpaceEvent::DpiChanged { .. } => {
