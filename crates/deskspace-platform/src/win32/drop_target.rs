@@ -56,7 +56,7 @@ const PERFORMED_DROP_EFFECT: &str = "Performed DropEffect";
 
 /// What the drag currently over the window carries, remembered from
 /// `DragEnter` because `DragOver` gets no data object.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragKind {
     /// Nothing a space accepts.
     None,
@@ -87,9 +87,14 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // is borrowed only for the duration of the call.
         let allowed = unsafe { *effect };
         let kind = drag_kind(data.as_ref());
-        if kind == DragKind::None
-            && let Some(data) = data.as_ref()
-        {
+        tracing::debug!(
+            space = self.id,
+            allowed = allowed.0,
+            keys = keys.0,
+            ?kind,
+            "drag entered space"
+        );
+        if let Some(data) = data.as_ref() {
             log_formats(data);
         }
         self.accepts.set(kind);
@@ -500,9 +505,9 @@ fn display_name(item: &IShellItem) -> String {
     }
 }
 
-/// Logs the formats a data object offers, so a rejected drag can be diagnosed.
-/// Called only when a `DragEnter` finds nothing the space accepts, so it is
-/// never on a hot path.
+/// Logs the formats a data object offers, so a drag source's behavior can be
+/// diagnosed (the Start menu and the taskbar are undocumented). Called once
+/// per `DragEnter`, so it is never on a hot path.
 fn log_formats(data: &IDataObject) {
     // SAFETY: `data` is a live data object; the enumerator is released on drop.
     let Ok(enumerator) = (unsafe { data.EnumFormatEtc(DATADIR_GET.0 as u32) }) else {

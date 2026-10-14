@@ -239,8 +239,16 @@ second shortcut writer.
     Calculator), a taskbar-pinned app, and a plain file from Explorer. Record
     per source the allowed effects, the formats, the cursor shown, and the
     result, here under this task (replace this bullet).
-  - Done when: the log line lands (`fix: log every drag a space sees (L1)`)
-    and the findings are recorded. If they contradict L2's plan, **stop and
+  - Log line landed (`fix: log every drag a space sees (L1)`).
+  - Findings so far (maintainer, 2026-10-14, before the log line): a Start
+    app (Element) showed the "Move" cursor over a space, so Start offered
+    `MOVE`, and its `CF_HDROP` held the app's AppUserModelID
+    (`com.squirrel.element-desktop.Element`), not a filesystem path. The drop
+    took the files path and `add_dropped` ignored the "file" as missing.
+    Other Start apps showed no "Link" cursor, so the allowed effects vary by
+    item. Start entries are Applications-folder items, whose parsing name is
+    an AUMID, not the `.lnk` under `Start Menu\Programs` assumed above.
+  - Done when: the log line lands and the findings are recorded. If they contradict L2's plan, **stop and
     ask** before L2.
 
 - [ ] **L2. Decide a drop by what the source allows; a link makes a
