@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (321 tests) are green. Update this count whenever a
+  `cargo test --workspace` (325 tests) are green. Update this count whenever a
   test is added or removed.
 - Every space is its own top-level window with a Windows 11 look: acrylic or
   blur material behind a translucent tint, DWM rounded corners and border,
@@ -514,7 +514,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
 | Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
-| Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch` |
+| Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
 | System | `system`, `dpi`, `autostart` |
 
@@ -721,7 +721,16 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   such as Explorer or the desktop does not draw its default "Move"/"Copy" action
   hint over the item image. `Drop` marks the source's data object with the
   "Performed DropEffect" format so a shell source does not move the files a
-  second time after DeskSpace has. A non-`CF_HDROP` drag reports `DROPEFFECT_NONE`.
+  second time after DeskSpace has. A drag that carries neither `CF_HDROP` nor a
+  Shell ID List reports `DROPEFFECT_NONE`. A Start-menu tile or taskbar app
+  carries a `CFSTR_SHELLIDLIST` instead of files, including packaged apps with
+  no filesystem path; the space accepts it (`shell_drop_effect` prefers a copy)
+  and raises `SpaceEvent::ShellItemsDropped` with each item's absolute ID list
+  and Explorer display name. The app writes a `.lnk` per item into the space
+  storage (`win32/shortcuts.rs` `create_shortcut`, `IShellLinkW::SetIDList` +
+  `IPersistFile::Save`) under a clash-free name and lists it, as Explorer does
+  when such an item is dropped on a folder (F-50). A drag with both formats is
+  treated as files, so a real file still moves rather than becoming a shortcut.
 - Dragging an item out (`shell_items::drag_out`) sets the source data object's
   "Preferred DropEffect" to `MOVE`, so dropping it on the desktop takes the file
   out of the space instead of leaving a `- Copy` behind. The drop target alone
@@ -1211,6 +1220,9 @@ Settings field ids are in `settings/ids.rs`'s `mod field` (next free 70; 25 and
   while spaces are hidden shows them.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space.
+  Dropping a Start-menu tile or taskbar app creates a shortcut in the space
+  instead, as Explorer does when one is dropped on a folder; a packaged app
+  with no file path works the same way.
 - Click an item to select it; Ctrl+click adds or removes it from the
   selection, and Shift+click selects the range from the last click. Drag from
   empty space to rubber-band select (Ctrl or Shift adds to the selection), and

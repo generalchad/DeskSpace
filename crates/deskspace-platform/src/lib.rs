@@ -8,8 +8,8 @@ pub mod win32;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
-    ClipboardAction, Event, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, SpaceEvent,
-    TrayEvent,
+    ClipboardAction, Event, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent, ShellItem,
+    SpaceEvent, TrayEvent,
 };
 pub use render::{
     ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
@@ -38,6 +38,7 @@ pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
+pub use win32::shortcuts::create_shortcut;
 pub use win32::system::{
     cursor_pos, drag_threshold, system_accent_color, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,

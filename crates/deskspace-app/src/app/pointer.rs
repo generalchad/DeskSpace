@@ -228,6 +228,11 @@ impl App {
                     self.add_dropped(ui, space, Point::new(x, y), paths, keep_in_place);
                 }
             }
+            SpaceEvent::ShellItemsDropped { x, y, items } => {
+                if let Surface::Space(space) = surface {
+                    self.add_shortcuts(ui, space, Point::new(x, y), items);
+                }
+            }
             SpaceEvent::DpiChanged { .. } => {
                 if let Surface::Space(id) = surface {
                     self.on_dpi_changed(ui, id);

@@ -67,6 +67,13 @@ impl ItemStore {
     pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
         move_into(path, folder)
     }
+
+    /// A path in the store for `file_name` that does not exist yet, applying
+    /// Explorer's " (n)" clash suffix. The file is not created; the caller
+    /// writes it. Used for shortcuts created for dropped shell items.
+    pub fn unique_path(&self, file_name: &str) -> PathBuf {
+        unique_destination(&self.root, Path::new(file_name))
+    }
 }
 
 /// Whether two paths name the same file. Windows paths differ by case and by
@@ -184,6 +191,19 @@ mod tests {
         let back = store.release(&stored, &desktop).unwrap();
         assert_eq!(back, original);
         assert!(!stored.exists());
+    }
+
+    #[test]
+    fn unique_path_avoids_existing_files() {
+        let scratch = Scratch::new("unique");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        std::fs::create_dir_all(store.root()).unwrap();
+        assert_eq!(store.unique_path("App.lnk"), store.root().join("App.lnk"));
+        std::fs::write(store.root().join("App.lnk"), "x").unwrap();
+        assert_eq!(
+            store.unique_path("App.lnk"),
+            store.root().join("App (2).lnk")
+        );
     }
 
     #[test]

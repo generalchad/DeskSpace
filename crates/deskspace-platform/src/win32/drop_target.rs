@@ -20,25 +20,26 @@ use std::path::PathBuf;
 use windows::Win32::Foundation::{GlobalFree, HWND, POINT, POINTL};
 use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Com::{
-    CLSCTX_INPROC_SERVER, CoCreateInstance, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM,
-    STGMEDIUM_0, TYMED_HGLOBAL,
+    CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree, DATADIR_GET, DVASPECT_CONTENT,
+    FORMATETC, IDataObject, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
 };
-use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+use windows::Win32::System::DataExchange::{GetClipboardFormatNameW, RegisterClipboardFormatW};
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
 use windows::Win32::System::Ole::{
-    CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE, IDropTarget,
-    IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
+    CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
+    IDropTarget, IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
 };
 use windows::Win32::System::SystemServices::{MK_SHIFT, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Shell::{
     CLSID_DragDropHelper, DROPDESCRIPTION, DROPIMAGE_NOIMAGE, DROPIMAGETYPE, DragQueryFileW, HDROP,
-    IDropTargetHelper,
+    IDropTargetHelper, ILGetSize, IShellItem, IShellItemArray,
+    SHCreateShellItemArrayFromDataObject, SHGetIDListFromObject, SIGDN_NORMALDISPLAY,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetParent;
 use windows::core::{PCWSTR, Ref, Result as WinResult};
 
 use crate::error::PlatformError;
-use crate::input::{Event, SpaceEvent};
+use crate::input::{Event, ShellItem, SpaceEvent};
 use crate::win32::runtime;
 use crate::win32::system::wide;
 
@@ -53,14 +54,25 @@ pub(crate) const PREFERRED_DROP_EFFECT: &str = "Preferred DropEffect";
 /// https://learn.microsoft.com/en-us/windows/win32/shell/clipboard#cfstr_performeddropeffect
 const PERFORMED_DROP_EFFECT: &str = "Performed DropEffect";
 
+/// What the drag currently over the window carries, remembered from
+/// `DragEnter` because `DragOver` gets no data object.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DragKind {
+    /// Nothing a space accepts.
+    None,
+    /// A `CF_HDROP` file list; the files move into the space.
+    Files,
+    /// A Shell ID List (a Start-menu tile, a taskbar app); a shortcut is made.
+    ShellItems,
+}
+
 #[windows_core::implement(IDropTarget)]
 struct SpaceDropTarget {
     id: u64,
     window: HWND,
     hosted: bool,
-    /// Whether the current drag carries files, remembered from `DragEnter`
-    /// because `DragOver` gets no data object.
-    accepts: Cell<bool>,
+    /// The kind of the current drag, remembered from `DragEnter`.
+    accepts: Cell<DragKind>,
 }
 
 impl IDropTarget_Impl for SpaceDropTarget_Impl {
@@ -74,19 +86,24 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // SAFETY: OLE passes a valid, writable effect; the data object, if any,
         // is borrowed only for the duration of the call.
         let allowed = unsafe { *effect };
-        let accepts = data.as_ref().is_some_and(has_files);
-        self.accepts.set(accepts);
-        let chosen = if accepts {
-            desired_effect(keys, allowed)
-        } else {
-            DROPEFFECT_NONE
+        let kind = drag_kind(data.as_ref());
+        if kind == DragKind::None
+            && let Some(data) = data.as_ref()
+        {
+            log_formats(data);
+        }
+        self.accepts.set(kind);
+        let chosen = match kind {
+            DragKind::Files => desired_effect(keys, allowed),
+            DragKind::ShellItems => shell_drop_effect(allowed),
+            DragKind::None => DROPEFFECT_NONE,
         };
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // A shell source (Explorer, the desktop) puts a default action hint
         // like "Move" on the data object; clearing it here leaves the drag
         // showing only the item image, matching a DeskSpace-originated drag.
-        if let Some(data) = data.as_ref().filter(|_| accepts) {
+        if let Some(data) = data.as_ref().filter(|_| kind != DragKind::None) {
             let _ = set_drop_description(data, DROPIMAGE_NOIMAGE);
         }
         with_image_helper(|helper| {
@@ -104,10 +121,10 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
     ) -> WinResult<()> {
         // SAFETY: OLE passes a valid, writable effect.
         let allowed = unsafe { *effect };
-        let chosen = if self.accepts.get() {
-            desired_effect(keys, allowed)
-        } else {
-            DROPEFFECT_NONE
+        let chosen = match self.accepts.get() {
+            DragKind::Files => desired_effect(keys, allowed),
+            DragKind::ShellItems => shell_drop_effect(allowed),
+            DragKind::None => DROPEFFECT_NONE,
         };
         // SAFETY: as above.
         unsafe { *effect = chosen };
@@ -117,7 +134,7 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
     }
 
     fn DragLeave(&self) -> WinResult<()> {
-        self.accepts.set(false);
+        self.accepts.set(DragKind::None);
         // SAFETY: matches the forwarded DragEnter.
         with_image_helper(|helper| unsafe { helper.DragLeave() });
         Ok(())
@@ -133,55 +150,76 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // SAFETY: OLE passes a valid, writable effect and a live data object.
         let allowed = unsafe { *effect };
         let data = data.as_ref();
-        let accepts = data.is_some_and(has_files);
-        let chosen = if accepts {
-            desired_effect(keys, allowed)
-        } else {
-            DROPEFFECT_NONE
+        let kind = drag_kind(data);
+        let chosen = match kind {
+            DragKind::Files => desired_effect(keys, allowed),
+            DragKind::ShellItems => shell_drop_effect(allowed),
+            DragKind::None => DROPEFFECT_NONE,
         };
         // SAFETY: as above.
         unsafe { *effect = chosen };
-        self.accepts.set(false);
+        self.accepts.set(DragKind::None);
         // The image is removed before the app runs: handling the drop can take
         // a moment (file moves) and must not leave the image frozen on screen.
         // SAFETY: forwarding this call's own arguments.
         with_image_helper(|helper| unsafe { helper.Drop(data, &screen(point), chosen) });
-        let (Some(data), true) = (data, chosen != DROPEFFECT_NONE) else {
+        let (Some(data), true, kind) = (data, chosen != DROPEFFECT_NONE, kind) else {
             return Ok(());
         };
-        let Some(paths) = file_paths(data) else {
-            return Ok(());
-        };
-        if paths.is_empty() {
-            return Ok(());
-        }
-
-        tracing::debug!(
-            space = self.id,
-            effect = chosen.0,
-            ?paths,
-            exist = ?paths.iter().map(|path| path.exists()).collect::<Vec<_>>(),
-            "files dropped on space"
-        );
-        let keep_in_place = chosen == DROPEFFECT_COPY;
         let (x, y) = desktop_point(self.window, self.hosted, point);
-        runtime::dispatch(Event::Space {
-            id: self.id,
-            event: SpaceEvent::FilesDropped {
-                x,
-                y,
-                paths,
-                keep_in_place,
-            },
-        });
-
-        // The app performs the move itself (the event above runs before this
-        // returns for drags that started in another process). Marking the move
-        // as already performed stops the source from moving the files a second
-        // time; for an in-process (space-to-space) drag it is a no-op, because
-        // DeskSpace's own source never deletes on `Move`.
-        if chosen == DROPEFFECT_MOVE {
-            let _ = set_drop_effect(data, PERFORMED_DROP_EFFECT, DROPEFFECT_MOVE);
+        match kind {
+            DragKind::Files => {
+                let Some(paths) = file_paths(data) else {
+                    return Ok(());
+                };
+                if paths.is_empty() {
+                    return Ok(());
+                }
+                tracing::debug!(
+                    space = self.id,
+                    effect = chosen.0,
+                    ?paths,
+                    exist = ?paths.iter().map(|path| path.exists()).collect::<Vec<_>>(),
+                    "files dropped on space"
+                );
+                let keep_in_place = chosen == DROPEFFECT_COPY;
+                runtime::dispatch(Event::Space {
+                    id: self.id,
+                    event: SpaceEvent::FilesDropped {
+                        x,
+                        y,
+                        paths,
+                        keep_in_place,
+                    },
+                });
+                // The app performs the move itself (the event above runs before
+                // this returns for drags that started in another process).
+                // Marking the move as already performed stops the source from
+                // moving the files a second time; for an in-process
+                // (space-to-space) drag it is a no-op, because DeskSpace's own
+                // source never deletes on `Move`.
+                if chosen == DROPEFFECT_MOVE {
+                    let _ = set_drop_effect(data, PERFORMED_DROP_EFFECT, DROPEFFECT_MOVE);
+                }
+            }
+            DragKind::ShellItems => {
+                let Some(items) = shell_items(data) else {
+                    return Ok(());
+                };
+                if items.is_empty() {
+                    return Ok(());
+                }
+                tracing::debug!(
+                    space = self.id,
+                    count = items.len(),
+                    "shell items dropped on space"
+                );
+                runtime::dispatch(Event::Space {
+                    id: self.id,
+                    event: SpaceEvent::ShellItemsDropped { x, y, items },
+                });
+            }
+            DragKind::None => {}
         }
         Ok(())
     }
@@ -237,7 +275,7 @@ pub(crate) fn register(window: HWND, id: u64, hosted: bool) -> Result<(), Platfo
         id,
         window,
         hosted,
-        accepts: Cell::new(false),
+        accepts: Cell::new(DragKind::None),
     }
     .into();
     // SAFETY: `window` was created by this runtime and OLE is initialized on
@@ -367,6 +405,141 @@ fn has_files(data: &IDataObject) -> bool {
     unsafe { data.QueryGetData(&drop_files_format()).is_ok() }
 }
 
+/// What `data` offers a space. A file list wins over shell items: a drag can
+/// carry both, and a real file should move, not become a shortcut.
+fn drag_kind(data: Option<&IDataObject>) -> DragKind {
+    let Some(data) = data else {
+        return DragKind::None;
+    };
+    if has_files(data) {
+        DragKind::Files
+    } else if has_shell_items(data) {
+        DragKind::ShellItems
+    } else {
+        DragKind::None
+    }
+}
+
+/// Whether `data` describes shell items (a Start-menu tile, a taskbar app,
+/// including a packaged app with no file). The shell builds an item array from
+/// whatever form the source used (`CFSTR_SHELLIDLIST`, a file descriptor
+/// array, ...), which covers virtual drags that carry no `CF_HDROP`; a drag
+/// the shell cannot name yields nothing.
+fn has_shell_items(data: &IDataObject) -> bool {
+    shell_item_array(data).is_some_and(|array| {
+        // SAFETY: the array is live.
+        unsafe { array.GetCount() }.is_ok_and(|count| count > 0)
+    })
+}
+
+/// The shell's view of a drag's items, however the source expressed them, or
+/// `None` when the object carries no shell items (for example plain text).
+/// https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shcreateshellitemarrayfromdataobject
+fn shell_item_array(data: &IDataObject) -> Option<IShellItemArray> {
+    // SAFETY: `data` is a live data object; the helper builds a fresh array.
+    unsafe { SHCreateShellItemArrayFromDataObject(data).ok() }
+}
+
+/// The effect a space reports for a virtual shell item: a shortcut is created,
+/// so ask for a link - the cursor Explorer shows for this drag - then a copy,
+/// then a move, always avoiding a move when the source offers anything else,
+/// because a move would ask the source to destroy the original.
+fn shell_drop_effect(allowed: DROPEFFECT) -> DROPEFFECT {
+    [DROPEFFECT_LINK, DROPEFFECT_COPY, DROPEFFECT_MOVE]
+        .into_iter()
+        .find(|want| allowed.0 & want.0 != 0)
+        .unwrap_or(DROPEFFECT_NONE)
+}
+
+/// The shell items a virtual drag carries, each with Explorer's display name
+/// and an absolute ID list that `create_shortcut` can rebuild.
+fn shell_items(data: &IDataObject) -> Option<Vec<ShellItem>> {
+    let array = shell_item_array(data)?;
+    // SAFETY: the array is live.
+    let count = unsafe { array.GetCount() }.ok()?;
+    let mut items = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        // SAFETY: `index` is below the array's count.
+        let Ok(item) = (unsafe { array.GetItemAt(index) }) else {
+            continue;
+        };
+        if let Some(item) = shell_item(&item) {
+            items.push(item);
+        }
+    }
+    (!items.is_empty()).then_some(items)
+}
+
+/// One `ShellItem` from a live shell item, or `None` when its ID list cannot be
+/// read.
+fn shell_item(item: &IShellItem) -> Option<ShellItem> {
+    // SAFETY: the name and ID list are copied before they are freed with the
+    // shell allocator the APIs document.
+    unsafe {
+        let name = display_name(item);
+        let pidl = SHGetIDListFromObject(item).ok()?;
+        let size = ILGetSize(Some(pidl)) as usize;
+        let id_list = std::slice::from_raw_parts(pidl.cast::<u8>(), size).to_vec();
+        CoTaskMemFree(Some(pidl.cast::<core::ffi::c_void>()));
+        Some(ShellItem { name, id_list })
+    }
+}
+
+/// Explorer's display name for a shell item, or an empty string when the shell
+/// cannot name it.
+fn display_name(item: &IShellItem) -> String {
+    // SAFETY: the returned string is copied before it is freed with the shell
+    // allocator the API documents.
+    unsafe {
+        let Ok(name) = item.GetDisplayName(SIGDN_NORMALDISPLAY) else {
+            return String::new();
+        };
+        let text = name.to_string().unwrap_or_default();
+        CoTaskMemFree(Some(name.0 as *const core::ffi::c_void));
+        text
+    }
+}
+
+/// Logs the formats a data object offers, so a rejected drag can be diagnosed.
+/// Called only when a `DragEnter` finds nothing the space accepts, so it is
+/// never on a hot path.
+fn log_formats(data: &IDataObject) {
+    // SAFETY: `data` is a live data object; the enumerator is released on drop.
+    let Ok(enumerator) = (unsafe { data.EnumFormatEtc(DATADIR_GET.0 as u32) }) else {
+        return;
+    };
+    let mut format = [FORMATETC::default(); 1];
+    loop {
+        let mut fetched = 0u32;
+        // SAFETY: a one-element buffer and a valid count out-pointer.
+        let status = unsafe { enumerator.Next(&mut format, Some(&mut fetched)) };
+        if status.is_err() || fetched == 0 {
+            break;
+        }
+        tracing::debug!(
+            cf = format[0].cfFormat,
+            name = %clipboard_format_name(format[0].cfFormat),
+            tymed = format[0].tymed,
+            aspect = format[0].dwAspect,
+            "drag offered a format"
+        );
+    }
+}
+
+/// A clipboard format's registered name, or its number for the standard
+/// formats (for example `CF_HDROP` is 15).
+fn clipboard_format_name(format: u16) -> String {
+    if format as u32 >= 0xC000 {
+        let mut buffer = [0u16; 256];
+        // SAFETY: `buffer` is writable and its length is passed.
+        let length = unsafe { GetClipboardFormatNameW(format as u32, &mut buffer) };
+        if length > 0 {
+            return String::from_utf16_lossy(&buffer[..length as usize]);
+        }
+    }
+    format.to_string()
+}
+
 /// Reads the `CF_HDROP` file list out of `data`, releasing the medium. Returns
 /// `None` when the data object has no usable global file list.
 fn file_paths(data: &IDataObject) -> Option<Vec<PathBuf>> {
@@ -445,5 +618,13 @@ mod tests {
             desired_effect(MODIFIERKEYS_FLAGS(0), DROPEFFECT_NONE),
             DROPEFFECT_NONE
         );
+    }
+
+    #[test]
+    fn shell_items_prefer_link_then_copy() {
+        assert_eq!(shell_drop_effect(ALL), DROPEFFECT_LINK);
+        assert_eq!(shell_drop_effect(DROPEFFECT_COPY), DROPEFFECT_COPY);
+        assert_eq!(shell_drop_effect(DROPEFFECT_MOVE), DROPEFFECT_MOVE);
+        assert_eq!(shell_drop_effect(DROPEFFECT_NONE), DROPEFFECT_NONE);
     }
 }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, SpaceId};
-use deskspace_platform::{Ui, desktop_directory, notify_moved};
+use deskspace_platform::{ShellItem, Ui, create_shortcut, desktop_directory, notify_moved};
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 
@@ -57,6 +57,45 @@ impl App {
             self.resync_desktop_layer(ui);
         }
         self.refresh_tray(ui);
+        self.save();
+    }
+
+    /// Creates a shortcut in the store for each virtual shell item dropped on
+    /// a space (a Start-menu tile or taskbar app, F-50) and lists it in
+    /// `target`. Explorer writes a `.lnk` when such an item is dropped on a
+    /// folder, and the store is the space's folder, so the shortcut moves,
+    /// opens, and releases like any other item.
+    pub(super) fn add_shortcuts(
+        &mut self,
+        ui: &mut Ui,
+        target: SpaceId,
+        at: Point,
+        items: Vec<ShellItem>,
+    ) {
+        let root = self.storage.root();
+        if let Err(error) = std::fs::create_dir_all(root) {
+            tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
+            return;
+        }
+        for item in items {
+            let path = self.storage.unique_path(&shortcut_file_name(&item.name));
+            match create_shortcut(&item, &path) {
+                Ok(()) => {
+                    tracing::info!(name = %item.name, path = %path.display(), "created a shortcut in the store");
+                    self.dispatch(
+                        Command::AddItem {
+                            space: target,
+                            path,
+                        },
+                        at,
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, name = %item.name, "could not create a shortcut");
+                }
+            }
+        }
+        self.refresh_space(ui, target);
         self.save();
     }
 
@@ -275,5 +314,46 @@ impl App {
             self.sync_windows(ui);
             self.save();
         }
+    }
+}
+
+/// A `.lnk` file name for a shell item's display name (F-50). Characters that
+/// are illegal in a Windows file name become `_`, trailing dots and spaces are
+/// trimmed (Windows ignores them), and an empty result falls back to
+/// "Shortcut", as Explorer does.
+fn shortcut_file_name(display: &str) -> String {
+    let mut name: String = display
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if (c as u32) < 0x20 => '_',
+            c => c,
+        })
+        .collect();
+    while name.ends_with([' ', '.']) {
+        name.pop();
+    }
+    if name.is_empty() {
+        name.push_str("Shortcut");
+    }
+    name.push_str(".lnk");
+    name
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcut_names_make_illegal_characters_safe() {
+        assert_eq!(shortcut_file_name("Minesweeper"), "Minesweeper.lnk");
+        assert_eq!(shortcut_file_name("A/B:C?D"), "A_B_C_D.lnk");
+    }
+
+    #[test]
+    fn shortcut_names_trim_trailing_dots_and_fall_back_when_empty() {
+        assert_eq!(shortcut_file_name("Report..."), "Report.lnk");
+        assert_eq!(shortcut_file_name("   "), "Shortcut.lnk");
+        assert_eq!(shortcut_file_name(""), "Shortcut.lnk");
     }
 }

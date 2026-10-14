@@ -218,7 +218,7 @@ A native, lightweight, offline Windows desktop organizer that:
 - *M2:* spaces and their items are complete and behave like Explorer.
   Desktop takeover is built and opt-in (the layer, hide, restore,
   Explorer-restart re-hide, the crash watchdog, and the Desktop-folder watch
-  are in); undo and non-file shell drags (F-50) remain.
+  are in); undo remains. Non-file shell drags (F-50) are done.
 - *M3:* the tray, menus, and settings window work, with all nine pages.
   What remains depends on later milestones (lens and snapshot entries) or on
   design (more item presets).
@@ -344,6 +344,10 @@ Done:
     ignore `SC_MINIMIZE`);
   - the Desktop folder is watched while the layer is drawn, so loose items
     follow outside changes (I8).
+- **[done]** Non-file shell drags (F-50). A space accepts a
+  `CFSTR_SHELLIDLIST` drag (a Start-menu tile or taskbar app), including a
+  packaged app with no filesystem path, and writes a shortcut into the space
+  storage, matching Explorer's drop-a-shortcut-on-a-folder behavior.
 
 Remaining:
 1. **Watch stored files.** Only the Desktop folder is watched; a change to a
@@ -353,11 +357,7 @@ Remaining:
    3). F-02's "delete with undo" depends on it.
 3. **Right-button drag** with Explorer's drop menu (D9; `TASKS.md`
    G5a-G5c). Its "Create shortcuts here" shares the shortcut-creation code
-   with F-50.
-4. **Accept non-file shell drags (F-50).** A Start menu or taskbar app drag
-   carries a Shell ID List, not `CF_HDROP`, so a space shows the red no-drop
-   cursor. It should create a shortcut in the space, as Explorer does, including
-   packaged apps that have no filesystem path. Needs design; see F-50.
+   (`win32/shortcuts.rs`) F-50 added.
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -411,7 +411,10 @@ Remaining:
    - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
-   - an Arrange submenu.
+   - an Arrange submenu;
+   - spaces entries on the desktop's own background menu - "New space",
+     "DeskSpace Settings", and the like - beside the existing "Show spaces"
+     verb, so the desktop is a control surface like the tray (F-52).
 2. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
@@ -689,8 +692,9 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
-| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Open; a space shows the no-drop cursor for them (drop target accepts `CF_HDROP` only) |
+| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending. A space accepts a `CFSTR_SHELLIDLIST` drag and writes a `.lnk` into the space storage (`win32/shortcuts.rs`), including packaged apps with no file path |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
+| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open; the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
 
 The polled customization backlog (2026-10-03) is F-24..F-35. The
 item-interaction session (2026-10-03) is F-36..F-39, and the

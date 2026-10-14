@@ -27,6 +27,7 @@ mod settings_window;
 pub mod shell_items;
 mod shell_selection;
 pub(crate) mod shell_view;
+pub(crate) mod shortcuts;
 mod space_window;
 pub mod system;
 mod tray;

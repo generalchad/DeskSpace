@@ -27,6 +27,20 @@ pub struct NavKey {
     pub focus: bool,
 }
 
+/// A shell item dragged as data rather than as a file: a Start-menu tile or a
+/// taskbar app. Such a drag carries a Shell ID List, not `CF_HDROP`, and a
+/// packaged app has no filesystem path at all, so a space creates a shortcut
+/// to it, as Explorer does when one is dropped on a folder (ROADMAP F-50).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellItem {
+    /// Explorer's display name, used for the shortcut's file name.
+    pub name: String,
+    /// The item's absolute shell ID list, as the raw bytes of an
+    /// `ITEMIDLIST` (the `ILGetSize` bytes of the `ILCombine`'d IDs). Rebuilt
+    /// into a PIDL by `create_shortcut`.
+    pub id_list: Vec<u8>,
+}
+
 /// Input on a space window. Coordinates are desktop coordinates (the
 /// coordinate system of `Space::rect`), not client coordinates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +85,13 @@ pub enum SpaceEvent {
         paths: Vec<std::path::PathBuf>,
         /// Shift was held at the drop: leave the files where they are.
         keep_in_place: bool,
+    },
+    /// Virtual shell items (a Start-menu tile, a taskbar app) were dropped on
+    /// the space. There is no file to move; the app writes a shortcut for each.
+    ShellItemsDropped {
+        x: i32,
+        y: i32,
+        items: Vec<ShellItem>,
     },
     /// Another window took the mouse capture mid-gesture (for example on
     /// Alt+Tab), so no matching `MouseUp` will arrive. Cancel any drag.

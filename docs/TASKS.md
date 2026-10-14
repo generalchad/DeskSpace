@@ -88,6 +88,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
+| Shortcuts from dropped shell items | `deskspace-platform/src/win32/shortcuts.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
@@ -590,7 +591,38 @@ is large.
   - **[needs human]** check: create a space from the space menu, the tray, and
     the hotkey; it uses the configured title, size, and lock state, and a
     locked new space keeps its size and scrolls.
-  - Landed as `feat: add the New spaces settings page (C8)`.
+   - Landed as `feat: add the New spaces settings page (C8)`.
+
+- [ ] **C9. Spaces entries on the desktop background menu (F-52).**
+  The desktop's right-click background menu already carries the "Show
+  DeskSpace spaces" verb while spaces are hidden (`win32/desktop_entry.rs`,
+  `App::sync_desktop_show_entry`); make the desktop a small control surface
+  that is there while DeskSpace runs.
+  - Platform, `win32/desktop_entry.rs`: replace the single
+    `set_desktop_show_entry(enabled, label, command, icon)` with a
+    data-driven `set_desktop_verbs(verbs: &[DesktopVerb])`, where
+    `DesktopVerb { key: &'static str, label: &'static str, command: &'static
+    str, icon: &'static str }` and each `key` is a child of
+    `DesktopBackground\Shell` under a common `DeskSpace` prefix. Delete each
+    known key first (`RegDeleteTreeW` per key), then write them; keep the
+    `create` / `set_string` helpers.
+  - Each verb's command re-launches the executable with a flag the running
+    instance handles, as `--show` does today: `--settings` exists; add
+    `--new-space` (a `cli.rs` field; `bootstrap.rs` posts a new
+    `controller::NEW_SPACE` and exits, and the controller raises an event the
+    app handles by creating a space at the pointer). Take the next free
+    `WM_APP` id and update the table in `CONTEXT.md` section 6.
+  - App, `app/visibility.rs`: `App::sync_desktop_verbs` writes "New space",
+    "DeskSpace Settings", and - only while hidden - "Show DeskSpace spaces";
+    `remove_desktop_show_entry` becomes `remove_desktop_verbs`; call it on
+    `Started` and on every visibility change.
+  - Docs: `CONTEXT.md` sections 6 and 8 (the CLI flag list), and the
+    `ROADMAP.md` F-52 row.
+  - Done when: CI is green (registry writes stay behind `cfg(test)`) and the
+    flag/event round trip is unit-tested. **[needs human]** check: with
+    DeskSpace running, right-click the desktop and use "New space" and
+    "DeskSpace Settings"; the entries are gone after a clean exit.
+    **[needs decision]** on which entries are always shown versus hidden-only.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
@@ -1357,14 +1389,29 @@ Remaining gaps from the controls review. Do them in order.
     Show here, and Cancel, and a left drag still moves (Shift still keeps in
     place).
 
-- [ ] **G5c. "Create shortcuts here".** After G5b and the F-50 design
-  (both need the same "create a `.lnk` in the store" helper, via
-  `IShellLinkW` + `IPersistFile`). The entry goes between "Copy here" and
-  "Show here without moving", and needs a fourth `DropAction` variant.
-  **[needs decision]** until F-50's design settles where shortcuts are
-  created and how packaged apps are handled.
+- [ ] **G5c. "Create shortcuts here".** After G5b. The `.lnk` helper now
+  exists (`win32/shortcuts.rs` `create_shortcut`; F-50 settled that shortcuts
+  are created in the space storage under a clash-free name,
+  `storage::ItemStore::unique_path`). Build a `ShellItem` for the dropped
+  file's path (rebuild it as an ID list, as `shell_items::Pidl::from_path`
+  does) and call the same `create_shortcut`. The entry goes between "Copy
+  here" and "Show here without moving", and needs a fourth `DropAction`
+  variant.
 - [ ] **G6. Ctrl+Z undo.** Design first; see ROADMAP.md section 8, open
   question 3.
+- [ ] **G7. Accept non-file shell drags as shortcuts (F-50).** (awaiting check)
+  Landed: a space's drop target accepts a `CFSTR_SHELLIDLIST` drag in addition
+  to `CF_HDROP` (`win32/drop_target.rs`, `DragKind`), reads the CIDA into
+  absolute ID lists with Explorer names, and raises
+  `SpaceEvent::ShellItemsDropped` (`input.rs`, `ShellItem`). The app writes a
+  `.lnk` per item into the space storage via the new `win32/shortcuts.rs`
+  `create_shortcut` (`IShellLinkW::SetIDList` + `IPersistFile::Save`) under a
+  clash-free name (`ItemStore::unique_path`) and lists it
+  (`App::add_shortcuts`, `app/files.rs`). Files take precedence when a drag
+  carries both formats. **[needs human]** check: drag a Start-menu tile and a
+  taskbar app onto a space; each appears as a shortcut and opening it launches
+  the app (including a packaged app with no file path), the cursor is not the
+  red no-drop one, and dragging a normal file still moves the file.
 
 ## H. Per-space looks in the settings window (ROADMAP M3, F-46)
 
@@ -1801,11 +1848,6 @@ Rules for every K task:
 
 Add one line per issue noticed but not fixed: file, symptom, suggested task.
 
-- `deskspace-platform/src/win32/drop_target.rs` accepts `CF_HDROP` only
-  (`has_files`), so a Start menu or taskbar app drag - which carries a Shell ID
-  List, not files - shows the red no-drop cursor over a space. Accept
-  `CFSTR_SHELLIDLIST` and create a shortcut in the space, as Explorer does
-  (F-50; needs design, including packaged apps with no filesystem path).
 - `deskspace-platform/src/win32/controller.rs` handles `WM_SETTINGCHANGE`
   with "ImmersiveColorSet" as `Event::SystemThemeChanged`, which is what
   refreshes the accent. Windows also broadcasts
