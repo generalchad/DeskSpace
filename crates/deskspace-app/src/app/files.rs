@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{
-    CustomShortcut, ShellItem, Ui, create_custom_shortcut, create_shortcut, desktop_directory,
-    notify_moved,
+    CustomShortcut, DropAction, ShellItem, Ui, create_custom_shortcut, create_shortcut,
+    desktop_directory, notify_moved,
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
@@ -19,7 +19,7 @@ impl App {
         target: SpaceId,
         at: Point,
         paths: Vec<PathBuf>,
-        keep_in_place: bool,
+        action: DropAction,
     ) {
         let mut touched = HashSet::from([target]);
         for path in paths {
@@ -41,13 +41,20 @@ impl App {
                     }
                     Command::MoveItem { id: item, target }
                 }
-                None => match self.place_dropped(path, keep_in_place) {
-                    Some(path) => Command::AddItem {
-                        space: target,
-                        path,
-                    },
-                    None => continue,
-                },
+                None => {
+                    let placed = match action {
+                        DropAction::KeepInPlace => Some(path),
+                        DropAction::Move => self.place_dropped(path),
+                        DropAction::Copy => self.copy_dropped(ui, path),
+                    };
+                    match placed {
+                        Some(path) => Command::AddItem {
+                            space: target,
+                            path,
+                        },
+                        None => continue,
+                    }
+                }
             };
             self.dispatch(command, at);
         }
@@ -144,12 +151,9 @@ impl App {
         self.sync_desktop_layer(ui);
     }
 
-    /// Where a newly dropped file will live: in the storage folder, or where
-    /// it already is. `None` if it vanished before it could be moved.
-    fn place_dropped(&self, path: PathBuf, keep_in_place: bool) -> Option<PathBuf> {
-        if keep_in_place {
-            return Some(path);
-        }
+    /// Where a moved dropped file will live: in the storage folder. `None` if
+    /// it vanished before it could be moved.
+    fn place_dropped(&self, path: PathBuf) -> Option<PathBuf> {
         match self.storage.adopt(&path) {
             Ok(stored) => {
                 if stored != path {
@@ -167,6 +171,19 @@ impl App {
                 Some(path)
             }
         }
+    }
+
+    /// Copies a dropped file into the store through the shell's file operation,
+    /// leaving the original where it is, as a Copy drop does (G5b) and a paste
+    /// copies. Returns the new path, or `None` when the copy failed.
+    fn copy_dropped(&mut self, ui: &mut Ui, path: PathBuf) -> Option<PathBuf> {
+        let root = self.storage.root();
+        if let Err(error) = std::fs::create_dir_all(root) {
+            tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
+            return None;
+        }
+        let created = ui.transfer_files(std::slice::from_ref(&path), root, false)?;
+        created.into_iter().next()
     }
 
     /// Takes an item out of its space when the space is deleted. A file that

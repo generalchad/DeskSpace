@@ -1568,3 +1568,46 @@ until I5-I6 all land, so no partial build hides the desktop.
     a space onto the desktop and into an Explorer folder; the shell's
     Move / Copy / Create shortcut menu appears and each choice works; a
     right click without moving still opens the item menu.
+
+- [x] **G5b. DeskSpace's drop menu on a space.** After G5a.
+  - The menu is shown by the drop target itself, inside `Drop`, because
+    `Drop` must return the chosen effect to the source synchronously. The
+    app then receives an ordinary `FilesDropped` describing the choice, so
+    no new re-entrancy is introduced.
+  - Model the choice explicitly. In `input.rs`, replace
+    `FilesDropped.keep_in_place: bool` with `action: DropAction`, a new
+    `pub enum DropAction { Move, KeepInPlace, Copy }` with a `///` doc per
+    variant (`Move`: into the store, the default; `KeepInPlace`: list the
+    file where it is, what Shift does today; `Copy`: put a copy in the
+    store). Re-export it from `lib.rs`. Update the one app caller (the
+    `FilesDropped` arm in `app/pointer.rs`) to map `Move` /
+    `KeepInPlace` onto today's `add_dropped(.., keep_in_place)`; this
+    first step is a pure refactor and can be its own commit.
+  - Platform, `win32/drop_target.rs`:
+    1. In `DragEnter`, remember whether `MK_RBUTTON` was down (a
+       `right_drag: Cell<bool>` on the drop target).
+    2. `desired_effect` (or `drop_plan`, once L2 has replaced it): for a
+       right drag, return `MOVE` (the menu decides the rest), so the cursor
+       does not flicker with the modifier keys.
+    3. In `Drop`, for a right drag, show a popup menu at the drop point
+       (the `POINTL` `Drop` receives is already in screen coordinates) with
+       `menu::track(owner, &entries, at)`, the function `Ui::popup_menu`
+       uses, owned by the space window; read no runtime state across the
+       call (AGENTS.md Gotchas). Entries:
+       "Move here", "Copy here", "Show here without moving", a separator,
+       and "Cancel". Map the choice with a pure, tested
+       `fn right_drop_choice(id: u32) -> Option<DropAction>` (`None` for
+       Cancel or a dismissed menu). On `None`, return `DROPEFFECT_NONE`
+       and raise no event. Otherwise raise `FilesDropped` with that action
+       and return `COPY` for `Copy` and `KeepInPlace`, `MOVE` for `Move`.
+       Keep the "Performed DropEffect" marking exactly as the left-drop
+       path does.
+  - App, `add_dropped` (`app/files.rs`): add the `Copy` case, copying the
+    files into the store through `ui.transfer_files` the way a Ctrl+C /
+    Ctrl+V paste does (`app/clipboard.rs`), then listing them. Change
+    `add_dropped` to take the `DropAction` instead of a bool.
+  - Done when: `right_drop_choice` has a test per entry. **[needs human]**
+    check: right-drag a file from Explorer onto a space; the menu appears;
+    each entry does what it says, the source file is left alone on Copy,
+    Show here, and Cancel, and a left drag still moves (Shift still keeps in
+    place).

@@ -17,6 +17,8 @@ use std::mem::{ManuallyDrop, size_of};
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 
+use deskspace_core::geometry::Point;
+
 use windows::Win32::Foundation::{GlobalFree, HWND, POINT, POINTL};
 use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Com::{
@@ -29,7 +31,7 @@ use windows::Win32::System::Ole::{
     CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE,
     IDropTarget, IDropTarget_Impl, MK_ALT, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
 };
-use windows::Win32::System::SystemServices::{MK_SHIFT, MODIFIERKEYS_FLAGS};
+use windows::Win32::System::SystemServices::{MK_RBUTTON, MK_SHIFT, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Shell::{
     CLSID_DragDropHelper, DROPDESCRIPTION, DROPIMAGE_NOIMAGE, DROPIMAGETYPE, DragQueryFileW, HDROP,
     IDropTargetHelper, IShellItemArray, SHCreateShellItemArrayFromDataObject,
@@ -38,7 +40,9 @@ use windows::Win32::UI::WindowsAndMessaging::GetParent;
 use windows::core::{PCWSTR, Ref, Result as WinResult};
 
 use crate::error::PlatformError;
-use crate::input::{Event, ShellItem, SpaceEvent};
+use crate::input::{DropAction, Event, ShellItem, SpaceEvent};
+use crate::ui::MenuEntry;
+use crate::win32::menu;
 use crate::win32::runtime;
 use crate::win32::shortcuts::shell_item;
 use crate::win32::system::wide;
@@ -94,6 +98,10 @@ struct SpaceDropTarget {
     hosted: bool,
     /// The kind of the current drag, remembered from `DragEnter`.
     accepts: Cell<DragKind>,
+    /// Whether the current drag started with the right button down, remembered
+    /// from `DragEnter`. A right drop shows a menu instead of using the
+    /// modifiers, as Explorer does.
+    right_drag: Cell<bool>,
 }
 
 impl IDropTarget_Impl for SpaceDropTarget_Impl {
@@ -108,18 +116,21 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // is borrowed only for the duration of the call.
         let allowed = unsafe { *effect };
         let kind = drag_kind(data.as_ref());
+        let right = keys.contains(MK_RBUTTON);
+        self.right_drag.set(right);
         tracing::debug!(
             space = self.id,
             allowed = allowed.0,
             keys = keys.0,
             ?kind,
+            right,
             "drag entered space"
         );
         if let Some(data) = data.as_ref() {
             log_formats(data);
         }
         self.accepts.set(kind);
-        let (_, chosen) = drop_plan(kind, keys, allowed);
+        let chosen = drag_effect(kind, right, keys, allowed);
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // A shell source (Explorer, the desktop) puts a default action hint
@@ -143,7 +154,7 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
     ) -> WinResult<()> {
         // SAFETY: OLE passes a valid, writable effect.
         let allowed = unsafe { *effect };
-        let (_, chosen) = drop_plan(self.accepts.get(), keys, allowed);
+        let chosen = drag_effect(self.accepts.get(), self.right_drag.get(), keys, allowed);
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // SAFETY: forwarding this call's own arguments.
@@ -153,6 +164,7 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
 
     fn DragLeave(&self) -> WinResult<()> {
         self.accepts.set(DragKind::None);
+        self.right_drag.set(false);
         // SAFETY: matches the forwarded DragEnter.
         with_image_helper(|helper| unsafe { helper.DragLeave() });
         Ok(())
@@ -168,7 +180,29 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // SAFETY: OLE passes a valid, writable effect and a live data object.
         let allowed = unsafe { *effect };
         let data = data.as_ref();
-        let (plan, chosen) = drop_plan(drag_kind(data), keys, allowed);
+        let kind = drag_kind(data);
+        let right = self.right_drag.replace(false);
+        // A right drag carrying files shows a menu, and the chosen action
+        // decides the effect. The menu returns before this does, so the effect
+        // is known to the source when the drag resumes. The image is removed
+        // first: the menu can be open a while and must not hold it on screen.
+        if right && kind == DragKind::Files {
+            // SAFETY: forwarding this call's own arguments.
+            with_image_helper(|helper| unsafe {
+                helper.Drop(data, &screen(point), DROPEFFECT_NONE)
+            });
+            let action = ask_right_drop(self.window, point);
+            let chosen = action.map_or(DROPEFFECT_NONE, drop_action_effect);
+            // SAFETY: as above.
+            unsafe { *effect = chosen };
+            self.accepts.set(DragKind::None);
+            if let (Some(data), Some(action)) = (data, action) {
+                let (x, y) = desktop_point(self.window, self.hosted, point);
+                self.drop_files(data, x, y, action);
+            }
+            return Ok(());
+        }
+        let (plan, chosen) = drop_plan(kind, keys, allowed);
         // SAFETY: as above.
         unsafe { *effect = chosen };
         self.accepts.set(DragKind::None);
@@ -182,8 +216,8 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         let (x, y) = desktop_point(self.window, self.hosted, point);
         match plan {
             DropPlan::None => {}
-            DropPlan::MoveFiles => self.drop_files(data, x, y, false),
-            DropPlan::KeepFiles => self.drop_files(data, x, y, true),
+            DropPlan::MoveFiles => self.drop_files(data, x, y, DropAction::Move),
+            DropPlan::KeepFiles => self.drop_files(data, x, y, DropAction::KeepInPlace),
             DropPlan::Shortcuts => self.drop_shortcuts(data, x, y),
         }
         Ok(())
@@ -191,33 +225,30 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
 }
 
 impl SpaceDropTarget {
-    /// Raises `FilesDropped` for the drag's file list. The app moves the files
-    /// itself unless `keep_in_place`.
-    fn drop_files(&self, data: &IDataObject, x: i32, y: i32, keep_in_place: bool) {
+    /// Raises `FilesDropped` for the drag's file list, telling the app which
+    /// `action` the user chose (a modifier on a left drop, the menu on a right
+    /// one).
+    fn drop_files(&self, data: &IDataObject, x: i32, y: i32, action: DropAction) {
         let Some(paths) = file_paths(data).filter(|paths| !paths.is_empty()) else {
             return;
         };
-        tracing::debug!(
-            space = self.id,
-            keep_in_place,
-            ?paths,
-            "files dropped on space"
-        );
+        tracing::debug!(space = self.id, ?action, ?paths, "files dropped on space");
         runtime::dispatch(Event::Space {
             id: self.id,
             event: SpaceEvent::FilesDropped {
                 x,
                 y,
                 paths,
-                keep_in_place,
+                action,
             },
         });
-        // The app performs the move itself (the event above runs before this
-        // returns for drags that started in another process). Marking the move
+        // A move is performed by the app itself (the event above runs before
+        // this returns for drags that started in another process). Marking it
         // as already performed stops the source from moving the files a second
         // time; for an in-process (space-to-space) drag it is a no-op, because
-        // DeskSpace's own source never deletes on `Move`.
-        if !keep_in_place {
+        // DeskSpace's own source never deletes on `Move`. A copy or keep-in-
+        // place leaves the source's original alone, so nothing is marked.
+        if action == DropAction::Move {
             let _ = set_drop_effect(data, PERFORMED_DROP_EFFECT, DROPEFFECT_MOVE);
         }
     }
@@ -292,6 +323,7 @@ pub(crate) fn register(window: HWND, id: u64, hosted: bool) -> Result<(), Platfo
         window,
         hosted,
         accepts: Cell::new(DragKind::None),
+        right_drag: Cell::new(false),
     }
     .into();
     // SAFETY: `window` was created by this runtime and OLE is initialized on
@@ -429,6 +461,71 @@ fn file_drop_effect(keys: MODIFIERKEYS_FLAGS, allowed: DROPEFFECT) -> DROPEFFECT
         .into_iter()
         .find(|want| allowed.0 & want.0 != 0)
         .unwrap_or(DROPEFFECT_NONE)
+}
+
+/// The effect to report while a drag hovers over the space. A right drag
+/// carrying files reports `MOVE` whatever the modifiers, because the drop menu
+/// decides the real action and the cursor should not flicker as keys change;
+/// everything else follows `drop_plan`.
+fn drag_effect(
+    kind: DragKind,
+    right: bool,
+    keys: MODIFIERKEYS_FLAGS,
+    allowed: DROPEFFECT,
+) -> DROPEFFECT {
+    if right && kind == DragKind::Files && allowed.0 & DROPEFFECT_MOVE.0 != 0 {
+        DROPEFFECT_MOVE
+    } else {
+        drop_plan(kind, keys, allowed).1
+    }
+}
+
+/// The effect a right drop reports for a chosen action: a move moves, so the
+/// source deletes its original; a copy or keep-in-place leaves it alone, which
+/// `COPY` tells the source.
+fn drop_action_effect(action: DropAction) -> DROPEFFECT {
+    match action {
+        DropAction::Move => DROPEFFECT_MOVE,
+        DropAction::Copy | DropAction::KeepInPlace => DROPEFFECT_COPY,
+    }
+}
+
+/// The right-drag drop menu's entry ids. Non-zero because `TrackPopupMenuEx`
+/// returns 0 for a dismissed menu.
+const DROP_MOVE: u32 = 1;
+const DROP_COPY: u32 = 2;
+const DROP_KEEP: u32 = 3;
+const DROP_CANCEL: u32 = 4;
+
+/// The entries of the menu a right drag shows on a space, in order.
+fn right_drop_entries() -> Vec<MenuEntry> {
+    vec![
+        MenuEntry::item(DROP_MOVE, "Move here"),
+        MenuEntry::item(DROP_COPY, "Copy here"),
+        MenuEntry::item(DROP_KEEP, "Show here without moving"),
+        MenuEntry::Separator,
+        MenuEntry::item(DROP_CANCEL, "Cancel"),
+    ]
+}
+
+/// What a chosen menu entry means. `None` for Cancel, and for a dismissed menu
+/// (whose id 0 matches no arm), so the drop reports no effect and raises no
+/// event.
+fn right_drop_choice(id: u32) -> Option<DropAction> {
+    match id {
+        DROP_MOVE => Some(DropAction::Move),
+        DROP_COPY => Some(DropAction::Copy),
+        DROP_KEEP => Some(DropAction::KeepInPlace),
+        _ => None,
+    }
+}
+
+/// Shows the right-drag menu at the (screen) drop `point` and returns the
+/// chosen action, or `None` when the user cancelled or dismissed it. The menu
+/// is owned by the space window; no runtime state is read across the call.
+fn ask_right_drop(window: HWND, point: &POINTL) -> Option<DropAction> {
+    let entries = right_drop_entries();
+    menu::track(window, &entries, Point::new(point.x, point.y)).and_then(right_drop_choice)
 }
 
 fn drop_files_format() -> FORMATETC {
@@ -700,5 +797,54 @@ mod tests {
         assert!(is_file_list(&paths));
         let mixed = [paths[0].clone(), PathBuf::from("relative.txt")];
         assert!(!is_file_list(&mixed));
+    }
+
+    #[test]
+    fn right_drop_choice_maps_each_entry() {
+        assert_eq!(right_drop_choice(DROP_MOVE), Some(DropAction::Move));
+        assert_eq!(right_drop_choice(DROP_COPY), Some(DropAction::Copy));
+        assert_eq!(right_drop_choice(DROP_KEEP), Some(DropAction::KeepInPlace));
+        assert_eq!(right_drop_choice(DROP_CANCEL), None);
+        // A dismissed menu reports 0, which matches no entry.
+        assert_eq!(right_drop_choice(0), None);
+    }
+
+    #[test]
+    fn a_right_drop_reports_the_effect_of_its_action() {
+        assert_eq!(drop_action_effect(DropAction::Move), DROPEFFECT_MOVE);
+        assert_eq!(drop_action_effect(DropAction::Copy), DROPEFFECT_COPY);
+        assert_eq!(drop_action_effect(DropAction::KeepInPlace), DROPEFFECT_COPY);
+    }
+
+    #[test]
+    fn a_right_file_drag_hovers_as_a_move() {
+        // The menu decides the action, so the hover does not track Shift.
+        assert_eq!(
+            drag_effect(DragKind::Files, true, NO_KEYS, ALL),
+            DROPEFFECT_MOVE
+        );
+        assert_eq!(
+            drag_effect(DragKind::Files, true, MK_SHIFT, ALL),
+            DROPEFFECT_MOVE
+        );
+        // A source that allows no move still shows its own copy.
+        assert_eq!(
+            drag_effect(DragKind::Files, true, NO_KEYS, DROPEFFECT_COPY),
+            DROPEFFECT_COPY
+        );
+        // Shell items still ask for the shortcut link, never a move.
+        assert_eq!(
+            drag_effect(DragKind::ShellItems, true, NO_KEYS, ALL),
+            DROPEFFECT_LINK
+        );
+        // A left drag follows the modifiers as before.
+        assert_eq!(
+            drag_effect(DragKind::Files, false, NO_KEYS, ALL),
+            DROPEFFECT_MOVE
+        );
+        assert_eq!(
+            drag_effect(DragKind::Files, false, MK_SHIFT, ALL),
+            DROPEFFECT_COPY
+        );
     }
 }

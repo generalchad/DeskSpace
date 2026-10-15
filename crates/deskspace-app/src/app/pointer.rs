@@ -248,12 +248,12 @@ impl App {
                 x,
                 y,
                 paths,
-                keep_in_place,
+                action,
             } => {
                 // Only a space registers an OLE drop target, so `id` is a
                 // space here.
                 if let Surface::Space(space) = surface {
-                    self.add_dropped(ui, space, Point::new(x, y), paths, keep_in_place);
+                    self.add_dropped(ui, space, Point::new(x, y), paths, action);
                 }
             }
             SpaceEvent::ShellItemsDropped { x, y, items } => {

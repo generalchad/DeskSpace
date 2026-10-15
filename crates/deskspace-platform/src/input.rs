@@ -45,6 +45,20 @@ pub struct ShellItem {
     pub id_list: Vec<u8>,
 }
 
+/// What a drop does with the dragged files. A left drop picks this from the
+/// modifier keys; a right drop lets the user choose it from a menu (G5b).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropAction {
+    /// Move the files into the space storage (the default).
+    Move,
+    /// Leave the files where they are; the space only lists them. What Shift
+    /// does on a left drop, and Explorer's "Show here without moving".
+    KeepInPlace,
+    /// Put a copy in the space storage and leave the original, copied through
+    /// the shell's file operation.
+    Copy,
+}
+
 /// Input on a space window. Coordinates are desktop coordinates (the
 /// coordinate system of `Space::rect`), not client coordinates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,8 +101,9 @@ pub enum SpaceEvent {
         x: i32,
         y: i32,
         paths: Vec<std::path::PathBuf>,
-        /// Shift was held at the drop: leave the files where they are.
-        keep_in_place: bool,
+        /// What to do with the files: move them into the store, list them
+        /// where they are (Shift), or copy them into the store.
+        action: DropAction,
     },
     /// Virtual shell items (a Start-menu tile, a taskbar app) were dropped on
     /// the space. There is no file to move; the app writes a shortcut for each.

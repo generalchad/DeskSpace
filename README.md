@@ -124,6 +124,7 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   `PageDown` scroll the space.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
+  A right drag onto a space opens a menu to move, copy, or just show the files.
   Apps dragged from the Start menu or the taskbar become shortcuts.
 - Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
   the desktop takeover on, your loose desktop icons stay visible.

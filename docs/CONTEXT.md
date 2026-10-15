@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (350 tests) are green. Update this count whenever a
+  `cargo test --workspace` (353 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking), and
   v0.2.2 (adding shortcuts to spaces),
@@ -677,8 +677,13 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   cursor. `drag_kind` says what a drag carries (`DragKind`: real files,
   shell items, or nothing) and the pure `drop_plan` decides what a drop does
   (`DropPlan`) and which effect to report. A file drop becomes
-  `SpaceEvent::FilesDropped`; the effect is `MOVE` by default and `COPY`
-  while Shift is down, so `keep_in_place` is set only for the latter. As in
+  `SpaceEvent::FilesDropped` with a `DropAction`: `Move` by default (`MOVE`),
+  `KeepInPlace` while Shift is down (`COPY`), or `Copy` from a right drop's
+  menu. A right drag over a space reports `MOVE` while hovering (the menu
+  decides the real action) and, on `Drop`, shows a Move here / Copy here /
+  Show here without moving / Cancel menu owned by the space window; the chosen
+  action becomes the `DropAction`, reporting `MOVE` for Move and `COPY`
+  otherwise (G5b; the "Create shortcuts here" entry is G5c). As in
   Explorer, a `LINK` drop always makes shortcuts: a file list links when Alt
   is held and the source allows a link, or when the source offers neither
   `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is
@@ -688,10 +693,11 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   formats at `debug`. On `DragEnter` it also stores an empty "DropDescription"
   (`DROPIMAGE_NOIMAGE`, no text) on the source's data object, so a shell source
   such as Explorer or the desktop does not draw its default "Move"/"Copy" action
-  hint over the item image. `Drop` marks the source's data object with the
+  hint over the item image. A move marks the source's data object with the
   "Performed DropEffect" format so a shell source does not move the files a
-  second time after DeskSpace has; a shortcut drop never sets it, since
-  nothing moved. A drag that carries neither files nor shell items reports
+  second time after DeskSpace has; a shortcut, copy, or keep-in-place drop
+  never sets it, since the original was not moved. A drag that carries
+  neither files nor shell items reports
   `DROPEFFECT_NONE`. A shell-item drag (any form
   `SHCreateShellItemArrayFromDataObject` reads, including a packaged app with
   no filesystem path) is accepted (`shell_drop_effect` prefers `LINK`, then
@@ -1181,9 +1187,12 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   the drag threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a), which
   never rearranges inside the space, so a right-drag onto Explorer or the
   desktop shows the shell's own Move / Copy / Create shortcut menu. A right
-  click without moving still opens the item or space menu. Showing
-  DeskSpace's equivalent menu when a right drag drops on a space (G5b) and
-  the "Create shortcuts here" entry (G5c) are still open.
+  drag onto a space shows DeskSpace's own Move here / Copy here / Show here
+  without moving / Cancel menu (G5b): "Copy here" copies the files into the
+  store and leaves the originals, "Show here without moving" lists them where
+  they are, and Cancel drops nothing. A right click without moving still
+  opens the item or space menu. The "Create shortcuts here" entry (G5c) is
+  still open.
 - Double-click a space title bar to roll it up or down.
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
@@ -1262,8 +1271,9 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   while spaces are hidden shows them.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are and only show them in the space,
-  or Alt to add a shortcut to them instead. An app dragged from the Start
-  menu or the taskbar (or any drag that offers only a link) creates a
+  or Alt to add a shortcut to them instead. A right drag onto a space shows a
+  menu to move, copy, or just show the files (G5b). An app dragged from the
+  Start menu or the taskbar (or any drag that offers only a link) creates a
   shortcut in the space, as Explorer does when one is dropped on a folder; a
   dropped shortcut file is copied, and its original stays where it was.
 - Click an item to select it; Ctrl+click adds or removes it from the

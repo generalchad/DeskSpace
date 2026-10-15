@@ -9,8 +9,8 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 describe the code when each task landed, often before the R1 and K splits).
 Work that is built but not yet confirmed on screen is listed in section V.
 
-**Pick a task:** G5b-G5c (Explorer-style right-button drag) are ready, in
-order; G5a landed and awaits its on-screen check (section V). Section L's only
+**Pick a task:** G5c (Explorer-style right-button drag) is ready; G5a and G5b
+landed and await their on-screen checks (section V). Section L's only
 remaining item, L1, needs a maintainer's on-screen
 findings. F13 first needs the Ctrl+wheel bug
 under **Found while working** explained. Tasks marked **[needs decision]** or
@@ -444,51 +444,8 @@ Remaining gaps from the controls review. Do them in order.
 - **G5. Right-button drag (ROADMAP D9).** A right drag on an item always
   starts a shell drag (it never reorders inside the space). On drop,
   Explorer and the desktop show their own Move / Copy / Create shortcut
-  menu; a space shows DeskSpace's. G5a is done (its check is in section V);
-  G5b and G5c remain, in order.
-
-- [ ] **G5b. DeskSpace's drop menu on a space.** After G5a.
-  - The menu is shown by the drop target itself, inside `Drop`, because
-    `Drop` must return the chosen effect to the source synchronously. The
-    app then receives an ordinary `FilesDropped` describing the choice, so
-    no new re-entrancy is introduced.
-  - Model the choice explicitly. In `input.rs`, replace
-    `FilesDropped.keep_in_place: bool` with `action: DropAction`, a new
-    `pub enum DropAction { Move, KeepInPlace, Copy }` with a `///` doc per
-    variant (`Move`: into the store, the default; `KeepInPlace`: list the
-    file where it is, what Shift does today; `Copy`: put a copy in the
-    store). Re-export it from `lib.rs`. Update the one app caller (the
-    `FilesDropped` arm in `app/pointer.rs`) to map `Move` /
-    `KeepInPlace` onto today's `add_dropped(.., keep_in_place)`; this
-    first step is a pure refactor and can be its own commit.
-  - Platform, `win32/drop_target.rs`:
-    1. In `DragEnter`, remember whether `MK_RBUTTON` was down (a
-       `right_drag: Cell<bool>` on the drop target).
-    2. `desired_effect` (or `drop_plan`, once L2 has replaced it): for a
-       right drag, return `MOVE` (the menu decides the rest), so the cursor
-       does not flicker with the modifier keys.
-    3. In `Drop`, for a right drag, show a popup menu at the drop point
-       (the `POINTL` `Drop` receives is already in screen coordinates) with
-       `menu::track(owner, &entries, at)`, the function `Ui::popup_menu`
-       uses, owned by the space window; read no runtime state across the
-       call (AGENTS.md Gotchas). Entries:
-       "Move here", "Copy here", "Show here without moving", a separator,
-       and "Cancel". Map the choice with a pure, tested
-       `fn right_drop_choice(id: u32) -> Option<DropAction>` (`None` for
-       Cancel or a dismissed menu). On `None`, return `DROPEFFECT_NONE`
-       and raise no event. Otherwise raise `FilesDropped` with that action
-       and return `COPY` for `Copy` and `KeepInPlace`, `MOVE` for `Move`.
-       Keep the "Performed DropEffect" marking exactly as the left-drop
-       path does.
-  - App, `add_dropped` (`app/files.rs`): add the `Copy` case, copying the
-    files into the store through `ui.transfer_files` the way a Ctrl+C /
-    Ctrl+V paste does (`app/clipboard.rs`), then listing them. Change
-    `add_dropped` to take the `DropAction` instead of a bool.
-  - Done when: `right_drop_choice` has a test per entry. **[needs human]**
-    check: right-drag a file from Explorer onto a space; the menu appears;
-    each entry does what it says, the source file is left alone on Copy,
-    Show here, and Cancel, and a left drag still moves (Shift still keeps in
-    place).
+  menu; a space shows DeskSpace's. G5a and G5b are done (their checks are in
+  section V); G5c remains.
 
 - [ ] **G5c. "Create shortcuts here".** After G5b and L2. The entry goes
   between "Copy here" and "Show here without moving". Choosing it takes L2's
@@ -584,6 +541,7 @@ or a **Found while working** line. The task text for each id is in
 | F14 (F-51) | The color picker is opaque, rounded, and bordered; palette selection and double-click confirm; "Custom colors…" shows a flicker-free live preview; the Colors-page swatch opens it; OK and Cancel, Enter and Esc behave; the scale is right at 100 % and 150 %; the settings window does not hang. |
 | G1, G3 | On the desktop shell: typing selects by prefix and the buffer expires; Home/End/PageUp/PageDown scroll; arrows move the selection, Shift extends, Ctrl moves only the dotted focus rectangle and scrolls it into view. |
 | G5a | Right-drag an item out of a space onto the desktop and into an Explorer folder: the shell's Move / Copy / Create shortcut menu appears and each choice works; a right click without moving still opens the item menu. |
+| G5b | Right-drag a file from Explorer onto a space: DeskSpace's Move here / Copy here / Show here without moving / Cancel menu appears; each entry does what it says; the source file is left alone on Copy, Show here, and Cancel; a left drag still moves and Shift still keeps in place. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid (Acrylic passed). |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

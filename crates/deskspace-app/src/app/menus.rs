@@ -3,7 +3,7 @@
 use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
-use deskspace_platform::{ItemMenuChoice, MenuEntry, Ui, work_area_at};
+use deskspace_platform::{DropAction, ItemMenuChoice, MenuEntry, Ui, work_area_at};
 
 use super::files::ShortcutSource;
 use super::{
@@ -323,7 +323,7 @@ impl App {
         };
         let paths = ui.pick_files(&format!("Add files to \u{201C}{title}\u{201D}"));
         if !paths.is_empty() {
-            self.add_dropped(ui, id, at, paths, false);
+            self.add_dropped(ui, id, at, paths, DropAction::Move);
         }
     }
 
