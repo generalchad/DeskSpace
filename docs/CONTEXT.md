@@ -42,8 +42,9 @@ context menus, and a settings window in the first usable release (v0.2).
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
   `cargo test --workspace` (353 tests) are green. Update this count whenever a
   test is added or removed.
-- Released: v0.2.0 (the first public release), v0.2.1 (update checking), and
-  v0.2.2 (adding shortcuts to spaces),
+- Released: v0.2.0 (the first public release), v0.2.1 (update checking),
+  v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
+  and Explorer-style right-button drag),
   each as an NSIS installer and a portable zip on GitHub Releases (section 10,
   "Packaging").
 - Every space is its own top-level window with a Windows 11 look: acrylic or
