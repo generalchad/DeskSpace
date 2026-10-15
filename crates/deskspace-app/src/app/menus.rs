@@ -209,6 +209,7 @@ impl App {
         // space still takes new shortcuts.
         let can_paste_shortcut = !ui.clipboard_shell_items().is_empty();
         entries.push(new_shortcut_menu(can_paste_shortcut));
+        entries.push(MenuEntry::item(menu::ADD_FILES, "Add files\u{2026}"));
         entries.push(space_appearance_menu(
             space,
             space.theme(&self.config.theme),
@@ -246,6 +247,7 @@ impl App {
             Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
             Some(menu::RESET_APPEARANCE) => self.use_global_appearance(ui, id, at),
             Some(menu::SPACE_SETTINGS) => self.open_settings_with(ui, Some(id)),
+            Some(menu::ADD_FILES) => self.add_files(ui, id, at),
             Some(choice) => {
                 if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
@@ -304,6 +306,24 @@ impl App {
         };
         if !sources.is_empty() {
             self.add_shortcuts(ui, id, at, sources);
+        }
+    }
+
+    /// "Add files…" (F-55): picks files in the standard Open dialog and moves
+    /// them into space `id`, exactly as dropping them would (ROADMAP D3).
+    /// Cancelling adds nothing.
+    pub(super) fn add_files(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let Some(title) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| space.title.clone())
+        else {
+            return;
+        };
+        let paths = ui.pick_files(&format!("Add files to \u{201C}{title}\u{201D}"));
+        if !paths.is_empty() {
+            self.add_dropped(ui, id, at, paths, false);
         }
     }
 

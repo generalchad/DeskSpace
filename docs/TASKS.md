@@ -9,8 +9,9 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 describe the code when each task landed, often before the R1 and K splits).
 Work that is built but not yet confirmed on screen is listed in section V.
 
-**Pick a task:** section L (adding items to spaces) is the current priority;
-start with L1. G5a-G5c are ready, in order. F13 first needs the Ctrl+wheel bug
+**Pick a task:** G5a-G5c (Explorer-style right-button drag) are ready, in
+order. Section L's only remaining item, L1, needs a maintainer's on-screen
+findings. F13 first needs the Ctrl+wheel bug
 under **Found while working** explained. Tasks marked **[needs decision]** or
 in section D are not ready; skip them.
 
@@ -202,11 +203,11 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 
 Today an item reaches a space by a file drag, a paste, or (F-50) a drag that
 carries shell items, which includes Start-menu and taskbar apps since L2
-(awaiting its on-screen check, section V). L1 still needs the per-source
-findings. The space menu's "New shortcut ▸" (L3-L5, archived; landed as a
-DeskSpace list window, a Custom shortcut dialog, and "Paste shortcut") and a
-space's Settings page "Shortcuts" (L7, archived) are in; L6 adds the rest. It
-does not depend on L1-L2.
+(awaiting its on-screen check, section V). The space menu's "New shortcut ▸"
+(L3-L5, archived; landed as a DeskSpace list window, a Custom shortcut
+dialog, and "Paste shortcut"), its "Add files…" (L6, archived), and a space's
+Settings page "Shortcuts" (L7, archived) are in. L1, the last item, needs the
+maintainer's per-source findings; everything else does not depend on it.
 
 Shared code, already in place (F-50, commit `01043e8`, L2, F-53, and F-54):
 
@@ -265,23 +266,6 @@ second shortcut writer.
     L2 was amended for this (archived) and has landed; record the remaining
     sources from the check above, including the Start-menu result now.
   - Done when: the log line lands and the findings are recorded.
-
-- [ ] **L6. "Add files…" in the space menu (F-55).** **[needs decision]**: does a
-  file picked in a dialog move into the space (as a drop does, D3), stay in
-  place, or become a shortcut? Recommendation: move, like a drop, because one
-  rule for "add a file" is easiest to learn; but a dialog that relocates files
-  may surprise users, so the maintainer decides first.
-  - Platform: `Ui::pick_files`, an `IFileOpenDialog` with
-    `FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM`, opened on the Desktop
-    folder (copy `shortcut_dialog::browse_for_file`). One dialog cannot pick
-    files and folders together, so folders stay drag-only for now.
-  - App: `menu::ADD_FILES = 48`, an entry after "New shortcut ▸" (it adds
-    files, not shortcuts); the arm calls
-    `add_dropped(ui, id, at, paths, keep_in_place)` per the decision, so it
-    shares the drop path exactly.
-  - Docs: `CONTEXT.md` section 8, `README.md` Controls, and the F-55 row.
-  - Done when: tests pass. **[needs human]** check: pick two files; they land
-    in the space as decided, and Cancel adds nothing.
 
 ## C. Features (ROADMAP M3)
 
@@ -644,6 +628,7 @@ or a **Found while working** line. The task text for each id is in
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
 | L5 (F-54) | Copy a file and a folder in Explorer; "New shortcut ▸ Paste shortcut" in a space (and from the Shortcuts page's + tile) makes two shortcuts and the originals stay; with nothing on the clipboard the entry is grey. |
+| L6 (F-55) | "Add files…" on a space lists the standard Open dialog on the Desktop; picking two files moves them into that space (as a drop does), and Cancel adds nothing. |
 | Drag and drop (F-36, F-37) | The move/copy cursor; no `- Copy` left on the desktop after a drag out; the drag image over Explorer and over spaces; the in-space ghost. |
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |

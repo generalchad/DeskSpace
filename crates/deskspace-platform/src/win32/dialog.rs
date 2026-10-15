@@ -7,15 +7,22 @@
 //! (`dark_mode`). Each dialog owns its state; the window points at it through
 //! `GWLP_USERDATA` only while it exists.
 
+use std::path::PathBuf;
+
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     CreateFontIndirectW, CreateSolidBrush, DeleteObject, HBRUSH, HDC, HFONT, HGDIOBJ, SetBkColor,
     SetTextColor,
 };
+use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+use windows::Win32::UI::Shell::{
+    FOLDERID_Desktop, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FileOpenDialog,
+    IFileOpenDialog, IShellItem, KF_FLAG_DEFAULT, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, DispatchMessageW, EnumChildWindows, GetClassNameW,
     GetCursorPos, GetMessageW, GetWindowTextLengthW, GetWindowTextW, HMENU, IsDialogMessageW,
@@ -28,6 +35,7 @@ use windows::core::{BOOL, PCWSTR};
 
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::settings_window::colorref;
+use crate::win32::shortcuts::display_name;
 use crate::win32::system::{message_logfont, wide, work_area_at};
 
 /// The dialog-manager ids `IsDialogMessageW` sends for Enter and Escape, so
@@ -283,6 +291,63 @@ pub(crate) unsafe fn window_text(control: HWND) -> String {
         let mut buffer = vec![0u16; length + 1];
         let copied = GetWindowTextW(control, &mut buffer).max(0) as usize;
         String::from_utf16_lossy(&buffer[..copied])
+    }
+}
+
+/// Opens the standard file Open dialog over `owner` and returns the files the
+/// user picked, or an empty list when they cancelled. Multi-select is on and
+/// the dialog starts on the Desktop folder; only existing filesystem items are
+/// offered, so every returned path names a real file (F-55).
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileopendialog
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-_fileopendialogoptions
+pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
+    // SAFETY: OLE is initialized on this thread; the dialog is modal over
+    // `owner` and released when it goes out of scope.
+    unsafe {
+        let created: windows::core::Result<IFileOpenDialog> =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER);
+        let Ok(picker) = created else {
+            return Vec::new();
+        };
+        let Ok(options) = picker.GetOptions() else {
+            return Vec::new();
+        };
+        if picker
+            .SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT)
+            .is_err()
+        {
+            return Vec::new();
+        }
+        let title = wide(title);
+        let _ = picker.SetTitle(PCWSTR(title.as_ptr()));
+        if let Ok(desktop) =
+            SHGetKnownFolderItem::<IShellItem>(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)
+        {
+            let _ = picker.SetFolder(&desktop);
+        }
+        // The owner is a background window, so the dialog would otherwise open
+        // behind the active app.
+        let _ = SetForegroundWindow(owner);
+        // Cancel comes back as an error (HRESULT_FROM_WIN32(ERROR_CANCELLED)).
+        if picker.Show(Some(owner)).is_err() {
+            return Vec::new();
+        }
+        let Ok(results) = picker.GetResults() else {
+            return Vec::new();
+        };
+        let Ok(count) = results.GetCount() else {
+            return Vec::new();
+        };
+        let mut paths = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let Ok(item) = results.GetItemAt(index) else {
+                continue;
+            };
+            if let Some(path) = display_name(&item, SIGDN_FILESYSPATH) {
+                paths.push(PathBuf::from(path));
+            }
+        }
+        paths
     }
 }
 

@@ -63,6 +63,20 @@ impl Ui {
         unsafe { crate::win32::shortcut_dialog::custom_shortcut(owner, title, dark) }
     }
 
+    /// Opens the standard file Open dialog titled `title` and returns the files
+    /// the user picked, or an empty list when they cancelled. Multi-select is
+    /// on and the dialog starts on the Desktop folder. Blocks in a modal loop;
+    /// other events are queued meanwhile.
+    pub fn pick_files(&mut self, title: &str) -> Vec<std::path::PathBuf> {
+        let Some(owner) = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))
+        else {
+            return Vec::new();
+        };
+        // SAFETY: `owner` is a live window owned by this thread, and the dialog
+        // is modal for the duration of the call.
+        unsafe { crate::win32::dialog::pick_files(owner, title) }
+    }
+
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen
     /// entry id. Blocks in a modal loop; other events are queued meanwhile.
     pub fn popup_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<u32> {

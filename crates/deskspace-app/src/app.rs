@@ -121,6 +121,7 @@ mod menu {
     pub const NEW_SHORTCUT_APPS: u32 = 45;
     pub const NEW_SHORTCUT_CUSTOM: u32 = 46;
     pub const PASTE_SHORTCUT: u32 = 47;
+    pub const ADD_FILES: u32 = 48;
 }
 
 /// A way to make a new shortcut in a space (F-53, F-54).
@@ -717,6 +718,7 @@ mod tests {
             menu::RESET_APPEARANCE,
             menu::SPACE_SETTINGS,
             menu::CHECK_UPDATES,
+            menu::ADD_FILES,
         ];
         let mut ids: Vec<u32> = other.to_vec();
         ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));

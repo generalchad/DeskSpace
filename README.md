@@ -100,9 +100,10 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
-  web address, or pastes a shortcut to what you copied in Explorer ("Paste
-  shortcut"). In Settings, a space's "Shortcuts" page shows a preview of the
-  space: click an item's ✕ to delete it, or the + tile to add a shortcut.
+  web address, pastes a shortcut to what you copied in Explorer ("Paste
+  shortcut"), or moves files you pick ("Add files…"). In Settings, a space's
+  "Shortcuts" page shows a preview of the space: click an item's ✕ to delete
+  it, or the + tile to add a shortcut.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the

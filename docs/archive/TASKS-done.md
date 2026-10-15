@@ -1509,3 +1509,19 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: tests pass. **[needs human]** check: copy a file and a folder
     in Explorer; "Paste shortcut" in a space makes two shortcuts and the
     originals stay; with nothing on the clipboard the entry is grey.
+
+- [x] **L6. "Add files…" in the space menu (F-55).** Decided with the
+  maintainer (2026-10-14): a picked file moves into the space, exactly as a
+  drop does.
+  - Platform: `Ui::pick_files`, an `IFileOpenDialog` with
+    `FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM`, opened on the Desktop
+    folder (`win32/dialog.rs::pick_files`, from
+    `shortcut_dialog::browse_for_file`). One dialog cannot pick
+    files and folders together, so folders stay drag-only for now.
+  - App: `menu::ADD_FILES = 48`, an entry after "New shortcut ▸" (it adds
+    files, not shortcuts); the arm calls
+    `add_dropped(ui, id, at, paths, false)`, so it
+    shares the drop path exactly.
+  - Docs: `CONTEXT.md` section 8, `README.md` Controls, and the F-55 row.
+  - Done when: tests pass. **[needs human]** check: pick two files; they land
+    in the space as decided, and Cancel adds nothing.

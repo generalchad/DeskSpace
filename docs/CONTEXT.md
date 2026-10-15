@@ -513,7 +513,7 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
-41-47; next free 13, or 48; 9, the removed "Remove from space", stays
+41-48; next free 13, or 49; 9, the removed "Remove from space", stays
 unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
 Settings field ids are in `settings/ids.rs`'s `mod field` (next free 72; 25 and
@@ -1209,6 +1209,12 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   storage and lists the shortcuts at the end of the space. The same choices
   open from the + tile on a space's Settings page "Shortcuts", whose preview
   also deletes an item from its X (after asking).
+- The space menu's "Add files…" (F-55) picks files in the standard Open
+  dialog (`deskspace_platform::Ui::pick_files`, an `IFileOpenDialog` with
+  multi-select, started on the Desktop folder) and moves them into the space
+  through the same `App::add_dropped` path a drop uses (ROADMAP D3), so a
+  picked file is relocated into the space storage exactly like a dragged one.
+  Cancelling adds nothing.
 - In Settings, pick Global or a space in the left pane. Global edits apply to
   every space that is not customized. A space's pages are greyed, showing the
   global values, until "Customize this space" is ticked; its edits then apply
