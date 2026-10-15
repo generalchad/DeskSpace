@@ -1048,10 +1048,15 @@ after About) and `settings::listed_pages` says which pages a scope lists.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (via the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the takeover
-  (M2): `hide`/`restore` hide or show the `SysListView32` of every
-  `SHELLDLL_DefView` (one per monitor), re-enumerating each time so a listview
+  (M2): `hide`/`restore` hide or show every `SysListView32` under a
+  `SHELLDLL_DefView`, re-enumerating each time so a listview
   Explorer recreates is found, and `rehide_if_active` re-hides only while
-  takeover is on. Only the listview is hidden, never the `SHELLDLL_DefView`, so
+  takeover is on. The walk recurses the whole subtree of the desktop shell
+  (`Progman` / `WorkerW`), not just its direct children, because on some builds
+  the icon `SHELLDLL_DefView` is nested under the shell (for example
+  `Progman -> WorkerW -> SHELLDLL_DefView`); it is limited to the shell's
+  subtree because an Explorer window also contains a `SHELLDLL_DefView`. Only
+  the listview is hidden, never the `SHELLDLL_DefView`, so
   `find_host` and the shell-view COM reads keep working. `restore` runs in the
   `run` teardown before `OleUninitialize`; `rehide_if_active` runs on
   `TaskbarCreated` (Explorer restart) and from the app's health timer.

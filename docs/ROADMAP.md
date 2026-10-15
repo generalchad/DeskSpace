@@ -165,8 +165,9 @@ A native, lightweight, offline Windows desktop organizer that:
       see the 2026-10-11 progress entry. A space also ignores
       `WM_SYSCOMMAND`/`SC_MINIMIZE`, so survival does not depend on that
       exclusion and Show Desktop cannot tear down the accent blur.
-  - *Hiding Explorer's icons:* hide the `SysListView32` of every
-    `SHELLDLL_DefView` (there is one per monitor) and restore it on a clean
+  - *Hiding Explorer's icons:* hide every `SysListView32` under a
+    `SHELLDLL_DefView` in the desktop shell's window subtree (the view may be
+    nested, not just a direct child) and restore it on a clean
     exit. Re-hide after Explorer restarts (`TaskbarCreated`) and on a
     low-frequency health timer.
   - *Crash safety:* a small watchdog helper process, launched before the icons
