@@ -1484,3 +1484,28 @@ until I5-I6 all land, so no partial build hides the desktop.
     `Ui::prefetch_apps`) after the maintainer found the picker slow to open.
     Checked on screen 2026-10-13 (hover, X with confirmation, +, and a fast
     picker).
+
+- [x] **L5. "Paste shortcut" in the New shortcut submenu (F-54).** After
+  F-53. Explorer's "Paste shortcut": copy anything in Explorer, then make a
+  shortcut to it in a space.
+  - Platform: `Ui::clipboard_shell_items(&mut self) -> Vec<ShellItem>` in
+    `runtime/ui_shell.rs`, implemented in `win32/clipboard.rs`:
+    `OleGetClipboard`, then the same path as drops (make
+    `drop_target::shell_items` `pub(crate)`, or move it beside `shell_item`
+    in `shortcuts.rs`; do not copy it). Reuse the retry the clipboard file
+    reader already has for a clipboard another process holds.
+  - App: `menu::PASTE_SHORTCUT = 47` in the "New shortcut" submenu after a
+    separator (a row in `NEW_SHORTCUT_ENTRIES` with a new `NewShortcut`
+    variant), greyed when `ui.clipboard_shell_items()` is empty (read it once
+    while building the menu). It calls `add_shortcuts` with
+    `ShortcutSource::Shell`; L2's copy-a-`.lnk` rule applies because it lives
+    there. Paste shortcut never moves or
+    deletes the clipboard's files and leaves the clipboard and any cut
+    ghosting alone.
+  - No key: Explorer has no default key for it, and Ctrl+V keeps meaning
+    paste.
+  - Docs: `CONTEXT.md` section 8 (the New shortcut bullet), `README.md`
+    Controls, and the F-54 row.
+  - Done when: tests pass. **[needs human]** check: copy a file and a folder
+    in Explorer; "Paste shortcut" in a space makes two shortcuts and the
+    originals stay; with nothing on the clipboard the entry is grey.

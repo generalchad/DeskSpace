@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (347 tests) are green. Update this count whenever a
+  `cargo test --workspace` (349 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking), and
   v0.2.2 (adding shortcuts to spaces),
@@ -62,9 +62,11 @@ context menus, and a settings window in the first usable release (v0.2).
   DeskSpace's own layer) is built and opt-in (section 6; ROADMAP D7, D8).
 - Dragging an app from the Start menu onto a space makes a shortcut
   (`TASKS.md` L2); it awaits an on-screen check (section V). The space
-  menu's "New shortcut ▸" picks installed apps or takes a custom target, and
-  a space's Settings page "Shortcuts" previews it with an X per item and a +
-  tile (F-53); all of it was checked on screen on 2026-10-13.
+  menu's "New shortcut ▸" picks installed apps, takes a custom target, or
+  pastes a shortcut to what is on the clipboard, and a space's Settings page
+  "Shortcuts" previews it with an X per item and a + tile (F-53, F-54); F-53
+  was checked on screen on 2026-10-13, and "Paste shortcut" awaits its check
+  (section V).
 - Verification: many behaviors are covered by unit tests but not confirmed on
   screen; `TASKS.md` section V lists them. Confirm one before building on it.
   Checked on screen so far: the blur, corners, space content, and settings
@@ -511,7 +513,7 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 
 Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
-41-46; next free 13, or 47; 9, the removed "Remove from space", stays
+41-47; next free 13, or 48; 9, the removed "Remove from space", stays
 unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
 Settings field ids are in `settings/ids.rs`'s `mod field` (next free 72; 25 and
@@ -843,7 +845,10 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   `IFileOperation` into the store (`FOF_RENAMEONCOLLISION` guards the shared
   store against Explorer's Replace dialog; `FOF_ALLOWUNDO` records an undo),
   and an `IFileOperationProgressSink` returns each created path so the pasted
-  items are listed and selected. The keys arrive through the same low-level
+  items are listed and selected. `Ui::clipboard_shell_items` reads the
+  clipboard's shell items through `OleGetClipboard` and `drop_target::shell_items`
+  (sharing `open_clipboard`'s retry) for "New shortcut ▸ Paste shortcut"
+  (F-54). The keys arrive through the same low-level
   keyboard hook as Delete, now gated on a selection (Ctrl+C/X) or a current
   space (Ctrl+V). Delete sends the selection to the Recycle Bin
   (`Ui::delete_files(paths, permanent)` → `IFileOperation::DeleteItem` with
@@ -1187,16 +1192,20 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   by reorders items by name (A–Z or Z–A), type, size (smallest or largest),
   or date (oldest or newest). All three submenus are built from tables in
   `app.rs` (`OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `SORT_PRESETS`).
-- The space menu's New shortcut submenu (F-53; `NEW_SHORTCUT_ENTRIES` in
+- The space menu's New shortcut submenu (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in
   `app.rs`, also enabled for a locked space) offers "From installed
   apps…", a picker listing every app in the Applications folder (Store apps
-  included) with a check box per row and a search box, and "Custom
+  included) with a check box per row and a search box, "Custom
   shortcut…", a dialog for a target (file, folder, program, or web address,
   with Browse…), optional arguments, and a name that follows the target until
-  edited. A typed path is resolved as the Run dialog does (`%VARIABLES%`, a
+  edited, and (after a separator) "Paste shortcut", which is enabled when the
+  clipboard holds shell items (`Ui::clipboard_shell_items`) and leaves the
+  clipboard, its files, and any cut ghosting untouched. A typed path is
+  resolved as the Run dialog does (`%VARIABLES%`, a
   bare program name on the search path), and a target that does not exist is
   reported in the dialog. A web address becomes a `.url`; everything else a
-  `.lnk`. Both end in `App::add_shortcuts`, which writes into the space
+  `.lnk` (a copied `.lnk` or `.url` is duplicated into the store). All three
+  end in `App::add_shortcuts`, which writes into the space
   storage and lists the shortcuts at the end of the space. The same choices
   open from the + tile on a space's Settings page "Shortcuts", whose preview
   also deletes an item from its X (after asking).

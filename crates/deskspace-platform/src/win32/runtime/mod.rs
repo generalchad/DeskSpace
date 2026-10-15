@@ -38,7 +38,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
-use crate::input::Event;
+use crate::input::{Event, ShellItem};
 use crate::render::{SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::clipboard::ClipboardFiles;

@@ -120,20 +120,23 @@ mod menu {
     pub const SORT_DATE_DESC: u32 = 36;
     pub const NEW_SHORTCUT_APPS: u32 = 45;
     pub const NEW_SHORTCUT_CUSTOM: u32 = 46;
+    pub const PASTE_SHORTCUT: u32 = 47;
 }
 
-/// A way to make a new shortcut in a space (F-53).
+/// A way to make a new shortcut in a space (F-53, F-54).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NewShortcut {
     /// Pick apps from the Applications folder.
     Apps,
     /// Describe the target by hand.
     Custom,
+    /// Shortcut to the items on the clipboard.
+    Paste,
 }
 
 /// The "New shortcut" submenu: menu id, label, and what it makes. Shared by
 /// the space menu and the settings window's Shortcuts page.
-const NEW_SHORTCUT_ENTRIES: [(u32, &str, NewShortcut); 2] = [
+const NEW_SHORTCUT_ENTRIES: [(u32, &str, NewShortcut); 3] = [
     (
         menu::NEW_SHORTCUT_APPS,
         "From installed apps\u{2026}",
@@ -144,6 +147,7 @@ const NEW_SHORTCUT_ENTRIES: [(u32, &str, NewShortcut); 2] = [
         "Custom shortcut\u{2026}",
         NewShortcut::Custom,
     ),
+    (menu::PASTE_SHORTCUT, "Paste shortcut", NewShortcut::Paste),
 ];
 
 /// The tint-opacity presets the Appearance submenu offers: menu id, label, and

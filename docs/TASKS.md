@@ -203,16 +203,17 @@ values through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 Today an item reaches a space by a file drag, a paste, or (F-50) a drag that
 carries shell items, which includes Start-menu and taskbar apps since L2
 (awaiting its on-screen check, section V). L1 still needs the per-source
-findings. The space menu's "New shortcut ▸" (L3-L4, archived; landed as a
-DeskSpace list window and a "New shortcut" submenu with a Custom shortcut
-dialog, decided with the maintainer) and a space's Settings page "Shortcuts"
-(L7, archived) are in; L5 and L6 add the rest. They do not depend on L1-L2.
+findings. The space menu's "New shortcut ▸" (L3-L5, archived; landed as a
+DeskSpace list window, a Custom shortcut dialog, and "Paste shortcut") and a
+space's Settings page "Shortcuts" (L7, archived) are in; L6 adds the rest. It
+does not depend on L1-L2.
 
-Shared code, already in place (F-50, commit `01043e8`, L2, and F-53):
+Shared code, already in place (F-50, commit `01043e8`, L2, F-53, and F-54):
 
 - `win32/drop_target.rs`: `DragKind`, `drag_kind`, `is_file_list`,
   `DropPlan`, `drop_plan`, `shell_items`, `shell_drop_effect`, and
-  `log_formats`.
+  `log_formats`; `win32/clipboard.rs` `shell_items`
+  (`Ui::clipboard_shell_items`).
 - `input.rs`: `ShellItem { name, path, id_list }` and
   `SpaceEvent::ShellItemsDropped`; `ui.rs`: `CustomShortcut`,
   `ShortcutTarget`.
@@ -264,31 +265,6 @@ second shortcut writer.
     L2 was amended for this (archived) and has landed; record the remaining
     sources from the check above, including the Start-menu result now.
   - Done when: the log line lands and the findings are recorded.
-
-- [ ] **L5. "Paste shortcut" in the New shortcut submenu (F-54).** After
-  F-53. Explorer's "Paste shortcut": copy anything in Explorer, then make a
-  shortcut to it in a space.
-  - Platform: `Ui::clipboard_shell_items(&mut self) -> Vec<ShellItem>` in
-    `runtime/ui_shell.rs`, implemented in `win32/clipboard.rs`:
-    `OleGetClipboard`, then the same path as drops (make
-    `drop_target::shell_items` `pub(crate)`, or move it beside `shell_item`
-    in `shortcuts.rs`; do not copy it). Reuse the retry the clipboard file
-    reader already has for a clipboard another process holds.
-  - App: `menu::PASTE_SHORTCUT = 47` in the "New shortcut" submenu after a
-    separator (a row in `NEW_SHORTCUT_ENTRIES` with a new `NewShortcut`
-    variant), greyed when `ui.clipboard_shell_items()` is empty (read it once
-    while building the menu). It calls `add_shortcuts` with
-    `ShortcutSource::Shell`; L2's copy-a-`.lnk` rule applies because it lives
-    there. Paste shortcut never moves or
-    deletes the clipboard's files and leaves the clipboard and any cut
-    ghosting alone.
-  - No key: Explorer has no default key for it, and Ctrl+V keeps meaning
-    paste.
-  - Docs: `CONTEXT.md` section 8 (the New shortcut bullet), `README.md`
-    Controls, and the F-54 row.
-  - Done when: tests pass. **[needs human]** check: copy a file and a folder
-    in Explorer; "Paste shortcut" in a space makes two shortcuts and the
-    originals stay; with nothing on the clipboard the entry is grey.
 
 - [ ] **L6. "Add files…" in the space menu (F-55).** **[needs decision]**: does a
   file picked in a dialog move into the space (as a drop does, D3), stay in
@@ -667,6 +643,7 @@ or a **Found while working** line. The task text for each id is in
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid (Acrylic passed). |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
+| L5 (F-54) | Copy a file and a folder in Explorer; "New shortcut ▸ Paste shortcut" in a space (and from the Shortcuts page's + tile) makes two shortcuts and the originals stay; with nothing on the clipboard the entry is grey. |
 | Drag and drop (F-36, F-37) | The move/copy cursor; no `- Copy` left on the desktop after a drag out; the drag image over Explorer and over spaces; the in-space ghost. |
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |

@@ -98,9 +98,10 @@ arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
 - Double-click a space title bar to roll it up or down. Right-click a space for
   roll up, rename, lock, fit to contents, new shortcut, appearance, sort,
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"
-  either lists your installed apps (Store apps included) to tick and add, or
+  lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
-  web address. In Settings, a space's "Shortcuts" page shows a preview of the
+  web address, or pastes a shortcut to what you copied in Explorer ("Paste
+  shortcut"). In Settings, a space's "Shortcuts" page shows a preview of the
   space: click an item's ✕ to delete it, or the + tile to add a shortcut.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to

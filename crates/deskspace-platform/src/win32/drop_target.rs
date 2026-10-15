@@ -497,9 +497,10 @@ fn shell_drop_effect(allowed: DROPEFFECT) -> DROPEFFECT {
         .unwrap_or(DROPEFFECT_NONE)
 }
 
-/// The shell items a virtual drag carries, each with Explorer's display name
-/// and an absolute ID list that `create_shortcut` can rebuild.
-fn shell_items(data: &IDataObject) -> Option<Vec<ShellItem>> {
+/// The shell items a data object carries (a drag or the clipboard), each with
+/// Explorer's display name and an absolute ID list that `create_shortcut` can
+/// rebuild.
+pub(crate) fn shell_items(data: &IDataObject) -> Option<Vec<ShellItem>> {
     let array = shell_item_array(data)?;
     // SAFETY: the array is live.
     let count = unsafe { array.GetCount() }.ok()?;

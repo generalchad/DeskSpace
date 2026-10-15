@@ -207,7 +207,8 @@ impl App {
         entries.push(MenuEntry::Separator);
         // Locking fixes a space's position, not its contents, so a locked
         // space still takes new shortcuts.
-        entries.push(new_shortcut_menu());
+        let can_paste_shortcut = !ui.clipboard_shell_items().is_empty();
+        entries.push(new_shortcut_menu(can_paste_shortcut));
         entries.push(space_appearance_menu(
             space,
             space.theme(&self.config.theme),
@@ -271,10 +272,10 @@ impl App {
     }
 
     /// Makes new shortcuts in space `id` the way `kind` says: apps checked in
-    /// the installed-apps picker, or one described in the "Custom shortcut"
-    /// dialog. Cancelling either adds nothing. The shortcuts are listed at
-    /// the end of the space; `at` only picks the monitor whose work area
-    /// bounds the space.
+    /// the installed-apps picker, one described in the "Custom shortcut"
+    /// dialog, or the items on the clipboard. Cancelling a dialog adds
+    /// nothing. The shortcuts are listed at the end of the space; `at` only
+    /// picks the monitor whose work area bounds the space.
     pub(super) fn new_shortcut(&mut self, ui: &mut Ui, id: SpaceId, kind: NewShortcut, at: Point) {
         let Some(title) = self
             .config
@@ -295,6 +296,11 @@ impl App {
                 .map(ShortcutSource::Custom)
                 .into_iter()
                 .collect(),
+            NewShortcut::Paste => ui
+                .clipboard_shell_items()
+                .into_iter()
+                .map(ShortcutSource::Shell)
+                .collect(),
         };
         if !sources.is_empty() {
             self.add_shortcuts(ui, id, at, sources);
@@ -304,8 +310,9 @@ impl App {
     /// Shows the "New shortcut" choices at `at` (the settings window's +
     /// tile) and makes the chosen kind of shortcut in space `id`.
     pub(super) fn offer_new_shortcut(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let can_paste = !ui.clipboard_shell_items().is_empty();
         let choice = ui
-            .popup_menu(&new_shortcut_entries(), at)
+            .popup_menu(&new_shortcut_entries(can_paste), at)
             .and_then(new_shortcut_choice);
         if let Some(kind) = choice {
             let near = self.space_center(id);
@@ -414,18 +421,24 @@ fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
     MenuEntry::submenu("Appearance", entries)
 }
 
-/// The "New shortcut" submenu (F-53), from `NEW_SHORTCUT_ENTRIES`.
-fn new_shortcut_menu() -> MenuEntry {
-    MenuEntry::submenu("New shortcut", new_shortcut_entries())
+/// The "New shortcut" submenu (F-53, F-54), from `NEW_SHORTCUT_ENTRIES`.
+/// `can_paste` enables "Paste shortcut" when the clipboard holds shell items.
+fn new_shortcut_menu(can_paste: bool) -> MenuEntry {
+    MenuEntry::submenu("New shortcut", new_shortcut_entries(can_paste))
 }
 
 /// The New shortcut choices themselves, for the submenu and the settings
 /// window's + tile.
-fn new_shortcut_entries() -> Vec<MenuEntry> {
-    NEW_SHORTCUT_ENTRIES
-        .iter()
-        .map(|(id, label, _)| MenuEntry::item(*id, *label))
-        .collect()
+fn new_shortcut_entries(can_paste: bool) -> Vec<MenuEntry> {
+    let mut entries = Vec::with_capacity(NEW_SHORTCUT_ENTRIES.len() + 1);
+    for (id, label, kind) in NEW_SHORTCUT_ENTRIES {
+        if kind == NewShortcut::Paste {
+            entries.push(MenuEntry::Separator);
+        }
+        let enabled = kind != NewShortcut::Paste || can_paste;
+        entries.push(MenuEntry::item(id, label).enabled(enabled));
+    }
+    entries
 }
 
 /// What a "New shortcut" menu id makes, if it is one.
@@ -456,7 +469,7 @@ mod tests {
 
     #[test]
     fn the_new_shortcut_menu_maps_each_entry_back() {
-        let MenuEntry::Submenu { label, entries, .. } = new_shortcut_menu() else {
+        let MenuEntry::Submenu { label, entries, .. } = new_shortcut_menu(false) else {
             panic!("expected a submenu");
         };
         assert_eq!(label, "New shortcut");
@@ -467,7 +480,14 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(ids, [menu::NEW_SHORTCUT_APPS, menu::NEW_SHORTCUT_CUSTOM]);
+        assert_eq!(
+            ids,
+            [
+                menu::NEW_SHORTCUT_APPS,
+                menu::NEW_SHORTCUT_CUSTOM,
+                menu::PASTE_SHORTCUT
+            ]
+        );
         assert_eq!(
             new_shortcut_choice(menu::NEW_SHORTCUT_APPS),
             Some(NewShortcut::Apps)
@@ -476,7 +496,26 @@ mod tests {
             new_shortcut_choice(menu::NEW_SHORTCUT_CUSTOM),
             Some(NewShortcut::Custom)
         );
+        assert_eq!(
+            new_shortcut_choice(menu::PASTE_SHORTCUT),
+            Some(NewShortcut::Paste)
+        );
         assert_eq!(new_shortcut_choice(menu::ROLL), None);
+    }
+
+    #[test]
+    fn paste_shortcut_follows_a_separator_and_the_clipboard() {
+        let empty = new_shortcut_entries(false);
+        assert_eq!(empty[2], MenuEntry::Separator);
+        assert_eq!(
+            empty[3],
+            MenuEntry::item(menu::PASTE_SHORTCUT, "Paste shortcut").enabled(false)
+        );
+        let filled = new_shortcut_entries(true);
+        assert_eq!(
+            filled[3],
+            MenuEntry::item(menu::PASTE_SHORTCUT, "Paste shortcut").enabled(true)
+        );
     }
 
     #[test]

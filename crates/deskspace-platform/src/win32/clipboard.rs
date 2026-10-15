@@ -17,11 +17,14 @@ use windows::Win32::System::DataExchange::{
     SetClipboardData,
 };
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
-use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE};
+use windows::Win32::System::Ole::{
+    CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, OleGetClipboard,
+};
 use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
 use windows::core::{BOOL, PCWSTR};
 
 use crate::error::PlatformError;
+use crate::input::ShellItem;
 use crate::win32::system::wide;
 
 /// Files on the clipboard and whether they were cut (to be moved) or copied.
@@ -71,6 +74,18 @@ pub(crate) fn file_list() -> Option<ClipboardFiles> {
     }
 }
 
+/// The shell items on the clipboard (files, folders, or virtual items copied
+/// in Explorer), or an empty list when it holds none.
+/// https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-olegetclipboard
+pub(crate) fn shell_items() -> Vec<ShellItem> {
+    // SAFETY: OLE is initialized on the UI thread; the returned data object is
+    // released when `data` drops.
+    let Ok(data) = with_clipboard_retry(|| unsafe { OleGetClipboard() }) else {
+        return Vec::new();
+    };
+    super::drop_target::shell_items(&data).unwrap_or_default()
+}
+
 /// Empties the clipboard.
 pub(crate) fn clear() -> Result<(), PlatformError> {
     // SAFETY: open, empty, and close, with no borrowed state.
@@ -88,18 +103,23 @@ const OPEN_ATTEMPTS: usize = 5;
 /// Opens the clipboard, retrying briefly: another process (often Explorer) can
 /// hold it at the moment a change notification arrives.
 fn open_clipboard() -> Result<(), PlatformError> {
+    // SAFETY: opening the clipboard with no owner window.
+    with_clipboard_retry(|| unsafe { OpenClipboard(None) }).map_err(PlatformError::from)
+}
+
+/// Retries a clipboard call briefly while another process holds the clipboard.
+fn with_clipboard_retry<T, E>(mut op: impl FnMut() -> Result<T, E>) -> Result<T, E> {
     let mut last = None;
     for _ in 0..OPEN_ATTEMPTS {
-        // SAFETY: opening the clipboard with no owner window.
-        match unsafe { OpenClipboard(None) } {
-            Ok(()) => return Ok(()),
+        match op() {
+            Ok(value) => return Ok(value),
             Err(error) => {
                 last = Some(error);
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
         }
     }
-    Err(last.expect("at least one attempt").into())
+    Err(last.expect("at least one attempt"))
 }
 
 /// A `CF_HDROP` buffer: a `DROPFILES` header followed by the paths as
@@ -248,5 +268,24 @@ mod tests {
             .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         assert_eq!(list, expected);
+    }
+
+    #[test]
+    fn clipboard_retry_recovers_from_transient_failures() {
+        let mut attempts = 0;
+        let result = with_clipboard_retry(|| {
+            attempts += 1;
+            if attempts < 3 { Err("busy") } else { Ok(42) }
+        });
+        assert_eq!(result, Ok(42));
+        assert_eq!(attempts, 3);
+
+        let mut attempts = 0;
+        let result: Result<(), &str> = with_clipboard_retry(|| {
+            attempts += 1;
+            Err("held")
+        });
+        assert_eq!(result, Err("held"));
+        assert_eq!(attempts, OPEN_ATTEMPTS);
     }
 }

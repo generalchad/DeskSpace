@@ -87,6 +87,12 @@ impl Ui {
         clipboard::file_list()
     }
 
+    /// The shell items on the clipboard (files, folders, or virtual items
+    /// copied in Explorer), or an empty list when it holds none.
+    pub fn clipboard_shell_items(&mut self) -> Vec<ShellItem> {
+        clipboard::shell_items()
+    }
+
     /// Empties the clipboard after a cut has been pasted.
     pub fn clear_clipboard(&mut self) {
         if let Err(error) = clipboard::clear() {

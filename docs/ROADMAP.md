@@ -240,16 +240,16 @@ Takeover ships opt-in (D8, D9).
   are in); undo remains. Non-file shell drags (F-50), including Start-menu
   apps, become shortcuts; the Start-menu drop awaits an on-screen check.
 - *M3:* the tray, menus, and settings window work, with all nine pages.
-  "New shortcut ▸" and the settings Shortcuts page are in (F-53). What
-  remains is Paste shortcut and Files… (F-54, F-55),
+  "New shortcut ▸" (including "Paste shortcut") and the settings Shortcuts
+  page are in (F-53, F-54). What remains is Files… (F-55),
   desktop verbs (F-52), and entries that depend on later milestones or on
   design.
 
 **Next, in order:**
 
 1. **Adding items to spaces** (`TASKS.md` section L): Start-menu and
-   taskbar drags create shortcuts (F-50), and "New shortcut ▸" and the
-   settings Shortcuts page are in (F-53); next "Paste shortcut" (F-54) and
+   taskbar drags create shortcuts (F-50), and "New shortcut ▸", "Paste
+   shortcut", and the settings Shortcuts page are in (F-53, F-54); next
    "Files…" once decided (F-55).
 2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
    built-but-unchecked behaviors before more work builds on them.
@@ -446,7 +446,8 @@ Remaining:
      preview of the space whose items each carry an X (delete, after a
      confirmation), and a + tile that offers the same New shortcut choices
      (F-53);
-   - "Paste shortcut", as in Explorer, in the New shortcut submenu (F-54);
+   - **[done]** "Paste shortcut", as in Explorer, in the New shortcut submenu
+     (F-54; check pending);
    - "Files…", once it is decided whether a picked file moves, stays in
      place, or becomes a shortcut (F-55).
 2. Tray and menu entries:
@@ -749,7 +750,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
 | F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
 | F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done: the space menu's submenu and a space's Settings page "Shortcuts" (a preview with an X per item and a + tile); checked on screen 2026-10-13 |
-| F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Open (`TASKS.md` L5) |
+| F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
 | F-55 | "Add ▸ Files…": pick files to add to a space | M3 | Open; needs a decision on move vs keep vs shortcut (`TASKS.md` L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 
