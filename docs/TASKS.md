@@ -9,8 +9,9 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 describe the code when each task landed, often before the R1 and K splits).
 Work that is built but not yet confirmed on screen is listed in section V.
 
-**Pick a task:** G5a-G5c (Explorer-style right-button drag) are ready, in
-order. Section L's only remaining item, L1, needs a maintainer's on-screen
+**Pick a task:** G5b-G5c (Explorer-style right-button drag) are ready, in
+order; G5a landed and awaits its on-screen check (section V). Section L's only
+remaining item, L1, needs a maintainer's on-screen
 findings. F13 first needs the Ctrl+wheel bug
 under **Found while working** explained. Tasks marked **[needs decision]** or
 in section D are not ready; skip them.
@@ -443,50 +444,8 @@ Remaining gaps from the controls review. Do them in order.
 - **G5. Right-button drag (ROADMAP D9).** A right drag on an item always
   starts a shell drag (it never reorders inside the space). On drop,
   Explorer and the desktop show their own Move / Copy / Create shortcut
-  menu; a space shows DeskSpace's. Three tasks, in order.
-
-- [ ] **G5a. A right drag starts a shell drag.**
-  - Today a right press only selects (`on_space_event`, `app/pointer.rs`,
-    the `MouseButton::Right` arm calls `select_at`) and a right release opens
-    the item or space menu.
-  - App, `app/pointer.rs`:
-    1. Add a field to `PointerState`: `right_press: Option<(Surface, ItemId,
-       Point)>`, with a `///` doc ("an item pressed with the right button,
-       not yet dragged").
-    2. In the right `MouseDown` arm, after `select_at`, set it when the
-       press hit an item (`self.surface_item_at(surface, point)`).
-    3. In the `MouseMove` arm, before `drag_to`: if `right_press` is set and
-       the pointer moved past `deskspace_platform::drag_threshold()` from
-       the press point (copy how the left-button drag decides it has
-       started), take `right_press` and call `self.drag_item_out(ui,
-       surface, item)` with the right button (step 5). Then return.
-    4. Add a second field, `right_dragged: bool` ("a right drag ran since
-       the last right press"); step 3 sets it. In the right `MouseUp` arm:
-       clear `right_press`; if `right_dragged` is set, clear it and open no
-       menu; otherwise open the item or space menu exactly as today. Clear
-       both fields on `CaptureLost` and in the right `MouseDown` arm.
-    5. `drag_item_out` itself needs no new argument: the platform does not
-       take a button.
-  - Platform: probably no change. `win32/shell_items.rs` `drag_out` calls
-    `SHDoDragDrop` with no drop source (`None`), and the shell's default
-    drop source follows whichever mouse button is held when the drag
-    starts, so a drag started while the right button is down ends on its
-    release and the target shows its menu. Two things to confirm while
-    testing, and fix only if they fail:
-    - `drag_out` calls `ReleaseCapture()` first; the right button must
-      still be down at that point (it is, since the drag starts on a
-      move);
-    - the right button's release is consumed by the drag loop, so the space
-      may never get its `MouseUp`; then `right_dragged` stays set until the
-      next right press clears it (step 4), which is harmless.
-    If the default drop source does not handle the right button, **stop and
-    ask**; a custom `IDropSource` is a larger change.
-  - Pure helper with a test: `fn right_drag_started(press: Point, now:
-    Point, threshold: Size) -> bool` in `app/pointer.rs`.
-  - Done when: tests pass. **[needs human]** check: right-drag an item from
-    a space onto the desktop and into an Explorer folder; the shell's
-    Move / Copy / Create shortcut menu appears and each choice works; a
-    right click without moving still opens the item menu.
+  menu; a space shows DeskSpace's. G5a is done (its check is in section V);
+  G5b and G5c remain, in order.
 
 - [ ] **G5b. DeskSpace's drop menu on a space.** After G5a.
   - The menu is shown by the drop target itself, inside `Drop`, because
@@ -624,6 +583,7 @@ or a **Found while working** line. The task text for each id is in
 | F9 | With "Snap resized spaces to whole columns and rows" off, a resize keeps the dragged size (still snapped to `snap`). The on state passed 2026-10-12. |
 | F14 (F-51) | The color picker is opaque, rounded, and bordered; palette selection and double-click confirm; "Custom colors…" shows a flicker-free live preview; the Colors-page swatch opens it; OK and Cancel, Enter and Esc behave; the scale is right at 100 % and 150 %; the settings window does not hang. |
 | G1, G3 | On the desktop shell: typing selects by prefix and the buffer expires; Home/End/PageUp/PageDown scroll; arrows move the selection, Shift extends, Ctrl moves only the dotted focus rectangle and scrolls it into view. |
+| G5a | Right-drag an item out of a space onto the desktop and into an Explorer folder: the shell's Move / Copy / Create shortcut menu appears and each choice works; a right click without moving still opens the item menu. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid (Acrylic passed). |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
@@ -679,3 +639,7 @@ Add one line per issue noticed but not fixed: file, symptom, suggested task.
   under any preset, so even the `Custom` branch that should change
   `Theme.icon_size` never runs. The G2 check was therefore premature. Find out
   why the Ctrl+wheel event does not reach `adjust_icon_size` (before doing F13).
+- `deskspace-app/src/app/pointer.rs` `right_drag_to` (G5a): a right drag calls
+  `drag_item_out` without setting `pointer.drag_image`, so the shell substitutes
+  its own oversized image, unlike a left drag. Suggested task: factor the
+  image build out of `begin_drag_visual` and use it for right drags too.

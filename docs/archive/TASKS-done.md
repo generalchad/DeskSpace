@@ -1525,3 +1525,46 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Docs: `CONTEXT.md` section 8, `README.md` Controls, and the F-55 row.
   - Done when: tests pass. **[needs human]** check: pick two files; they land
     in the space as decided, and Cancel adds nothing.
+
+- [x] **G5a. A right drag starts a shell drag.**
+  - Today a right press only selects (`on_space_event`, `app/pointer.rs`,
+    the `MouseButton::Right` arm calls `select_at`) and a right release opens
+    the item or space menu.
+  - App, `app/pointer.rs`:
+    1. Add a field to `PointerState`: `right_press: Option<(Surface, ItemId,
+       Point)>`, with a `///` doc ("an item pressed with the right button,
+       not yet dragged").
+    2. In the right `MouseDown` arm, after `select_at`, set it when the
+       press hit an item (`self.surface_item_at(surface, point)`).
+    3. In the `MouseMove` arm, before `drag_to`: if `right_press` is set and
+       the pointer moved past `deskspace_platform::drag_threshold()` from
+       the press point (copy how the left-button drag decides it has
+       started), take `right_press` and call `self.drag_item_out(ui,
+       surface, item)` with the right button (step 5). Then return.
+    4. Add a second field, `right_dragged: bool` ("a right drag ran since
+       the last right press"); step 3 sets it. In the right `MouseUp` arm:
+       clear `right_press`; if `right_dragged` is set, clear it and open no
+       menu; otherwise open the item or space menu exactly as today. Clear
+       both fields on `CaptureLost` and in the right `MouseDown` arm.
+    5. `drag_item_out` itself needs no new argument: the platform does not
+       take a button.
+  - Platform: probably no change. `win32/shell_items.rs` `drag_out` calls
+    `SHDoDragDrop` with no drop source (`None`), and the shell's default
+    drop source follows whichever mouse button is held when the drag
+    starts, so a drag started while the right button is down ends on its
+    release and the target shows its menu. Two things to confirm while
+    testing, and fix only if they fail:
+    - `drag_out` calls `ReleaseCapture()` first; the right button must
+      still be down at that point (it is, since the drag starts on a
+      move);
+    - the right button's release is consumed by the drag loop, so the space
+      may never get its `MouseUp`; then `right_dragged` stays set until the
+      next right press clears it (step 4), which is harmless.
+    If the default drop source does not handle the right button, **stop and
+    ask**; a custom `IDropSource` is a larger change.
+  - Pure helper with a test: `fn right_drag_started(press: Point, now:
+    Point, threshold: Size) -> bool` in `app/pointer.rs`.
+  - Done when: tests pass. **[needs human]** check: right-drag an item from
+    a space onto the desktop and into an Explorer folder; the shell's
+    Move / Copy / Create shortcut menu appears and each choice works; a
+    right click without moving still opens the item menu.

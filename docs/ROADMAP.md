@@ -733,7 +733,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-33 | Animations toggle | M5 | Open |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
-| F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending. Right-button drag decided (D9), open (`TASKS.md` G5a-G5c) |
+| F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending. Right-button drag decided (D9): a right drag starts a shell drag (G5a); DeskSpace's own drop menu on a space (G5b) and "Create shortcuts here" (G5c) are open |
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |

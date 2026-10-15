@@ -4,7 +4,9 @@ use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
 
-use deskspace_platform::{CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui};
+use deskspace_platform::{
+    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
+};
 
 use super::drag::Drag;
 use super::files::ShortcutSource;
@@ -69,6 +71,13 @@ pub(super) fn resolve_pending_click(
 pub(super) struct PointerState {
     pub(super) drag: Drag,
     pub(super) pending_click: Option<PendingClick>,
+    /// An item pressed with the right button, not yet dragged. Past the drag
+    /// threshold it becomes a shell drag, as a right drag does in Explorer.
+    pub(super) right_press: Option<(Surface, ItemId, Point)>,
+    /// Whether a right drag ran since the last right press. Its release is
+    /// consumed by the shell's drag loop, so DeskSpace must not also open its
+    /// own menu on the next right release.
+    pub(super) right_dragged: bool,
     pub(super) hovered: Option<(Surface, ItemId)>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
@@ -168,10 +177,17 @@ impl App {
                 y,
                 button: MouseButton::Right,
                 ..
-            } => self.select_at(ui, surface, Point::new(x, y)),
+            } => {
+                let point = Point::new(x, y);
+                self.select_at(ui, surface, point);
+                self.pointer.right_press = self
+                    .surface_item_at(surface, point)
+                    .map(|item| (surface, item, point));
+                self.pointer.right_dragged = false;
+            }
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
-                if !self.drag_to(ui, point) {
+                if !self.right_drag_to(ui, point) && !self.drag_to(ui, point) {
                     if let Surface::Space(id) = surface {
                         self.update_cursor(ui, id, point);
                     }
@@ -188,19 +204,30 @@ impl App {
             SpaceEvent::MouseUp {
                 button: MouseButton::Left,
                 ..
+            } => self.end_drag(ui),
+            SpaceEvent::CaptureLost => {
+                self.pointer.right_press = None;
+                self.pointer.right_dragged = false;
+                self.end_drag(ui);
             }
-            | SpaceEvent::CaptureLost => self.end_drag(ui),
             SpaceEvent::MouseUp {
                 x,
                 y,
                 button: MouseButton::Right,
             } => {
                 let point = Point::new(x, y);
-                match self.surface_item_at(surface, point) {
-                    Some(item) => self.show_item_menu(ui, surface, item, point),
-                    None => {
-                        if let Surface::Space(id) = surface {
-                            self.show_space_menu(ui, id, point);
+                self.pointer.right_press = None;
+                // A right drag ends in the shell's own Move / Copy / Create
+                // shortcut menu, so only a plain right click opens DeskSpace's.
+                if self.pointer.right_dragged {
+                    self.pointer.right_dragged = false;
+                } else {
+                    match self.surface_item_at(surface, point) {
+                        Some(item) => self.show_item_menu(ui, surface, item, point),
+                        None => {
+                            if let Surface::Space(id) = surface {
+                                self.show_space_menu(ui, id, point);
+                            }
                         }
                     }
                 }
@@ -373,6 +400,24 @@ impl App {
         self.refresh_surface(ui, surface);
     }
 
+    /// Starts a shell drag when the right button has been held down and the
+    /// pointer moved past the drag threshold: Explorer's right-drag, which
+    /// never rearranges inside the surface, and whose release the shell's own
+    /// Move / Copy / Create shortcut menu handles. Returns true once the shell
+    /// has taken over the gesture.
+    pub(super) fn right_drag_to(&mut self, ui: &mut Ui, point: Point) -> bool {
+        let Some((surface, item, press)) = self.pointer.right_press else {
+            return false;
+        };
+        if !right_drag_started(press, point, drag_threshold()) {
+            return false;
+        }
+        self.pointer.right_press = None;
+        self.pointer.right_dragged = true;
+        self.drag_item_out(ui, surface, item);
+        true
+    }
+
     pub(super) fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
         let edges = self
             .config
@@ -511,6 +556,12 @@ impl App {
     }
 }
 
+/// Whether a right press at `press` has moved far enough to `now` to start a
+/// drag, using the same threshold as the left-button drag.
+fn right_drag_started(press: Point, now: Point, threshold: Size) -> bool {
+    (now.x - press.x).abs() >= threshold.width || (now.y - press.y).abs() >= threshold.height
+}
+
 /// The edges a resize moves right now. An axis joins only once the pointer has
 /// left a half-cell dead zone around the grab point, so a click or a tiny drag
 /// on a border never resizes the space; once joined, the axis stays active so
@@ -613,6 +664,19 @@ mod tests {
             resolve_pending_click(None, ItemId(1), true),
             PendingClickOutcome::Nothing
         );
+    }
+
+    #[test]
+    fn a_right_drag_starts_past_the_threshold_on_either_axis() {
+        let threshold = Size::new(4, 4);
+        let press = Point::new(100, 100);
+        // Inside the threshold: still a click.
+        assert!(!right_drag_started(press, Point::new(102, 102), threshold));
+        // Reaching the threshold on one axis starts the drag.
+        assert!(right_drag_started(press, Point::new(104, 100), threshold));
+        assert!(right_drag_started(press, Point::new(100, 104), threshold));
+        assert!(right_drag_started(press, Point::new(96, 100), threshold));
+        assert!(right_drag_started(press, Point::new(100, 96), threshold));
     }
 
     #[test]

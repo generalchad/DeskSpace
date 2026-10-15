@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (349 tests) are green. Update this count whenever a
+  `cargo test --workspace` (350 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking), and
   v0.2.2 (adding shortcuts to spaces),
@@ -1177,10 +1177,13 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   Ctrl+wheel has no visible effect there yet. ROADMAP D9 decides it should
   change the desktop's own icon size instead, as Ctrl+wheel on the desktop
   does (`TASKS.md` F13).
-- A right-button drag does nothing special yet: a right press selects and
-  the release opens the menu. ROADMAP D9 decides on Explorer's behavior (a
-  shell drag with a Move / Copy / Create shortcut menu on drop;
-  `TASKS.md` G5a-G5c).
+- A right-button press on an item selects it; holding it and dragging past
+  the drag threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a), which
+  never rearranges inside the space, so a right-drag onto Explorer or the
+  desktop shows the shell's own Move / Copy / Create shortcut menu. A right
+  click without moving still opens the item or space menu. Showing
+  DeskSpace's equivalent menu when a right drag drops on a space (G5b) and
+  the "Create shortcuts here" entry (G5c) are still open.
 - Double-click a space title bar to roll it up or down.
 - Rename a space from its right-click menu; the title is edited in place
   (Enter commits, Escape cancels, clicking away commits).
