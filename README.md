@@ -4,7 +4,10 @@ DeskSpace is a free and open-source desktop organizer for Windows. It groups you
 *spaces* that you can arrange, resize, and style on a per-space basis. Spaces fit right in on
 Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
-service, and most importantly: No tracking or telemetry. DeskSpace never contacts the network today. A planned update check will be the one exception, and it will be off unless you turn it on.
+service, and most importantly: no tracking or telemetry. The only network
+access is the update check, which runs when you choose "Check for updates…" or,
+if you turn it on in Settings, about once a day. It asks GitHub for the latest
+release and sends nothing about you or your files.
 
 Currently, only desktop items and shortcuts are supported. Very soon, we intend to release *lenses*:
  Lenses are spaces that show the live contents of a folder. Other planned features include auto-hiding, multiple pages,
@@ -155,6 +158,7 @@ crates/deskspace-core      The data model and layout logic (no Windows code)
 crates/deskspace-config    Reading, writing, and upgrading the settings file
 crates/deskspace-platform  The Windows layer: windows, drawing, tray, menus,
                            and the settings window
+crates/deskspace-update    Checking for, downloading, and installing updates
 crates/deskspace-app       The program itself: the command line, event
                            handling, and the crash helper
 ```

@@ -96,13 +96,13 @@ context menus, and a settings window in the first usable release (v0.2).
                  |  deskspace-app   |  binary: CLI, event handler, scene and
                  +---------+--------+  settings-form builders
                            |  depends on
-             +-------------+-------------+
-             v                           v
-   +------------------+        +----------------------+
-   | deskspace-config |        | deskspace-platform   |
-   +---------+--------+        |  Win32, DWM, D2D,    |
-             |                 |  shell, native UI    |
-             |                 +----------+-----------+
+             +-------------+-------------+---------------------+
+             v                           v                     v
+   +------------------+        +----------------------+  +------------------+
+   | deskspace-config |        | deskspace-platform   |  | deskspace-update |
+   +---------+--------+        |  Win32, DWM, D2D,    |  |  update check    |
+             |                 |  shell, native UI    |  |  and install     |
+             |                 +----------+-----------+  +------------------+
              +------------+---------------+
                           v
                  +------------------+
@@ -110,7 +110,8 @@ context menus, and a settings window in the first usable release (v0.2).
                  +------------------+
 ```
 
-Rules: dependencies point downward only. `deskspace-core` has no OS
+Rules: dependencies point downward only; `deskspace-update` depends on no
+workspace crate. `deskspace-core` has no OS
 dependencies; its one IO exception is `item.rs`, which reads a file's kind and
 metadata when an `Item` is created (`TASKS.md` R4 moves it out). `deskspace-platform` is the only crate containing `unsafe` or
 Win32 types. `deskspace-app` describes what to show (scenes, menus, settings
