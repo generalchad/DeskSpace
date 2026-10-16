@@ -484,8 +484,6 @@ the ROADMAP decision ids (`D1`-`D9`).
 - **R3. Platform module layout.** What remains after the K splits:
   - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
     `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
-  - make internal modules private: `win32/mod.rs` has 12 `pub mod`s, though
-    the app uses only the `lib.rs` re-exports;
   - long window procedures (`space_window.rs` about 180 lines,
     `controller.rs`, `color_picker.rs`, `settings_window/mod.rs` about 120-150
     each): one named handler per message, keeping `runtime::dispatch` the

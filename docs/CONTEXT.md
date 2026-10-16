@@ -465,7 +465,8 @@ WindowSettings {
 
 ### Module map
 
-Crate root (`src/`): `lib.rs` (re-exports; the app imports only from here),
+Crate root (`src/`): `lib.rs` (re-exports; every module is private, so the
+app can import only from here),
 `input.rs` (`Event`, `SpaceEvent`, `SettingsEvent`, `TrayEvent`, `NavKey`,
 `SelectionKey`, `ClipboardAction`), `ui.rs` (`MenuEntry`, `SettingsForm` and
 its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`

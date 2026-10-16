@@ -1,9 +1,9 @@
-pub mod edit;
-pub mod error;
-pub mod input;
-pub mod render;
-pub mod ui;
-pub mod win32;
+mod edit;
+mod error;
+mod input;
+mod render;
+mod ui;
+mod win32;
 
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
