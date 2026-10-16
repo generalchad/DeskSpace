@@ -9,8 +9,6 @@
 //! producing a broken shortcut.
 
 use std::path::PathBuf;
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{FillRect, HDC};
@@ -21,16 +19,18 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, BS_PUSHBUTTON, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, GetClientRect,
-    RegisterClassW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
-    WM_NCDESTROY, WNDCLASSW, WS_EX_CLIENTEDGE, WS_TABSTOP,
+    SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
+    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY,
+    WS_EX_CLIENTEDGE, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, w};
 
+use crate::error::PlatformError;
 use crate::ui::{CustomShortcut, ShortcutTarget};
 use crate::win32::dialog::{self, DialogChrome, ID_CANCEL, ID_OK, window_text};
 use crate::win32::shortcuts::{display_name, resolve_path};
 use crate::win32::system::wide;
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceShortcutDialog");
@@ -44,9 +44,6 @@ const CLIENT_HEIGHT: i32 = 262;
 /// SS_NOPREFIX | SS_CENTERIMAGE for labels (WinUser.h).
 /// https://learn.microsoft.com/en-us/windows/win32/controls/static-control-styles
 const LABEL_STYLE: u32 = 0x0080 | 0x0200;
-
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 struct DialogState {
     owner: HWND,
@@ -74,9 +71,7 @@ pub(crate) unsafe fn custom_shortcut(
     // SAFETY: Win32 window creation on the UI thread. `state` is owned here
     // and dropped after the loop; the window points at it only while alive.
     unsafe {
-        if !ensure_class() {
-            return None;
-        }
+        ensure_class().ok()?;
         let chrome = DialogChrome::new(dialog::dpi_of(owner), dark);
         let client = (chrome.s(CLIENT_WIDTH), chrome.s(CLIENT_HEIGHT));
         let dpi = chrome.dpi;
@@ -419,21 +414,8 @@ unsafe extern "system" fn wndproc(
     }
 }
 
-fn ensure_class() -> bool {
-    REGISTER_CLASS.call_once(|| {
-        let Some(instance) = dialog::instance() else {
-            return;
-        };
-        let class = WNDCLASSW {
-            lpfnWndProc: Some(wndproc),
-            hInstance: instance,
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        };
-        // SAFETY: `class` is fully initialised and its name is static.
-        CLASS_REGISTERED.store(unsafe { RegisterClassW(&class) } != 0, Ordering::SeqCst);
-    });
-    CLASS_REGISTERED.load(Ordering::SeqCst)
+fn ensure_class() -> Result<(), PlatformError> {
+    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))
 }
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call

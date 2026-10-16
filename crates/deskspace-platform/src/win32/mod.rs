@@ -36,6 +36,7 @@ mod space_window;
 pub mod system;
 mod tray;
 pub mod watchdog;
+mod window_class;
 mod window_state;
 
 pub use clipboard::ClipboardFiles;

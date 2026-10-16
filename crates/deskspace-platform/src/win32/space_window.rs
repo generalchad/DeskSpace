@@ -11,9 +11,6 @@
 //! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA`
 //! (`window_state`) and is freed exactly once, in `WM_NCDESTROY`.
 
-use std::sync::Once;
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -28,13 +25,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GetClientRect, GetParent, GetWindowRect, HTCLIENT,
     HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, RegisterClassW, SC_MINIMIZE, SW_SHOWNOACTIVATE,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes,
-    SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
-    WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
-    WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowPos,
+    ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
+    WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
@@ -44,6 +41,7 @@ use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{drop_target, dwm, runtime, window_state};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
@@ -55,9 +53,6 @@ const MK_LBUTTON: usize = 0x0001;
 const MK_RBUTTON: usize = 0x0002;
 const MK_MBUTTON: usize = 0x0010;
 const MK_ANY_BUTTON: usize = MK_LBUTTON | MK_RBUTTON | MK_MBUTTON;
-
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_ATOM: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) struct SpaceWindowOptions {
     pub id: u64,
@@ -128,7 +123,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
     // deliberately not freed here.
     unsafe {
         let instance = HINSTANCE(GetModuleHandleW(None)?.0);
-        ensure_class(instance)?;
+        ensure_class()?;
         let hwnd = CreateWindowExW(
             ex_style,
             CLASS_NAME,
@@ -375,29 +370,15 @@ impl Frame {
     }
 }
 
-fn ensure_class(instance: HINSTANCE) -> Result<(), PlatformError> {
-    REGISTER_CLASS.call_once(|| {
-        let class = WNDCLASSW {
-            // Without CS_DBLCLKS Windows never sends WM_LBUTTONDBLCLK, and a
-            // double-click arrives as two WM_LBUTTONDOWNs.
-            // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-lbuttondblclk
-            style: CS_DBLCLKS,
-            lpfnWndProc: Some(wndproc),
-            hInstance: instance,
-            // SAFETY: loading a shared stock cursor.
-            hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }.unwrap_or_default(),
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        };
-        // SAFETY: `class` is fully initialised and its strings are static.
-        let atom = unsafe { RegisterClassW(&class) };
-        CLASS_ATOM.store(atom as u32, Ordering::SeqCst);
-    });
-    if CLASS_ATOM.load(Ordering::SeqCst) == 0 {
-        Err(PlatformError::ClassRegistration)
-    } else {
-        Ok(())
-    }
+fn ensure_class() -> Result<(), PlatformError> {
+    // Without CS_DBLCLKS Windows never sends WM_LBUTTONDBLCLK, and a
+    // double-click arrives as two WM_LBUTTONDOWNs.
+    // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-lbuttondblclk
+    window_class::register(
+        WindowClass::new(CLASS_NAME, Some(wndproc))
+            .style(CS_DBLCLKS)
+            .arrow_cursor(),
+    )
 }
 
 /// Applies the frame's rounded window region, or removes it.

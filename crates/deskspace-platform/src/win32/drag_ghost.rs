@@ -7,9 +7,6 @@
 //! from the space that holds the capture. It is created on first use, reused,
 //! and destroyed with the other UI windows.
 
-use std::sync::Once;
-use std::sync::atomic::{AtomicU16, Ordering};
-
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -18,20 +15,17 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, HWND_TOPMOST, RegisterClassW, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SetWindowPos, ShowWindow, ULW_ALPHA,
-    UpdateLayeredWindow, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, HWND_TOPMOST, SW_HIDE, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOSIZE, SetWindowPos, ShowWindow, ULW_ALPHA, UpdateLayeredWindow,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::win32::drag_image::{self, DragImage};
+use crate::win32::window_class::{self, WindowClass};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceDragGhost");
-
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_ATOM: AtomicU16 = AtomicU16::new(0);
 
 pub(crate) struct DragGhost {
     hwnd: HWND,
@@ -44,7 +38,7 @@ impl DragGhost {
         // DefWindowProcW; the window carries no state.
         unsafe {
             let instance = HINSTANCE(GetModuleHandleW(None)?.0);
-            ensure_class(instance)?;
+            ensure_class()?;
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED
                     | WS_EX_TRANSPARENT
@@ -169,21 +163,6 @@ unsafe extern "system" fn wndproc(
     unsafe { DefWindowProcW(window, message, wparam, lparam) }
 }
 
-fn ensure_class(instance: HINSTANCE) -> Result<(), PlatformError> {
-    REGISTER_CLASS.call_once(|| {
-        let class = WNDCLASSW {
-            lpfnWndProc: Some(wndproc),
-            hInstance: instance,
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        };
-        // SAFETY: `class` is fully initialised and its strings are static.
-        let atom = unsafe { RegisterClassW(&class) };
-        CLASS_ATOM.store(atom, Ordering::SeqCst);
-    });
-    if CLASS_ATOM.load(Ordering::SeqCst) == 0 {
-        Err(PlatformError::ClassRegistration)
-    } else {
-        Ok(())
-    }
+fn ensure_class() -> Result<(), PlatformError> {
+    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))
 }

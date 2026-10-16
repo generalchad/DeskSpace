@@ -19,9 +19,6 @@ mod update;
 pub(crate) use commands::colorref;
 pub(crate) use update::update;
 
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use deskspace_core::theme::Color;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
@@ -48,14 +45,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GetClassNameW,
     GetClientRect, GetCursorPos, GetParent, GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP,
     ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL,
-    LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED,
-    RegisterClassW, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
-    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT,
-    WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
-    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL,
+    LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, SW_HIDE,
+    SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
+    SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM,
+    WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETICON,
+    WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
+    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -67,6 +63,7 @@ use crate::ui::{
 };
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{runtime, tray, window_state};
 
 use build::build;
@@ -133,9 +130,6 @@ const TBM_SETRANGEMAX: u32 = TBM_SETRANGEMIN + 1;
 const MARK_LABEL_HEIGHT: i32 = 16;
 /// Corner radius of a color field's preview swatch, at 96 DPI.
 const SWATCH_RADIUS: i32 = 4;
-
-static REGISTER_CLASSES: Once = Once::new();
-static CLASSES_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// The controls created for one field.
 pub(super) struct FieldControls {
@@ -257,8 +251,8 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
     // SAFETY: Win32 window creation on the UI thread. Ownership of the state
     // passes to the window in WM_NCCREATE; it is freed in WM_NCDESTROY.
     unsafe {
-        let instance = HINSTANCE(GetModuleHandleW(None)?.0);
-        ensure_classes(instance)?;
+        let instance = window_class::instance()?;
+        ensure_classes()?;
         let mut state = SettingsState {
             form: form.clone(),
             fields: Vec::new(),
@@ -402,41 +396,16 @@ fn window_style() -> WINDOW_STYLE {
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN
 }
 
-fn ensure_classes(instance: HINSTANCE) -> Result<(), PlatformError> {
-    REGISTER_CLASSES.call_once(|| {
-        // No class background brushes: both window procedures erase with
-        // the current light or dark body color (WM_ERASEBKGND).
-        // SAFETY: class structs are fully initialised; strings are static.
-        unsafe {
-            let main = WNDCLASSW {
-                lpfnWndProc: Some(wndproc),
-                hInstance: instance,
-                lpszClassName: CLASS_NAME,
-                ..Default::default()
-            };
-            let page = WNDCLASSW {
-                lpfnWndProc: Some(page_wndproc),
-                hInstance: instance,
-                lpszClassName: PAGE_CLASS,
-                ..Default::default()
-            };
-            let preview = WNDCLASSW {
-                lpfnWndProc: Some(preview::preview_wndproc),
-                hInstance: instance,
-                lpszClassName: PREVIEW_CLASS,
-                ..Default::default()
-            };
-            let registered = RegisterClassW(&main) != 0
-                && RegisterClassW(&page) != 0
-                && RegisterClassW(&preview) != 0;
-            CLASSES_REGISTERED.store(registered, Ordering::SeqCst);
-        }
-    });
-    if CLASSES_REGISTERED.load(Ordering::SeqCst) {
-        Ok(())
-    } else {
-        Err(PlatformError::ClassRegistration)
-    }
+/// Registers the window, page, and preview classes. The window and page
+/// procedures erase with the current light or dark body color
+/// (WM_ERASEBKGND), which is why the classes have no background brush.
+fn ensure_classes() -> Result<(), PlatformError> {
+    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))?;
+    window_class::register(WindowClass::new(PAGE_CLASS, Some(page_wndproc)))?;
+    window_class::register(WindowClass::new(
+        PREVIEW_CLASS,
+        Some(preview::preview_wndproc),
+    ))
 }
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call

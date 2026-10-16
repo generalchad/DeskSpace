@@ -15,8 +15,6 @@
 //! owner (the settings window or the controller) is frozen while it is open.
 
 use std::cell::RefCell;
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::theme::{Color, Hsv};
@@ -39,16 +37,18 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, IsWindow, MSG, PostQuitMessage, RegisterClassW, SW_SHOW, SetForegroundWindow,
-    ShowWindow, TranslateMessage, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN,
-    WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
+    GetMessageW, IsWindow, MSG, PostQuitMessage, SW_SHOW, SetForegroundWindow, ShowWindow,
+    TranslateMessage, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN,
+    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
+use crate::error::PlatformError;
 use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::{draw_glyph, glyph_font, message_logfont, work_area_at};
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
@@ -138,9 +138,6 @@ const WINDOWS_COLORS: [Color; COLS * ROWS] = [
 
 /// How many recent colors are kept and shown (one row).
 const RECENT_LIMIT: usize = COLS;
-
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     /// The colors picked recently, most recent first, kept for the session.
@@ -607,9 +604,7 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
             Ok(module) => windows::Win32::Foundation::HINSTANCE(module.0),
             Err(_) => return None,
         };
-        if !ensure_class(instance) {
-            return None;
-        }
+        ensure_class().ok()?;
         let dpi = dpi_of(owner);
         let layout = PickerLayout::compute(dpi as f32 / 96.0);
         let font = CreateFontIndirectW(&message_logfont(dpi));
@@ -713,20 +708,8 @@ fn style_window(hwnd: HWND, dark: bool) {
     }
 }
 
-fn ensure_class(instance: windows::Win32::Foundation::HINSTANCE) -> bool {
-    REGISTER_CLASS.call_once(|| {
-        let class = WNDCLASSW {
-            style: CS_DBLCLKS,
-            lpfnWndProc: Some(wndproc),
-            hInstance: instance,
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        };
-        // SAFETY: `class` is fully initialised and its class name is a static
-        // string that outlives the process.
-        CLASS_REGISTERED.store(unsafe { RegisterClassW(&class) } != 0, Ordering::SeqCst);
-    });
-    CLASS_REGISTERED.load(Ordering::SeqCst)
+fn ensure_class() -> Result<(), PlatformError> {
+    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)).style(CS_DBLCLKS))
 }
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call

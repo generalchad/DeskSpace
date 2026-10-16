@@ -9,9 +9,6 @@
 //! is drawn (`LVN_GETDISPINFOW`), from the catalog's cached icon or, when the
 //! catalog was listed without icons, rendered then.
 
-use std::sync::Once;
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{DeleteObject, FillRect, HDC, HGDIOBJ};
 use windows::Win32::UI::Controls::{
@@ -29,12 +26,13 @@ use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{IShellItem, SHCreateItemFromIDList};
 use windows::Win32::UI::WindowsAndMessaging::{
     BS_DEFPUSHBUTTON, BS_PUSHBUTTON, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, GetClientRect,
-    RegisterClassW, SendMessageW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
-    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WNDCLASSW, WS_EX_CLIENTEDGE, WS_TABSTOP,
+    SendMessageW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
+    WM_NCDESTROY, WM_NOTIFY, WS_EX_CLIENTEDGE, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
+use crate::error::PlatformError;
 use crate::input::ShellItem;
 use crate::render::Icon;
 use crate::win32::app_catalog;
@@ -43,6 +41,7 @@ use crate::win32::drag_image::dib;
 use crate::win32::icons::{resample, shell_item_icon};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::wide;
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceAppPicker");
@@ -58,9 +57,6 @@ const ICON_SIZE: i32 = 24;
 /// https://learn.microsoft.com/en-us/windows/win32/controls/extended-list-view-styles
 const UNCHECKED: u32 = 1 << 12;
 const CHECKED: u32 = 2 << 12;
-
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// One app in the list.
 struct AppRow {
@@ -104,7 +100,7 @@ pub(crate) unsafe fn pick_apps(owner: HWND, title: &str, dark: bool) -> Vec<Shel
     // SAFETY: Win32 window creation on the UI thread. `state` is owned here
     // and dropped after the loop; the window points at it only while alive.
     unsafe {
-        if !ensure_class() {
+        if ensure_class().is_err() {
             return Vec::new();
         }
         let chrome = DialogChrome::new(dialog::dpi_of(owner), dark);
@@ -545,21 +541,8 @@ unsafe extern "system" fn wndproc(
     }
 }
 
-fn ensure_class() -> bool {
-    REGISTER_CLASS.call_once(|| {
-        let Some(instance) = dialog::instance() else {
-            return;
-        };
-        let class = WNDCLASSW {
-            lpfnWndProc: Some(wndproc),
-            hInstance: instance,
-            lpszClassName: CLASS_NAME,
-            ..Default::default()
-        };
-        // SAFETY: `class` is fully initialised and its name is static.
-        CLASS_REGISTERED.store(unsafe { RegisterClassW(&class) } != 0, Ordering::SeqCst);
-    });
-    CLASS_REGISTERED.load(Ordering::SeqCst)
+fn ensure_class() -> Result<(), PlatformError> {
+    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))
 }
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call

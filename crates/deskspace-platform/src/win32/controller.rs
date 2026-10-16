@@ -6,20 +6,17 @@
 //! as `TaskbarCreated` and `WM_SETTINGCHANGE`.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows
 
-use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, WM_APP, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
-    WM_ENDSESSION, WM_HOTKEY, WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterWindowMessageW,
+    WM_APP, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
+    WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -27,6 +24,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, TrayEvent};
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
+use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{desktop_icons, keyboard, outside_click, runtime, shell_items};
 
 pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
@@ -43,30 +41,17 @@ pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw
 const NIN_KEYSELECT: u32 = NIN_SELECT | 0x1;
 
-static REGISTER_CLASS: Once = Once::new();
-static CLASS_ATOM: AtomicU32 = AtomicU32::new(0);
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) fn create() -> Result<HWND, PlatformError> {
     // SAFETY: plain window class registration and creation on the UI thread.
     unsafe {
-        let instance = HINSTANCE(GetModuleHandleW(None)?.0);
-        REGISTER_CLASS.call_once(|| {
-            let class = WNDCLASSW {
-                lpfnWndProc: Some(wndproc),
-                hInstance: instance,
-                lpszClassName: CLASS_NAME,
-                ..Default::default()
-            };
-            CLASS_ATOM.store(RegisterClassW(&class) as u32, Ordering::SeqCst);
-            TASKBAR_CREATED.store(
-                RegisterWindowMessageW(w!("TaskbarCreated")),
-                Ordering::SeqCst,
-            );
-        });
-        if CLASS_ATOM.load(Ordering::SeqCst) == 0 {
-            return Err(PlatformError::ClassRegistration);
-        }
+        let instance = window_class::instance()?;
+        window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)))?;
+        TASKBAR_CREATED.store(
+            RegisterWindowMessageW(w!("TaskbarCreated")),
+            Ordering::SeqCst,
+        );
         let window = CreateWindowExW(
             WS_EX_TOOLWINDOW,
             CLASS_NAME,
