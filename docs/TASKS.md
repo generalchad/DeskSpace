@@ -121,7 +121,12 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
    `Effect` (`None`, `Appearance` to restyle, `Layout` to re-flow, `Pending`
    for apply-on-OK) in `apply.rs`: in `apply_look_field` for a look setting,
    which makes it per space with no further work, or in `apply_field`'s
-   Global-only arms otherwise.
+   Global-only arms otherwise. A button instead gets a `ButtonAction`
+   variant (`settings/mod.rs`), a line in `button_action`, and an arm in
+   `App::on_settings_button`. The tests `field_ids_are_unique`,
+   `every_editable_global_field_has_a_handler`,
+   `every_editable_space_field_has_a_handler`, and
+   `every_button_has_an_action` fail until the field is wired up.
 3. If Cancel must undo a re-flow or restyle, extend `settings::needs_relayout`
    or `needs_restyle` (`App::cancel_settings` in `app/settings_session.rs`
    calls them).

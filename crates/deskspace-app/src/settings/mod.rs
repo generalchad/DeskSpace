@@ -218,6 +218,30 @@ pub fn build_form(
     }
 }
 
+/// What a settings button does. Every `Field::button` id maps to one, so a new
+/// button cannot be built without a handler (`button_action` and the app's
+/// `on_settings_event` match on it exhaustively).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ButtonAction {
+    /// The Colors page's reset: restore the default look (Global) or copy the
+    /// global look (a customized space).
+    ResetAppearance,
+    /// The Layout page's "Fit to contents" for the selected space.
+    FitToContents,
+    /// The General page's "Check for updates now".
+    CheckForUpdates,
+}
+
+/// The action of the button with field id `id`, or `None` for any other id.
+pub fn button_action(id: u32) -> Option<ButtonAction> {
+    match id {
+        field::RESET => Some(ButtonAction::ResetAppearance),
+        field::FIT_CONTENTS => Some(ButtonAction::FitToContents),
+        field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
+        _ => None,
+    }
+}
+
 /// What an edit changed, so the caller knows what to refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
@@ -256,6 +280,115 @@ mod tests {
         match &form.field(id).unwrap().kind {
             FieldKind::Slider { value, .. } => *value,
             other => panic!("expected a slider, got {other:?}"),
+        }
+    }
+
+    fn form(config: &Config, session: &Session) -> SettingsForm {
+        build_form(
+            config,
+            session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        )
+    }
+
+    /// A value of the kind the control for `kind` reports, or `None` for a
+    /// field the user cannot edit (headings, notes, buttons, previews, and
+    /// read-only text).
+    fn edit_value(kind: &FieldKind) -> Option<FieldValue> {
+        match kind {
+            FieldKind::Choice { options, .. } => Some(FieldValue::Choice(options.len() - 1)),
+            FieldKind::Toggle { on } => Some(FieldValue::Toggle(!on)),
+            FieldKind::Slider { max, .. } => Some(FieldValue::Slider(*max)),
+            FieldKind::Color { .. } => Some(FieldValue::Color(Color::rgb(1, 2, 3))),
+            FieldKind::Text {
+                read_only: false, ..
+            } => Some(FieldValue::Text("Ctrl+Alt+Q".into())),
+            FieldKind::Heading
+            | FieldKind::Note
+            | FieldKind::Button { .. }
+            | FieldKind::SpacePreview(_)
+            | FieldKind::Text {
+                read_only: true, ..
+            } => None,
+        }
+    }
+
+    #[test]
+    fn field_ids_are_unique() {
+        let (config, session) = setup();
+        let mut ids: Vec<u32> = form(&config, &session)
+            .pages
+            .iter()
+            .flat_map(|page| page.fields.iter().map(|field| field.id))
+            .collect();
+        let count = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), count, "two settings fields share an id");
+    }
+
+    #[test]
+    fn every_editable_global_field_has_a_handler() {
+        let (config, session) = setup();
+        for page in form(&config, &session).pages {
+            for field in page.fields {
+                let Some(value) = edit_value(&field.kind) else {
+                    continue;
+                };
+                let (mut config, mut session) = setup();
+                let effect = apply_field(&mut config, &mut session, field.id, value, true);
+                assert_ne!(
+                    effect,
+                    Effect::None,
+                    "field {} ({:?}) on the {} page has no arm in `apply_field`",
+                    field.id,
+                    field.label,
+                    page.title
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_editable_space_field_has_a_handler() {
+        let (mut config, id) = config_with_space("A");
+        config.desktop.space_mut(id).unwrap().custom = true;
+        let mut session = Session::new(&config);
+        session.select_scope(Some(id));
+        let pages = form(&config, &session).pages;
+        for page in pages.iter().take(LOOK_PAGE_COUNT) {
+            for field in &page.fields {
+                let Some(value) = edit_value(&field.kind) else {
+                    continue;
+                };
+                assert!(
+                    space_edit(&config, &mut session, field.id, value, true).is_some(),
+                    "look field {} ({:?}) has no arm in `apply_look_field`",
+                    field.id,
+                    field.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_button_has_an_action() {
+        let (config, session) = setup();
+        for field in form(&config, &session)
+            .pages
+            .iter()
+            .flat_map(|page| &page.fields)
+        {
+            if matches!(field.kind, FieldKind::Button { .. }) {
+                assert!(
+                    button_action(field.id).is_some(),
+                    "button {} ({:?}) has no `ButtonAction`",
+                    field.id,
+                    field.label
+                );
+            }
         }
     }
 

@@ -7,7 +7,7 @@ use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui};
 
 use crate::scene::item_label;
-use crate::settings::{self, Effect, Session, SpaceSnapshot};
+use crate::settings::{self, ButtonAction, Effect, Session, SpaceSnapshot};
 
 use super::{
     App, HIGHLIGHT_MS, HIGHLIGHT_TIMER, PREVIEW_DELAY_MS, PREVIEW_TIMER, Preview, Surface,
@@ -158,36 +158,11 @@ impl App {
                 }
                 self.refresh_settings(ui);
             }
-            SettingsEvent::Button {
-                field: settings::field::RESET,
-            } if editing_space => {
-                let command = settings::match_global(&self.config, session);
-                self.apply_space_setting(ui, command);
-            }
-            SettingsEvent::Button {
-                field: settings::field::RESET,
-            } => {
-                settings::reset_appearance(&mut self.config, session);
-                ui.set_ui_dark(self.ui_dark());
-                self.restyle_all(ui);
-                self.refresh_settings(ui);
-            }
-            SettingsEvent::Button {
-                field: settings::field::FIT_CONTENTS,
-            } if editing_space => {
-                let id = session.scope;
-                if let Some(id) = id {
-                    let at = self.space_center(id);
-                    if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
-                        self.scroll.remove(&id);
-                    }
+            SettingsEvent::Button { field } => {
+                if let Some(action) = settings::button_action(field) {
+                    self.on_settings_button(ui, action);
                 }
-                self.refresh_settings(ui);
             }
-            SettingsEvent::Button {
-                field: settings::field::CHECK_UPDATES_NOW,
-            } => self.start_update_check(ui, true),
-            SettingsEvent::Button { .. } => {}
             SettingsEvent::HeaderSwitch { on } => {
                 let command = settings::customize_space(&self.config, session, on);
                 self.apply_space_setting(ui, command);
@@ -237,6 +212,34 @@ impl App {
                 self.cancel_settings(ui);
                 ui.close_settings();
             }
+        }
+    }
+
+    fn on_settings_button(&mut self, ui: &mut Ui, action: ButtonAction) {
+        let Some(session) = self.settings.as_mut() else {
+            return;
+        };
+        match (action, session.scope) {
+            (ButtonAction::ResetAppearance, Some(_)) => {
+                let command = settings::match_global(&self.config, session);
+                self.apply_space_setting(ui, command);
+            }
+            (ButtonAction::ResetAppearance, None) => {
+                settings::reset_appearance(&mut self.config, session);
+                ui.set_ui_dark(self.ui_dark());
+                self.restyle_all(ui);
+                self.refresh_settings(ui);
+            }
+            (ButtonAction::FitToContents, Some(id)) => {
+                let at = self.space_center(id);
+                if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
+                    self.scroll.remove(&id);
+                }
+                self.refresh_settings(ui);
+            }
+            // The button is grey for Global, which has no space to fit.
+            (ButtonAction::FitToContents, None) => {}
+            (ButtonAction::CheckForUpdates, _) => self.start_update_check(ui, true),
         }
     }
 
