@@ -1,6 +1,6 @@
 # DeskSpace
 
-DeskSpace is a free and open-source desktop organizer for Windows. It groups your desktop icons and desired folder contents into movable boxes called
+DeskSpace is a free and open-source desktop organizer for Windows. It groups your desktop icons into movable boxes called
 *spaces* that you can arrange, resize, and style on a per-space basis. Spaces fit right in on
 Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
@@ -9,9 +9,10 @@ access is the update check, which runs when you choose "Check for updates…" or
 if you turn it on in Settings, about once a day. It asks GitHub for the latest
 release and sends nothing about you or your files.
 
-Currently, only desktop items and shortcuts are supported. Very soon, we intend to release *lenses*:
- Lenses are spaces that show the live contents of a folder. Other planned features include auto-hiding, multiple pages,
-and saved layouts. See [`ROADMAP.md`](docs/ROADMAP.md) but be forewarned - it's a bit wordy right now!
+Spaces currently hold desktop items and shortcuts. Next up are *lenses*:
+spaces that show the live contents of a folder. Other planned features include
+auto-hiding, multiple pages, and saved layouts; see
+[`ROADMAP.md`](docs/ROADMAP.md) for the full plan.
 
 Status: early but usable. Spaces, desktop items, and the tray, menus, and
 settings window are in place; some behaviors are still being checked. This is
@@ -38,21 +39,36 @@ not a finished product yet.
 - **Control center.** A tray icon, right-click menus, keyboard shortcuts, and a
   settings window where every option can be changed and previewed live.
 
-## Requirements
+## Install
 
-- Windows 10 or 11.
-- The pinned Rust toolchain with the MSVC target, installed automatically by
-  rustup from `rust-toolchain.toml`. There are no other system dependencies.
+DeskSpace runs on Windows 10 or 11 (x64). Blur needs Windows 10 1803 or newer;
+rounded corners need Windows 11.
 
-DeskSpace is Windows-only. Blur needs Windows 10 1803 or newer; rounded corners
-need Windows 11.
+Download the latest release from the
+[Releases page](https://github.com/generalchad/DeskSpace/releases/latest):
 
-## Build and run
+- **Installer**: `deskspace_<version>_x64-setup.exe`. It adds a Start menu
+  entry and an uninstaller, and the in-app updater can install new versions.
+- **Portable**: `deskspace-v<version>-x86_64-pc-windows-msvc.zip`. Unzip it
+  anywhere and run `deskspace.exe`; keep `deskspace-watchdog.exe` beside it.
+  Compare the zip with its `.sha256` file to check the download.
+
+DeskSpace is not yet code-signed, so Windows SmartScreen may warn about an
+unrecognized app; choose "More info", then "Run anyway".
+
+## Build from source
+
+You need [rustup](https://rustup.rs) with the MSVC toolchain; it installs the
+pinned Rust version from `rust-toolchain.toml` on the first build. There are no
+other system dependencies.
 
 ```
 cargo build --release
 cargo run -p deskspace-app -- --no-icons
 ```
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the development loop, tests, and
+checks.
 
 ### Command-line options
 
@@ -73,24 +89,6 @@ cargo run -p deskspace-app -- --no-icons
 
 The hidden development flags `--on-top`, `--takeover`, and `--takeover-layer`
 help inspect the look and the desktop layer.
-
-### Development commands
-
-| Task | Command |
-|------|---------|
-| Build | `cargo build --workspace` |
-| Run | `cargo run -p deskspace-app -- --no-icons` |
-| Test | `cargo test --workspace` |
-| Lint | `cargo clippy --workspace --all-targets` |
-| Format | `cargo fmt --all` |
-| Dependencies | `cargo deny check all` |
-| Release | `cargo build --release` |
-| Dev loop | `./scripts/dev.ps1` |
-
-`scripts/dev.ps1` builds and runs with a scratch profile in
-`%TEMP%\deskspace-dev`. Its switches are `-Release`, `-Fresh`, `-RealConfig`,
-`-OnTop`, `-Settings`, `-NoIcons`, `-Check`, `-NoRun`, and `-Verbosity`;
-arguments after `--` go to DeskSpace. See `Get-Help ./scripts/dev.ps1`.
 
 ## Controls
 
@@ -175,25 +173,20 @@ show and the platform turns that into windows and pixels.
 | [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](docs/TASKS.md) | Open, one-commit work items and the on-screen check list |
 | [`docs/archive/`](docs/archive/) | Finished tasks and the progress log up to v0.2.0 (history) |
-| [`RELEASING.md`](RELEASING.md) | How to cut a release, and the versioning policy |
+| [`CHANGELOG.md`](CHANGELOG.md) | Notable changes in each release |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report bugs and contribute changes |
 | [`AGENTS.md`](AGENTS.md) | Engineering rules and the build/test workflow |
+| [`RELEASING.md`](RELEASING.md) | How to cut a release, and the versioning policy |
+| [`SECURITY.md`](SECURITY.md) | Supported versions and how to report a vulnerability privately |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | The Contributor Covenant this project follows |
 
 ## Contributing
 
-Contributions are welcome. Read [`AGENTS.md`](AGENTS.md) first, then only the
-`docs/CONTEXT.md` sections a change touches. Before considering a change complete,
-run:
-
-```
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo deny check all
-```
-
-Keep each commit one logical unit of work, and add tests for new behavior.
-Readability, maintainability, and extensibility come first: see "Design
-priorities" in `AGENTS.md`, and pick up a ready-made task from `docs/TASKS.md`.
+Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to
+set up, find a task, and submit a change; [`AGENTS.md`](AGENTS.md) has the
+engineering rules. Please report security problems privately as described in
+[`SECURITY.md`](SECURITY.md), and follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
