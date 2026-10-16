@@ -465,6 +465,142 @@ unsafe fn paint(window: HWND) {
     }
 }
 
+/// Raises `event` for this window's space. Same contract as `with_state`.
+unsafe fn space_event(window: HWND, event: SpaceEvent) {
+    // SAFETY: the caller's contract; the borrow ends before the dispatch.
+    if let Some(id) = unsafe { with_state(window, |state| state.id) } {
+        runtime::dispatch(Event::Space { id, event });
+    }
+}
+
+/// Whether the space is hosted in the desktop. Same contract as `with_state`.
+unsafe fn is_hosted(window: HWND) -> bool {
+    // SAFETY: the caller's contract.
+    unsafe { with_state(window, |state| state.hosted) }.unwrap_or(false)
+}
+
+/// Keeps top-level spaces under every other window so they behave like part
+/// of the desktop.
+unsafe fn on_window_pos_changing(window: HWND, lparam: LPARAM) {
+    // SAFETY: for WM_WINDOWPOSCHANGING lParam is null or a live WINDOWPOS the
+    // system lets us edit; the state borrow is short.
+    unsafe {
+        let position = lparam.0 as *mut WINDOWPOS;
+        let pinned = with_state(window, |state| !state.hosted && !state.on_top);
+        if pinned == Some(true) && !position.is_null() && !(*position).flags.contains(SWP_NOZORDER)
+        {
+            (*position).hwndInsertAfter = HWND_BOTTOM;
+        }
+    }
+}
+
+unsafe fn on_mouse_move(window: HWND, lparam: LPARAM) {
+    // SAFETY: `window` is a live space window; the state borrows are short.
+    unsafe {
+        let start_tracking = with_state(window, |state| {
+            !std::mem::replace(&mut state.tracking_leave, true)
+        });
+        if start_tracking == Some(true) {
+            // Ask for WM_MOUSELEAVE so hover highlights clear when the cursor
+            // leaves the space.
+            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackmouseevent
+            let mut track = TRACKMOUSEEVENT {
+                cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE,
+                hwndTrack: window,
+                dwHoverTime: 0,
+            };
+            let _ = TrackMouseEvent(&mut track);
+        }
+        let (x, y) = to_desktop(window, lparam, is_hosted(window));
+        space_event(window, SpaceEvent::MouseMove { x, y });
+    }
+}
+
+unsafe fn on_mouse_leave(window: HWND) {
+    // SAFETY: `window` is a live space window; the state borrow is short.
+    unsafe {
+        with_state(window, |state| {
+            state.tracking_leave = false;
+            state.cursor = CursorShape::Arrow;
+        });
+        space_event(window, SpaceEvent::MouseLeave);
+    }
+}
+
+unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
+    // Unlike other mouse messages, the wheel position is in screen
+    // coordinates, and the delta is the signed high word of wParam
+    // (GET_WHEEL_DELTA_WPARAM).
+    // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
+    let delta = hiword(wparam.0 as isize);
+    let mut point = [POINT {
+        x: loword(lparam.0),
+        y: hiword(lparam.0),
+    }];
+    // SAFETY: `window` is a live space window and `point` a valid one-element
+    // buffer. GetKeyState reads this thread's input queue state, which matches
+    // the message being processed.
+    unsafe {
+        if is_hosted(window) {
+            MapWindowPoints(None, GetParent(window).ok(), &mut point);
+        }
+        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
+        space_event(
+            window,
+            SpaceEvent::Wheel {
+                x: point[0].x,
+                y: point[0].y,
+                delta,
+                ctrl,
+            },
+        );
+    }
+}
+
+unsafe fn on_button_down(window: HWND, message: u32, lparam: LPARAM) {
+    // SAFETY: `window` is a live space window. GetKeyState reads this thread's
+    // input queue state, which matches the message being processed.
+    unsafe {
+        // Capture so the matching button-up arrives even if the cursor leaves
+        // the window mid-drag.
+        // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
+        SetCapture(window);
+        let (x, y) = to_desktop(window, lparam, is_hosted(window));
+        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
+        let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
+        space_event(
+            window,
+            SpaceEvent::MouseDown {
+                x,
+                y,
+                button: button_for(message),
+                ctrl,
+                shift,
+            },
+        );
+    }
+}
+
+unsafe fn on_button_up(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) {
+    // SAFETY: `window` is a live space window. ReleaseCapture is not tied to
+    // the window, so it is sound even if the handler destroyed it.
+    unsafe {
+        let (x, y) = to_desktop(window, lparam, is_hosted(window));
+        space_event(
+            window,
+            SpaceEvent::MouseUp {
+                x,
+                y,
+                button: button_for(message),
+            },
+        );
+        if wparam.0 & MK_ANY_BUTTON == 0 {
+            let _ = ReleaseCapture();
+        }
+    }
+}
+
 unsafe extern "system" fn wndproc(
     window: HWND,
     message: u32,
@@ -474,13 +610,6 @@ unsafe extern "system" fn wndproc(
     // SAFETY: called by Windows with valid arguments for `message`; state
     // access follows the rules on `with_state`.
     unsafe {
-        let space_event = |event: SpaceEvent| {
-            if let Some(id) = with_state(window, |state| state.id) {
-                runtime::dispatch(Event::Space { id, event });
-            }
-        };
-        let hosted = || with_state(window, |state| state.hosted).unwrap_or(false);
-
         match message {
             WM_NCCREATE => {
                 window_state::attach_create_param::<SpaceState>(window, lparam);
@@ -514,51 +643,22 @@ unsafe extern "system" fn wndproc(
                 // fight the model. LOWORD(wParam) is the new horizontal DPI.
                 // https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows
                 let dpi = loword(wparam.0 as isize).max(0) as u32;
-                space_event(SpaceEvent::DpiChanged { dpi });
+                space_event(window, SpaceEvent::DpiChanged { dpi });
                 LRESULT(0)
             }
             WM_WINDOWPOSCHANGING => {
-                // Keep top-level spaces under every other window so they behave
-                // like part of the desktop.
-                let position = lparam.0 as *mut WINDOWPOS;
-                let pinned = with_state(window, |state| !state.hosted && !state.on_top);
-                if pinned == Some(true)
-                    && !position.is_null()
-                    && !(*position).flags.contains(SWP_NOZORDER)
-                {
-                    (*position).hwndInsertAfter = HWND_BOTTOM;
-                }
+                on_window_pos_changing(window, lparam);
                 LRESULT(0)
             }
             // Clicking a space must not activate it (and pull it above other
             // apps); WS_EX_NOACTIVATE alone does not cover every click path.
             WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
             WM_MOUSEMOVE => {
-                let start_tracking = with_state(window, |state| {
-                    !std::mem::replace(&mut state.tracking_leave, true)
-                });
-                if start_tracking == Some(true) {
-                    // Ask for WM_MOUSELEAVE so hover highlights clear when the
-                    // cursor leaves the space.
-                    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackmouseevent
-                    let mut track = TRACKMOUSEEVENT {
-                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                        dwFlags: TME_LEAVE,
-                        hwndTrack: window,
-                        dwHoverTime: 0,
-                    };
-                    let _ = TrackMouseEvent(&mut track);
-                }
-                let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(SpaceEvent::MouseMove { x, y });
+                on_mouse_move(window, lparam);
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
-                with_state(window, |state| {
-                    state.tracking_leave = false;
-                    state.cursor = CursorShape::Arrow;
-                });
-                space_event(SpaceEvent::MouseLeave);
+                on_mouse_leave(window);
                 LRESULT(0)
             }
             WM_SETCURSOR if loword(lparam.0) == HTCLIENT as i32 => {
@@ -567,63 +667,20 @@ unsafe extern "system" fn wndproc(
                 LRESULT(1)
             }
             WM_MOUSEWHEEL => {
-                // Unlike other mouse messages, the wheel position is in screen
-                // coordinates, and the delta is the signed high word of wParam
-                // (GET_WHEEL_DELTA_WPARAM).
-                // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
-                let delta = hiword(wparam.0 as isize);
-                let mut point = [POINT {
-                    x: loword(lparam.0),
-                    y: hiword(lparam.0),
-                }];
-                if hosted() {
-                    MapWindowPoints(None, GetParent(window).ok(), &mut point);
-                }
-                // SAFETY: GetKeyState reads this thread's input queue state,
-                // which matches the message being processed.
-                let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
-                space_event(SpaceEvent::Wheel {
-                    x: point[0].x,
-                    y: point[0].y,
-                    delta,
-                    ctrl,
-                });
+                on_mouse_wheel(window, wparam, lparam);
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDBLCLK => {
-                // Capture so the matching button-up arrives even if the cursor
-                // leaves the window mid-drag.
-                // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
-                SetCapture(window);
-                let (x, y) = to_desktop(window, lparam, hosted());
-                // SAFETY: GetKeyState reads this thread's input queue state,
-                // which matches the message being processed.
-                let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
-                let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
-                space_event(SpaceEvent::MouseDown {
-                    x,
-                    y,
-                    button: button_for(message),
-                    ctrl,
-                    shift,
-                });
+                on_button_down(window, message, lparam);
                 LRESULT(0)
             }
             WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
-                let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(SpaceEvent::MouseUp {
-                    x,
-                    y,
-                    button: button_for(message),
-                });
-                if wparam.0 & MK_ANY_BUTTON == 0 {
-                    let _ = ReleaseCapture();
-                }
+                on_button_up(window, message, wparam, lparam);
                 LRESULT(0)
             }
             WM_LBUTTONDBLCLK => {
-                let (x, y) = to_desktop(window, lparam, hosted());
-                space_event(SpaceEvent::DoubleClick { x, y });
+                let (x, y) = to_desktop(window, lparam, is_hosted(window));
+                space_event(window, SpaceEvent::DoubleClick { x, y });
                 LRESULT(0)
             }
             WM_DESTROY => {
@@ -637,7 +694,7 @@ unsafe extern "system" fn wndproc(
                 // after the last button-up also lands here, after MouseUp has
                 // been delivered, so a CaptureLost then is harmless.
                 if lparam.0 != window.0 as isize {
-                    space_event(SpaceEvent::CaptureLost);
+                    space_event(window, SpaceEvent::CaptureLost);
                 }
                 LRESULT(0)
             }

@@ -77,6 +77,76 @@ unsafe fn is_color_set_change(lparam: LPARAM) -> bool {
     area.is_ok_and(|area| area == "ImmersiveColorSet")
 }
 
+/// The event a posted or plain notification message stands for, decoded from
+/// its parameters alone. `None` when the message is not one of these, or its
+/// payload does not decode.
+fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
+    let event = match message {
+        WM_HOTKEY => Event::Hotkey {
+            id: wparam.0 as i32,
+        },
+        // SetTimer with no callback posts WM_TIMER; wParam is the timer id.
+        // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-timer
+        WM_TIMER => Event::Timer { id: wparam.0 },
+        WM_CLIPBOARDUPDATE => Event::ClipboardChanged,
+        messages::TRAY_CALLBACK => tray_event(wparam, lparam)?,
+        messages::SHOW_SPACES => Event::ShowSpaces,
+        messages::FOLDER_CHANGE => Event::FolderChanged,
+        messages::WAKE => Event::Wake { id: wparam.0 },
+        messages::EDIT_KEY => Event::EditKey(keyboard::decode(wparam.0, lparam.0)?),
+        messages::DELETE_KEY => Event::DeleteSelection,
+        messages::CLIPBOARD_KEY => Event::Clipboard(keyboard::clipboard_action(wparam.0)?),
+        messages::RENAME_KEY => Event::RenameSelection,
+        messages::PROPERTIES_KEY => Event::ShowProperties,
+        messages::SELECTION_KEY => Event::SelectionKey(keyboard::selection_key(wparam.0)?),
+        messages::SELECT_ALL_KEY => Event::SelectAll,
+        messages::TYPE_KEY => Event::Typed(char::from_u32(wparam.0 as u32)?),
+        messages::NAV_KEY => Event::Navigate(keyboard::nav_key(wparam.0)?),
+        _ => return None,
+    };
+    Some(event)
+}
+
+/// With NOTIFYICON_VERSION_4, LOWORD(lParam) is the tray event and wParam
+/// carries the anchor point in screen coordinates.
+fn tray_event(wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
+    match (lparam.0 & 0xFFFF) as u32 {
+        NIN_SELECT | NIN_KEYSELECT => Some(Event::Tray(TrayEvent::Activated)),
+        WM_CONTEXTMENU => Some(Event::Tray(TrayEvent::MenuRequested {
+            x: loword(wparam.0 as isize),
+            y: hiword(wparam.0 as isize),
+        })),
+        _ => None,
+    }
+}
+
+/// A press posted by the mouse hook, raised only when it landed outside
+/// every DeskSpace window.
+fn on_outside_probe(wparam: WPARAM, lparam: LPARAM) {
+    let point = POINT {
+        x: wparam.0 as isize as i32,
+        y: lparam.0 as i32,
+    };
+    if outside_click::is_outside(point) {
+        runtime::dispatch(Event::PointerDownOutside {
+            on_desktop: outside_click::is_desktop(point),
+        });
+    }
+}
+
+fn on_destroy(window: HWND) {
+    // SAFETY: `window` is the controller, still live during WM_DESTROY.
+    unsafe {
+        let _ = RemoveClipboardFormatListener(window);
+        outside_click::stop();
+        keyboard::stop();
+        runtime::dispatch_close_once();
+        runtime::destroy_ui_windows();
+        tray::remove(window);
+        PostQuitMessage(0);
+    }
+}
+
 unsafe extern "system" fn wndproc(
     window: HWND,
     message: u32,
@@ -88,108 +158,13 @@ unsafe extern "system" fn wndproc(
         if let Some(result) = shell_items::forward_menu_message(message, wparam, lparam) {
             return result;
         }
+        if let Some(event) = event_for(message, wparam, lparam) {
+            runtime::dispatch(event);
+            return LRESULT(0);
+        }
         match message {
-            WM_HOTKEY => {
-                runtime::dispatch(Event::Hotkey {
-                    id: wparam.0 as i32,
-                });
-                LRESULT(0)
-            }
-            messages::SHOW_SPACES => {
-                runtime::dispatch(Event::ShowSpaces);
-                LRESULT(0)
-            }
-            messages::FOLDER_CHANGE => {
-                runtime::dispatch(Event::FolderChanged);
-                LRESULT(0)
-            }
-            messages::WAKE => {
-                runtime::dispatch(Event::Wake { id: wparam.0 });
-                LRESULT(0)
-            }
-            messages::TRAY_CALLBACK => {
-                // With NOTIFYICON_VERSION_4, LOWORD(lParam) is the event and
-                // wParam carries the anchor point in screen coordinates.
-                match (lparam.0 & 0xFFFF) as u32 {
-                    NIN_SELECT | NIN_KEYSELECT => {
-                        runtime::dispatch(Event::Tray(TrayEvent::Activated));
-                    }
-                    WM_CONTEXTMENU => {
-                        runtime::dispatch(Event::Tray(TrayEvent::MenuRequested {
-                            x: loword(wparam.0 as isize),
-                            y: hiword(wparam.0 as isize),
-                        }));
-                    }
-                    _ => {}
-                }
-                LRESULT(0)
-            }
-            // SetTimer with no callback posts WM_TIMER; wParam is the timer id.
-            // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-timer
-            WM_TIMER => {
-                runtime::dispatch(Event::Timer { id: wparam.0 });
-                LRESULT(0)
-            }
-            messages::EDIT_KEY => {
-                if let Some(key) = keyboard::decode(wparam.0, lparam.0) {
-                    runtime::dispatch(Event::EditKey(key));
-                }
-                LRESULT(0)
-            }
-            messages::DELETE_KEY => {
-                runtime::dispatch(Event::DeleteSelection);
-                LRESULT(0)
-            }
-            messages::CLIPBOARD_KEY => {
-                if let Some(action) = keyboard::clipboard_action(wparam.0) {
-                    runtime::dispatch(Event::Clipboard(action));
-                }
-                LRESULT(0)
-            }
-            messages::RENAME_KEY => {
-                runtime::dispatch(Event::RenameSelection);
-                LRESULT(0)
-            }
-            messages::PROPERTIES_KEY => {
-                runtime::dispatch(Event::ShowProperties);
-                LRESULT(0)
-            }
-            messages::SELECTION_KEY => {
-                if let Some(key) = keyboard::selection_key(wparam.0) {
-                    runtime::dispatch(Event::SelectionKey(key));
-                }
-                LRESULT(0)
-            }
-            messages::SELECT_ALL_KEY => {
-                runtime::dispatch(Event::SelectAll);
-                LRESULT(0)
-            }
-            messages::TYPE_KEY => {
-                if let Some(character) = char::from_u32(wparam.0 as u32) {
-                    runtime::dispatch(Event::Typed(character));
-                }
-                LRESULT(0)
-            }
-            messages::NAV_KEY => {
-                if let Some(key) = keyboard::nav_key(wparam.0) {
-                    runtime::dispatch(Event::Navigate(key));
-                }
-                LRESULT(0)
-            }
-            WM_CLIPBOARDUPDATE => {
-                runtime::dispatch(Event::ClipboardChanged);
-                LRESULT(0)
-            }
             messages::OUTSIDE_PROBE => {
-                let point = POINT {
-                    x: wparam.0 as isize as i32,
-                    y: lparam.0 as i32,
-                };
-                if outside_click::is_outside(point) {
-                    runtime::dispatch(Event::PointerDownOutside {
-                        on_desktop: outside_click::is_desktop(point),
-                    });
-                }
+                on_outside_probe(wparam, lparam);
                 LRESULT(0)
             }
             WM_SETTINGCHANGE => {
@@ -213,13 +188,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_DESTROY => {
-                let _ = RemoveClipboardFormatListener(window);
-                outside_click::stop();
-                keyboard::stop();
-                runtime::dispatch_close_once();
-                runtime::destroy_ui_windows();
-                tray::remove(window);
-                PostQuitMessage(0);
+                on_destroy(window);
                 LRESULT(0)
             }
             _ if message != 0 && message == TASKBAR_CREATED.load(Ordering::SeqCst) => {
@@ -231,5 +200,58 @@ unsafe extern "system" fn wndproc(
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::SelectionKey;
+
+    fn event(message: u32, wparam: usize, lparam: isize) -> Option<Event> {
+        event_for(message, WPARAM(wparam), LPARAM(lparam))
+    }
+
+    #[test]
+    fn posted_messages_carry_their_payload() {
+        assert_eq!(event(messages::WAKE, 7, 0), Some(Event::Wake { id: 7 }));
+        assert_eq!(event(WM_TIMER, 3, 0), Some(Event::Timer { id: 3 }));
+        assert_eq!(event(WM_HOTKEY, 2, 0), Some(Event::Hotkey { id: 2 }));
+        assert_eq!(
+            event(messages::TYPE_KEY, 'k' as usize, 0),
+            Some(Event::Typed('k'))
+        );
+        assert_eq!(
+            event(messages::SELECTION_KEY, keyboard::SEL_OPEN, 0),
+            Some(Event::SelectionKey(SelectionKey::Open))
+        );
+        assert_eq!(event(messages::SHOW_SPACES, 0, 0), Some(Event::ShowSpaces));
+    }
+
+    #[test]
+    fn undecodable_payloads_and_other_messages_raise_nothing() {
+        assert_eq!(event(messages::TYPE_KEY, 0xD800, 0), None);
+        assert_eq!(event(messages::SELECTION_KEY, usize::MAX, 0), None);
+        assert_eq!(event(messages::OUTSIDE_PROBE, 0, 0), None);
+        assert_eq!(event(WM_CLOSE, 0, 0), None);
+    }
+
+    #[test]
+    fn tray_callback_decodes_activation_and_menu_anchor() {
+        assert_eq!(
+            event(messages::TRAY_CALLBACK, 0, NIN_SELECT as isize),
+            Some(Event::Tray(TrayEvent::Activated))
+        );
+        assert_eq!(
+            event(messages::TRAY_CALLBACK, 0, NIN_KEYSELECT as isize),
+            Some(Event::Tray(TrayEvent::Activated))
+        );
+        // A negative x (a monitor left of the primary) survives the packing.
+        let anchor = ((40u16 as usize) << 16) | (-12i16 as u16 as usize);
+        assert_eq!(
+            event(messages::TRAY_CALLBACK, anchor, WM_CONTEXTMENU as isize),
+            Some(Event::Tray(TrayEvent::MenuRequested { x: -12, y: 40 }))
+        );
+        assert_eq!(event(messages::TRAY_CALLBACK, 0, 0x0200), None);
     }
 }

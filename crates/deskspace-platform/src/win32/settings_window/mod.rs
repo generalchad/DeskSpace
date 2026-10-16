@@ -423,6 +423,100 @@ pub(super) fn settings_event(event: SettingsEvent) {
     runtime::dispatch(Event::Settings(event));
 }
 
+/// A control notification or button press, routed by control id.
+unsafe fn on_command(window: HWND, wparam: WPARAM, lparam: LPARAM) {
+    let id = wparam.0 & 0xFFFF;
+    let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
+    let control = HWND(lparam.0 as *mut core::ffi::c_void);
+    // SAFETY: `window` is the live settings window; each handler follows the
+    // rules on `with_state`.
+    unsafe {
+        match id {
+            ID_OK => settings_event(SettingsEvent::Ok),
+            ID_CANCEL => settings_event(SettingsEvent::Cancel),
+            ID_APPLY => settings_event(SettingsEvent::Apply),
+            ID_LIST if code == LBN_SELCHANGE => on_nav_changed(window),
+            ID_SCOPES if code == LBN_SELCHANGE => on_scope_changed(window),
+            ID_HEADER_SWITCH if code == BN_CLICKED => on_header_switch(window, control),
+            ID_HEADER_BUTTON if code == BN_CLICKED => settings_event(SettingsEvent::HeaderButton),
+            id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
+            _ => {}
+        }
+    }
+}
+
+/// Colors a control for the window's theme: returns the background brush, or
+/// `None` to leave the control to the default (light-mode input fields).
+unsafe fn on_ctl_color(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> Option<LRESULT> {
+    let control = HWND(lparam.0 as *mut core::ffi::c_void);
+    let dc = HDC(wparam.0 as *mut core::ffi::c_void);
+    // SAFETY: `window` is the live settings window and `dc` the control's
+    // device context for this message; the state borrow is short.
+    unsafe {
+        let (colors, body, field, disabled, rail) = with_state(window, |state| {
+            (
+                state.colors,
+                state.body_brush,
+                state.command_bar_brush,
+                state.is_disabled_label(control),
+                [state.list, state.scopes_list].contains(&Some(control)),
+            )
+        })?;
+        // The rail panes are part of the window body, not input fields: below
+        // their rows they show the body color too.
+        if rail {
+            SetBkColor(dc, colorref(colors.body));
+            return Some(LRESULT(body.0 as isize));
+        }
+        let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
+        if editable && !colors.dark {
+            return None;
+        }
+        // Labels, checkboxes, trackbars, and read-only edits sit on the page
+        // body; in dark mode, editable fields and drop-down lists use the
+        // slightly darker field color.
+        let (background, brush) = if editable {
+            (colors.command_bar, field)
+        } else {
+            (colors.body, body)
+        };
+        let text = if disabled {
+            colors.disabled_text
+        } else {
+            colors.text
+        };
+        SetTextColor(dc, colorref(text));
+        SetBkColor(dc, colorref(background));
+        Some(LRESULT(brush.0 as isize))
+    }
+}
+
+/// Draws an owner-draw control; returns whether it was one of ours.
+unsafe fn on_owner_draw(window: HWND, lparam: LPARAM) -> bool {
+    let item = lparam.0 as *const DRAWITEMSTRUCT;
+    if item.is_null() {
+        return false;
+    }
+    // SAFETY: Windows passes a live DRAWITEMSTRUCT for an owner-draw control
+    // of this window.
+    unsafe {
+        let item = &*item;
+        match item.CtlID as usize {
+            ID_LIST => on_draw_item(window, item),
+            ID_SCOPES => on_draw_scope(window, item),
+            ID_HEADER_BUTTON => on_draw_header_button(window, item),
+            id if id >= CONTROL_BASE => on_draw_swatch(window, item),
+            _ => return false,
+        }
+    }
+    true
+}
+
 unsafe extern "system" fn wndproc(
     window: HWND,
     message: u32,
@@ -438,22 +532,7 @@ unsafe extern "system" fn wndproc(
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_COMMAND => {
-                let id = wparam.0 & 0xFFFF;
-                let code = ((wparam.0 >> 16) & 0xFFFF) as u32;
-                let control = HWND(lparam.0 as *mut core::ffi::c_void);
-                match id {
-                    ID_OK => settings_event(SettingsEvent::Ok),
-                    ID_CANCEL => settings_event(SettingsEvent::Cancel),
-                    ID_APPLY => settings_event(SettingsEvent::Apply),
-                    ID_LIST if code == LBN_SELCHANGE => on_nav_changed(window),
-                    ID_SCOPES if code == LBN_SELCHANGE => on_scope_changed(window),
-                    ID_HEADER_SWITCH if code == BN_CLICKED => on_header_switch(window, control),
-                    ID_HEADER_BUTTON if code == BN_CLICKED => {
-                        settings_event(SettingsEvent::HeaderButton)
-                    }
-                    id if id >= CONTROL_BASE => on_field_command(window, id, code, control),
-                    _ => {}
-                }
+                on_command(window, wparam, lparam);
                 LRESULT(0)
             }
             WM_HSCROLL => {
@@ -463,61 +542,15 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
-                let control = HWND(lparam.0 as *mut core::ffi::c_void);
-                let Some((colors, body, field, disabled, rail)) = with_state(window, |state| {
-                    (
-                        state.colors,
-                        state.body_brush,
-                        state.command_bar_brush,
-                        state.is_disabled_label(control),
-                        [state.list, state.scopes_list].contains(&Some(control)),
-                    )
-                }) else {
-                    return DefWindowProcW(window, message, wparam, lparam);
-                };
-                let dc = HDC(wparam.0 as *mut core::ffi::c_void);
-                // The rail panes are part of the window body, not input
-                // fields: below their rows they show the body color too.
-                if rail {
-                    SetBkColor(dc, colorref(colors.body));
-                    return LRESULT(body.0 as isize);
-                }
-                let editable = matches!(message, WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX);
-                if editable && !colors.dark {
-                    return DefWindowProcW(window, message, wparam, lparam);
-                }
-                // Labels, checkboxes, trackbars, and read-only edits sit on
-                // the page body; in dark mode, editable fields and drop-down
-                // lists use the slightly darker field color.
-                let (background, brush) = if editable {
-                    (colors.command_bar, field)
-                } else {
-                    (colors.body, body)
-                };
-                let text = if disabled {
-                    colors.disabled_text
-                } else {
-                    colors.text
-                };
-                SetTextColor(dc, colorref(text));
-                SetBkColor(dc, colorref(background));
-                LRESULT(brush.0 as isize)
+                on_ctl_color(window, message, wparam, lparam)
+                    .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam))
             }
             WM_DRAWITEM => {
-                let item = lparam.0 as *const DRAWITEMSTRUCT;
-                // SAFETY: Windows passes a live DRAWITEMSTRUCT for an
-                // owner-draw control of this window.
-                if item.is_null() {
-                    return DefWindowProcW(window, message, wparam, lparam);
+                if on_owner_draw(window, lparam) {
+                    LRESULT(1)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
                 }
-                match (*item).CtlID as usize {
-                    ID_LIST => on_draw_item(window, &*item),
-                    ID_SCOPES => on_draw_scope(window, &*item),
-                    ID_HEADER_BUTTON => on_draw_header_button(window, &*item),
-                    id if id >= CONTROL_BASE => on_draw_swatch(window, &*item),
-                    _ => return DefWindowProcW(window, message, wparam, lparam),
-                }
-                LRESULT(1)
             }
             WM_ERASEBKGND => {
                 let dc = HDC(wparam.0 as *mut core::ffi::c_void);

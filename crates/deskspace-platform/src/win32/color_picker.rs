@@ -591,6 +591,75 @@ impl PickerState {
     fn select_swatch(&mut self, index: usize) {
         self.selected = swatch_color(&self.recent, index);
     }
+
+    fn region_at(&self, point: Point) -> Option<Region> {
+        self.layout.region_at(self.panel, self.recent.len(), point)
+    }
+
+    /// Drags a value control and tracks button hover; returns whether to
+    /// redraw.
+    fn pointer_moved(&mut self, point: Point) -> bool {
+        let mut redraw = false;
+        if let Some(region) = self.drag
+            && region.is_value()
+        {
+            self.set_from_point(region, point);
+            redraw = true;
+        }
+        let hover = self
+            .region_at(point)
+            .filter(|region| matches!(region, Region::Ok | Region::Cancel | Region::Toggle));
+        if hover != self.hover {
+            self.hover = hover;
+            redraw = true;
+        }
+        redraw
+    }
+
+    /// Selects a swatch or starts dragging a value control; returns whether to
+    /// redraw.
+    fn pressed(&mut self, point: Point) -> bool {
+        match self.region_at(point) {
+            Some(Region::Swatch(index)) => {
+                self.select_swatch(index);
+                true
+            }
+            Some(region) if region.is_value() => {
+                self.drag = Some(region);
+                self.set_from_point(region, point);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A double-click on a swatch picks it; returns whether the picker is done.
+    fn double_clicked(&mut self, point: Point) -> bool {
+        let Some(Region::Swatch(index)) = self.region_at(point) else {
+            return false;
+        };
+        self.select_swatch(index);
+        confirm(self);
+        true
+    }
+
+    /// Ends a drag and presses the button under `point`; returns whether the
+    /// picker is done.
+    fn released(&mut self, point: Point) -> bool {
+        self.drag = None;
+        match self.region_at(point) {
+            Some(Region::Ok) => {
+                confirm(self);
+                true
+            }
+            Some(Region::Cancel) => true,
+            Some(Region::Toggle) => {
+                self.toggle_panel();
+                false
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Opens the picker `dark`-themed over `owner` and returns the chosen color, or
@@ -757,103 +826,34 @@ unsafe extern "system" fn wndproc(
             }
             WM_MOUSEMOVE => {
                 let point = mouse_point(lparam);
-                let redraw = with_state(window, |state| {
-                    let mut redraw = false;
-                    if let Some(region) = state.drag
-                        && region.is_value()
-                    {
-                        state.set_from_point(region, point);
-                        redraw = true;
-                    }
-                    let hover = state
-                        .layout
-                        .region_at(state.panel, state.recent.len(), point)
-                        .filter(|region| {
-                            matches!(region, Region::Ok | Region::Cancel | Region::Toggle)
-                        });
-                    if hover != state.hover {
-                        state.hover = hover;
-                        redraw = true;
-                    }
-                    redraw
-                })
-                .unwrap_or(false);
-                if redraw {
+                if with_state(window, |state| state.pointer_moved(point)) == Some(true) {
                     let _ = InvalidateRect(Some(window), None, false);
                 }
                 LRESULT(0)
             }
             WM_LBUTTONDOWN => {
                 let point = mouse_point(lparam);
-                let redraw = with_state(window, |state| {
-                    match state
-                        .layout
-                        .region_at(state.panel, state.recent.len(), point)
-                    {
-                        Some(Region::Swatch(index)) => {
-                            state.select_swatch(index);
-                            true
-                        }
-                        Some(region) if region.is_value() => {
-                            state.drag = Some(region);
-                            state.set_from_point(region, point);
-                            true
-                        }
-                        _ => false,
-                    }
-                })
-                .unwrap_or(false);
+                let redraw = with_state(window, |state| state.pressed(point));
                 SetCapture(window);
-                if redraw {
+                if redraw == Some(true) {
                     let _ = InvalidateRect(Some(window), None, false);
                 }
                 LRESULT(0)
             }
             WM_LBUTTONDBLCLK => {
                 let point = mouse_point(lparam);
-                let finish = with_state(window, |state| {
-                    match state
-                        .layout
-                        .region_at(state.panel, state.recent.len(), point)
-                    {
-                        Some(Region::Swatch(index)) => {
-                            state.select_swatch(index);
-                            confirm(state);
-                            true
-                        }
-                        _ => false,
-                    }
-                })
-                .unwrap_or(false);
+                let done = with_state(window, |state| state.double_clicked(point));
                 let _ = ReleaseCapture();
-                if finish {
+                if done == Some(true) {
                     let _ = DestroyWindow(window);
                 }
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
                 let point = mouse_point(lparam);
-                let finish = with_state(window, |state| {
-                    state.drag = None;
-                    match state
-                        .layout
-                        .region_at(state.panel, state.recent.len(), point)
-                    {
-                        Some(Region::Ok) => {
-                            confirm(state);
-                            true
-                        }
-                        Some(Region::Cancel) => true,
-                        Some(Region::Toggle) => {
-                            state.toggle_panel();
-                            false
-                        }
-                        _ => false,
-                    }
-                })
-                .unwrap_or(false);
+                let done = with_state(window, |state| state.released(point));
                 let _ = ReleaseCapture();
-                if finish {
+                if done == Some(true) {
                     let _ = DestroyWindow(window);
                 } else {
                     let _ = InvalidateRect(Some(window), None, false);
@@ -1623,5 +1623,66 @@ mod tests {
         state.toggle_panel();
         assert_eq!(state.panel, Panel::Palette);
         assert_eq!(state.selected, Some(Color::rgb(0x10, 0x7C, 0x10)));
+    }
+
+    fn state_at(color: Color) -> PickerState {
+        PickerState::new(
+            color,
+            true,
+            PickerLayout::compute(1.0),
+            HFONT::default(),
+            HFONT::default(),
+        )
+    }
+
+    fn center(rect: Rect) -> Point {
+        Point::new(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    }
+
+    #[test]
+    fn releasing_on_ok_or_cancel_finishes_and_only_ok_picks() {
+        let mut state = state_at(Color::rgb(1, 2, 3));
+        assert!(state.released(center(state.layout.cancel)));
+        assert_eq!(state.result, None);
+        assert!(state.released(center(state.layout.ok)));
+        assert_eq!(state.result, Some(Color::rgb(1, 2, 3)));
+    }
+
+    #[test]
+    fn releasing_on_toggle_switches_panels_without_finishing() {
+        let mut state = state_at(Color::rgb(1, 2, 3));
+        assert!(!state.released(center(state.layout.toggle)));
+        assert_eq!(state.panel, Panel::Custom);
+    }
+
+    #[test]
+    fn pressing_a_value_control_drags_it_until_release() {
+        let mut state = state_at(Color::rgb(1, 2, 3));
+        state.toggle_panel();
+        let hue = state.layout.hue;
+        assert!(state.pressed(Point::new(hue.x, hue.y + 1)));
+        assert_eq!(state.drag, Some(Region::Hue));
+        assert!(state.pointer_moved(Point::new(hue.x + hue.width, hue.y + 1)));
+        assert_eq!(state.hue, 360.0);
+        state.released(Point::new(0, 0));
+        assert_eq!(state.drag, None);
+    }
+
+    #[test]
+    fn double_clicking_a_swatch_picks_it() {
+        let mut state = state_at(Color::rgb(1, 2, 3));
+        let swatch = state.layout.swatch_rect(state.layout.windows_grid, 0);
+        assert!(state.double_clicked(center(swatch)));
+        assert_eq!(state.result, Some(WINDOWS_COLORS[0]));
+        assert!(!state.double_clicked(Point::new(0, 0)));
+    }
+
+    #[test]
+    fn hovering_a_button_redraws_once() {
+        let mut state = state_at(Color::rgb(1, 2, 3));
+        let ok = center(state.layout.ok);
+        assert!(state.pointer_moved(ok));
+        assert_eq!(state.hover, Some(Region::Ok));
+        assert!(!state.pointer_moved(ok));
     }
 }

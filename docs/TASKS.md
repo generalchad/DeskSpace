@@ -142,11 +142,11 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 
 1. `deskspace-platform/src/input.rs`: a `SelectionKey` variant (no data) with
    a `///` doc. Only a key that carries data gets its own `Event` variant and
-   `WM_APP` id.
+   `WM_APP` id (in `win32/messages.rs`, decoded in `event_for` in
+   `win32/controller.rs`).
 2. `win32/keyboard.rs`: a `SEL_*` code and a branch in `fn handle` under the
    right flag (the `AGENTS.md` Gotchas table) that posts `SELECTION_KEY`; map
-   the code to the variant where `SELECTION_KEY` is dispatched in
-   `win32/controller.rs`.
+   the code to the variant in `fn selection_key` (and its test).
 3. `deskspace-app/src/app.rs`: handle it in `App::on_selection_key`, calling
    a method in the `app/` module that owns the behavior.
 4. Update the key lists in `AGENTS.md` (Gotchas), `CONTEXT.md` section 8, and
@@ -484,10 +484,6 @@ the ROADMAP decision ids (`D1`-`D9`).
 - **R3. Platform module layout.** What remains after the K splits:
   - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
     `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
-  - long window procedures (`space_window.rs` about 180 lines,
-    `controller.rs`, `color_picker.rs`, `settings_window/mod.rs` about 120-150
-    each): one named handler per message, keeping `runtime::dispatch` the
-    last statement of each branch (`AGENTS.md` Gotchas).
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **R7. On-screen verification pass** (maintainer). The list is section V.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
@@ -572,6 +568,7 @@ each id is in `archive/TASKS-done.md`.
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
+| R3 (window procedures) | Nothing should change: hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
 
