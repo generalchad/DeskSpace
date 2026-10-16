@@ -44,14 +44,18 @@ public key, so both halves must be rotated together.
    `Cargo.lock` with `cargo check --workspace`.
 3. Move any finished milestone or feature items in `docs/ROADMAP.md` and
    `docs/CONTEXT.md`.
-4. Commit as `release: vX.Y.Z`.
-5. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-6. Watch the workflow: `gh run watch`.
-7. Download the zip and the installer (`deskspace_<version>_x64-setup.exe`)
+4. In `CHANGELOG.md`, rename "Unreleased" to `[X.Y.Z] - YYYY-MM-DD`, start a
+   new empty "Unreleased" above it, and update the compare links at the
+   bottom.
+5. Commit as `release: vX.Y.Z`.
+6. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+7. Watch the workflow: `gh run watch`.
+8. Download the zip and the installer (`deskspace_<version>_x64-setup.exe`)
    from the release page, check the zip's `.sha256`, and smoke-test the zip
    with a scratch `--config` and the installer by installing and uninstalling
    it.
-8. Edit the generated release notes on the GitHub release page.
+9. Replace the generated release notes on the GitHub release page with the
+   version's `CHANGELOG.md` section.
 
 ## What the workflow does
 
