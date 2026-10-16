@@ -1625,3 +1625,34 @@ until I5-I6 all land, so no partial build hides the desktop.
   `storage.rs`. `ItemFacts` carries `is_folder` rather than a `kind`, so
   `ItemKind::classify(path, is_folder)` stays the one place that decides a
   kind. `view.rs` (the desktop layer) also creates items and reads facts.
+
+- **R3. Platform module layout.** What remains after the K splits:
+  - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
+    `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
+  - a `win32/messages.rs` owning every `WM_APP + n` (today in
+    `controller.rs`, `keyboard.rs`, and `outside_click.rs`), with a test
+    that the values are unique (compare B15 for timers);
+  - make internal modules private: `win32/mod.rs` has 12 `pub mod`s, though
+    the app uses only the `lib.rs` re-exports;
+  - long window procedures (`space_window.rs` about 180 lines,
+    `controller.rs`, `color_picker.rs`, `settings_window/mod.rs` about 120-150
+    each): one named handler per message, keeping `runtime::dispatch` the
+    last statement of each branch (`AGENTS.md` Gotchas).
+  Resolved, in four commits:
+  - The fourteen ids live in `win32/messages.rs`, values unchanged, with
+    tests that they are unique and inside the `WM_APP` range. Payload codes
+    (`SEL_*`, `NAV_*`, `ACTION_*`) stay in `keyboard.rs` with their encoders
+    and decoders.
+  - Every top-level module of the platform crate is private, not only the
+    `win32` ones. A `win32` module is `pub(crate)` only when code outside
+    `win32` (`lib.rs`, `render`) uses it. No dead code surfaced.
+  - The window procedures (`color_picker.rs`, `settings_window/mod.rs` and
+    `space_window.rs`) get one named handler per multi-line message; one-line
+    arms and the arms whose length is their why-comment stay inline. The
+    controller instead gets a pure `event_for` that decodes every posted
+    message, and the picker's pointer logic became tested `PickerState`
+    methods.
+  - The GDI decoder is gone. `d2d::decode_icon` (WIC `CreateBitmapFromHICON`)
+    matched it byte for byte on a legacy masked icon, a 32 bpp icon, shell
+    file icons and every overlay at each image-list size, before it replaced
+    it. Two tests pin the mask and premultiply behavior.

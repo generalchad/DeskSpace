@@ -5,10 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::SIZE;
-use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits,
-    GetObjectW, HBITMAP, HGDIOBJ, ReleaseDC,
-};
+use windows::Win32::Graphics::Gdi::{DeleteObject, HBITMAP};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
@@ -17,11 +14,11 @@ use windows::Win32::UI::Shell::{
     SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE, SHIL_JUMBO, SHIL_LARGE, SHIL_SMALL,
     SIIGBF_ICONONLY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
+use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
 use windows::core::{Interface, PCWSTR};
 
 use crate::render::Icon;
-use crate::render::d2d::decode_bitmap;
+use crate::render::d2d::{decode_bitmap, decode_icon};
 use crate::win32::system::wide;
 
 /// Icons decoded per path, pixel size, and overlay size, bounded by a
@@ -154,7 +151,7 @@ fn load_classic_icon(path: &Path) -> Option<Icon> {
         if result == 0 || info.hIcon.is_invalid() {
             return None;
         }
-        let icon = decode_icon_masked(info.hIcon);
+        let icon = decode_icon(info.hIcon);
         let _ = DestroyIcon(info.hIcon);
         icon
     }
@@ -188,106 +185,6 @@ pub(crate) fn shell_item_icon(item: &IShellItem, size: u32) -> Option<Icon> {
         let icon = decode_bitmap(bitmap);
         let _ = DeleteObject(bitmap.into());
         icon
-    }
-}
-
-/// Converts an `HICON` to premultiplied BGRA from its color and mask bitmaps:
-/// a 32 bpp icon carries its alpha in the color bitmap, a legacy icon carries
-/// transparency in the 1 bpp AND mask.
-fn decode_icon_masked(hicon: HICON) -> Option<Icon> {
-    // SAFETY: `hicon` is live; `GetIconInfo` creates two bitmaps that are
-    // deleted before returning, and the GDI calls only fill our buffers.
-    unsafe {
-        let mut info = ICONINFO::default();
-        GetIconInfo(hicon, &mut info).ok()?;
-        let mut bitmap = BITMAP::default();
-        GetObjectW(
-            HGDIOBJ(info.hbmColor.0),
-            std::mem::size_of::<BITMAP>() as i32,
-            Some((&mut bitmap as *mut BITMAP).cast()),
-        );
-        let (width, height) = (bitmap.bmWidth, bitmap.bmHeight);
-        if width <= 0 || height <= 0 {
-            let _ = DeleteObject(HGDIOBJ(info.hbmColor.0));
-            let _ = DeleteObject(HGDIOBJ(info.hbmMask.0));
-            return None;
-        }
-        let dc = GetDC(None);
-        let header = |bits: u16| BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: -height,
-                biPlanes: 1,
-                biBitCount: bits,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut color = vec![0u8; (width * height * 4) as usize];
-        let mut color_info = header(32);
-        let color_ok = GetDIBits(
-            dc,
-            info.hbmColor,
-            0,
-            height as u32,
-            Some(color.as_mut_ptr().cast()),
-            &mut color_info,
-            DIB_RGB_COLORS,
-        ) != 0;
-        let stride = (((width + 31) / 32) * 4) as usize;
-        let mut mask = vec![0u8; stride * height as usize];
-        let mut mask_info = header(1);
-        let mask_ok = GetDIBits(
-            dc,
-            info.hbmMask,
-            0,
-            height as u32,
-            Some(mask.as_mut_ptr().cast()),
-            &mut mask_info,
-            DIB_RGB_COLORS,
-        ) != 0;
-        ReleaseDC(None, dc);
-        let _ = DeleteObject(HGDIOBJ(info.hbmColor.0));
-        let _ = DeleteObject(HGDIOBJ(info.hbmMask.0));
-        if !color_ok {
-            return None;
-        }
-        let has_alpha = color.as_chunks::<4>().0.iter().any(|pixel| pixel[3] != 0);
-        let mut pixels = vec![0u8; color.len()];
-        for y in 0..height as usize {
-            for x in 0..width as usize {
-                let index = (y * width as usize + x) * 4;
-                let transparent = if mask_ok {
-                    let byte = mask[y * stride + x / 8];
-                    (byte >> (7 - (x % 8))) & 1 == 1
-                } else {
-                    false
-                };
-                let alpha = if has_alpha {
-                    if transparent {
-                        0
-                    } else {
-                        color[index + 3] as u16
-                    }
-                } else if transparent {
-                    0
-                } else {
-                    255
-                };
-                for channel in 0..3 {
-                    pixels[index + channel] =
-                        ((color[index + channel] as u32 * alpha as u32 + 127) / 255) as u8;
-                }
-                pixels[index + 3] = alpha as u8;
-            }
-        }
-        Some(Icon::new(
-            width as u32,
-            height as u32,
-            pixels.into_boxed_slice(),
-        ))
     }
 }
 
@@ -339,7 +236,7 @@ fn load_overlay_image(overlay: i32, size: u32, overlay_size: u8) -> Option<Icon>
     let icon = unsafe {
         let index = list.GetOverlayImage(overlay).ok()?;
         let hicon = list.GetIcon(index, ILD_TRANSPARENT.0).ok()?;
-        let icon = decode_icon_masked(hicon);
+        let icon = decode_icon(hicon);
         let _ = DestroyIcon(hicon);
         icon
     }?;

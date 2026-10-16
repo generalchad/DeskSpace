@@ -13,7 +13,7 @@ mod geometry;
 mod graphics;
 mod item;
 
-pub(crate) use bitmap::decode_bitmap;
+pub(crate) use bitmap::{decode_bitmap, decode_icon};
 
 use std::cell::RefCell;
 use std::collections::HashMap;

@@ -481,9 +481,6 @@ Rules for every K task:
 Each needs design work first. Ids are `R1`-`R15` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
-- **R3. Platform module layout.** What remains after the K splits:
-  - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
-    `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **R7. On-screen verification pass** (maintainer). The list is section V.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
@@ -568,7 +565,7 @@ each id is in `archive/TASKS-done.md`.
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
-| R3 (window procedures) | Nothing should change: hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
+| R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
 

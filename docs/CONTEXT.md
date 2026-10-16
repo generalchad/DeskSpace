@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (379 tests) are green. Update this count whenever a
+  `cargo test --workspace` (381 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -914,7 +914,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
 - `Icon` is an `Arc` of owned premultiplied-BGRA pixels with a never-reused
   id. The main path decodes the `IShellItemImageFactory` HBITMAP through WIC
   (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
-  (`icons::decode_icon_masked`), destroyed right away. Scenes therefore never
+  through WIC too (`d2d::decode_icon`, which applies a legacy icon's AND
+  mask), destroyed right away. Scenes therefore never
   point at freed handles.
 - `Painter` owns an `ID2D1HwndRenderTarget` (premultiplied alpha, 96 DPI so
   one DIP is one pixel), a brush, and a per-target bitmap cache keyed by
@@ -1103,8 +1104,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   `IImageList::GetOverlayImage` fetches its full-icon-sized image from the
   system image list nearest the size (`SHIL_SMALL`..`SHIL_JUMBO`), area-averaged
   to `theme.overlay_size` percent and anchored in the bottom-left corner before
-  compositing. HICONs are decoded from their color and
-  mask bitmaps (`decode_icon_masked`). Entries are keyed by path, pixel size,
+  compositing. HICONs are decoded through WIC
+  (`d2d::decode_icon`). Entries are keyed by path, pixel size,
   and overlay size, with least-recently-used eviction at 1024 entries.
   `invalidate(path)` forgets every size of one path.
 - `shell_items.rs`: Explorer behavior for items. `Ui::open_path`
