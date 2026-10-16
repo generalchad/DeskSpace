@@ -463,45 +463,34 @@ impl Builder {
     }
 }
 
-pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) {
+/// Creates every control of the settings window. Fails, leaving the caller to
+/// destroy `hwnd`, if a page container cannot be created: the navigation and
+/// the field diff in `update` index pages and fields by their position in
+/// `form`, so a skipped page would shift every page after it.
+pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), PlatformError> {
     // SAFETY: every call creates or positions children of `hwnd`; no state
     // borrow is held while controls are created.
     unsafe {
+        let instance = HINSTANCE(GetModuleHandleW(None)?.0);
         let dpi = GetDpiForWindow(hwnd).max(96);
+        let page_width = scaled(540, dpi);
+        let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
+
         let (font, heading_font, glyph_font) = create_fonts(dpi);
         let builder = Builder {
-            instance: HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0),
+            instance,
             dpi,
             font,
             heading_font,
         };
         let s = |value| builder.s(value);
         let margin = s(12);
-        let page_width = s(540);
 
         let nav = &form.nav;
 
-        let mut pages = Vec::new();
         let mut fields = Vec::new();
         let mut page_height = 0;
-        for page in &form.pages {
-            let container = CreateWindowExW(
-                WS_EX_CONTROLPARENT,
-                PAGE_CLASS,
-                w!(""),
-                WS_CHILD | WS_CLIPCHILDREN,
-                0,
-                0,
-                page_width,
-                s(100),
-                Some(hwnd),
-                None,
-                Some(builder.instance),
-                None,
-            );
-            let Ok(container) = container else {
-                continue;
-            };
+        for (&container, page) in pages.iter().zip(&form.pages) {
             let mut y = s(16);
             for field in &page.fields {
                 let index = fields.len();
@@ -511,7 +500,6 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) {
                 y += height;
             }
             page_height = page_height.max(y + s(8));
-            pages.push(container);
         }
 
         // Lay the pages beside the rail and compute the client size.
@@ -687,7 +675,40 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) {
             state.command_bar_top = command_bar_top;
             state.updating = false;
         });
+        Ok(())
     }
+}
+
+/// Creates one hidden page container per form page, in form order. They are
+/// sized and positioned once the tallest page is known.
+unsafe fn create_pages(
+    parent: HWND,
+    instance: HINSTANCE,
+    count: usize,
+    page_width: i32,
+) -> Result<Vec<HWND>, PlatformError> {
+    (0..count)
+        .map(|_| {
+            // SAFETY: creating a child window of our own live window.
+            let page = unsafe {
+                CreateWindowExW(
+                    WS_EX_CONTROLPARENT,
+                    PAGE_CLASS,
+                    w!(""),
+                    WS_CHILD | WS_CLIPCHILDREN,
+                    0,
+                    0,
+                    page_width,
+                    0,
+                    Some(parent),
+                    None,
+                    Some(instance),
+                    None,
+                )
+            };
+            Ok(page?)
+        })
+        .collect()
 }
 
 /// Creates an owner-drawn list box for a rail pane (scopes or categories).
