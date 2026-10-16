@@ -24,16 +24,11 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
 
 /// The item-display presets the Appearance page offers, in dropdown order.
 /// "Match Explorer's display" mirrors Explorer's icon size, spacing, check
-/// boxes, and extensions; "Custom" uses the fields below. The selection maps
-/// onto `Theme.preset`.
-pub(super) const PRESETS: [&str; 2] = ["Match Explorer's display", "Custom"];
-
-pub(super) fn preset_index(preset: Preset) -> usize {
-    match preset {
-        Preset::MatchExplorer => 0,
-        Preset::Custom => 1,
-    }
-}
+/// boxes, and extensions; "Custom" uses the fields below.
+pub(super) const PRESETS: [(Preset, &str); 2] = [
+    (Preset::MatchExplorer, "Match Explorer's display"),
+    (Preset::Custom, "Custom"),
+];
 
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![

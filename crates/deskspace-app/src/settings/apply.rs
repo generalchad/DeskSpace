@@ -4,7 +4,8 @@
 use super::ids::field;
 use super::session::Session;
 use super::tables::{
-    BACKDROPS, HOTKEY_BINDINGS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, is_hotkey_field,
+    BACKDROPS, HOTKEY_BINDINGS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS,
+    is_hotkey_field,
 };
 use super::*;
 use super::{Effect, scope_space};
@@ -45,11 +46,7 @@ fn apply_look_field(
             Effect::Appearance
         }
         (field::PRESET, FieldValue::Choice(index)) => {
-            theme.preset = if *index == 0 {
-                Preset::MatchExplorer
-            } else {
-                Preset::Custom
-            };
+            theme.preset = PRESETS.get(*index).map_or(theme.preset, |entry| entry.0);
             // Mirroring also imports Explorer's icon size and item spacing, so
             // the grid has to re-flow, not just restyle.
             Effect::Layout

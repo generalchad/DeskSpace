@@ -3,7 +3,7 @@
 use super::ids::field;
 use super::tables::{
     BACKDROPS, HOTKEY_BINDINGS, HOTKEY_HINT, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES,
-    PRESETS, corner_marks, preset_index,
+    PRESETS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -62,8 +62,8 @@ pub(super) fn look_pages(
             Field::choice(
                 field::PRESET,
                 "Item preset",
-                &PRESETS,
-                preset_index(theme.preset),
+                &labels(&PRESETS),
+                index_of(&PRESETS, theme.preset),
             ),
         ],
     };
