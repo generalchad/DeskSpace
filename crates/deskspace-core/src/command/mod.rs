@@ -1,14 +1,22 @@
-use std::cmp::Ordering;
+//! The command layer: every change to the domain model is a `Command` applied
+//! with `Desktop::apply`.
+//!
+//! `apply_with_layout` only dispatches; each command is a private `Desktop::apply_<variant>`
+//! method in the submodule for what it changes. To add a command, add the
+//! variant here, one dispatch arm, and the method beside its neighbours.
+
+mod item_ops;
+mod layer_ops;
+mod sort;
+mod space_ops;
+
 use std::path::PathBuf;
 
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
-use crate::item::{Item, ItemKind};
-use crate::layout::{
-    GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
-    resize_rect, resolve_collisions, snap_rect,
-};
+use crate::item::Item;
+use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::space::{ResizeEdges, SpaceLook};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,10 +36,14 @@ pub enum Command {
         id: SpaceId,
         title: String,
     },
+    /// Moves an unlocked space by `delta`, snapped to the grid and kept
+    /// inside the bounds.
     MoveSpace {
         id: SpaceId,
         delta: Point,
     },
+    /// Sets an unlocked space's rect, snapped to the grid and kept inside the
+    /// bounds.
     SetSpaceRect {
         id: SpaceId,
         rect: Rect,
@@ -109,9 +121,13 @@ pub enum Command {
         path: PathBuf,
         label: String,
     },
+    /// Lays a space's items out on the grid again, fitting the space to them
+    /// unless it is user-sized.
     AutoArrange {
         id: SpaceId,
     },
+    /// Snaps every unlocked space to the grid, then pushes overlapping spaces
+    /// apart.
     SnapAll,
     /// Replaces the loose desktop layer from a shell snapshot, reconciling by
     /// path so `ItemId`s survive refreshes: an existing path keeps its id, a
@@ -143,8 +159,11 @@ pub enum SortKey {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandOutcome {
+    /// The command changed (or deliberately kept) the model.
     Applied,
+    /// The space or item it names does not exist.
     NotFound,
+    /// The target exists but refuses the change, for example a locked space.
     Rejected,
 }
 
@@ -176,377 +195,74 @@ impl Desktop {
                 at,
                 size,
                 locked,
-            } => {
-                let mut rect = Rect::new(at.x, at.y, size.width, size.height);
-                rect = clamp_to_bounds(rect, bounds);
-                let id = self.add_space(title, rect);
-                if locked && let Some(space) = self.space_mut(id) {
-                    space.locked = true;
-                }
-                CommandOutcome::Applied
-            }
-            Command::DeleteSpace { id } => match self.remove_space(id) {
-                Some(_) => CommandOutcome::Applied,
-                None => CommandOutcome::NotFound,
-            },
-            Command::RenameSpace { id, title } => match self.space_mut(id) {
-                Some(space) => {
-                    space.title = title;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::MoveSpace { id, delta } => {
-                let snap = layout.snap;
-                match self.space_mut(id) {
-                    Some(space) => {
-                        if space.locked {
-                            return CommandOutcome::Rejected;
-                        }
-                        let moved = space.rect.offset(delta.x, delta.y);
-                        let snapped = snap_rect(moved, snap);
-                        space.rect = clamp_to_bounds(snapped, bounds);
-                        CommandOutcome::Applied
-                    }
-                    None => CommandOutcome::NotFound,
-                }
-            }
+            } => self.apply_create_space(title, at, size, locked, bounds),
+            Command::DeleteSpace { id } => self.apply_delete_space(id),
+            Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
+            Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
-                let snap = layout.snap;
-                match self.space_mut(id) {
-                    Some(space) => {
-                        if space.locked {
-                            return CommandOutcome::Rejected;
-                        }
-                        space.rect = clamp_to_bounds(snap_rect(rect, snap), bounds);
-                        CommandOutcome::Applied
-                    }
-                    None => CommandOutcome::NotFound,
-                }
+                self.apply_set_space_rect(id, rect, layout, bounds)
             }
             Command::ResizeSpace { id, edges, to } => {
-                let Some(space) = self.space_mut(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                if space.locked || space.rolled_up || !edges.any() {
-                    return CommandOutcome::Rejected;
-                }
-                let min = layout.min_space_size();
-                let resized = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
-                // With `fit_to_grid`, a drag lands on whole columns and rows,
-                // so the padding is even all round instead of the remainder
-                // sitting on one edge.
-                space.rect = if layout.fit_to_grid {
-                    let resized = if edges.left || edges.right {
-                        fit_rect_width(resized, edges, &layout)
-                    } else {
-                        resized
-                    };
-                    if edges.top || edges.bottom {
-                        fit_rect_height(resized, edges, &layout)
-                    } else {
-                        resized
-                    }
-                } else {
-                    resized
-                };
-                space.user_sized = true;
-                position_items(space, layout);
-                CommandOutcome::Applied
+                self.apply_resize_space(id, edges, to, layout, bounds)
             }
-            Command::FitToContents { id } => {
-                let Some(space) = self.space_mut(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                if space.locked {
-                    return CommandOutcome::Rejected;
-                }
-                space.user_sized = false;
-                arrange_space(space, layout);
-                space.rect = clamp_to_bounds(space.rect, bounds);
-                CommandOutcome::Applied
-            }
-            Command::Reflow { id } => {
-                let Some(space) = self.space_mut(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                if space.locked {
-                    // A locked space keeps its size; the scale still reaches its
-                    // title height and item positions.
-                    space.title_height = layout.title_height;
-                    position_items(space, layout);
-                } else {
-                    // `arrange_space` resizes auto spaces, reflows user-sized
-                    // ones, and applies the title height either way.
-                    arrange_space(space, layout);
-                }
-                CommandOutcome::Applied
-            }
+            Command::FitToContents { id } => self.apply_fit_to_contents(id, layout, bounds),
+            Command::Reflow { id } => self.apply_reflow(id, layout),
             Command::SortSpace {
                 id,
                 key,
                 descending,
-            } => {
-                let Some(space) = self.space_mut(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                space.items.sort_by(|a, b| {
-                    let order = match key {
-                        SortKey::Name => compare_names(&a.label, &b.label),
-                        SortKey::Kind => kind_rank(a.kind)
-                            .cmp(&kind_rank(b.kind))
-                            .then_with(|| compare_names(&a.label, &b.label)),
-                        SortKey::Size => a
-                            .size
-                            .unwrap_or(0)
-                            .cmp(&b.size.unwrap_or(0))
-                            .then_with(|| compare_names(&a.label, &b.label)),
-                        SortKey::Modified => a
-                            .modified
-                            .unwrap_or(0)
-                            .cmp(&b.modified.unwrap_or(0))
-                            .then_with(|| compare_names(&a.label, &b.label)),
-                    };
-                    if descending { order.reverse() } else { order }
-                });
-                position_items(space, layout);
-                CommandOutcome::Applied
+            } => self.apply_sort_space(id, key, descending, layout),
+            Command::CustomizeSpace { id, on, seed } => self.apply_customize_space(id, on, seed),
+            Command::SetSpaceLook { id, custom, look } => {
+                self.apply_set_space_look(id, custom, look)
             }
-            Command::CustomizeSpace { id, on, seed } => match self.space_mut(id) {
-                Some(space) => {
-                    if on && space.look.is_none() {
-                        space.look = Some(seed.clamped());
-                    }
-                    space.custom = on;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::SetSpaceLook { id, custom, look } => match self.space_mut(id) {
-                Some(space) => {
-                    space.look = look.map(SpaceLook::clamped);
-                    space.custom = custom;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::ToggleLock { id } => match self.space_mut(id) {
-                Some(space) => {
-                    space.locked = !space.locked;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::ToggleRollup { id } => match self.space_mut(id) {
-                Some(space) => {
-                    space.rolled_up = !space.rolled_up;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
-            Command::AddItem { space, path } => {
-                if self.space(space).is_none() {
-                    return CommandOutcome::NotFound;
-                }
-                let item = Item::new(self.next_item_id(), path);
-                self.add_item(space, item);
-                self.rearrange(space, layout);
-                CommandOutcome::Applied
+            Command::ToggleLock { id } => self.apply_toggle_lock(id),
+            Command::ToggleRollup { id } => self.apply_toggle_rollup(id),
+            Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
+            Command::SnapAll => self.apply_snap_all(layout, bounds),
+            Command::AddItem { space, path } => self.apply_add_item(space, path, layout),
+            Command::RemoveItem { id } => self.apply_remove_item(id, layout),
+            Command::MoveItem { id, target } => self.apply_move_item(id, target, layout),
+            Command::ReorderItem { id, index } => self.apply_reorder_item(id, index, layout),
+            Command::ReorderItems { ids, index } => self.apply_reorder_items(&ids, index, layout),
+            Command::RenameItem { id, path, label } => self.apply_rename_item(id, path, label),
+            Command::SyncDesktop { items } => self.apply_sync_desktop(items),
+            Command::MoveToDesktop { item } => self.apply_move_to_desktop(item, layout),
+            Command::SetDesktopItemPosition { item, position } => {
+                self.apply_set_desktop_item_position(item, position)
             }
-            Command::RemoveItem { id } => {
-                let Some(source) = self.space_containing(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                self.remove_item(id);
-                // Close the gap without resizing the space under the user.
-                if let Some(space) = self.space_mut(source) {
-                    position_items(space, layout);
-                }
-                CommandOutcome::Applied
-            }
-            Command::MoveItem { id, target } => {
-                if self.item(id).is_none() || self.space(target).is_none() {
-                    return CommandOutcome::NotFound;
-                }
-                let source = self.space_containing(id);
-                if self.move_item(id, target) {
-                    self.rearrange(target, layout);
-                    if let Some(source) = source {
-                        // Close the gap the item left, without resizing the
-                        // source space under the user.
-                        if let Some(space) = self.space_mut(source) {
-                            position_items(space, layout);
-                        }
-                    }
-                    CommandOutcome::Applied
-                } else {
-                    CommandOutcome::Rejected
-                }
-            }
-            Command::ReorderItem { id, index } => {
-                let Some(source) = self.space_containing(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(space) = self.space_mut(source) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(current) = space.items.iter().position(|item| item.id == id) else {
-                    return CommandOutcome::NotFound;
-                };
-                if index >= space.items.len() {
-                    return CommandOutcome::Rejected;
-                }
-                if index != current {
-                    let item = space.items.remove(current);
-                    space.items.insert(index, item);
-                    position_items(space, layout);
-                }
-                CommandOutcome::Applied
-            }
-            Command::ReorderItems { ids, index } => {
-                let Some(id) = ids.first() else {
-                    return CommandOutcome::Rejected;
-                };
-                let Some(source) = self.space_containing(*id) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(space) = self.space_mut(source) else {
-                    return CommandOutcome::NotFound;
-                };
-                let mut moving: Vec<Item> = Vec::new();
-                space.items.retain(|item| {
-                    if ids.contains(&item.id) {
-                        moving.push(item.clone());
-                        false
-                    } else {
-                        true
-                    }
-                });
-                if moving.is_empty() {
-                    return CommandOutcome::Rejected;
-                }
-                let index = index.min(space.items.len());
-                for (offset, item) in moving.into_iter().enumerate() {
-                    space.items.insert(index + offset, item);
-                }
-                position_items(space, layout);
-                CommandOutcome::Applied
-            }
-            Command::AutoArrange { id } => {
-                if self.space(id).is_some() {
-                    self.rearrange(id, layout);
-                    CommandOutcome::Applied
-                } else {
-                    CommandOutcome::NotFound
-                }
-            }
-            Command::RenameItem { id, path, label } => {
-                let Some(source) = self.space_containing(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(space) = self.space_mut(source) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(item) = space.item_mut(id) else {
-                    return CommandOutcome::NotFound;
-                };
-                item.path = path;
-                item.label = label;
-                CommandOutcome::Applied
-            }
-            Command::SnapAll => {
-                let ids: Vec<SpaceId> = self.spaces.iter().map(|space| space.id).collect();
-                for id in ids {
-                    if let Some(space) = self.space_mut(id)
-                        && !space.locked
-                    {
-                        space.rect = clamp_to_bounds(snap_rect(space.rect, layout.snap), bounds);
-                    }
-                }
-                resolve_collisions(&mut self.spaces, layout.gap, bounds);
-                CommandOutcome::Applied
-            }
-            Command::SyncDesktop { items } => {
-                let mut next = self.next_item_id().0;
-                let mut reconciled = Vec::with_capacity(items.len());
-                for mut entry in items {
-                    match self.layer.items().iter().find(|old| old.path == entry.path) {
-                        Some(old) => entry.id = old.id,
-                        None => {
-                            entry.id = ItemId(next);
-                            next += 1;
-                        }
-                    }
-                    reconciled.push(entry);
-                }
-                self.layer.replace_items(reconciled);
-                CommandOutcome::Applied
-            }
-            Command::MoveToDesktop { item } => {
-                let Some(source) = self.space_containing(item) else {
-                    return CommandOutcome::NotFound;
-                };
-                let Some(mut moved) = self.remove_item(item) else {
-                    return CommandOutcome::NotFound;
-                };
-                moved.position = Point::ZERO;
-                self.layer.push_item(moved);
-                // Close the gap the item left, without resizing the source
-                // space under the user.
-                if let Some(space) = self.space_mut(source) {
-                    position_items(space, layout);
-                }
-                CommandOutcome::Applied
-            }
-            Command::SetDesktopItemPosition { item, position } => match self.layer.item_mut(item) {
-                Some(entry) => {
-                    entry.position = position;
-                    CommandOutcome::Applied
-                }
-                None => CommandOutcome::NotFound,
-            },
         }
     }
 
+    /// Runs `change` on space `id`, or reports it missing.
+    fn with_space(
+        &mut self,
+        id: SpaceId,
+        change: impl FnOnce(&mut crate::space::Space) -> CommandOutcome,
+    ) -> CommandOutcome {
+        self.space_mut(id).map_or(CommandOutcome::NotFound, change)
+    }
+
+    /// Arranges space `id` to fit its items (a no-op when it is gone).
     fn rearrange(&mut self, id: SpaceId, layout: GridSpec) {
         if let Some(space) = self.space_mut(id) {
             arrange_space(space, layout);
         }
     }
-}
 
-/// Case-insensitive label order, comparing lowered characters without
-/// allocating.
-fn compare_names(a: &str, b: &str) -> Ordering {
-    let mut left = a.chars().flat_map(char::to_lowercase);
-    let mut right = b.chars().flat_map(char::to_lowercase);
-    loop {
-        match (left.next(), right.next()) {
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
-            (Some(x), Some(y)) => match x.cmp(&y) {
-                Ordering::Equal => continue,
-                other => return other,
-            },
+    /// Closes the gap an item left in space `id`, without resizing the space
+    /// under the user.
+    fn close_gap(&mut self, id: SpaceId, layout: GridSpec) {
+        if let Some(space) = self.space_mut(id) {
+            position_items(space, layout);
         }
-    }
-}
-
-/// Group order for `SortKey::Kind`: folders, files, shortcuts, drives, other.
-fn kind_rank(kind: ItemKind) -> u8 {
-    match kind {
-        ItemKind::Folder => 0,
-        ItemKind::File => 1,
-        ItemKind::Shortcut => 2,
-        ItemKind::Drive => 3,
-        ItemKind::Other => 4,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::item::ItemKind;
 
     fn bounds() -> Rect {
         Rect::new(0, 0, 1920, 1080)

@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (359 tests) are green. Update this count whenever a
+  `cargo test --workspace` (360 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -298,12 +298,17 @@ GridSpec {
 - `clamp_to_bounds` keeps rects inside the work area.
 - `resolve_collisions` pushes overlapping spaces down.
 
-### Command layer (`command.rs`)
+### Command layer (`command/`)
 
 All mutations flow through `Desktop::apply_with_layout(command, layout, bounds)
 -> CommandOutcome` (`Applied | NotFound | Rejected`), where `layout` is the
 effective (scaled) grid; `apply(command, bounds)` is a convenience that uses
-the stored base grid. Variants:
+the stored base grid. `command/mod.rs` holds the types and a dispatch `match`
+whose every arm calls a private `Desktop::apply_<variant>` method;
+`space_ops.rs`, `item_ops.rs`, and `layer_ops.rs` hold those methods by what
+they change, and `sort.rs` the `SortSpace` ordering. Shared helpers in
+`mod.rs`: `with_space` (run a change on a space or report `NotFound`),
+`rearrange`, and `close_gap`. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
 `ResizeSpace`, `FitToContents`, `Reflow`, `CustomizeSpace`, `SetSpaceLook`,

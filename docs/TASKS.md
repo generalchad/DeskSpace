@@ -61,7 +61,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | To change... | Look in |
 |--------------|---------|
 | The model (spaces, items, the desktop layer) | `deskspace-core/src/{space,item,desktop,desktop_layer}.rs` |
-| A model mutation | `deskspace-core/src/command.rs` (`Command`, `Desktop::apply_with_layout`) |
+| A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `layer_ops.rs`) |
 | Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
 | A look setting or color | `deskspace-core/src/theme.rs` (`Theme`, `Palette`, `*_RANGE`) |
 | A non-look setting, config load/migrate | `deskspace-config/src/schema.rs` (`WindowSettings`, `Config::migrate`) |
@@ -134,12 +134,13 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
 
 ### Recipe: a new model change (`Command`)
 
-1. `deskspace-core/src/command.rs`: add a variant with a `///` doc. Add its
-   arm in `apply_with_layout`; return `NotFound` for a missing id,
-   `Rejected` when the change is not allowed (for example a locked space),
-   else `Applied`. Keep the arm short: put real logic in a method on
-   `Space`/`Desktop` or a `layout.rs` function.
-2. Tests in `command.rs`: one per outcome (copy the `Reflow` tests).
+1. `deskspace-core/src/command/mod.rs`: add a variant with a `///` doc and a
+   one-line arm in `apply_with_layout` that calls `self.apply_<variant>(..)`.
+   Write that method in `space_ops.rs`, `item_ops.rs`, or `layer_ops.rs`
+   (whichever it changes), using `with_space` for a single space. Return
+   `NotFound` for a missing id, `Rejected` when the change is not allowed
+   (for example a locked space), else `Applied`.
+2. Tests in `command/mod.rs`: one per outcome (copy the `Reflow` tests).
 3. App: call it through `self.dispatch(...)` or, for a change to one space
    that should repaint and save, `self.apply_to_space(ui, id, command, at)`
    (`app/persist.rs`). Never mutate `self.config.desktop` directly.
