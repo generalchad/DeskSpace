@@ -257,6 +257,12 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 config.window.check_for_updates,
             )
             .enabled(deskspace_update::is_configured()),
+            Field::toggle(
+                field::INSTALL_UPDATES,
+                "Install updates automatically",
+                config.window.install_updates,
+            )
+            .enabled(can_install_automatically(config)),
             Field::note(field::CHECK_UPDATES_NOTE, updates_note()),
             Field::button(field::CHECK_UPDATES_NOW, "", "Check for updates now")
                 .enabled(deskspace_update::is_configured()),
@@ -264,11 +270,23 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
     }
 }
 
+/// Automatic installs need the automatic check, and an installed build that
+/// can replace itself (a portable copy only notifies).
+fn can_install_automatically(config: &Config) -> bool {
+    config.window.check_for_updates
+        && deskspace_update::is_configured()
+        && deskspace_update::is_installed()
+}
+
 fn updates_note() -> &'static str {
-    if deskspace_update::is_configured() {
-        "The automatic check contacts GitHub about once a day. You can always check now."
-    } else {
+    if !deskspace_update::is_configured() {
         "This build cannot check for updates. Download new versions from the releases page."
+    } else if !deskspace_update::is_installed() {
+        "The automatic check contacts GitHub about once a day. This portable copy only \
+         tells you about new versions; the installed version can update itself."
+    } else {
+        "The automatic check contacts GitHub about once a day. An automatic update \
+         downloads in the background and installs after you have been away for 10 minutes."
     }
 }
 

@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (381 tests) are green. Update this count whenever a
+  `cargo test --workspace` (386 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -157,6 +157,7 @@ windows and controls.
   | `settings_session` | opening, previewing, applying, and cancelling the settings window |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `info_tip` | the hover info tip |
+  | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
 ## 4. Domain model (`deskspace-core`)
 
@@ -414,6 +415,7 @@ WindowSettings {
     new_space_height: i32,      // default 120
     new_space_locked: bool,     // default false
     check_for_updates: bool,        // default false; opt-in, about once a day
+    install_updates: bool,          // default false; install found updates unattended
     last_update_check: Option<u64>, // Unix seconds of the last completed check
     skipped_version: Option<String>, // a version the user chose to skip
 }
@@ -523,9 +525,10 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 6 | `PREVIEW_TIMER` | 15 ms | deferred settings preview (fires when the queue is idle) |
 | 7 | `TYPE_TIMER` | 900 ms | type-to-select prefix buffer |
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
+| 9 | `UPDATE_IDLE_TIMER` | 60 s | quiet-moment poll for a downloaded automatic update |
 
-Next free: 9. Menu ids are in `app.rs`'s `mod menu` (1-12, 20-28, 30-36,
-41-48; next free 13, or 49; 9, the removed "Remove from space", stays
+Next free: 10. Menu ids are in `app.rs`'s `mod menu` (1-13, 20-28, 30-36,
+41-48; next free 14, or 49; 9, the removed "Remove from space", stays
 unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
 Settings field ids are in `settings/ids.rs`'s `mod field` (next free 72; 25 and
@@ -1282,7 +1285,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   "Look" pages appear for Global and for every space; Shortcuts only for a
   space; the rest only for Global.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click for
-  Settings…, Hide/Show spaces, New space, Exit DeskSpace. A space created
+  Settings…, Hide/Show spaces, New space, Check for updates… (or "Restart to
+  update to X" once an automatic update is downloaded), Exit DeskSpace. A space created
   from the tray goes to the center of the work area, and creating a space
   while spaces are hidden shows them.
 - Drop files from Explorer or the desktop onto a space to move them into it;
@@ -1475,8 +1479,24 @@ elsewhere stay stable.
   - The installer is per user, installs to `%LocalAppData%\DeskSpace.App`
     (apart from the stored files under `%LocalAppData%\DeskSpace`), and is
     unsigned until R10.
-  - Auto-update (F-45, `deskspace-update`) is opt-in and installs the full
-    package from a minisign-signed `latest.json`. Until the maintainer sets
+  - Auto-update (F-45, `deskspace-update`, driven by `app/update.rs`) is
+    opt-in and installs the full package from a minisign-signed
+    `latest.json`. Two General-page toggles control it: "Check for updates
+    automatically" (`check_for_updates`) and, below it, "Install updates
+    automatically" (`install_updates`, enabled only with the check on, in the
+    installed build: `deskspace_update::is_installed`). Without automatic
+    installs a found update is offered in a prompt (Update and restart /
+    Later / Skip this version). With them, the app downloads and verifies the
+    package in the background, then installs it silently once the user has
+    been idle for 10 minutes and no full-screen app or presentation is
+    running (`idle_time`, `user_is_presenting`), and never while the settings
+    window or a rename is open; until then the tray offers "Restart to update
+    to X". Either way the app first quits through the normal teardown
+    (save, restore Explorer's icons, signal the watchdog), and
+    `bootstrap::run` runs the installer (`InstallOnExit`) after
+    `deskspace_platform::run` returns; the NSIS installer (`/P` or `/S`, plus
+    `/R`) relaunches DeskSpace. A skipped version is never installed
+    automatically. Until the maintainer sets
     the `DESKSPACE_MINISIGN_KEY` secret and `UPDATE_PUBKEY`, releases ship
     without a feed, and the app greys out the tray's "Check for updates…" and
     the Settings update controls (`deskspace_update::is_configured`).

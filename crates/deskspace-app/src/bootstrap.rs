@@ -105,6 +105,11 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         storage = %app.storage.root().display(),
         "starting DeskSpace"
     );
+    let install_on_exit = app.install_on_exit();
     deskspace_platform::run(options, Box::new(app)).context("the DeskSpace UI runtime failed")?;
-    Ok(())
+    // An update queued by the app runs only now, after the teardown has
+    // restored the desktop; the installer then relaunches DeskSpace.
+    install_on_exit
+        .install()
+        .context("could not start the update installer")
 }

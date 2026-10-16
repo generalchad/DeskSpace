@@ -15,7 +15,7 @@ use deskspace_platform::{
 use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_scene, space_style};
 
 use super::rename::EditTarget;
-use super::{App, HEALTH_MS, HEALTH_TIMER, Surface, tray_tooltip};
+use super::{App, HEALTH_MS, HEALTH_TIMER, Surface};
 
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -460,7 +460,7 @@ impl App {
     }
 
     pub(super) fn refresh_tray(&self, ui: &mut Ui) {
-        ui.set_tray_tooltip(&tray_tooltip(&self.config.desktop));
+        ui.set_tray_tooltip(&self.tray_text());
     }
 
     /// Re-reads Explorer's display options and re-flows every space, as F5

@@ -49,6 +49,11 @@ pub struct WindowSettings {
     /// default: no network traffic happens unless the user turns this on or
     /// starts a check from the tray.
     pub check_for_updates: bool,
+    /// Install an update the automatic check finds without asking: download
+    /// it in the background, then install it while the user is away. Off by
+    /// default; it only takes effect with `check_for_updates` on, in the
+    /// installed build.
+    pub install_updates: bool,
     /// Unix seconds of the last completed update check, so an automatic check
     /// runs at most once a day.
     pub last_update_check: Option<u64>,
@@ -71,6 +76,7 @@ impl Default for WindowSettings {
             new_space_height: 120,
             new_space_locked: false,
             check_for_updates: false,
+            install_updates: false,
             last_update_check: None,
             skipped_version: None,
         }
@@ -485,12 +491,14 @@ mod tests {
         assert!(!parsed.window.check_for_updates);
         assert_eq!(parsed.window.last_update_check, None);
         assert_eq!(parsed.window.skipped_version, None);
+        assert!(!parsed.window.install_updates);
 
         let parsed: Config = toml::from_str(
-            "version = 2\n[window]\ncheck_for_updates = true\nlast_update_check = 42\nskipped_version = \"0.3.0\"\n",
+            "version = 2\n[window]\ncheck_for_updates = true\ninstall_updates = true\nlast_update_check = 42\nskipped_version = \"0.3.0\"\n",
         )
         .unwrap();
         assert!(parsed.window.check_for_updates);
+        assert!(parsed.window.install_updates);
         assert_eq!(parsed.window.last_update_check, Some(42));
         assert_eq!(parsed.window.skipped_version.as_deref(), Some("0.3.0"));
     }

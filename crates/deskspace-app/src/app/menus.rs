@@ -4,6 +4,7 @@ use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Size};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
 use deskspace_platform::{DropAction, ItemMenuChoice, MenuEntry, Ui, work_area_at};
+use deskspace_update::InstallMode;
 
 use super::files::ShortcutSource;
 use super::{
@@ -346,18 +347,32 @@ impl App {
             self.visibility_entry(),
             MenuEntry::item(menu::NEW_SPACE, "New space"),
             MenuEntry::Separator,
-            MenuEntry::item(menu::CHECK_UPDATES, "Check for updates\u{2026}")
-                .enabled(deskspace_update::is_configured()),
+            self.update_entry(),
             MenuEntry::Separator,
             MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
         ];
         if let Some(choice) = ui.popup_menu(&entries, at) {
-            if choice == menu::CHECK_UPDATES {
-                self.start_update_check(ui, true);
-                return;
+            match choice {
+                menu::CHECK_UPDATES => return self.start_update_check(ui, true),
+                menu::INSTALL_UPDATE => {
+                    return self.install_ready_update(ui, InstallMode::Passive);
+                }
+                _ => {}
             }
             let work = work_area_at(at);
             self.run_common_menu(ui, choice, work.center());
+        }
+    }
+
+    /// The tray's update entry: install a downloaded update, or check.
+    fn update_entry(&self) -> MenuEntry {
+        match self.update.ready_version() {
+            Some(version) => MenuEntry::item(
+                menu::INSTALL_UPDATE,
+                format!("Restart to update to {version}"),
+            ),
+            None => MenuEntry::item(menu::CHECK_UPDATES, "Check for updates\u{2026}")
+                .enabled(deskspace_update::is_configured()),
         }
     }
 

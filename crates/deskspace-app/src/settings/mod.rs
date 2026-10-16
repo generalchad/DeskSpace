@@ -479,6 +479,26 @@ mod tests {
         let available = deskspace_update::is_configured();
         assert_eq!(toggle.enabled, available);
         assert_eq!(button.enabled, available);
+        let install = form.field(field::INSTALL_UPDATES).unwrap();
+        assert!(matches!(install.kind, FieldKind::Toggle { on: false }));
+        assert_eq!(
+            install.enabled,
+            available && deskspace_update::is_installed()
+        );
+    }
+
+    #[test]
+    fn automatic_installs_need_the_automatic_check() {
+        let (config, session) = setup();
+        assert!(!config.window.check_for_updates);
+        let form = build_form(
+            &config,
+            &session,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
+        assert!(!form.field(field::INSTALL_UPDATES).unwrap().enabled);
     }
 
     #[test]

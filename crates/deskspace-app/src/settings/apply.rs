@@ -168,6 +168,10 @@ pub fn apply_field(
                 config.window.check_for_updates = on;
                 Effect::Pending
             }
+            (field::INSTALL_UPDATES, FieldValue::Toggle(on)) => {
+                config.window.install_updates = on;
+                Effect::Pending
+            }
             (field::SNAP, FieldValue::Slider(value)) => {
                 config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
                 Effect::Pending
@@ -347,6 +351,20 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.check_for_updates);
+    }
+
+    #[test]
+    fn install_updates_is_pending() {
+        let (mut config, mut session) = setup();
+        let effect = apply_field(
+            &mut config,
+            &mut session,
+            field::INSTALL_UPDATES,
+            FieldValue::Toggle(true),
+            true,
+        );
+        assert_eq!(effect, Effect::Pending);
+        assert!(config.window.install_updates);
     }
 
     #[test]

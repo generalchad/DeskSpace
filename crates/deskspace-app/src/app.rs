@@ -63,9 +63,9 @@ const PREVIEW_DELAY_MS: u32 = 15;
 /// Timer id for the periodic update check (`app/update.rs`).
 const UPDATE_TIMER: usize = 4;
 /// Wake ids passed to `Ui::waker` by the update worker threads: the check
-/// result, then the download-and-install result.
+/// result, then the download result.
 const UPDATE_WAKE: usize = 0;
-const UPDATE_INSTALLED_WAKE: usize = 1;
+const UPDATE_DOWNLOADED_WAKE: usize = 1;
 /// Timer id for the settings-window highlight on a space.
 const HIGHLIGHT_TIMER: usize = 5;
 /// How long the space selected in the settings window stays highlighted.
@@ -79,6 +79,9 @@ const HEALTH_TIMER: usize = 8;
 /// How often, while takeover is on, to re-hide Explorer's icon layer in case
 /// it recreated it without broadcasting `TaskbarCreated`.
 const HEALTH_MS: u32 = 5_000;
+/// Timer id for the quiet-moment poll of a downloaded automatic update
+/// (`app/update.rs`).
+const UPDATE_IDLE_TIMER: usize = 9;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -93,6 +96,7 @@ mod menu {
     pub const RENAME: u32 = 10;
     pub const RENAME_ITEM: u32 = 11;
     pub const CHECK_UPDATES: u32 = 12;
+    pub const INSTALL_UPDATE: u32 = 13;
     pub const OPACITY_100: u32 = 20;
     pub const OPACITY_80: u32 = 21;
     pub const OPACITY_60: u32 = 22;
@@ -542,7 +546,7 @@ impl EventHandler for App {
                 if std::mem::take(&mut self.open_settings_on_start) {
                     self.open_settings(ui);
                 }
-                self.start_auto_update_checks(ui);
+                self.sync_update_schedule(ui);
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
@@ -587,10 +591,11 @@ impl EventHandler for App {
             Event::Timer { id } if id == TYPE_TIMER => self.type_buffer.clear(),
             Event::Timer { id } if id == HEALTH_TIMER => self.health_tick(),
             Event::Timer { id } if id == UPDATE_TIMER => self.on_update_timer(ui),
+            Event::Timer { id } if id == UPDATE_IDLE_TIMER => self.on_update_idle_timer(ui),
             Event::Timer { .. } => {}
             // Worker threads hand their result back through the waker.
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
-            Event::Wake { id } if id == UPDATE_INSTALLED_WAKE => self.on_update_installed(ui),
+            Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
             Event::Wake { .. } => {}
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();

@@ -346,6 +346,12 @@ impl App {
         if takeover_changed {
             self.apply_takeover(ui);
         }
+        let update_check_changed = self.settings.as_ref().is_some_and(|session| {
+            session.saved_window.check_for_updates != self.config.window.check_for_updates
+        });
+        if update_check_changed {
+            self.sync_update_schedule(ui);
+        }
         self.save();
         if let Some(session) = self.settings.as_mut() {
             session.commit(&self.config);

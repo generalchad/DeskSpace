@@ -7,7 +7,19 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- "Install updates automatically" in Settings > General: the installed version
+  downloads a new release in the background and installs it after you have
+  been away for 10 minutes, or when you choose "Restart to update" in the tray
+  menu. Off by default.
+
 ### Fixed
+
+- Turning on "Check for updates automatically" now takes effect at once
+  instead of after a restart.
+- Installing an update shuts DeskSpace down cleanly first, so the desktop
+  icons are restored and the settings saved before the installer runs.
 
 - The update controls are greyed out in builds that cannot check for updates.
 - The release now publishes its update feed as `latest.json`, the name the

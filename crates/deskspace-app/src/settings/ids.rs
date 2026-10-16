@@ -67,6 +67,7 @@ pub mod field {
 
     pub const SHORTCUTS_NOTE: u32 = 70;
     pub const SPACE_PREVIEW: u32 = 71;
+    pub const INSTALL_UPDATES: u32 = 72;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

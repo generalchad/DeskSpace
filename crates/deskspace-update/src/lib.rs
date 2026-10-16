@@ -7,11 +7,18 @@
 //! signed feed (`latest.json`) published as an asset of the latest GitHub
 //! release and verifies it with a minisign public key compiled into the binary.
 //!
-//! The package is always the full NSIS installer; there are no deltas.
+//! The package is always the full NSIS installer; there are no deltas. An
+//! update is installed in two steps, so the app can shut down cleanly in
+//! between: `download` fetches and verifies the package on a worker thread,
+//! and `install` runs it once the app's message loop has ended.
 
 #![forbid(unsafe_code)]
 
-use cargo_packager_updater::{Config, Update, check_update, semver::Version};
+use std::path::Path;
+
+use cargo_packager_updater::{
+    Config, Update, WindowsConfig, WindowsUpdateInstallMode, check_update, semver::Version,
+};
 use thiserror::Error;
 
 /// The release feed, always served from the latest published release.
@@ -48,6 +55,32 @@ pub struct Available {
     update: Update,
 }
 
+/// A downloaded, signature-verified update package, ready to install.
+pub struct Package {
+    pub version: String,
+    update: Update,
+    bytes: Vec<u8>,
+}
+
+/// How the installer shows itself while it replaces the app. Both modes need
+/// no input and relaunch DeskSpace when they finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallMode {
+    /// A small progress window, for an update the user just asked for.
+    Passive,
+    /// No window at all, for an automatic update while the user is away.
+    Silent,
+}
+
+impl InstallMode {
+    fn sdk_mode(self) -> WindowsUpdateInstallMode {
+        match self {
+            Self::Passive => WindowsUpdateInstallMode::Passive,
+            Self::Silent => WindowsUpdateInstallMode::Quiet,
+        }
+    }
+}
+
 /// Whether this build can check for updates at all. The app disables its
 /// update controls when it cannot, rather than offering a check that always
 /// fails.
@@ -82,11 +115,41 @@ pub fn check() -> Result<Option<Available>, UpdateError> {
     }))
 }
 
-/// Downloads and verifies the update package, then runs it, replacing the
-/// installed app. Blocking; call it on a worker thread. The installer
-/// terminates and relaunches DeskSpace, so it normally does not return.
-pub fn download_and_install(available: &Available) -> Result<(), UpdateError> {
-    available.update.download_and_install()?;
+/// Whether this executable is the installed build (under
+/// `%LOCALAPPDATA%\DeskSpace.App`, where `packaging/nsis/installer.nsi` puts
+/// it) rather than a portable copy. Only the installed build can replace
+/// itself; a portable build only points the user at the release page.
+pub fn is_installed() -> bool {
+    let Some(local) = std::env::var_os("LOCALAPPDATA") else {
+        return false;
+    };
+    let root = Path::new(&local).join("DeskSpace.App");
+    std::env::current_exe().is_ok_and(|exe| exe.starts_with(&root))
+}
+
+/// Downloads the update package and verifies its signature. Blocking; call it
+/// on a worker thread.
+pub fn download(available: &Available) -> Result<Package, UpdateError> {
+    let bytes = available.update.download()?;
+    Ok(Package {
+        version: available.version.clone(),
+        update: available.update.clone(),
+        bytes,
+    })
+}
+
+/// Runs the installer for a downloaded package. Call it only after the app
+/// has shut down (its windows closed, Explorer's icons restored, and the
+/// watchdog told the exit was clean): the updater ends this process as soon
+/// as the installer starts, so on success this never returns. The installer
+/// replaces the files and relaunches DeskSpace.
+pub fn install(package: Package, mode: InstallMode) -> Result<(), UpdateError> {
+    let mut update = package.update;
+    update.config.windows = Some(WindowsConfig {
+        install_mode: Some(mode.sdk_mode()),
+        ..WindowsConfig::default()
+    });
+    update.install(package.bytes)?;
     Ok(())
 }
 
@@ -109,6 +172,14 @@ mod tests {
             workflow.contains(&format!("FEED={feed}")),
             "release.yml must upload `{feed}`"
         );
+    }
+
+    #[test]
+    fn install_modes_relaunch_the_app_after_installing() {
+        for mode in [InstallMode::Passive, InstallMode::Silent] {
+            assert!(mode.sdk_mode().nsis_args().contains(&"/R"), "{mode:?}");
+        }
+        assert!(InstallMode::Silent.sdk_mode().nsis_args().contains(&"/S"));
     }
 
     #[test]

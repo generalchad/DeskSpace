@@ -122,6 +122,14 @@ A native, lightweight, offline Windows desktop organizer that:
     and offers Update / Later / Skip this version. Update downloads,
     installs, and restarts DeskSpace with the same config. Later asks again
     at the next check. A skipped version is stored and not offered again.
+  - *Automatic install (2026-10-16):* an opt-in "Install updates
+    automatically" toggle under the check toggle, off by default and only for
+    the installed build. With it on, an automatic check downloads a new,
+    unskipped version without asking and installs it silently after 10
+    minutes without input (not during a full-screen app or presentation, and
+    not while the settings window or a rename is open). The tray offers to
+    restart sooner. Every install quits through the normal teardown first,
+    so the desktop is restored before the installer runs.
   - *Channels within the updater:* stable only. An opt-in pre-release
     channel (`-alpha.N`, `-beta.N`, `-rc.N`) is deferred, because GitHub's
     "latest" feed never serves a pre-release.
@@ -657,9 +665,10 @@ Remaining:
    - It installs the **full** package only (no deltas), from a signed
      `latest.json` plus a minisign `.sig` published as a release asset.
    - Settings live in `WindowSettings` as `#[serde(default)]` fields: the
-     automatic check, the last check time, and the skipped version. The General
-     page has a toggle and a "Check for updates now" button, and the tray has a
-     "Check for updates…" entry. (The pre-release channel is deferred: the
+     automatic check, automatic installs, the last check time, and the skipped
+     version. The General page has two toggles and a "Check for updates now"
+     button, and the tray has a "Check for updates…" entry (or "Restart to
+     update to X" while a downloaded update waits). (The pre-release channel is deferred: the
      GitHub "latest" feed never serves a pre-release.)
    - A portable build only notifies (opens the release page).
    - `cargo deny` passes (the updater's `time` dependency moved the minimum
@@ -744,7 +753,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Done; check pending. The in-app updater (`deskspace-update`) reads a signed `latest.json`, opt-in and manual, and installs the full NSIS package (`TASKS.md` E8-E11); the minisign key is a maintainer setup step |
+| F-45 | Auto-update from GitHub Releases | M8 | Done; check pending. The in-app updater (`deskspace-update`) reads a signed `latest.json`, opt-in and manual, can install unattended at a quiet moment (opt-in), and installs the full NSIS package (`TASKS.md` E8-E11); the minisign key is a maintainer setup step |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |

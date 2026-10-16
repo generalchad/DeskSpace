@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use deskspace_core::Color;
 use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT, RECT};
@@ -8,7 +10,12 @@ use windows::Win32::Graphics::Gdi::{
     SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+use windows::Win32::UI::Shell::{
+    QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, NONCLIENTMETRICSW, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG,
     SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETNONCLIENTMETRICS,
@@ -137,6 +144,41 @@ pub fn virtual_desktop_rect() -> Rect {
         )
     };
     Rect::new(x, y, width.max(1), height.max(1))
+}
+
+/// How long since the user last pressed a key or moved the mouse, in this
+/// session.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastinputinfo
+pub fn idle_time() -> Duration {
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    // SAFETY: `info` is a valid out-pointer with `cbSize` set, as required.
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return Duration::ZERO;
+    }
+    // SAFETY: a plain tick query. Both values are 32-bit tick counts that wrap
+    // after 49.7 days, so the wrapping difference is still the idle time.
+    let now = unsafe { GetTickCount() };
+    Duration::from_millis(u64::from(now.wrapping_sub(info.dwTime)))
+}
+
+/// Whether the user is in a full-screen app, a presentation, or otherwise
+/// "busy" by the shell's own notification rules, when DeskSpace should not
+/// restart itself even if no input arrives.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shqueryusernotificationstate
+pub fn user_is_presenting() -> bool {
+    // SAFETY: a plain shell query with no arguments.
+    let Ok(state) = (unsafe { SHQueryUserNotificationState() }) else {
+        return false;
+    };
+    [
+        QUNS_BUSY,
+        QUNS_RUNNING_D3D_FULL_SCREEN,
+        QUNS_PRESENTATION_MODE,
+    ]
+    .contains(&state)
 }
 
 pub(crate) fn wide(text: &str) -> Vec<u16> {
