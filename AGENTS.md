@@ -69,9 +69,12 @@ to read and to extend than it found it.
   module; when a file passes roughly 800 lines of non-test code, split it
   along its existing seams (see `docs/TASKS.md` section K) rather than adding to it.
 - **Maintainable.** One source of truth per fact: tables drive menus
-  (`OPACITY_PRESETS`, `SORT_PRESETS`), settings fields (`field::` ids,
-  `HOTKEY_BINDINGS`), and hotkeys, so adding an entry is one line, not edits
-  in several places. Delete dead code and dead branches instead of keeping
+  (`OPACITY_PRESETS`, `SORT_PRESETS`), option lists (`(value, label)` pairs
+  in `settings/tables.rs`), and hotkeys (`HOTKEY_BINDINGS`), so adding an
+  entry is one row, not edits in several places. Where a table cannot carry
+  the behavior, an enum does (`ButtonAction`, `HotkeyAction`), so the
+  compiler or a guard test points at every place still to wire up; the
+  `docs/TASKS.md` recipes list them. Delete dead code and dead branches instead of keeping
   them "just in case". Keep pure logic (core, `settings.rs`, `scene.rs`,
   helpers such as `next_in_direction`) separate from Win32 calls, so it can be
   unit-tested. When code and docs disagree, fix the docs in the same commit.
