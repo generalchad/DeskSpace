@@ -16,15 +16,11 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetClassNameW, HC_ACTION, HHOOK, MSLLHOOKSTRUCT,
-    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP, WM_LBUTTONDOWN,
+    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL, WM_LBUTTONDOWN,
     WM_MBUTTONDOWN, WM_RBUTTONDOWN, WindowFromPoint,
 };
 
-use crate::win32::{desktop_shell, runtime};
-
-/// Posted to the controller with the press position: wParam is x, lParam y
-/// (screen coordinates).
-pub(crate) const OUTSIDE_PROBE: u32 = WM_APP + 2;
+use crate::win32::{desktop_shell, messages, runtime};
 
 /// Window class of popup menus. Clicking one of DeskSpace's own menus (such
 /// as an item's context menu) must not clear the selection it applies to.
@@ -83,7 +79,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
             unsafe {
                 let _ = PostMessageW(
                     Some(controller),
-                    OUTSIDE_PROBE,
+                    messages::OUTSIDE_PROBE,
                     WPARAM(point.x as isize as usize),
                     LPARAM(point.y as isize),
                 );

@@ -24,47 +24,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
-    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_APP, WM_KEYDOWN,
+    PostMessageW, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN,
     WM_SYSKEYDOWN,
 };
 
 use crate::edit::{EditKey, MoveDir};
 use crate::input::{ClipboardAction, NavDir, NavKey, SelectionKey};
-use crate::win32::desktop_shell;
-
-/// Posted to the controller with the decoded key: wParam is a kind code and
-/// lParam the character for `KIND_CHAR`.
-pub(crate) const EDIT_KEY: u32 = WM_APP + 3;
-
-/// Posted to the controller when Delete is pressed while an item is selected.
-pub(crate) const DELETE_KEY: u32 = WM_APP + 4;
-
-/// Posted to the controller with a clipboard shortcut; wParam is one of the
-/// `ACTION_*` codes.
-pub(crate) const CLIPBOARD_KEY: u32 = WM_APP + 5;
-
-/// Posted to the controller when F2 is pressed while an item is selected or a
-/// space is current.
-pub(crate) const RENAME_KEY: u32 = WM_APP + 6;
-
-/// Posted to the controller when Ctrl+A is pressed while a space is current.
-pub(crate) const SELECT_ALL_KEY: u32 = WM_APP + 7;
-
-/// Posted to the controller when Alt+Enter is pressed while an item is
-/// selected or a space is current.
-pub(crate) const PROPERTIES_KEY: u32 = WM_APP + 9;
-
-/// Posted to the controller for a watched selection key; wParam is one of the
-/// `SEL_*` codes.
-pub(crate) const SELECTION_KEY: u32 = WM_APP + 11;
-
-/// Posted to the controller with a typed character for type-to-select; wParam
-/// is the character.
-pub(crate) const TYPE_KEY: u32 = WM_APP + 12;
-
-/// Posted to the controller for an arrow key; wParam packs the direction and
-/// the Shift (extend) and Ctrl (focus) modifiers.
-pub(crate) const NAV_KEY: u32 = WM_APP + 13;
+use crate::win32::{desktop_shell, messages};
 
 pub(crate) const SEL_OPEN: usize = 0;
 pub(crate) const SEL_CLEAR: usize = 1;
@@ -258,12 +224,12 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
             return false;
         }
         if key_down(VK_MENU) && is_key(event.vkCode, VK_RETURN) {
-            post_message(PROPERTIES_KEY, 0, 0);
+            post_message(messages::PROPERTIES_KEY, 0, 0);
             return true;
         }
         if key_down(VK_CONTROL) {
             if is_key(event.vkCode, VK_A) {
-                post_message(SELECT_ALL_KEY, 0, 0);
+                post_message(messages::SELECT_ALL_KEY, 0, 0);
                 return true;
             }
             let action = if WATCH_SELECTION.get() && is_key(event.vkCode, VK_C) {
@@ -276,45 +242,45 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
                 None
             };
             if let Some(action) = action {
-                post_message(CLIPBOARD_KEY, action, 0);
+                post_message(messages::CLIPBOARD_KEY, action, 0);
                 return true;
             }
             // Ctrl+arrow moves the focus only, leaving the selection.
             if WATCH_PASTE.get()
                 && let Some(dir) = arrow_dir(event.vkCode)
             {
-                post_message(NAV_KEY, dir | (1 << 3), 0);
+                post_message(messages::NAV_KEY, dir | (1 << 3), 0);
                 return true;
             }
             return false;
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_RETURN) {
-            post_message(SELECTION_KEY, SEL_OPEN, 0);
+            post_message(messages::SELECTION_KEY, SEL_OPEN, 0);
             return true;
         }
         if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && is_key(event.vkCode, VK_F2) {
-            post_message(RENAME_KEY, 0, 0);
+            post_message(messages::RENAME_KEY, 0, 0);
             return true;
         }
         if WATCH_SELECTION.get() && key_down(VK_SHIFT) && is_key(event.vkCode, VK_DELETE) {
-            post_message(SELECTION_KEY, SEL_PERMANENT_DELETE, 0);
+            post_message(messages::SELECTION_KEY, SEL_PERMANENT_DELETE, 0);
             return true;
         }
         if WATCH_SELECTION.get() && is_key(event.vkCode, VK_DELETE) {
-            post_message(DELETE_KEY, 0, 0);
+            post_message(messages::DELETE_KEY, 0, 0);
             return true;
         }
         if is_key(event.vkCode, VK_ESCAPE) {
-            post_message(SELECTION_KEY, SEL_CLEAR, 0);
+            post_message(messages::SELECTION_KEY, SEL_CLEAR, 0);
             return true;
         }
         if is_key(event.vkCode, VK_F5) {
-            post_message(SELECTION_KEY, SEL_REFRESH, 0);
+            post_message(messages::SELECTION_KEY, SEL_REFRESH, 0);
             return true;
         }
         // The Menu key and Shift+F10 open the context menu, as on the desktop.
         if is_key(event.vkCode, VK_APPS) || (key_down(VK_SHIFT) && is_key(event.vkCode, VK_F10)) {
-            post_message(SELECTION_KEY, SEL_MENU, 0);
+            post_message(messages::SELECTION_KEY, SEL_MENU, 0);
             return true;
         }
         // Scrolling, arrows, and type-to-select need a current space, not just
@@ -322,7 +288,7 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
         if WATCH_PASTE.get() {
             if let Some(dir) = arrow_dir(event.vkCode) {
                 let extend = if key_down(VK_SHIFT) { 1 << 2 } else { 0 };
-                post_message(NAV_KEY, dir | extend, 0);
+                post_message(messages::NAV_KEY, dir | extend, 0);
                 return true;
             }
             let scroll = if is_key(event.vkCode, VK_HOME) {
@@ -337,11 +303,11 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
                 None
             };
             if let Some(scroll) = scroll {
-                post_message(SELECTION_KEY, scroll, 0);
+                post_message(messages::SELECTION_KEY, scroll, 0);
                 return true;
             }
             if let Some(character) = typeahead_char(event.vkCode) {
-                post_message(TYPE_KEY, character as usize, 0);
+                post_message(messages::TYPE_KEY, character as usize, 0);
                 return true;
             }
         }
@@ -435,7 +401,7 @@ fn typeahead_char(vk: u32) -> Option<char> {
 }
 
 fn post(kind: usize, ch: usize) {
-    post_message(EDIT_KEY, kind, ch as isize);
+    post_message(messages::EDIT_KEY, kind, ch as isize);
 }
 
 fn post_message(message: u32, wparam: usize, lparam: isize) {

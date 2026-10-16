@@ -17,8 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
 use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
-use crate::win32::controller;
 use crate::win32::system::wide;
+use crate::win32::{controller, messages};
 
 /// The desktop background Shell verb that shows hidden spaces.
 const SHOW_VERB: &str = r"Software\Classes\DesktopBackground\Shell\DeskSpaceShowSpaces";
@@ -68,7 +68,7 @@ pub fn signal_show_spaces() -> bool {
         }
         PostMessageW(
             Some(controller),
-            controller::SHOW_SPACES,
+            messages::SHOW_SPACES,
             WPARAM(0),
             LPARAM(0),
         )

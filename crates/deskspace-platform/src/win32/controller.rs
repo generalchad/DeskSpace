@@ -15,7 +15,7 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterWindowMessageW,
-    WM_APP, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
+    WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
     WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
@@ -25,17 +25,9 @@ use crate::input::{Event, TrayEvent};
 use crate::win32::system::{hiword, loword};
 use crate::win32::tray;
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{desktop_icons, keyboard, outside_click, runtime, shell_items};
+use crate::win32::{desktop_icons, keyboard, messages, outside_click, runtime, shell_items};
 
 pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
-/// Posted by a second launch to ask this instance to show its spaces.
-pub(crate) const SHOW_SPACES: u32 = WM_APP + 8;
-/// Posted by a worker thread through `Ui::waker`; `wparam` is the caller's id.
-pub(crate) const WAKE: u32 = WM_APP + 10;
-/// Posted by the folder watcher when a watched folder's contents change
-/// (`Ui::watch_folder`).
-pub(crate) const FOLDER_CHANGE: u32 = WM_APP + 14;
-pub(crate) const TRAY_CALLBACK: u32 = WM_APP + 1;
 /// NIN_KEYSELECT is NIN_SELECT | NINF_KEY; defined here because it is a
 /// macro, not a constant, in the SDK headers.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw
@@ -103,19 +95,19 @@ unsafe extern "system" fn wndproc(
                 });
                 LRESULT(0)
             }
-            SHOW_SPACES => {
+            messages::SHOW_SPACES => {
                 runtime::dispatch(Event::ShowSpaces);
                 LRESULT(0)
             }
-            FOLDER_CHANGE => {
+            messages::FOLDER_CHANGE => {
                 runtime::dispatch(Event::FolderChanged);
                 LRESULT(0)
             }
-            WAKE => {
+            messages::WAKE => {
                 runtime::dispatch(Event::Wake { id: wparam.0 });
                 LRESULT(0)
             }
-            TRAY_CALLBACK => {
+            messages::TRAY_CALLBACK => {
                 // With NOTIFYICON_VERSION_4, LOWORD(lParam) is the event and
                 // wParam carries the anchor point in screen coordinates.
                 match (lparam.0 & 0xFFFF) as u32 {
@@ -138,47 +130,47 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::Timer { id: wparam.0 });
                 LRESULT(0)
             }
-            keyboard::EDIT_KEY => {
+            messages::EDIT_KEY => {
                 if let Some(key) = keyboard::decode(wparam.0, lparam.0) {
                     runtime::dispatch(Event::EditKey(key));
                 }
                 LRESULT(0)
             }
-            keyboard::DELETE_KEY => {
+            messages::DELETE_KEY => {
                 runtime::dispatch(Event::DeleteSelection);
                 LRESULT(0)
             }
-            keyboard::CLIPBOARD_KEY => {
+            messages::CLIPBOARD_KEY => {
                 if let Some(action) = keyboard::clipboard_action(wparam.0) {
                     runtime::dispatch(Event::Clipboard(action));
                 }
                 LRESULT(0)
             }
-            keyboard::RENAME_KEY => {
+            messages::RENAME_KEY => {
                 runtime::dispatch(Event::RenameSelection);
                 LRESULT(0)
             }
-            keyboard::PROPERTIES_KEY => {
+            messages::PROPERTIES_KEY => {
                 runtime::dispatch(Event::ShowProperties);
                 LRESULT(0)
             }
-            keyboard::SELECTION_KEY => {
+            messages::SELECTION_KEY => {
                 if let Some(key) = keyboard::selection_key(wparam.0) {
                     runtime::dispatch(Event::SelectionKey(key));
                 }
                 LRESULT(0)
             }
-            keyboard::SELECT_ALL_KEY => {
+            messages::SELECT_ALL_KEY => {
                 runtime::dispatch(Event::SelectAll);
                 LRESULT(0)
             }
-            keyboard::TYPE_KEY => {
+            messages::TYPE_KEY => {
                 if let Some(character) = char::from_u32(wparam.0 as u32) {
                     runtime::dispatch(Event::Typed(character));
                 }
                 LRESULT(0)
             }
-            keyboard::NAV_KEY => {
+            messages::NAV_KEY => {
                 if let Some(key) = keyboard::nav_key(wparam.0) {
                     runtime::dispatch(Event::Navigate(key));
                 }
@@ -188,7 +180,7 @@ unsafe extern "system" fn wndproc(
                 runtime::dispatch(Event::ClipboardChanged);
                 LRESULT(0)
             }
-            outside_click::OUTSIDE_PROBE => {
+            messages::OUTSIDE_PROBE => {
                 let point = POINT {
                     x: wparam.0 as isize as i32,
                     y: lparam.0 as i32,

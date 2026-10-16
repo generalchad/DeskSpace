@@ -72,6 +72,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Menu and settings-form data types | `deskspace-platform/src/ui.rs` |
 | `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime/` (`mod.rs`, `ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, `ui_chrome.rs`) |
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
+| `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
@@ -483,9 +484,6 @@ the ROADMAP decision ids (`D1`-`D9`).
 - **R3. Platform module layout.** What remains after the K splits:
   - one icon decoder instead of two: `icons::decode_icon_masked` (GDI
     `GetDIBits`, for HICONs) and `d2d::decode_bitmap` (WIC, for HBITMAPs);
-  - a `win32/messages.rs` owning every `WM_APP + n` (today in
-    `controller.rs`, `keyboard.rs`, and `outside_click.rs`), with a test
-    that the values are unique (compare B15 for timers);
   - make internal modules private: `win32/mod.rs` has 12 `pub mod`s, though
     the app uses only the `lib.rs` re-exports;
   - long window procedures (`space_window.rs` about 180 lines,

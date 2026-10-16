@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, Result};
 
-use crate::win32::controller;
+use crate::win32::messages;
 
 const TRAY_ID: u32 = 1;
 
@@ -75,7 +75,7 @@ fn data(window: HWND, tooltip: &str) -> NOTIFYICONDATAW {
         hWnd: window,
         uID: TRAY_ID,
         uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP,
-        uCallbackMessage: controller::TRAY_CALLBACK,
+        uCallbackMessage: messages::TRAY_CALLBACK,
         hIcon: tray_icon(),
         ..Default::default()
     };

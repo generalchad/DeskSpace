@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (369 tests) are green. Update this count whenever a
+  `cargo test --workspace` (371 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -486,27 +486,29 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 
 Never renumber these; add new ones at the next free value.
 
-`WM_APP + n` messages posted to the controller window (`TaskbarCreated` is a
-registered message, not in this range):
+`WM_APP + n` messages posted to the controller window, all defined in
+`win32/messages.rs` (`TaskbarCreated` is a registered message, not in this
+range):
 
-| n | Constant | Defined in |
-|---|----------|------------|
-| 1 | `TRAY_CALLBACK` | `controller.rs` |
+| n | Constant | Posted by |
+|---|----------|-----------|
+| 1 | `TRAY_CALLBACK` | the shell, for the tray icon (`tray.rs`) |
 | 2 | `OUTSIDE_PROBE` | `outside_click.rs` |
 | 3 | `EDIT_KEY` | `keyboard.rs` |
 | 4 | `DELETE_KEY` | `keyboard.rs` |
 | 5 | `CLIPBOARD_KEY` | `keyboard.rs` |
 | 6 | `RENAME_KEY` | `keyboard.rs` |
 | 7 | `SELECT_ALL_KEY` | `keyboard.rs` |
-| 8 | `SHOW_SPACES` | `controller.rs` |
+| 8 | `SHOW_SPACES` | a second launch (`desktop_entry.rs`) |
 | 9 | `PROPERTIES_KEY` | `keyboard.rs` |
-| 10 | `WAKE` | `controller.rs` |
+| 10 | `WAKE` | `Waker` (`runtime/mod.rs`) |
 | 11 | `SELECTION_KEY` | `keyboard.rs` |
 | 12 | `TYPE_KEY` | `keyboard.rs` |
 | 13 | `NAV_KEY` | `keyboard.rs` |
-| 14 | `FOLDER_CHANGE` | `controller.rs` (posted by `folder_watch.rs`) |
+| 14 | `FOLDER_CHANGE` | `folder_watch.rs` |
 
-Next free: 15. `TASKS.md` R3 gathers these into one `win32/messages.rs`.
+Next free: 15. A new message also goes in the `ALL` list of the
+`messages.rs` tests, which check the values are unique.
 
 App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 

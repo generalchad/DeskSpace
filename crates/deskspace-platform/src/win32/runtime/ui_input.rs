@@ -33,7 +33,7 @@ impl Ui {
         // Dropped outside the borrow: stopping joins the worker thread.
         let previous = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
         drop(previous);
-        match folder_watch::FolderWatch::start(path, controller, controller::FOLDER_CHANGE) {
+        match folder_watch::FolderWatch::start(path, controller, messages::FOLDER_CHANGE) {
             Ok(watch) => {
                 with_runtime(|runtime| runtime.folder_watch = Some((path.to_path_buf(), watch)));
             }

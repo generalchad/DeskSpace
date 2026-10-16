@@ -24,6 +24,7 @@ pub(crate) mod icons;
 mod info_tip;
 mod keyboard;
 mod menu;
+mod messages;
 mod outside_click;
 pub mod runtime;
 mod settings_window;

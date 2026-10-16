@@ -50,8 +50,8 @@ use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
     clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
-    folder_watch, menu, outside_click, settings_window, shell_selection, shell_view, space_window,
-    tray, watchdog,
+    folder_watch, menu, messages, outside_click, settings_window, shell_selection, shell_view,
+    space_window, tray, watchdog,
 };
 
 pub trait EventHandler {
@@ -224,7 +224,7 @@ impl Waker {
         unsafe {
             let _ = PostMessageW(
                 Some(HWND(self.controller as *mut core::ffi::c_void)),
-                controller::WAKE,
+                messages::WAKE,
                 WPARAM(id),
                 LPARAM(0),
             );
