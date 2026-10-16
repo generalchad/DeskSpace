@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (365 tests) are green. Update this count whenever a
+  `cargo test --workspace` (366 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -1134,8 +1134,11 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   (on the controller window via `Ui`). The app registers three bindings, each at
   its own index and editable on the Hotkeys page: show/hide spaces (`Ctrl+Alt+D`
   by default), create a new space at the pointer, and open settings (both
-  unbound by default). An empty binding is unregistered; the table lives in
-  `settings::HOTKEY_BINDINGS`.
+  unbound by default). An empty binding is unregistered. The table
+  `settings::HOTKEY_BINDINGS` drives all of it: each row names its
+  `HotkeyAction`, its two field ids, its label, and the `WindowSettings`
+  field that stores it, and its position is its registration index;
+  `App::on_hotkey` matches on the action.
 
 ## 7. Runtime flow
 

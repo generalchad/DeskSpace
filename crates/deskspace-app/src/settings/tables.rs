@@ -42,60 +42,69 @@ pub(super) fn corner_marks() -> Vec<SliderMark> {
 pub(super) const HOTKEY_HINT: &str = "Combine Ctrl, Alt, Shift, or Win with a letter, digit, or F1-F24, \
      for example Ctrl+Alt+D. Empty leaves the action unbound.";
 
-/// A global hotkey the Hotkeys page can bind: the field that edits it, the note
-/// field below it, its label, and the registration index the app passes to
-/// `Ui::register_hotkey`.
+/// What a global hotkey does when pressed. The app matches on it, so a new
+/// action cannot be added without a handler.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HotkeyAction {
+    ToggleSpaces,
+    NewSpace,
+    OpenSettings,
+}
+
+/// A global hotkey the Hotkeys page can bind: what it does, the field that
+/// edits it, the note field below it, its label, and where its text is
+/// stored. Its position in `HOTKEY_BINDINGS` is its registration index.
 #[derive(Clone, Copy, Debug)]
 pub struct HotkeyBinding {
+    pub action: HotkeyAction,
     pub field: u32,
     pub note: u32,
     pub label: &'static str,
-    pub index: i32,
+    stored: fn(&WindowSettings) -> &String,
+    stored_mut: fn(&mut WindowSettings) -> &mut String,
 }
 
-/// The global hotkeys, in registration order. The app iterates this to register
-/// and to apply each binding, so a new binding is one entry here plus its
-/// `WindowSettings` field.
+impl HotkeyBinding {
+    /// The binding's saved text, for example "Ctrl+Alt+D"; empty is unbound.
+    pub fn text(self, window: &WindowSettings) -> &str {
+        (self.stored)(window)
+    }
+
+    pub fn set_text(self, window: &mut WindowSettings, text: String) {
+        *(self.stored_mut)(window) = text;
+    }
+}
+
+/// The global hotkeys, in registration order. A new binding is one entry here,
+/// its `WindowSettings` field, its two `field::` ids, and (for a new action)
+/// a `HotkeyAction` variant; the app registers, applies, and dispatches every
+/// binding from this table.
 pub const HOTKEY_BINDINGS: [HotkeyBinding; 3] = [
     HotkeyBinding {
+        action: HotkeyAction::ToggleSpaces,
         field: field::HOTKEY,
         note: field::HOTKEY_NOTE,
         label: "Show or hide spaces",
-        index: 0,
+        stored: |window| &window.toggle_hotkey,
+        stored_mut: |window| &mut window.toggle_hotkey,
     },
     HotkeyBinding {
+        action: HotkeyAction::NewSpace,
         field: field::HOTKEY_NEW_SPACE,
         note: field::HOTKEY_NEW_SPACE_NOTE,
         label: "Create a new space",
-        index: 1,
+        stored: |window| &window.new_space_hotkey,
+        stored_mut: |window| &mut window.new_space_hotkey,
     },
     HotkeyBinding {
+        action: HotkeyAction::OpenSettings,
         field: field::HOTKEY_SETTINGS,
         note: field::HOTKEY_SETTINGS_NOTE,
         label: "Open settings",
-        index: 2,
+        stored: |window| &window.settings_hotkey,
+        stored_mut: |window| &mut window.settings_hotkey,
     },
 ];
-
-/// The stored text of the binding at `index`.
-pub fn hotkey_setting(window: &WindowSettings, index: i32) -> &str {
-    match index {
-        0 => &window.toggle_hotkey,
-        1 => &window.new_space_hotkey,
-        2 => &window.settings_hotkey,
-        _ => "",
-    }
-}
-
-/// Sets the stored text of the binding at `index`.
-pub fn set_hotkey_setting(window: &mut WindowSettings, index: i32, text: String) {
-    match index {
-        0 => window.toggle_hotkey = text,
-        1 => window.new_space_hotkey = text,
-        2 => window.settings_hotkey = text,
-        _ => {}
-    }
-}
 
 pub(super) fn is_hotkey_field(id: u32) -> bool {
     HOTKEY_BINDINGS.iter().any(|binding| binding.field == id)
@@ -126,6 +135,35 @@ mod tests {
             let field = form.field(binding.field).expect("its text field");
             assert!(field.enabled);
             assert!(form.field(binding.note).is_some(), "its hint note");
+        }
+    }
+
+    #[test]
+    fn each_binding_stores_its_own_setting() {
+        let mut window = WindowSettings::default();
+        for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
+            binding.set_text(&mut window, format!("Ctrl+F{}", slot + 1));
+        }
+        assert_eq!(window.toggle_hotkey, "Ctrl+F1");
+        assert_eq!(window.new_space_hotkey, "Ctrl+F2");
+        assert_eq!(window.settings_hotkey, "Ctrl+F3");
+        for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
+            assert_eq!(binding.text(&window), format!("Ctrl+F{}", slot + 1));
+        }
+    }
+
+    #[test]
+    fn each_action_has_one_binding() {
+        for action in [
+            HotkeyAction::ToggleSpaces,
+            HotkeyAction::NewSpace,
+            HotkeyAction::OpenSettings,
+        ] {
+            let count = HOTKEY_BINDINGS
+                .iter()
+                .filter(|binding| binding.action == action)
+                .count();
+            assert_eq!(count, 1, "{action:?}");
         }
     }
 }

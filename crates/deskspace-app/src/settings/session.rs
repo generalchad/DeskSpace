@@ -2,7 +2,7 @@
 //! a revert needs to reflow or restyle.
 
 use super::ids::page;
-use super::tables::{HOTKEY_BINDINGS, hotkey_setting};
+use super::tables::HOTKEY_BINDINGS;
 use super::*;
 
 /// A space's customization, snapshotted so Cancel can restore it.
@@ -53,15 +53,18 @@ pub struct Session {
     pub saved_spaces: Vec<SpaceSnapshot>,
 }
 
+/// Every binding's saved text, in `HOTKEY_BINDINGS` order.
+fn saved_hotkey_texts(window: &WindowSettings) -> [String; HOTKEY_BINDINGS.len()] {
+    std::array::from_fn(|slot| HOTKEY_BINDINGS[slot].text(window).to_string())
+}
+
 impl Session {
     pub fn new(config: &Config) -> Self {
         Self {
             saved_theme: config.theme.clone(),
             saved_window: config.window.clone(),
             saved_layout: config.desktop.layout,
-            hotkey_texts: std::array::from_fn(|slot| {
-                hotkey_setting(&config.window, HOTKEY_BINDINGS[slot].index).to_string()
-            }),
+            hotkey_texts: saved_hotkey_texts(&config.window),
             hotkey_errors: Default::default(),
             dirty: false,
             scope: None,
@@ -76,9 +79,7 @@ impl Session {
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
         self.saved_spaces = snapshot_spaces(config);
-        self.hotkey_texts = std::array::from_fn(|slot| {
-            hotkey_setting(&config.window, HOTKEY_BINDINGS[slot].index).to_string()
-        });
+        self.hotkey_texts = saved_hotkey_texts(&config.window);
         self.hotkey_errors = Default::default();
         self.dirty = false;
     }

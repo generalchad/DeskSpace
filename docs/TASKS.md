@@ -165,6 +165,19 @@ The pattern used by `Theme.icon_size` / `Theme.overlay_size`:
 4. Update the key lists in `AGENTS.md` (Gotchas), `CONTEXT.md` section 8,
    and `README.md` Controls.
 
+### Recipe: a new global hotkey
+
+1. `deskspace-config/src/schema.rs`: a `WindowSettings` string field for the
+   binding (default empty, so it starts unbound).
+2. `deskspace-app/src/settings/ids.rs`: two `field::` ids (the text field
+   and its note).
+3. `settings/tables.rs`: a `HotkeyAction` variant and a `HOTKEY_BINDINGS`
+   row naming the action, the ids, the label, and the setting. The Hotkeys
+   page, staging, Apply, and registration all read the table.
+4. `deskspace-app/src/app.rs`: the action's arm in `App::on_hotkey` (the
+   compiler asks for it). Extend `each_action_has_one_binding` and
+   `each_binding_stores_its_own_setting` in `tables.rs`.
+
 ### Recipe: a new menu entry
 
 1. `deskspace-app/src/app.rs`: add an id to `mod menu` (next free; see the id

@@ -9,7 +9,7 @@ use deskspace_platform::{
     system_accent_color, system_uses_dark_mode,
 };
 
-use crate::settings::{self, Session};
+use crate::settings::{self, HotkeyAction, Session};
 use crate::storage::ItemStore;
 
 mod clipboard;
@@ -32,13 +32,8 @@ use rename::EditState;
 use selection::Selection;
 use update::UpdateState;
 
-const TOGGLE_HOTKEY: i32 = 0;
-/// Registration indices for the global hotkeys. `settings::HOTKEY_BINDINGS`
-/// holds the matching table; a test keeps the two in step.
-const NEW_SPACE_HOTKEY: i32 = 1;
-const SETTINGS_HOTKEY: i32 = 2;
-/// How many global hotkeys can be registered at once.
-const HOTKEY_COUNT: usize = 3;
+/// How many global hotkeys can be registered at once, one per binding.
+const HOTKEY_COUNT: usize = settings::HOTKEY_BINDINGS.len();
 /// Width of the band along a space's edges that starts a resize.
 const RESIZE_BORDER: i32 = 6;
 /// `WHEEL_DELTA`: one notch of a standard mouse wheel.
@@ -464,10 +459,11 @@ impl App {
 
     // ---- hotkey --------------------------------------------------------
 
-    /// Registers the binding at `index` to `text`, replacing any previous one.
-    /// An empty `text` leaves the action unbound.
-    fn register_hotkey(&mut self, ui: &mut Ui, index: i32, text: &str) -> Result<(), String> {
-        if let Some(previous) = self.hotkeys[index as usize].take() {
+    /// Registers the binding in slot `slot` of `settings::HOTKEY_BINDINGS` to
+    /// `text`, replacing any previous one. An empty `text` leaves the action
+    /// unbound.
+    fn register_hotkey(&mut self, ui: &mut Ui, slot: usize, text: &str) -> Result<(), String> {
+        if let Some(previous) = self.hotkeys[slot].take() {
             ui.unregister_hotkey(previous);
         }
         let text = text.trim();
@@ -476,17 +472,38 @@ impl App {
         }
         let spec =
             parse_hotkey(text).ok_or_else(|| format!("\"{text}\" is not a valid hotkey."))?;
-        match ui.register_hotkey(index, spec) {
+        match ui.register_hotkey(hotkey_index(slot), spec) {
             Ok(hotkey) => {
-                self.hotkeys[index as usize] = Some(hotkey);
+                self.hotkeys[slot] = Some(hotkey);
                 Ok(())
             }
             Err(error) => {
-                tracing::warn!(%error, hotkey = text, index, "could not register hotkey");
+                tracing::warn!(%error, hotkey = text, slot, "could not register hotkey");
                 Err(format!("{text} is already in use by another app."))
             }
         }
     }
+
+    /// Runs the action of the binding whose hotkey `id` was pressed.
+    fn on_hotkey(&mut self, ui: &mut Ui, id: i32) {
+        let pressed = settings::HOTKEY_BINDINGS
+            .iter()
+            .enumerate()
+            .find(|(slot, _)| hotkey_id(hotkey_index(*slot)) == id);
+        let Some((_, binding)) = pressed else {
+            return;
+        };
+        match binding.action {
+            HotkeyAction::ToggleSpaces => self.set_visible(ui, !self.visible),
+            HotkeyAction::NewSpace => self.create_space(ui, cursor_pos()),
+            HotkeyAction::OpenSettings => self.open_settings(ui),
+        }
+    }
+}
+
+/// The platform registration index of the binding in `slot`.
+fn hotkey_index(slot: usize) -> i32 {
+    i32::try_from(slot).expect("a handful of hotkey bindings")
 }
 
 impl EventHandler for App {
@@ -496,10 +513,9 @@ impl EventHandler for App {
                 // DeskSpace's own menus and settings window follow the
                 // `ui_mode` setting; the spaces follow their own Color mode.
                 ui.set_ui_dark(self.ui_dark());
-                for binding in &settings::HOTKEY_BINDINGS {
-                    let text =
-                        settings::hotkey_setting(&self.config.window, binding.index).to_string();
-                    if let Err(message) = self.register_hotkey(ui, binding.index, &text) {
+                for (slot, binding) in settings::HOTKEY_BINDINGS.iter().enumerate() {
+                    let text = binding.text(&self.config.window).to_string();
+                    if let Err(message) = self.register_hotkey(ui, slot, &text) {
                         tracing::warn!(message, "hotkey unavailable");
                     }
                 }
@@ -556,14 +572,7 @@ impl EventHandler for App {
             // A watched folder changed (I8): re-read the shell's loose items
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged => self.resync_desktop_layer(ui),
-            Event::Hotkey { id } if id == hotkey_id(TOGGLE_HOTKEY) => {
-                self.set_visible(ui, !self.visible);
-            }
-            Event::Hotkey { id } if id == hotkey_id(NEW_SPACE_HOTKEY) => {
-                self.create_space(ui, cursor_pos());
-            }
-            Event::Hotkey { id } if id == hotkey_id(SETTINGS_HOTKEY) => self.open_settings(ui),
-            Event::Hotkey { .. } => {}
+            Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {
                 self.show_tray_menu(ui, Point::new(x, y));
@@ -729,15 +738,6 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(ids.len(), unique.len(), "menu ids collide");
-    }
-
-    #[test]
-    fn hotkey_indices_match_the_settings_bindings() {
-        let bindings = crate::settings::HOTKEY_BINDINGS;
-        assert_eq!(bindings.len(), HOTKEY_COUNT);
-        assert_eq!(bindings[0].index, TOGGLE_HOTKEY);
-        assert_eq!(bindings[1].index, NEW_SPACE_HOTKEY);
-        assert_eq!(bindings[2].index, SETTINGS_HOTKEY);
     }
 
     #[test]

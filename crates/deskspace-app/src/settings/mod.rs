@@ -16,7 +16,7 @@ mod tables;
 pub use apply::{apply_field, customize_space, match_global, reset_appearance, space_edit};
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
-pub use tables::{HOTKEY_BINDINGS, hotkey_setting, set_hotkey_setting};
+pub use tables::{HOTKEY_BINDINGS, HotkeyAction};
 
 use std::path::Path;
 

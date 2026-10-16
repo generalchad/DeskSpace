@@ -320,19 +320,19 @@ impl App {
         };
         for (slot, binding) in settings::HOTKEY_BINDINGS.iter().enumerate() {
             let text = texts[slot].trim().to_string();
-            let current = settings::hotkey_setting(&self.config.window, binding.index).to_string();
-            if text == current && self.hotkeys[binding.index as usize].is_some() {
+            let current = binding.text(&self.config.window).to_string();
+            if text == current && self.hotkeys[slot].is_some() {
                 continue;
             }
-            if let Err(message) = self.register_hotkey(ui, binding.index, &text) {
+            if let Err(message) = self.register_hotkey(ui, slot, &text) {
                 // Put the previous binding back so the hotkey keeps working.
-                let _ = self.register_hotkey(ui, binding.index, &current);
+                let _ = self.register_hotkey(ui, slot, &current);
                 if let Some(session) = self.settings.as_mut() {
                     session.hotkey_errors[slot] = Some(message);
                 }
                 return false;
             }
-            settings::set_hotkey_setting(&mut self.config.window, binding.index, text);
+            binding.set_text(&mut self.config.window, text);
         }
         let start_changed = self.settings.as_ref().is_some_and(|session| {
             session.saved_window.start_with_windows != self.config.window.start_with_windows
