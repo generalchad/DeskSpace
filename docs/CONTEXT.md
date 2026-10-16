@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (354 tests) are green. Update this count whenever a
+  `cargo test --workspace` (351 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files

@@ -15,4 +15,3 @@ cargo-packager-updater = { version = "0.2.3", default-features = false, features
     "native-tls",
 ] }
 thiserror.workspace = true
-tracing.workspace = true

@@ -285,7 +285,6 @@ name = "deskspace-core"
 version = "0.2.3"
 dependencies = [
  "serde",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -306,7 +305,6 @@ version = "0.2.3"
 dependencies = [
  "cargo-packager-updater",
  "thiserror 2.0.21",
- "tracing",
 ]
 
 [[package]]

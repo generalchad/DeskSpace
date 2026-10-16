@@ -83,25 +83,6 @@ pub fn download_and_install(available: &Available) -> Result<(), UpdateError> {
     Ok(())
 }
 
-/// The release page, opened by a portable build that only notifies.
-pub fn release_page() -> &'static str {
-    RELEASES_URL
-}
-
-/// Picks the newest version in `candidates` that is newer than `current` and,
-/// unless `prerelease`, is not a pre-release. Pure, so the selection can be
-/// tested without a feed.
-pub fn newest(current: &str, candidates: &[&str], prerelease: bool) -> Option<String> {
-    let current = parse(current).ok()?;
-    candidates
-        .iter()
-        .filter_map(|candidate| parse(candidate).ok())
-        .filter(|version| *version > current)
-        .filter(|version| prerelease || version.pre.is_empty())
-        .max()
-        .map(|version| version.to_string())
-}
-
 fn parse(version: &str) -> Result<Version, UpdateError> {
     Version::parse(version.trim_start_matches('v'))
         .map_err(|_| UpdateError::Version(version.to_string()))
@@ -124,40 +105,12 @@ mod tests {
     }
 
     #[test]
-    fn newest_picks_the_highest_newer_version() {
-        let candidates = ["0.1.0", "0.2.0", "0.2.1", "v0.3.0"];
-        assert_eq!(
-            newest("0.2.0", &candidates, false).as_deref(),
-            Some("0.3.0")
-        );
-    }
-
-    #[test]
-    fn newest_ignores_older_and_equal_versions() {
-        let candidates = ["0.1.0", "0.2.0"];
-        assert_eq!(newest("0.2.0", &candidates, false), None);
-        assert_eq!(newest("0.3.0", &candidates, false), None);
-    }
-
-    #[test]
-    fn newest_skips_prereleases_unless_enabled() {
-        let candidates = ["0.3.0-alpha.1", "0.2.1"];
-        assert_eq!(
-            newest("0.2.0", &candidates, false).as_deref(),
-            Some("0.2.1")
-        );
-        assert_eq!(
-            newest("0.2.0", &candidates, true).as_deref(),
-            Some("0.3.0-alpha.1")
-        );
-    }
-
-    #[test]
-    fn newest_tolerates_a_leading_v_and_bad_entries() {
-        let candidates = ["v0.4.0", "not-a-version", "0.3.0"];
-        assert_eq!(
-            newest("0.2.0", &candidates, false).as_deref(),
-            Some("0.4.0")
-        );
+    fn parse_accepts_a_leading_v_and_rejects_bad_versions() {
+        assert_eq!(parse("v0.4.0").unwrap(), Version::new(0, 4, 0));
+        assert_eq!(parse("0.4.0").unwrap(), Version::new(0, 4, 0));
+        assert!(matches!(
+            parse("not-a-version"),
+            Err(UpdateError::Version(_))
+        ));
     }
 }
