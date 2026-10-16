@@ -112,6 +112,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_release_workflow_publishes_the_feed_the_updater_reads() {
+        let feed = UPDATE_ENDPOINT.rsplit('/').next().unwrap();
+        let workflow = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.github/workflows/release.yml");
+        let workflow = std::fs::read_to_string(workflow).unwrap();
+        assert!(
+            workflow.contains(&format!("FEED={feed}")),
+            "release.yml must upload `{feed}`"
+        );
+    }
+
+    #[test]
     fn newest_picks_the_highest_newer_version() {
         let candidates = ["0.1.0", "0.2.0", "0.2.1", "v0.3.0"];
         assert_eq!(
