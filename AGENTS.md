@@ -120,8 +120,7 @@ Release work (`RELEASING.md`; `docs/TASKS.md` R10-R13) also uses `gh`, `actionli
 ## Workspace layout
 
 ```
-crates/deskspace-core      Domain model. No OS dependencies (one known
-                           exception: item.rs reads file metadata; TASKS R4).
+crates/deskspace-core      Domain model. No OS dependencies and no IO.
 crates/deskspace-config    Serde/TOML configuration schema and persistence.
 crates/deskspace-update    Update checking and installation (ROADMAP F-45);
                            wraps `cargo-packager-updater` and has no workspace

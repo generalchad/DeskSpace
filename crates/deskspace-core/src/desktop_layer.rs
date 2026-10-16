@@ -63,11 +63,12 @@ impl DesktopLayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::item::ItemFacts;
 
     #[test]
     fn item_at_hits_absolute_cells() {
         let mut layer = DesktopLayer::default();
-        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
         item.position = Point::new(40, 60);
         layer.push_item(item);
         let cell = Size::new(96, 104);
@@ -78,8 +79,16 @@ mod tests {
     #[test]
     fn push_item_ignores_a_duplicate_id() {
         let mut layer = DesktopLayer::default();
-        layer.push_item(Item::new(ItemId(1), "C:/missing/a.txt"));
-        layer.push_item(Item::new(ItemId(1), "C:/missing/b.txt"));
+        layer.push_item(Item::new(
+            ItemId(1),
+            "C:/missing/a.txt",
+            ItemFacts::default(),
+        ));
+        layer.push_item(Item::new(
+            ItemId(1),
+            "C:/missing/b.txt",
+            ItemFacts::default(),
+        ));
         assert_eq!(layer.item_count(), 1);
     }
 }

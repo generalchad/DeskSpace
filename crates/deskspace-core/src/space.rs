@@ -321,6 +321,7 @@ impl Space {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::item::ItemFacts;
 
     #[test]
     fn rolled_up_space_collapses_to_title_bar() {
@@ -337,7 +338,7 @@ mod tests {
     #[test]
     fn item_at_uses_content_relative_cells() {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(100, 100, 300, 300));
-        let mut item = Item::new(ItemId(7), "a.txt");
+        let mut item = Item::new(ItemId(7), "a.txt", ItemFacts::default());
         item.position = Point::new(10, 10);
         space.push_item(item);
         let cell = Size::new(50, 50);
@@ -351,7 +352,7 @@ mod tests {
     #[test]
     fn item_at_accounts_for_scroll() {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 100));
-        let mut item = Item::new(ItemId(3), "deep.txt");
+        let mut item = Item::new(ItemId(3), "deep.txt", ItemFacts::default());
         item.position = Point::new(10, 200);
         space.push_item(item);
         let cell = Size::new(50, 50);
@@ -364,7 +365,7 @@ mod tests {
     fn max_scroll_is_overflow_beyond_the_content_area() {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 128));
         assert_eq!(space.max_scroll(Size::new(50, 50), 10), 0);
-        let mut item = Item::new(ItemId(1), "a");
+        let mut item = Item::new(ItemId(1), "a", ItemFacts::default());
         item.position = Point::new(10, 200);
         space.push_item(item);
         // Extent 200 + 50 + 10 = 260; content height 128 - 28 = 100.

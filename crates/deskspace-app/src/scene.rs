@@ -446,11 +446,12 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
     use deskspace_core::{Item, Point, SpaceId, SpaceLook};
 
     fn space() -> Space {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(500, 300, 240, 200));
-        let mut item = Item::new(ItemId(4), "C:/missing/report.txt");
+        let mut item = Item::new(ItemId(4), "C:/missing/report.txt", ItemFacts::default());
         item.position = Point::new(12, 12);
         space.push_item(item);
         space
@@ -458,40 +459,44 @@ mod tests {
 
     #[test]
     fn compressed_and_encrypted_items_get_explorer_colors() {
-        let mut compressed = Item::new(ItemId(4), "C:/missing/a.txt");
+        let mut compressed = Item::new(ItemId(4), "C:/missing/a.txt", ItemFacts::default());
         compressed.compressed = true;
         assert_eq!(compressed_label(&compressed, true), Some(COMPRESSED_LABEL));
-        let mut encrypted = Item::new(ItemId(5), "C:/missing/b.txt");
+        let mut encrypted = Item::new(ItemId(5), "C:/missing/b.txt", ItemFacts::default());
         encrypted.encrypted = true;
         assert_eq!(compressed_label(&encrypted, true), Some(ENCRYPTED_LABEL));
         assert_eq!(compressed_label(&encrypted, false), None);
         assert_eq!(
-            compressed_label(&Item::new(ItemId(6), "C:/missing/c.txt"), true),
+            compressed_label(
+                &Item::new(ItemId(6), "C:/missing/c.txt", ItemFacts::default()),
+                true
+            ),
             None
         );
     }
 
     #[test]
     fn extensions_are_shown_only_when_requested() {
-        let file = Item::new(ItemId(4), "C:/missing/report.txt");
+        let file = Item::new(ItemId(4), "C:/missing/report.txt", ItemFacts::default());
         assert_eq!(item_label(&file, false), "report");
         assert_eq!(item_label(&file, true), "report.txt");
-        let folder = Item::new(ItemId(5), "C:/missing/folder").with_kind(ItemKind::Folder);
+        let folder = Item::new(ItemId(5), "C:/missing/folder", ItemFacts::default())
+            .with_kind(ItemKind::Folder);
         assert_eq!(item_label(&folder, true), "folder");
     }
 
     #[test]
     fn shortcuts_never_show_their_extension() {
-        let lnk = Item::new(ItemId(4), "C:/missing/Notepad.lnk");
+        let lnk = Item::new(ItemId(4), "C:/missing/Notepad.lnk", ItemFacts::default());
         assert_eq!(item_label(&lnk, false), "Notepad");
         assert_eq!(item_label(&lnk, true), "Notepad");
-        let url = Item::new(ItemId(5), "C:/missing/example.url");
+        let url = Item::new(ItemId(5), "C:/missing/example.url", ItemFacts::default());
         assert_eq!(item_label(&url, true), "example");
     }
 
     #[test]
     fn a_stored_extension_is_hidden_after_the_option_turns_off() {
-        let mut file = Item::new(ItemId(4), "C:/missing/report.txt");
+        let mut file = Item::new(ItemId(4), "C:/missing/report.txt", ItemFacts::default());
         // As captured from the shell while Explorer showed extensions.
         file.label = "report.txt".to_string();
         assert_eq!(item_label(&file, false), "report");
@@ -700,7 +705,7 @@ mod tests {
     #[test]
     fn desktop_layer_scene_maps_absolute_positions() {
         let mut layer = DesktopLayer::default();
-        let mut item = Item::new(ItemId(4), "C:/missing/report.txt");
+        let mut item = Item::new(ItemId(4), "C:/missing/report.txt", ItemFacts::default());
         item.position = Point::new(500, 300);
         layer.push_item(item);
         let theme = Theme::default();
@@ -726,7 +731,11 @@ mod tests {
     fn desktop_layer_drag_scene_keeps_only_the_dragged_ids() {
         let mut layer = DesktopLayer::default();
         for (n, position) in [(1u64, Point::new(500, 300)), (2, Point::new(700, 300))] {
-            let mut item = Item::new(ItemId(n), format!("C:/missing/{n}.txt"));
+            let mut item = Item::new(
+                ItemId(n),
+                format!("C:/missing/{n}.txt"),
+                ItemFacts::default(),
+            );
             item.position = position;
             layer.push_item(item);
         }
@@ -804,7 +813,11 @@ mod tests {
         let mut space = Space::new(SpaceId(1), "Tall", Rect::new(0, 0, 240, 200));
         space.user_sized = true;
         for index in 0..10u64 {
-            let mut item = Item::new(ItemId(index + 1), format!("C:/missing/{index}.txt"));
+            let mut item = Item::new(
+                ItemId(index + 1),
+                format!("C:/missing/{index}.txt"),
+                ItemFacts::default(),
+            );
             item.position = layout.grid_position_in(index as usize, 2);
             space.push_item(item);
         }

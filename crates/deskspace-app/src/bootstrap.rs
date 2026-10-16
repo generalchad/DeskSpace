@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::{Desktop, Item, Rect, layout::arrange_space};
-use deskspace_platform::{Placement, RunOptions, enumerate_desktop_items, system_uses_dark_mode};
+use deskspace_platform::{
+    Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode,
+};
 
 use crate::app::{App, tray_tooltip};
 use crate::cli::Cli;
@@ -18,9 +20,10 @@ pub fn seed_default_desktop(desktop: &mut Desktop, with_icons: bool) {
         match enumerate_desktop_items() {
             Ok(entries) => {
                 for entry in entries {
-                    let item = Item::new(desktop.next_item_id(), entry.path)
-                        .with_label(entry.label)
-                        .with_kind(entry.kind);
+                    let item =
+                        Item::new(desktop.next_item_id(), &entry.path, item_facts(&entry.path))
+                            .with_label(entry.label)
+                            .with_kind(entry.kind);
                     desktop.add_item(id, item);
                 }
             }

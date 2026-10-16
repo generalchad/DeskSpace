@@ -484,6 +484,7 @@ fn space_sort_menu() -> MenuEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::{Item, Rect};
@@ -547,7 +548,7 @@ mod tests {
             .config
             .desktop
             .add_space("S", Rect::new(100, 100, 240, 200));
-        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
         item.position = Point::new(12, 12);
         app.config.desktop.add_item(id, item);
         app.selection.surface = Some(Surface::Space(id));

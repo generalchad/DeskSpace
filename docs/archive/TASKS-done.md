@@ -1611,3 +1611,17 @@ until I5-I6 all land, so no partial build hides the desktop.
     each entry does what it says, the source file is left alone on Copy,
     Show here, and Cancel, and a left drag still moves (Shift still keeps in
     place).
+
+- **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads the file
+  system (`ItemKind::classify`, `read_metadata`, `file_flags`) from
+  `Item::new`, which `Command::AddItem` calls inside core. Move the reads out,
+  add an `ItemFacts { kind, size, modified, compressed, encrypted }` (name
+  to be decided) that the caller fills, and pass it into `AddItem` and
+  `Item::new`. Callers: `app/files.rs` (`add_dropped`, `add_shortcuts`),
+  `app/clipboard.rs` (paste), and `bootstrap.rs` (seeding). Needs a decision
+  on where the reads live (`storage.rs` is a candidate).
+  Resolved: the reads live in the platform, `deskspace_platform::item_facts`
+  (`win32/desktop_items.rs`, beside the attribute reads it already did), not
+  `storage.rs`. `ItemFacts` carries `is_folder` rather than a `kind`, so
+  `ItemKind::classify(path, is_folder)` stays the one place that decides a
+  kind. `view.rs` (the desktop layer) also creates items and reads facts.

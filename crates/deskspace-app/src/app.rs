@@ -661,6 +661,7 @@ pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
     use deskspace_core::{ItemId, Rect};
     use std::path::PathBuf;
 
@@ -674,7 +675,11 @@ mod tests {
             .desktop
             .add_space("S", Rect::new(100, 100, 240, 200));
         for (n, position) in [(1, Point::new(12, 12)), (2, Point::new(118, 126))] {
-            let mut item = Item::new(ItemId(n), format!("C:/missing/{n}.txt"));
+            let mut item = Item::new(
+                ItemId(n),
+                format!("C:/missing/{n}.txt"),
+                ItemFacts::default(),
+            );
             item.position = position;
             app.config.desktop.add_item(id, item);
         }
@@ -776,7 +781,7 @@ mod tests {
         use deskspace_core::Item;
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let mut item = Item::new(ItemId(9), "C:/missing/loose.txt");
+        let mut item = Item::new(ItemId(9), "C:/missing/loose.txt", ItemFacts::default());
         item.position = Point::new(40, 60);
         app.config.desktop.layer_mut().push_item(item);
 
@@ -800,7 +805,11 @@ mod tests {
     fn only_spaces_with_items_ask_before_deleting() {
         let mut space = Space::new(SpaceId(1), "S", Rect::new(0, 0, 200, 200));
         assert!(!delete_needs_confirmation(&space));
-        space.push_item(deskspace_core::Item::new(ItemId(1), "C:/a.txt"));
+        space.push_item(deskspace_core::Item::new(
+            ItemId(1),
+            "C:/a.txt",
+            ItemFacts::default(),
+        ));
         assert!(delete_needs_confirmation(&space));
     }
 

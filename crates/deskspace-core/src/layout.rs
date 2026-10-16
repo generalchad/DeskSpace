@@ -296,11 +296,16 @@ mod tests {
     use super::*;
     use crate::id::{ItemId, SpaceId};
     use crate::item::Item;
+    use crate::item::ItemFacts;
 
     fn space_with_items(count: usize) -> Space {
         let mut space = Space::new(SpaceId(1), "Test", Rect::new(0, 0, 10, 10));
         for index in 0..count {
-            space.push_item(Item::new(ItemId(index as u64 + 1), format!("item{index}")));
+            space.push_item(Item::new(
+                ItemId(index as u64 + 1),
+                format!("item{index}"),
+                ItemFacts::default(),
+            ));
         }
         space
     }

@@ -441,6 +441,7 @@ fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::Item;
@@ -569,9 +570,14 @@ mod tests {
         let mut app = App::new(Config::new(), store, false, false);
         let id = app.config.desktop.add_space("S", Rect::new(0, 0, 400, 400));
         for n in 1..=4u64 {
-            app.config
-                .desktop
-                .add_item(id, Item::new(ItemId(n), format!("C:/missing/{n}.txt")));
+            app.config.desktop.add_item(
+                id,
+                Item::new(
+                    ItemId(n),
+                    format!("C:/missing/{n}.txt"),
+                    ItemFacts::default(),
+                ),
+            );
         }
         app.selection.surface = Some(Surface::Space(id));
         // Ctrl+click builds a selection and toggles items off again.

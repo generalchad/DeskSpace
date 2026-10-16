@@ -492,14 +492,6 @@ the ROADMAP decision ids (`D1`-`D9`).
     `controller.rs`, `color_picker.rs`, `settings_window/mod.rs` about 120-150
     each): one named handler per message, keeping `runtime::dispatch` the
     last statement of each branch (`AGENTS.md` Gotchas).
-- **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads the file
-  system (`ItemKind::classify`, `read_metadata`, `file_flags`) from
-  `Item::new`, which `Command::AddItem` calls inside core. Move the reads out,
-  add an `ItemFacts { kind, size, modified, compressed, encrypted }` (name
-  to be decided) that the caller fills, and pass it into `AddItem` and
-  `Item::new`. Callers: `app/files.rs` (`add_dropped`, `add_shortcuts`),
-  `app/clipboard.rs` (paste), and `bootstrap.rs` (seeding). Needs a decision
-  on where the reads live (`storage.rs` is a candidate).
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **R7. On-screen verification pass** (maintainer). The list is section V.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
@@ -623,3 +615,8 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `drag_item_out` without setting `pointer.drag_image`, so the shell
   substitutes its own oversized image. Suggested task: factor the image build
   out of `begin_drag_visual` and use it for right drags too.
+- `win32/desktop_items.rs`: each `DesktopEntry` is stat'ed twice, once for
+  its `kind` during enumeration and again by `item_facts` when `view.rs` /
+  `bootstrap.rs` build its `Item` (the desktop layer re-reads them on every
+  sync). Suggested task: give `DesktopEntry` an `ItemFacts` and drop its
+  `kind` field.

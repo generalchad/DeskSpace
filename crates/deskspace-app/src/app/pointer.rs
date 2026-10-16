@@ -620,6 +620,7 @@ fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
 
     use deskspace_core::GridSpec;
 
@@ -766,7 +767,7 @@ mod tests {
     fn double_click_rolls_on_the_title_and_opens_items() {
         let layout = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "S", Rect::new(100, 100, 240, 400));
-        let mut item = deskspace_core::Item::new(ItemId(7), "C:/a.lnk");
+        let mut item = deskspace_core::Item::new(ItemId(7), "C:/a.lnk", ItemFacts::default());
         item.position = Point::new(12, 12);
         space.push_item(item);
         let target =

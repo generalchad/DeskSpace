@@ -168,6 +168,7 @@ impl Desktop {
 mod tests {
     use super::*;
     use crate::item::Item;
+    use crate::item::ItemFacts;
 
     #[test]
     fn ids_increment_across_spaces() {
@@ -182,10 +183,15 @@ mod tests {
     fn next_item_id_spans_spaces_and_the_layer() {
         let mut desktop = Desktop::new();
         let space = desktop.add_space("A", Rect::ZERO);
-        desktop.add_item(space, Item::new(ItemId(5), "C:/missing/a.txt"));
-        desktop
-            .layer_mut()
-            .push_item(Item::new(ItemId(9), "C:/missing/loose.txt"));
+        desktop.add_item(
+            space,
+            Item::new(ItemId(5), "C:/missing/a.txt", ItemFacts::default()),
+        );
+        desktop.layer_mut().push_item(Item::new(
+            ItemId(9),
+            "C:/missing/loose.txt",
+            ItemFacts::default(),
+        ));
         assert_eq!(desktop.next_item_id(), ItemId(10));
         assert!(desktop.item(ItemId(5)).is_some(), "space item is found");
         assert!(desktop.item(ItemId(9)).is_some(), "layer item is found");
@@ -196,7 +202,7 @@ mod tests {
         let mut desktop = Desktop::new();
         let a = desktop.add_space("A", Rect::ZERO);
         let b = desktop.add_space("B", Rect::ZERO);
-        let item = Item::new(desktop.next_item_id(), "file.txt");
+        let item = Item::new(desktop.next_item_id(), "file.txt", ItemFacts::default());
         let item_id = item.id;
         desktop.add_item(a, item);
         assert_eq!(desktop.space_containing(item_id), Some(a));
@@ -208,7 +214,7 @@ mod tests {
     fn move_item_to_missing_space_keeps_item() {
         let mut desktop = Desktop::new();
         let a = desktop.add_space("A", Rect::ZERO);
-        let item = Item::new(desktop.next_item_id(), "file.txt");
+        let item = Item::new(desktop.next_item_id(), "file.txt", ItemFacts::default());
         let item_id = item.id;
         desktop.add_item(a, item);
         assert!(!desktop.move_item(item_id, SpaceId(999)));
@@ -219,10 +225,13 @@ mod tests {
     fn space_item_count_excludes_the_desktop_layer() {
         let mut desktop = Desktop::new();
         let space = desktop.add_space("A", Rect::ZERO);
-        desktop.add_item(space, Item::new(ItemId(1), "in-space.txt"));
+        desktop.add_item(
+            space,
+            Item::new(ItemId(1), "in-space.txt", ItemFacts::default()),
+        );
         desktop
             .layer_mut()
-            .push_item(Item::new(ItemId(2), "loose.txt"));
+            .push_item(Item::new(ItemId(2), "loose.txt", ItemFacts::default()));
         assert_eq!(desktop.space_item_count(), 1);
         assert_eq!(desktop.layer().item_count(), 1);
     }

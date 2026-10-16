@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
-use crate::item::Item;
+use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::space::{ResizeEdges, SpaceLook};
 
@@ -93,9 +93,12 @@ pub enum Command {
     ToggleRollup {
         id: SpaceId,
     },
+    /// Lists `path` in `space`. The caller reads `facts` from the file
+    /// system; core does no IO.
     AddItem {
         space: SpaceId,
         path: PathBuf,
+        facts: ItemFacts,
     },
     RemoveItem {
         id: ItemId,
@@ -220,7 +223,9 @@ impl Desktop {
             Command::ToggleRollup { id } => self.apply_toggle_rollup(id),
             Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
             Command::SnapAll => self.apply_snap_all(layout, bounds),
-            Command::AddItem { space, path } => self.apply_add_item(space, path, layout),
+            Command::AddItem { space, path, facts } => {
+                self.apply_add_item(space, path, facts, layout)
+            }
             Command::RemoveItem { id } => self.apply_remove_item(id, layout),
             Command::MoveItem { id, target } => self.apply_move_item(id, target, layout),
             Command::ReorderItem { id, index } => self.apply_reorder_item(id, index, layout),
@@ -333,6 +338,7 @@ mod tests {
             Command::AddItem {
                 space: id,
                 path: "file.txt".into(),
+                facts: ItemFacts::default(),
             },
             bounds(),
         );
@@ -360,6 +366,7 @@ mod tests {
                 Command::AddItem {
                     space: a,
                     path: name.into(),
+                    facts: ItemFacts::default(),
                 },
                 bounds(),
             );
@@ -403,6 +410,7 @@ mod tests {
                 Command::AddItem {
                     space: id,
                     path: format!("file{index}.txt").into(),
+                    facts: ItemFacts::default(),
                 },
                 bounds(),
             );
@@ -426,6 +434,7 @@ mod tests {
                 Command::AddItem {
                     space: id,
                     path: format!("{name}.txt").into(),
+                    facts: ItemFacts::default(),
                 },
                 bounds(),
             );
@@ -548,6 +557,7 @@ mod tests {
                 Command::AddItem {
                     space: id,
                     path: name.into(),
+                    facts: ItemFacts::default(),
                 },
                 bounds(),
             );
@@ -723,7 +733,11 @@ mod tests {
     }
 
     fn item(id: u64, label: &str, kind: ItemKind, size: u64, modified: u64) -> Item {
-        let mut item = Item::new(ItemId(id), format!("C:/missing/{label}"));
+        let mut item = Item::new(
+            ItemId(id),
+            format!("C:/missing/{label}"),
+            ItemFacts::default(),
+        );
         item.label = label.to_string();
         item.kind = kind;
         item.size = Some(size);
@@ -906,6 +920,7 @@ mod tests {
                 Command::AddItem {
                     space: id,
                     path: name.into(),
+                    facts: ItemFacts::default(),
                 },
                 bounds(),
             );
@@ -1008,7 +1023,11 @@ mod tests {
     #[test]
     fn sync_desktop_reuses_ids_by_path_across_a_reorder() {
         let enter = |name: &str, x: i32| {
-            let mut item = Item::new(ItemId(0), format!("C:/missing/{name}"));
+            let mut item = Item::new(
+                ItemId(0),
+                format!("C:/missing/{name}"),
+                ItemFacts::default(),
+            );
             item.position = Point::new(x, 0);
             item
         };
@@ -1045,7 +1064,7 @@ mod tests {
     fn move_to_desktop_moves_a_space_item_to_the_layer() {
         let mut desktop = Desktop::new();
         let space = desktop.add_space("A", Rect::new(0, 0, 100, 100));
-        let item = Item::new(ItemId(1), "C:/missing/a.txt");
+        let item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
         let item_id = item.id;
         desktop.add_item(space, item);
         assert_eq!(
@@ -1064,9 +1083,11 @@ mod tests {
     #[test]
     fn set_desktop_item_position_moves_and_reports_missing() {
         let mut desktop = Desktop::new();
-        desktop
-            .layer_mut()
-            .push_item(Item::new(ItemId(1), "C:/missing/a.txt"));
+        desktop.layer_mut().push_item(Item::new(
+            ItemId(1),
+            "C:/missing/a.txt",
+            ItemFacts::default(),
+        ));
         assert_eq!(
             desktop.apply(
                 Command::SetDesktopItemPosition {

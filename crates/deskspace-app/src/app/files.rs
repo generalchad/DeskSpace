@@ -7,7 +7,7 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{
     CustomShortcut, DropAction, ShellItem, Ui, create_custom_shortcut, create_shortcut,
-    desktop_directory, notify_moved,
+    desktop_directory, item_facts, notify_moved,
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
@@ -50,6 +50,7 @@ impl App {
                     match placed {
                         Some(path) => Command::AddItem {
                             space: target,
+                            facts: item_facts(&path),
                             path,
                         },
                         None => continue,
@@ -98,6 +99,7 @@ impl App {
                     self.dispatch(
                         Command::AddItem {
                             space: target,
+                            facts: item_facts(&path),
                             path,
                         },
                         at,

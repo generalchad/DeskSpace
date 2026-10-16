@@ -16,8 +16,10 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
-    pub fn classify(path: &Path) -> Self {
-        if path.is_dir() {
+    /// The kind of `path`: a folder when the caller found one there, otherwise
+    /// decided by the extension alone.
+    pub fn classify(path: &Path, is_folder: bool) -> Self {
+        if is_folder {
             return Self::Folder;
         }
         match path
@@ -33,6 +35,19 @@ impl ItemKind {
     }
 }
 
+/// What the file system knows about an item's path, read by the caller (core
+/// does no IO). The default is what an unreadable path yields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ItemFacts {
+    pub is_folder: bool,
+    /// Size in bytes; `None` for folders.
+    pub size: Option<u64>,
+    /// Last modification time in seconds since the Unix epoch.
+    pub modified: Option<u64>,
+    pub compressed: bool,
+    pub encrypted: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
     pub id: ItemId,
@@ -43,40 +58,36 @@ pub struct Item {
     /// Top-left of the item's grid cell, relative to its space's content area.
     #[serde(default)]
     pub position: Point,
-    /// File size in bytes, read when the item is created. `None` for folders
-    /// and paths that cannot be read.
+    /// File size in bytes, from the `ItemFacts` the item was created with.
+    /// `None` for folders and paths that cannot be read.
     #[serde(default)]
     pub size: Option<u64>,
-    /// Last modification time in seconds since the Unix epoch, read when the
-    /// item is created. `None` when unavailable.
+    /// Last modification time in seconds since the Unix epoch, from the
+    /// item's `ItemFacts`. `None` when unavailable.
     #[serde(default)]
     pub modified: Option<u64>,
-    /// NTFS compressed attribute, read at creation for Explorer's compressed
-    /// label color (`SSF_SHOWCOMPCOLOR`).
+    /// NTFS compressed attribute, for Explorer's compressed label color
+    /// (`SSF_SHOWCOMPCOLOR`).
     #[serde(default)]
     pub compressed: bool,
-    /// NTFS encrypted attribute, read at creation for Explorer's encrypted
-    /// label color.
+    /// NTFS encrypted attribute, for Explorer's encrypted label color.
     #[serde(default)]
     pub encrypted: bool,
 }
 
 impl Item {
-    pub fn new(id: ItemId, path: impl Into<PathBuf>) -> Self {
+    pub fn new(id: ItemId, path: impl Into<PathBuf>, facts: ItemFacts) -> Self {
         let path = path.into();
-        let kind = ItemKind::classify(&path);
-        let label = default_label(&path);
-        let (size, modified, compressed, encrypted) = read_metadata(&path);
         Self {
             id,
+            kind: ItemKind::classify(&path, facts.is_folder),
+            label: default_label(&path),
             path,
-            label,
-            kind,
             position: Point::ZERO,
-            size,
-            modified,
-            compressed,
-            encrypted,
+            size: facts.size,
+            modified: facts.modified,
+            compressed: facts.compressed,
+            encrypted: facts.encrypted,
         }
     }
 
@@ -103,54 +114,47 @@ fn default_label(path: &Path) -> String {
         .to_string()
 }
 
-/// The size (files only) and last-modified time of `path`, when it can be
-/// read. Like `ItemKind::classify`, this inspects the filesystem once at
-/// creation; there is no watcher yet, so the values can go stale.
-fn read_metadata(path: &Path) -> (Option<u64>, Option<u64>, bool, bool) {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return (None, None, false, false);
-    };
-    let size = metadata.is_file().then_some(metadata.len());
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|elapsed| elapsed.as_secs());
-    let (compressed, encrypted) = file_flags(&metadata);
-    (size, modified, compressed, encrypted)
-}
-
-/// The NTFS compressed/encrypted attributes (`FILE_ATTRIBUTE_COMPRESSED` /
-/// `FILE_ATTRIBUTE_ENCRYPTED`), which Explorer uses to color labels.
-fn file_flags(metadata: &std::fs::Metadata) -> (bool, bool) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        let attributes = metadata.file_attributes();
-        (attributes & 0x0000_0800 != 0, attributes & 0x0000_4000 != 0)
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = metadata;
-        (false, false)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn label_strips_extension() {
-        let item = Item::new(ItemId(1), "C:/Users/me/Desktop/report.docx");
+        let item = Item::new(
+            ItemId(1),
+            "C:/Users/me/Desktop/report.docx",
+            ItemFacts::default(),
+        );
         assert_eq!(item.label, "report");
     }
 
     #[test]
     fn shortcut_kind_detected_by_extension() {
         assert_eq!(
-            ItemKind::classify(Path::new("thing.lnk")),
+            ItemKind::classify(Path::new("thing.lnk"), false),
             ItemKind::Shortcut
         );
+    }
+
+    #[test]
+    fn a_folder_is_a_folder_whatever_its_extension() {
+        assert_eq!(
+            ItemKind::classify(Path::new("archive.zip"), true),
+            ItemKind::Folder
+        );
+    }
+
+    #[test]
+    fn new_item_takes_its_facts() {
+        let facts = ItemFacts {
+            size: Some(42),
+            modified: Some(7),
+            compressed: true,
+            ..ItemFacts::default()
+        };
+        let item = Item::new(ItemId(1), "C:/a.txt", facts);
+        assert_eq!(item.kind, ItemKind::File);
+        assert_eq!((item.size, item.modified), (Some(42), Some(7)));
+        assert!(item.compressed && !item.encrypted);
     }
 }

@@ -5,8 +5,11 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
-use deskspace_core::item::ItemKind;
-use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_SYSTEM};
+use deskspace_core::item::{ItemFacts, ItemKind};
+use windows::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED, FILE_ATTRIBUTE_HIDDEN,
+    FILE_ATTRIBUTE_SYSTEM,
+};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT, SHCNE_CREATE,
@@ -85,7 +88,7 @@ fn enumerate_via_view() -> Option<Vec<DesktopEntry>> {
         };
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path),
+            kind: ItemKind::classify(&path, path.is_dir()),
             path,
             position,
         });
@@ -107,13 +110,36 @@ fn enumerate_via_folder(
         }
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path),
+            kind: ItemKind::classify(&path, path.is_dir()),
             path,
             position: None,
         });
     }
     entries.sort_by_key(|entry| entry.label.to_lowercase());
     Ok(entries)
+}
+
+/// What the file system says about `path`, read once when an item is listed;
+/// nothing watches it afterwards, so the values can go stale. An unreadable
+/// path yields `ItemFacts::default()`. The compressed and encrypted attributes
+/// drive Explorer's label colors:
+/// <https://learn.microsoft.com/windows/win32/fileio/file-attribute-constants>
+pub fn item_facts(path: &Path) -> ItemFacts {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return ItemFacts::default();
+    };
+    let attributes = metadata.file_attributes();
+    ItemFacts {
+        is_folder: metadata.is_dir(),
+        size: metadata.is_file().then_some(metadata.len()),
+        modified: metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|elapsed| elapsed.as_secs()),
+        compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
+        encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
+    }
 }
 
 /// Whether Explorer would list this file, given its hidden and protected
@@ -246,5 +272,25 @@ mod tests {
         assert!(keep_attributes("h.txt", hidden, &shown));
         assert!(!keep_attributes("s.txt", system, &hidden_off));
         assert!(keep_attributes("s.txt", system, &shown));
+    }
+
+    #[test]
+    fn item_facts_reads_files_and_folders_and_defaults_when_missing() {
+        let folder = std::env::temp_dir().join(format!("deskspace-facts-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("five.txt");
+        std::fs::write(&file, "hello").unwrap();
+
+        let file_facts = item_facts(&file);
+        let folder_facts = item_facts(&folder);
+        let missing_facts = item_facts(&folder.join("missing.txt"));
+        let _ = std::fs::remove_dir_all(&folder);
+
+        assert!(!file_facts.is_folder);
+        assert_eq!(file_facts.size, Some(5));
+        assert!(file_facts.modified.is_some());
+        assert!(folder_facts.is_folder);
+        assert_eq!(folder_facts.size, None);
+        assert_eq!(missing_facts, ItemFacts::default());
     }
 }

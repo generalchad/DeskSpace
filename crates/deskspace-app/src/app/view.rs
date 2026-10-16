@@ -8,8 +8,8 @@ use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog, desktop_directory,
-    desktop_display_since, enumerate_desktop_items, hide_desktop_icons, rehide_desktop_icons,
-    restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
+    desktop_display_since, enumerate_desktop_items, hide_desktop_icons, item_facts,
+    rehide_desktop_icons, restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
 };
 
 use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_scene, space_style};
@@ -273,7 +273,7 @@ impl App {
                 if in_space {
                     return None;
                 }
-                let mut item = Item::new(ItemId(0), &entry.path)
+                let mut item = Item::new(ItemId(0), &entry.path, item_facts(&entry.path))
                     .with_label(entry.label.clone())
                     .with_kind(entry.kind);
                 item.position = position;

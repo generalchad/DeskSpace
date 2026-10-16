@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::id::{ItemId, SpaceId};
-use crate::item::Item;
+use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, position_items};
 
 impl Desktop {
@@ -13,12 +13,13 @@ impl Desktop {
         &mut self,
         space: SpaceId,
         path: PathBuf,
+        facts: ItemFacts,
         layout: GridSpec,
     ) -> CommandOutcome {
         if self.space(space).is_none() {
             return CommandOutcome::NotFound;
         }
-        let item = Item::new(self.next_item_id(), path);
+        let item = Item::new(self.next_item_id(), path, facts);
         self.add_item(space, item);
         self.rearrange(space, layout);
         CommandOutcome::Applied

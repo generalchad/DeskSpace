@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::{Command, ItemId, SpaceId};
-use deskspace_platform::{ClipboardFiles, Ui};
+use deskspace_platform::{ClipboardFiles, Ui, item_facts};
 
 use super::{App, Surface};
 
@@ -155,6 +155,7 @@ impl App {
                 Command::AddItem {
                     space: target,
                     path: path.clone(),
+                    facts: item_facts(path),
                 },
                 at,
             );

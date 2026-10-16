@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (366 tests) are green. Update this count whenever a
+  `cargo test --workspace` (369 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -112,8 +112,8 @@ context menus, and a settings window in the first usable release (v0.2).
 
 Rules: dependencies point downward only; `deskspace-update` depends on no
 workspace crate. `deskspace-core` has no OS
-dependencies; its one IO exception is `item.rs`, which reads a file's kind and
-metadata when an `Item` is created (`TASKS.md` R4 moves it out). `deskspace-platform` is the only crate containing `unsafe` or
+dependencies and does no IO: whoever creates an `Item` passes in the
+`ItemFacts` it read (`deskspace_platform::item_facts`). `deskspace-platform` is the only crate containing `unsafe` or
 Win32 types. `deskspace-app` describes what to show (scenes, menus, settings
 forms) as plain data and reacts to events; the platform turns those into
 windows and controls.
@@ -184,9 +184,11 @@ Item {
 ItemKind { File, Folder, Shortcut, Drive, Other }
 ```
 
-`ItemKind::classify` and `size`/`modified`/`compressed`/`encrypted` inspect
-the filesystem once, when the item is created (`Item::new`; this is core's
-one IO exception, `TASKS.md` R4). `classify` never yields `Drive` (only
+`kind` and `size`/`modified`/`compressed`/`encrypted` come from the
+`ItemFacts` passed to `Item::new` (and `Command::AddItem`), which the caller
+reads once with `deskspace_platform::item_facts`; nothing refreshes them
+afterwards. `ItemKind::classify(path, is_folder)` is pure: a folder, else by
+extension. Tests pass `ItemFacts::default()`. `classify` never yields `Drive` (only
 `with_kind` does), and a path with no extension is `Other`. `label` defaults
 to the file stem.
 `position` is the top-left of the item's grid cell **relative to the space's

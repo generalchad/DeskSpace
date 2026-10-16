@@ -252,6 +252,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::ItemFacts;
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::Item;
@@ -265,7 +266,7 @@ mod tests {
             .config
             .desktop
             .add_space("S", Rect::new(100, 100, 240, 200));
-        let mut item = Item::new(ItemId(1), "C:/missing/a.txt");
+        let mut item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
         item.position = Point::ZERO;
         app.config.desktop.add_item(id, item);
         app.shell_display = ShellDisplay {

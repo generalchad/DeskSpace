@@ -28,7 +28,7 @@ pub use win32::desktop_icons::{
     restore as restore_desktop_icons,
 };
 pub use win32::desktop_items::{
-    DesktopEntry, desktop_directory, enumerate_desktop_items, notify_moved,
+    DesktopEntry, desktop_directory, enumerate_desktop_items, item_facts, notify_moved,
 };
 pub use win32::display_settings::{
     CheckBoxMode, ShellDisplay, desktop_display, desktop_display_since,
