@@ -255,13 +255,20 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 field::CHECK_UPDATES,
                 "Check for updates automatically",
                 config.window.check_for_updates,
-            ),
-            Field::note(
-                field::CHECK_UPDATES_NOTE,
-                "The automatic check contacts GitHub about once a day. You can always check now.",
-            ),
-            Field::button(field::CHECK_UPDATES_NOW, "", "Check for updates now"),
+            )
+            .enabled(deskspace_update::is_configured()),
+            Field::note(field::CHECK_UPDATES_NOTE, updates_note()),
+            Field::button(field::CHECK_UPDATES_NOW, "", "Check for updates now")
+                .enabled(deskspace_update::is_configured()),
         ],
+    }
+}
+
+fn updates_note() -> &'static str {
+    if deskspace_update::is_configured() {
+        "The automatic check contacts GitHub about once a day. You can always check now."
+    } else {
+        "This build cannot check for updates. Download new versions from the releases page."
     }
 }
 

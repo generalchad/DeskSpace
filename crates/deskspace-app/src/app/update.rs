@@ -53,10 +53,10 @@ impl UpdateState {
 }
 
 impl App {
-    /// Arms the automatic update check when the setting is on. Called once on
-    /// `Started`; the timer reschedules itself.
+    /// Arms the automatic update check when the setting is on and this build
+    /// can check. Called once on `Started`; the timer reschedules itself.
     pub(super) fn start_auto_update_checks(&mut self, ui: &mut Ui) {
-        if self.config.window.check_for_updates {
+        if self.config.window.check_for_updates && deskspace_update::is_configured() {
             ui.set_timer(UPDATE_TIMER, UPDATE_FIRST_DELAY_MS);
         }
     }

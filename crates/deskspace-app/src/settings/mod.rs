@@ -339,11 +339,13 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
-        assert!(matches!(
-            form.field(field::CHECK_UPDATES).unwrap().kind,
-            FieldKind::Toggle { on: true }
-        ));
-        assert!(form.field(field::CHECK_UPDATES_NOW).is_some());
+        let toggle = form.field(field::CHECK_UPDATES).unwrap();
+        assert!(matches!(toggle.kind, FieldKind::Toggle { on: true }));
+        let button = form.field(field::CHECK_UPDATES_NOW).unwrap();
+        // A build without an update key offers the controls, greyed out.
+        let available = deskspace_update::is_configured();
+        assert_eq!(toggle.enabled, available);
+        assert_eq!(button.enabled, available);
     }
 
     #[test]

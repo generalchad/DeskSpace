@@ -1463,7 +1463,8 @@ elsewhere stay stable.
   - Auto-update (F-45, `deskspace-update`) is opt-in and installs the full
     package from a minisign-signed `latest.json`. Until the maintainer sets
     the `DESKSPACE_MINISIGN_KEY` secret and `UPDATE_PUBKEY`, releases ship
-    without a feed and a check reports that no channel is configured.
+    without a feed, and the app greys out the tray's "Check for updates…" and
+    the Settings update controls (`deskspace_update::is_configured`).
   - The toolchain is pinned in `rust-toolchain.toml`, and the release build
     is reproducible (`--remap-path-prefix` in `release.yml`, `/Brepro` in
     `build.rs`).

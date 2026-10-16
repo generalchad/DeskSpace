@@ -346,7 +346,8 @@ impl App {
             self.visibility_entry(),
             MenuEntry::item(menu::NEW_SPACE, "New space"),
             MenuEntry::Separator,
-            MenuEntry::item(menu::CHECK_UPDATES, "Check for updates\u{2026}"),
+            MenuEntry::item(menu::CHECK_UPDATES, "Check for updates\u{2026}")
+                .enabled(deskspace_update::is_configured()),
             MenuEntry::Separator,
             MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
         ];

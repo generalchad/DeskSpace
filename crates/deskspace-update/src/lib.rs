@@ -48,10 +48,17 @@ pub struct Available {
     update: Update,
 }
 
+/// Whether this build can check for updates at all. The app disables its
+/// update controls when it cannot, rather than offering a check that always
+/// fails.
+pub fn is_configured() -> bool {
+    !UPDATE_PUBKEY.trim().is_empty()
+}
+
 /// Checks the feed for a release newer than the running build. Blocking; call
 /// it on a worker thread. `Ok(None)` means the app is up to date.
 pub fn check() -> Result<Option<Available>, UpdateError> {
-    if UPDATE_PUBKEY.trim().is_empty() {
+    if !is_configured() {
         return Err(UpdateError::NotConfigured);
     }
     let current = parse(env!("CARGO_PKG_VERSION"))?;
