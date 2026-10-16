@@ -216,7 +216,8 @@ Rust specifics:
 - `///` doc comments are positive documentation and are expected on public
   library items whose behavior is not obvious. Keep them concise.
 - Every `unsafe` block carries a `// SAFETY:` comment stating why the invariants
-  hold. This is the one comment that is never optional.
+  hold. This is the one comment that is never optional; the workspace lint
+  `clippy::undocumented_unsafe_blocks` (root `Cargo.toml`) enforces it.
 - A comment must be at least as correct as the code. When you change code,
   update or delete its comment in the same change.
 

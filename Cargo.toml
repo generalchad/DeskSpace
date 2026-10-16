@@ -11,6 +11,12 @@ authors = ["Timothy W. Brown"]
 repository = "https://github.com/generalchad/DeskSpace"
 homepage = "https://github.com/generalchad/DeskSpace"
 description = "A free and open-source desktop space organizer for Windows"
+# The crates are internal to the app; nothing is published to crates.io.
+publish = false
+
+[workspace.lints.clippy]
+# AGENTS.md: every `unsafe` block carries a `// SAFETY:` comment.
+undocumented_unsafe_blocks = "deny"
 
 [workspace.dependencies]
 deskspace-core = { path = "crates/deskspace-core" }

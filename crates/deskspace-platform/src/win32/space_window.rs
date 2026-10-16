@@ -468,7 +468,8 @@ fn button_for(message: u32) -> MouseButton {
 }
 
 unsafe fn paint(window: HWND) {
-    // SAFETY (all calls): `window` is live and the state borrows are short.
+    // SAFETY: for every call, `window` is live and the state borrows are
+    // short.
     unsafe {
         let checked_out = with_state(window, |state| {
             (state.painter.take(), state.scene.take(), state.frame.paint)

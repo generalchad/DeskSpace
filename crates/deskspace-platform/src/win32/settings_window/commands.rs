@@ -24,8 +24,9 @@ pub(super) unsafe fn window_text(control: HWND) -> String {
 pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, control: HWND) {
     let index = (id - CONTROL_BASE) / 4;
     let part = (id - CONTROL_BASE) % 4;
-    // SAFETY (all calls): `window` is the live settings window and `control`
-    // its child; state borrows end before any control message is sent.
+    // SAFETY: for every call, `window` is the live settings window and
+    // `control` its child; state borrows end before any control message is
+    // sent.
     unsafe {
         let Some(Some((field, color))) = with_state(window, |state| {
             if state.updating {
@@ -139,7 +140,7 @@ pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, contro
 }
 
 pub(super) unsafe fn on_scroll(window: HWND, control: HWND) {
-    // SAFETY (all calls): `control` is a trackbar child of this window.
+    // SAFETY: for every call, `control` is a trackbar child of this window.
     unsafe {
         let Some(Some((index, field_id, suffix, last, value_text, value_edit))) =
             with_state(window, |state| {

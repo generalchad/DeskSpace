@@ -50,9 +50,9 @@ pub fn enumerate_desktop_items() -> Result<Vec<DesktopEntry>, PlatformError> {
 fn enumerate_via_view() -> Option<Vec<DesktopEntry>> {
     let view = crate::win32::shell_view::desktop_shell_view()?;
     let folder: IFolderView = view.cast().ok()?;
-    // SAFETY: `folder` is a live desktop view; both calls only fill
-    // out-parameters.
+    // SAFETY: `folder` is a live desktop view; the call fills an out-parameter.
     let parent: IShellFolder = unsafe { folder.GetFolder() }.ok()?;
+    // SAFETY: as above.
     let count = unsafe { folder.ItemCount(SVGIO_ALLVIEW) }.ok()?;
     let mut entries = Vec::with_capacity(count.max(0) as usize);
 

@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
 # The updater itself. Native TLS on Windows is SChannel, which keeps the
@@ -15,3 +16,6 @@ cargo-packager-updater = { version = "0.2.3", default-features = false, features
     "native-tls",
 ] }
 thiserror.workspace = true
+
+[lints]
+workspace = true

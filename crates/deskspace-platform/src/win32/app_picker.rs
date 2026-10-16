@@ -568,9 +568,10 @@ fn ensure_class() -> bool {
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut PickerState) -> R) -> Option<R> {
-    // SAFETY: the pointer is the live state `pick_apps` owns for as long as
-    // the window exists, and `f` cannot re-enter to create a second borrow.
+    // SAFETY: reading a window long has no memory-safety preconditions.
     let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *mut PickerState;
+    // SAFETY: the pointer is null or the live state `pick_apps` owns for as
+    // long as the window exists, and `f` cannot re-enter for a second borrow.
     unsafe { pointer.as_mut() }.map(f)
 }
 

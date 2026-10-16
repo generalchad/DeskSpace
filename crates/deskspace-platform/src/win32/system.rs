@@ -211,9 +211,13 @@ unsafe fn face_is(font: HFONT, expected: PCWSTR) -> bool {
     if dc.is_invalid() {
         return false;
     }
+    // SAFETY: `dc` is the valid screen DC above and `font` a live font; the
+    // previous object is selected back before the DC is released.
     let previous = unsafe { SelectObject(dc, HGDIOBJ(font.0)) };
     let mut name = [0u16; 32];
+    // SAFETY: `name` is a writable buffer whose length the slice carries.
     let length = unsafe { GetTextFaceW(dc, Some(&mut name[..])) };
+    // SAFETY: restores the DC's original font and releases the DC we got.
     unsafe {
         SelectObject(dc, previous);
         ReleaseDC(None, dc);
