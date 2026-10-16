@@ -858,6 +858,145 @@ mod tests {
         assert!(!a.intersects(*b));
     }
 
+    #[test]
+    fn delete_and_rename_missing_space_are_not_found() {
+        let mut desktop = Desktop::new();
+        let missing = SpaceId(999);
+        assert_eq!(
+            desktop.apply(Command::DeleteSpace { id: missing }, bounds()),
+            CommandOutcome::NotFound
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::RenameSpace {
+                    id: missing,
+                    title: "B".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn rename_space_sets_the_title() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.apply(
+            Command::RenameSpace {
+                id,
+                title: "Projects".into(),
+            },
+            bounds(),
+        );
+        assert_eq!(desktop.space(id).unwrap().title, "Projects");
+    }
+
+    #[test]
+    fn move_space_snaps_and_stays_inside_the_bounds() {
+        let mut desktop = Desktop::new();
+        let snap = desktop.layout.snap;
+        let id = desktop.add_space("A", Rect::new(0, 0, 200, 100));
+        desktop.apply(
+            Command::MoveSpace {
+                id,
+                delta: Point::new(snap + 1, 5000),
+            },
+            bounds(),
+        );
+        let rect = desktop.space(id).unwrap().rect;
+        assert_eq!(rect.x % snap, 0);
+        assert_eq!(
+            rect.y + rect.height,
+            bounds().height,
+            "clamped to the bottom"
+        );
+    }
+
+    #[test]
+    fn set_space_rect_snaps_and_respects_the_lock() {
+        let mut desktop = Desktop::new();
+        let snap = desktop.layout.snap;
+        let id = desktop.add_space("A", Rect::new(0, 0, 200, 100));
+        let set = |x| Command::SetSpaceRect {
+            id,
+            rect: Rect::new(x, 0, 200, 100),
+        };
+        assert_eq!(
+            desktop.apply(set(snap * 3 + 1), bounds()),
+            CommandOutcome::Applied
+        );
+        assert_eq!(desktop.space(id).unwrap().rect.x % snap, 0);
+        desktop.apply(Command::ToggleLock { id }, bounds());
+        assert_eq!(desktop.apply(set(0), bounds()), CommandOutcome::Rejected);
+    }
+
+    #[test]
+    fn toggle_rollup_flips_both_ways() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.apply(Command::ToggleRollup { id }, bounds());
+        assert!(desktop.space(id).unwrap().rolled_up);
+        desktop.apply(Command::ToggleRollup { id }, bounds());
+        assert!(!desktop.space(id).unwrap().rolled_up);
+    }
+
+    #[test]
+    fn auto_arrange_lays_items_on_the_grid() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 0, 0),
+            item(2, "b", ItemKind::File, 0, 0),
+        ]);
+        desktop.space_mut(id).unwrap().items[1].position = Point::new(999, 999);
+        assert_eq!(
+            desktop.apply(Command::AutoArrange { id }, bounds()),
+            CommandOutcome::Applied
+        );
+        assert_eq!(
+            desktop.space(id).unwrap().items[1].position,
+            desktop.layout.grid_position(1)
+        );
+        assert_eq!(
+            desktop.apply(Command::AutoArrange { id: SpaceId(999) }, bounds()),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn rename_item_updates_path_and_label() {
+        let (mut desktop, id) = space_with_items(vec![item(1, "a", ItemKind::File, 0, 0)]);
+        let item_id = desktop.space(id).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::RenameItem {
+                    id: item_id,
+                    path: "C:/missing/b".into(),
+                    label: "b".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let renamed = desktop.item(item_id).unwrap();
+        assert_eq!(renamed.label, "b");
+        assert_eq!(renamed.path, PathBuf::from("C:/missing/b"));
+    }
+
+    #[test]
+    fn reorder_items_rejects_an_empty_selection() {
+        let (mut desktop, _) = space_with_items(vec![item(1, "a", ItemKind::File, 0, 0)]);
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItems {
+                    ids: Vec::new(),
+                    index: 0,
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+    }
+
     fn space_with_items(items: Vec<Item>) -> (Desktop, SpaceId) {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 400, 400));
