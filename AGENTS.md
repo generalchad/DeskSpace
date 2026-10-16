@@ -174,7 +174,7 @@ nothing in the workspace. Do not introduce upward dependencies.
 Commit after every change; never leave finished work uncommitted. Keep each
 commit one logical unit of work, and split unrelated edits into separate
 commits - do not batch them. When working from `docs/TASKS.md`, make one commit per
-task (see its "How to work a task", rule 8) and tick the task's box in that
+task (see its "How to work a task", rule 7) and tick the task's box in that
 same commit. Follow the message style there: `feat: ...`, `fix: ...`,
 `refactor: ...`, `docs: ...`, `test: ...`, `perf: ...`, `ci: ...`,
 `release: ...`, imperative and lowercase. Run `cargo fmt --all`,
