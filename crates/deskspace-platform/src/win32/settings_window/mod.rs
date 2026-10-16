@@ -6,7 +6,8 @@
 //! Each page is a container window (`PAGE_CLASS`) that forwards control
 //! notifications to the settings window, so every control can be found by id
 //! in one place. Window state lives behind a raw `*mut SettingsState` in
-//! `GWLP_USERDATA` and is freed exactly once, in `WM_NCDESTROY`.
+//! `GWLP_USERDATA` (`window_state`) and is freed exactly once, in
+//! `WM_NCDESTROY`.
 
 mod build;
 mod commands;
@@ -43,18 +44,18 @@ use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_OWNERDRAW,
     BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
-    CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE,
-    EN_KILLFOCUS, ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows,
-    GWLP_USERDATA, GetClassNameW, GetClientRect, GetCursorPos, GetParent, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP, ICON_BIG, ICON_SMALL, IsIconic,
-    LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE,
-    LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, RegisterClassW, SW_HIDE, SW_RESTORE, SW_SHOW,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM,
-    WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETICON,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
-    WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE, EN_KILLFOCUS,
+    ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GetClassNameW,
+    GetClientRect, GetCursorPos, GetParent, GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP,
+    ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL,
+    LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED,
+    RegisterClassW, SW_HIDE, SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC,
+    WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT,
+    WM_SETICON, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE,
+    WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -66,7 +67,7 @@ use crate::ui::{
 };
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
-use crate::win32::{runtime, tray};
+use crate::win32::{runtime, tray, window_state};
 
 use build::build;
 use commands::{on_field_command, on_scroll};
@@ -438,20 +439,15 @@ fn ensure_classes(instance: HINSTANCE) -> Result<(), PlatformError> {
     }
 }
 
-unsafe fn state_of(window: HWND) -> *mut SettingsState {
-    // SAFETY: reading the user-data slot of a window of our class.
-    unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SettingsState }
-}
-
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 pub(super) unsafe fn with_state<R>(
     window: HWND,
     f: impl FnOnce(&mut SettingsState) -> R,
 ) -> Option<R> {
-    // SAFETY: a non-null pointer is the live state (WM_NCDESTROY clears the
-    // slot before freeing), and `f` cannot re-enter to create a second borrow.
-    unsafe { state_of(window).as_mut() }.map(f)
+    // SAFETY: the settings window always holds a `SettingsState`; the caller
+    // rules out re-entry.
+    unsafe { window_state::with_state(window, f) }
 }
 
 pub(super) fn settings_event(event: SettingsEvent) {
@@ -469,13 +465,7 @@ unsafe extern "system" fn wndproc(
     unsafe {
         match message {
             WM_NCCREATE => {
-                let create = lparam.0 as *const CREATESTRUCTW;
-                if !create.is_null() {
-                    let state = (*create).lpCreateParams as *mut SettingsState;
-                    if !state.is_null() {
-                        SetWindowLongPtrW(window, GWLP_USERDATA, state as isize);
-                    }
-                }
+                window_state::attach_create_param::<SettingsState>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_COMMAND => {
@@ -578,11 +568,7 @@ unsafe extern "system" fn wndproc(
             }
             WM_NCDESTROY => {
                 runtime::settings_closed(window);
-                let state = state_of(window);
-                if !state.is_null() {
-                    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-                    drop(Box::from_raw(state));
-                }
+                window_state::free::<SettingsState>(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),

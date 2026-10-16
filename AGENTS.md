@@ -226,9 +226,10 @@ Rust specifics:
 
 - The bundled MCP cargo tooling passes `--locked`. Keep `Cargo.lock` current
   when adding or updating dependencies.
-- Space and settings window state live behind raw pointers in
-  `GWLP_USERDATA` and are freed exactly once in `WM_NCDESTROY`. Do not free
-  them elsewhere.
+- Window state lives behind raw pointers in `GWLP_USERDATA`, always through
+  `win32/window_state.rs`: owned state is freed exactly once in
+  `WM_NCDESTROY` (`window_state::free`), and a modal window's borrowed state
+  is only detached there. Do not free it elsewhere.
 - `deskspace_platform::run` takes the `EventHandler` and blocks on the message
   pump. The handler is checked out of the runtime while it runs; never hold a
   `with_runtime` / `with_state` borrow across a Win32 call that can send

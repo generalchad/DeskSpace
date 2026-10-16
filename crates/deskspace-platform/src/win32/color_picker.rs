@@ -38,18 +38,18 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, ReleaseCapture, SetCapture, VK_ESCAPE, VK_RETURN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GWLP_USERDATA, GetCursorPos, GetMessageW, GetWindowLongPtrW, IsWindow, MSG, PostQuitMessage,
-    RegisterClassW, SW_SHOW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN, WNDCLASSW, WS_CLIPCHILDREN,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
+    GetMessageW, IsWindow, MSG, PostQuitMessage, RegisterClassW, SW_SHOW, SetForegroundWindow,
+    ShowWindow, TranslateMessage, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN,
+    WNDCLASSW, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::win32::dark_mode::{self, UiColors};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::{draw_glyph, glyph_font, message_logfont, work_area_at};
+use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
 
@@ -732,11 +732,9 @@ fn ensure_class(instance: windows::Win32::Foundation::HINSTANCE) -> bool {
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut PickerState) -> R) -> Option<R> {
-    // SAFETY: reading a window long has no memory-safety preconditions.
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *mut PickerState;
-    // SAFETY: the pointer is null or the live state `pick` owns for as long
-    // as the window exists, and `f` cannot re-enter for a second borrow.
-    unsafe { pointer.as_mut() }.map(f)
+    // SAFETY: picker windows hold the `PickerState` `pick` owns for as long
+    // as the window exists; the caller rules out re-entry.
+    unsafe { window_state::with_state(window, f) }
 }
 
 /// The client point from a mouse message's `lparam`.
@@ -765,13 +763,7 @@ unsafe extern "system" fn wndproc(
     unsafe {
         match message {
             WM_NCCREATE => {
-                let create = lparam.0 as *const CREATESTRUCTW;
-                if !create.is_null() {
-                    let state = (*create).lpCreateParams as *mut PickerState;
-                    if !state.is_null() {
-                        SetWindowLongPtrW(window, GWLP_USERDATA, state as isize);
-                    }
-                }
+                window_state::attach_create_param::<PickerState>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             // The whole client is painted in `WM_PAINT`.
@@ -900,7 +892,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_NCDESTROY => {
-                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+                window_state::detach(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),

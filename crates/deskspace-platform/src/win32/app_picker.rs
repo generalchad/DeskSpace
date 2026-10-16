@@ -28,11 +28,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{IShellItem, SHCreateItemFromIDList};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CREATESTRUCTW, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL,
-    GWLP_USERDATA, GetClientRect, GetWindowLongPtrW, RegisterClassW, SendMessageW,
-    SetWindowLongPtrW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
-    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
-    WM_NCDESTROY, WM_NOTIFY, WNDCLASSW, WS_EX_CLIENTEDGE, WS_TABSTOP,
+    BS_DEFPUSHBUTTON, BS_PUSHBUTTON, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, GetClientRect,
+    RegisterClassW, SendMessageW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND,
+    WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WNDCLASSW, WS_EX_CLIENTEDGE, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
@@ -44,6 +43,7 @@ use crate::win32::drag_image::dib;
 use crate::win32::icons::{resample, shell_item_icon};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::wide;
+use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceAppPicker");
 const ID_SEARCH: usize = 10;
@@ -487,10 +487,7 @@ unsafe extern "system" fn wndproc(
     unsafe {
         match message {
             WM_NCCREATE => {
-                let create = lparam.0 as *const CREATESTRUCTW;
-                if let Some(create) = create.as_ref() {
-                    SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize);
-                }
+                window_state::attach_create_param::<PickerState>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_COMMAND => {
@@ -540,7 +537,7 @@ unsafe extern "system" fn wndproc(
             WM_NCDESTROY => {
                 // The state belongs to `pick_apps`, which drops it after the
                 // modal loop; only the pointer is cleared here.
-                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+                window_state::detach(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
@@ -568,11 +565,9 @@ fn ensure_class() -> bool {
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut PickerState) -> R) -> Option<R> {
-    // SAFETY: reading a window long has no memory-safety preconditions.
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *mut PickerState;
-    // SAFETY: the pointer is null or the live state `pick_apps` owns for as
-    // long as the window exists, and `f` cannot re-enter for a second borrow.
-    unsafe { pointer.as_mut() }.map(f)
+    // SAFETY: picker windows hold the `PickerState` `pick_apps` owns for as
+    // long as the window exists; the caller rules out re-entry.
+    unsafe { window_state::with_state(window, f) }
 }
 
 /// The indices of the apps whose names contain every word of `query`,

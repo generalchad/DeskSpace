@@ -474,7 +474,7 @@ its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog` |
+| Windows | `window_state` (each window's `GWLP_USERDATA` state; use it for a new window class), `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |

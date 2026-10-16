@@ -20,11 +20,10 @@ use windows::Win32::UI::Shell::{
     FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CREATESTRUCTW, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL,
-    GWLP_USERDATA, GetClientRect, GetWindowLongPtrW, RegisterClassW, SetWindowLongPtrW,
-    SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN, WM_CTLCOLOREDIT,
-    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WNDCLASSW,
-    WS_EX_CLIENTEDGE, WS_TABSTOP,
+    BS_DEFPUSHBUTTON, BS_PUSHBUTTON, DefWindowProcW, EN_CHANGE, ES_AUTOHSCROLL, GetClientRect,
+    RegisterClassW, SetWindowTextW, WINDOW_EX_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_ERASEBKGND, WM_NCCREATE,
+    WM_NCDESTROY, WNDCLASSW, WS_EX_CLIENTEDGE, WS_TABSTOP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -32,6 +31,7 @@ use crate::ui::{CustomShortcut, ShortcutTarget};
 use crate::win32::dialog::{self, DialogChrome, ID_CANCEL, ID_OK, window_text};
 use crate::win32::shortcuts::{display_name, resolve_path};
 use crate::win32::system::wide;
+use crate::win32::window_state;
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceShortcutDialog");
 const ID_TARGET: usize = 10;
@@ -374,10 +374,7 @@ unsafe extern "system" fn wndproc(
     unsafe {
         match message {
             WM_NCCREATE => {
-                let create = lparam.0 as *const CREATESTRUCTW;
-                if let Some(create) = create.as_ref() {
-                    SetWindowLongPtrW(window, GWLP_USERDATA, create.lpCreateParams as isize);
-                }
+                window_state::attach_create_param::<DialogState>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_COMMAND => {
@@ -414,7 +411,7 @@ unsafe extern "system" fn wndproc(
             WM_NCDESTROY => {
                 // The state belongs to `custom_shortcut`, which drops it after
                 // the modal loop; only the pointer is cleared here.
-                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+                window_state::detach(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
@@ -442,10 +439,7 @@ fn ensure_class() -> bool {
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut DialogState) -> R) -> Option<R> {
-    // SAFETY: reading a window long has no memory-safety preconditions.
-    let pointer = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) } as *mut DialogState;
-    // SAFETY: the pointer is null or the live state `custom_shortcut` owns
-    // for as long as the window exists, and `f` cannot re-enter for a second
-    // borrow.
-    unsafe { pointer.as_mut() }.map(f)
+    // SAFETY: dialog windows hold the `DialogState` `custom_shortcut` owns for
+    // as long as the window exists; the caller rules out re-entry.
+    unsafe { window_state::with_state(window, f) }
 }

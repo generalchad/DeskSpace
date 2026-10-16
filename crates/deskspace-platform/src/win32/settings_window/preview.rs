@@ -226,10 +226,12 @@ unsafe fn field_data(window: HWND) -> Option<FieldData> {
     }
 }
 
-unsafe fn view_of(window: HWND) -> Option<&'static mut PreviewView> {
-    // SAFETY: a non-null slot is the live view (WM_NCDESTROY clears it before
-    // freeing); callers keep the reference only within one message.
-    unsafe { (GetWindowLongPtrW(window, GWLP_USERDATA) as *mut PreviewView).as_mut() }
+/// Runs `f` with a short-lived borrow of the preview's own view state. `f`
+/// must not call anything that can re-enter `preview_wndproc`.
+unsafe fn with_view<R>(window: HWND, f: impl FnOnce(&mut PreviewView) -> R) -> Option<R> {
+    // SAFETY: preview windows always hold a `PreviewView`; the caller rules
+    // out re-entry.
+    unsafe { window_state::with_state(window, f) }
 }
 
 unsafe fn layout_of(window: HWND, data: &FieldData) -> PreviewLayout {
@@ -256,7 +258,7 @@ pub(super) unsafe extern "system" fn preview_wndproc(
         match message {
             WM_NCCREATE => {
                 let view = Box::into_raw(Box::new(PreviewView::default()));
-                SetWindowLongPtrW(window, GWLP_USERDATA, view as isize);
+                window_state::attach(window, view);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_ERASEBKGND => LRESULT(1),
@@ -269,20 +271,19 @@ pub(super) unsafe extern "system" fn preview_wndproc(
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
-                if let Some(view) = view_of(window) {
+                let had_hover = with_view(window, |view| {
                     view.tracking = false;
                     view.pressed = None;
-                    if view.hover.take().is_some() {
-                        let _ = InvalidateRect(Some(window), None, false);
-                    }
+                    view.hover.take().is_some()
+                });
+                if had_hover == Some(true) {
+                    let _ = InvalidateRect(Some(window), None, false);
                 }
                 LRESULT(0)
             }
             WM_LBUTTONDOWN => {
                 let hit = hit_at(window, mouse_point(lparam));
-                if let Some(view) = view_of(window) {
-                    view.pressed = hit;
-                }
+                with_view(window, |view| view.pressed = hit);
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
@@ -295,9 +296,9 @@ pub(super) unsafe extern "system" fn preview_wndproc(
                 LRESULT(0)
             }
             WM_SETCURSOR => {
-                let hand = view_of(window).is_some_and(|view| {
+                let hand = with_view(window, |view| {
                     matches!(view.hover, Some(PreviewHit::Remove(_) | PreviewHit::Add))
-                });
+                }) == Some(true);
                 let shape = if hand { IDC_HAND } else { IDC_ARROW };
                 if let Ok(cursor) = LoadCursorW(None, shape) {
                     SetCursor(Some(cursor));
@@ -305,11 +306,7 @@ pub(super) unsafe extern "system" fn preview_wndproc(
                 LRESULT(1)
             }
             WM_NCDESTROY => {
-                let view = GetWindowLongPtrW(window, GWLP_USERDATA) as *mut PreviewView;
-                if !view.is_null() {
-                    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-                    drop(Box::from_raw(view));
-                }
+                window_state::free::<PreviewView>(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
@@ -333,7 +330,7 @@ unsafe fn hit_at(window: HWND, point: Point) -> Option<PreviewHit> {
         if !data.enabled {
             return None;
         }
-        let scroll = view_of(window).map_or(0, |view| view.scroll);
+        let scroll = with_view(window, |view| view.scroll).unwrap_or(0);
         layout_of(window, &data).hit(point, scroll)
     }
 }
@@ -342,10 +339,14 @@ unsafe fn on_mouse_move(window: HWND, point: Point) {
     // SAFETY: our own window; TrackMouseEvent only arms WM_MOUSELEAVE.
     unsafe {
         let hit = hit_at(window, point);
-        let Some(view) = view_of(window) else {
+        let Some((tracking, hover_changed)) = with_view(window, |view| {
+            let changed = view.hover != hit;
+            view.hover = hit;
+            (view.tracking, changed)
+        }) else {
             return;
         };
-        if !view.tracking {
+        if !tracking {
             // Ask for WM_MOUSELEAVE so the hover clears when the pointer
             // leaves.
             // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackmouseevent
@@ -355,10 +356,10 @@ unsafe fn on_mouse_move(window: HWND, point: Point) {
                 hwndTrack: window,
                 dwHoverTime: 0,
             };
-            view.tracking = TrackMouseEvent(&mut track).is_ok();
+            let tracking = TrackMouseEvent(&mut track).is_ok();
+            with_view(window, |view| view.tracking = tracking);
         }
-        if view.hover != hit {
-            view.hover = hit;
+        if hover_changed {
             let _ = InvalidateRect(Some(window), None, false);
         }
     }
@@ -371,15 +372,18 @@ unsafe fn scroll_by(window: HWND, delta: i32) {
             return;
         };
         let layout = layout_of(window, &data);
-        let Some(view) = view_of(window) else {
-            return;
-        };
         // One wheel notch (WHEEL_DELTA, 120) scrolls half a tile row.
         let step = scaled(TILE_HEIGHT, data.dpi) / 2;
-        let scroll = (view.scroll - delta * step / 120).clamp(0, layout.max_scroll());
-        if scroll != view.scroll {
-            view.scroll = scroll;
-            view.hover = None;
+        let scrolled = with_view(window, |view| {
+            let scroll = (view.scroll - delta * step / 120).clamp(0, layout.max_scroll());
+            let changed = scroll != view.scroll;
+            if changed {
+                view.scroll = scroll;
+                view.hover = None;
+            }
+            changed
+        });
+        if scrolled == Some(true) {
             let _ = InvalidateRect(Some(window), None, false);
         }
     }
@@ -391,7 +395,7 @@ unsafe fn on_click(window: HWND, point: Point) {
     // handler may rebuild or destroy the settings window.
     unsafe {
         let hit = hit_at(window, point);
-        let pressed = view_of(window).and_then(|view| view.pressed.take());
+        let pressed = with_view(window, |view| view.pressed.take()).flatten();
         if hit.is_none() || hit != pressed {
             return;
         }
@@ -405,7 +409,7 @@ unsafe fn on_click(window: HWND, point: Point) {
             }
             Some(PreviewHit::Add) => {
                 let layout = layout_of(window, &data);
-                let scroll = view_of(window).map_or(0, |view| view.scroll);
+                let scroll = with_view(window, |view| view.scroll).unwrap_or(0);
                 let tile = layout.tile(layout.tile_of(PreviewHit::Add), scroll);
                 let mut anchor = POINT {
                     x: tile.x,
@@ -441,11 +445,9 @@ unsafe fn paint(window: HWND) {
             let bitmap = CreateCompatibleBitmap(dc, width, height);
             let previous = SelectObject(buffer, HGDIOBJ(bitmap.0));
             let layout = layout_of(window, &data);
-            let view = view_of(window);
-            let scroll = view
-                .as_ref()
-                .map_or(0, |view| view.scroll.min(layout.max_scroll()));
-            let hover = view.and_then(|view| view.hover);
+            let (scroll, hover) =
+                with_view(window, |view| (view.scroll, view.hover)).unwrap_or((0, None));
+            let scroll = scroll.min(layout.max_scroll());
             draw(buffer, &data, &layout, scroll, hover, client);
             let _ = BitBlt(dc, 0, 0, width, height, Some(buffer), 0, 0, SRCCOPY);
             SelectObject(buffer, previous);

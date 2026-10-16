@@ -8,8 +8,8 @@
 //! WorkerW. Child windows get neither DWM backdrops nor composited alpha, so
 //! they are painted opaque and rounded with a window region.
 //!
-//! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA` and
-//! is freed exactly once, in `WM_NCDESTROY`.
+//! Window state lives behind a raw `*mut SpaceState` in `GWLP_USERDATA`
+//! (`window_state`) and is freed exactly once, in `WM_NCDESTROY`.
 
 use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -26,15 +26,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GWLP_USERDATA, GetClientRect,
-    GetParent, GetWindowLongPtrW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW,
-    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE,
-    RegisterClassW, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GetClientRect, GetParent, GetWindowRect, HTCLIENT,
+    HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+    LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, RegisterClassW, SC_MINIMIZE, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes,
+    SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
     WM_WINDOWPOSCHANGING, WNDCLASSW, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
@@ -45,7 +44,7 @@ use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::system::{hiword, loword};
-use crate::win32::{drop_target, dwm, runtime};
+use crate::win32::{drop_target, dwm, runtime, window_state};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
@@ -430,17 +429,12 @@ unsafe fn update_region(hwnd: HWND) {
     }
 }
 
-unsafe fn state_of(window: HWND) -> *mut SpaceState {
-    // SAFETY: reading the user-data slot of a window of our class.
-    unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) as *mut SpaceState }
-}
-
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
 unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut SpaceState) -> R) -> Option<R> {
-    // SAFETY: a non-null pointer is the live state (WM_NCDESTROY clears the
-    // slot before freeing), and `f` cannot re-enter to create a second borrow.
-    unsafe { state_of(window).as_mut() }.map(f)
+    // SAFETY: space windows always hold a `SpaceState`; the caller rules out
+    // re-entry.
+    unsafe { window_state::with_state(window, f) }
 }
 
 /// Converts a client point to the space's desktop coordinates: screen
@@ -508,13 +502,7 @@ unsafe extern "system" fn wndproc(
 
         match message {
             WM_NCCREATE => {
-                let create = lparam.0 as *const CREATESTRUCTW;
-                if !create.is_null() {
-                    let state = (*create).lpCreateParams as *mut SpaceState;
-                    if !state.is_null() {
-                        SetWindowLongPtrW(window, GWLP_USERDATA, state as isize);
-                    }
-                }
+                window_state::attach_create_param::<SpaceState>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             WM_PAINT => {
@@ -673,11 +661,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_NCDESTROY => {
-                let state = state_of(window);
-                if !state.is_null() {
-                    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-                    drop(Box::from_raw(state));
-                }
+                window_state::free::<SpaceState>(window);
                 DefWindowProcW(window, message, wparam, lparam)
             }
             _ => DefWindowProcW(window, message, wparam, lparam),

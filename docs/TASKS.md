@@ -328,10 +328,10 @@ Ids are `R1`-`R13` so they do not collide with the ROADMAP decision ids
   - a `win32/messages.rs` owning every `WM_APP + n` (today in
     `controller.rs`, `keyboard.rs`, and `outside_click.rs`; see the table in
     `CONTEXT.md` section 6), with a test that the values are unique;
-  - generic helpers for `GWLP_USERDATA` window state (copies in
-    `settings_window.rs` and `space_window.rs`) and for window-class
-    registration (`controller.rs`, `drag_ghost.rs`, `settings_window.rs`,
-    `space_window.rs`);
+  - a generic helper for window-class registration (`controller.rs`,
+    `drag_ghost.rs`, `settings_window.rs`, `space_window.rs`, and the
+    pickers and dialogs); the `GWLP_USERDATA` state helper is done
+    (`win32/window_state.rs`);
   - make internal modules private: `win32/mod.rs` has 12 `pub mod`s, though
     the app uses only the `lib.rs` re-exports.
 - **R4. Keep IO out of core.** `deskspace-core/src/item.rs` reads the file
