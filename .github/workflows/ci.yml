@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# A new push to a branch or pull request cancels its run still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -22,9 +30,29 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+  # Keeps `rust-version` in Cargo.toml honest: the workspace must still build
+  # on the minimum supported Rust, not just the pinned toolchain.
+  msrv:
+    name: minimum supported Rust
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the minimum supported toolchain
+        shell: pwsh
+        run: |
+          $msrv = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object name -eq 'deskspace-app' | Select-Object -ExpandProperty rust_version
+          rustup toolchain install $msrv --profile minimal
+          "MSRV=$msrv" >> $env:GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - name: Check
+        run: cargo +${{ env.MSRV }} check --workspace --all-targets --locked
 
   deny:
     name: dependencies

@@ -1450,7 +1450,8 @@ elsewhere stay stable.
   the storage folder.
 - **Packaging, signing, and auto-update.** The policy is ROADMAP D6 and the
   release steps are `RELEASING.md`; the facts that matter in the code:
-  - CI (`ci.yml`) runs fmt, clippy with `-D warnings`, tests, and
+  - CI (`ci.yml`) runs fmt, clippy with `-D warnings`, tests (all with
+    `--locked`), a `cargo check` on the `rust-version` toolchain, and
     `cargo deny check all`. A `v*` tag matching the workspace version runs
     `release.yml`, which publishes `deskspace_<version>_x64-setup.exe` (NSIS,
     built by the CI-only `cargo-packager` 0.11.8 from

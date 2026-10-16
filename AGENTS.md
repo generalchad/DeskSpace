@@ -20,7 +20,8 @@ under `cfg(windows)`, so the workspace does not build on other platforms.
 - Rust with the MSVC toolchain. `rust-toolchain.toml` pins the exact stable
   version, which rustup installs automatically (with the components and
   targets it lists). `Cargo.toml` sets `rust-version = "1.88"` as the minimum
-  supported version, a separate fact.
+  supported version, a separate fact that CI checks with its own job; raising
+  it is a deliberate `ci:` commit.
 - No other system dependencies
 
 To bump the toolchain, change the version in `rust-toolchain.toml` alone, fix
@@ -51,8 +52,8 @@ config at `%TEMP%\deskspace-dev\deskspace.toml`. Switches: `-Release`,
 
 Always run `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D
 warnings`, and `cargo test --workspace` before considering a change complete.
-CI (`.github/workflows/ci.yml`) treats clippy warnings as failures and also
-runs `cargo deny check all`.
+CI (`.github/workflows/ci.yml`) treats clippy warnings as failures, checks
+the build on the minimum supported Rust, and runs `cargo deny check all`.
 
 ## Design priorities
 
