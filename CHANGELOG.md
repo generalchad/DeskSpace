@@ -16,6 +16,26 @@ Notable changes to DeskSpace, newest first. The format follows
 - "Create shortcuts here" in the menu a right drag shows on a space, as in
   Explorer: the files stay where they are and the space gets a shortcut to
   each.
+- A zoom pop-up at the top of the screen shows the icon size as a percentage,
+  with zoom out, zoom in, and Reset. Ctrl+Plus, Ctrl+Minus, and Ctrl+0 zoom
+  as well as Ctrl+wheel.
+- With the desktop takeover on, dropping something on the desktop (a file, a
+  Start or taskbar app, or an item from a space) opens a new space holding it.
+- With the desktop takeover on, right-clicking an empty spot of the desktop
+  shows New space, DeskSpace settings, and Hide/Show spaces above Explorer's
+  own desktop menu. The Menu key and Shift+F10 open it too.
+- DeskSpace tells you once when it cannot save its settings, for example when
+  the config file is read-only, instead of losing changes silently.
+
+### Changed
+
+- A new space opens beside the row of spaces at the top of the monitor,
+  with the same gap as the others, instead of on top of whatever is under the
+  pointer.
+- Under "Match Explorer's display", Ctrl+wheel changes the desktop's own icon
+  size, as it does on the desktop, and spaces follow it.
+- Changing the icon size keeps every space's size and its title bar; use
+  "Fit to contents" to fit a space to its items.
 
 ### Fixed
 
@@ -23,7 +43,13 @@ Notable changes to DeskSpace, newest first. The format follows
   instead of after a restart.
 - Installing an update shuts DeskSpace down cleanly first, so the desktop
   icons are restored and the settings saved before the installer runs.
-
+- With the desktop takeover on, a space could slip under the desktop layer
+  after Show desktop or a task switch and stop taking clicks and drops.
+- The takeover desktop's icons follow an icon-size change.
+- Sorting or arranging a space that another space overlaps lays its icons on
+  its own grid.
+- Ctrl+wheel, Ctrl+click, and Shift+click in a space see the Ctrl and Shift
+  keys, so they no longer act as a plain scroll or click.
 - The update controls are greyed out in builds that cannot check for updates.
 - The release now publishes its update feed as `latest.json`, the name the
   updater reads.
