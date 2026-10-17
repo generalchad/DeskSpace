@@ -97,7 +97,9 @@ help inspect the look and the desktop layer.
   wheel scrolls a space whose items do not fit, and Ctrl+wheel changes the
   icon size: under "Match Explorer's display" (the default) it resizes the
   desktop's own icons and the spaces together, as Ctrl+wheel on the desktop
-  does; under "Custom" it changes DeskSpace's icon size.
+  does; under "Custom" it changes DeskSpace's icon size. A pop-up at the top
+  of the screen shows the size as a percentage, with buttons to zoom out, zoom
+  in, and reset to 100 %.
 - Double-click a space title bar to roll it up or down. Right-click a space for
   roll up, rename, lock, fit to contents, new shortcut, appearance, sort,
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"

@@ -1,5 +1,6 @@
 pub mod d2d;
 pub mod scene;
+pub mod zoom_bar;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -7,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub(crate) use d2d::PaintFrame;
 pub use d2d::{Painter, PreparedScene};
 pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
+pub use zoom_bar::ZoomBar;
 
 use deskspace_core::geometry::Rect;
 

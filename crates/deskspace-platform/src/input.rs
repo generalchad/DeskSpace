@@ -156,6 +156,18 @@ pub enum SelectionKey {
     PageDown,
 }
 
+/// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size
+/// as Ctrl+wheel does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoomAction {
+    /// Smaller icons, one Ctrl+wheel notch.
+    Out,
+    /// Larger icons, one Ctrl+wheel notch.
+    In,
+    /// Back to 100 %.
+    Reset,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left click or keyboard selection of the tray icon.
@@ -274,6 +286,8 @@ pub enum Event {
     FolderChanged,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
+    /// A zoom pop-up button was clicked (see `Ui::show_zoom_bar`).
+    Zoom(ZoomAction),
     /// Delivered once, before the runtime tears windows down: on quit, console
     /// Ctrl+C or close, and at logoff/shutdown. Save here.
     CloseRequested,

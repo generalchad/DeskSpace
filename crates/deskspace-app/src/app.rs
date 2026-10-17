@@ -26,6 +26,7 @@ mod settings_session;
 mod update;
 mod view;
 mod visibility;
+mod zoom;
 
 use pointer::PointerState;
 use rename::EditState;
@@ -82,6 +83,11 @@ const HEALTH_MS: u32 = 5_000;
 /// Timer id for the quiet-moment poll of a downloaded automatic update
 /// (`app/update.rs`).
 const UPDATE_IDLE_TIMER: usize = 9;
+/// Timer id for hiding the zoom pop-up (`app/zoom.rs`).
+const ZOOM_BAR_TIMER: usize = 10;
+/// How long the zoom pop-up stays after the last zoom, unless the pointer is
+/// over it.
+const ZOOM_BAR_MS: u32 = 2_000;
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -592,11 +598,13 @@ impl EventHandler for App {
             Event::Timer { id } if id == HEALTH_TIMER => self.health_tick(),
             Event::Timer { id } if id == UPDATE_TIMER => self.on_update_timer(ui),
             Event::Timer { id } if id == UPDATE_IDLE_TIMER => self.on_update_idle_timer(ui),
+            Event::Timer { id } if id == ZOOM_BAR_TIMER => self.on_zoom_bar_timer(ui),
             Event::Timer { .. } => {}
             // Worker threads hand their result back through the waker.
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
             Event::Wake { .. } => {}
+            Event::Zoom(action) => self.zoom(ui, action),
             Event::SystemThemeChanged => {
                 self.system_dark = system_uses_dark_mode();
                 self.system_accent = system_accent_color();

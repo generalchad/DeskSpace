@@ -1,8 +1,10 @@
 //! Ui methods for DeskSpace's own chrome: the color picker, popup
-//! menus, dark mode, the settings window, the tray tooltip, and quitting.
+//! menus, dark mode, the settings window, the zoom pop-up, the tray tooltip,
+//! and quitting.
 
 use super::*;
 use crate::input::ShellItem;
+use crate::render::ZoomBar;
 use crate::ui::CustomShortcut;
 
 impl Ui {
@@ -212,6 +214,41 @@ impl Ui {
         } else {
             Some(pressed as usize)
         }
+    }
+
+    /// Shows the zoom pop-up (ROADMAP F-57) with `bar`, or updates it in
+    /// place, at the top center of the monitor under the pointer. Its buttons
+    /// raise `Event::Zoom`; it stays until `hide_zoom_bar`.
+    pub fn show_zoom_bar(&mut self, bar: ZoomBar) {
+        let existing = with_runtime(|runtime| runtime.zoom_bar).flatten();
+        let hwnd = match existing {
+            Some(hwnd) => hwnd,
+            None => match zoom_bar::create() {
+                Ok(hwnd) => {
+                    with_runtime(|runtime| runtime.zoom_bar = Some(hwnd));
+                    hwnd
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not create the zoom pop-up");
+                    return;
+                }
+            },
+        };
+        zoom_bar::show(hwnd, bar);
+    }
+
+    pub fn hide_zoom_bar(&mut self) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.zoom_bar).flatten() {
+            zoom_bar::hide(hwnd);
+        }
+    }
+
+    /// Whether the zoom pop-up is showing with the pointer over it, so the app
+    /// can keep it open while the user reaches for its buttons.
+    pub fn is_zoom_bar_hovered(&self) -> bool {
+        with_runtime(|runtime| runtime.zoom_bar)
+            .flatten()
+            .is_some_and(zoom_bar::is_hovered)
     }
 
     pub fn is_settings_open(&self) -> bool {

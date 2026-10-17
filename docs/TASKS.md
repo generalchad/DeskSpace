@@ -56,6 +56,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
 | Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| Ctrl+wheel, zoom, the zoom pop-up's behavior | `deskspace-app/src/app/zoom.rs` |
 | Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
 | Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
@@ -76,6 +77,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
+| The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
 | The color picker popup | `deskspace-platform/src/win32/color_picker.rs` |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
@@ -552,6 +554,7 @@ each id is in `archive/TASKS-done.md`.
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
 | Mouse modifiers | Ctrl+wheel reaching a space with Ctrl set was confirmed from a log on 2026-10-16. Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
 | F13 (F-25) | Under the default preset, Ctrl+wheel stops at 16 and 256 px; under Custom it changes the spaces (and, with takeover, the layer's icons) but not Explorer's; a space with its own Custom look keeps its size either way. Default preset with takeover on (the layer's icons resize and re-space with the spaces, both ways) passed 2026-10-16. |
+| F-57 zoom pop-up | Ctrl+wheel over a space shows the pop-up at the top center of that monitor, in the spaces' look (light and dark, Acrylic, Blur, Solid, and Clear, which shows as Acrylic); − and + change the size one notch and grey out at the ends; Reset returns to 100 % and greys out there; it hides 2 s after the last zoom but stays while the pointer is on it; clicking it never takes the focus; the scale is right at 100 % and 150 % (and the percentage reads 100 % at "Medium icons" on a 150 % monitor). Its look at 100 % (dark, Acrylic) was checked from a screenshot on 2026-10-16; the buttons were not. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working

@@ -1,22 +1,17 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
-    next_desktop_icon_size, set_desktop_icon_size,
 };
 
 use super::drag::Drag;
 use super::files::ShortcutSource;
 use super::selection::marquee_selection;
 
-use super::{
-    App, ICON_SIZE_WHEEL_STEP, INFO_TIP_DELAY_MS, INFO_TIP_TIMER, RESIZE_BORDER, Surface,
-    WHEEL_DELTA,
-};
+use super::{App, INFO_TIP_DELAY_MS, INFO_TIP_TIMER, RESIZE_BORDER, Surface, WHEEL_DELTA};
 
 /// A left press on an already-selected item without Ctrl/Shift, resolved on
 /// release if it did not become a drag.
@@ -428,54 +423,6 @@ impl App {
                 space.resize_edges_at(point, RESIZE_BORDER)
             });
         ui.set_space_cursor(id.0, cursor_for(edges));
-    }
-
-    /// Ctrl+wheel changes the icon size, as it does on the desktop. A space
-    /// with its own `Custom` look keeps its size either way.
-    ///
-    /// Under "Match Explorer's display" (ROADMAP D9) it changes the desktop's
-    /// own icon size, which the spaces that match Explorer then follow, so
-    /// they stay 1:1 with the desktop. Otherwise, or when the desktop's size
-    /// cannot be read, it changes DeskSpace's global icon size, persisted
-    /// through the settings rather than the config's base grid.
-    pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
-        if self.config.theme.match_explorer()
-            && let Some(current) = self.shell_display.icon_size
-        {
-            self.adjust_desktop_icon_size(ui, current, delta);
-        } else {
-            self.adjust_global_icon_size(ui, delta);
-        }
-    }
-
-    fn adjust_desktop_icon_size(&mut self, ui: &mut Ui, current: i32, delta: i32) {
-        let notches = delta / WHEEL_DELTA;
-        if notches == 0 {
-            return;
-        }
-        if set_desktop_icon_size(next_desktop_icon_size(current, notches)) {
-            self.refresh_shell_display(ui);
-        }
-    }
-
-    fn adjust_global_icon_size(&mut self, ui: &mut Ui, delta: i32) {
-        let step = delta * ICON_SIZE_WHEEL_STEP / WHEEL_DELTA;
-        if step == 0 {
-            return;
-        }
-        let current = self
-            .config
-            .theme
-            .icon_size
-            .clamp(ICON_SIZE_RANGE.0, ICON_SIZE_RANGE.1) as i32;
-        let next = (current + step).clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into());
-        if next as u8 == self.config.theme.icon_size {
-            return;
-        }
-        self.config.theme.icon_size = next as u8;
-        self.relayout_all(ui);
-        self.schedule_save(ui);
-        self.refresh_settings(ui);
     }
 
     pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {

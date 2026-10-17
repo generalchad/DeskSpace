@@ -39,6 +39,7 @@ mod tray;
 pub(crate) mod watchdog;
 mod window_class;
 mod window_state;
+mod zoom_bar;
 
 pub use clipboard::ClipboardFiles;
 pub use desktop_shell::Placement;

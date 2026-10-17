@@ -51,7 +51,7 @@ use crate::win32::system::wide;
 use crate::win32::{
     clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
     folder_watch, menu, messages, outside_click, settings_window, shell_selection, shell_view,
-    space_window, tray, watchdog,
+    space_window, tray, watchdog, zoom_bar,
 };
 
 pub trait EventHandler {
@@ -92,6 +92,8 @@ struct Runtime {
     drag_ghost: Option<DragGhost>,
     /// Created on the first item hover and reused for every info tip.
     info_tip: Option<InfoTip>,
+    /// The zoom pop-up (ROADMAP F-57), created when it is first shown.
+    zoom_bar: Option<HWND>,
     /// The folder under watch and its worker, when `Ui::watch_folder` is on.
     /// Dropped on teardown, which stops the worker.
     folder_watch: Option<(PathBuf, folder_watch::FolderWatch)>,
@@ -187,6 +189,7 @@ pub(crate) fn destroy_ui_windows() {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.extend(runtime.settings.take());
         windows.extend(runtime.layer.take());
+        windows.extend(runtime.zoom_bar.take());
         (windows, runtime.drag_ghost.take(), runtime.info_tip.take())
     })
     .unwrap_or_default();
@@ -301,6 +304,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             close_dispatched: false,
             drag_ghost: None,
             info_tip: None,
+            zoom_bar: None,
             folder_watch: None,
         });
     });

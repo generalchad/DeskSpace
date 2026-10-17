@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (389 tests) are green. Update this count whenever a
+  `cargo test --workspace` (396 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -150,6 +150,7 @@ windows and controls.
   | `hit` | surface lookups (`surface_item_at`, `surface_palette`, `find_item_by_file`) |
   | `selection` | `Selection`, keyboard selection (`on_navigate`, `on_typed`), `active_items` |
   | `pointer` | `PointerState`, mouse events, resize, hover, marquee |
+  | `zoom` | the icon size zoom changes (`ZoomLevel`), Ctrl+wheel, Reset, and the zoom pop-up |
   | `drag` | `Drag`, drag-to-rearrange, the drag image, and drag out |
   | `rename` | `EditState`, inline rename of titles and items |
   | `files` | drops, delete, prune, `resync_desktop_layer` |
@@ -471,16 +472,17 @@ WindowSettings {
 Crate root (`src/`): `lib.rs` (re-exports; every module is private, so the
 app can import only from here),
 `input.rs` (`Event`, `SpaceEvent`, `SettingsEvent`, `TrayEvent`, `NavKey`,
-`SelectionKey`, `ClipboardAction`), `ui.rs` (`MenuEntry`, `SettingsForm` and
+`SelectionKey`, `ClipboardAction`, `ZoomAction`), `ui.rs` (`MenuEntry`, `SettingsForm` and
 its parts, `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs`
 (`PlatformError`). `render/`: `mod.rs` (`Icon`,
 `ItemMetrics`, check-box geometry), `scene.rs` (`SpaceScene`, `SpaceStyle`),
-`d2d/` (the painter). Everything with `unsafe` is under `win32/`:
+`zoom_bar.rs` (`ZoomBar` and the zoom pop-up's pure layout and hit test),
+`d2d/` (the painters). Everything with `unsafe` is under `win32/`:
 
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog` |
+| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -527,6 +529,7 @@ App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
 | 7 | `TYPE_TIMER` | 900 ms | type-to-select prefix buffer |
 | 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
 | 9 | `UPDATE_IDLE_TIMER` | 60 s | quiet-moment poll for a downloaded automatic update |
+| 10 | `ZOOM_BAR_TIMER` | 2000 ms | hide the zoom pop-up once the pointer is off it (F-57) |
 
 Next free: 10. Menu ids are in `app.rs`'s `mod menu` (1-13, 20-28, 30-36,
 41-48; next free 14, or 49; 9, the removed "Remove from space", stays
@@ -544,7 +547,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
 `EditKey(EditKey)`, `DeleteSelection`, `Clipboard(ClipboardAction)`,
 `ClipboardChanged`, `RenameSelection`, `SelectionKey(SelectionKey)`,
 `ShowProperties`, `SelectAll`, `Typed(char)`, `Navigate(NavKey)`,
-`Timer { .. }`, `PointerDownOutside { on_desktop }`, `ShowSpaces`, `FolderChanged`, `SystemThemeChanged`, and
+`Timer { .. }`, `PointerDownOutside { on_desktop }`, `ShowSpaces`, `FolderChanged`, `SystemThemeChanged`,
+`Zoom(ZoomAction)` (a zoom pop-up button), and
 `CloseRequested`. `SpaceEvent` is `MouseMove`, `MouseDown { ctrl, shift }`,
 `MouseUp`, `DoubleClick`, `MouseLeave`, `Wheel`, `FilesDropped`,
 `ShellItemsDropped`,
@@ -936,7 +940,20 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   trimming, wrapped labels (one or two lines at the configured size; formats
   are cached per 10 % size step), and a 1 px shadow when the scene asks for
   one (label shadow mode `Auto` below 25 % tint alpha, or `On`). `D2DERR_RECREATE_TARGET` drops
-  device resources for recreation on the next paint.
+  device resources for recreation on the next paint. The render target and
+  brush live in a `HwndCanvas` (`d2d/canvas.rs`) that every window painter
+  shares.
+- The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a top-most, never-activated
+  `WS_POPUP` with the space material (`dwm::apply_style`, from the global
+  look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so
+  the text stays readable). `ZoomBarPainter` (`d2d/zoom_bar.rs`) draws the
+  `ZoomBar` the app sends in 96-DPI units under a scale transform for the
+  monitor under the pointer: zoom out and in (Segoe Fluent glyphs), the
+  percentage, a divider, and Reset, with a hover fill and dimmed disabled
+  buttons. `Ui::show_zoom_bar` places it at the top center of that monitor's
+  work area; a click on a button (press and release on the same one) raises
+  `Event::Zoom`. The app hides it after `ZOOM_BAR_TIMER` unless
+  `Ui::is_zoom_bar_hovered`.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
 
@@ -1209,6 +1226,11 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   spaces follow (ROADMAP D9); under Custom it changes the global icon size
   (10 % a notch). A space with its own Custom look keeps its size. Spaces the
   user never resized grow and shrink with their icons (`TASKS.md` F15).
+- Every zoom shows the zoom pop-up at the top center of the monitor under the
+  pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
+  icons" is 100 %), zoom out and in (one notch each), and Reset (back to
+  100 %). Buttons grey out at the ends of the range, and Reset at 100 %. It
+  hides 2 s after the last zoom, or once the pointer leaves it.
 - A right-button press on an item selects it; holding it and dragging past
   the drag threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a), which
   never rearranges inside the space, so a right-drag onto Explorer or the

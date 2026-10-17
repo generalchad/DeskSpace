@@ -9,10 +9,10 @@ pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
     ClipboardAction, DropAction, Event, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent,
-    ShellItem, SpaceEvent, TrayEvent,
+    ShellItem, SpaceEvent, TrayEvent, ZoomAction,
 };
 pub use render::{
-    ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
+    ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle, ZoomBar,
     item_check_box, item_check_box_hit,
 };
 pub use ui::{

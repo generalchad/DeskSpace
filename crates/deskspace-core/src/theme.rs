@@ -229,6 +229,9 @@ pub mod corner {
 pub const OVERLAY_SIZE_DEFAULT: u8 = 80;
 /// The bounds an overlay size is clamped to. 100% matches Explorer exactly.
 pub const OVERLAY_SIZE_RANGE: (u8, u8) = (40, 100);
+/// The default item icon size, in percent: 48 px at 96 DPI, Explorer's
+/// "Medium icons". The zoom pop-up's Reset returns to it.
+pub const ICON_SIZE_DEFAULT: u8 = 100;
 /// The bounds an item icon size is clamped to, as a percent of the default.
 pub const ICON_SIZE_RANGE: (u8, u8) = (50, 200);
 /// The bounds an item label size is clamped to, as a percent of the default.
@@ -295,7 +298,7 @@ impl Default for Theme {
             show_border: true,
             label_lines: 2,
             label_size: 100,
-            icon_size: 100,
+            icon_size: ICON_SIZE_DEFAULT,
             overlay_size: OVERLAY_SIZE_DEFAULT,
             label_shadow: LabelShadow::Auto,
             custom_colors: false,

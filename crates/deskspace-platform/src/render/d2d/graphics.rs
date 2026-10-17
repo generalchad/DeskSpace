@@ -17,6 +17,9 @@ pub(super) struct Graphics {
     /// format on every paint.
     pub(super) label_formats: HashMap<u8, IDWriteTextFormat>,
     pub(super) glyph_format: Option<IDWriteTextFormat>,
+    /// The zoom pop-up's percentage, and its button text (centered both ways).
+    pub(super) zoom_percent_format: IDWriteTextFormat,
+    pub(super) zoom_label_format: IDWriteTextFormat,
     /// A dotted stroke for the keyboard focus rectangle.
     pub(super) focus_stroke: ID2D1StrokeStyle,
 }
@@ -105,6 +108,11 @@ impl Graphics {
                 None => None,
             };
 
+            let zoom_percent_format =
+                centered_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_SEMI_BOLD, 14.0)?;
+            let zoom_label_format =
+                centered_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+
             let focus_stroke = d2d.CreateStrokeStyle(
                 &D2D1_STROKE_STYLE_PROPERTIES {
                     dashStyle: D2D1_DASH_STYLE_DOT,
@@ -122,6 +130,8 @@ impl Graphics {
                 label_format,
                 label_formats,
                 glyph_format,
+                zoom_percent_format,
+                zoom_label_format,
                 focus_stroke,
             })
         }
@@ -163,6 +173,23 @@ unsafe fn make_format(
             size,
             w!(""),
         )?)
+    }
+}
+
+/// A one-line format centered horizontally and vertically.
+unsafe fn centered_format(
+    dwrite: &IDWriteFactory,
+    family: PCWSTR,
+    weight: DWRITE_FONT_WEIGHT,
+    size: f32,
+) -> Result<IDWriteTextFormat, PlatformError> {
+    // SAFETY: as in `make_format`.
+    unsafe {
+        let format = make_format(dwrite, family, weight, size)?;
+        format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+        format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+        format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+        Ok(format)
     }
 }
 

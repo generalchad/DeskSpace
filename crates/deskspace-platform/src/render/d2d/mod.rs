@@ -8,12 +8,15 @@
 //! https://learn.microsoft.com/en-us/windows/win32/direct2d/supported-pixel-formats-and-alpha-modes
 
 mod bitmap;
+mod canvas;
 mod edit;
 mod geometry;
 mod graphics;
 mod item;
+mod zoom_bar;
 
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
+pub(crate) use zoom_bar::ZoomBarPainter;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -64,6 +67,7 @@ use crate::render::Icon;
 use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
 
 use bitmap::to_icon;
+use canvas::HwndCanvas;
 use edit::draw_edit_title;
 use geometry::{color_f, draw_text, fill_rounded, inset, rect_f, to_rect_f};
 use graphics::{GRAPHICS, Graphics, graphics};
@@ -135,11 +139,9 @@ impl PreparedScene {
 
 #[derive(Default)]
 pub struct Painter {
-    target: Option<ID2D1HwndRenderTarget>,
-    brush: Option<ID2D1SolidColorBrush>,
+    canvas: HwndCanvas,
     /// GPU copies of `Icon`s, keyed by `Icon::id`.
     icons: HashMap<u64, ID2D1Bitmap>,
-    size: (u32, u32),
 }
 
 impl Painter {
@@ -176,10 +178,10 @@ impl Painter {
         frame: PaintFrame,
     ) -> Result<(), PlatformError> {
         let graphics = graphics()?;
-        let (target, brush) = self.ensure_target(&graphics, hwnd)?;
+        let (target, brush) = self.canvas.ensure(&graphics, hwnd)?;
         let scene = &prepared.scene;
-        let width = self.size.0 as f32;
-        let height = self.size.1 as f32;
+        let (width, height) = self.canvas.size();
+        let (width, height) = (width as f32, height as f32);
         let whole = rect_f(0.0, 0.0, width, height);
         let radius = frame.radius as f32;
 
@@ -394,74 +396,11 @@ impl Painter {
         };
     }
 
-    fn ensure_target(
-        &mut self,
-        graphics: &Graphics,
-        hwnd: HWND,
-    ) -> Result<(ID2D1HwndRenderTarget, ID2D1SolidColorBrush), PlatformError> {
-        let mut client = RECT::default();
-        // SAFETY: `hwnd` is the window being painted.
-        unsafe { GetClientRect(hwnd, &mut client)? };
-        let size = (
-            (client.right - client.left).max(1) as u32,
-            (client.bottom - client.top).max(1) as u32,
-        );
-
-        if let (Some(target), Some(brush)) = (&self.target, &self.brush) {
-            if size != self.size {
-                // SAFETY: resizing a live render target.
-                unsafe {
-                    target.Resize(&D2D_SIZE_U {
-                        width: size.0,
-                        height: size.1,
-                    })?
-                };
-                self.size = size;
-            }
-            return Ok((target.clone(), brush.clone()));
-        }
-
-        let properties = D2D1_RENDER_TARGET_PROPERTIES {
-            r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            // 96 DPI makes one DIP one physical pixel, matching the model's
-            // pixel coordinates.
-            dpiX: 96.0,
-            dpiY: 96.0,
-            usage: D2D1_RENDER_TARGET_USAGE_NONE,
-            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-        };
-        let hwnd_properties = D2D1_HWND_RENDER_TARGET_PROPERTIES {
-            hwnd,
-            pixelSize: D2D_SIZE_U {
-                width: size.0,
-                height: size.1,
-            },
-            presentOptions: D2D1_PRESENT_OPTIONS_NONE,
-        };
-        // SAFETY: property structs are fully initialised locals.
-        let (target, brush) = unsafe {
-            let target = graphics
-                .d2d
-                .CreateHwndRenderTarget(&properties, &hwnd_properties)?;
-            target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-            let brush = target.CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)?;
-            (target, brush)
-        };
-        self.target = Some(target.clone());
-        self.brush = Some(brush.clone());
-        self.size = size;
-        Ok((target, brush))
-    }
-
     fn bitmap_for(&mut self, icon: &Icon) -> Option<ID2D1Bitmap> {
         if let Some(bitmap) = self.icons.get(&icon.id()) {
             return Some(bitmap.clone());
         }
-        let target = self.target.as_ref()?;
+        let target = self.canvas.target()?;
         let properties = D2D1_BITMAP_PROPERTIES {
             pixelFormat: D2D1_PIXEL_FORMAT {
                 format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -504,8 +443,7 @@ impl Painter {
     }
 
     fn release_device_resources(&mut self) {
-        self.target = None;
-        self.brush = None;
+        self.canvas.release();
         self.icons.clear();
     }
 }

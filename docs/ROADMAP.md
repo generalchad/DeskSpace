@@ -438,6 +438,9 @@ Done:
     and conflict reporting: show/hide, new space, and open settings (F-18);
   - snapping, now `GridSpec.snap`.
 - **[done]** Dark mode for the settings window and menus, following Windows.
+- **[done]** A zoom pop-up (F-57): every icon-size change shows the size as
+  a percentage at the top center of the screen, with zoom out, zoom in, and
+  Reset buttons, in the spaces' look.
 - **[done]** A modern color picker (F-51): the settings Colors page and the
   space menu's Appearance submenu open DeskSpace's own themed popup (a
   "Recent colors" row and a "Windows colors" grid, with the saturation/value
@@ -765,6 +768,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
 | F-55 | "Add ▸ Files…": pick files to add to a space | M3 | Done; check pending. The files move into the space as a drop does (`TASKS.md` L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
+| F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending. Shown by every zoom (Ctrl+wheel, its buttons), in the global look, hidden 2 s after the last zoom unless hovered |
 
 
 ## 8. Open questions
