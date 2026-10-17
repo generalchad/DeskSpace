@@ -6,9 +6,9 @@ use deskspace_core::Backdrop;
 use deskspace_core::theme::{ICON_SIZE_DEFAULT, ICON_SIZE_RANGE, Palette, Theme};
 use deskspace_platform::{
     DESKTOP_ICON_RANGE, ITEM_ICON_SIZE, Ui, ZoomAction, ZoomBar, next_desktop_icon_size,
-    set_desktop_icon_size,
 };
 
+use super::effect::Effect;
 use super::{App, ICON_SIZE_WHEEL_STEP, Surface, Timer, WHEEL_DELTA};
 use crate::scene::space_style;
 
@@ -102,10 +102,28 @@ impl App {
     /// A zoom pop-up button or zoom key: one notch either way, or back to
     /// 100 %.
     pub(super) fn zoom(&mut self, ui: &mut Ui, action: ZoomAction) {
+        let effects = self.zoom_effects(action);
+        self.run(ui, effects);
+    }
+
+    /// Ctrl+wheel: `delta` is the wheel's, in `WHEEL_DELTA` units.
+    pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
+        let effects = self.wheel_zoom_effects(delta);
+        self.run(ui, effects);
+    }
+
+    /// Hides the pop-up once the pointer is off it. The timer repeats, so a
+    /// hovered pop-up is checked again until the pointer leaves.
+    pub(super) fn on_zoom_bar_timer(&mut self, ui: &mut Ui) {
+        let hovered = ui.is_zoom_bar_hovered();
+        self.run(ui, zoom_bar_timer_effects(hovered));
+    }
+
+    fn zoom_effects(&mut self, action: ZoomAction) -> Vec<Effect> {
         match action {
-            ZoomAction::Out => self.adjust_icon_size(ui, -WHEEL_DELTA),
-            ZoomAction::In => self.adjust_icon_size(ui, WHEEL_DELTA),
-            ZoomAction::Reset => self.reset_icon_size(ui),
+            ZoomAction::Out => self.wheel_zoom_effects(-WHEEL_DELTA),
+            ZoomAction::In => self.wheel_zoom_effects(WHEEL_DELTA),
+            ZoomAction::Reset => self.reset_zoom_effects(),
         }
     }
 
@@ -118,51 +136,42 @@ impl App {
     /// they stay 1:1 with the desktop. Otherwise, or when the desktop's size
     /// cannot be read, it changes DeskSpace's global icon size, persisted
     /// through the settings rather than the config's base grid.
-    pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
-        match self.zoom_level() {
-            ZoomLevel::Desktop(current) => self.adjust_desktop_icon_size(ui, current, delta),
+    fn wheel_zoom_effects(&mut self, delta: i32) -> Vec<Effect> {
+        let mut effects = match self.zoom_level() {
+            ZoomLevel::Desktop(current) => desktop_zoom_effects(current, delta),
             ZoomLevel::Custom(current) => {
                 let step = delta * ICON_SIZE_WHEEL_STEP / WHEEL_DELTA;
                 let next = (i32::from(current) + step)
                     .clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into());
-                self.set_global_icon_size(ui, next as u8);
+                self.set_global_icon_size(next as u8)
             }
-        }
-        self.show_zoom_bar(ui);
-        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
+        };
+        effects.extend(show_zoom_bar_effects());
+        effects
     }
 
-    fn reset_icon_size(&mut self, ui: &mut Ui) {
-        match self.zoom_level() {
-            ZoomLevel::Desktop(_) => {
-                if set_desktop_icon_size(ITEM_ICON_SIZE) {
-                    self.refresh_shell_display(ui);
-                }
-            }
-            ZoomLevel::Custom(_) => self.set_global_icon_size(ui, ICON_SIZE_DEFAULT),
-        }
-        self.show_zoom_bar(ui);
-        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
+    fn reset_zoom_effects(&mut self) -> Vec<Effect> {
+        let mut effects = match self.zoom_level() {
+            ZoomLevel::Desktop(_) => vec![
+                Effect::SetDesktopIconSize(ITEM_ICON_SIZE),
+                Effect::RefreshShellDisplay,
+            ],
+            ZoomLevel::Custom(_) => self.set_global_icon_size(ICON_SIZE_DEFAULT),
+        };
+        effects.extend(show_zoom_bar_effects());
+        effects
     }
 
-    fn adjust_desktop_icon_size(&mut self, ui: &mut Ui, current: i32, delta: i32) {
-        let notches = delta / WHEEL_DELTA;
-        if notches == 0 {
-            return;
-        }
-        if set_desktop_icon_size(next_desktop_icon_size(current, notches)) {
-            self.refresh_shell_display(ui);
-        }
-    }
-
-    fn set_global_icon_size(&mut self, ui: &mut Ui, size: u8) {
+    fn set_global_icon_size(&mut self, size: u8) -> Vec<Effect> {
         if size == self.config.theme.icon_size {
-            return;
+            return Vec::new();
         }
         self.config.theme.icon_size = size;
-        self.relayout_all(ui);
-        self.schedule_save(ui);
-        self.refresh_settings(ui);
+        vec![
+            Effect::RelayoutAll,
+            Effect::ScheduleSave,
+            Effect::RefreshSettings,
+        ]
     }
 
     /// Shows the pop-up with the current size.
@@ -175,21 +184,180 @@ impl App {
             self.system.dark(),
         ));
     }
+}
 
-    /// Hides the pop-up once the pointer is off it. The timer repeats, so a
-    /// hovered pop-up is checked again until the pointer leaves.
-    pub(super) fn on_zoom_bar_timer(&mut self, ui: &mut Ui) {
-        if ui.is_zoom_bar_hovered() {
-            return;
-        }
-        ui.hide_zoom_bar();
-        Self::clear_timer(ui, Timer::ZoomBar);
+/// Ctrl+wheel under "Match Explorer's display": the desktop's own size moves
+/// by whole notches, so a partial one (a precision wheel) changes nothing.
+fn desktop_zoom_effects(current: i32, delta: i32) -> Vec<Effect> {
+    let notches = delta / WHEEL_DELTA;
+    if notches == 0 {
+        return Vec::new();
     }
+    vec![
+        Effect::SetDesktopIconSize(next_desktop_icon_size(current, notches)),
+        Effect::RefreshShellDisplay,
+    ]
+}
+
+/// Shows the pop-up and (re)starts its hide timer.
+fn show_zoom_bar_effects() -> [Effect; 2] {
+    [
+        Effect::ShowZoomBar,
+        Effect::SetTimer(Timer::ZoomBar, ZOOM_BAR_MS),
+    ]
+}
+
+fn zoom_bar_timer_effects(hovered: bool) -> Vec<Effect> {
+    if hovered {
+        return Vec::new();
+    }
+    vec![Effect::HideZoomBar, Effect::ClearTimer(Timer::ZoomBar)]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::theme::Preset;
+    use deskspace_platform::ShellDisplay;
+
+    /// An app whose zoom changes `preset`'s size: DeskSpace's own
+    /// `icon_size`, or under Match Explorer the desktop's `desktop_size`
+    /// (`None` when it cannot be read).
+    fn zoom_app(preset: Preset, icon_size: u8, desktop_size: Option<i32>) -> App {
+        let mut config = Config::new();
+        config.theme.preset = preset;
+        config.theme.icon_size = icon_size;
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(config, store, false, false);
+        app.system.set_shell(ShellDisplay {
+            icon_size: desktop_size,
+            ..ShellDisplay::default()
+        });
+        app
+    }
+
+    fn then_show_bar(mut effects: Vec<Effect>) -> Vec<Effect> {
+        effects.extend(show_zoom_bar_effects());
+        effects
+    }
+
+    const SIZE_CHANGED: [Effect; 3] = [
+        Effect::RelayoutAll,
+        Effect::ScheduleSave,
+        Effect::RefreshSettings,
+    ];
+
+    #[test]
+    fn a_custom_zoom_changes_the_global_size_and_shows_the_bar() {
+        let mut app = zoom_app(Preset::Custom, ICON_SIZE_DEFAULT, Some(ITEM_ICON_SIZE));
+        let effects = app.zoom_effects(ZoomAction::In);
+        assert_eq!(effects, then_show_bar(SIZE_CHANGED.to_vec()));
+        let step = ICON_SIZE_WHEEL_STEP as u8;
+        assert_eq!(app.config.theme.icon_size, ICON_SIZE_DEFAULT + step);
+
+        let effects = app.zoom_effects(ZoomAction::Out);
+        assert_eq!(effects, then_show_bar(SIZE_CHANGED.to_vec()));
+        assert_eq!(app.config.theme.icon_size, ICON_SIZE_DEFAULT);
+    }
+
+    #[test]
+    fn a_custom_zoom_at_either_end_only_shows_the_bar() {
+        let (small, large) = ICON_SIZE_RANGE;
+        let mut app = zoom_app(Preset::Custom, large, None);
+        assert_eq!(app.zoom_effects(ZoomAction::In), then_show_bar(vec![]));
+        assert_eq!(app.config.theme.icon_size, large);
+
+        let mut app = zoom_app(Preset::Custom, small, None);
+        assert_eq!(app.zoom_effects(ZoomAction::Out), then_show_bar(vec![]));
+        assert_eq!(app.config.theme.icon_size, small);
+    }
+
+    #[test]
+    fn a_custom_reset_changes_only_a_size_away_from_the_default() {
+        let mut app = zoom_app(Preset::Custom, ICON_SIZE_DEFAULT, None);
+        assert_eq!(app.zoom_effects(ZoomAction::Reset), then_show_bar(vec![]));
+
+        let mut app = zoom_app(Preset::Custom, ICON_SIZE_RANGE.1, None);
+        let effects = app.zoom_effects(ZoomAction::Reset);
+        assert_eq!(effects, then_show_bar(SIZE_CHANGED.to_vec()));
+        assert_eq!(app.config.theme.icon_size, ICON_SIZE_DEFAULT);
+    }
+
+    #[test]
+    fn a_match_explorer_zoom_asks_explorer_and_leaves_the_global_size() {
+        let mut app = zoom_app(
+            Preset::MatchExplorer,
+            ICON_SIZE_DEFAULT,
+            Some(ITEM_ICON_SIZE),
+        );
+        let effects = app.zoom_effects(ZoomAction::In);
+        let next = next_desktop_icon_size(ITEM_ICON_SIZE, 1);
+        assert!(next > ITEM_ICON_SIZE);
+        assert_eq!(
+            effects,
+            then_show_bar(vec![
+                Effect::SetDesktopIconSize(next),
+                Effect::RefreshShellDisplay,
+            ])
+        );
+        assert_eq!(app.config.theme.icon_size, ICON_SIZE_DEFAULT);
+    }
+
+    #[test]
+    fn a_match_explorer_zoom_at_either_end_stays_in_range() {
+        let (small, large) = DESKTOP_ICON_RANGE;
+        for (size, action) in [(large, ZoomAction::In), (small, ZoomAction::Out)] {
+            let mut app = zoom_app(Preset::MatchExplorer, ICON_SIZE_DEFAULT, Some(size));
+            assert_eq!(
+                app.zoom_effects(action),
+                then_show_bar(vec![
+                    Effect::SetDesktopIconSize(size),
+                    Effect::RefreshShellDisplay,
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn a_match_explorer_reset_asks_for_medium_icons() {
+        let mut app = zoom_app(Preset::MatchExplorer, ICON_SIZE_DEFAULT, Some(96));
+        assert_eq!(
+            app.zoom_effects(ZoomAction::Reset),
+            then_show_bar(vec![
+                Effect::SetDesktopIconSize(ITEM_ICON_SIZE),
+                Effect::RefreshShellDisplay,
+            ])
+        );
+    }
+
+    #[test]
+    fn a_partial_wheel_notch_leaves_the_desktop_size_alone() {
+        let mut app = zoom_app(
+            Preset::MatchExplorer,
+            ICON_SIZE_DEFAULT,
+            Some(ITEM_ICON_SIZE),
+        );
+        let effects = app.wheel_zoom_effects(WHEEL_DELTA / 2);
+        assert_eq!(effects, then_show_bar(vec![]));
+    }
+
+    #[test]
+    fn an_unreadable_desktop_size_zooms_the_global_size() {
+        let mut app = zoom_app(Preset::MatchExplorer, ICON_SIZE_DEFAULT, None);
+        let effects = app.zoom_effects(ZoomAction::In);
+        assert_eq!(effects, then_show_bar(SIZE_CHANGED.to_vec()));
+    }
+
+    #[test]
+    fn the_bar_hides_only_once_the_pointer_is_off_it() {
+        assert_eq!(zoom_bar_timer_effects(true), vec![]);
+        assert_eq!(
+            zoom_bar_timer_effects(false),
+            vec![Effect::HideZoomBar, Effect::ClearTimer(Timer::ZoomBar)]
+        );
+    }
 
     #[test]
     fn the_desktop_size_reads_as_a_percent_of_medium_icons() {

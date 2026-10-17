@@ -8,7 +8,6 @@
 //! inside the same `on_event` call that produced it, so the runtime's
 //! re-entrancy rules (`ENGINEERING.md` section 6) hold exactly as for a
 //! direct call. Grow the enum one event family at a time.
-#![expect(dead_code, reason = "R17b adds the first caller")]
 
 use deskspace_platform::{Ui, set_desktop_icon_size};
 
