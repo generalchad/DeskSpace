@@ -1939,3 +1939,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: `rg -n apply_to_space crates` finds nothing. **[needs
     human]** check: lock, roll up, sort, and "Fit to contents" each repaint
     the space at once and survive a restart.
+
+- [x] **B28d. Move the bare `dispatch` callers to `commit`.** Make one
+  commit per file: `app/menus.rs`, `app/clipboard.rs`, `app/files.rs`,
+  `app/drag.rs`, `app/rename.rs`, and `app/settings_session.rs`. For each
+  `self.dispatch(` call:
+  - If it is followed by `refresh_space` or `schedule_save` for the spaces
+    it changed, replace the call with `commit` and delete those follow-ups.
+  - If it is one of several commands followed by a single refresh, or it is
+    followed by `flush_save` (file moves save at once), keep `dispatch`. Add
+    a one-line comment above it saying which case it is.
+  - Done when: every `self.dispatch(` outside `commit` has such a comment.

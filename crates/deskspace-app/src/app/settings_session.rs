@@ -288,6 +288,7 @@ impl App {
             return;
         };
         let edit = settings::space_edit(&self.config, session, field, value, self.system_dark);
+        // Not `commit`: the edit is previewed now and saved by Apply.
         if let Some((id, command, effect)) = edit
             && self.dispatch(command, self.space_center(id)).is_applied()
         {
@@ -307,6 +308,7 @@ impl App {
             Some(Command::CustomizeSpace { id, .. } | Command::SetSpaceLook { id, .. }) => *id,
             _ => return self.refresh_settings(ui),
         };
+        // Not `commit`: a new look needs a restyle and re-flow, not a repaint.
         if let Some(command) = command
             && self.dispatch(command, self.space_center(id)).is_applied()
         {
@@ -403,13 +405,8 @@ impl App {
                 .desktop
                 .space(*id)
                 .is_some_and(|space| space.user_sized() && space.rect() == *rect);
-            if still_pinned
-                && self
-                    .dispatch(Command::FitToContents { id: *id }, rect.center())
-                    .is_applied()
-            {
-                self.refresh_space(ui, *id);
-                self.schedule_save(ui);
+            if still_pinned {
+                self.commit(ui, Command::FitToContents { id: *id }, rect.center());
             }
         }
     }
@@ -425,6 +422,7 @@ impl App {
                 continue;
             }
             let at = space.rect().center();
+            // Not `commit`: a restored look needs a restyle and re-flow.
             if self.dispatch(snapshot.restore(), at).is_applied() {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);

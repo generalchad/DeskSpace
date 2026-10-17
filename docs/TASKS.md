@@ -9,7 +9,7 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
-- section B (code health; do B28-B30 in order);
+- section B (code health; do B29-B30 in order);
 - K7;
 - Q1-Q6;
 - section N, in order;
@@ -358,28 +358,12 @@ lines), `settings/apply.rs` `apply_look_field` (about 110), and
 wired in three places, and R14 (table-driven settings fields) removes that
 cause; splitting them first would be undone by R14.
 
-### Make the compiler enforce the rules (B28-B30)
+### Make the compiler enforce the rules (B29-B30)
 
 `ENGINEERING.md` section 2, rules 1 and 4: a rule the compiler can check
 should not depend on review. Do the tasks in the order listed. Each is one
 commit. Each step says exactly what to type; if the code does not match what
 a step describes, stop and ask (rule 4).
-
-**B28: one commit path that refreshes and saves.** Today each caller of
-`App::dispatch` has to remember to call `refresh_space` and `schedule_save`
-afterwards, and `dispatch` returns a `bool`, so `NotFound` and `Rejected`
-look the same. Do B28a-B28d in order.
-
-- [ ] **B28d. Move the bare `dispatch` callers to `commit`.** Make one
-  commit per file: `app/menus.rs`, `app/clipboard.rs`, `app/files.rs`,
-  `app/drag.rs`, `app/rename.rs`, and `app/settings_session.rs`. For each
-  `self.dispatch(` call:
-  - If it is followed by `refresh_space` or `schedule_save` for the spaces
-    it changed, replace the call with `commit` and delete those follow-ups.
-  - If it is one of several commands followed by a single refresh, or it is
-    followed by `flush_save` (file moves save at once), keep `dispatch`. Add
-    a one-line comment above it saying which case it is.
-  - Done when: every `self.dispatch(` outside `commit` has such a comment.
 
 - [ ] **B29. Tell the user when the config cannot be saved.** Today
   `App::save` (`app/persist.rs`) only logs the error, and release builds
