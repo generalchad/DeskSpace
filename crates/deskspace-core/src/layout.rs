@@ -45,17 +45,25 @@ impl GridSpec {
     /// the monitor's DPI and the icon-size setting, so no persisted value has
     /// to carry a scale.
     pub fn scaled(&self, scale: f32) -> Self {
-        let scale = scale.max(0.1);
-        let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
         Self {
-            cell_width: scaled(self.cell_width),
-            cell_height: scaled(self.cell_height),
-            gap: scaled(self.gap),
-            padding: scaled(self.padding),
-            title_height: scaled(self.title_height),
+            cell_width: scale_length(self.cell_width, scale),
+            cell_height: scale_length(self.cell_height, scale),
+            gap: scale_length(self.gap, scale),
+            padding: scale_length(self.padding, scale),
+            title_height: scale_length(self.title_height, scale),
             columns: self.columns,
-            snap: scaled(self.snap),
+            snap: scale_length(self.snap, scale),
             fit_to_grid: self.fit_to_grid,
+        }
+    }
+
+    /// Like `scaled`, but the title bar takes `title_scale` instead. The title
+    /// bar is space chrome, not an item, so the app scales it for the
+    /// monitor's DPI alone: a zoom changes the items, not the title bar.
+    pub fn scaled_with_title(&self, scale: f32, title_scale: f32) -> Self {
+        Self {
+            title_height: scale_length(self.title_height, title_scale),
+            ..self.scaled(scale)
         }
     }
 
@@ -139,6 +147,11 @@ impl GridSpec {
     pub fn scroll_step(&self) -> i32 {
         self.cell_height + self.gap
     }
+}
+
+/// `value` scaled by `scale` and rounded, at least 1 pixel.
+fn scale_length(value: i32, scale: f32) -> i32 {
+    ((value as f32 * scale.max(0.1)).round() as i32).max(1)
 }
 
 /// Moves the `edges` of `rect` to `point`, snapped to `snap`, keeping the
@@ -350,6 +363,19 @@ mod tests {
         // A scale never collapses a dimension to zero.
         assert!(base.scaled(0.0).cell_width >= 1);
         assert_eq!(base.scaled(1.0), base);
+    }
+
+    #[test]
+    fn the_title_bar_takes_its_own_scale() {
+        let base = GridSpec::default();
+        let zoomed = base.scaled_with_title(2.0, 1.0);
+        assert_eq!(zoomed.title_height, base.title_height);
+        assert_eq!(zoomed.cell_width, base.cell_width * 2);
+        let high_dpi = base.scaled_with_title(2.0, 1.5);
+        assert_eq!(
+            high_dpi.title_height,
+            (base.title_height as f32 * 1.5).round() as i32
+        );
     }
 
     #[test]

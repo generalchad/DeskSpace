@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (400 tests) are green. Update this count whenever a
+  `cargo test --workspace` (402 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -283,7 +283,9 @@ GridSpec {
   `GridSpec::scaled(scale)` produces the effective grid for a display. The app
   derives a per-space scale (the space's `Theme.icon_size` setting or
   Explorer's icon size, times the space's monitor DPI) and shares it through
-  `layout_for(id)` / `metrics_for(id)`; commands take the effective grid of the
+  `layout_for(id)` / `metrics_for(id)`. The title bar takes the DPI alone
+  (`GridSpec::scaled_with_title`), so a zoom changes the items but never the
+  title bar's height; commands take the effective grid of the
   space under the action: `Desktop::apply_with_layout(command, layout, bounds)`,
   with `apply` delegating using the stored base. Scene geometry, hit tests, and
   scroll all read the same per-space grid, so the grid the painter uses always

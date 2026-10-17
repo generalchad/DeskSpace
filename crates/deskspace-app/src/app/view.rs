@@ -146,12 +146,20 @@ impl App {
         scale * space_dpi(id.0)
     }
 
-    /// `grid` scaled for an icon/DPI scale. When `theme` mirrors Explorer, its
-    /// item spacing (the full cell size in physical pixels) replaces the cell
-    /// and gap, so the grid step matches the desktop exactly. The stored grids
-    /// are never scaled, so the settings form keeps editing logical values.
-    pub(super) fn base_layout(&self, theme: &Theme, grid: GridSpec, scale: f32) -> GridSpec {
-        let mut layout = grid.scaled(scale);
+    /// `grid` scaled for an icon/DPI scale, with the title bar scaled by
+    /// `title_scale` (the DPI alone, so a zoom leaves it alone). When `theme`
+    /// mirrors Explorer, its item spacing (the full cell size in physical
+    /// pixels) replaces the cell and gap, so the grid step matches the desktop
+    /// exactly. The stored grids are never scaled, so the settings form keeps
+    /// editing logical values.
+    pub(super) fn base_layout(
+        &self,
+        theme: &Theme,
+        grid: GridSpec,
+        scale: f32,
+        title_scale: f32,
+    ) -> GridSpec {
+        let mut layout = grid.scaled_with_title(scale, title_scale);
         if theme.match_explorer()
             && let Some(spacing) = self.shell_display.icon_spacing
         {
@@ -164,14 +172,24 @@ impl App {
 
     /// The scaled grid for one space, including its monitor's DPI.
     pub(super) fn layout_for(&self, id: SpaceId) -> GridSpec {
-        self.base_layout(self.theme_for(id), self.grid_for(id), self.space_scale(id))
+        self.base_layout(
+            self.theme_for(id),
+            self.grid_for(id),
+            self.space_scale(id),
+            space_dpi(id.0),
+        )
     }
 
     /// The logical global grid (icon size only, no per-monitor DPI), for
     /// callers that have no space at hand.
     pub(super) fn effective_layout(&self) -> GridSpec {
         let theme = &self.config.theme;
-        self.base_layout(theme, self.config.desktop.layout, self.icon_scale(theme))
+        self.base_layout(
+            theme,
+            self.config.desktop.layout,
+            self.icon_scale(theme),
+            1.0,
+        )
     }
 
     /// Scaled icon, label, and check-box sizes for one space.
@@ -566,7 +584,7 @@ mod tests {
             icon_spacing: Some(Size::new(120, 130)),
             ..ShellDisplay::default()
         });
-        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0);
+        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0, 1.0);
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
             (120, 130, 0)
@@ -581,7 +599,7 @@ mod tests {
         });
         app.config.theme.preset = Preset::Custom;
         app.config.desktop.layout.gap = 20;
-        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0);
+        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0, 1.0);
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
             (96, 104, 20)
@@ -619,5 +637,16 @@ mod tests {
         app.config.theme.preset = Preset::Custom;
         app.config.theme.icon_size = 200;
         assert_eq!(app.effective_layout().cell_width, 192);
+    }
+
+    #[test]
+    fn a_zoom_leaves_the_title_bar_alone() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.preset = Preset::Custom;
+        app.config.theme.icon_size = 200;
+        assert_eq!(
+            app.effective_layout().title_height,
+            app.config.desktop.layout.title_height
+        );
     }
 }
