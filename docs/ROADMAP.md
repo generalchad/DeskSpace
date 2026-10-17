@@ -29,8 +29,9 @@ A native, lightweight, offline Windows desktop organizer that:
 - mirrors folders as live lenses,
 - hides and reveals everything quickly (roll-up, auto-hide, peek),
 - looks and feels modern (per-pixel alpha, blur, animation),
-- and stays fully configurable from a tray app, context menus, and a settings
-  window.
+- stays fully configurable from a tray app, context menus, and a settings
+  window,
+- and speaks the user's language.
 
 ## 2. Decisions locked
 
@@ -568,6 +569,59 @@ Exit criteria: a signed installer installs, runs, updates to a newer release,
 and uninstalls cleanly on a fresh Windows 10 machine and a fresh Windows 11
 machine.
 
+### M9 - Translation
+
+Goal: DeskSpace speaks the user's Windows display language, and adding a
+language takes a translator, not a programmer (F-60).
+
+Where we start: the UI is data-driven (section 3), so nearly every string a
+user sees is built in `deskspace-app` (menus, the settings form, message
+boxes, the tray tooltip) and handed to the platform as data. A few are
+written in the platform: the color picker, the installed-apps picker, the
+custom shortcut dialog, the right-drop menu, and the info tip. Explorer's own
+menus and dialogs (the item menu, conflict prompts, Properties) are already
+in the user's language.
+
+Remaining:
+1. **Design.** Settle open question 4 (`TASKS.md` R18).
+2. **Extraction.** Every user-facing string goes through one lookup, with
+   English as the source text and no visible change. The platform takes its
+   few strings from the app as arguments, so it holds no catalogs. A test
+   fails on a key with no English text. Text the user owns (a space's title,
+   the configured new-space title) is data and is never translated after it
+   is written.
+3. **Choosing the language.** Follow the Windows display language
+   (`GetUserPreferredUILanguages`), falling back from region to language to
+   English. A "Language" choice on the General page (Windows default, then
+   each bundled language) applies on Apply; menus are built on demand
+   already, and the open settings window is rebuilt.
+4. **Layout that fits every language.** Settings labels have a fixed width
+   today (`Builder::field`), and German or Finnish run about 30 % longer than
+   English. Measure or wrap the text instead. A pseudo-locale (accented,
+   padded English, as Windows' `qps-ploc`) shows untranslated strings and
+   truncation in one on-screen pass.
+5. **Plurals and placeholders.** Messages with counts (the tray tooltip's
+   spaces and items) follow each language's plural rules, and placeholders
+   are named so a translator can reorder them.
+6. **The first languages,** from contributors, with a translator guide in
+   `CONTRIBUTING.md`. The installer's pages follow (NSIS language files,
+   through cargo-packager).
+7. **Later.**
+   - Right-to-left languages (Arabic, Hebrew) need mirrored layout
+     (`WS_EX_LAYOUTRTL`, DirectWrite's reading direction) in spaces, the
+     settings window, and the pop-ups; a project of its own.
+   - Locale-aware natural sort of item names (`CompareStringEx`).
+   - Full East Asian use also needs IME composition in inline rename
+     (`CONTEXT.md` section 10).
+
+Not planned for now: translating the docs, and a hosted translation platform
+(Weblate, for example) before there are several translators.
+
+Exit criteria: with Windows set to a bundled language, every DeskSpace string
+is in that language and none is cut off at 100 % and 150 %; the pseudo-locale
+shows no English; and adding a language needs no code change beyond its
+catalog.
+
 ## 6. Release mapping
 
 - **v0.2 "Take the desktop"** (v0.2.0-v0.2.3, section 4): M0, M1, and most
@@ -578,6 +632,9 @@ machine.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
+- **Translation (M9)** is not yet assigned to a release. Extraction (item 2)
+  changes nothing visible and can land in any release; the maintainer picks
+  the release that ships the first language.
 
 ## 7. Feature index
 
@@ -649,6 +706,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
 | F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
+| F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 
 
 ## 8. Open questions
@@ -662,6 +720,22 @@ Resolve each one during the milestone that raises it.
    can already undo the shell operations (paste, delete, rename) through
    `FOF_ALLOWUNDO`. Moves into the store are plain renames with no undo
    record.
+4. **Translation format (M9).** Which message format, and where do the
+   catalogs live?
+   - *Fluent* (`fluent-bundle`): plurals, named placeholders, and grammar
+     live in the translator's file, and the tooling is mature. It adds
+     dependencies for `cargo deny` to clear, and its keys are strings, so a
+     test or a generated enum must check them.
+   - *A hand-rolled table:* a message enum with English in the code and one
+     TOML file per language, checked by tests. The compiler checks every key
+     and nothing is added to the dependency tree, but each language's plural
+     rules are written by hand.
+   - *gettext `.po`:* the format translators know best, but the pure-Rust
+     readers are less maintained.
+   - Catalogs embedded in the executable keep the portable zip one file;
+     catalogs beside it let a translator try a change without building.
+   - Proposed, awaiting the maintainer: Fluent, embedded, with a test that
+     every key the code uses has English text.
 
 Every other question raised so far is answered by a decision in section 2
 (D2, D3, D6-D9).

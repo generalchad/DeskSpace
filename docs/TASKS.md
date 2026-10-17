@@ -519,7 +519,7 @@ Rules for every Q task:
 
 ## D. Reserved (strong model or maintainer; do not start)
 
-Each needs design work first. Ids are `R1`-`R17` so they do not collide with
+Each needs design work first. Ids are `R1`-`R18` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
@@ -578,6 +578,19 @@ the ROADMAP decision ids (`D1`-`D9`).
   should be built as the first verb if this lands first. No in-process plugin
   loading: native plugins in a shell-integrated app cost more stability and
   security than they are worth now.
+- **R18. Translation design (F-60, ROADMAP M9).** Answer ROADMAP open
+  question 4 (the format and where catalogs live), then settle:
+  - how keys are checked: a generated enum, or a test that every key the
+    code uses has English text;
+  - how the platform's own strings (color picker, installed-apps picker,
+    custom shortcut dialog, right-drop menu, info tip) reach it without the
+    platform holding catalogs;
+  - the fallback chain (region, language, English) and plural rules;
+  - how the settings window fits longer labels (measure or wrap; B14 names
+    the layout constants first).
+
+  Then split M9 items 2-5 into one-commit tasks here. If R14 lands first, a
+  field's label belongs in its row.
 
 ## V. Awaiting on-screen check
 
