@@ -96,6 +96,15 @@ pub(crate) fn release_graphics() {
     GRAPHICS.with(|cell| cell.borrow_mut().take());
 }
 
+/// The render target, brush, and shared factories every draw helper uses,
+/// gathered once per paint (and once in `render_items`).
+#[derive(Clone, Copy)]
+pub(super) struct DrawContext<'a> {
+    graphics: &'a Graphics,
+    target: &'a ID2D1RenderTarget,
+    brush: &'a ID2D1SolidColorBrush,
+}
+
 /// A scene with its strings pre-encoded, so painting does not allocate.
 pub struct PreparedScene {
     scene: SpaceScene,
@@ -179,6 +188,11 @@ impl Painter {
     ) -> Result<(), PlatformError> {
         let graphics = graphics()?;
         let (target, brush) = self.canvas.ensure(&graphics, hwnd)?;
+        let ctx = DrawContext {
+            graphics: &graphics,
+            target: &target,
+            brush: &brush,
+        };
         let scene = &prepared.scene;
         let (width, height) = self.canvas.size();
         let (width, height) = (width as f32, height as f32);
@@ -210,7 +224,7 @@ impl Painter {
                 );
                 fill_rounded(&target, &brush, whole, radius, scene.title_fill);
                 target.PopAxisAlignedClip();
-                self.draw_title(&graphics, &target, &brush, prepared, width, title_height);
+                self.draw_title(ctx, prepared, width, title_height);
             }
 
             // A chrome-less layer (the desktop layer) draws its items from the
@@ -221,7 +235,7 @@ impl Painter {
                     &rect_f(0.0, content_top, width, height),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
-                self.draw_items(&graphics, &target, &brush, prepared);
+                self.draw_items(ctx, prepared);
                 if let Some(marquee) = scene.marquee {
                     draw_marquee(
                         &target,
@@ -292,28 +306,23 @@ impl Painter {
 
     unsafe fn draw_title(
         &self,
-        graphics: &Graphics,
-        target: &ID2D1HwndRenderTarget,
-        brush: &ID2D1SolidColorBrush,
+        ctx: DrawContext,
         prepared: &PreparedScene,
         width: f32,
         title_height: f32,
     ) {
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
         let scene = &prepared.scene;
         let lock_width = if scene.locked { title_height } else { 0.0 };
         let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
             if scene.editing.is_some() {
-                draw_edit_title(
-                    graphics,
-                    target,
-                    brush,
-                    prepared,
-                    TITLE_INSET,
-                    text_right,
-                    title_height,
-                );
+                draw_edit_title(ctx, prepared, TITLE_INSET, text_right, title_height);
             } else {
                 draw_text(
                     target,
@@ -339,13 +348,7 @@ impl Painter {
         }
     }
 
-    unsafe fn draw_items(
-        &mut self,
-        graphics: &Graphics,
-        target: &ID2D1HwndRenderTarget,
-        brush: &ID2D1SolidColorBrush,
-        prepared: &PreparedScene,
-    ) {
+    unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
         let scene = &prepared.scene;
         let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
         for (item, label) in scene.items.iter().zip(&prepared.labels) {
@@ -354,18 +357,7 @@ impl Painter {
             }
             let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe {
-                draw_item(
-                    graphics,
-                    target,
-                    brush,
-                    scene,
-                    item,
-                    label,
-                    bitmap.as_ref(),
-                    None,
-                )
-            };
+            unsafe { draw_item(ctx, scene, item, label, bitmap.as_ref(), None) };
         }
         // The rename box grows over the items below it, as Explorer's does, so
         // draw the item being renamed last.
@@ -384,9 +376,7 @@ impl Painter {
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
             draw_item(
-                graphics,
-                target,
-                brush,
+                ctx,
                 scene,
                 item,
                 label,
@@ -502,6 +492,11 @@ pub(crate) fn render_items(
             dpiY: 96.0,
         };
 
+        let ctx = DrawContext {
+            graphics: &graphics,
+            target: &target,
+            brush: &brush,
+        };
         let mut scene = scene.clone();
         scene.show_check_boxes = false;
 
@@ -542,16 +537,7 @@ pub(crate) fn render_items(
                     )
                     .ok()
             });
-            draw_item(
-                &graphics,
-                &target,
-                &brush,
-                &scene,
-                &item,
-                &label,
-                icon.as_ref(),
-                None,
-            );
+            draw_item(ctx, &scene, &item, &label, icon.as_ref(), None);
         }
         target.EndDraw(None, None).ok()?;
         drop(target);

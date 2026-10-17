@@ -200,19 +200,6 @@ matching on `Surface` at the call site.
 Each is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. Do them in any order.
 
-- [ ] **B12. Group the d2d draw-helper arguments.** `render/d2d/item.rs`
-  `draw_item` (8) and `draw_check_box` (8) and `render/d2d/edit.rs`
-  `draw_edit_buffer` (9) are allowed. Each starts with the same
-  `graphics, target, brush` (or `target, brush`).
-  - Add `pub(super) struct DrawContext<'a> { graphics: &'a Graphics, target:
-    &'a ID2D1RenderTarget, brush: &'a ID2D1SolidColorBrush }` in
-    `render/d2d/mod.rs`, build it once per paint and in `render_items`, and
-    pass it. `draw_check_box` also takes its four box numbers as one
-    `CheckBoxRect` (or the existing check-box geometry type in
-    `render/mod.rs`, if one fits).
-  - No allocation in the paint path (`AGENTS.md`).
-  - Done when: the three allows are gone.
-
 - [ ] **B13. One child-control helper.** `win32/dialog.rs` `control` and
   `win32/settings_window/build.rs` `Builder::control` are near-copies, both
   allowed `too_many_arguments` (8).

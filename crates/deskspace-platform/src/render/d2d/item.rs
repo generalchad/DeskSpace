@@ -33,17 +33,19 @@ pub(super) fn draw_marquee(
 
 /// Draws one item cell: highlight, icon, and label. Shared by the space
 /// painter and `render_items`, so a drag image is exactly what the space shows.
-#[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn draw_item(
-    graphics: &Graphics,
-    target: &ID2D1RenderTarget,
-    brush: &ID2D1SolidColorBrush,
+    ctx: DrawContext,
     scene: &SpaceScene,
     item: &ItemVisual,
     label: &[u16],
     icon: Option<&ID2D1Bitmap>,
     edit: Option<&[u16]>,
 ) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
     let cell = to_rect_f(item.rect);
     let metrics = scene.metrics;
     let icon_size = metrics.icon_size as f32;
@@ -97,16 +99,13 @@ pub(super) unsafe fn draw_item(
         let show_box = item.state != ItemState::Dragged
             && (scene.check_boxes_persistent || item.checked || item.hovered);
         if scene.show_check_boxes && show_box {
-            draw_check_box(
-                target,
-                brush,
-                icon_left,
-                cell.top + icon_top,
-                metrics.check_box_size as f32,
-                metrics.check_box_margin as f32,
-                item.checked,
-                scene.check_fill,
-            );
+            let margin = metrics.check_box_margin as f32;
+            let check_box = CheckBoxRect {
+                left: icon_left + margin,
+                top: cell.top + icon_top + margin,
+                size: metrics.check_box_size as f32,
+            };
+            draw_check_box(ctx, check_box, item.checked, scene.check_fill);
         }
         let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
         let scale = scene
@@ -123,9 +122,7 @@ pub(super) unsafe fn draw_item(
                 // over the items below it, so lay it out in the label's width
                 // but a tall box; `draw_edit_buffer` hugs the measured lines.
                 draw_edit_buffer(
-                    graphics,
-                    target,
-                    brush,
+                    ctx,
                     text_edit,
                     buffer,
                     &format,
@@ -161,23 +158,28 @@ pub(super) unsafe fn draw_item(
     }
 }
 
+/// Where an item's check box is drawn: its top-left corner and side length.
+/// The painter keeps the icon's float position, so this can sit a rounding
+/// pixel away from `item_check_box`, the whole-pixel rect hit tests use.
+#[derive(Clone, Copy)]
+struct CheckBoxRect {
+    left: f32,
+    top: f32,
+    size: f32,
+}
+
 /// Draws Explorer's item check box at the top-left of an icon. Checked, it is
 /// filled with the accent (`check_fill`) and shows a white tick, as Windows
 /// draws a checked box; unchecked, it is a light box with a dark border that
 /// stays visible on any backdrop.
-#[allow(clippy::too_many_arguments)]
 unsafe fn draw_check_box(
-    target: &ID2D1RenderTarget,
-    brush: &ID2D1SolidColorBrush,
-    icon_left: f32,
-    icon_top: f32,
-    size: f32,
-    margin: f32,
+    ctx: DrawContext,
+    check_box: CheckBoxRect,
     checked: bool,
     check_fill: Color,
 ) {
-    let left = icon_left + margin;
-    let top = icon_top + margin;
+    let DrawContext { target, brush, .. } = ctx;
+    let CheckBoxRect { left, top, size } = check_box;
     let rect = rect_f(left, top, left + size, top + size);
     let radius = (size * 0.19).max(1.0);
     let rounded = D2D1_ROUNDED_RECT {

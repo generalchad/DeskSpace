@@ -6,9 +6,7 @@ use super::*;
 
 /// Draws the title rename buffer in the title bar.
 pub(super) unsafe fn draw_edit_title(
-    graphics: &Graphics,
-    target: &ID2D1HwndRenderTarget,
-    brush: &ID2D1SolidColorBrush,
+    ctx: DrawContext,
     prepared: &PreparedScene,
     left: f32,
     right: f32,
@@ -24,12 +22,10 @@ pub(super) unsafe fn draw_edit_title(
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
         draw_edit_buffer(
-            graphics,
-            target,
-            brush,
+            ctx,
             edit,
             buffer,
-            &graphics.edit_format,
+            &ctx.graphics.edit_format,
             rect_f(left, 0.0, right, title_height),
             scene.edit,
             scene.caret_visible,
@@ -115,11 +111,8 @@ unsafe fn edit_lines(layout: &IDWriteTextLayout) -> Vec<EditLine> {
 /// opaque box with an even margin, the selected text in the system highlight,
 /// and a blinking caret. The measured lines place the box, selection, and
 /// caret, so all three follow DirectWrite's own shaping.
-#[allow(clippy::too_many_arguments)]
 pub(super) unsafe fn draw_edit_buffer(
-    graphics: &Graphics,
-    target: &ID2D1RenderTarget,
-    brush: &ID2D1SolidColorBrush,
+    ctx: DrawContext,
     edit: &TextEdit,
     buffer: &[u16],
     format: &IDWriteTextFormat,
@@ -127,6 +120,11 @@ pub(super) unsafe fn draw_edit_buffer(
     colors: EditColors,
     caret_visible: bool,
 ) {
+    let DrawContext {
+        graphics,
+        target,
+        brush,
+    } = ctx;
     let width = (rect.right - rect.left).max(1.0);
     let height = (rect.bottom - rect.top).max(1.0);
     // SAFETY: caller is inside BeginDraw/EndDraw.
