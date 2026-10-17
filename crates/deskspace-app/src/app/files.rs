@@ -57,6 +57,7 @@ impl App {
                     }
                 }
             };
+            // Not `commit`: one of several commands, refreshed once below.
             self.dispatch(command, at);
         }
         for id in &touched {
@@ -96,6 +97,7 @@ impl App {
             match self.write_shortcut(&source) {
                 Ok(path) => {
                     tracing::info!(name = source.name(), path = %path.display(), "created a shortcut in the store");
+                    // Not `commit`: one of several commands, refreshed once below.
                     self.dispatch(
                         Command::AddItem {
                             space: target,
@@ -220,6 +222,7 @@ impl App {
             .desktop
             .space_containing(id)
             .map_or(Point::ZERO, |space| self.space_center(space));
+        // Not `commit`: the caller loops over items and refreshes once.
         self.dispatch(Command::RemoveItem { id }, near).is_applied()
     }
 
@@ -262,6 +265,7 @@ impl App {
                 .is_none_or(|item| !item.path.exists());
             if gone {
                 self.forget_item(item);
+                // Not `commit`: the file already moved, so this saves at once below.
                 self.dispatch(Command::RemoveItem { id: item }, near);
             }
         }
@@ -299,6 +303,7 @@ impl App {
         }
         self.forget_item(item);
         let near = self.space_center(space);
+        // Not `commit`: the file already moved, so this saves at once below.
         self.dispatch(Command::RemoveItem { id: item }, near);
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
@@ -350,6 +355,7 @@ impl App {
         }
         for item in missing {
             let near = self.space_center(id);
+            // Not `commit`: one of several commands, refreshed once below.
             self.dispatch(Command::RemoveItem { id: item }, near);
             self.forget_item(item);
         }
@@ -394,6 +400,7 @@ impl App {
             return;
         }
         let near = self.space_center(id);
+        // Not `commit`: a deleted space closes its window and saves at once.
         if self
             .dispatch(Command::DeleteSpace { id }, near)
             .is_applied()
