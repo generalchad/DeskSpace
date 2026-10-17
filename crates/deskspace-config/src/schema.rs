@@ -1,5 +1,4 @@
-use deskspace_core::layout::position_items;
-use deskspace_core::{Desktop, SpaceLook, Theme};
+use deskspace_core::{Desktop, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -126,15 +125,7 @@ impl Config {
             // The v1 theme was opaque colors tuned for a color-keyed GDI
             // overlay; carried over, they would hide the acrylic backdrop.
             self.theme = Theme::default();
-            let layout = self.desktop.layout;
-            for space in &mut self.desktop.spaces {
-                // v1 stored 210 as the fill alpha, which no later setting
-                // means; drop it rather than fold it into a custom look.
-                space.clear_legacy_overrides();
-                // v1 stored absolute item positions that went stale when the
-                // space moved. Positions are now space-relative grid cells.
-                position_items(space, layout);
-            }
+            self.desktop.reset_v1_spaces();
         }
         if self.version < CURRENT_VERSION {
             self.version = CURRENT_VERSION;
@@ -144,9 +135,7 @@ impl Config {
         self.theme = self.theme.clone().clamped();
         self.window = self.window.clone().clamped();
         self.desktop.layout = self.desktop.layout.clamped();
-        for space in &mut self.desktop.spaces {
-            space.look = space.look.take().map(SpaceLook::clamped);
-        }
+        self.desktop.clamp_looks();
     }
 }
 

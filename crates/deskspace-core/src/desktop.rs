@@ -4,8 +4,8 @@ use crate::desktop_layer::DesktopLayer;
 use crate::geometry::Rect;
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
-use crate::layout::GridSpec;
-use crate::space::Space;
+use crate::layout::{GridSpec, position_items};
+use crate::space::{Space, SpaceLook};
 use crate::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -162,6 +162,27 @@ impl Desktop {
         }
         folded
     }
+
+    /// Resets every space loaded from a v1 file. v1 stored 210 as the fill
+    /// alpha, which no later setting means, so it is dropped rather than
+    /// folded into a custom look. v1 also stored absolute item positions that
+    /// went stale when the space moved; positions are now space-relative grid
+    /// cells, so the items are placed again.
+    pub fn reset_v1_spaces(&mut self) {
+        let layout = self.layout;
+        for space in &mut self.spaces {
+            space.clear_legacy_overrides();
+            position_items(space, layout);
+        }
+    }
+
+    /// Clamps every space's own look, so a hand-edited out-of-range setting
+    /// cannot leave the settings window showing no choice selected.
+    pub fn clamp_looks(&mut self) {
+        for space in &mut self.spaces {
+            space.look = space.look.take().map(SpaceLook::clamped);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +190,7 @@ mod tests {
     use super::*;
     use crate::item::Item;
     use crate::item::ItemFacts;
+    use crate::layout::GAP_RANGE;
 
     #[test]
     fn ids_increment_across_spaces() {
@@ -246,5 +268,24 @@ mod tests {
             Some(id)
         );
         assert_eq!(desktop.space_at(crate::geometry::Point::new(10, 100)), None);
+    }
+
+    #[test]
+    fn clamp_looks_clamps_every_space() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.space_mut(id).unwrap().look = Some(SpaceLook {
+            theme: Theme {
+                icon_size: 1,
+                ..Theme::default()
+            },
+            gap: 999,
+            padding: -10,
+        });
+        desktop.clamp_looks();
+        let look = desktop.space(id).unwrap().look.as_ref().unwrap();
+        assert_eq!(look.theme.icon_size, crate::theme::ICON_SIZE_RANGE.0);
+        assert_eq!(look.gap, GAP_RANGE.1);
+        assert_eq!(look.padding, GAP_RANGE.0);
     }
 }

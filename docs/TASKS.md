@@ -366,24 +366,6 @@ and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
 `layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
 bypass `Command`. B27a-B27f close that, after B21.
 
-- [ ] **B27a. Move `Config::migrate`'s two space loops into core.**
-  - In `deskspace-core/src/desktop.rs`, add two methods to `impl Desktop`:
-    - `pub fn reset_v1_spaces(&mut self)`: the body of the v1 loop in
-      `deskspace-config/src/schema.rs` `Config::migrate` (each space:
-      `clear_legacy_overrides()`, then `position_items(space,
-      self.layout)`).
-    - `pub fn clamp_looks(&mut self)`: `for space in &mut self.spaces {
-      space.look = space.look.take().map(SpaceLook::clamped); }`.
-    - Move each loop's comment into the new method's `///` doc.
-  - In `Config::migrate`, replace the two loops with
-    `self.desktop.reset_v1_spaces();` and `self.desktop.clamp_looks();`.
-  - Tests: the config migrate tests pass unchanged. Add one core test,
-    `clamp_looks_clamps_every_space`: a space with an out-of-range
-    `look` comes back in range (copy an existing `SpaceLook::clamped` test
-    for the values).
-  - Done when: `rg -n "desktop.spaces" crates/deskspace-config/src` finds
-    nothing outside `#[cfg(test)]` modules.
-
 - [ ] **B27b. Add read accessors (core only).**
   - In `deskspace-core/src/space.rs` `impl Space`, add one-line public
     getters: `title(&self) -> &str`, `rect(&self) -> Rect`,
