@@ -200,18 +200,6 @@ matching on `Surface` at the call site.
 Each is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. Do them in any order.
 
-- [ ] **B11. Group the scene-builder arguments.** `scene.rs`
-  `desktop_layer_scene` (8 arguments), `desktop_layer_drag_scene` (9), and
-  `drag_scene` (8) carry `#[allow(clippy::too_many_arguments)]`. Each takes
-  the same `theme, palette, layout, metrics` quartet.
-  - Add `pub struct SurfaceLook<'a> { theme: &'a Theme, palette: &'a
-    Palette, layout: GridSpec, metrics: ItemMetrics }` (`Copy`, `///` doc) in
-    `scene.rs` and pass it in place of the four arguments to all four
-    builders, `space_scene` included. Build it at the call sites in `app/`
-    (`view.rs`, `drag.rs`) from the existing `*_for` / `surface_*` accessors.
-  - Done when: the three allows are gone and scene tests pass unchanged
-    apart from the argument.
-
 - [ ] **B12. Group the d2d draw-helper arguments.** `render/d2d/item.rs`
   `draw_item` (8) and `draw_check_box` (8) and `render/d2d/edit.rs`
   `draw_edit_buffer` (9) are allowed. Each starts with the same

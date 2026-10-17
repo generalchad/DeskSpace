@@ -13,6 +13,16 @@ const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
 /// a shadow to stay readable on busy wallpapers.
 const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
 
+/// How a surface is styled and sized: everything a scene builder needs besides
+/// the surface's items and its transient `ViewState`.
+#[derive(Clone, Copy)]
+pub struct SurfaceLook<'a> {
+    pub theme: &'a Theme,
+    pub palette: &'a Palette,
+    pub layout: GridSpec,
+    pub metrics: ItemMetrics,
+}
+
 /// Transient view state that affects how one space is drawn.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ViewState {
@@ -74,13 +84,16 @@ pub fn layer_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
 /// items are neither drawn nor loaded.
 pub fn space_scene(
     space: &Space,
-    theme: &Theme,
-    palette: &Palette,
-    layout: GridSpec,
-    metrics: ItemMetrics,
+    look: SurfaceLook,
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
+    let SurfaceLook {
+        theme,
+        palette,
+        layout,
+        metrics,
+    } = look;
     let cell = layout.cell();
     let content_top = space.title_height;
     let content_bottom = space.rect.height;
@@ -182,17 +195,19 @@ pub fn space_scene(
 /// layer item's position is absolute, in virtual-desktop coordinates, so
 /// `origin` (the layer window's top-left) is subtracted for window-local
 /// rects. It has no title, border, or scroll.
-#[allow(clippy::too_many_arguments)]
 pub fn desktop_layer_scene(
     layer: &DesktopLayer,
     origin: Point,
-    theme: &Theme,
-    palette: &Palette,
-    layout: GridSpec,
-    metrics: ItemMetrics,
+    look: SurfaceLook,
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
+    let SurfaceLook {
+        theme,
+        palette,
+        layout,
+        metrics,
+    } = look;
     let cell = layout.cell();
     let items = layer
         .items()
@@ -269,22 +284,18 @@ pub fn desktop_layer_scene(
 /// Builds the scene used to render a drag image from the loose desktop layer:
 /// the layer's draw list reduced to the dragged `ids`, at their absolute
 /// positions. Mirrors `drag_scene` for spaces.
-#[allow(clippy::too_many_arguments)]
 pub fn desktop_layer_drag_scene(
     layer: &DesktopLayer,
     origin: Point,
     ids: &[ItemId],
-    theme: &Theme,
-    palette: &Palette,
-    layout: GridSpec,
-    metrics: ItemMetrics,
+    look: SurfaceLook,
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
     let show_extensions = view.show_extensions;
-    let cell = layout.cell();
-    let mut scene =
-        desktop_layer_scene(layer, origin, theme, palette, layout, metrics, view, icons);
+    let cell = look.layout.cell();
+    let (icon_size, overlay_size) = (look.metrics.icon_size, look.theme.overlay_size);
+    let mut scene = desktop_layer_scene(layer, origin, look, view, icons);
     scene.items = ids
         .iter()
         .filter_map(|id| {
@@ -298,7 +309,7 @@ pub fn desktop_layer_drag_scene(
                     cell.height,
                 ),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                icon: icons.icon_for(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,
@@ -314,21 +325,18 @@ pub fn desktop_layer_drag_scene(
 /// to the dragged `ids`. A selected item scrolled out of view is included too,
 /// at the grid position it would occupy, so a group drag shows the whole
 /// selection exactly where Explorer would.
-#[allow(clippy::too_many_arguments)]
 pub fn drag_scene(
     space: &Space,
     ids: &[ItemId],
-    theme: &Theme,
-    palette: &Palette,
-    layout: GridSpec,
-    metrics: ItemMetrics,
+    look: SurfaceLook,
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
     let scroll = view.scroll;
     let show_extensions = view.show_extensions;
-    let mut scene = space_scene(space, theme, palette, layout, metrics, view, icons);
-    let cell = layout.cell();
+    let (icon_size, overlay_size) = (look.metrics.icon_size, look.theme.overlay_size);
+    let mut scene = space_scene(space, look, view, icons);
+    let cell = look.layout.cell();
     let content_top = space.title_height;
     scene.items = ids
         .iter()
@@ -343,7 +351,7 @@ pub fn drag_scene(
                     cell.height,
                 ),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                icon: icons.icon_for(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,
@@ -457,6 +465,15 @@ mod tests {
         space
     }
 
+    fn surface_look<'a>(theme: &'a Theme, palette: &'a Palette) -> SurfaceLook<'a> {
+        SurfaceLook {
+            theme,
+            palette,
+            layout: GridSpec::default(),
+            metrics: ItemMetrics::for_scale(1.0),
+        }
+    }
+
     #[test]
     fn compressed_and_encrypted_items_get_explorer_colors() {
         let mut compressed = Item::new(ItemId(4), "C:/missing/a.txt", ItemFacts::default());
@@ -509,10 +526,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 show_check_boxes: true,
                 check_boxes_persistent: true,
@@ -531,10 +545,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 cut: vec![ItemId(4)],
                 ..ViewState::default()
@@ -550,10 +561,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -570,10 +578,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -588,10 +593,7 @@ mod tests {
         let palette = theme.palette(true);
         let scene = space_scene(
             &space,
-            &theme,
-            &palette,
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &palette),
             ViewState {
                 hovered: Some(ItemId(4)),
                 selected: vec![ItemId(4)],
@@ -609,10 +611,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 selected: vec![ItemId(4)],
                 ..ViewState::default()
@@ -628,10 +627,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 selected: vec![ItemId(4)],
                 dragged: vec![ItemId(4)],
@@ -648,10 +644,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 highlight: true,
                 ..ViewState::default()
@@ -672,10 +665,7 @@ mod tests {
         };
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -689,10 +679,7 @@ mod tests {
         let theme = Theme::default();
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState {
                 focused: Some(ItemId(4)),
                 ..ViewState::default()
@@ -712,10 +699,7 @@ mod tests {
         let scene = desktop_layer_scene(
             &layer,
             Point::new(100, 100),
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -744,10 +728,7 @@ mod tests {
             &layer,
             Point::new(100, 100),
             &[ItemId(2)],
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -772,10 +753,7 @@ mod tests {
         let palette = theme.palette(true);
         let scene = space_scene(
             &space,
-            theme,
-            &palette,
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(theme, &palette),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -796,10 +774,7 @@ mod tests {
         };
         let scene = space_scene(
             &space,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -831,10 +806,7 @@ mod tests {
         let build = |scroll| {
             space_scene(
                 &space,
-                &theme,
-                &theme.palette(true),
-                GridSpec::default(),
-                ItemMetrics::for_scale(1.0),
+                surface_look(&theme, &theme.palette(true)),
                 ViewState {
                     scroll,
                     ..ViewState::default()
@@ -864,10 +836,7 @@ mod tests {
         let scene = drag_scene(
             &space,
             &ids,
-            &theme,
-            &theme.palette(true),
-            GridSpec::default(),
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );
@@ -888,10 +857,7 @@ mod tests {
         let thumb = |scroll| {
             space_scene(
                 &tall,
-                &theme,
-                &theme.palette(true),
-                layout,
-                ItemMetrics::for_scale(1.0),
+                surface_look(&theme, &theme.palette(true)),
                 ViewState {
                     scroll,
                     ..ViewState::default()
@@ -912,10 +878,7 @@ mod tests {
         let short = space();
         let scene = space_scene(
             &short,
-            &theme,
-            &theme.palette(true),
-            layout,
-            ItemMetrics::for_scale(1.0),
+            surface_look(&theme, &theme.palette(true)),
             ViewState::default(),
             &mut IconCache::new(),
         );

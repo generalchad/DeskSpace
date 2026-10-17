@@ -8,7 +8,7 @@ use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
 
 use deskspace_platform::{DragImage, Ui, drag_threshold, virtual_desktop_rect};
 
-use crate::scene::{desktop_layer_drag_scene, drag_scene};
+use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
 use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
 use super::{App, Surface};
@@ -240,16 +240,13 @@ impl App {
             .map(|rect| Point::new(origin.x - rect.x, origin.y - rect.y));
         self.pointer.drag_image = match surface {
             Surface::Space(id) => self.config.desktop.space(id).and_then(|entry| {
-                let scene = drag_scene(
-                    entry,
-                    &ids,
-                    entry.theme(&self.config.theme),
-                    &palette,
+                let look = SurfaceLook {
+                    theme: entry.theme(&self.config.theme),
+                    palette: &palette,
                     layout,
                     metrics,
-                    view,
-                    &mut self.icons,
-                );
+                };
+                let scene = drag_scene(entry, &ids, look, view, &mut self.icons);
                 DragImage::of_selection(&scene, &id_values, grab?)
             }),
             Surface::Desktop => {
@@ -257,10 +254,12 @@ impl App {
                     self.config.desktop.layer(),
                     virtual_desktop_rect().origin(),
                     &ids,
-                    &self.config.theme,
-                    &palette,
-                    layout,
-                    metrics,
+                    SurfaceLook {
+                        theme: &self.config.theme,
+                        palette: &palette,
+                        layout,
+                        metrics,
+                    },
                     view,
                     &mut self.icons,
                 );

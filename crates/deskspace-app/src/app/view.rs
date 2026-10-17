@@ -12,7 +12,9 @@ use deskspace_platform::{
     rehide_desktop_icons, restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
 };
 
-use crate::scene::{ViewState, desktop_layer_scene, layer_style, space_scene, space_style};
+use crate::scene::{
+    SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
+};
 
 use super::rename::EditTarget;
 use super::{App, HEALTH_MS, HEALTH_TIMER, Surface};
@@ -376,15 +378,17 @@ impl App {
         }
         let rect = virtual_desktop_rect();
         let view = self.view_for(Surface::Desktop);
-        let theme = &self.config.theme;
         let palette = self.surface_palette(Surface::Desktop);
+        let look = SurfaceLook {
+            theme: &self.config.theme,
+            palette: &palette,
+            layout: self.surface_layout(Surface::Desktop),
+            metrics: self.surface_metrics(Surface::Desktop),
+        };
         let scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
-            theme,
-            &palette,
-            self.surface_layout(Surface::Desktop),
-            self.surface_metrics(Surface::Desktop),
+            look,
             view,
             &mut self.icons,
         );
@@ -407,15 +411,13 @@ impl App {
             return;
         };
         let palette = self.palette_for(id);
-        let mut scene = space_scene(
-            space,
-            space.theme(&self.config.theme),
-            &palette,
-            self.layout_for(id),
-            self.metrics_for(id),
-            view,
-            &mut self.icons,
-        );
+        let look = SurfaceLook {
+            theme: space.theme(&self.config.theme),
+            palette: &palette,
+            layout: self.layout_for(id),
+            metrics: self.metrics_for(id),
+        };
+        let mut scene = space_scene(space, look, view, &mut self.icons);
         if let Some(session) = self
             .edit
             .session()
