@@ -605,7 +605,6 @@ impl EventHandler for App {
                 // refresh its display options, then restyle for dark mode.
                 self.refresh_shell_display(ui);
                 self.restyle_all(ui);
-                self.refresh_desktop_layer(ui);
                 self.refresh_settings(ui);
             }
             Event::CloseRequested => {

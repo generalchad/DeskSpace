@@ -180,30 +180,36 @@ impl App {
     }
 
     /// Re-reads Explorer's display options and repaints if they changed. A
-    /// changed icon size or item spacing re-flows every space too.
+    /// changed icon size or item spacing re-flows every surface that matches
+    /// Explorer too.
     pub(super) fn refresh_shell_display(&mut self, ui: &mut Ui) {
         let display = desktop_display_since(self.shell_display.check_boxes);
         if display == self.shell_display {
             return;
         }
-        let any_matching = self
+        let resized = display.icon_size != self.shell_display.icon_size
+            || display.icon_spacing != self.shell_display.icon_spacing;
+        let any_space_matching = self
             .config
             .desktop
             .spaces
             .iter()
             .any(|space| space.theme(&self.config.theme).match_explorer());
-        let relayout = any_matching
-            && (display.icon_size != self.shell_display.icon_size
-                || display.icon_spacing != self.shell_display.icon_spacing);
+        let layer_matching = self.layer_active() && self.config.theme.match_explorer();
         self.shell_display = display;
         // Independent ticks do not survive a switch out of that mode.
         if self.shell_display.check_boxes != CheckBoxMode::Independent {
             self.selection.checked.clear();
         }
-        if relayout {
+        if resized && (any_space_matching || layer_matching) {
             self.relayout_all(ui);
         } else {
             self.restyle_all(ui);
+        }
+        // Explorer re-spaces its own (hidden) icons for the new size, and the
+        // layer draws them where Explorer placed them, so read them again.
+        if resized && layer_matching {
+            self.resync_desktop_layer(ui);
         }
     }
 
@@ -409,11 +415,14 @@ impl App {
         ui.set_space_scene(id.0, scene);
     }
 
+    /// Re-applies every space's style and repaints them and the desktop
+    /// layer.
     pub(super) fn restyle_all(&mut self, ui: &mut Ui) {
         let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
         for id in ids {
             self.restyle_space(ui, id);
         }
+        self.refresh_desktop_layer(ui);
     }
 
     /// Re-applies one space's window style and repaints it.
@@ -422,8 +431,9 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    /// Re-flows every space for a changed grid: growing spaces resize to fit,
-    /// user-sized spaces keep their size and reflow.
+    /// Re-flows every space for a changed grid (growing spaces resize to fit,
+    /// user-sized spaces keep their size and reflow) and repaints the desktop
+    /// layer, whose icons share the global scale.
     pub(super) fn relayout_all(&mut self, ui: &mut Ui) {
         let ids: Vec<SpaceId> = self
             .config
@@ -435,6 +445,7 @@ impl App {
         for id in ids {
             self.reflow_space(ui, id);
         }
+        self.refresh_desktop_layer(ui);
     }
 
     /// Re-flows one space for its current grid (icon size and monitor DPI) and
@@ -468,7 +479,6 @@ impl App {
     pub(super) fn refresh_spaces(&mut self, ui: &mut Ui) {
         self.refresh_shell_display(ui);
         self.relayout_all(ui);
-        self.refresh_desktop_layer(ui);
     }
 }
 

@@ -551,7 +551,7 @@ each id is in `archive/TASKS-done.md`.
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
 | Mouse modifiers | Ctrl+wheel reaching a space with Ctrl set was confirmed from a log on 2026-10-16. Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
-| F13 (F-25) | Under the default "Match Explorer's display" preset, Ctrl+wheel over a space changes the desktop's own icons and the spaces together, both ways, and stops at 16 and 256 px; under Custom it changes only the spaces; a space with its own Custom look keeps its size either way. |
+| F13 (F-25) | Under the default preset, Ctrl+wheel stops at 16 and 256 px; under Custom it changes the spaces (and, with takeover, the layer's icons) but not Explorer's; a space with its own Custom look keeps its size either way. Default preset with takeover on (the layer's icons resize and re-space with the spaces, both ways) passed 2026-10-16. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
