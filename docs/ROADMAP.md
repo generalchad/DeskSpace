@@ -459,6 +459,9 @@ Remaining:
 3. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
+4. Theme files (F-58): save a whole look to a file and load it on Global or
+   a space, so themes can be shared without forking (`TASKS.md` C10; the
+   proposed design awaits the maintainer's decision).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -604,6 +607,10 @@ Remaining:
 5. Performance pass: idle CPU near zero, and large spaces handled well. Scenes
    already carry only the visible items, and the icon cache is already
    LRU-bounded.
+6. Scripting verbs (F-59): a small, stable set of `--verb` commands handed to
+   the running instance, the out-of-process extension point that the desktop
+   menu (F-52) and "Send to" (F-56) can share (`TASKS.md` R16). In-process
+   plugins are a non-goal for now.
 
 Exit criteria: new icons file themselves according to the rules, and a full
 workflow is possible without a mouse.
@@ -737,6 +744,8 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
+| F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
+| F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 
 
 ## 8. Open questions

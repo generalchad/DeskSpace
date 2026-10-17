@@ -8,9 +8,9 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Pick a task:** section B (code health) and K7 are ready for any
-contributor; G5c is ready. L1 needs a maintainer's on-screen findings. Skip
-tasks marked **[needs decision]** and everything in section D.
+**Pick a task:** section B (code health), K7, and section N (in order) are
+ready for any contributor; G5c is ready. L1 needs a maintainer's on-screen
+findings. Skip tasks marked **[needs decision]** and everything in section D.
 
 ## How to work a task
 
@@ -227,6 +227,136 @@ user-visible change is expected. Do them in any order.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
 
+- [ ] **B18. Menu ids as an enum.** The model is B15 (commit `3096a47`,
+  `Timer` in `app.rs`). `app.rs`'s `mod menu` holds 34 loose `u32` consts,
+  and `menu_ids_are_unique` only works because its hand-kept `other` list
+  names every id the preset tables do not.
+  - Replace `mod menu` with `#[repr(u32)] enum MenuId` beside `Timer`: one
+    variant per const, CamelCase (`ROLL` -> `Roll`, `OPACITY_100` ->
+    `Opacity100`), **the same values** (never renumber; 9 stays unused), plus
+    `const ALL: [Self; N]` and `fn from_id(id: u32) -> Option<Self>`, as
+    `Timer` has.
+  - The preset tables (`NEW_SHORTCUT_ENTRIES`, `OPACITY_PRESETS`,
+    `ICON_SIZE_PRESETS`, `SORT_PRESETS`) hold `MenuId` instead of `u32`.
+    `MenuEntry::item` still takes a `u32` (the platform knows no app ids), so
+    pass `id as u32`; add a small `fn menu_item(id: MenuId, label: &str) ->
+    MenuEntry` in `app/menus.rs` if more than a few call sites need it.
+  - Where a chosen id is matched (`app/menus.rs`: `show_space_menu`,
+    `show_item_menu` with `ItemMenuChoice::App`, the tray menu,
+    `run_common_menu`, the submenu helpers), convert once with
+    `MenuId::from_id` and match on the enum.
+  - Tests: replace `menu_ids_are_unique` with `menu_ids_round_trip` (every
+    `ALL` entry survives `from_id`, `from_id(9)` and `from_id(0)` are `None`)
+    and `menu_ids_stay_below_the_shell_range` (every value is below
+    `0x8000`). `ALL` makes the hand-kept list unnecessary.
+  - Docs: `CONTEXT.md` section 6 "Other ids" names `MenuId`; the recipe "a
+    new menu entry" step 1 becomes "a `MenuId` variant (next free value) and
+    its `ALL` entry".
+  - Done when: `mod menu` is gone and no `u32` menu id literal is left in the
+    app.
+
+- [ ] **B19. Forbid `unsafe` in `deskspace-app`.** The app crate has no
+  `unsafe` today, but nothing enforces "all `unsafe` lives in the platform"
+  there. Add `#![forbid(unsafe_code)]` at the top of both binary roots,
+  `src/main.rs` and `src/watchdog_main.rs` (after the existing
+  `windows_subsystem` attribute and its comment). Leave `build.rs` alone; it
+  is its own crate. Update the three places that list which crates forbid it:
+  `ENGINEERING.md` section 3, `CONTEXT.md` section 3 ("Crate
+  responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
+  - Done when: the gates pass and the docs say four crates forbid `unsafe`.
+
+- [ ] **B20. Stop hand-counting tests in the docs.** `CONTEXT.md` section 2
+  states the test count ("403 tests") and `How to work a task` rule 6 asks
+  every task to update it, so it drifts. `cargo test` already reports the
+  number.
+  - `CONTEXT.md` section 2: drop the number and the "Update this count"
+    sentence.
+  - This file: rule 6 drops "and the test count in `CONTEXT.md` section 2
+    updated"; section K's "Done when" keeps "with the same test count" (it
+    is checked from `cargo test` output, not the docs); section B's intro is
+    unchanged.
+  - Done when: `grep -rn "403\|test count" docs/*.md` finds only the K rule
+    and the section B intro.
+
+- [ ] **B21. Seed the first space through `Command`s.** `bootstrap.rs`
+  builds the initial "Desktop" space by calling `Desktop::add_item` and
+  `arrange_space` on `desktop.space_mut(id)` directly, the one place outside
+  tests that changes the model without a `Command` (`ENGINEERING.md`
+  section 3). Seed it with `Command::CreateSpace`, one `Command::AddItem` per
+  entry (the `ItemFacts` it already reads), then `Command::AutoArrange`,
+  applied through `Desktop::apply` with the work area `bootstrap` already
+  uses. Same result, so the existing seeding tests pass unchanged; add one if
+  none covers "a fresh config gets one arranged Desktop space".
+  - Done when: `bootstrap.rs` calls no `*_mut` model accessor.
+
+- [ ] **B22. List the process-wide state.** The platform keeps about sixteen
+  `static`s and `thread_local!`s, each justified (hooks and Win32 callbacks
+  get no context pointer), but nowhere listed, which makes the runtime the
+  hardest part to reason about. Add a subsection "Process-wide state" to
+  `CONTEXT.md` section 6, after "Runtime": a table of every one with its file,
+  name, what it holds, why it cannot be passed instead, and who resets it.
+  Find them with `grep -rn "^static\|thread_local!" crates/*/src` (the
+  current set is in `render/d2d/graphics.rs`, `app_catalog.rs`,
+  `color_picker.rs`, `console.rs`, `controller.rs`, `desktop_icons.rs`,
+  `desktop_shell.rs`, `drop_target.rs`, `keyboard.rs`, `outside_click.rs`,
+  `runtime/mod.rs`, `shell_items.rs`, `shell_view.rs`, `tray.rs`, and
+  `watchdog.rs`). Docs only; no code changes. If one has no reason you can
+  state, list it under **Found while working** instead of guessing.
+
+- [ ] **B23. Make the keyboard watch a pure, tested table.**
+  `win32/keyboard.rs` `fn handle` is about 160 lines of `if` chains that both
+  decide which key means what and post the message, so none of the key
+  routing is unit-tested, and the `ENGINEERING.md` Keys table is kept in step
+  by hand.
+  - Extract `fn watched_key(vk: u32, mods: Mods, watch: Watch) ->
+    Option<(u32, usize)>` (the message and its `wparam`) as a pure function,
+    where `Mods { ctrl, shift, alt }` and `Watch { selection, paste }` are
+    small `Copy` structs. `handle` reads the modifiers, the flags, and
+    `desktop_is_foreground` (still checked first), calls it, and posts. Keep
+    the editing path (`EDITING`) as it is, in its own function.
+  - Tests: one per row of the `ENGINEERING.md` Keys table, each asserting the
+    key is routed under its flag and ignored without it (for example Ctrl+V
+    with only `selection` set is `None`).
+  - Done when: `handle` is under about 50 lines and every key in the Keys
+    table has a test. **[needs human]** check: the F1-F5, G1, and G3 rows of
+    section V still pass.
+
+- [ ] **B24. Split `App::on_space_event`.** `app/pointer.rs`
+  `on_space_event` is about 135 lines: a preamble (the surface still exists,
+  commit a rename, act like a desktop click) and a `match` over
+  `SpaceEvent` whose arms run up to 25 lines.
+  - Move the preamble into `fn prepare_space_event(&mut self, ui, surface,
+    &event) -> bool` (false means ignore), and each arm longer than about
+    five lines into a named method in the module that owns it (`pointer.rs`
+    for mouse arms; the drop arms call into `files.rs`, where the logic
+    already lives).
+  - Pure move: no behavior change, no new `pub(super)` beyond what the moved
+    methods need. Done when: `on_space_event` is under about 50 lines.
+
+- [ ] **B25. Name `App::on_event`'s long arms.** `app.rs` `on_event` is a
+  good dispatch `match` except for `Event::Started` (about 40 lines),
+  `Event::SystemThemeChanged`, and `Event::CloseRequested`. Move each into
+  `on_started`, `on_system_theme_changed`, and `on_close_requested`, in the
+  module that owns most of what they touch (`app/view.rs` for the theme,
+  `app/persist.rs` or `app.rs` for start and close; follow `CONTEXT.md`
+  section 7's runtime-flow steps 3 and 6, which describe them). Pure move.
+  Done when: every arm of `on_event` is one call.
+
+- [ ] **B26. Split `settings_window::build` and `update`.**
+  `win32/settings_window/build.rs` `build` (about 210 lines) and
+  `update.rs` `update` (about 125 lines) each build or diff the panes, the
+  header, and the pages in one body. Split each into `*_panes`, `*_header`,
+  and `*_pages` helpers in the same file, in the order the body already runs
+  them. Do it after B14 (same file). Pure move. Done when: no function in
+  either file is over about 80 lines. **[needs human]** check: the settings
+  window opens, switches scopes and pages, and previews as before.
+
+Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
+lines), `settings/apply.rs` `apply_look_field` (about 110), and
+`settings/mod.rs` `build_form` (about 105). They are long because a field is
+wired in three places, and R14 (table-driven settings fields) removes that
+cause; splitting them first would be undone by R14.
+
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
 Everything except L1 has landed (L2-L7 archived). Every way of adding a
@@ -291,6 +421,45 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     flag/event round trip is unit-tested. **[needs human]** check: right-click
     the desktop and use "New space" and "DeskSpace Settings"; the entries are
     gone after a clean exit.
+
+- [ ] **C10. Theme files: save, load, and share a look (F-58).**
+  **[needs decision]**: the maintainer approves or amends the proposal below,
+  then removes this marker and the task is ready. Distinct from C6: C6 is
+  named *item* presets; C10 is a file holding a whole look, so people can
+  share themes without forking.
+  - Proposal (recommended by review, 2026-10-16):
+    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
+      padding), because `SpaceLook` is already the unit of "a look": it
+      round-trips through serde, defaults missing fields, and clamps on load.
+      `ui_mode` is ignored on apply, as it is for a space. Open point: should
+      `preset` (Match Explorer / Custom) travel with a theme? Proposed: yes,
+      since it decides icon size and spacing, which are part of how a theme
+      looks.
+    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
+      `name`, an optional `author`, and a `[look]` table. A file with a newer
+      `format` loads with a warning, unknown keys ignored, as `Config` does.
+    - Location: a `themes` folder beside the config file (so a scratch
+      `--config` has its own), listed in Settings; "Save theme…" and "Load
+      theme…" also take any path through the standard file dialogs.
+    - Applying: in the Global scope it writes `config.theme` and the grid's
+      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
+      true }`. Either way it is a previewed edit that Cancel undoes, like any
+      other settings change.
+  - Once approved, three commits:
+    - **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
+      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
+      `save(path)` returning `ConfigError`, and `themes_dir()` on
+      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
+      values clamp, unknown keys ignored, a newer `format` loads.
+    - **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
+      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
+      the open side if it has none.
+    - **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
+      theme…"): two `ButtonAction` variants and their arms in
+      `App::on_settings_button` (the "new global setting" recipe's button
+      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
+      check: save a customized space's look, load it on Global and on another
+      space, Cancel undoes the load.
 
 ## F. Ad-hoc features
 
@@ -373,9 +542,87 @@ Rules for every K task:
   - `pick` keeps its path, used by `runtime/ui_chrome.rs` and
     `settings_window/commands.rs`.
 
+## N. Narrow `App` (state ownership)
+
+`App` has 25 fields and about 300 methods spread over the `app/` modules,
+and every module can reach every field. The split by file is mostly sound:
+the large shared fields are already owned structs (`Selection`,
+`PointerState`, `EditState`, `UpdateState`), and `config` is the model, so
+reading it everywhere is expected. What is left is loose fields that belong
+to one concept. Measured on 2026-10-16 (field: the `app/` modules that use
+it, outside tests):
+
+| Field | Used in |
+|-------|---------|
+| `type_buffer` | `app.rs` (timer), `selection` |
+| `watching_outside` | `selection` |
+| `settings`, `pending_preview`, `highlighted` | `settings_session` (and one read each in `view`, `menus`, `update`) |
+| `takeover_layer`, `takeover`, `desktop_entries` | `view` |
+| `hotkeys` | `app.rs`, `settings_session` |
+| `system_dark`, `system_accent`, `shell_display` | `app.rs`, `view`, `hit`, `selection`, `zoom`, `rename`, `settings_session` |
+| `scroll`, `icon_scales` | `hit`, `selection`, `pointer`, `files`, `menus`, `settings_session`; `view` |
+
+Rules for every N task:
+
+- Each task moves loose fields into one owned struct, in the module that
+  already owns their behavior, with the methods that touch only those
+  fields. Copy how `Selection` (`app/selection.rs`) is declared and held.
+- Behavior-preserving: same test count or more, no user-visible change, no
+  logic edits beyond `self.x` becoming `self.group.x` or a method call.
+- A use outside the owning module goes through a small method (`is_open()`,
+  `layer_active()`), not a `pub(super)` field. If a use needs more than a
+  one-line accessor, stop and ask (rule 4).
+- Update `CONTEXT.md` section 3's module table if a module's "Owns" column
+  changes. Commit as `refactor: <what> (Nn)`.
+
+- [ ] **N1. Move `type_buffer` and `watching_outside` into `Selection`.**
+  Both are selection state (type-to-select's prefix, and whether outside
+  clicks are watched while something is selected). `Timer::Type` in
+  `App::on_timer` clears the buffer through a `Selection` method.
+
+- [ ] **N2. A `SettingsUi` for the open settings window.** In
+  `app/settings_session.rs`: `struct SettingsUi { session: Option<Session>,
+  pending_preview: Preview, highlighted: Option<SpaceId> }`, held as
+  `App::settings_ui`. The reads in `view.rs`, `menus.rs`, and `update.rs`
+  become `self.settings_ui.is_open()` (or the accessor the read needs).
+
+- [ ] **N3. A `LayerState` for the desktop layer.** In `app/view.rs`:
+  `struct LayerState { layer_flag: bool, takeover_flag: bool, entries:
+  Vec<DesktopEntry> }` from `takeover_layer`, `takeover`, and
+  `desktop_entries`. `App::layer_active` and `App::desktop_takeover` read the
+  config's `take_over_desktop` too, so they stay on `App` and call the
+  struct's flag accessors. `bootstrap.rs` sets
+  the two flags through a constructor. Check `desktop_entries`' doc comment
+  ("until then they are only diagnostics"); if the layer now consumes them,
+  fix the comment in the same commit.
+
+- [ ] **N4. A `Hotkeys` for the registered bindings.** In `app.rs` (or a new
+  `app/hotkeys.rs` if it passes about 60 lines): `struct Hotkeys([Option<Hotkey>;
+  HOTKEY_COUNT])` with `register_all(ui, &WindowSettings)` and
+  `unregister_all(ui)`, the bodies the start, Apply, and close paths share
+  today. `App::on_hotkey` keeps the action `match`.
+
+- [ ] **N5. A `SystemLook` for what Windows reports.** In `app/view.rs`:
+  `struct SystemLook { dark: bool, accent: Option<Color>, shell: ShellDisplay
+  }` with `refresh(&mut self)` (the reads `Event::SystemThemeChanged` and a
+  space click do now). Do it after N3, and after B25 if `on_event`'s theme arm
+  has moved. Mechanical, but it touches seven modules: one commit, and run
+  the gates before it.
+
+- [ ] **N6. A `ViewCache` for per-space view state.** `scroll` and
+  `icon_scales` are per-space, not persisted, and keyed by `SpaceId`. Put them
+  in `struct ViewCache` in `app/view.rs` with `scroll_of(id)`,
+  `set_scroll(id, px)`, `forget(id)` (call it where a space is deleted; today
+  both maps keep a deleted space's entry, so check and note it under **Found
+  while working** if that is still true), and the `icon_scales` reads. After
+  N5.
+
+After N1-N6, `App` holds the model and its stores, the owned groups, and a few
+flags. Splitting `Ui` so `App` can be tested against a fake is R15.
+
 ## D. Reserved (strong model or maintainer; do not start)
 
-Each needs design work first. Ids are `R1`-`R15` so they do not collide with
+Each needs design work first. Ids are `R1`-`R16` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
@@ -421,12 +668,27 @@ the ROADMAP decision ids (`D1`-`D9`).
   read, write-and-clamp, `Effect`), as `HOTKEY_BINDINGS` does for hotkeys, so
   the setting recipe becomes one row. Decide how option tables, look versus
   Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
-- **R15. Narrow `App` and `Ui`.** `App` has about 31 fields, all reachable
-  from every `app/` module, and `Ui` about 58 public methods. Group the
-  remaining session state into owned structs (as `PointerState`, `EditState`,
-  and `Selection` already are), and consider splitting `Ui` into focused
-  handles (spaces, shell, chrome) so app logic can be tested against a fake.
-  Needs a design that keeps `runtime::dispatch`'s re-entrancy rules.
+- **R15. Split `Ui` so `App` can be tested against a fake.** `App`'s loose
+  state is section N. What remains is `Ui`: 59 public methods (already filed
+  by area in `runtime/ui_spaces.rs` 15, `ui_input.rs` 10, `ui_shell.rs` 15,
+  `ui_chrome.rs` 18), taken as one concrete type, so no `App` behavior that
+  touches the screen can be unit-tested; the app's tests reach only the pure
+  modules. Design focused traits or handles along those four files, a
+  recording fake for tests, and how `EventHandler::on_event` receives them,
+  keeping `runtime::dispatch`'s re-entrancy rules. After N1-N6.
+- **R16. Scripting verbs: an out-of-process extension point (F-59).**
+  Extensions today mean editing the source. Design a small, stable verb set
+  (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
+  `deskspace.exe --verb ...` hands to the running instance, so scripts, the
+  desktop menu (C9), and Explorer's "Send to" (F-56) share one path. Settle:
+  the transport (today `--show` posts one `WM_APP` id; arguments need
+  `WM_COPYDATA` or a named pipe), one `Verb` enum shared by `cli.rs` and the
+  controller, mapping verbs onto existing app methods (never a second way to
+  change the model), and the trust boundary (same user and session only;
+  never accept a verb from an elevated or remote caller). C9's `--new-space`
+  should be built as the first verb if this lands first. No in-process plugin
+  loading: native plugins in a shell-integrated app cost more stability and
+  security than they are worth now.
 
 ## V. Awaiting on-screen check
 
