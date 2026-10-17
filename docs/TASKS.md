@@ -10,7 +10,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- Q2-Q6.
+- Q2-Q6;
+- section U, in order (U1 and U2 are pure and need no screen).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -404,10 +405,106 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
-## G. More Explorer-standard controls
+## U. Undo and redo (ROADMAP D11, M2)
 
-- [ ] **G6. Ctrl+Z undo.** After R6 settles the design (ROADMAP section 8,
-  open question 3).
+Read D11 first; it is the spec. Do the tasks in order, one commit each. The
+history is session state in the app; core gains only a restore `Command`
+and ids that are never reused. Every undoable action records one entry, and
+undo or redo either applies a whole entry or, when the entry is stale,
+changes nothing and says so.
+
+- [ ] **U1. Ids are never reused; a restore command (core).**
+  - `Desktop::next_space_id` and `next_item_id` take the highest id ever
+    handed out this session, not the highest present, so an id freed by a
+    delete is not given to a newer space or item. Keep the high-water marks
+    in `#[serde(skip)]` fields, seeded from the loaded ids, so the config
+    file does not change.
+  - `Command::RestoreSpaces { spaces: Vec<(SpaceId, Option<(usize, Space)>)> }`:
+    for each id, `Some` puts that exact `Space` back at that index in the
+    space order (replacing a space with the same id), and `None` removes the
+    space. `Rejected` if a restored item id is held by another space or by
+    the desktop layer. Its `touched_by` arm names every listed id.
+  - Tests: a delete then a create gets a new id; a restore round-trips a
+    deleted space with its items, look, and place in the order; a clashing
+    item id is rejected; `None` removes.
+- [ ] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
+  - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
+    `spaces` holds each changed space's before and after
+    (`Option<(usize, Space)>` each; `None` means absent), and `files` is a
+    `Vec<FileChange>` in the order made: `Moved { from, to }`,
+    `Renamed { from, to }`, `Created { path }`, and
+    `Recycled { original, at }` (`at` is when it was recycled).
+  - Recording: `begin(label)`, then `note_space(desktop, id)` captures a
+    space's before state the first time an entry sees it, `note_file(change)`
+    adds a file change, and `finish(desktop)` reads every after state and
+    pushes the entry, unless it changed nothing. `finish` clears `redo` and
+    keeps at most `UNDO_DEPTH` (50) entries.
+  - Checks: `UndoEntry::can_undo(desktop, exists)` is true while every
+    listed space equals its after state and every file change can be
+    reversed (`to` exists and `from` is free, as `exists` reports);
+    `can_redo` is the same against the before state. `exists` is a closure,
+    so tests run without a disk.
+  - Tests: an entry round trip, the depth cap, a new entry clears redo, a
+    changed space or a moved file makes an entry stale, and an empty action
+    records nothing.
+- [ ] **U3. Undo and redo layout changes (app).**
+  - `App::dispatch` calls `note_space` for every space in `touched_by`
+    while an entry is open. Wrap each user action in `begin`/`finish` at its
+    entry point (menu choice, drag end, resize end, rename commit, new
+    space, delete space): move, resize, reorder, sort, arrange, snap all,
+    fit to contents, lock, roll-up, rename a space, create a space, and move
+    items between spaces. A drag records once, on release, not per mouse
+    move.
+  - `App::undo` and `App::redo` (in `app/undo.rs`): check the top entry; if
+    it is stale, drop it and tell the user with `ui.alert` ("DeskSpace can't
+    undo “Move 3 items”, because the space changed since."); otherwise
+    dispatch `RestoreSpaces`, move the entry across, refresh what it names,
+    and save. File changes are reversed in U5-U7; until then an entry that
+    holds any is never recorded.
+  - Menus (the menu-entry recipe): Undo and Redo, named for the entry's
+    label ("Undo Move 3 items"), at the top of the space menu and the tray,
+    greyed when there is nothing to do.
+  - Tests: through `fixtures.rs`, each listed action records one entry that
+    undoes and redoes; a settings-window edit records none.
+- [ ] **U4. Ctrl+Z and Ctrl+Y (the key recipe).** Two `SelectionKey`
+  variants under `WATCH_PASTE`, the flag Ctrl+V uses, so they act only
+  while a space is current and pass through to Explorer otherwise. Move
+  Ctrl+Z out of `other_keys_pass_through_to_type_to_select_or_the_app`.
+  **[needs human]** check: Ctrl+Z after a space move puts it back, Ctrl+Y
+  moves it again; with no space current, Ctrl+Z on the desktop still undoes
+  an Explorer rename.
+- [ ] **U5. Undo file moves (app).** Record `Moved` where DeskSpace moves a
+  file: `place_dropped` (into the store, including drops from the taken-over
+  desktop), `release_item` (back to the desktop on a space delete), and a
+  paste's external moves; record `Renamed` for an item rename
+  (`rename.rs`). Reverse in reverse order with the same mechanism that made
+  the change (`ItemStore` for store moves, `ui.transfer_files`, and
+  `ui.rename_path`), after checking every change first, so a stale entry
+  touches no file. Then a space delete undoes: its files go back into the
+  store and the space comes back with its items. **[needs human]** check:
+  drop a file into a space and undo (it is back where it was); delete a
+  space with stored files, undo, then redo; rename an item and undo.
+- [ ] **U6. Restore from the Recycle Bin (platform).**
+  `Ui::restore_recycled(original: &Path, since: SystemTime) -> Option<PathBuf>`:
+  find the Recycle Bin item whose original location is `original` and that
+  was deleted at or after `since` (the newest if several), restore it with
+  the shell's "undelete" verb, and return the restored path. `None` when it
+  is gone (emptied, or restored by hand). Cite the Microsoft Learn pages for
+  the Recycle Bin folder and its properties beside the code. **[needs
+  human]** check: recycle a file in Explorer, restore it through a test
+  harness or `--verbose` log, and confirm it is back under its old name.
+- [ ] **U7. Undo deletes, copies, and new shortcuts (app).** Record
+  `Recycled` (with the time taken just before the call) for a Recycle-Bin
+  delete in `delete_selected_items` and `delete_space_item`; an item that
+  was only unlisted is a model change and needs no file record. Record
+  `Created` for copies (`copy_dropped`, a paste's copies), shortcuts
+  (`add_shortcuts`), and "Add files…". Undoing `Recycled` restores with
+  U6; undoing `Created` recycles the file and turns the record into
+  `Recycled` so redo can restore it. Shift+Delete records nothing.
+  **[needs human]** check: delete two items and undo (both return to the
+  space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty
+  the Recycle Bin between a delete and its undo: the undo says it can't and
+  changes nothing.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
@@ -522,7 +619,6 @@ Rules for every Q task:
 Each needs design work first. Ids are `R1`-`R18` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
-- **R6. Undo design.** Needs an answer to ROADMAP open question 3.
 - **R7. On-screen verification pass** (maintainer). The list is section V.
 - **R10. Code signing (maintainer, ROADMAP M8 item 3, D6).** Apply to
   SignPath Foundation (an OSI license, which Apache-2.0 is, and a public

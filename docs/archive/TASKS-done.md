@@ -2177,3 +2177,11 @@ until I5-I6 all land, so no partial build hides the desktop.
       the default (copy `zooming_stops_at_both_ends_of_its_range`).
     - **R17c:** `App::commit` returns its effects through the same `run`.
       **[needs human]** check: the F13 and F-57 rows of section V still pass.
+
+- **R6. Undo design.** Superseded 2026-10-17: the maintainer answered
+  ROADMAP open question 3 with D11, and section U holds the work. Was:
+  Needs an answer to ROADMAP open question 3.
+
+- [ ] **G6. Ctrl+Z undo.** Superseded 2026-10-17 by section U (U4 is the
+  key). Was: After R6 settles the design (ROADMAP section 8, open question
+  3).

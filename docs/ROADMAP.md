@@ -242,6 +242,41 @@ A native, lightweight, offline Windows desktop organizer that:
     the space opens at the click or the pointer, as before.
   - Code: `deskspace-core/src/placement.rs`.
 
+- **D11. Undo (2026-10-17).** Resolves open question 3.
+  - *Depth:* multi-level, with redo. One user action is one entry (a drag of
+    five files is one), labelled for the menus ("Move 3 items"). The stack
+    keeps about 50 entries, and a new action clears the redo side.
+  - *Session only:* the history lives in the app, like scroll state, and is
+    cleared on exit. Nothing is added to the config.
+  - *Scope:* every change DeskSpace makes through a user action: arranging,
+    moving, resizing, sorting, locking, rolling up, and renaming spaces;
+    creating and deleting spaces; moving items between spaces; and the
+    files behind them. Files dropped into the store go back where they came
+    from. Files a space's deletion returned to the desktop go back into the
+    store. Copies, pastes, and new shortcuts go to the Recycle Bin. Shell
+    renames are renamed back. Items deleted to the Recycle Bin are restored
+    from it. Not covered: Shift+Delete (nothing to restore), settings-window
+    edits (Cancel undoes those), positions on the taken-over desktop (the
+    shell owns them), and drags out to Explorer (Explorer's own undo has
+    them).
+  - *Never clobber:* an entry stores, for each space it changed, the space
+    before and after, and the file changes it made. It is undone only while
+    those spaces still equal its after state, and every file is still where
+    the action left it with its old place free; redo checks the before
+    state the same way. Anything else changed them since (a prune, a look
+    edit, a re-flow that moved items, a file moved outside DeskSpace), so
+    the entry is stale: it is dropped with a message naming it, and nothing
+    is changed. All checks run before the first file is touched.
+  - *Model:* a restore is a `Command` that puts back exactly the stored
+    spaces, so the model still changes only through `Command`s. Ids are
+    never reused within a session, so a restored space or item cannot
+    collide with a newer one.
+  - *Keys and menus:* Ctrl+Z and Ctrl+Y act while a space is current, the
+    rule Ctrl+V follows; otherwise they still reach Explorer. The space menu
+    and the tray offer Undo and Redo, named for the action ("Undo Move 3
+    items").
+  - Work items: `TASKS.md` section U.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -286,8 +321,8 @@ lists what each has done.
    built-but-unchecked behaviors before more work builds on them.
 3. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **M2 undo** for file moves and space deletion. First settle open
-   question 3.
+4. **M2 undo** for layout changes, file moves, and space deletion (D11;
+   `TASKS.md` section U).
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -327,8 +362,8 @@ Remaining:
 1. **Watch stored files.** Only the Desktop folder is watched; a change to a
    stored file made outside DeskSpace is noticed only by an item action or at
    startup. Lenses will reuse the same watcher (M4 phase 2).
-2. **Undo** for file moves, item removal, and space deletion (open question
-   3). F-02's "delete with undo" depends on it.
+2. **Undo** for layout changes, file moves, item removal, and space
+   deletion (D11). F-02's "delete with undo" depends on it.
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -715,11 +750,7 @@ Resolve each one during the milestone that raises it.
 
 1. **Takeover safety (M2).** *Resolved:* D8.
 2. **Desktop layer vs blur (M2).** *Resolved:* D8.
-3. **Undo model (M2).** Should the undo stack be single-level or
-   multi-level? Should it cover file moves, which are destructive? Explorer
-   can already undo the shell operations (paste, delete, rename) through
-   `FOF_ALLOWUNDO`. Moves into the store are plain renames with no undo
-   record.
+3. **Undo model (M2).** *Resolved:* D11.
 4. **Translation format (M9).** Which message format, and where do the
    catalogs live?
    - *Fluent* (`fluent-bundle`): plurals, named placeholders, and grammar
@@ -738,7 +769,7 @@ Resolve each one during the milestone that raises it.
      every key the code uses has English text.
 
 Every other question raised so far is answered by a decision in section 2
-(D2, D3, D6-D9).
+(D2, D3, D6-D9, D11).
 
 ## 9. Risks
 
