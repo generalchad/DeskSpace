@@ -2,7 +2,7 @@
 //! (R1).
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, CommandOutcome, SpaceId};
+use deskspace_core::{Command, CommandOutcome};
 use deskspace_platform::{Ui, work_area_at};
 
 use super::{App, Timer};
@@ -54,21 +54,23 @@ impl App {
         self.save();
     }
 
-    /// Applies `command`, then repaints the space and schedules a save when the
-    /// domain changed. Returns whether the command applied.
-    pub(super) fn apply_to_space(
-        &mut self,
-        ui: &mut Ui,
-        id: SpaceId,
-        command: Command,
-        at: Point,
-    ) -> bool {
-        if self.dispatch(command, at).is_applied() {
-            self.refresh_space(ui, id);
-            self.schedule_save(ui);
-            true
-        } else {
-            false
+    /// Applies `command`, then, when it applied, repaints what it changed
+    /// (`Desktop::touched_by`) and schedules a save. The one path for a change
+    /// whose repaint and save need nothing special.
+    pub(super) fn commit(&mut self, ui: &mut Ui, command: Command, at: Point) -> CommandOutcome {
+        let touched = self.config.desktop.touched_by(&command);
+        let outcome = self.dispatch(command, at);
+        if !outcome.is_applied() {
+            return outcome;
         }
+        // A deleted space is gone; `refresh_space` skips it.
+        for id in touched.spaces {
+            self.refresh_space(ui, id);
+        }
+        if touched.layer {
+            self.refresh_desktop_layer(ui);
+        }
+        self.schedule_save(ui);
+        outcome
     }
 }

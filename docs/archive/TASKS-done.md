@@ -1921,3 +1921,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     - `MoveToDesktop` touches its source space and the layer.
     - If a variant fits none of these rules, stop and ask.
   - Tests: one per rule above, in `command/mod.rs`.
+
+- [x] **B28c. `App::commit` replaces `apply_to_space`.**
+  - In `app/persist.rs`, add `pub(super) fn commit(&mut self, ui: &mut Ui,
+    command: Command, at: Point) -> CommandOutcome`. In this order, it:
+    1. reads `self.config.desktop.touched_by(&command)`;
+    2. calls `self.dispatch(command, at)`;
+    3. if the command applied, calls `refresh_space` for each touched space
+       that still exists;
+    4. if `touched.layer` is set, redraws the desktop layer. Use the method
+       `app/view.rs` already calls for that; if it takes more than one call,
+       stop and ask;
+    5. calls `schedule_save`.
+  - Replace each `apply_to_space(ui, id, command, at)` call with
+    `commit(ui, command, at)`. The callers are in `app.rs`, `app/menus.rs`,
+    and `app/settings_session.rs`. Then delete `apply_to_space`.
+  - Done when: `rg -n apply_to_space crates` finds nothing. **[needs
+    human]** check: lock, roll up, sort, and "Fit to contents" each repaint
+    the space at once and survive a restart.

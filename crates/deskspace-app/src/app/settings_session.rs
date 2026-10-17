@@ -237,7 +237,10 @@ impl App {
             }
             (ButtonAction::FitToContents, Some(id)) => {
                 let at = self.space_center(id);
-                if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
+                if self
+                    .commit(ui, Command::FitToContents { id }, at)
+                    .is_applied()
+                {
                     self.scroll.remove(&id);
                 }
                 self.refresh_settings(ui);

@@ -481,7 +481,7 @@ impl App {
         if self.selection.surface == Some(Surface::Space(id)) {
             self.selection.clear();
         }
-        self.apply_to_space(ui, id, Command::ToggleRollup { id }, near);
+        self.commit(ui, Command::ToggleRollup { id }, near);
     }
 
     // ---- timers --------------------------------------------------------

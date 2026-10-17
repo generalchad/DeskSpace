@@ -145,9 +145,10 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    Then an arm in `Desktop::touched_by` (`command/touched.rs`) naming what it
    changes; the compiler asks for it.
 2. Tests in `command/mod.rs`: one per outcome (copy the `Reflow` tests).
-3. App: call it through `self.dispatch(...)` or, for a change to one space
-   that should repaint and save, `self.apply_to_space(ui, id, command, at)`
-   (`app/persist.rs`). Never mutate `self.config.desktop` directly.
+3. App: call it through `self.commit(ui, command, at)` (`app/persist.rs`),
+   which repaints what `touched_by` names and saves; bare `self.dispatch`
+   only when the caller repaints or saves in its own way. Never mutate
+   `self.config.desktop` directly.
 4. Add the variant to the Commands list in `CONTEXT.md` section 4.
 
 ### Recipe: a new key
@@ -368,24 +369,6 @@ a step describes, stop and ask (rule 4).
 `App::dispatch` has to remember to call `refresh_space` and `schedule_save`
 afterwards, and `dispatch` returns a `bool`, so `NotFound` and `Rejected`
 look the same. Do B28a-B28d in order.
-
-- [ ] **B28c. `App::commit` replaces `apply_to_space`.**
-  - In `app/persist.rs`, add `pub(super) fn commit(&mut self, ui: &mut Ui,
-    command: Command, at: Point) -> CommandOutcome`. In this order, it:
-    1. reads `self.config.desktop.touched_by(&command)`;
-    2. calls `self.dispatch(command, at)`;
-    3. if the command applied, calls `refresh_space` for each touched space
-       that still exists;
-    4. if `touched.layer` is set, redraws the desktop layer. Use the method
-       `app/view.rs` already calls for that; if it takes more than one call,
-       stop and ask;
-    5. calls `schedule_save`.
-  - Replace each `apply_to_space(ui, id, command, at)` call with
-    `commit(ui, command, at)`. The callers are in `app.rs`, `app/menus.rs`,
-    and `app/settings_session.rs`. Then delete `apply_to_space`.
-  - Done when: `rg -n apply_to_space crates` finds nothing. **[needs
-    human]** check: lock, roll up, sort, and "Fit to contents" each repaint
-    the space at once and survive a restart.
 
 - [ ] **B28d. Move the bare `dispatch` callers to `commit`.** Make one
   commit per file: `app/menus.rs`, `app/clipboard.rs`, `app/files.rs`,
@@ -882,6 +865,7 @@ each id is in `archive/TASKS-done.md`.
 | F13 (F-25) | Under the default preset, Ctrl+wheel stops at 16 and 256 px; under Custom it changes the spaces (and, with takeover, the layer's icons) but not Explorer's; a space with its own Custom look keeps its size either way. |
 | F-57 zoom pop-up | Still to check: the look in light mode and on the Blur, Solid, and Clear backdrops (Clear shows as Acrylic); the scale at 150 %, where the percentage should read 100 % at "Medium icons". |
 | F15 | Still to check: the icon-size slider and the Match Explorer preset leave every space's size alone; "Fit to contents" then fits the space to its items; Cancel after a slider preview leaves a never-resized space growing with new items again; moving a space to a monitor with another DPI still scales it (title bar included). |
+| B28c | Lock, roll up, sort, and "Fit to contents" (space menu and the settings button) each repaint the space at once and survive a restart. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working

@@ -145,9 +145,8 @@ impl App {
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
-        self.apply_to_space(
+        self.commit(
             ui,
-            id,
             Command::SortSpace {
                 id,
                 key,
@@ -260,12 +259,15 @@ impl App {
             Some(menu::RENAME) => self.begin_rename(ui, id),
             Some(menu::DELETE) => self.delete_space(ui, id),
             Some(menu::FIT) => {
-                if self.apply_to_space(ui, id, Command::FitToContents { id }, at) {
+                if self
+                    .commit(ui, Command::FitToContents { id }, at)
+                    .is_applied()
+                {
                     self.scroll.remove(&id);
                 }
             }
             Some(menu::LOCK) => {
-                self.apply_to_space(ui, id, Command::ToggleLock { id }, at);
+                self.commit(ui, Command::ToggleLock { id }, at);
             }
             Some(menu::SPACE_TINT) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
             Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
