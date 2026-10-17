@@ -2074,3 +2074,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   `shell_items(data)`, raise `ShellItemsDropped`, and return `LINK`, so
   `App::add_shortcuts` writes the shortcuts (or copies a dropped `.lnk`). No
   new `DropAction` variant and no second shortcut writer.
+
+- **R15. Split `Ui` so `App` can be tested against a fake.** Superseded:
+  the maintainer chose R17 (pure update, then effects) on 2026-10-17, which
+  tests the app's decisions without a `Ui` fake. Kept for the record.
+  `App`'s loose
+  state is grouped into owned structs (N1-N6, archived). What remains is `Ui`: about 60 public methods (already
+  filed by area in `runtime/ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, and
+  `ui_chrome.rs`), taken as one concrete type, so no `App` behavior that
+  touches the screen can be unit-tested; the app's tests reach only the pure
+  modules. Design focused traits or handles along those four files, a
+  recording fake for tests, and how `EventHandler::on_event` receives them,
+  keeping `runtime::dispatch`'s re-entrancy rules. Weigh R17
+  first: it may make the fake unnecessary.
