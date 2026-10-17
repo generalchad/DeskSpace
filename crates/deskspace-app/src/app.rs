@@ -374,17 +374,12 @@ pub struct App {
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: [Option<Hotkey>; HOTKEY_COUNT],
-    /// Whether the platform is reporting clicks outside spaces; kept on only
-    /// while an item is selected.
-    watching_outside: bool,
     /// A settings edit is waiting for `Timer::Preview` to restyle or re-flow
     /// every space.
     pending_preview: Preview,
     settings: Option<Session>,
     /// The space highlighted for the settings window, until `Timer::Highlight`.
     highlighted: Option<SpaceId>,
-    /// The keys typed so far for type-to-select, cleared by `Timer::Type`.
-    type_buffer: String,
     open_settings_on_start: bool,
     /// Draw the loose desktop items on a chrome-less layer window (hidden
     /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
@@ -417,11 +412,9 @@ impl App {
             icon_scales: HashMap::new(),
             visible: !hidden,
             hotkeys: [None; HOTKEY_COUNT],
-            watching_outside: false,
             pending_preview: Preview::default(),
             settings: None,
             highlighted: None,
-            type_buffer: String::new(),
             open_settings_on_start: open_settings,
             takeover_layer: false,
             takeover: false,
@@ -504,7 +497,7 @@ impl App {
             Timer::Highlight => self.clear_highlight(ui),
             Timer::Preview => self.flush_preview(ui),
             // The type-to-select prefix expired; the next key starts fresh.
-            Timer::Type => self.type_buffer.clear(),
+            Timer::Type => self.selection.clear_typed(),
             Timer::Health => self.health_tick(),
             Timer::UpdateIdle => self.on_update_idle_timer(ui),
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),

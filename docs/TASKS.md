@@ -656,8 +656,6 @@ it, outside tests):
 
 | Field | Used in |
 |-------|---------|
-| `type_buffer` | `app.rs` (timer), `selection` |
-| `watching_outside` | `selection` |
 | `settings`, `pending_preview`, `highlighted` | `settings_session` (and one read each in `view`, `menus`, `update`) |
 | `takeover_layer`, `takeover`, `desktop_entries` | `view` |
 | `hotkeys` | `app.rs`, `settings_session` |
@@ -676,11 +674,6 @@ Rules for every N task:
   one-line accessor, stop and ask (rule 4).
 - Update `CONTEXT.md` section 3's module table if a module's "Owns" column
   changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N1. Move `type_buffer` and `watching_outside` into `Selection`.**
-  Both are selection state (type-to-select's prefix, and whether outside
-  clicks are watched while something is selected). `Timer::Type` in
-  `App::on_timer` clears the buffer through a `Selection` method.
 
 - [ ] **N2. A `SettingsUi` for the open settings window.** In
   `app/settings_session.rs`: `struct SettingsUi { session: Option<Session>,

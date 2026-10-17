@@ -1950,3 +1950,8 @@ until I5-I6 all land, so no partial build hides the desktop.
     followed by `flush_save` (file moves save at once), keep `dispatch`. Add
     a one-line comment above it saying which case it is.
   - Done when: every `self.dispatch(` outside `commit` has such a comment.
+
+- [x] **N1. Move `type_buffer` and `watching_outside` into `Selection`.**
+  Both are selection state (type-to-select's prefix, and whether outside
+  clicks are watched while something is selected). `Timer::Type` in
+  `App::on_timer` clears the buffer through a `Selection` method.

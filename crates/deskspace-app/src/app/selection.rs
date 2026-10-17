@@ -16,7 +16,8 @@ const TYPE_DELAY_MS: u32 = 900;
 
 /// The item selection and the per-item marks that travel with it: the current
 /// surface, the selected items, the Shift anchor, the keyboard focus, the cut
-/// (ghosted) items, and the independent check-box ticks. Grouping them gives
+/// (ghosted) items, and the independent check-box ticks, plus the
+/// type-to-select prefix and the outside-click watch. Grouping them gives
 /// one "select only this item" and one "forget this item" in place of the
 /// copies the pointer, clipboard, and file paths used to repeat.
 #[derive(Debug, Default)]
@@ -34,9 +35,19 @@ pub(super) struct Selection {
     pub(super) cut: HashSet<ItemId>,
     /// Ticked items in independent item-check-box mode. Session-only.
     pub(super) checked: Vec<ItemId>,
+    /// The keys typed so far for type-to-select, cleared by `Timer::Type`.
+    typed: String,
+    /// Whether the platform is reporting clicks outside spaces; kept on only
+    /// while something is selected.
+    watching_outside: bool,
 }
 
 impl Selection {
+    /// Forgets the type-to-select prefix, so the next key starts a new search.
+    pub(super) fn clear_typed(&mut self) {
+        self.typed.clear();
+    }
+
     /// Selects exactly `item` in `surface`, moving the anchor and focus to it,
     /// as a plain click does.
     pub(super) fn select_only(&mut self, surface: Surface, item: ItemId) {
@@ -164,9 +175,9 @@ impl App {
         let wanted = !self.selection.items.is_empty()
             || self.edit.is_active()
             || self.selection.surface.is_some();
-        if wanted != self.watching_outside {
+        if wanted != self.selection.watching_outside {
             ui.watch_outside_clicks(wanted);
-            self.watching_outside = wanted;
+            self.selection.watching_outside = wanted;
         }
     }
 
@@ -222,7 +233,7 @@ impl App {
         let Some(surface) = self.selection.surface else {
             return;
         };
-        self.type_buffer.push(ch);
+        self.selection.typed.push(ch);
         Self::set_timer(ui, Timer::Type, TYPE_DELAY_MS);
         let show_extensions =
             self.surface_match_explorer(surface) && self.shell_display.show_extensions;
@@ -238,7 +249,7 @@ impl App {
                 .position(|entry| entry.id == *item)
         });
         let start = current.map_or(0, |index| index + 1);
-        let Some(index) = next_prefix_match(&labels, &self.type_buffer, start) else {
+        let Some(index) = next_prefix_match(&labels, &self.selection.typed, start) else {
             return;
         };
         let Some(item) = self.surface_items(surface).get(index).map(|entry| entry.id) else {
