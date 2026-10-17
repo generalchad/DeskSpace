@@ -10,7 +10,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- K7;
 - Q1-Q6.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -84,7 +83,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
-| The color picker popup | `deskspace-platform/src/win32/color_picker.rs` |
+| The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs`, `layout.rs`, `paint.rs`, `draw.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
 | The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
@@ -459,23 +458,6 @@ Rules for every K task:
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
 
-- [ ] **K7. Split `win32/color_picker.rs`** (about 1,400 non-test lines).
-  - `color_picker/mod.rs` keeps: the module doc, the sizing constants,
-    `WINDOWS_COLORS`, the recent colors (`RECENT_LIMIT`, `remember`),
-    `PickerState`, `pick`, `picker_position`, `dpi_of`, `style_window`,
-    `ensure_class`, `with_state`, `mouse_point`, `confirm`, and `wndproc`.
-  - `layout.rs` (pure): `Panel`, `Region`, `PickerLayout`, `swatch_color`,
-    `saturation_value`, `fraction_x`, with their tests.
-  - `paint.rs`: `Buffer`, `paint`, `ensure_buffer`, `paint_markers`,
-    `composite_marker`, `coverage`, `paint_content`, `paint_palette`,
-    `paint_custom`, `scaled_marker`, `blend`, `checker_color`.
-  - `draw.rs`: the GDI primitives `rect_to_win`, `fill_solid`, `frame`,
-    `draw_color_box` (re-exported from `mod.rs`: `settings_window/paint.rs`
-    calls `color_picker::draw_color_box`), `draw_ring`, `draw_swatch`,
-    `draw_check`, `draw_label`, `draw_hex`, `draw_button`, `fill_image`.
-  - `pick` keeps its path, used by `runtime/ui_chrome.rs` and
-    `settings_window/commands.rs`.
-
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
 `CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
@@ -511,8 +493,8 @@ Rules for every Q task:
    crates` finds it in the code.
 
 - [ ] **Q1. "Native UI"** (`ui.rs`, `win32/menu.rs`,
-  `win32/settings_window/`, `win32/color_picker.rs`, `win32/dialog.rs`,
-  `win32/dark_mode.rs`). Do it after K7, which moves `color_picker.rs`.
+  `win32/settings_window/`, `win32/color_picker/`, `win32/dialog.rs`,
+  `win32/dark_mode.rs`).
 - [ ] **Q2. "Selection, display matching, keys, and clipboard"**
   (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
   `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The

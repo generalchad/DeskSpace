@@ -808,7 +808,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   settings state (found by control id), so an update only repaints it, and its
   pure `PreviewLayout` serves painting and hit-testing. It has no keyboard
   support yet.
-- **Color picker** (`win32/color_picker.rs`, `Ui::pick_color`, F-51): a
+- **Color picker** (`win32/color_picker/`, `Ui::pick_color`, F-51): a
   rounded popup, themed to follow the dark/light mode, that replaces the dated
   `ChooseColor` dialog. It opens on a palette grid after the Windows color
   dialog (a "Recent colors" row and a "Windows colors" grid), with the

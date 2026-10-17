@@ -2105,3 +2105,20 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: `handle` is under about 50 lines and every key in the Keys
     table has a test. **[needs human]** check: the F1-F5, G1, and G3 rows of
     section V still pass.
+
+- [x] **K7. Split `win32/color_picker.rs`** (about 1,400 non-test lines).
+  - `color_picker/mod.rs` keeps: the module doc, the sizing constants,
+    `WINDOWS_COLORS`, the recent colors (`RECENT_LIMIT`, `remember`),
+    `PickerState`, `pick`, `picker_position`, `dpi_of`, `style_window`,
+    `ensure_class`, `with_state`, `mouse_point`, `confirm`, and `wndproc`.
+  - `layout.rs` (pure): `Panel`, `Region`, `PickerLayout`, `swatch_color`,
+    `saturation_value`, `fraction_x`, with their tests.
+  - `paint.rs`: `Buffer`, `paint`, `ensure_buffer`, `paint_markers`,
+    `composite_marker`, `coverage`, `paint_content`, `paint_palette`,
+    `paint_custom`, `scaled_marker`, `blend`, `checker_color`.
+  - `draw.rs`: the GDI primitives `rect_to_win`, `fill_solid`, `frame`,
+    `draw_color_box` (re-exported from `mod.rs`: `settings_window/paint.rs`
+    calls `color_picker::draw_color_box`), `draw_ring`, `draw_swatch`,
+    `draw_check`, `draw_label`, `draw_hex`, `draw_button`, `fill_image`.
+  - `pick` keeps its path, used by `runtime/ui_chrome.rs` and
+    `settings_window/commands.rs`.
