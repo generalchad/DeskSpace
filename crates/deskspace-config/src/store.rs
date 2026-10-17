@@ -170,7 +170,7 @@ mod tests {
         store.save(&config).unwrap();
         assert!(store.exists());
         let loaded = store.load().unwrap();
-        assert_eq!(loaded.desktop.spaces[0].title, "F");
+        assert_eq!(loaded.desktop.spaces()[0].title(), "F");
     }
 
     #[test]

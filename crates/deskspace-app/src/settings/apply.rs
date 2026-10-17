@@ -219,10 +219,10 @@ pub fn space_edit(
     value: FieldValue,
     system_dark: bool,
 ) -> Option<(SpaceId, Command, Effect)> {
-    let space = scope_space(config, session).filter(|space| space.custom)?;
+    let space = scope_space(config, session).filter(|space| space.custom())?;
     let mut look = space
-        .look
-        .clone()
+        .look()
+        .cloned()
         .unwrap_or_else(|| SpaceLook::from_global(&config.theme, &config.desktop.layout));
     let effect = apply_look_field(&mut look, id, &value, system_dark)?;
     session.dirty = true;
@@ -249,7 +249,7 @@ pub fn customize_space(config: &Config, session: &mut Session, on: bool) -> Opti
 /// The command for a customized space's "Match global appearance": a look
 /// copied from the global settings.
 pub fn match_global(config: &Config, session: &mut Session) -> Option<Command> {
-    let space = scope_space(config, session).filter(|space| space.custom)?;
+    let space = scope_space(config, session).filter(|space| space.custom())?;
     session.dirty = true;
     Some(Command::SetSpaceLook {
         id: space.id,

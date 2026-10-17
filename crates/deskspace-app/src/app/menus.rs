@@ -215,7 +215,7 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let roll = if space.rolled_up {
+        let roll = if space.rolled_up() {
             "Roll down"
         } else {
             "Roll up"
@@ -223,9 +223,9 @@ impl App {
         let mut entries = vec![
             MenuEntry::item(menu::ROLL, roll),
             MenuEntry::item(menu::RENAME, "Rename"),
-            MenuEntry::item(menu::LOCK, "Lock position").checked(space.locked),
+            MenuEntry::item(menu::LOCK, "Lock position").checked(space.locked()),
         ];
-        if space.user_sized && !space.locked {
+        if space.user_sized() && !space.locked() {
             entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);
@@ -307,7 +307,7 @@ impl App {
             .config
             .desktop
             .space(id)
-            .map(|space| space.title.clone())
+            .map(|space| space.title().to_owned())
         else {
             return;
         };
@@ -341,7 +341,7 @@ impl App {
             .config
             .desktop
             .space(id)
-            .map(|space| space.title.clone())
+            .map(|space| space.title().to_owned())
         else {
             return;
         };
@@ -449,9 +449,9 @@ impl App {
         let spaces: Vec<Rect> = self
             .config
             .desktop
-            .spaces
+            .spaces()
             .iter()
-            .map(|space| space.rect)
+            .map(|space| space.rect())
             .collect();
         let scale = scale_for(monitor_dpi_at(near));
         let default_gap = (DEFAULT_SPACE_GAP as f32 * scale).round() as i32;
@@ -488,7 +488,7 @@ fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
         MenuEntry::item(menu::SPACE_TEXT, "Custom text\u{2026}").checked(theme.custom_colors),
     );
     entries.push(
-        MenuEntry::item(menu::RESET_APPEARANCE, "Use global appearance").enabled(space.custom),
+        MenuEntry::item(menu::RESET_APPEARANCE, "Use global appearance").enabled(space.custom()),
     );
     entries.push(MenuEntry::Separator);
     entries.push(MenuEntry::item(
@@ -611,7 +611,7 @@ mod tests {
 
         let (rect, content) = {
             let space = app.config.desktop.space(id).unwrap();
-            (space.rect, space.content_rect())
+            (space.rect(), space.content_rect())
         };
         let layout = app.config.desktop.layout;
 

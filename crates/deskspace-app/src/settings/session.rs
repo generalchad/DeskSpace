@@ -19,8 +19,8 @@ impl SpaceSnapshot {
     pub fn of(space: &Space) -> Self {
         Self {
             id: space.id,
-            custom: space.custom,
-            look: space.look.clone(),
+            custom: space.custom(),
+            look: space.look().cloned(),
         }
     }
 
@@ -145,7 +145,7 @@ impl Session {
 fn snapshot_spaces(config: &Config) -> Vec<SpaceSnapshot> {
     config
         .desktop
-        .spaces
+        .spaces()
         .iter()
         .map(SpaceSnapshot::of)
         .collect()

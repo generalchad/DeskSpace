@@ -341,10 +341,10 @@ impl App {
                         origin: point,
                         active: false,
                     };
-                } else if !space.locked && space.title_bar().contains(point) {
+                } else if !space.locked() && space.title_bar().contains(point) {
                     self.pointer.drag = Drag::Space {
                         id,
-                        grab: Point::new(point.x - space.rect.x, point.y - space.rect.y),
+                        grab: Point::new(point.x - space.rect().x, point.y - space.rect().y),
                     };
                 } else if space.content_rect().contains(point) {
                     // Empty content: start a rubber-band selection.

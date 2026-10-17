@@ -96,7 +96,7 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let original = space.title.clone();
+        let original = space.title().to_owned();
         self.edit.begin(EditSession {
             surface: Surface::Space(id),
             target: EditTarget::Title,

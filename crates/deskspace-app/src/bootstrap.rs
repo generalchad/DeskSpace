@@ -124,7 +124,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         store.load_or_default()
     };
 
-    if config.desktop.spaces.is_empty() {
+    if config.desktop.spaces().is_empty() {
         seed_default_desktop(&mut config.desktop, !cli.no_icons);
     }
     // Per-space overrides from before customized looks become a look now.
@@ -196,13 +196,13 @@ mod tests {
 
         seed_space(&mut desktop, entries, BOUNDS);
 
-        let [space] = desktop.spaces.as_slice() else {
-            panic!("expected one space, got {}", desktop.spaces.len());
+        let [space] = desktop.spaces() else {
+            panic!("expected one space, got {}", desktop.spaces().len());
         };
-        assert_eq!(space.title, INITIAL_SPACE);
-        assert_eq!(space.rect.origin(), INITIAL_RECT.origin());
+        assert_eq!(space.title(), INITIAL_SPACE);
+        assert_eq!(space.rect().origin(), INITIAL_RECT.origin());
         let seeded: Vec<(&str, ItemKind)> = space
-            .items
+            .items()
             .iter()
             .map(|item| (item.label.as_str(), item.kind))
             .collect();
@@ -231,10 +231,10 @@ mod tests {
 
         seed_space(&mut desktop, Vec::new(), BOUNDS);
 
-        let [space] = desktop.spaces.as_slice() else {
-            panic!("expected one space, got {}", desktop.spaces.len());
+        let [space] = desktop.spaces() else {
+            panic!("expected one space, got {}", desktop.spaces().len());
         };
-        assert_eq!(space.title, INITIAL_SPACE);
-        assert!(space.items.is_empty());
+        assert_eq!(space.title(), INITIAL_SPACE);
+        assert!(space.items().is_empty());
     }
 }

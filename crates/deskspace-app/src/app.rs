@@ -589,7 +589,7 @@ impl EventHandler for App {
                 self.relayout_all(ui);
                 self.prune_all_missing(ui);
                 tracing::info!(
-                    spaces = self.config.desktop.spaces.len(),
+                    spaces = self.config.desktop.spaces().len(),
                     dark = self.system_dark,
                     "spaces created"
                 );
@@ -677,7 +677,7 @@ impl EventHandler for App {
 
 /// Deleting an empty space loses nothing, so it happens without asking.
 fn delete_needs_confirmation(space: &Space) -> bool {
-    !space.items.is_empty()
+    !space.items().is_empty()
 }
 
 /// What deleting a space with `count` items, `stored` of them in the space
@@ -700,7 +700,7 @@ fn delete_consequence(count: usize, stored: usize) -> String {
 }
 
 pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
-    let spaces = desktop.spaces.len();
+    let spaces = desktop.spaces().len();
     let items = desktop.space_item_count();
     let space_word = if spaces == 1 { "space" } else { "spaces" };
     let item_word = if items == 1 { "item" } else { "items" };

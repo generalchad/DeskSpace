@@ -68,9 +68,9 @@ impl App {
         let show_extensions =
             self.surface_match_explorer(Surface::Space(id)) && self.shell_display.show_extensions;
         let overlay_size = space.theme(&self.config.theme).overlay_size;
-        let title = space.title.clone();
+        let title = space.title().to_owned();
         let entries: Vec<(PathBuf, String)> = space
-            .items
+            .items()
             .iter()
             .map(|item| (item.path.clone(), item_label(item, show_extensions)))
             .collect();
@@ -399,7 +399,7 @@ impl App {
                 .config
                 .desktop
                 .space(*id)
-                .is_some_and(|space| space.user_sized && space.rect == *rect);
+                .is_some_and(|space| space.user_sized() && space.rect() == *rect);
             if still_pinned && self.dispatch(Command::FitToContents { id: *id }, rect.center()) {
                 self.refresh_space(ui, *id);
                 self.schedule_save(ui);
@@ -417,7 +417,7 @@ impl App {
             if SpaceSnapshot::of(space) == *snapshot {
                 continue;
             }
-            let at = space.rect.center();
+            let at = space.rect().center();
             if self.dispatch(snapshot.restore(), at) {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);

@@ -27,7 +27,7 @@ impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
     pub(super) fn sync_windows(&mut self, ui: &mut Ui) {
         let existing: HashSet<u64> = ui.space_ids().into_iter().collect();
-        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
+        let ids: Vec<SpaceId> = self.config.desktop.spaces().iter().map(|f| f.id).collect();
         for id in &ids {
             if existing.contains(&id.0) {
                 continue;
@@ -216,7 +216,7 @@ impl App {
         let any_space_matching = self
             .config
             .desktop
-            .spaces
+            .spaces()
             .iter()
             .any(|space| space.theme(&self.config.theme).match_explorer());
         let layer_matching = self.layer_active() && self.config.theme.match_explorer();
@@ -296,9 +296,9 @@ impl App {
                 let in_space = self
                     .config
                     .desktop
-                    .spaces
+                    .spaces()
                     .iter()
-                    .flat_map(|space| space.items.iter())
+                    .flat_map(|space| space.items().iter())
                     .any(|item| crate::storage::same_path(&item.path, &entry.path));
                 if in_space {
                     return None;
@@ -442,7 +442,7 @@ impl App {
     /// Re-applies every space's style and repaints them and the desktop
     /// layer.
     pub(super) fn restyle_all(&mut self, ui: &mut Ui) {
-        let ids: Vec<SpaceId> = self.config.desktop.spaces.iter().map(|f| f.id).collect();
+        let ids: Vec<SpaceId> = self.config.desktop.spaces().iter().map(|f| f.id).collect();
         for id in ids {
             self.restyle_space(ui, id);
         }
@@ -462,7 +462,7 @@ impl App {
         let ids: Vec<SpaceId> = self
             .config
             .desktop
-            .spaces
+            .spaces()
             .iter()
             .map(|space| space.id)
             .collect();
@@ -479,7 +479,7 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let bounds = work_area_at(space.rect.center());
+        let bounds = work_area_at(space.rect().center());
         let layout = self.layout_for(id);
         self.config
             .desktop
@@ -498,10 +498,10 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        if space.user_sized || previous.is_none_or(|previous| previous == factor) {
+        if space.user_sized() || previous.is_none_or(|previous| previous == factor) {
             return;
         }
-        let rect = space.rect;
+        let rect = space.rect();
         self.config.desktop.apply_with_layout(
             Command::KeepSize { id },
             self.layout_for(id),

@@ -315,7 +315,7 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let Some(item) = space.items.get(index) else {
+        let Some(item) = space.items().get(index) else {
             return;
         };
         let content_height = space.content_rect().height;

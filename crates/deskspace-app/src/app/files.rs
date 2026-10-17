@@ -281,7 +281,7 @@ impl App {
             .config
             .desktop
             .space(space)
-            .and_then(|space| space.items.get(index))
+            .and_then(|space| space.items().get(index))
             .map(|item| (item.id, item.path.clone(), item.label.clone()))
         else {
             return;
@@ -320,7 +320,7 @@ impl App {
         let ids: Vec<SpaceId> = self
             .config
             .desktop
-            .spaces
+            .spaces()
             .iter()
             .map(|space| space.id)
             .collect();
@@ -338,7 +338,7 @@ impl App {
             .space(id)
             .map(|space| {
                 space
-                    .items
+                    .items()
                     .iter()
                     .filter(|item| !item.path.exists())
                     .map(|item| item.id)
@@ -363,15 +363,15 @@ impl App {
             return;
         };
         let stored = space
-            .items
+            .items()
             .iter()
             .filter(|item| self.storage.contains(&item.path))
             .count();
         if delete_needs_confirmation(space) {
             let question = format!(
                 "Delete the space \"{}\"?\n\n{}",
-                space.title,
-                delete_consequence(space.items.len(), stored)
+                space.title(),
+                delete_consequence(space.items().len(), stored)
             );
             if !ui.confirm("Delete space", &question) {
                 return;
@@ -379,7 +379,7 @@ impl App {
         }
         // Return stored files to the desktop before the space goes; if any
         // cannot be moved, keep the space so its files stay reachable.
-        let items: Vec<ItemId> = space.items.iter().map(|item| item.id).collect();
+        let items: Vec<ItemId> = space.items().iter().map(|item| item.id).collect();
         let kept = items
             .into_iter()
             .filter(|item| !self.release_item(*item))

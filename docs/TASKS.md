@@ -366,19 +366,6 @@ and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
 `layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
 bypass `Command`. B27a-B27f close that, after B21.
 
-- [ ] **B27c. Read through the accessors outside core.**
-  1. Temporarily change the eight `Space` fields above and
-     `Desktop::spaces` from `pub` to `pub(crate)`. Do not commit this.
-  2. Run `cargo check --workspace --all-targets`.
-  3. Fix every error that is a **read**: `space.title` becomes
-     `space.title()`, `&space.items` becomes `space.items()`,
-     `desktop.spaces.iter()` becomes `desktop.spaces().iter()`, and so on.
-     Leave every error that is a **write** (`=`, `push`, `&mut`) alone; it
-     belongs to B27d.
-  4. Change the fields back to `pub`, run the gates, and commit only the
-     call-site changes.
-  - Done when: step 1 again leaves only write errors.
-
 - [ ] **B27d. Write test fixtures through `Command`s.**
   - Find the writes with step 1 of B27c (again uncommitted). They are in
     tests: `scene.rs`, `settings/mod.rs`, `settings/apply.rs`,

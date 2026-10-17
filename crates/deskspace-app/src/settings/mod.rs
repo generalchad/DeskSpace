@@ -63,7 +63,7 @@ pub fn scope_index(config: &Config, session: &Session) -> usize {
         .and_then(|space| {
             config
                 .desktop
-                .spaces
+                .spaces()
                 .iter()
                 .position(|other| other.id == space.id)
         })
@@ -75,7 +75,7 @@ pub fn scope_index(config: &Config, session: &Session) -> usize {
 pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
     index
         .checked_sub(1)
-        .and_then(|index| config.desktop.spaces.get(index))
+        .and_then(|index| config.desktop.spaces().get(index))
         .map(|space| space.id)
 }
 
@@ -130,7 +130,7 @@ pub fn build_form(
     let grid = space.map_or(config.desktop.layout, |space| {
         space.grid(config.desktop.layout)
     });
-    let editable = space.is_none_or(|space| space.custom);
+    let editable = space.is_none_or(|space| space.custom());
 
     let mut pages = look_pages(theme, &grid, system_dark, space.is_some());
     if !editable {
@@ -145,7 +145,7 @@ pub fn build_form(
     // the space menu's "Fit to contents".
     pages[page::LAYOUT].fields.push(
         Field::button(field::FIT_CONTENTS, "", "Fit to contents")
-            .enabled(space.is_some_and(|space| space.user_sized && !space.locked)),
+            .enabled(space.is_some_and(|space| space.user_sized() && !space.locked())),
     );
     pages.push(general_page(config));
     pages.push(new_spaces_page(config));
@@ -173,10 +173,10 @@ pub fn build_form(
         indent: false,
         dimmed: false,
     }];
-    scopes.extend(config.desktop.spaces.iter().map(|space| SettingsScope {
-        label: space.title.clone(),
+    scopes.extend(config.desktop.spaces().iter().map(|space| SettingsScope {
+        label: space.title().to_owned(),
         indent: true,
-        dimmed: !space.custom,
+        dimmed: !space.custom(),
     }));
     let header = match space {
         None => SettingsHeader {
@@ -185,15 +185,15 @@ pub fn build_form(
             button: None,
         },
         Some(space) => SettingsHeader {
-            title: space.title.clone(),
+            title: space.title().to_owned(),
             switch: Some(SettingsSwitch {
                 label: "Customize this space".into(),
-                on: space.custom,
+                on: space.custom(),
             }),
             button: Some(SettingsButton {
                 // The ellipsis promises a confirmation dialog, which only a
                 // non-empty space shows (matching the space menu).
-                label: if space.items.is_empty() {
+                label: if space.items().is_empty() {
                     "Delete space".into()
                 } else {
                     "Delete space\u{2026}".into()

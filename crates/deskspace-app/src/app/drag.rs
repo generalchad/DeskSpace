@@ -110,8 +110,8 @@ impl App {
                 let rect = Rect::new(
                     point.x - grab.x,
                     point.y - grab.y,
-                    space.rect.width,
-                    space.rect.height,
+                    space.rect().width,
+                    space.rect().height,
                 );
                 if self.dispatch(Command::SetSpaceRect { id, rect }, point)
                     && let Some(space) = self.config.desktop.space(id)
@@ -140,14 +140,14 @@ impl App {
                 if !active.0 && !active.1 {
                     return true;
                 }
-                let before = self.config.desktop.space(id).map(|space| space.rect);
+                let before = self.config.desktop.space(id).map(|space| space.rect());
                 let command = Command::ResizeSpace {
                     id,
                     edges: active_edges,
                     to: point,
                 };
                 if self.dispatch(command, point)
-                    && self.config.desktop.space(id).map(|space| space.rect) != before
+                    && self.config.desktop.space(id).map(|space| space.rect()) != before
                 {
                     self.refresh_space(ui, id);
                 }
@@ -295,8 +295,8 @@ impl App {
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
             let content = space.content_rect();
-            let columns = if space.user_sized {
-                layout.columns_for(space.rect.width)
+            let columns = if space.user_sized() {
+                layout.columns_for(space.rect().width)
             } else {
                 layout.columns
             }
@@ -305,12 +305,12 @@ impl App {
             let step_y = layout.cell_height + layout.gap;
             let column = ((point.x - content.x - layout.padding) / step_x).clamp(0, columns - 1);
             let row = ((point.y - content.y - layout.padding) / step_y).max(0);
-            let count = space.items.len();
+            let count = space.items().len();
             if count == 0 {
                 return None;
             }
             let index = ((row * columns + column) as usize).min(count - 1);
-            let current = space.items.iter().position(|entry| entry.id == item)?;
+            let current = space.items().iter().position(|entry| entry.id == item)?;
             Some((index, current))
         });
         let Some((index, current)) = target else {

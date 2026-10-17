@@ -28,7 +28,7 @@ impl App {
                 .config
                 .desktop
                 .space(id)
-                .map_or(&[][..], |space| &space.items),
+                .map_or(&[][..], |space| space.items()),
             Surface::Desktop => self.config.desktop.layer().items(),
         }
     }
@@ -207,9 +207,9 @@ impl App {
     pub(super) fn find_item_by_file(&self, path: &Path) -> Option<ItemId> {
         self.config
             .desktop
-            .spaces
+            .spaces()
             .iter()
-            .flat_map(|space| space.items.iter())
+            .flat_map(|space| space.items().iter())
             .find(|item| crate::storage::same_path(&item.path, path))
             .map(|item| item.id)
     }
@@ -245,7 +245,7 @@ impl App {
         self.config
             .desktop
             .space(id)
-            .map_or(Point::ZERO, |space| space.rect.center())
+            .map_or(Point::ZERO, |space| space.rect().center())
     }
 }
 

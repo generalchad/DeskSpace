@@ -150,7 +150,7 @@ mod tests {
     fn missing_fields_fall_back_to_defaults() {
         let parsed: Config = toml::from_str("version = 2\n").unwrap();
         assert_eq!(parsed.version, 2);
-        assert!(parsed.desktop.spaces.is_empty());
+        assert!(parsed.desktop.spaces().is_empty());
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(parsed.theme, Theme::default());
     }
@@ -189,7 +189,7 @@ mod tests {
         // mica from early v2 files maps onto the blur material.
         assert_eq!(parsed.theme.backdrop, Backdrop::Blur);
         assert_eq!(parsed.theme.tint_opacity, Theme::default().tint_opacity);
-        assert_eq!(parsed.desktop.spaces[0].items.len(), 1);
+        assert_eq!(parsed.desktop.spaces()[0].items().len(), 1);
     }
 
     #[test]
@@ -249,13 +249,13 @@ mod tests {
         parsed.migrate();
         assert_eq!(parsed.version, CURRENT_VERSION);
         assert_eq!(parsed.theme, Theme::default());
-        let space = &parsed.desktop.spaces[0];
-        assert!(!space.custom && space.look.is_none());
+        let space = &parsed.desktop.spaces()[0];
+        assert!(!space.custom() && space.look().is_none());
         assert_eq!(
-            space.items[0].position,
+            space.items()[0].position,
             parsed.desktop.layout.grid_position(0)
         );
-        assert_ne!(space.items[0].position, Point::new(412, 340));
+        assert_ne!(space.items()[0].position, Point::new(412, 340));
         let theme = parsed.theme.clone();
         assert!(!parsed.desktop.fold_legacy_overrides(&theme, false));
     }
@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(parsed.theme.icon_size, ICON_SIZE_RANGE.0);
         assert_eq!(parsed.theme.tint_opacity, 100);
         assert_eq!(parsed.theme.label_lines, 2);
-        let look = parsed.desktop.spaces[0].look.as_ref().unwrap();
+        let look = parsed.desktop.spaces()[0].look().unwrap();
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
         assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
@@ -359,10 +359,10 @@ mod tests {
         let mut parsed: Config = toml::from_str(text).unwrap();
         let theme = parsed.theme.clone();
         assert!(parsed.desktop.fold_legacy_overrides(&theme, false));
-        assert!(!parsed.desktop.spaces[0].custom);
-        let big = &parsed.desktop.spaces[1];
-        assert!(big.custom);
-        assert_eq!(big.look.as_ref().unwrap().theme.icon_size, 150);
+        assert!(!parsed.desktop.spaces()[0].custom());
+        let big = &parsed.desktop.spaces()[1];
+        assert!(big.custom());
+        assert_eq!(big.look().unwrap().theme.icon_size, 150);
 
         let written = toml::to_string(&parsed).unwrap();
         let reread: Config = toml::from_str(&written).unwrap();
@@ -510,8 +510,8 @@ mod tests {
         config.theme.custom_colors = true;
         let text = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.desktop.spaces.len(), 1);
-        assert_eq!(parsed.desktop.spaces[0].title, "Work");
+        assert_eq!(parsed.desktop.spaces().len(), 1);
+        assert_eq!(parsed.desktop.spaces()[0].title(), "Work");
         assert!(parsed.theme.custom_colors);
     }
 }

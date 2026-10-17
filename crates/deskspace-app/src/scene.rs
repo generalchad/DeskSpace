@@ -96,12 +96,12 @@ pub fn space_scene(
     } = look;
     let cell = layout.cell();
     let content_top = space.title_height;
-    let content_bottom = space.rect.height;
-    let items = if space.rolled_up {
+    let content_bottom = space.rect().height;
+    let items = if space.rolled_up() {
         Vec::new()
     } else {
         space
-            .items
+            .items()
             .iter()
             .map(|item| {
                 let rect = Rect::new(
@@ -152,7 +152,7 @@ pub fn space_scene(
 
     SpaceScene {
         chrome: true,
-        title: space.title.clone(),
+        title: space.title().to_owned(),
         title_height: space.title_height,
         tint,
         title_fill: palette.title_fill,
@@ -169,8 +169,8 @@ pub fn space_scene(
         label_size: theme
             .label_size
             .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
-        locked: space.locked,
-        rolled_up: space.rolled_up,
+        locked: space.locked(),
+        rolled_up: space.rolled_up(),
         highlight: view.highlight,
         focused_item: view.focused.map(|id| id.0),
         editing: None,
@@ -341,7 +341,7 @@ pub fn drag_scene(
     scene.items = ids
         .iter()
         .filter_map(|id| {
-            let item = space.items.iter().find(|item| item.id == *id)?;
+            let item = space.items().iter().find(|item| item.id == *id)?;
             Some(ItemVisual {
                 id: item.id.0,
                 rect: Rect::new(
@@ -424,7 +424,7 @@ fn thumb_bottom_margin(corner_radius: i32) -> i32 {
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
 fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32) -> Option<Rect> {
-    if space.rolled_up {
+    if space.rolled_up() {
         return None;
     }
     let max_scroll = space.max_scroll(layout.cell(), layout.padding);
@@ -444,7 +444,7 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32
     let travel = track_height - thumb_height;
     let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
     Some(Rect::new(
-        space.rect.width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
+        space.rect().width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
         track_top + offset,
         SCROLL_THUMB_WIDTH,
         thumb_height,
@@ -871,9 +871,9 @@ mod tests {
         assert_eq!(start.y, tall.title_height + SCROLL_THUMB_MARGIN);
         assert_eq!(
             end.bottom(),
-            tall.rect.height - thumb_bottom_margin(theme.effective_corner_radius() as i32)
+            tall.rect().height - thumb_bottom_margin(theme.effective_corner_radius() as i32)
         );
-        assert_eq!(start.right(), tall.rect.width - SCROLL_THUMB_MARGIN);
+        assert_eq!(start.right(), tall.rect().width - SCROLL_THUMB_MARGIN);
 
         let short = space();
         let scene = space_scene(

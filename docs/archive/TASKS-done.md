@@ -1838,3 +1838,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Leave `id` public: it never changes after creation.
   - If a method with one of these names already exists, stop and ask.
   - Change no caller in this commit. Done when: the gates pass.
+
+- [x] **B27c. Read through the accessors outside core.**
+  1. Temporarily change the eight `Space` fields above and
+     `Desktop::spaces` from `pub` to `pub(crate)`. Do not commit this.
+  2. Run `cargo check --workspace --all-targets`.
+  3. Fix every error that is a **read**: `space.title` becomes
+     `space.title()`, `&space.items` becomes `space.items()`,
+     `desktop.spaces.iter()` becomes `desktop.spaces().iter()`, and so on.
+     Leave every error that is a **write** (`=`, `push`, `&mut`) alone; it
+     belongs to B27d.
+  4. Change the fields back to `pub`, run the gates, and commit only the
+     call-site changes.
+  - Done when: step 1 again leaves only write errors.
