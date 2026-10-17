@@ -1,5 +1,8 @@
 //! The settings field and page ids.
 
+/// Settings control ids. Never renumber one; a new field takes the highest
+/// value plus one. 25 and 26, freed by the removed placement setting, stay
+/// unused. `field_ids_are_unique` guards the list.
 pub mod field {
     pub const SPACES_HEADING: u32 = 1;
     pub const MODE: u32 = 2;

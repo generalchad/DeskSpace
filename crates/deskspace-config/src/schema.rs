@@ -25,11 +25,13 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WindowSettings {
+    /// Shows or hides the spaces. Empty means unbound.
     pub toggle_hotkey: String,
     /// Creates a space at the pointer. Empty means unbound.
     pub new_space_hotkey: String,
     /// Opens the settings window. Empty means unbound.
     pub settings_hotkey: String,
+    /// Start with the spaces hidden (`--show` overrides it).
     pub start_hidden: bool,
     /// Run DeskSpace at sign-in through the per-user `Run` key.
     pub start_with_windows: bool,
@@ -41,6 +43,7 @@ pub struct WindowSettings {
     /// The size a new space starts with, in pixels, clamped to
     /// `NEW_SPACE_SIZE_RANGE`.
     pub new_space_width: i32,
+    /// See `new_space_width`.
     pub new_space_height: i32,
     /// Whether a new space starts locked (kept at its size, scrolling instead
     /// of growing).

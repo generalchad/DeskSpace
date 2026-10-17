@@ -47,8 +47,9 @@ const ICON_SIZE_WHEEL_STEP: i32 = 10;
 const UPDATE_WAKE: usize = 0;
 const UPDATE_DOWNLOADED_WAKE: usize = 1;
 /// The app's timers, delivered back as `Event::Timer` with the variant's
-/// value as the id. The values are cited in `CONTEXT.md` section 6; never
-/// renumber them.
+/// value as the id. Never renumber one; a new timer takes the highest value
+/// plus one and joins `ALL`, and `App::on_timer`'s exhaustive match asks for
+/// its handler. Each delay constant lives in the module that starts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
 enum Timer {
@@ -94,6 +95,9 @@ impl Timer {
     }
 }
 
+/// The app's popup-menu ids. Never renumber one; a new entry takes the
+/// highest value plus one, below `0x8000`, where the shell's ids start
+/// (`SHELL_FIRST_ID`), and joins `menu_ids_are_unique`.
 mod menu {
     pub const ROLL: u32 = 1;
     pub const LOCK: u32 = 2;

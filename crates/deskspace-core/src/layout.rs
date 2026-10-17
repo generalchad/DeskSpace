@@ -11,12 +11,19 @@ pub const SNAP_RANGE: (i32, i32) = (0, 64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GridSpec {
+    /// One item's cell, icon and label, before the gap.
     pub cell_width: i32,
+    /// See `cell_width`.
     pub cell_height: i32,
+    /// The icon spacing between cells (`GAP_RANGE`).
     pub gap: i32,
+    /// The edge padding inside a space's content area.
     pub padding: i32,
+    /// A space's title bar height.
     pub title_height: i32,
+    /// The columns of a space that sizes itself to its items.
     pub columns: i32,
+    /// The step that moved and resized spaces snap to (`SNAP_RANGE`).
     pub snap: i32,
     /// Round a user-sized space's width and height to whole grid columns and
     /// rows when it is resized, so its edge padding stays even. Off keeps the

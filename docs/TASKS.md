@@ -87,9 +87,10 @@ Where each kind of code lives. Paths are under `crates/`.
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
 
-Ids (`WM_APP` messages, timers, menu ids, `field::` ids) and their next free
-values are tabled in `CONTEXT.md` section 6, "Message, timer, and id tables".
-Never renumber an id; take the next free one and update that table.
+Ids (`WM_APP` messages, timers, menu ids, `field::` ids): never renumber
+one. "Next free" in the recipes means the highest value in that list plus
+one; read it from the code. `CONTEXT.md` section 6, "Message, timer, and id
+tables", says where each list lives and which test guards it.
 
 ### Recipe: a new global setting
 
@@ -249,9 +250,10 @@ user-visible change is expected. Do them in any order.
     `ALL` entry survives `from_id`, `from_id(9)` and `from_id(0)` are `None`)
     and `menu_ids_stay_below_the_shell_range` (every value is below
     `0x8000`). `ALL` makes the hand-kept list unnecessary.
-  - Docs: `CONTEXT.md` section 6 "Other ids" names `MenuId`; the recipe "a
+  - Docs: in `CONTEXT.md` section 6, "Message, timer, and id tables", the
+    "Menu ids" row names `enum MenuId` and its guard tests. The recipe "a
     new menu entry" step 1 becomes "a `MenuId` variant (next free value) and
-    its `ALL` entry".
+    its `ALL` entry". Move the `mod menu` doc comment onto the enum.
   - Done when: `mod menu` is gone and no `u32` menu id literal is left in the
     app.
 
@@ -276,19 +278,32 @@ user-visible change is expected. Do them in any order.
   none covers "a fresh config gets one arranged Desktop space".
   - Done when: `bootstrap.rs` calls no `*_mut` model accessor.
 
-- [ ] **B22. List the process-wide state.** The platform keeps about sixteen
-  `static`s and `thread_local!`s, each justified (hooks and Win32 callbacks
-  get no context pointer), but nowhere listed, which makes the runtime the
-  hardest part to reason about. Add a subsection "Process-wide state" to
-  `CONTEXT.md` section 6, after "Runtime": a table of every one with its file,
-  name, what it holds, why it cannot be passed instead, and who resets it.
-  Find them with `grep -rn "^static\|thread_local!" crates/*/src` (the
-  current set is in `render/d2d/graphics.rs`, `app_catalog.rs`,
-  `color_picker.rs`, `console.rs`, `controller.rs`, `desktop_icons.rs`,
-  `desktop_shell.rs`, `drop_target.rs`, `keyboard.rs`, `outside_click.rs`,
-  `runtime/mod.rs`, `shell_items.rs`, `shell_view.rs`, `tray.rs`, and
-  `watchdog.rs`). Docs only; no code changes. If one has no reason you can
-  state, list it under **Found while working** instead of guessing.
+- [ ] **B22. Mark the process-wide state where it lives.** The platform keeps
+  a number of `static`s and `thread_local!`s. Most are needed, because hooks
+  and Win32 callbacks get no context pointer. But none says why, which makes
+  the runtime the hardest part to reason about. Explain each one in a
+  comment beside it, not in a doc table, which would drift (`ENGINEERING.md`
+  section 7).
+  1. List them: `rg -n "^\s*(pub(\(crate\))? )?static |thread_local!"
+     crates/deskspace-platform/src`. Skip `static` string or number
+     constants that never change; they are not state.
+  2. Above each remaining one, write a comment that starts with
+     `// Process state:` and gives, in at most three lines:
+     - what it holds;
+     - why it cannot be passed instead (for example, "a `WH_KEYBOARD_LL`
+       hook procedure gets no user pointer");
+     - who sets it and who clears it.
+
+     For a `thread_local!` block, comment each entry.
+  3. If you cannot say why one cannot be passed, do not guess. Write
+     `// Process state: TODO(B22): no stated reason` and add a line under
+     **Found while working**.
+  4. In `CONTEXT.md` section 6, at the end of "Runtime", add one bullet:
+     "Process-wide state: every `static` or `thread_local!` that holds state
+     is marked `// Process state:` with what it holds, why it cannot be
+     passed, and who clears it; `rg -n "Process state:"` lists them."
+  - Comments only; no code changes. Make one commit for the platform crate.
+  - Done when: every match from step 1 that holds state has the comment.
 
 - [ ] **B23. Make the keyboard watch a pure, tested table.**
   `win32/keyboard.rs` `fn handle` is about 160 lines of `if` chains that both

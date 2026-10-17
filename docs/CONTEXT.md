@@ -128,14 +128,9 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
 
 ### Item
 
-```
-Item {
-    id, path: PathBuf, label: String, kind: ItemKind, position: Point,
-    size: Option<u64>, modified: Option<u64>,
-    compressed: bool, encrypted: bool,   // file attributes, for label colors
-}
-ItemKind { File, Folder, Shortcut, Drive, Other }
-```
+`Item` and `ItemKind` (`item.rs`; the fields are documented there) are a
+path, a label, a kind, a grid position, and facts read once from the file
+system.
 
 `core` does no IO, so whoever creates an `Item` passes in the `ItemFacts` it
 read once with `deskspace_platform::item_facts` (to `Item::new` or
@@ -149,22 +144,7 @@ area**, so moving a space never touches its items.
 
 ### Space
 
-```
-Space {
-    id: SpaceId,
-    title: String,
-    rect: Rect,           // desktop coordinates
-    items: Vec<Item>,
-    locked: bool,
-    rolled_up: bool,
-    custom: bool,              // uses `look` instead of the global settings
-    look: Option<SpaceLook>,   // kept while `custom` is off
-    title_height: i32,         // default 28
-    user_sized: bool,          // set by a resize or a zoom; keeps size, reflows, scrolls
-}
-
-SpaceLook { theme: Theme, gap: i32, padding: i32 }
-```
+`Space` and `SpaceLook` are in `space.rs`, where every field is documented.
 
 A space follows the global `Theme` and grid spacing until it is customized.
 `SpaceLook` is its own copy of every look setting: the whole theme (its
@@ -208,12 +188,8 @@ virtual-desktop coordinates. `layer()` / `layer_mut()` reach it; it has
 
 ### Layout engine (`layout.rs`)
 
-```
-GridSpec {
-    cell_width: 96, cell_height: 104, gap: 10, padding: 12,
-    title_height: 28, columns: 4, snap: 16, fit_to_grid: true,
-}
-```
+`GridSpec` (fields documented there; defaults in its `Default`) is the grid
+every space lays out on.
 
 - `arrange_space` resizes the space to fit its items (unless locked or
   user-sized) and calls `position_items`, which lays items on the grid in
@@ -257,14 +233,9 @@ bounds) -> CommandOutcome` (`Applied | NotFound | Rejected`;
 a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`, and
 `layer_ops.rs` hold those by what they change, `sort.rs` the `SortSpace`
 ordering, and `mod.rs` the shared helpers `with_space` (run a change on a
-space or report `NotFound`), `rearrange`, and `close_gap`. Variants:
-
-`CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
-`ResizeSpace`, `FitToContents`, `KeepSize`, `Reflow`, `CustomizeSpace`,
-`SetSpaceLook`, `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
-`RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
-`AutoArrange`, `SnapAll`, `SyncDesktop`, `MoveToDesktop`,
-`SetDesktopItemPosition`.
+space or report `NotFound`), `rearrange`, and `close_gap`. The variants and
+their fields are documented on `Command`; the rules below are the ones a
+variant's doc cannot show.
 
 - `CreateSpace { title, at, size, locked }` clamps to the work area (no
   snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
@@ -289,29 +260,9 @@ space or report `NotFound`), `rearrange`, and `close_gap`. Variants:
 
 ### Theme (`theme.rs`)
 
-```
-Theme {
-    mode: ThemeMode,          // System (default) | Dark | Light; colors spaces
-    ui_mode: ThemeMode,       // dark/light for the settings window and menus
-    backdrop: Backdrop,       // Acrylic (default) | Blur | Clear | Solid
-    corner_radius: u8,        // px, 0..=24, default 8 (theme::corner presets)
-    tint_opacity: u8,         // percent, default 40 (TINT_OPACITY_RANGE 0..=100)
-    title_shading: u8,        // percent, default 30 (TITLE_SHADING_RANGE 0..=100)
-    show_border: bool,        // default true
-    label_lines: u8,          // 1 or 2, default 2
-    label_size: u8,           // percent, default 100 (LABEL_SIZE_RANGE 60..=160)
-    icon_size: u8,            // percent, default 100 (ICON_SIZE_RANGE 50..=200);
-                              // scales icon and grid cell
-    overlay_size: u8,         // percent of the icon, default 80 (OVERLAY_SIZE_RANGE 40..=100)
-    label_shadow: LabelShadow,// Auto (default) | On | Off
-    custom_colors: bool,      // default false
-    tint: Color, text: Color, // used only when custom_colors
-    marquee_color: Color,     // default Windows blue; the selection box color
-    show_marquee_border: bool,// default true; the selection box border
-    preset: Preset,           // Custom | MatchExplorer (default); item display
-    use_accent: bool,         // default false; accent for selection and border
-}
-```
+`Theme` holds every look setting. Each field is documented in `theme.rs`,
+its default is in `Theme::default`, and its range is the `*_RANGE` constant
+beside it.
 
 - `Preset` bundles the item-display choices: `MatchExplorer` mirrors
   Explorer's icon size, spacing, check boxes, and extensions; `Custom` uses
@@ -347,28 +298,11 @@ Theme {
 
 ## 5. Configuration (`deskspace-config`)
 
-```
-Config { version, desktop: Desktop, theme: Theme, window: WindowSettings }
+`Config { version, desktop, theme, window }` and `WindowSettings`, the
+non-look settings, are in `schema.rs`, with each field documented and its
+default in `Default`.
 
-WindowSettings {
-    toggle_hotkey: String,      // default "Ctrl+Alt+D"; show/hide spaces
-    new_space_hotkey: String,   // default "" (unbound); create a space at the pointer
-    settings_hotkey: String,    // default "" (unbound); open settings
-    start_hidden: bool,         // default false
-    start_with_windows: bool,   // default false; per-user Run key at sign-in
-    take_over_desktop: bool,    // default false; hide Explorer's icons (M2)
-    new_space_title: String,    // default "New space"
-    new_space_width: i32,       // default 240; clamped to NEW_SPACE_SIZE_RANGE
-    new_space_height: i32,      // default 120
-    new_space_locked: bool,     // default false
-    check_for_updates: bool,        // default false; opt-in, about once a day
-    install_updates: bool,          // default false; install found updates unattended
-    last_update_check: Option<u64>, // Unix seconds of the last completed check
-    skipped_version: Option<String>, // a version the user chose to skip
-}
-```
-
-- `CURRENT_VERSION = 2`; a missing `version` key reads as 0. `Config::migrate`
+- A missing `version` key reads as 0. `Config::migrate`
   upgrades version 0/1 files: it resets the theme (v1 colors were opaque and
   tuned for the old color-keyed overlay), clears each space's v1 overrides
   (`clear_legacy_overrides`: opacity, which was a fill alpha, tint, text, and
@@ -436,78 +370,27 @@ pure layout and hit test), and `d2d/` (the painters). Everything with
 
 ### Message, timer, and id tables
 
-Never renumber these; add new ones at the next free value.
+Ids that other code, docs, or another process cite are never renumbered. A
+new one takes the highest value in use plus one; no doc keeps a "next free"
+value, because the code shows it. Each list has a uniqueness test or an
+exhaustive match:
 
-`WM_APP + n` messages posted to the controller window, all in
-`win32/messages.rs` (`TaskbarCreated` is a registered message, outside this
-range):
+| Ids | Where | Guard |
+|-----|-------|-------|
+| `WM_APP + n` messages to the controller | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
+| App timers | `enum Timer` in `deskspace-app/src/app.rs`, delivered as `Event::Timer` and set through `App::set_timer` / `clear_timer`; each delay is a constant in the module that starts it | `Timer::ALL` and the exhaustive `App::on_timer` |
+| Menu ids | `app.rs`'s `mod menu`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start) | `menu_ids_are_unique` |
+| Settings field ids | `settings/ids.rs`'s `mod field` | `field_ids_are_unique` |
 
-| n | Constant | Posted by |
-|---|----------|-----------|
-| 1 | `TRAY_CALLBACK` | the shell, for the tray icon (`tray.rs`) |
-| 2 | `OUTSIDE_PROBE` | `outside_click.rs` |
-| 3 | `EDIT_KEY` | `keyboard.rs` |
-| 4 | `DELETE_KEY` | `keyboard.rs` |
-| 5 | `CLIPBOARD_KEY` | `keyboard.rs` |
-| 6 | `RENAME_KEY` | `keyboard.rs` |
-| 7 | `SELECT_ALL_KEY` | `keyboard.rs` |
-| 8 | `SHOW_SPACES` | a second launch (`desktop_entry.rs`) |
-| 9 | `PROPERTIES_KEY` | `keyboard.rs` |
-| 10 | `WAKE` | `Waker` (`runtime/mod.rs`) |
-| 11 | `SELECTION_KEY` | `keyboard.rs` |
-| 12 | `TYPE_KEY` | `keyboard.rs` |
-| 13 | `NAV_KEY` | `keyboard.rs` |
-| 14 | `FOLDER_CHANGE` | `folder_watch.rs` |
-
-Next free: 15. A new message also joins the `ALL` list in the `messages.rs`
-tests, which check the values are unique.
-
-App timers are the `Timer` enum in `deskspace-app/src/app.rs`, delivered as
-`Event::Timer`, dispatched by `App::on_timer`, and set and cleared through
-`App::set_timer` / `App::clear_timer`; each delay constant lives in the module
-that starts the timer.
-
-| Id | Variant | Period | Purpose |
-|----|----------|--------|---------|
-| 1 | `Timer::Autosave` | 700 ms | debounced config save |
-| 2 | `Timer::Caret` | 530 ms | rename caret blink |
-| 3 | `Timer::InfoTip` | 600 ms | hover delay before an info tip |
-| 4 | `Timer::Update` | 60 s, then hourly | periodic update check (F-45) |
-| 5 | `Timer::Highlight` | 1200 ms | settings-window highlight on a space |
-| 6 | `Timer::Preview` | 15 ms | deferred settings preview (fires when the queue is idle) |
-| 7 | `Timer::Type` | 900 ms | type-to-select prefix buffer |
-| 8 | `Timer::Health` | 5000 ms | re-hide Explorer's icons while takeover is on |
-| 9 | `Timer::UpdateIdle` | 60 s | quiet-moment poll for a downloaded automatic update |
-| 10 | `Timer::ZoomBar` | 2000 ms | hide the zoom pop-up once the pointer is off it (F-57) |
-
-Next free: 11; a new variant also joins `Timer::ALL` and the exhaustive
-`App::on_timer`.
-
-Other ids: menu ids are in `app.rs`'s `mod menu` (1-13, 20-28, 30-36, 41-48;
-next free 14, or 49; 9, the removed "Remove from space", stays unused), and
-item-menu app ids stay below `0x8000` (`shell_items::SHELL_FIRST_ID`), where
-the shell's ids start. Settings field ids are in `settings/ids.rs`'s
-`mod field` (next free 72; 25 and 26, freed by the removed placement setting,
-stay unused). Page indices (`mod page`) are build positions, so a new page
-goes at the end (Shortcuts is 9, after About); `settings::listed_pages` says
-which pages a scope lists.
+Page indices (`mod page`) are build positions, so a new page goes at the
+end; `settings::listed_pages` says which pages a scope lists.
 
 ### Events
 
-`Event` (`input.rs`) is everything the app hears: `Started`, `Space { .. }`,
-`Hotkey { .. }`, `Tray(TrayEvent)`, `Settings(SettingsEvent)`,
-`EditKey(EditKey)`, `DeleteSelection`, `Clipboard(ClipboardAction)`,
-`ClipboardChanged`, `RenameSelection`, `SelectionKey(SelectionKey)`,
-`ShowProperties`, `SelectAll`, `Typed(char)`, `Navigate(NavKey)`,
-`Timer { .. }`, `PointerDownOutside { on_desktop }`, `ShowSpaces`,
-`FolderChanged`, `SystemThemeChanged`, `Zoom(ZoomAction)` (a zoom pop-up
-button), and `CloseRequested`. `SpaceEvent` is `MouseMove`,
-`MouseDown { ctrl, shift }`, `MouseUp`, `DoubleClick`, `MouseLeave`, `Wheel`,
-`FilesDropped`, `ShellItemsDropped`, `CaptureLost`, and `DpiChanged`.
-`SettingsEvent` is `Changed`, `Button`, `NavChanged`, `ScopeChanged`,
-`HeaderSwitch { on }`, `HeaderButton`, `PreviewRemove { field, index }`,
-`PreviewAdd { field, x, y }`, `Ok`, `Cancel`, and `Apply`. A new input source
-adds a variant here and one arm in `App::on_event`.
+`Event` (`input.rs`) is everything the app hears, with `SpaceEvent` (a space
+or the desktop layer) and `SettingsEvent` (the settings window) nested in
+it; each variant is documented there. A new input source adds a variant and
+one arm in `App::on_event`, whose match is exhaustive.
 
 ### Runtime (`win32/runtime/`)
 
@@ -841,17 +724,11 @@ adds a variant here and one arm in `App::on_event`.
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
-  `SpaceScene` carries `chrome`, `title`, `title_height`, the colors (`tint`,
-  `title_fill`, `title_text`, `item_text`, `hover_fill`, `selected_fill`,
-  `marquee_color` with `show_marquee_border`, `border`, `check_fill`,
-  `edit`), an optional `text_shadow`, label lines and size,
-  `metrics: ItemMetrics`, `locked`, `rolled_up`, the `ItemVisual`s in
-  window-local coordinates (id, rect, label, icon, state, hovered, checked,
-  cut, `label_color`), an optional `scroll_thumb` and rubber-band `marquee`,
-  `editing` / `editing_item` with `caret_visible`, `show_check_boxes` /
-  `check_boxes_persistent` (Independent vs Selection), `focused_item`, and
-  `highlight`. `SpaceStyle` is backdrop, corner radius, dark, border, and
-  `chrome`. A new visual is one `SpaceScene` field, filled in
+  `SpaceScene` carries everything a space draws: chrome, title, resolved
+  colors, item metrics, and the visible `ItemVisual`s in window-local
+  coordinates. `SpaceStyle` carries the window-level attributes. Both are
+  documented field by field in `render/scene.rs`. A new visual is one
+  `SpaceScene` field, filled in
   `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
   for window-level attributes only (it re-applies DWM state).
 - The app scrolls by offsetting item rects and includes only items that

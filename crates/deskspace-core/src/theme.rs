@@ -244,10 +244,12 @@ pub const TITLE_SHADING_RANGE: (u8, u8) = (0, 100);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Theme {
+    /// The color mode of the spaces. `ui_mode` colors DeskSpace's own chrome.
     pub mode: ThemeMode,
     /// The color mode of DeskSpace's own chrome (the settings window and popup
     /// menus). Separate from `mode`, which only colors the spaces.
     pub ui_mode: ThemeMode,
+    /// The material behind a space's tint.
     pub backdrop: Backdrop,
     /// Corner radius in pixels, `0..=corner::MAX`. Also reads the older
     /// `corners = "round" | "small" | "square"` setting.
@@ -258,6 +260,7 @@ pub struct Theme {
     /// How much darker (dark mode) or lighter (light mode) the title bar is
     /// than the body, in percent.
     pub title_shading: u8,
+    /// Draw a 1 px border around each space.
     pub show_border: bool,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
@@ -269,11 +272,14 @@ pub struct Theme {
     /// The shell's icon overlay (the shortcut arrow, a sync badge) as a percent
     /// of the icon size (100 is Explorer's own proportion).
     pub overlay_size: u8,
+    /// When item labels get a 1 px text shadow.
     pub label_shadow: LabelShadow,
     /// When false, `tint` and `text` are ignored and the palette follows the
     /// light or dark mode.
     pub custom_colors: bool,
+    /// The custom background tint; used only with `custom_colors`.
     pub tint: Color,
+    /// The custom title and item text color; used only with `custom_colors`.
     pub text: Color,
     /// The rubber-band selection box color. Explorer draws the box in the
     /// system highlight color; this defaults to Windows blue and follows the

@@ -15,6 +15,7 @@ pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpaceLook {
+    /// The space's own copy of the whole theme; its `ui_mode` is unused.
     pub theme: Theme,
     /// Icon spacing (`GridSpec::gap`).
     pub gap: i32,
@@ -60,6 +61,7 @@ impl SpaceLook {
 pub struct Space {
     pub id: SpaceId,
     pub title: String,
+    /// The whole space, title bar included, in desktop coordinates.
     pub rect: Rect,
     #[serde(default)]
     pub items: Vec<Item>,
