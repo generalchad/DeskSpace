@@ -182,9 +182,10 @@ says why; the diff already shows what. Run the gates (section 1) first.
 - **Seeing a space.** Spaces sit at the bottom of the z-order, behind your
   editor; use `--on-top` with a scratch `--config`. To check the look, run over
   a high-contrast window (bright stripes or text) and take a screenshot: over a
-  dark editor, blur and flat translucency look the same. Find window rects by
-  enumerating the `DeskSpaceSpace` and `DeskSpaceSettings` classes. Remove the
-  scratch config afterwards.
+  dark editor, blur and flat translucency look the same. `scripts/zorder.ps1`
+  lists DeskSpace's windows with their rects and z-order, and which window
+  a click at each space's or taskbar's center reaches; run it while a window
+  will not take clicks or drops. Remove the scratch config afterwards.
 - **Hidden launch hides settings.** Starting the binary with a hidden show
   state (for example PowerShell `Start-Process -WindowStyle Hidden`) hides the
   settings window: Windows applies the startup show command to the first
