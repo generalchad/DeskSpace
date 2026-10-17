@@ -129,6 +129,7 @@ impl App {
                 }
                 None => {}
             }
+            // Not `commit`: one of several commands, refreshed once below.
             self.dispatch(Command::MoveItem { id: *item, target }, at);
         }
 
@@ -151,6 +152,7 @@ impl App {
                 tracing::warn!(path = %path.display(), "pasted file is missing; ignored");
                 continue;
             }
+            // Not `commit`: one of several commands, refreshed once below.
             self.dispatch(
                 Command::AddItem {
                     space: target,
