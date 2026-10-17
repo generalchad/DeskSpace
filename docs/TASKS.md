@@ -10,7 +10,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** section B (code health) and K7 are ready for any
 contributor; G5c is ready. L1 needs a maintainer's on-screen findings, and F13
-first needs the Ctrl+wheel bug under **Found while working** explained. Skip
+(Ctrl+wheel under "Match Explorer's display") is unblocked. Skip
 tasks marked **[needs decision]** and everything in section D.
 
 ## How to work a task
@@ -286,15 +286,12 @@ user-visible change is expected. Do them in any order.
   - Update the key recipe's step 4.
 
 - [ ] **B17. Fix stale statements in CONTEXT and ROADMAP.**
-  - `CONTEXT.md` section 6, "Mouse input": "Ctrl+wheel changes the global
-    icon size" contradicts the known bug (section 2 and **Found while
-    working**); say it is meant to, and point at F13.
   - `CONTEXT.md` section 2, "Code health": no non-test file is over 800
     lines is false until K7 lands; reword it to name `color_picker.rs`.
   - `ROADMAP.md` section 4, "Next, in order": item 1 (section L) has only
     L1's findings left and item 4 lists G5a-G5b, which have landed; reduce
     them to L1 and G5c.
-  - Done when: the three statements match this file.
+  - Done when: the two statements match this file.
 
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
@@ -364,8 +361,9 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
 ## F. Ad-hoc features
 
 - [ ] **F13. Ctrl+wheel under "Match Explorer's display" drives the
-  desktop's icon size (ROADMAP D9).** Blocked: first explain why Ctrl+wheel
-  does nothing under any preset (**Found while working**).
+  desktop's icon size (ROADMAP D9).** The reason Ctrl+wheel did nothing
+  under any preset is fixed (`fix: read mouse modifiers from the message`;
+  section V); confirm the `Custom` branch on screen before relying on it.
   - Today `App::adjust_icon_size` (`app/pointer.rs`) changes
     `Theme.icon_size`, which the default `MatchExplorer` preset replaces with
     Explorer's size (`App::icon_scale` / `space_scale`, `app/view.rs`). D9
@@ -567,6 +565,7 @@ each id is in `archive/TASKS-done.md`.
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
+| Mouse modifiers | Under the `Custom` item preset, Ctrl+wheel over a space changes the icon size both ways (the G2 check, redone); Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
@@ -598,11 +597,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   no keyboard support (not a Tab stop; its X and + are mouse-only).
   Suggested task: arrow-key focus, Delete for the X, and Enter on the +
   tile (ROADMAP M7 accessibility).
-- `app/pointer.rs` `adjust_icon_size` (`SpaceEvent::Wheel`): the maintainer
-  reports (2026-10-12) that Ctrl+wheel over a space does nothing under any
-  preset, so even the `Custom` branch never runs and the G2 check was
-  premature. Find out why the event does not reach `adjust_icon_size`
-  (before F13).
 - `app/pointer.rs` `right_drag_to` (G5a): a right drag calls
   `drag_item_out` without setting `pointer.drag_image`, so the shell
   substitutes its own oversized image. Suggested task: factor the image build

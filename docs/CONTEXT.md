@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (386 tests) are green. Update this count whenever a
+  `cargo test --workspace` (387 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -79,8 +79,9 @@ context menus, and a settings window in the first usable release (v0.2).
   a kill through the watchdog; 2026-10-11); inline-rename Shift/Caps, the
   whole-column and whole-row resize fit, the resize dead zone, "Fit to
   contents" in the settings window, and the accent-colored check boxes
-  (2026-10-12). Ctrl+wheel over a space does nothing under any preset
-  (`TASKS.md` **Found while working**).
+  (2026-10-12). Ctrl+wheel over a space did nothing under any preset, because
+  the Ctrl state came from `GetKeyState`, which is stale on a never-activated
+  window; fixed 2026-10-16 (check pending, `TASKS.md` section V).
 - Not yet: lenses (phase 0 of M4, resize and scroll, is done), auto-hide,
   undo for file moves, Explorer's list/details view modes, code signing, and
   a live update feed. `ROADMAP.md` section 7 is the full feature list.
@@ -681,8 +682,10 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   composition backdrop (M5).
 - Mouse input is reported in desktop coordinates as `SpaceEvent`s;
   `TrackMouseEvent` provides `MouseLeave`; capture is held from button-down to
-  the last button-up. `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state)
-  becomes `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
+  the last button-up. Ctrl and Shift come from the message's `MK_*` flags
+  (`space_window::modifiers`), never `GetKeyState`, which reports the state as
+  of the last keyboard message the thread read, and a space's thread reads
+  none. `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state) becomes `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
   "scroll inactive windows" setting (on by default). Ctrl+wheel changes the
   global icon size (`App::adjust_icon_size`), as it does on the desktop; a
   customized space keeps its own size.

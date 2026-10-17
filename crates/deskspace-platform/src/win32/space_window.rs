@@ -17,10 +17,10 @@ use windows::Win32::Graphics::Gdi::{
     CreateRoundRectRgn, InvalidateRect, MapWindowPoints, SetWindowRgn, ValidateRect,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemServices::{MK_CONTROL, MK_SHIFT};
 use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-    VK_CONTROL, VK_SHIFT,
+    ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GetClientRect, GetParent, GetWindowRect, HTCLIENT,
@@ -434,6 +434,29 @@ unsafe fn to_desktop(window: HWND, lparam: LPARAM, hosted: bool) -> (i32, i32) {
     (point[0].x, point[0].y)
 }
 
+/// Ctrl and Shift as a mouse message reports them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Modifiers {
+    ctrl: bool,
+    shift: bool,
+}
+
+/// Reads the `MK_*` flags that every mouse message carries in the low word of
+/// wParam (for `WM_MOUSEWHEEL`, GET_KEYSTATE_WPARAM).
+///
+/// `GetKeyState` cannot be used here: it reports the key state as of the last
+/// keyboard message this thread read, and a space is never activated, so its
+/// thread never sees Ctrl or Shift go down. That is why Ctrl+wheel did nothing
+/// over a space.
+/// https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel
+fn modifiers(wparam: WPARAM) -> Modifiers {
+    let keys = (wparam.0 & 0xFFFF) as u32;
+    Modifiers {
+        ctrl: keys & MK_CONTROL.0 != 0,
+        shift: keys & MK_SHIFT.0 != 0,
+    }
+}
+
 fn button_for(message: u32) -> MouseButton {
     match message {
         WM_LBUTTONDOWN | WM_LBUTTONUP => MouseButton::Left,
@@ -538,14 +561,13 @@ unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
         x: loword(lparam.0),
         y: hiword(lparam.0),
     }];
+    let Modifiers { ctrl, .. } = modifiers(wparam);
     // SAFETY: `window` is a live space window and `point` a valid one-element
-    // buffer. GetKeyState reads this thread's input queue state, which matches
-    // the message being processed.
+    // buffer.
     unsafe {
         if is_hosted(window) {
             MapWindowPoints(None, GetParent(window).ok(), &mut point);
         }
-        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
         space_event(
             window,
             SpaceEvent::Wheel {
@@ -558,17 +580,15 @@ unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
     }
 }
 
-unsafe fn on_button_down(window: HWND, message: u32, lparam: LPARAM) {
-    // SAFETY: `window` is a live space window. GetKeyState reads this thread's
-    // input queue state, which matches the message being processed.
+unsafe fn on_button_down(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) {
+    let Modifiers { ctrl, shift } = modifiers(wparam);
+    // SAFETY: `window` is a live space window.
     unsafe {
         // Capture so the matching button-up arrives even if the cursor leaves
         // the window mid-drag.
         // https://learn.microsoft.com/en-us/windows/win32/inputdev/about-mouse-input#mouse-capture
         SetCapture(window);
         let (x, y) = to_desktop(window, lparam, is_hosted(window));
-        let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
-        let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;
         space_event(
             window,
             SpaceEvent::MouseDown {
@@ -671,7 +691,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDBLCLK => {
-                on_button_down(window, message, lparam);
+                on_button_down(window, message, wparam, lparam);
                 LRESULT(0)
             }
             WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP => {
@@ -704,5 +724,38 @@ unsafe extern "system" fn wndproc(
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modifiers_come_from_the_mouse_message() {
+        let wheel_with_ctrl = WPARAM((120usize << 16) | MK_CONTROL.0 as usize);
+        assert_eq!(
+            modifiers(wheel_with_ctrl),
+            Modifiers {
+                ctrl: true,
+                shift: false
+            }
+        );
+        let click_with_both = WPARAM((MK_CONTROL.0 | MK_SHIFT.0) as usize);
+        assert_eq!(
+            modifiers(click_with_both),
+            Modifiers {
+                ctrl: true,
+                shift: true
+            }
+        );
+        let wheel_down_alone = WPARAM((-120i16 as u16 as usize) << 16);
+        assert_eq!(
+            modifiers(wheel_down_alone),
+            Modifiers {
+                ctrl: false,
+                shift: false
+            }
+        );
     }
 }

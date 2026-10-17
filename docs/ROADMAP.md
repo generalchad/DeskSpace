@@ -733,7 +733,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
-| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel does nothing over a space under any preset (2026-10-12); Match Explorer behavior is `TASKS.md` F13 |
+| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel over a space did nothing under any preset (2026-10-12); fixed 2026-10-16, check pending. Match Explorer behavior is `TASKS.md` F13 |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
