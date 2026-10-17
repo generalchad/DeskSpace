@@ -1,7 +1,7 @@
 # CONTEXT
 
 Project context for DeskSpace. Read this before making changes.
-`AGENTS.md` documents the build/test workflow and engineering rules.
+`ENGINEERING.md` documents the build/test workflow and engineering rules.
 
 ## 1. What DeskSpace is
 
@@ -860,7 +860,7 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   selected or a space is current; Enter, Delete, Shift+Delete, and Ctrl+C/X
   only with a selection; and Ctrl+V, Home, End, PageUp, PageDown, the arrow
   keys, and typed characters only with a current space. Every other key
-  passes through. AGENTS.md's Gotchas has the flag-by-key table. Alt+Enter
+  passes through. ENGINEERING.md's Keys table has the flag-by-key list. Alt+Enter
   shows the focused item's Properties (`Ui::show_properties`) or DeskSpace
   Settings; Enter opens the focused item, Esc clears the selection, F5 refreshes
   the spaces, the Menu key or Shift+F10 opens the item's or space's context

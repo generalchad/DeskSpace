@@ -6,7 +6,7 @@
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. Outside a rename the same hook can watch keys for the current
 //! selection or space instead of editing; `fn handle` is the source of truth for
-//! which key needs which flag, and the AGENTS.md "Gotchas" table repeats it. The
+//! which key needs which flag, and the docs/ENGINEERING.md "Keys" table repeats it. The
 //! hook runs for every key in the session and Windows drops it if this thread is
 //! slow to pump messages (`LowLevelHooksTimeout`), so it is installed only
 //! while one of those modes is active.

@@ -14,7 +14,7 @@ tasks marked **[needs decision]** and everything in section D.
 
 ## How to work a task
 
-1. Read `AGENTS.md` once (especially "Design priorities"), then only the
+1. Read `ENGINEERING.md` once (especially "Design priorities"), then only the
    `CONTEXT.md` sections a task names. Use the file map below to find code.
 2. One task per commit. Do not fix "nearby" things; note them under **Found
    while working** at the end of this file instead.
@@ -25,11 +25,11 @@ tasks marked **[needs decision]** and everything in section D.
    the code more readable than you found it, within the task's scope. If no
    extension point fits, stop and ask rather than special-casing.
 6. Done means: fmt, clippy `-D warnings` (no new `#[allow]`), and tests pass
-   (`AGENTS.md` has the commands), with new tests for new logic and the test
+   (`ENGINEERING.md` has the commands), with new tests for new logic and the test
    count in `CONTEXT.md` section 2 updated; `CONTEXT.md` updated where
    behavior changed, and the `ROADMAP.md` feature index (section 7) where a
    feature's status changed; and the task's own "Done when" list.
-7. Commit in the `AGENTS.md` style with the task id in parentheses
+7. Commit in the `ENGINEERING.md` style with the task id in parentheses
    (`refactor: split d2d.rs (K2)`). In the same commit, tick the box and move
    the task, verbatim, to the end of `archive/TASKS-done.md`.
 8. **[needs human]** tasks need an on-screen check you cannot do. Implement,
@@ -147,11 +147,11 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    `WM_APP` id (in `win32/messages.rs`, decoded in `event_for` in
    `win32/controller.rs`).
 2. `win32/keyboard.rs`: a `SEL_*` code and a branch in `fn handle` under the
-   right flag (the `AGENTS.md` Gotchas table) that posts `SELECTION_KEY`; map
+   right flag (the `ENGINEERING.md` Keys table) that posts `SELECTION_KEY`; map
    the code to the variant in `fn selection_key` (and its test).
 3. `deskspace-app/src/app.rs`: handle it in `App::on_selection_key`, calling
    a method in the `app/` module that owns the behavior.
-4. Update the key lists in `AGENTS.md` (Gotchas), `CONTEXT.md` section 8, and
+4. Update the key lists in `ENGINEERING.md` (Keys), `CONTEXT.md` section 8, and
    `README.md` Controls (B16 reduces this to one place).
 
 ### Recipe: a new global hotkey
@@ -227,9 +227,9 @@ user-visible change is expected. Do them in any order.
     and 150 %.
 
 - [ ] **B16. One home for the key list.** The full key list is kept in three
-  places (`AGENTS.md` Gotchas, `CONTEXT.md` section 8, `README.md`
+  places (`ENGINEERING.md` Keys, `CONTEXT.md` section 8, `README.md`
   Controls), so the key recipe edits all three.
-  - Keep the flag-by-key table in `AGENTS.md` only. `CONTEXT.md` section 8
+  - Keep the flag-by-key table in `ENGINEERING.md` only. `CONTEXT.md` section 8
     links to it instead of restating which flag a key needs. `README.md`
     keeps its user-facing prose (it is for users, not contributors).
   - Update the key recipe's step 4.
@@ -350,7 +350,7 @@ order, after B11 and B12 (the strip adds scene and paint arguments).
 
 ## K. Split the large files (readability)
 
-`AGENTS.md` asks for files under about 800 lines of non-test code. When one
+`ENGINEERING.md` asks for files under about 800 lines of non-test code. When one
 grows past it, add a K task naming what stays in `mod.rs` and what moves where
 (the archived K tasks are the model). Each K task is a **pure move**: no
 renames, no logic changes, no signature changes beyond visibility.

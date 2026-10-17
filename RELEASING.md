@@ -1,6 +1,6 @@
 # RELEASING
 
-How to cut a DeskSpace release. `AGENTS.md` has the build and test workflow,
+How to cut a DeskSpace release. `docs/ENGINEERING.md` has the build and test workflow,
 and `docs/ROADMAP.md` section 6 maps versions to milestones.
 
 ## Versioning

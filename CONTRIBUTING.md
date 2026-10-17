@@ -39,9 +39,9 @@ windows; add `-OnTop` to see them over your editor.
 
 ## Making a change
 
-1. Read [`AGENTS.md`](AGENTS.md). Despite the name it is the engineering guide
-   for every contributor: the design priorities, the architectural rules, the
-   extension points, and the comment style. Then read only the
+1. Read [`docs/ENGINEERING.md`](docs/ENGINEERING.md), the engineering guide:
+   the design priorities, the architectural rules, the extension points, and
+   the comment style. Then read only the
    [`docs/CONTEXT.md`](docs/CONTEXT.md) sections your change touches.
 2. Keep each commit one logical unit of work, with tests for new logic.
    Update `docs/CONTEXT.md` in the same commit when behavior changes.

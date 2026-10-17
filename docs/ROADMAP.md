@@ -1,7 +1,7 @@
 # ROADMAP
 
 The plan for bringing DeskSpace to feature parity with comparable tools.
-`CONTEXT.md` describes the current architecture and `AGENTS.md` the engineering
+`CONTEXT.md` describes the current architecture and `ENGINEERING.md` the engineering
 rules. `TASKS.md` breaks the next steps into concrete, one-commit work items.
 
 How to read this file:
@@ -231,7 +231,7 @@ A native, lightweight, offline Windows desktop organizer that:
   `SettingsForm` field, `#[serde(default)]` setting, `Surface`) or a newly
   designed one, never as a special case. When a milestone grows a file past
   about 800 lines of non-test code, the split is part of that milestone, not
-  a later cleanup (`TASKS.md` section K). AGENTS.md "Design priorities" has
+  a later cleanup (`TASKS.md` section K). ENGINEERING.md "Design priorities" has
   the details.
 
 ## 4. Where we are

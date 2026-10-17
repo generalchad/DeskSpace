@@ -15,7 +15,7 @@ description = "A free and open-source desktop space organizer for Windows"
 publish = false
 
 [workspace.lints.clippy]
-# AGENTS.md: every `unsafe` block carries a `// SAFETY:` comment.
+# docs/ENGINEERING.md: every `unsafe` block carries a `// SAFETY:` comment.
 undocumented_unsafe_blocks = "deny"
 
 [workspace.dependencies]

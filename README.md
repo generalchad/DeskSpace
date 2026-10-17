@@ -174,13 +174,14 @@ show and the platform turns that into windows and pixels.
 
 | File | Contents |
 |------|----------|
+| [`ENGINEERING.md`](docs/ENGINEERING.md) | Engineering rules, commands, and gotchas |
 | [`CONTEXT.md`](docs/CONTEXT.md) | Architecture and current behavior (authoritative) |
 | [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](docs/TASKS.md) | Open, one-commit work items and the on-screen check list |
 | [`docs/archive/`](docs/archive/) | Finished tasks and the progress log up to v0.2.0 (history) |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes in each release |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report bugs and contribute changes |
-| [`AGENTS.md`](AGENTS.md) | Engineering rules and the build/test workflow |
+| [`AGENTS.md`](AGENTS.md) | A brief for automated agents (points to the above) |
 | [`RELEASING.md`](RELEASING.md) | How to cut a release, and the versioning policy |
 | [`SECURITY.md`](SECURITY.md) | Supported versions and how to report a vulnerability privately |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | The Contributor Covenant this project follows |
@@ -188,8 +189,8 @@ show and the platform turns that into windows and pixels.
 ## Contributing
 
 Contributions are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) explains how to
-set up, find a task, and submit a change; [`AGENTS.md`](AGENTS.md) has the
-engineering rules. Please report security problems privately as described in
+set up, find a task, and submit a change; [`ENGINEERING.md`](docs/ENGINEERING.md)
+has the engineering rules. Please report security problems privately as described in
 [`SECURITY.md`](SECURITY.md), and follow the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
