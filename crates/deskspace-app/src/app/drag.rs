@@ -113,7 +113,9 @@ impl App {
                     space.rect().width,
                     space.rect().height,
                 );
-                if self.dispatch(Command::SetSpaceRect { id, rect }, point)
+                if self
+                    .dispatch(Command::SetSpaceRect { id, rect }, point)
+                    .is_applied()
                     && let Some(space) = self.config.desktop.space(id)
                 {
                     ui.set_space_rect(id.0, space.visible_rect());
@@ -146,7 +148,7 @@ impl App {
                     edges: active_edges,
                     to: point,
                 };
-                if self.dispatch(command, point)
+                if self.dispatch(command, point).is_applied()
                     && self.config.desktop.space(id).map(|space| space.rect()) != before
                 {
                     self.refresh_space(ui, id);
@@ -170,7 +172,10 @@ impl App {
         };
         let start = entry.position;
         let position = Point::new(start.x + point.x - origin.x, start.y + point.y - origin.y);
-        if self.dispatch(Command::SetDesktopItemPosition { item, position }, point) {
+        if self
+            .dispatch(Command::SetDesktopItemPosition { item, position }, point)
+            .is_applied()
+        {
             self.refresh_desktop_layer(ui);
         }
     }
@@ -324,7 +329,7 @@ impl App {
         } else {
             Command::ReorderItem { id: item, index }
         };
-        if self.dispatch(command, point) {
+        if self.dispatch(command, point).is_applied() {
             self.refresh_space(ui, space);
         }
     }

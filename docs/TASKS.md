@@ -367,14 +367,6 @@ a step describes, stop and ask (rule 4).
 afterwards, and `dispatch` returns a `bool`, so `NotFound` and `Rejected`
 look the same. Do B28a-B28d in order.
 
-- [ ] **B28a. `App::dispatch` returns the `CommandOutcome`.**
-  - In `app/persist.rs`, change `dispatch` to return `CommandOutcome`
-    instead of `bool`. Before returning, when the outcome is not applied,
-    log it once: `tracing::debug!(?outcome, "command not applied")`.
-  - Each caller that used the `bool` adds `.is_applied()`. Find the callers
-    with `rg -n "self\.dispatch\(" crates/deskspace-app/src`.
-  - Pure refactor. Done when: the gates pass.
-
 - [ ] **B28b. Core: `Desktop::touched_by` says what a command will change.**
   - In `deskspace-core/src/command/mod.rs`, add `pub struct Touched {
     pub spaces: Vec<SpaceId>, pub layer: bool }` with a `///` doc. Also add

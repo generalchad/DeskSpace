@@ -220,7 +220,7 @@ impl App {
             .desktop
             .space_containing(id)
             .map_or(Point::ZERO, |space| self.space_center(space));
-        self.dispatch(Command::RemoveItem { id }, near)
+        self.dispatch(Command::RemoveItem { id }, near).is_applied()
     }
 
     /// Deletes every selected item's file with the shell, then drops the items
@@ -394,7 +394,10 @@ impl App {
             return;
         }
         let near = self.space_center(id);
-        if self.dispatch(Command::DeleteSpace { id }, near) {
+        if self
+            .dispatch(Command::DeleteSpace { id }, near)
+            .is_applied()
+        {
             if self.selection.surface == Some(Surface::Space(id)) {
                 self.selection.clear();
             }

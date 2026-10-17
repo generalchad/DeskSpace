@@ -286,7 +286,7 @@ impl App {
         };
         let edit = settings::space_edit(&self.config, session, field, value, self.system_dark);
         if let Some((id, command, effect)) = edit
-            && self.dispatch(command, self.space_center(id))
+            && self.dispatch(command, self.space_center(id)).is_applied()
         {
             let preview = match effect {
                 Effect::Layout => Preview::relayout(id),
@@ -305,7 +305,7 @@ impl App {
             _ => return self.refresh_settings(ui),
         };
         if let Some(command) = command
-            && self.dispatch(command, self.space_center(id))
+            && self.dispatch(command, self.space_center(id)).is_applied()
         {
             self.restyle_space(ui, id);
             self.reflow_space(ui, id);
@@ -400,7 +400,11 @@ impl App {
                 .desktop
                 .space(*id)
                 .is_some_and(|space| space.user_sized() && space.rect() == *rect);
-            if still_pinned && self.dispatch(Command::FitToContents { id: *id }, rect.center()) {
+            if still_pinned
+                && self
+                    .dispatch(Command::FitToContents { id: *id }, rect.center())
+                    .is_applied()
+            {
                 self.refresh_space(ui, *id);
                 self.schedule_save(ui);
             }
@@ -418,7 +422,7 @@ impl App {
                 continue;
             }
             let at = space.rect().center();
-            if self.dispatch(snapshot.restore(), at) {
+            if self.dispatch(snapshot.restore(), at).is_applied() {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);
             }

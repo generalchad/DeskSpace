@@ -1894,3 +1894,11 @@ until I5-I6 all land, so no partial build hides the desktop.
     same.
   - Done when: `rg -n "space_mut|layer_mut|add_space|\.add_item\("
     crates/deskspace-app crates/deskspace-config` finds nothing.
+
+- [x] **B28a. `App::dispatch` returns the `CommandOutcome`.**
+  - In `app/persist.rs`, change `dispatch` to return `CommandOutcome`
+    instead of `bool`. Before returning, when the outcome is not applied,
+    log it once: `tracing::debug!(?outcome, "command not applied")`.
+  - Each caller that used the `bool` adds `.is_applied()`. Find the callers
+    with `rg -n "self\.dispatch\(" crates/deskspace-app/src`.
+  - Pure refactor. Done when: the gates pass.

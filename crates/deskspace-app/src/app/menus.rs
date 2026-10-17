@@ -78,7 +78,7 @@ impl App {
             custom: true,
             look: Some(look),
         };
-        if self.dispatch(command, at) {
+        if self.dispatch(command, at).is_applied() {
             self.space_look_changed(ui, id);
         }
     }
@@ -124,7 +124,7 @@ impl App {
             on: false,
             seed: SpaceLook::from_global(&self.config.theme, &self.config.desktop.layout),
         };
-        if self.dispatch(command, at) {
+        if self.dispatch(command, at).is_applied() {
             self.space_look_changed(ui, id);
         }
     }
@@ -433,7 +433,7 @@ impl App {
             size,
             locked,
         };
-        if self.dispatch(command, origin) {
+        if self.dispatch(command, origin).is_applied() {
             if !self.visible {
                 self.set_visible(ui, true);
             }

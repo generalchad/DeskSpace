@@ -188,7 +188,10 @@ impl App {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
                         let near = self.space_center(id);
-                        if self.dispatch(Command::RenameSpace { id, title }, near) {
+                        if self
+                            .dispatch(Command::RenameSpace { id, title }, near)
+                            .is_applied()
+                        {
                             self.schedule_save(ui);
                         }
                     }

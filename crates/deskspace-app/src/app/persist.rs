@@ -2,7 +2,7 @@
 //! (R1).
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, SpaceId};
+use deskspace_core::{Command, CommandOutcome, SpaceId};
 use deskspace_platform::{Ui, work_area_at};
 
 use super::{App, Timer};
@@ -11,7 +11,7 @@ use super::{App, Timer};
 const AUTOSAVE_DELAY_MS: u32 = 700;
 
 impl App {
-    pub(super) fn dispatch(&mut self, command: Command, near: Point) -> bool {
+    pub(super) fn dispatch(&mut self, command: Command, near: Point) -> CommandOutcome {
         let bounds = work_area_at(near);
         // Use the grid of the space under the action so a command that moves or
         // arranges items lands on the same monitor's scale.
@@ -20,10 +20,14 @@ impl App {
             .desktop
             .space_at(near)
             .map_or_else(|| self.effective_layout(), |id| self.layout_for(id));
-        self.config
+        let outcome = self
+            .config
             .desktop
-            .apply_with_layout(command, layout, bounds)
-            .is_applied()
+            .apply_with_layout(command, layout, bounds);
+        if !outcome.is_applied() {
+            tracing::debug!(?outcome, "command not applied");
+        }
+        outcome
     }
 
     pub(super) fn save(&self) {
@@ -59,7 +63,7 @@ impl App {
         command: Command,
         at: Point,
     ) -> bool {
-        if self.dispatch(command, at) {
+        if self.dispatch(command, at).is_applied() {
             self.refresh_space(ui, id);
             self.schedule_save(ui);
             true
