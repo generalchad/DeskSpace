@@ -236,6 +236,10 @@ pub const ICON_SIZE_DEFAULT: u8 = 100;
 pub const ICON_SIZE_RANGE: (u8, u8) = (50, 200);
 /// The bounds an item label size is clamped to, as a percent of the default.
 pub const LABEL_SIZE_RANGE: (u8, u8) = (60, 160);
+/// The bounds a tint opacity is clamped to, in percent.
+pub const TINT_OPACITY_RANGE: (u8, u8) = (0, 100);
+/// The bounds a title-bar shading is clamped to, in percent.
+pub const TITLE_SHADING_RANGE: (u8, u8) = (0, 100);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -467,8 +471,12 @@ impl Theme {
     /// no choice selected.
     pub fn clamped(mut self) -> Self {
         self.corner_radius = self.corner_radius.min(corner::MAX);
-        self.tint_opacity = self.tint_opacity.min(100);
-        self.title_shading = self.title_shading.min(100);
+        self.tint_opacity = self
+            .tint_opacity
+            .clamp(TINT_OPACITY_RANGE.0, TINT_OPACITY_RANGE.1);
+        self.title_shading = self
+            .title_shading
+            .clamp(TITLE_SHADING_RANGE.0, TITLE_SHADING_RANGE.1);
         self.label_lines = self.label_lines.clamp(1, 2);
         self.label_size = self
             .label_size
@@ -780,8 +788,8 @@ mod tests {
         }
         .clamped();
         assert_eq!(theme.corner_radius, corner::MAX);
-        assert_eq!(theme.tint_opacity, 100);
-        assert_eq!(theme.title_shading, 100);
+        assert_eq!(theme.tint_opacity, TINT_OPACITY_RANGE.1);
+        assert_eq!(theme.title_shading, TITLE_SHADING_RANGE.1);
         assert_eq!(theme.label_lines, 2);
         assert_eq!(theme.label_size, LABEL_SIZE_RANGE.0);
         assert_eq!(theme.icon_size, ICON_SIZE_RANGE.0);

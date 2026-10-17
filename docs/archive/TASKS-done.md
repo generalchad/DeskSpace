@@ -1714,3 +1714,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     a core test per kind of space. **[needs human]** check: Ctrl+wheel over
     an auto-sized and a resized space; neither changes size, both re-flow and
     scroll.
+
+- [x] **B10. Named ranges for tint opacity and title shading.**
+  `settings/apply.rs` (`apply_look_field`) clamps `tint_opacity` and
+  `title_shading` with a literal `0, 100`, `settings/pages.rs` passes
+  `(0, 100)` for both sliders, and `Theme::clamped` uses `.min(100)`. This
+  breaks the "use the constant, never a literal range" rule (`CONTEXT.md`
+  section 4).
+  - `theme.rs`: add `pub const TINT_OPACITY_RANGE: (u8, u8) = (0, 100);` and
+    `TITLE_SHADING_RANGE`, with a `///` doc, beside `OVERLAY_SIZE_RANGE`. Use
+    them in `Theme::clamped`, `apply_look_field`, and `look_pages`, as
+    `ICON_SIZE_RANGE` is used.
+  - Done when: `grep -n '0, 100' crates/deskspace-app/src/settings` finds no
+    range for these two fields.

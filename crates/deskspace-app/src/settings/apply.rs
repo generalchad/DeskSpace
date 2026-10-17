@@ -34,11 +34,13 @@ fn apply_look_field(
             Effect::Appearance
         }
         (field::TINT_OPACITY, FieldValue::Slider(value)) => {
-            theme.tint_opacity = (*value).clamp(0, 100) as u8;
+            theme.tint_opacity =
+                (*value).clamp(TINT_OPACITY_RANGE.0.into(), TINT_OPACITY_RANGE.1.into()) as u8;
             Effect::Appearance
         }
         (field::TITLE_SHADING, FieldValue::Slider(value)) => {
-            theme.title_shading = (*value).clamp(0, 100) as u8;
+            theme.title_shading =
+                (*value).clamp(TITLE_SHADING_RANGE.0.into(), TITLE_SHADING_RANGE.1.into()) as u8;
             Effect::Appearance
         }
         (field::BORDER, FieldValue::Toggle(on)) => {

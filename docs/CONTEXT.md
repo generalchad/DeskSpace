@@ -354,8 +354,8 @@ Theme {
     ui_mode: ThemeMode,       // dark/light for the settings window and menus
     backdrop: Backdrop,       // Acrylic (default) | Blur | Clear | Solid
     corner_radius: u8,        // px, 0..=24, default 8 (theme::corner presets)
-    tint_opacity: u8,         // percent, default 40
-    title_shading: u8,        // percent, default 30
+    tint_opacity: u8,         // percent, default 40 (TINT_OPACITY_RANGE 0..=100)
+    title_shading: u8,        // percent, default 30 (TITLE_SHADING_RANGE 0..=100)
     show_border: bool,        // default true
     label_lines: u8,          // 1 or 2, default 2
     label_size: u8,           // percent, default 100 (LABEL_SIZE_RANGE 60..=160)

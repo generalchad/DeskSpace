@@ -48,15 +48,19 @@ pub(super) fn look_pages(
             Field::slider(
                 field::TINT_OPACITY,
                 "Tint opacity",
-                (0, 100),
-                theme.tint_opacity.min(100) as i32,
+                (TINT_OPACITY_RANGE.0.into(), TINT_OPACITY_RANGE.1.into()),
+                theme
+                    .tint_opacity
+                    .clamp(TINT_OPACITY_RANGE.0, TINT_OPACITY_RANGE.1) as i32,
             )
             .enabled(!solid),
             Field::slider(
                 field::TITLE_SHADING,
                 "Title bar shading",
-                (0, 100),
-                theme.title_shading.min(100) as i32,
+                (TITLE_SHADING_RANGE.0.into(), TITLE_SHADING_RANGE.1.into()),
+                theme
+                    .title_shading
+                    .clamp(TITLE_SHADING_RANGE.0, TITLE_SHADING_RANGE.1) as i32,
             ),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
             Field::choice(
