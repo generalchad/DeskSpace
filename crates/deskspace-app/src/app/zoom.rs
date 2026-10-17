@@ -129,6 +129,7 @@ impl App {
             }
         }
         self.show_zoom_bar(ui);
+        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
     }
 
     fn reset_icon_size(&mut self, ui: &mut Ui) {
@@ -141,6 +142,7 @@ impl App {
             ZoomLevel::Custom(_) => self.set_global_icon_size(ui, ICON_SIZE_DEFAULT),
         }
         self.show_zoom_bar(ui);
+        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
     }
 
     fn adjust_desktop_icon_size(&mut self, ui: &mut Ui, current: i32, delta: i32) {
@@ -163,8 +165,8 @@ impl App {
         self.refresh_settings(ui);
     }
 
-    /// Shows the pop-up with the current size and (re)starts its hide timer.
-    fn show_zoom_bar(&mut self, ui: &mut Ui) {
+    /// Shows the pop-up with the current size.
+    pub(super) fn show_zoom_bar(&self, ui: &mut Ui) {
         let palette = self.surface_palette(Surface::Desktop);
         ui.show_zoom_bar(zoom_bar(
             self.zoom_level(),
@@ -172,7 +174,6 @@ impl App {
             &palette,
             self.system.dark(),
         ));
-        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
     }
 
     /// Hides the pop-up once the pointer is off it. The timer repeats, so a

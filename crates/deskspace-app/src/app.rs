@@ -11,6 +11,7 @@ use crate::storage::ItemStore;
 
 mod clipboard;
 mod drag;
+mod effect;
 mod files;
 mod hit;
 mod hotkeys;

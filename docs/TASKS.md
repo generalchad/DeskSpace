@@ -56,6 +56,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
 | Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
+| An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
 | Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
