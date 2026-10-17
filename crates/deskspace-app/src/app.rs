@@ -95,47 +95,95 @@ impl Timer {
     }
 }
 
-/// The app's popup-menu ids. Never renumber one; a new entry takes the
-/// highest value plus one, below `0x8000`, where the shell's ids start
-/// (`SHELL_FIRST_ID`), and joins `menu_ids_are_unique`.
-mod menu {
-    pub const ROLL: u32 = 1;
-    pub const LOCK: u32 = 2;
-    pub const NEW_SPACE: u32 = 3;
-    pub const SETTINGS: u32 = 4;
-    pub const TOGGLE_VISIBLE: u32 = 5;
-    pub const EXIT: u32 = 6;
-    pub const DELETE: u32 = 7;
-    pub const FIT: u32 = 8;
+/// The app's popup-menu ids, passed to the platform as the variant's value.
+/// Never renumber one; a new entry takes the highest value plus one and joins
+/// `ALL`. Every value stays below `0x8000`, where the shell's item-menu ids
+/// start (`shell_items::SHELL_FIRST_ID`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+enum MenuId {
+    Roll = 1,
+    Lock = 2,
+    NewSpace = 3,
+    Settings = 4,
+    ToggleVisible = 5,
+    Exit = 6,
+    Delete = 7,
+    Fit = 8,
     // 9 was the item menu's "Remove from space"; it stays unused.
-    pub const RENAME: u32 = 10;
-    pub const RENAME_ITEM: u32 = 11;
-    pub const CHECK_UPDATES: u32 = 12;
-    pub const INSTALL_UPDATE: u32 = 13;
-    pub const OPACITY_100: u32 = 20;
-    pub const OPACITY_80: u32 = 21;
-    pub const OPACITY_60: u32 = 22;
-    pub const OPACITY_40: u32 = 23;
-    pub const OPACITY_20: u32 = 24;
-    pub const SPACE_TINT: u32 = 25;
-    pub const SPACE_TEXT: u32 = 26;
-    pub const RESET_APPEARANCE: u32 = 27;
-    pub const SPACE_SETTINGS: u32 = 28;
-    pub const ICON_SIZE_SMALL: u32 = 41;
-    pub const ICON_SIZE_MEDIUM: u32 = 42;
-    pub const ICON_SIZE_LARGE: u32 = 43;
-    pub const ICON_SIZE_XLARGE: u32 = 44;
-    pub const SORT_NAME_ASC: u32 = 30;
-    pub const SORT_NAME_DESC: u32 = 31;
-    pub const SORT_KIND: u32 = 32;
-    pub const SORT_SIZE_ASC: u32 = 33;
-    pub const SORT_SIZE_DESC: u32 = 34;
-    pub const SORT_DATE_ASC: u32 = 35;
-    pub const SORT_DATE_DESC: u32 = 36;
-    pub const NEW_SHORTCUT_APPS: u32 = 45;
-    pub const NEW_SHORTCUT_CUSTOM: u32 = 46;
-    pub const PASTE_SHORTCUT: u32 = 47;
-    pub const ADD_FILES: u32 = 48;
+    Rename = 10,
+    RenameItem = 11,
+    CheckUpdates = 12,
+    InstallUpdate = 13,
+    Opacity100 = 20,
+    Opacity80 = 21,
+    Opacity60 = 22,
+    Opacity40 = 23,
+    Opacity20 = 24,
+    SpaceTint = 25,
+    SpaceText = 26,
+    ResetAppearance = 27,
+    SpaceSettings = 28,
+    IconSizeSmall = 41,
+    IconSizeMedium = 42,
+    IconSizeLarge = 43,
+    IconSizeXLarge = 44,
+    SortNameAsc = 30,
+    SortNameDesc = 31,
+    SortKind = 32,
+    SortSizeAsc = 33,
+    SortSizeDesc = 34,
+    SortDateAsc = 35,
+    SortDateDesc = 36,
+    NewShortcutApps = 45,
+    NewShortcutCustom = 46,
+    PasteShortcut = 47,
+    AddFiles = 48,
+}
+
+impl MenuId {
+    const ALL: [Self; 36] = [
+        Self::Roll,
+        Self::Lock,
+        Self::NewSpace,
+        Self::Settings,
+        Self::ToggleVisible,
+        Self::Exit,
+        Self::Delete,
+        Self::Fit,
+        Self::Rename,
+        Self::RenameItem,
+        Self::CheckUpdates,
+        Self::InstallUpdate,
+        Self::Opacity100,
+        Self::Opacity80,
+        Self::Opacity60,
+        Self::Opacity40,
+        Self::Opacity20,
+        Self::SpaceTint,
+        Self::SpaceText,
+        Self::ResetAppearance,
+        Self::SpaceSettings,
+        Self::IconSizeSmall,
+        Self::IconSizeMedium,
+        Self::IconSizeLarge,
+        Self::IconSizeXLarge,
+        Self::SortNameAsc,
+        Self::SortNameDesc,
+        Self::SortKind,
+        Self::SortSizeAsc,
+        Self::SortSizeDesc,
+        Self::SortDateAsc,
+        Self::SortDateDesc,
+        Self::NewShortcutApps,
+        Self::NewShortcutCustom,
+        Self::PasteShortcut,
+        Self::AddFiles,
+    ];
+
+    fn from_id(id: u32) -> Option<Self> {
+        Self::ALL.into_iter().find(|menu| *menu as u32 == id)
+    }
 }
 
 /// A way to make a new shortcut in a space (F-53, F-54).
@@ -151,66 +199,66 @@ enum NewShortcut {
 
 /// The "New shortcut" submenu: menu id, label, and what it makes. Shared by
 /// the space menu and the settings window's Shortcuts page.
-const NEW_SHORTCUT_ENTRIES: [(u32, &str, NewShortcut); 3] = [
+const NEW_SHORTCUT_ENTRIES: [(MenuId, &str, NewShortcut); 3] = [
     (
-        menu::NEW_SHORTCUT_APPS,
+        MenuId::NewShortcutApps,
         "From installed apps\u{2026}",
         NewShortcut::Apps,
     ),
     (
-        menu::NEW_SHORTCUT_CUSTOM,
+        MenuId::NewShortcutCustom,
         "Custom shortcut\u{2026}",
         NewShortcut::Custom,
     ),
-    (menu::PASTE_SHORTCUT, "Paste shortcut", NewShortcut::Paste),
+    (MenuId::PasteShortcut, "Paste shortcut", NewShortcut::Paste),
 ];
 
 /// The tint-opacity presets the Appearance submenu offers: menu id, label, and
 /// the space's tint opacity in percent. Drives both the submenu and how a
 /// choice is handled.
-const OPACITY_PRESETS: [(u32, &str, u8); 5] = [
-    (menu::OPACITY_100, "Opacity 100%", 100),
-    (menu::OPACITY_80, "Opacity 80%", 80),
-    (menu::OPACITY_60, "Opacity 60%", 60),
-    (menu::OPACITY_40, "Opacity 40%", 40),
-    (menu::OPACITY_20, "Opacity 20%", 20),
+const OPACITY_PRESETS: [(MenuId, &str, u8); 5] = [
+    (MenuId::Opacity100, "Opacity 100%", 100),
+    (MenuId::Opacity80, "Opacity 80%", 80),
+    (MenuId::Opacity60, "Opacity 60%", 60),
+    (MenuId::Opacity40, "Opacity 40%", 40),
+    (MenuId::Opacity20, "Opacity 20%", 20),
 ];
 
 /// The icon-size choices the "Icon size" submenu offers: menu id, label, and
 /// the space's icon size in percent.
-const ICON_SIZE_PRESETS: [(u32, &str, u8); 4] = [
-    (menu::ICON_SIZE_SMALL, "Small", 75),
-    (menu::ICON_SIZE_MEDIUM, "Medium", 100),
-    (menu::ICON_SIZE_LARGE, "Large", 150),
-    (menu::ICON_SIZE_XLARGE, "Extra large", 200),
+const ICON_SIZE_PRESETS: [(MenuId, &str, u8); 4] = [
+    (MenuId::IconSizeSmall, "Small", 75),
+    (MenuId::IconSizeMedium, "Medium", 100),
+    (MenuId::IconSizeLarge, "Large", 150),
+    (MenuId::IconSizeXLarge, "Extra large", 200),
 ];
 
 /// The sort choices the Sort by submenu offers: menu id, label, sort key, and
 /// whether the order descends. Drives both the submenu and the choice handling.
-const SORT_PRESETS: [(u32, &str, SortKey, bool); 7] = [
+const SORT_PRESETS: [(MenuId, &str, SortKey, bool); 7] = [
     (
-        menu::SORT_NAME_ASC,
+        MenuId::SortNameAsc,
         "Name (A\u{2013}Z)",
         SortKey::Name,
         false,
     ),
     (
-        menu::SORT_NAME_DESC,
+        MenuId::SortNameDesc,
         "Name (Z\u{2013}A)",
         SortKey::Name,
         true,
     ),
-    (menu::SORT_KIND, "Type", SortKey::Kind, false),
-    (menu::SORT_SIZE_ASC, "Size (smallest)", SortKey::Size, false),
-    (menu::SORT_SIZE_DESC, "Size (largest)", SortKey::Size, true),
+    (MenuId::SortKind, "Type", SortKey::Kind, false),
+    (MenuId::SortSizeAsc, "Size (smallest)", SortKey::Size, false),
+    (MenuId::SortSizeDesc, "Size (largest)", SortKey::Size, true),
     (
-        menu::SORT_DATE_ASC,
+        MenuId::SortDateAsc,
         "Date (oldest)",
         SortKey::Modified,
         false,
     ),
     (
-        menu::SORT_DATE_DESC,
+        MenuId::SortDateDesc,
         "Date (newest)",
         SortKey::Modified,
         true,
@@ -688,36 +736,20 @@ mod tests {
     }
 
     #[test]
-    fn menu_ids_are_unique() {
-        // The ids the preset tables do not cover. Every other id lives here, so
-        // a table entry colliding with one fails the uniqueness check below.
-        let other = [
-            menu::ROLL,
-            menu::LOCK,
-            menu::NEW_SPACE,
-            menu::SETTINGS,
-            menu::TOGGLE_VISIBLE,
-            menu::EXIT,
-            menu::DELETE,
-            menu::FIT,
-            menu::RENAME,
-            menu::RENAME_ITEM,
-            menu::SPACE_TINT,
-            menu::SPACE_TEXT,
-            menu::RESET_APPEARANCE,
-            menu::SPACE_SETTINGS,
-            menu::CHECK_UPDATES,
-            menu::ADD_FILES,
-        ];
-        let mut ids: Vec<u32> = other.to_vec();
-        ids.extend(OPACITY_PRESETS.iter().map(|(id, ..)| *id));
-        ids.extend(ICON_SIZE_PRESETS.iter().map(|(id, ..)| *id));
-        ids.extend(SORT_PRESETS.iter().map(|(id, ..)| *id));
-        ids.extend(NEW_SHORTCUT_ENTRIES.iter().map(|(id, ..)| *id));
-        let mut unique = ids.clone();
-        unique.sort_unstable();
-        unique.dedup();
-        assert_eq!(ids.len(), unique.len(), "menu ids collide");
+    fn menu_ids_round_trip() {
+        for menu in MenuId::ALL {
+            assert_eq!(MenuId::from_id(menu as u32), Some(menu));
+        }
+        assert_eq!(MenuId::from_id(0), None);
+        assert_eq!(MenuId::from_id(9), None);
+    }
+
+    #[test]
+    fn menu_ids_stay_below_the_shell_range() {
+        // `shell_items::SHELL_FIRST_ID`: the shell's item-menu ids start here.
+        for menu in MenuId::ALL {
+            assert!((menu as u32) < 0x8000, "{menu:?} is in the shell's range");
+        }
     }
 
     #[test]

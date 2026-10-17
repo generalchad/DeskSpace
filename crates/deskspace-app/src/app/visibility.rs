@@ -3,7 +3,8 @@
 
 use deskspace_platform::{MenuEntry, Ui, set_start_with_windows};
 
-use super::{App, menu};
+use super::menus::menu_item;
+use super::{App, MenuId};
 
 impl App {
     pub(super) fn set_visible(&mut self, ui: &mut Ui, visible: bool) {
@@ -81,6 +82,6 @@ impl App {
         } else {
             "Show spaces"
         };
-        MenuEntry::item(menu::TOGGLE_VISIBLE, label)
+        menu_item(MenuId::ToggleVisible, label)
     }
 }

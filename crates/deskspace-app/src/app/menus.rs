@@ -11,8 +11,8 @@ use deskspace_update::InstallMode;
 
 use super::files::ShortcutSource;
 use super::{
-    App, ICON_SIZE_PRESETS, NEW_SHORTCUT_ENTRIES, NewShortcut, OPACITY_PRESETS, SORT_PRESETS,
-    SpaceColor, Surface, delete_needs_confirmation, menu,
+    App, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES, NewShortcut, OPACITY_PRESETS,
+    SORT_PRESETS, SpaceColor, Surface, delete_needs_confirmation,
 };
 
 impl App {
@@ -174,11 +174,13 @@ impl App {
         // desktop is a drag, so DeskSpace adds only its inline Rename. A loose
         // desktop item gets Explorer's menu alone.
         let entries = match surface {
-            Surface::Space(_) => vec![MenuEntry::item(menu::RENAME_ITEM, "Rename")],
+            Surface::Space(_) => vec![menu_item(MenuId::RenameItem, "Rename")],
             Surface::Desktop => Vec::new(),
         };
         match ui.item_menu(&path, &entries, at) {
-            Some(ItemMenuChoice::App(menu::RENAME_ITEM)) => {
+            Some(ItemMenuChoice::App(choice))
+                if MenuId::from_id(choice) == Some(MenuId::RenameItem) =>
+            {
                 if let Surface::Space(id) = surface {
                     self.begin_item_rename(ui, id, item);
                 }
@@ -202,12 +204,16 @@ impl App {
     /// otherwise leave unreachable under the layer.
     fn show_desktop_menu(&mut self, ui: &mut Ui, at: Point) {
         let entries = [
-            MenuEntry::item(menu::NEW_SPACE, "New space"),
-            MenuEntry::item(menu::SETTINGS, "DeskSpace settings\u{2026}"),
+            menu_item(MenuId::NewSpace, "New space"),
+            menu_item(MenuId::Settings, "DeskSpace settings\u{2026}"),
             self.visibility_entry(),
         ];
         match ui.desktop_menu(&entries, at) {
-            Some(ItemMenuChoice::App(choice)) => self.run_common_menu(ui, choice, at),
+            Some(ItemMenuChoice::App(choice)) => {
+                if let Some(choice) = MenuId::from_id(choice) {
+                    self.run_common_menu(ui, choice, at);
+                }
+            }
             Some(ItemMenuChoice::Shell) => self.resync_desktop_layer(ui),
             None => {}
         }
@@ -223,19 +229,19 @@ impl App {
             "Roll up"
         };
         let mut entries = vec![
-            MenuEntry::item(menu::ROLL, roll),
-            MenuEntry::item(menu::RENAME, "Rename"),
-            MenuEntry::item(menu::LOCK, "Lock position").checked(space.locked()),
+            menu_item(MenuId::Roll, roll),
+            menu_item(MenuId::Rename, "Rename"),
+            menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
         ];
         if space.user_sized() && !space.locked() {
-            entries.push(MenuEntry::item(menu::FIT, "Fit to contents"));
+            entries.push(menu_item(MenuId::Fit, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);
         // Locking fixes a space's position, not its contents, so a locked
         // space still takes new shortcuts.
         let can_paste_shortcut = !ui.clipboard_shell_items().is_empty();
         entries.push(new_shortcut_menu(can_paste_shortcut));
-        entries.push(MenuEntry::item(menu::ADD_FILES, "Add files\u{2026}"));
+        entries.push(menu_item(MenuId::AddFiles, "Add files\u{2026}"));
         entries.push(space_appearance_menu(
             space,
             space.theme(&self.config.theme),
@@ -249,19 +255,19 @@ impl App {
             "Delete space"
         };
         entries.extend([
-            MenuEntry::item(menu::DELETE, delete),
+            menu_item(MenuId::Delete, delete),
             MenuEntry::Separator,
-            MenuEntry::item(menu::NEW_SPACE, "New space"),
+            menu_item(MenuId::NewSpace, "New space"),
             MenuEntry::Separator,
-            MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
+            menu_item(MenuId::Settings, "Settings\u{2026}"),
             self.visibility_entry(),
-            MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
+            menu_item(MenuId::Exit, "Exit DeskSpace"),
         ]);
-        match ui.popup_menu(&entries, at) {
-            Some(menu::ROLL) => self.toggle_rollup(ui, id),
-            Some(menu::RENAME) => self.begin_rename(ui, id),
-            Some(menu::DELETE) => self.delete_space(ui, id),
-            Some(menu::FIT) => {
+        match ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
+            Some(MenuId::Roll) => self.toggle_rollup(ui, id),
+            Some(MenuId::Rename) => self.begin_rename(ui, id),
+            Some(MenuId::Delete) => self.delete_space(ui, id),
+            Some(MenuId::Fit) => {
                 if self
                     .commit(ui, Command::FitToContents { id }, at)
                     .is_applied()
@@ -269,14 +275,14 @@ impl App {
                     self.view_cache.set_scroll(id, 0);
                 }
             }
-            Some(menu::LOCK) => {
+            Some(MenuId::Lock) => {
                 self.commit(ui, Command::ToggleLock { id }, at);
             }
-            Some(menu::SPACE_TINT) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
-            Some(menu::SPACE_TEXT) => self.pick_space_color(ui, id, at, SpaceColor::Text),
-            Some(menu::RESET_APPEARANCE) => self.use_global_appearance(ui, id, at),
-            Some(menu::SPACE_SETTINGS) => self.open_settings_with(ui, Some(id)),
-            Some(menu::ADD_FILES) => self.add_files(ui, id, at),
+            Some(MenuId::SpaceTint) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
+            Some(MenuId::SpaceText) => self.pick_space_color(ui, id, at, SpaceColor::Text),
+            Some(MenuId::ResetAppearance) => self.use_global_appearance(ui, id, at),
+            Some(MenuId::SpaceSettings) => self.open_settings_with(ui, Some(id)),
+            Some(MenuId::AddFiles) => self.add_files(ui, id, at),
             Some(choice) => {
                 if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
@@ -362,6 +368,7 @@ impl App {
         let can_paste = !ui.clipboard_shell_items().is_empty();
         let choice = ui
             .popup_menu(&new_shortcut_entries(can_paste), at)
+            .and_then(MenuId::from_id)
             .and_then(new_shortcut_choice);
         if let Some(kind) = choice {
             let near = self.space_center(id);
@@ -371,18 +378,18 @@ impl App {
 
     pub(super) fn show_tray_menu(&mut self, ui: &mut Ui, at: Point) {
         let entries = [
-            MenuEntry::item(menu::SETTINGS, "Settings\u{2026}"),
+            menu_item(MenuId::Settings, "Settings\u{2026}"),
             self.visibility_entry(),
-            MenuEntry::item(menu::NEW_SPACE, "New space"),
+            menu_item(MenuId::NewSpace, "New space"),
             MenuEntry::Separator,
             self.update_entry(),
             MenuEntry::Separator,
-            MenuEntry::item(menu::EXIT, "Exit DeskSpace"),
+            menu_item(MenuId::Exit, "Exit DeskSpace"),
         ];
-        if let Some(choice) = ui.popup_menu(&entries, at) {
+        if let Some(choice) = ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
             match choice {
-                menu::CHECK_UPDATES => return self.start_update_check(ui, true),
-                menu::INSTALL_UPDATE => {
+                MenuId::CheckUpdates => return self.start_update_check(ui, true),
+                MenuId::InstallUpdate => {
                     return self.install_ready_update(ui, InstallMode::Passive);
                 }
                 _ => {}
@@ -395,21 +402,21 @@ impl App {
     /// The tray's update entry: install a downloaded update, or check.
     fn update_entry(&self) -> MenuEntry {
         match self.update.ready_version() {
-            Some(version) => MenuEntry::item(
-                menu::INSTALL_UPDATE,
+            Some(version) => menu_item(
+                MenuId::InstallUpdate,
                 format!("Restart to update to {version}"),
             ),
-            None => MenuEntry::item(menu::CHECK_UPDATES, "Check for updates\u{2026}")
+            None => menu_item(MenuId::CheckUpdates, "Check for updates\u{2026}")
                 .enabled(deskspace_update::is_configured()),
         }
     }
 
-    pub(super) fn run_common_menu(&mut self, ui: &mut Ui, choice: u32, at: Point) {
+    pub(super) fn run_common_menu(&mut self, ui: &mut Ui, choice: MenuId, at: Point) {
         match choice {
-            menu::NEW_SPACE => self.create_space(ui, at),
-            menu::SETTINGS => self.open_settings(ui),
-            menu::TOGGLE_VISIBLE => self.set_visible(ui, !self.visible),
-            menu::EXIT => ui.quit(),
+            MenuId::NewSpace => self.create_space(ui, at),
+            MenuId::Settings => self.open_settings(ui),
+            MenuId::ToggleVisible => self.set_visible(ui, !self.visible),
+            MenuId::Exit => ui.quit(),
             _ => {}
         }
     }
@@ -490,6 +497,11 @@ impl App {
     }
 }
 
+/// A menu entry for one of the app's menu ids.
+pub(super) fn menu_item(id: MenuId, label: impl Into<String>) -> MenuEntry {
+    MenuEntry::item(id as u32, label)
+}
+
 /// The default gutter around a new space, scaled for the monitor at `at`.
 fn gap_at(at: Point) -> i32 {
     let scale = scale_for(monitor_dpi_at(at));
@@ -503,35 +515,23 @@ fn gap_at(at: Point) -> i32 {
 fn space_appearance_menu(space: &Space, theme: &Theme) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = OPACITY_PRESETS
         .iter()
-        .map(|(id, label, value)| {
-            MenuEntry::item(*id, *label).checked(theme.tint_opacity == *value)
-        })
+        .map(|(id, label, value)| menu_item(*id, *label).checked(theme.tint_opacity == *value))
         .collect();
     entries.push(MenuEntry::Separator);
     entries.push(MenuEntry::submenu(
         "Icon size",
         ICON_SIZE_PRESETS
             .iter()
-            .map(|(id, label, value)| {
-                MenuEntry::item(*id, *label).checked(theme.icon_size == *value)
-            })
+            .map(|(id, label, value)| menu_item(*id, *label).checked(theme.icon_size == *value))
             .collect(),
     ));
     entries.push(MenuEntry::Separator);
-    entries.push(
-        MenuEntry::item(menu::SPACE_TINT, "Custom tint\u{2026}").checked(theme.custom_colors),
-    );
-    entries.push(
-        MenuEntry::item(menu::SPACE_TEXT, "Custom text\u{2026}").checked(theme.custom_colors),
-    );
-    entries.push(
-        MenuEntry::item(menu::RESET_APPEARANCE, "Use global appearance").enabled(space.custom()),
-    );
+    entries.push(menu_item(MenuId::SpaceTint, "Custom tint\u{2026}").checked(theme.custom_colors));
+    entries.push(menu_item(MenuId::SpaceText, "Custom text\u{2026}").checked(theme.custom_colors));
+    entries
+        .push(menu_item(MenuId::ResetAppearance, "Use global appearance").enabled(space.custom()));
     entries.push(MenuEntry::Separator);
-    entries.push(MenuEntry::item(
-        menu::SPACE_SETTINGS,
-        "Space settings\u{2026}",
-    ));
+    entries.push(menu_item(MenuId::SpaceSettings, "Space settings\u{2026}"));
     MenuEntry::submenu("Appearance", entries)
 }
 
@@ -550,13 +550,13 @@ fn new_shortcut_entries(can_paste: bool) -> Vec<MenuEntry> {
             entries.push(MenuEntry::Separator);
         }
         let enabled = kind != NewShortcut::Paste || can_paste;
-        entries.push(MenuEntry::item(id, label).enabled(enabled));
+        entries.push(menu_item(id, label).enabled(enabled));
     }
     entries
 }
 
 /// What a "New shortcut" menu id makes, if it is one.
-fn new_shortcut_choice(choice: u32) -> Option<NewShortcut> {
+fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
     NEW_SHORTCUT_ENTRIES
         .iter()
         .find(|(id, ..)| *id == choice)
@@ -569,7 +569,7 @@ fn space_sort_menu() -> MenuEntry {
         "Sort by",
         SORT_PRESETS
             .iter()
-            .map(|(id, label, ..)| MenuEntry::item(*id, *label))
+            .map(|(id, label, ..)| menu_item(*id, *label))
             .collect(),
     )
 }
@@ -588,34 +588,34 @@ mod tests {
             panic!("expected a submenu");
         };
         assert_eq!(label, "New shortcut");
-        let ids: Vec<u32> = entries
+        let ids: Vec<Option<MenuId>> = entries
             .iter()
             .filter_map(|entry| match entry {
-                MenuEntry::Item { id, .. } => Some(*id),
+                MenuEntry::Item { id, .. } => Some(MenuId::from_id(*id)),
                 _ => None,
             })
             .collect();
         assert_eq!(
             ids,
             [
-                menu::NEW_SHORTCUT_APPS,
-                menu::NEW_SHORTCUT_CUSTOM,
-                menu::PASTE_SHORTCUT
+                Some(MenuId::NewShortcutApps),
+                Some(MenuId::NewShortcutCustom),
+                Some(MenuId::PasteShortcut)
             ]
         );
         assert_eq!(
-            new_shortcut_choice(menu::NEW_SHORTCUT_APPS),
+            new_shortcut_choice(MenuId::NewShortcutApps),
             Some(NewShortcut::Apps)
         );
         assert_eq!(
-            new_shortcut_choice(menu::NEW_SHORTCUT_CUSTOM),
+            new_shortcut_choice(MenuId::NewShortcutCustom),
             Some(NewShortcut::Custom)
         );
         assert_eq!(
-            new_shortcut_choice(menu::PASTE_SHORTCUT),
+            new_shortcut_choice(MenuId::PasteShortcut),
             Some(NewShortcut::Paste)
         );
-        assert_eq!(new_shortcut_choice(menu::ROLL), None);
+        assert_eq!(new_shortcut_choice(MenuId::Roll), None);
     }
 
     #[test]
@@ -624,12 +624,12 @@ mod tests {
         assert_eq!(empty[2], MenuEntry::Separator);
         assert_eq!(
             empty[3],
-            MenuEntry::item(menu::PASTE_SHORTCUT, "Paste shortcut").enabled(false)
+            menu_item(MenuId::PasteShortcut, "Paste shortcut").enabled(false)
         );
         let filled = new_shortcut_entries(true);
         assert_eq!(
             filled[3],
-            MenuEntry::item(menu::PASTE_SHORTCUT, "Paste shortcut").enabled(true)
+            menu_item(MenuId::PasteShortcut, "Paste shortcut").enabled(true)
         );
     }
 

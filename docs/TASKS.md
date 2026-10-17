@@ -56,7 +56,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Config file paths and atomic save | `deskspace-config/src/store.rs` |
 | CLI flags | `deskspace-app/src/cli.rs` |
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
-| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `mod menu`, `*_PRESETS`) |
+| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
@@ -179,10 +179,10 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 
 ### Recipe: a new menu entry
 
-1. `app.rs`: an id in `mod menu` (next free) and in the `other` list of the
-   `menu_ids_are_unique` test. An entry in a family (opacity, icon size,
-   sort) is a row in the preset table instead.
-2. `app/menus.rs`: a `MenuEntry` in the builder (`show_space_menu`,
+1. `app.rs`: a `MenuId` variant (next free value) and its `ALL` entry. An
+   entry in a family (opacity, icon size, sort) also gets a row in its preset
+   table.
+2. `app/menus.rs`: a `menu_item` in the builder (`show_space_menu`,
    `show_tray_menu`, `show_item_menu`, or the submenu helper) and an arm for
    the chosen id. Entries shared by the tray and the space menu go through
    `run_common_menu`.
@@ -236,35 +236,6 @@ user-visible change is expected. Do them in any order.
   - Done when: no method in `build.rs` is over about 80 lines.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
-
-- [ ] **B18. Menu ids as an enum.** The model is B15 (commit `3096a47`,
-  `Timer` in `app.rs`). `app.rs`'s `mod menu` holds 34 loose `u32` consts,
-  and `menu_ids_are_unique` only works because its hand-kept `other` list
-  names every id the preset tables do not.
-  - Replace `mod menu` with `#[repr(u32)] enum MenuId` beside `Timer`: one
-    variant per const, CamelCase (`ROLL` -> `Roll`, `OPACITY_100` ->
-    `Opacity100`), **the same values** (never renumber; 9 stays unused), plus
-    `const ALL: [Self; N]` and `fn from_id(id: u32) -> Option<Self>`, as
-    `Timer` has.
-  - The preset tables (`NEW_SHORTCUT_ENTRIES`, `OPACITY_PRESETS`,
-    `ICON_SIZE_PRESETS`, `SORT_PRESETS`) hold `MenuId` instead of `u32`.
-    `MenuEntry::item` still takes a `u32` (the platform knows no app ids), so
-    pass `id as u32`; add a small `fn menu_item(id: MenuId, label: &str) ->
-    MenuEntry` in `app/menus.rs` if more than a few call sites need it.
-  - Where a chosen id is matched (`app/menus.rs`: `show_space_menu`,
-    `show_item_menu` with `ItemMenuChoice::App`, the tray menu,
-    `run_common_menu`, the submenu helpers), convert once with
-    `MenuId::from_id` and match on the enum.
-  - Tests: replace `menu_ids_are_unique` with `menu_ids_round_trip` (every
-    `ALL` entry survives `from_id`, `from_id(9)` and `from_id(0)` are `None`)
-    and `menu_ids_stay_below_the_shell_range` (every value is below
-    `0x8000`). `ALL` makes the hand-kept list unnecessary.
-  - Docs: in `CONTEXT.md` section 6, "Message, timer, and id tables", the
-    "Menu ids" row names `enum MenuId` and its guard tests. The recipe "a
-    new menu entry" step 1 becomes "a `MenuId` variant (next free value) and
-    its `ALL` entry". Move the `mod menu` doc comment onto the enum.
-  - Done when: `mod menu` is gone and no `u32` menu id literal is left in the
-    app.
 
 - [ ] **B19. Forbid `unsafe` in `deskspace-app`.** The app crate has no
   `unsafe` today, but nothing enforces "all `unsafe` lives in the platform"

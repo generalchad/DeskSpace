@@ -2027,3 +2027,32 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: the gates pass. **[needs human]** check: overlap two spaces
     with different icon sizes, then sort or arrange the lower one. Its icons
     land on its own grid.
+
+- [x] **B18. Menu ids as an enum.** The model is B15 (commit `3096a47`,
+  `Timer` in `app.rs`). `app.rs`'s `mod menu` holds 34 loose `u32` consts,
+  and `menu_ids_are_unique` only works because its hand-kept `other` list
+  names every id the preset tables do not.
+  - Replace `mod menu` with `#[repr(u32)] enum MenuId` beside `Timer`: one
+    variant per const, CamelCase (`ROLL` -> `Roll`, `OPACITY_100` ->
+    `Opacity100`), **the same values** (never renumber; 9 stays unused), plus
+    `const ALL: [Self; N]` and `fn from_id(id: u32) -> Option<Self>`, as
+    `Timer` has.
+  - The preset tables (`NEW_SHORTCUT_ENTRIES`, `OPACITY_PRESETS`,
+    `ICON_SIZE_PRESETS`, `SORT_PRESETS`) hold `MenuId` instead of `u32`.
+    `MenuEntry::item` still takes a `u32` (the platform knows no app ids), so
+    pass `id as u32`; add a small `fn menu_item(id: MenuId, label: &str) ->
+    MenuEntry` in `app/menus.rs` if more than a few call sites need it.
+  - Where a chosen id is matched (`app/menus.rs`: `show_space_menu`,
+    `show_item_menu` with `ItemMenuChoice::App`, the tray menu,
+    `run_common_menu`, the submenu helpers), convert once with
+    `MenuId::from_id` and match on the enum.
+  - Tests: replace `menu_ids_are_unique` with `menu_ids_round_trip` (every
+    `ALL` entry survives `from_id`, `from_id(9)` and `from_id(0)` are `None`)
+    and `menu_ids_stay_below_the_shell_range` (every value is below
+    `0x8000`). `ALL` makes the hand-kept list unnecessary.
+  - Docs: in `CONTEXT.md` section 6, "Message, timer, and id tables", the
+    "Menu ids" row names `enum MenuId` and its guard tests. The recipe "a
+    new menu entry" step 1 becomes "a `MenuId` variant (next free value) and
+    its `ALL` entry". Move the `mod menu` doc comment onto the enum.
+  - Done when: `mod menu` is gone and no `u32` menu id literal is left in the
+    app.

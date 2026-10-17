@@ -366,7 +366,7 @@ exhaustive match:
 |-----|-------|-------|
 | `WM_APP + n` messages to the controller | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
 | App timers | `enum Timer` in `deskspace-app/src/app.rs`, delivered as `Event::Timer` and set through `App::set_timer` / `clear_timer`; each delay is a constant in the module that starts it | `Timer::ALL` and the exhaustive `App::on_timer` |
-| Menu ids | `app.rs`'s `mod menu`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start) | `menu_ids_are_unique` |
+| Menu ids | `enum MenuId` in `deskspace-app/src/app.rs`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start); a chosen id becomes a `MenuId` through `MenuId::from_id` | `menu_ids_round_trip` and `menu_ids_stay_below_the_shell_range` |
 | Settings field ids | `settings/ids.rs`'s `mod field` | `field_ids_are_unique` |
 
 Page indices (`mod page`) are build positions, so a new page goes at the
