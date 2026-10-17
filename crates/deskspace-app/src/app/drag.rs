@@ -113,6 +113,7 @@ impl App {
                     space.rect().width,
                     space.rect().height,
                 );
+                // Not `commit`: runs on every pointer move; `end_drag` saves once.
                 if self
                     .dispatch(Command::SetSpaceRect { id, rect }, point)
                     .is_applied()
@@ -148,6 +149,7 @@ impl App {
                     edges: active_edges,
                     to: point,
                 };
+                // Not `commit`: runs on every pointer move; `end_drag` saves once.
                 if self.dispatch(command, point).is_applied()
                     && self.config.desktop.space(id).map(|space| space.rect()) != before
                 {
@@ -172,6 +174,7 @@ impl App {
         };
         let start = entry.position;
         let position = Point::new(start.x + point.x - origin.x, start.y + point.y - origin.y);
+        // Not `commit`: runs on every pointer move; `end_drag` saves once.
         if self
             .dispatch(Command::SetDesktopItemPosition { item, position }, point)
             .is_applied()
@@ -329,6 +332,7 @@ impl App {
         } else {
             Command::ReorderItem { id: item, index }
         };
+        // Not `commit`: runs on every pointer move; `end_drag` saves once.
         if self.dispatch(command, point).is_applied() {
             self.refresh_space(ui, space);
         }
