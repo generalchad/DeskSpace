@@ -19,14 +19,16 @@ use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMINVOKECOMMANDINFO,
     IContextMenu, IContextMenu2, IContextMenu3, IDataObjectAsyncCapability, IDragSourceHelper,
-    IDragSourceHelper2, ILCreateFromPathW, ILFindChild, ILFree, IShellItem, SEE_MASK_INVOKEIDLIST,
-    SEE_MASK_NOASYNC, SHCreateDataObject, SHCreateItemFromParsingName, SHDRAGIMAGE, SHDoDragDrop,
-    SHELLEXECUTEINFOW, SVGIO_BACKGROUND, ShellExecuteExW,
+    IDragSourceHelper2, ILCreateFromPathW, ILFindChild, ILFree, IShellFolder, IShellItem,
+    SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHCreateDataObject, SHCreateItemFromParsingName,
+    SHDRAGIMAGE, SHDoDragDrop, SHELLEXECUTEINFOW, SHGetDesktopFolder, SVGIO_BACKGROUND,
+    ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, MF_SEPARATOR,
-    PostMessageW, SW_SHOWNORMAL, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenuEx, WM_DRAWITEM, WM_INITMENUPOPUP, WM_MEASUREITEM, WM_MENUCHAR, WM_NULL,
+    ASFW_ANY, AllowSetForegroundWindow, CreatePopupMenu, DestroyMenu, GetMenuItemCount, HMENU,
+    InsertMenuW, MF_BYPOSITION, MF_SEPARATOR, PostMessageW, SW_SHOWNORMAL, SetForegroundWindow,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, WM_DRAWITEM, WM_INITMENUPOPUP,
+    WM_MEASUREITEM, WM_MENUCHAR, WM_NULL,
 };
 use windows::core::{Interface, PCSTR, PCWSTR};
 
@@ -175,14 +177,16 @@ pub(crate) fn track_item_menu(
     entries: &[MenuEntry],
     at: Point,
 ) -> Option<ItemMenuChoice> {
-    let shell_menu: Option<IContextMenu> = shell_item(path)
-        .and_then(|item| {
-            // SAFETY: binding a handler on a live shell item.
-            Ok(unsafe { item.BindToHandler(None, &BHID_SFUIObject)? })
-        })
-        .map_err(|error| tracing::debug!(%error, path = %path.display(), "no shell menu"))
-        .ok();
-    track_shell_menu(owner, shell_menu, entries, at)
+    let item_menu = || {
+        shell_item(path)
+            .and_then(|item| {
+                // SAFETY: binding a handler on a live shell item.
+                Ok(unsafe { item.BindToHandler(None, &BHID_SFUIObject)? })
+            })
+            .map_err(|error| tracing::debug!(%error, path = %path.display(), "no shell menu"))
+            .ok()
+    };
+    track_shell_menu(owner, &[&item_menu], entries, at)
 }
 
 /// Shows the app's `entries`, a separator, and then the desktop's background
@@ -194,44 +198,98 @@ pub(crate) fn track_desktop_menu(
     entries: &[MenuEntry],
     at: Point,
 ) -> Option<ItemMenuChoice> {
-    track_shell_menu(owner, desktop_background_menu(), entries, at)
+    track_shell_menu(
+        owner,
+        &[&desktop_view_menu, &desktop_folder_menu],
+        entries,
+        at,
+    )
 }
 
 /// The desktop view's own background menu. Asking the view (not the Desktop
 /// folder) is what brings in its View and Sort by submenus and the
 /// `DesktopBackground` shell extensions:
 /// <https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellview-getitemobject>
-fn desktop_background_menu() -> Option<IContextMenu> {
-    let view = crate::win32::shell_view::desktop_shell_view()?;
+fn desktop_view_menu() -> Option<IContextMenu> {
+    let Some(view) = crate::win32::shell_view::desktop_shell_view() else {
+        tracing::warn!("desktop view not reachable for its background menu");
+        return None;
+    };
     // SAFETY: `view` is the live desktop view; the call fills an out-parameter
     // with an owned interface.
     unsafe { view.GetItemObject::<IContextMenu>(SVGIO_BACKGROUND) }
-        .map_err(|error| tracing::debug!(%error, "no desktop background menu"))
+        .map_err(|error| tracing::warn!(%error, "no desktop view background menu"))
         .ok()
 }
 
-/// Tracks `entries`, a separator, and `shell_menu` (when there is one) as one
-/// popup, and runs the shell command chosen.
+/// The Desktop folder's background menu, built in this process. It lacks the
+/// view's View, Sort by, Refresh, and Paste, but keeps New, Display settings,
+/// Personalize, and the folder-background extensions, so the desktop menu
+/// still works when the view's menu cannot be filled. Seen 2026-10-17: the
+/// view's menu object arrived but added no entries, leaving only DeskSpace's
+/// own (DeskSpace was probably running elevated).
+/// <https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellfolder-createviewobject>
+fn desktop_folder_menu() -> Option<IContextMenu> {
+    // SAFETY: the desktop folder is a process-wide shell object; both calls
+    // return owned interfaces.
+    unsafe {
+        SHGetDesktopFolder()
+            .and_then(|folder: IShellFolder| folder.CreateViewObject(HWND::default()))
+    }
+    .map_err(|error| tracing::warn!(%error, "no desktop folder background menu"))
+    .ok()
+}
+
+/// Inserts `shell_menu`'s entries into `menu` at `index`. Returns whether it
+/// added any: a handler can report success and add nothing.
+///
+/// # Safety
+/// `menu` must be a live menu.
+unsafe fn fill_shell_menu(menu: HMENU, index: u32, shell_menu: &IContextMenu) -> bool {
+    // SAFETY: `menu` is live per the caller; the shell only inserts into it.
+    unsafe {
+        let before = GetMenuItemCount(Some(menu));
+        let result =
+            shell_menu.QueryContextMenu(menu, index, SHELL_FIRST_ID, SHELL_LAST_ID, CMF_NORMAL);
+        let added = GetMenuItemCount(Some(menu)) > before;
+        if !added {
+            tracing::warn!(?result, "shell context menu added no entries");
+        }
+        added
+    }
+}
+
+/// A way to get a shell context menu; `track_shell_menu` tries them in order.
+type MenuSource<'a> = &'a dyn Fn() -> Option<IContextMenu>;
+
+/// Tracks `entries`, a separator, and the first of `sources` that adds any
+/// entries, as one popup, and runs the shell command chosen. The separator
+/// appears only between two non-empty parts.
 fn track_shell_menu(
     owner: HWND,
-    shell_menu: Option<IContextMenu>,
+    sources: &[MenuSource],
     entries: &[MenuEntry],
     at: Point,
 ) -> Option<ItemMenuChoice> {
     // SAFETY: the menu is created, tracked, and destroyed within this call;
-    // labels outlive the AppendMenuW calls that copy them. The context menu
-    // is kept alive in ACTIVE_MENU while tracking and released afterwards.
+    // labels outlive the calls that copy them. The context menu is kept alive
+    // in ACTIVE_MENU while tracking and released afterwards.
     unsafe {
         let menu = CreatePopupMenu().ok()?;
         crate::win32::menu::append_entries(menu, entries);
-        if let Some(shell_menu) = &shell_menu {
-            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let index = entries.len() as u32 + 1;
-            let result =
-                shell_menu.QueryContextMenu(menu, index, SHELL_FIRST_ID, SHELL_LAST_ID, CMF_NORMAL);
-            if result.is_err() {
-                tracing::debug!(?result, "shell context menu could not be filled");
-            }
+        let app_count = GetMenuItemCount(Some(menu)).max(0) as u32;
+        let shell_menu = sources
+            .iter()
+            .filter_map(|source| source())
+            .find(|candidate| fill_shell_menu(menu, app_count, candidate));
+        if shell_menu.is_some() && app_count > 0 {
+            let _ = InsertMenuW(
+                menu,
+                app_count,
+                MF_BYPOSITION | MF_SEPARATOR,
+                0,
+                PCWSTR::null(),
+            );
         }
 
         ACTIVE_MENU.with(|cell| *cell.borrow_mut() = shell_menu.clone());

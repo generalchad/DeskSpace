@@ -1135,7 +1135,10 @@ one arm in `App::on_event`, whose match is exhaustive.
   nothing selected there) for "New space", "DeskSpace settings…", and
   Hide/Show spaces above Explorer's own desktop background menu
   (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
-  that menu would be unreachable. A shell command re-syncs the layer.
+  that menu would be unreachable. A shell command re-syncs the layer. When
+  the view's menu adds nothing, the Desktop folder's own background menu
+  (New, Display settings, Personalize; no View or Sort by) stands in, so the
+  menu never ends after DeskSpace's entries.
 - Item check boxes follow Explorer's mode (when the desktop shows them and the
   `MatchExplorer` preset is on). A checked box is filled with the Windows
   accent under a white tick (`Palette::check_fill`; Windows blue when the

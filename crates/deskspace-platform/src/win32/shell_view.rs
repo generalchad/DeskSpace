@@ -28,7 +28,17 @@ const CSIDL_DESKTOP: i32 = 0;
 /// The shell view that draws the desktop's icons, or `None` if the shell is
 /// not available.
 pub(crate) fn desktop_shell_view() -> Option<IShellView> {
-    let windows = shell_windows()?;
+    if let Some(view) = shell_windows().and_then(|windows| view_from(&windows)) {
+        return Some(view);
+    }
+    // The cached enumerator is a proxy into Explorer, so it dies when
+    // Explorer restarts and every later lookup would fail. Retry once with a
+    // fresh one.
+    release();
+    shell_windows().and_then(|windows| view_from(&windows))
+}
+
+fn view_from(windows: &IShellWindows) -> Option<IShellView> {
     let mut window = 0i32;
     let location = i4_variant(CSIDL_DESKTOP);
     // The second location is reserved and must be VT_EMPTY.
