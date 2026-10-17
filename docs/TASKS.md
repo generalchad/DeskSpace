@@ -273,17 +273,6 @@ user-visible change is expected. Do them in any order.
   responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
   - Done when: the gates pass and the docs say four crates forbid `unsafe`.
 
-- [ ] **B21. Seed the first space through `Command`s.** `bootstrap.rs`
-  builds the initial "Desktop" space by calling `Desktop::add_item` and
-  `arrange_space` on `desktop.space_mut(id)` directly, the one place outside
-  tests that changes the model without a `Command` (`ENGINEERING.md`
-  section 3). Seed it with `Command::CreateSpace`, one `Command::AddItem` per
-  entry (the `ItemFacts` it already reads), then `Command::AutoArrange`,
-  applied through `Desktop::apply` with the work area `bootstrap` already
-  uses. Same result, so the existing seeding tests pass unchanged; add one if
-  none covers "a fresh config gets one arranged Desktop space".
-  - Done when: `bootstrap.rs` calls no `*_mut` model accessor.
-
 - [ ] **B22. Mark the process-wide state where it lives.** The platform keeps
   a number of `static`s and `thread_local!`s. Most are needed, because hooks
   and Win32 callbacks get no context pointer. But none says why, which makes

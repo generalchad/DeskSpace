@@ -1798,3 +1798,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     unchanged.
   - Done when: `grep -rn "403\|test count" docs/*.md` finds only the K rule
     and the section B intro.
+
+- [x] **B21. Seed the first space through `Command`s.** `bootstrap.rs`
+  builds the initial "Desktop" space by calling `Desktop::add_item` and
+  `arrange_space` on `desktop.space_mut(id)` directly, the one place outside
+  tests that changes the model without a `Command` (`ENGINEERING.md`
+  section 3). Seed it with `Command::CreateSpace`, one `Command::AddItem` per
+  entry (the `ItemFacts` it already reads), then `Command::AutoArrange`,
+  applied through `Desktop::apply` with the work area `bootstrap` already
+  uses. Same result, so the existing seeding tests pass unchanged; add one if
+  none covers "a fresh config gets one arranged Desktop space".
+  - Done when: `bootstrap.rs` calls no `*_mut` model accessor.

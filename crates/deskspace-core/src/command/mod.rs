@@ -125,7 +125,8 @@ pub enum Command {
         ids: Vec<ItemId>,
         index: usize,
     },
-    /// Updates an item after its file was renamed on disk.
+    /// Updates an item's path and label: after its file was renamed on disk,
+    /// or to give a new item the shell's display name.
     RenameItem {
         id: ItemId,
         path: PathBuf,

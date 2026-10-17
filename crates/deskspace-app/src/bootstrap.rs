@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
-use deskspace_core::{Desktop, Item, Rect, layout::arrange_space};
+use deskspace_core::{Command, Desktop, ItemFacts, Rect};
 use deskspace_platform::{
-    Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode,
+    Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode, work_area_at,
 };
 
 use crate::app::{App, tray_tooltip};
@@ -13,30 +13,82 @@ use crate::cli::Cli;
 const INITIAL_SPACE: &str = "Desktop";
 const INITIAL_RECT: Rect = Rect::new(60, 60, 440, 320);
 
-pub fn seed_default_desktop(desktop: &mut Desktop, with_icons: bool) {
-    let id = desktop.add_space(INITIAL_SPACE, INITIAL_RECT);
+/// One desktop item to seed: its path, what the file system says about it,
+/// and the shell's display name for it.
+struct SeedEntry {
+    path: PathBuf,
+    facts: ItemFacts,
+    label: String,
+}
 
-    if with_icons {
-        match enumerate_desktop_items() {
-            Ok(entries) => {
-                for entry in entries {
-                    let item =
-                        Item::new(desktop.next_item_id(), &entry.path, item_facts(&entry.path))
-                            .with_label(entry.label)
-                            .with_kind(entry.kind);
-                    desktop.add_item(id, item);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "could not enumerate desktop items");
-            }
+pub fn seed_default_desktop(desktop: &mut Desktop, with_icons: bool) {
+    let entries = if with_icons {
+        desktop_entries()
+    } else {
+        Vec::new()
+    };
+    seed_space(desktop, entries, work_area_at(INITIAL_RECT.center()));
+}
+
+fn desktop_entries() -> Vec<SeedEntry> {
+    match enumerate_desktop_items() {
+        Ok(entries) => entries
+            .into_iter()
+            .map(|entry| SeedEntry {
+                facts: item_facts(&entry.path),
+                path: entry.path,
+                label: entry.label,
+            })
+            .collect(),
+        Err(error) => {
+            tracing::warn!(%error, "could not enumerate desktop items");
+            Vec::new()
         }
     }
+}
 
-    let layout = desktop.layout;
-    if let Some(space) = desktop.space_mut(id) {
-        arrange_space(space, layout);
+/// Creates the initial space holding `entries`, arranged, through `Command`s
+/// alone. `AddItem` labels an item with its file stem, so a `RenameItem`
+/// follows it to keep the shell's display name, as Explorer shows it.
+fn seed_space(desktop: &mut Desktop, entries: Vec<SeedEntry>, bounds: Rect) {
+    let id = desktop.next_space_id();
+    let create = Command::CreateSpace {
+        title: INITIAL_SPACE.to_owned(),
+        at: INITIAL_RECT.origin(),
+        size: INITIAL_RECT.size(),
+        locked: false,
+    };
+    if !apply_seed(desktop, create, bounds) {
+        return;
     }
+    for entry in entries {
+        let item = desktop.next_item_id();
+        let add = Command::AddItem {
+            space: id,
+            path: entry.path.clone(),
+            facts: entry.facts,
+        };
+        if apply_seed(desktop, add, bounds) {
+            let label = Command::RenameItem {
+                id: item,
+                path: entry.path,
+                label: entry.label,
+            };
+            apply_seed(desktop, label, bounds);
+        }
+    }
+    apply_seed(desktop, Command::AutoArrange { id }, bounds);
+}
+
+fn apply_seed(desktop: &mut Desktop, command: Command, bounds: Rect) -> bool {
+    let outcome = desktop.apply(command, bounds);
+    if !outcome.is_applied() {
+        tracing::warn!(
+            ?outcome,
+            "a command seeding the initial space did not apply"
+        );
+    }
+    outcome.is_applied()
 }
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
@@ -112,4 +164,77 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     install_on_exit
         .install()
         .context("could not start the update installer")
+}
+
+#[cfg(test)]
+mod tests {
+    use deskspace_core::ItemKind;
+
+    use super::*;
+
+    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
+    fn entry(path: &str, label: &str, is_folder: bool) -> SeedEntry {
+        SeedEntry {
+            path: PathBuf::from(path),
+            facts: ItemFacts {
+                is_folder,
+                ..ItemFacts::default()
+            },
+            label: label.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_fresh_desktop_gets_one_arranged_desktop_space() {
+        let mut desktop = Desktop::new();
+        let entries = vec![
+            entry(r"C:\Users\me\Desktop\report.docx", "report.docx", false),
+            entry(r"C:\Users\me\Desktop\Projects", "Projects", true),
+            entry(r"C:\Users\me\Desktop\Notes.lnk", "Notes", false),
+        ];
+
+        seed_space(&mut desktop, entries, BOUNDS);
+
+        let [space] = desktop.spaces.as_slice() else {
+            panic!("expected one space, got {}", desktop.spaces.len());
+        };
+        assert_eq!(space.title, INITIAL_SPACE);
+        assert_eq!(space.rect.origin(), INITIAL_RECT.origin());
+        let seeded: Vec<(&str, ItemKind)> = space
+            .items
+            .iter()
+            .map(|item| (item.label.as_str(), item.kind))
+            .collect();
+        assert_eq!(
+            seeded,
+            [
+                ("report.docx", ItemKind::File),
+                ("Projects", ItemKind::Folder),
+                ("Notes", ItemKind::Shortcut),
+            ]
+        );
+
+        let arranged = desktop.clone();
+        let id = space.id;
+        assert!(
+            desktop
+                .apply(Command::AutoArrange { id }, BOUNDS)
+                .is_applied()
+        );
+        assert_eq!(desktop, arranged, "the seeded space is already arranged");
+    }
+
+    #[test]
+    fn seeding_without_icons_gives_an_empty_desktop_space() {
+        let mut desktop = Desktop::new();
+
+        seed_space(&mut desktop, Vec::new(), BOUNDS);
+
+        let [space] = desktop.spaces.as_slice() else {
+            panic!("expected one space, got {}", desktop.spaces.len());
+        };
+        assert_eq!(space.title, INITIAL_SPACE);
+        assert!(space.items.is_empty());
+    }
 }
