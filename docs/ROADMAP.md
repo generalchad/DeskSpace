@@ -212,6 +212,23 @@ A native, lightweight, offline Windows desktop organizer that:
     Explorer's icons, which hiding spaces never hid. Hiding everything
     (spaces and icons) is M5's hide-all (F-11), a separate command.
 
+- **D10. New space placement (2026-10-17).** A new space used to open at
+  the click or the pointer, so it often landed on top of another space.
+  - Every way to create one (space menu, tray, desktop menu, hotkey) now
+    uses the click or the pointer only to pick the monitor. The space goes
+    one gutter to the right of that monitor's top row of spaces, its top in
+    line with the row's. A full row gives way to the next one down, then to
+    a new row under all of them; an empty monitor starts one gutter in from
+    its top-left corner.
+  - The gutter is the median gap between neighbouring spaces there (side by
+    side first, then stacked), so it matches an even layout and takes the
+    typical value of an uneven one. A gap the new space would fit in counts
+    as open desktop, not a gutter. With nothing to measure, it is
+    `DEFAULT_SPACE_GAP`, scaled for the monitor's DPI.
+  - A slot must keep half a gutter clear of every space. When none does,
+    the space opens at the click or the pointer, as before.
+  - Code: `deskspace-core/src/placement.rs`.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in

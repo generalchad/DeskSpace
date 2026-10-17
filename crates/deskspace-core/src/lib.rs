@@ -7,6 +7,7 @@ pub mod geometry;
 pub mod id;
 pub mod item;
 pub mod layout;
+pub mod placement;
 pub mod space;
 pub mod theme;
 

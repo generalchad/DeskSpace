@@ -34,7 +34,7 @@ pub use win32::display_settings::{
     CheckBoxMode, DESKTOP_ICON_RANGE, DESKTOP_ICON_STEP, ShellDisplay, desktop_display,
     desktop_display_since, next_desktop_icon_size, set_desktop_icon_size,
 };
-pub use win32::dpi::enable_per_monitor_awareness;
+pub use win32::dpi::{enable_per_monitor_awareness, monitor_dpi_at, scale_for};
 pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;

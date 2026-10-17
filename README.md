@@ -100,6 +100,10 @@ help inspect the look and the desktop layer.
   does; under "Custom" it changes DeskSpace's icon size. A pop-up at the top
   of the screen shows the size as a percentage, with buttons to zoom out, zoom
   in, and reset to 100 %.
+- A new space (from any menu or the hotkey) opens on the screen you clicked
+  or pointed at, to the right of the top row of spaces there, lined up with
+  them and spaced like them. When that row is full it goes to the next row,
+  or a new row underneath.
 - Double-click a space title bar to roll it up or down. Right-click a space for
   roll up, rename, lock, fit to contents, new shortcut, appearance, sort,
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"

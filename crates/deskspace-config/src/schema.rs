@@ -27,7 +27,7 @@ pub struct Config {
 pub struct WindowSettings {
     /// Shows or hides the spaces. Empty means unbound.
     pub toggle_hotkey: String,
-    /// Creates a space at the pointer. Empty means unbound.
+    /// Creates a space on the pointer's monitor. Empty means unbound.
     pub new_space_hotkey: String,
     /// Opens the settings window. Empty means unbound.
     pub settings_hotkey: String,

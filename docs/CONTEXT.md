@@ -206,6 +206,10 @@ every space lays out on.
 - `snap_to_grid` / `snap_rect` snap to the grid, `clamp_to_bounds` keeps
   rects in the work area, and `resolve_collisions` pushes overlapping spaces
   down.
+- `placement::new_space_origin` picks where a new space goes (ROADMAP D10).
+  The app calls it in `App::create_space` and passes the result to
+  `Command::CreateSpace`, which still only clamps, so the seed and tests can
+  name an exact spot.
 
 ### Command layer (`command/`)
 
@@ -1035,6 +1039,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
   unless the space is empty); New space; Settings…, Hide/Show spaces, Exit
   DeskSpace.
+- New space, from any menu or the hotkey, opens beside the top row of spaces
+  on the monitor of the click or the pointer, one typical gutter to the
+  right (ROADMAP D10).
 - **Appearance ▸** sets a tint-opacity preset (100/80/60/40/20 %), an icon size
   (Small 75, Medium 100, Large 150, Extra large 200 %), or a custom tint or
   text color. Each customizes the space, starting from what it shows now; "Use
@@ -1098,7 +1105,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   | Advanced | look | Shortcut overlay size |
   | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now |
   | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |
-  | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space at the pointer, Open settings (both unbound by default) |
+  | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
   | About | Global | Version, summary, license, configuration file path |
   | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
 
@@ -1185,7 +1192,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 **Hotkeys and the command line**
 
 - Settings → Hotkeys binds the global hotkeys: show/hide spaces
-  (`Ctrl+Alt+D` by default), a new space at the pointer, and open settings
+  (`Ctrl+Alt+D` by default), a new space on the pointer's monitor, and open settings
   (both unbound). While spaces are hidden, the desktop's right-click menu has
   "Show DeskSpace spaces" (a per-user `DesktopBackground\Shell` verb, removed
   once they are shown). It runs the executable with `--show`, which signals
