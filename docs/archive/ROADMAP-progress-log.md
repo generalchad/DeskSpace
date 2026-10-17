@@ -3,8 +3,8 @@
 What landed, oldest first, moved here verbatim from `docs/ROADMAP.md`
 Appendix A on 2026-10-13. This file is history: the details describe the state
 when each change landed, and `docs/CONTEXT.md` is authoritative for current
-behavior. Nothing new is added here; the git log and the GitHub release notes
-record later changes.
+behavior. The git log and the GitHub release notes record later changes;
+the last section holds history moved out of the main docs.
 
 Feature id provenance: the polled customization backlog (2026-10-03) is
 F-24..F-35, the item-interaction session (2026-10-03) is F-36..F-39, and the
@@ -316,3 +316,189 @@ native-appearance follow-ups are F-40..F-43.
   `v0.2.0` published as a normal (non-pre-release) release, so it appears as
   the repository's Latest release. The release workflow's Publish step is now
   idempotent (it replaces an existing release for the tag).
+
+## Moved from the main docs
+
+### 2026-10-16: ROADMAP.md milestone history
+
+Moved verbatim from `docs/ROADMAP.md` section 5, which keeps a summary.
+M0 and M1 in full:
+
+#### M0 - Foundations and guardrails  **[done]**
+
+Goal: a codebase that stays healthy as it grows.
+
+- **[done]** CI on Windows runs `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -D warnings`, and
+  `cargo test --workspace`. It also runs `cargo deny check all` (licenses,
+  advisories, bans, sources) from `deny.toml`.
+- **[done]** Events are honest. `Event`/`SpaceEvent` declare only what is
+  emitted, and `WM_MOUSELEAVE` drives hover. Timers (`Ui::set_timer`) are
+  added only when a feature needs one.
+- **[done]** Work-area awareness. Commands are bounded by the work area of the
+  monitor nearest the action (`work_area_at`).
+- **[done]** Error boundaries. Library crates return `thiserror` errors, and
+  the binary uses `anyhow` with context for each step.
+- **[done]** Debounced autosave. Layout changes save about 700 ms after the
+  last change. File moves and Apply/OK save at once, and closing flushes any
+  pending write.
+
+Exit criteria (met): CI is green, no event variant goes unused, and the work
+area drives bounds.
+
+#### M1 - Direct2D renderer and Windows 11 look  **[done]**
+
+Goal: spaces that look native on Windows 10 and 11.
+
+- **[done]** `render/d2d.rs` implements the `SpaceScene` contract. It draws
+  with per-pixel alpha and DirectWrite text, and handles device loss
+  (`D2DERR_RECREATE_TARGET`).
+- **[done]** Acrylic/blur behind space bodies on Windows 10 1803+ and 11
+  (see D2), with DWM rounded corners. Verified on Windows 11 build 26300.
+- **[done]** Per-monitor DPI.
+  - Each space reads its own monitor's DPI (`GetDpiForWindow`) and scales its
+    layout, icons, and hit tests.
+  - `WM_DPICHANGED` reflows a space that moves to a display with a different
+    DPI.
+  - Not yet checked on a mixed-DPI setup.
+- **[dropped]** GDI fallback painter. The D2D path has no known failure that
+  GDI would cover, and GDI cannot draw over the blur correctly.
+
+Exit criteria (met): spaces render through D2D with a Windows 11 look, and
+blur works on Windows 10 and 11.
+
+#### M2's "Done" list
+
+Done:
+- **[done]** Space chrome:
+  - create, and delete with a confirmation (F-02);
+  - resize from edges and corners, scroll, and "Fit to contents" (F-03);
+  - lock, shown by a glyph (F-05);
+  - rename inline from the space menu (F-02);
+  - the space context menu (F-14, basic).
+- **[done]** The managed store (D3). Drops move files into the store, and
+  Shift keeps them in place. Every move is announced to the shell with
+  `SHChangeNotify`. Dropped files are matched by canonical path, so a move
+  between spaces never creates a duplicate.
+- **[done]** Items inside spaces behave like Explorer items (F-06,
+  F-36..F-43):
+  - Items open on double-click and show Explorer's context menu.
+  - Selection:
+    - plain click, Ctrl+click, and Shift+click;
+    - rubber-band selection and Ctrl+A;
+    - both of Explorer's check-box modes.
+  - Drag and drop:
+    - dragging an item within its space rearranges it, and a multi-selection
+      moves as a block;
+    - OLE drag-out carries the whole selection and defaults to a move, with a
+      drag image;
+    - spaces are OLE drop targets with move/copy feedback.
+  - Editing:
+    - Ctrl+X/C/V through the shell clipboard;
+    - Delete sends items to the Recycle Bin;
+    - F2 renames an item inline.
+  - Display matches Explorer's settings:
+    - extensions, hidden files, and compressed/encrypted label colors;
+    - shell overlays, icon size, and item spacing;
+    - info tips.
+- **[done]** Shell-sourced icons. `IShellItemImageFactory` renders icons
+  at the effective pixel size, with overlays from the system image list.
+  `SHGetFileInfoW` remains a fallback.
+- **[done]** Desktop takeover (D7/D8, `TASKS.md` I1-I8), opt-in:
+  - the desktop's items and positions are read through the shell's
+    `IFolderView` into a `DesktopLayer` (I1-I2);
+  - a chrome-less layer window draws the loose items with the space item code,
+    and item interaction goes through a `Surface` (`Space` or `Desktop`), so
+    dragging works within the desktop and into a space (I3-I4);
+  - Explorer's icon listviews are hidden, restored on a clean exit, re-hidden
+    after an Explorer restart and on a health timer (I5), and restored by a
+    watchdog helper on a crash (I6);
+  - spaces survive Show Desktop without a watcher (I7 closed; spaces also
+    ignore `SC_MINIMIZE`);
+  - the Desktop folder is watched while the layer is drawn, so loose items
+    follow outside changes (I8).
+- **[done]** Non-file shell drags (F-50; `TASKS.md` L2). A space accepts a
+  drag that carries only shell items, including a packaged app with no
+  filesystem path, and writes a shortcut into the space storage, as Explorer
+  does on a folder. A drop decides by the effects the source allows (`LINK`
+  makes shortcuts, as does Alt), so a Start, taskbar, or Alt drag never moves
+  or lists the source's own `.lnk`, and a file list of AppUserModelIDs, which
+  the Start menu sends, counts as shell items. Awaits the on-screen check and
+  the rest of L1's per-source findings.
+- **[partial]** Right-button drag with Explorer's drop menu (D9): G5a and G5b
+  are done (check pending).
+
+#### M3's "Done" list
+
+Done:
+- **[done]** Tray icon (F-16): Settings, Hide/Show spaces, New space, and Exit.
+  While spaces are hidden, a desktop right-click verb, "Show DeskSpace spaces",
+  brings them back.
+- **[done]** Space context menu (F-14):
+  - create, delete, lock, roll up, and fit to contents;
+  - an Appearance submenu: tint opacity, icon size, and custom tint and text
+    colors, each of which customizes the space (F-24), plus "Use global
+    appearance" and "Space settings…";
+  - a one-off Sort by (F-31).
+- **[done]** Settings window (F-17). A data-driven form engine with live
+  preview, OK/Cancel/Apply, and the pages Appearance, Labels, Layout, Colors,
+  Advanced, General, New spaces, Hotkeys, and About. It covers the material,
+  corners, colors, label style (F-27), grid density (F-26), icon size (F-25),
+  overlay size, the new-space defaults, and the global hotkeys.
+- **[done]** Per-space looks (F-46). The settings window has three panes:
+  the scopes (Global, then every space indented, dimmed while it follows
+  Global), the pages of the selected scope, and the page. A space shows the
+  five look pages, greyed with the global values until "Customize this
+  space" is on; it then keeps its own copy of every look setting
+  (`SpaceLook`), kept while customization is off. Edits preview live through
+  `SetSpaceLook` / `CustomizeSpace`, and Cancel restores every space.
+  Selecting a space highlights it on the desktop.
+- **[done]** Every `WindowSettings` field is wired to behavior:
+  - `start_hidden`;
+  - the global hotkeys, editable as text on the Hotkeys page with validation
+    and conflict reporting: show/hide, new space, and open settings (F-18);
+  - snapping, now `GridSpec.snap`.
+- **[done]** Dark mode for the settings window and menus, following Windows.
+- **[done]** A zoom pop-up (F-57): every icon-size change shows the size as
+  a percentage at the top center of the screen, with zoom out, zoom in, and
+  Reset buttons, in the spaces' look.
+- **[done]** A modern color picker (F-51): the settings Colors page and the
+  space menu's Appearance submenu open DeskSpace's own themed popup (a
+  "Recent colors" row and a "Windows colors" grid, with the saturation/value
+  square, hue and alpha strips behind a "Custom colors…" toggle, plus a
+  preview, hex readout, and OK/Cancel) instead of the system `ChooseColor`
+  dialog (`TASKS.md` F14; check pending).
+
+- **[done]** Ways to add items without a drag (`TASKS.md` section L), each
+  ending in the F-50 shortcut path (`App::add_shortcuts`): "New shortcut ▸"
+  ("From installed apps…" and "Custom shortcut…", F-53), a space's Settings
+  page "Shortcuts" (an X per item and a + tile, F-53), "Paste shortcut"
+  (F-54), and "Add files…" (F-55). CONTEXT section 8 describes them.
+
+### 2026-10-16: on-screen confirmations recorded in CONTEXT.md
+
+Moved verbatim from `docs/CONTEXT.md` section 2 ("Verification").
+Later confirmations are recorded where their `TASKS.md` section V row is
+deleted (the commit says so).
+
+Checked on screen (Windows 11 build 26300): the blur, corners, space
+content, and settings layout; inline rename, in-space rearranging, the
+Delete key, per-space appearance, sort, grid and label settings, and
+cross-space moves (2026-10-03); a multi-item drag out (2026-10-10); the
+desktop layer's item interaction (`--takeover-layer`) and the takeover
+(`--takeover`: icons hide, return on exit, re-hide after an Explorer
+restart, and come back after a kill through the watchdog; 2026-10-11);
+inline-rename Shift/Caps, the whole-column and whole-row resize fit, the
+resize dead zone, "Fit to contents" in the settings window, and the
+accent-colored check boxes (2026-10-12); F-53's New shortcut (2026-10-13).
+
+### 2026-10-16: partial passes recorded in TASKS.md section V
+
+Moved from the section V rows, which now list only what is left to check.
+
+- F9: the on state (resized spaces fit to whole columns and rows) passed 2026-10-12.
+- H5, H4 (F-46): the highlight outline is visible on Acrylic.
+- Mouse modifiers: Ctrl+wheel reaching a space with Ctrl set was confirmed from a log on 2026-10-16.
+- F13 (F-25): the default preset with takeover on (the layer's icons resize and re-space with the spaces, both ways) passed 2026-10-16.
+- F-57 zoom pop-up: passed 2026-10-16 at 100 % in dark mode on Acrylic: Ctrl+wheel, the buttons, Ctrl+Plus/Minus/0, the hide timer and hover hold, and no focus steal.
+- F15: passed 2026-10-16: zooming keeps a never-resized space's size, re-flows its icons, and leaves its title bar and title text alone.

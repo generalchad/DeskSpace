@@ -23,31 +23,15 @@ finished product. The direction is decided in `ROADMAP.md` section 2.
 
 ## 2. Current status
 
-- Build, clippy `-D warnings`, and `cargo test --workspace` are green.
-- Releases and what is in progress: `ROADMAP.md` section 4; feature status:
-  its section 7. In short, spaces, their Explorer-like items (section 8 lists
-  every control), the tray, menus, and settings window are in; desktop
-  takeover is built and opt-in (sections 5-6); lenses, auto-hide, undo for
-  file moves, list/details views, code signing, and a live update feed are
-  not yet.
+- Build health is what CI reports; releases, progress, and feature status
+  are `ROADMAP.md` sections 4 and 7.
 - Verification: many behaviors are unit-tested but not confirmed on screen;
-  `TASKS.md` section V lists them. Confirm one before building on it.
-  Checked on screen (Windows 11 build 26300): the blur, corners, space
-  content, and settings layout; inline rename, in-space rearranging, the
-  Delete key, per-space appearance, sort, grid and label settings, and
-  cross-space moves (2026-10-03); a multi-item drag out (2026-10-10); the
-  desktop layer's item interaction (`--takeover-layer`) and the takeover
-  (`--takeover`: icons hide, return on exit, re-hide after an Explorer
-  restart, and come back after a kill through the watchdog; 2026-10-11);
-  inline-rename Shift/Caps, the whole-column and whole-row resize fit, the
-  resize dead zone, "Fit to contents" in the settings window, and the
-  accent-colored check boxes (2026-10-12); F-53's New shortcut (2026-10-13).
+  `TASKS.md` section V lists them. Confirm one before building on it. What
+  was already confirmed, and when, is in `archive/ROADMAP-progress-log.md`.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Code health: one non-test file is over the ~800-line guideline,
-  `win32/color_picker.rs` (about 1,400 lines; `TASKS.md` K7 splits it). The
-  R1 and K1-K6 splits brought the rest under it; section 3 lists the `app/`
-  modules.
+- Code health: a non-test file past the ~800-line guideline gets a K task in
+  `TASKS.md` section K; section 3 lists the `app/` modules.
 
 ## 3. Architecture
 
