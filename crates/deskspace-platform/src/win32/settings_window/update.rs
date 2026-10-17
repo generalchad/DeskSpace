@@ -101,6 +101,8 @@ pub(super) enum Update {
 
 /// Refreshes control values, labels, and enabled state from `form`. Returns
 /// false when `form` has a different shape and the window must be rebuilt.
+/// The panes, the header, and the shown page are touched only when they
+/// change, because a slider drag sends an update per tick.
 pub(crate) fn update(hwnd: HWND, form: &SettingsForm) -> bool {
     // SAFETY: the borrow below only reads/writes state and creates brushes;
     // control messages are sent after it ends.

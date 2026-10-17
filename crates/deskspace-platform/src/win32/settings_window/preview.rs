@@ -7,6 +7,9 @@
 //! the control id, like every field control), so a refreshed form only needs
 //! a repaint. The window's own state is the view: the scroll offset, the hover,
 //! and the pressed target, behind `GWLP_USERDATA` and freed in `WM_NCDESTROY`.
+//!
+//! It scrolls with the wheel. It has no keyboard support yet: it is not a Tab
+//! stop, and its X and + are mouse-only.
 
 use deskspace_core::geometry::{Point, Rect, Size};
 use windows::Win32::Foundation::{POINT, RECT};

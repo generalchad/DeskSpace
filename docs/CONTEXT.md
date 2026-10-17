@@ -765,73 +765,26 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
 
-- `MenuEntry` lists become `TrackPopupMenuEx` menus (`Ui::popup_menu` returns
-  the chosen id).
-- **Form model.** `SettingsForm` holds pages of `Field`s: `Heading`, `Note`,
-  `Choice`, `Toggle`, `Slider` (a unit `suffix`, optionally labeled
-  `SliderMark`s, and, when `editable`, a number box that commits on focus loss
-  instead of a static value), `Color`, `Text` (optionally `read_only`),
-  `Button`, and `SpacePreview`. A new kind of control is a `FieldKind` variant
-  plus its builder, `plan_field` diff, and command handling in
-  `settings_window/commands.rs`; prefer composing existing kinds.
-  `Ui::update_settings` diffs a new form of the same shape into the existing
-  controls and touches the panes and header only when they change, since a
-  slider drag sends an update per tick.
-- **Window.** Pages are laid out with common controls v6 (pages are container
-  windows that forward notifications); the caption uses Mica. Edits are
-  reported as `SettingsEvent::Changed { field, value }`, `Button`, `Ok`,
-  `Cancel`, and `Apply`, plus the pane events below. Appearance is split
-  across Appearance, Labels, Layout, Colors, and Advanced so no page clips on
-  a 1080-pixel display. The app embeds the common-controls v6 manifest
-  dependency through `crates/deskspace-app/build.rs`.
-- **Panes.** `SettingsForm.nav` (a `SettingsNav`) fills the window with panes
-  separated by hairlines: a scopes pane (`scopes`, each with an `indent` and a
-  `dimmed` flag; `ScopeChanged`), a categories pane (`groups` of
-  `SettingsNavEntry`s, each pointing at a page and optionally `marked` with a
-  dot; untitled groups have no title row; `NavChanged`), and a
-  `SettingsHeader` above the page with a title, an optional `SettingsSwitch`
-  (`HeaderSwitch`), and an optional `SettingsButton` (`HeaderButton`; shown
-  only with a switch; the app uses it for a space's "Delete space",
-  owner-drawn with a red tint as destructive). Both panes are owner-drawn
-  list boxes painted like Windows 11 navigation (an accent bar on the
-  selection). The platform knows nothing about spaces: the app fills the
-  panes, maps an index back to its meaning, and answers each event with a new
-  form. The page shape never changes: every page is always built, and the
-  app picks which ones the categories pane lists.
-- **Space preview.** A `SpacePreview` (`settings_window/preview.rs`) is a
-  child window of its page that paints a picture of a space with GDI into a
-  back buffer: the title bar and body as opaque fills
-  (`settings::space_preview_colors` approximates the tint over the blur), each
-  item's icon and label in grid order with an X in its upper-right corner,
-  and a trailing + tile. It scrolls with the wheel and reports
-  `PreviewRemove` and `PreviewAdd`. Its data stays with the field in the
-  settings state (found by control id), so an update only repaints it, and its
-  pure `PreviewLayout` serves painting and hit-testing. It has no keyboard
-  support yet.
-- **Color picker** (`win32/color_picker/`, `Ui::pick_color`, F-51): a
-  rounded popup, themed to follow the dark/light mode, that replaces the dated
-  `ChooseColor` dialog. It opens on a palette grid after the Windows color
-  dialog (a "Recent colors" row and a "Windows colors" grid), with the
-  saturation/value square and hue and alpha strips one toggle away ("Custom
-  colors…"), a preview, a hex readout, and OK/Cancel. It is modal: it disables
-  its owner and pumps every message, so Windows does not mark the owner "not
-  responding", though only the picker can be driven. It paints into a DIB
-  back buffer (no flicker) and deliberately does not extend the DWM frame into
-  the client, which would make DWM read GDI's zero alpha and render the popup
-  as glass. Its marker circles are composited into the buffer with per-pixel
-  coverage anti-aliasing, because GDI draws ellipses and lines with none. Its
-  text, its check mark, and the settings window's color button glyph use the
-  system message font and the symbol font (`system::message_logfont`,
-  `system::glyph_font`, `system::draw_glyph`). A color field is one owner-draw
-  button, a slightly rounded box (`color_picker::draw_color_box`) with an
-  eyedropper glyph, so the swatch itself opens the picker, with its hex value
-  beside it.
+The menus, the settings form, the color picker, the dialogs, and dark mode
+are described in their module docs (`win32/menu.rs`, `win32/settings_window/`,
+`win32/color_picker/`, `win32/dialog.rs`, `win32/app_picker.rs`,
+`win32/app_catalog.rs`, `win32/shortcut_dialog.rs`, `win32/dark_mode.rs`) and
+in `ui.rs`. What spans them:
+
+- **Panes.** The platform knows nothing about spaces: the app fills the
+  scopes and categories panes, maps an index back to its meaning, and answers
+  each event with a new form. The page shape never changes: every page is
+  always built, and the app picks which ones the categories pane lists.
+- **Modal windows.** The color picker, the installed-apps picker, and the
+  custom shortcut dialog are owned by the settings window when it is open,
+  else the controller; each disables its owner and pumps every message while
+  open. Picked apps become `ShellItem`s through `shortcuts::shell_item`, the
+  function drops use; the custom dialog's `CustomShortcut` is written by
+  `shortcuts::create_custom_shortcut`.
 - **Highlight.** Selecting a space in the scopes pane, or opening the window
-  on one, highlights it on the desktop for about 1.2 s: the space's scene sets
-  `SpaceScene::highlight`, and the painter draws a 2 px outline just inside
-  the frame in the space's `selected_fill` at full alpha. `Timer::Highlight`
-  clears it; selecting another space moves it, and Cancel, OK, and closing
-  the window clear it.
+  on one, highlights it on the desktop for about 1.2 s
+  (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another
+  space moves it; Cancel, OK, and closing the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Global lists every page but
   Shortcuts; a space lists the five look pages, which show its values (from
@@ -851,35 +804,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   - the Layout page's "Fit to contents" button (built for every scope so the
     page shape stays constant; grey unless a resized, unlocked space is being
     edited) runs the menu's `FitToContents`.
-- **Dark mode** (`win32/dark_mode.rs`): the app calls `Ui::set_ui_dark` with
-  `Theme.ui_mode` resolved against Windows on start, on `SystemThemeChanged`,
-  and while the choice is edited. It switches popup menus (uxtheme ordinals
-  135/136, `SetPreferredAppMode` and `FlushMenuThemes`) and the settings
-  window: dark caption, body, and command-bar colors (`UiColors`),
-  `DarkMode_Explorer` / `DarkMode_CFD` control styles, and owner-drawn panes
-  and header in both modes. The settings window's accent bar is a fixed
-  `UiColors.accent`, not the Windows accent. Static labels are never disabled
-  (Windows embosses disabled static text); disabled fields grey them through
-  `WM_CTLCOLORSTATIC`. The spaces follow their own `mode`.
-- **Dialogs** (`win32/dialog.rs`: the frame, fonts, colors, control helper,
-  and modal pump): the installed-apps picker (`win32/app_picker.rs`,
-  `Ui::pick_apps`) and the custom shortcut dialog
-  (`win32/shortcut_dialog.rs`, `Ui::custom_shortcut`). Like the color picker
-  they are owned by the settings window when it is open, else the
-  controller, disable their owner, and pump every message while open
-  (`IsDialogMessageW` gives them Tab, Enter, and Escape). The picker
-  enumerates `FOLDERID_AppsFolder` (`BHID_EnumItems`) into a report-view list
-  view with check boxes, from `win32/app_catalog.rs`: a cache the app fills on
-  a background thread (its own COM apartment) on `Started`
-  (`Ui::prefetch_apps`) and that the picker refreshes in the background after
-  each use, so it opens at once and newly installed apps appear next time;
-  before the first listing finishes it lists synchronously without icons and
-  renders them lazily. Each row's icon enters the image list on
-  `LVN_GETDISPINFOW`, resampled from the cache (`icons::resample`) or
-  rendered (`icons::shell_item_icon`). Picked apps become `ShellItem`s through
-  `shortcuts::shell_item`, the function drops use; the custom dialog's result
-  is a `CustomShortcut` (`ui.rs`; `ShortcutTarget::parse` reads typed text),
-  written by `shortcuts::create_custom_shortcut`.
+- **Dark mode.** The app calls `Ui::set_ui_dark` with `Theme.ui_mode`
+  resolved against Windows on start, on `SystemThemeChanged`, and while the
+  choice is edited. The spaces follow their own `mode`.
 
 ### Desktop shell, shell items, DPI, hotkeys
 

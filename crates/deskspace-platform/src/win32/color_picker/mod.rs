@@ -11,8 +11,9 @@
 //!
 //! `pick` owns the `PickerState` box; the window only points at it through
 //! `GWLP_USERDATA` for the duration of the loop, which ends when the window is
-//! destroyed. The loop reads only messages addressed to the picker, so the
-//! owner (the settings window or the controller) is frozen while it is open.
+//! destroyed. The owner (the settings window or the controller) is disabled
+//! while it is open, so only the picker can be driven, but the loop pumps
+//! every message so Windows does not mark the owner "not responding".
 
 use std::cell::RefCell;
 
@@ -365,7 +366,7 @@ impl PickerState {
 
 /// Opens the picker `dark`-themed over `owner` and returns the chosen color, or
 /// `None` if it was cancelled or the window could not be created. Blocks in a
-/// modal loop that services only the picker, so the owner waits.
+/// modal loop with the owner disabled, so the owner waits.
 pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Color> {
     // SAFETY: Win32 window creation on the UI thread. `state` is owned here and
     // dropped after the loop; the window points at it only while it is alive.

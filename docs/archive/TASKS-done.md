@@ -2122,3 +2122,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     `draw_check`, `draw_label`, `draw_hex`, `draw_button`, `fill_image`.
   - `pick` keeps its path, used by `runtime/ui_chrome.rs` and
     `settings_window/commands.rs`.
+
+- [x] **Q1. "Native UI"** (`ui.rs`, `win32/menu.rs`,
+  `win32/settings_window/`, `win32/color_picker/`, `win32/dialog.rs`,
+  `win32/dark_mode.rs`).

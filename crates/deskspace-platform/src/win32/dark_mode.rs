@@ -129,7 +129,8 @@ pub(crate) struct UiColors {
     pub secondary_text: Color,
     /// Labels of disabled fields.
     pub disabled_text: Color,
-    /// The selection bar and marked dot in the navigation panes.
+    /// The selection bar and marked dot in the navigation panes. A fixed
+    /// color, not the Windows accent.
     pub accent: Color,
     /// Hairline between the navigation panes.
     pub divider: Color,

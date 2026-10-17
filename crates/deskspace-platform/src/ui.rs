@@ -232,6 +232,7 @@ pub struct SettingsButton {
 /// A titled group of rail entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsNavGroup {
+    /// Empty leaves out the group's title row.
     pub title: String,
     pub entries: Vec<SettingsNavEntry>,
 }
@@ -270,6 +271,9 @@ pub struct Field {
     pub enabled: bool,
 }
 
+/// The kind of control a `Field` is. A new kind is a variant plus its builder
+/// (`settings_window/build.rs`), its `plan_field` diff (`update.rs`), and its
+/// command handling (`commands.rs`); prefer composing the existing kinds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldKind {
     /// Bold section title; `label` is the text.

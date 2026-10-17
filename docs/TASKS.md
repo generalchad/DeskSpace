@@ -10,7 +10,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- Q1-Q6.
+- Q2-Q6.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -492,9 +492,6 @@ Rules for every Q task:
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
 
-- [ ] **Q1. "Native UI"** (`ui.rs`, `win32/menu.rs`,
-  `win32/settings_window/`, `win32/color_picker/`, `win32/dialog.rs`,
-  `win32/dark_mode.rs`).
 - [ ] **Q2. "Selection, display matching, keys, and clipboard"**
   (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
   `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The

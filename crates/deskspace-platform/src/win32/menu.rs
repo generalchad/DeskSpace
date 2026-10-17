@@ -1,3 +1,6 @@
+//! Turns `MenuEntry` lists into `TrackPopupMenuEx` popup menus; `Ui::popup_menu`
+//! returns the chosen id.
+
 use deskspace_core::geometry::Point;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
