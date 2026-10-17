@@ -1692,3 +1692,25 @@ until I5-I6 all land, so no partial build hides the desktop.
     preset, Ctrl+wheel over a space changes the desktop's icons and the
     spaces together, both ways, and stops at both ends; under Custom it
     changes only the spaces.
+
+- [x] **F15. An icon-size change keeps every space's size (Explorer
+  parity).** **[needs decision]** on what an auto-sized space's `columns`
+  means afterwards. Explorer never resizes a window when its icon size
+  changes: the icons re-flow into fewer or more columns and a scrollbar
+  appears when they no longer fit. Today `arrange_space` (`layout.rs`) keeps
+  a user-sized space's rect but recomputes an auto-sized one from
+  `GridSpec.columns`, so Ctrl+wheel and the icon-size slider grow and shrink
+  every space the user never resized (maintainer, 2026-10-16: keep every
+  space's size, as Explorer does).
+  - Decide: does an icon-size change pin an auto-sized space (set
+    `user_sized`, through a `Command`), or does an auto-sized space derive its
+    columns from its current width once it has one, and keep growing only in
+    height as items are added? Decided 2026-10-16: pin it (`KeepSize`).
+  - Both Ctrl+wheel (`App::adjust_icon_size`, both branches) and the
+    Settings icon-size slider (and a Match Explorer size change read in
+    `refresh_shell_display`) follow the same rule; no special case for one
+    path.
+  - Done when: an icon-size change leaves every space's rect unchanged, with
+    a core test per kind of space. **[needs human]** check: Ctrl+wheel over
+    an auto-sized and a resized space; neither changes size, both re-flow and
+    scroll.

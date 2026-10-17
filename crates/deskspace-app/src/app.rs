@@ -358,6 +358,10 @@ pub struct App {
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
     /// current maximum after a resize, so read it through `scroll_of`.
     scroll: HashMap<SpaceId, i32>,
+    /// Each space's icon factor (`icon_scale`, without DPI) at its last
+    /// re-flow, so a change to it can keep the space's size first
+    /// (`App::keep_size_on_zoom`).
+    icon_scales: HashMap<SpaceId, f32>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: [Option<Hotkey>; HOTKEY_COUNT],
@@ -401,6 +405,7 @@ impl App {
             edit: EditState::default(),
             autosave: Autosave::default(),
             scroll: HashMap::new(),
+            icon_scales: HashMap::new(),
             visible: !hidden,
             hotkeys: [None; HOTKEY_COUNT],
             watching_outside: false,

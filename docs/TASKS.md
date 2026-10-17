@@ -361,28 +361,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
 
 ## F. Ad-hoc features
 
-- [ ] **F15. An icon-size change keeps every space's size (Explorer
-  parity).** **[needs decision]** on what an auto-sized space's `columns`
-  means afterwards. Explorer never resizes a window when its icon size
-  changes: the icons re-flow into fewer or more columns and a scrollbar
-  appears when they no longer fit. Today `arrange_space` (`layout.rs`) keeps
-  a user-sized space's rect but recomputes an auto-sized one from
-  `GridSpec.columns`, so Ctrl+wheel and the icon-size slider grow and shrink
-  every space the user never resized (maintainer, 2026-10-16: keep every
-  space's size, as Explorer does).
-  - Decide: does an icon-size change pin an auto-sized space (set
-    `user_sized`, through a `Command`), or does an auto-sized space derive its
-    columns from its current width once it has one, and keep growing only in
-    height as items are added?
-  - Both Ctrl+wheel (`App::adjust_icon_size`, both branches) and the
-    Settings icon-size slider (and a Match Explorer size change read in
-    `refresh_shell_display`) follow the same rule; no special case for one
-    path.
-  - Done when: an icon-size change leaves every space's rect unchanged, with
-    a core test per kind of space. **[needs human]** check: Ctrl+wheel over
-    an auto-sized and a resized space; neither changes size, both re-flow and
-    scroll.
-
 ## G. More Explorer-standard controls
 
 - [ ] **G5c. "Create shortcuts here" on a right drop (ROADMAP D9).** G5a and
@@ -555,6 +533,7 @@ each id is in `archive/TASKS-done.md`.
 | Mouse modifiers | Ctrl+wheel reaching a space with Ctrl set was confirmed from a log on 2026-10-16. Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
 | F13 (F-25) | Under the default preset, Ctrl+wheel stops at 16 and 256 px; under Custom it changes the spaces (and, with takeover, the layer's icons) but not Explorer's; a space with its own Custom look keeps its size either way. Default preset with takeover on (the layer's icons resize and re-space with the spaces, both ways) passed 2026-10-16. |
 | F-57 zoom pop-up | Still to check: the look in light mode and on the Blur, Solid, and Clear backdrops (Clear shows as Acrylic); the scale at 150 %, where the percentage should read 100 % at "Medium icons". Passed 2026-10-16 at 100 % in dark mode on Acrylic: Ctrl+wheel, the buttons, Ctrl+Plus/Minus/0, the hide timer and hover hold, and no focus steal. |
+| F15 | Under both presets, Ctrl+wheel, the zoom pop-up, the zoom keys, and the icon-size slider leave every space's size alone (one never resized and one resized by hand); the icons re-flow into more or fewer columns and scroll; "Fit to contents" then fits the space to its items; Cancel after a slider preview leaves a never-resized space growing with new items again; moving a space to a monitor with another DPI still scales it. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working

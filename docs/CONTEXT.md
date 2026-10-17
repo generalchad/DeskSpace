@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (397 tests) are green. Update this count whenever a
+  `cargo test --workspace` (400 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -210,7 +210,7 @@ Space {
     custom: bool,              // uses `look` instead of the global settings
     look: Option<SpaceLook>,   // kept while `custom` is off
     title_height: i32,         // default 28
-    user_sized: bool,          // set by a resize; keeps size, reflows, scrolls
+    user_sized: bool,          // set by a resize or a zoom; keeps size, reflows, scrolls
 }
 
 SpaceLook { theme: Theme, gap: i32, padding: i32 }
@@ -316,7 +316,7 @@ they change, and `sort.rs` the `SortSpace` ordering. Shared helpers in
 `rearrange`, and `close_gap`. Variants:
 
 `CreateSpace`, `DeleteSpace`, `RenameSpace`, `MoveSpace`, `SetSpaceRect`,
-`ResizeSpace`, `FitToContents`, `Reflow`, `CustomizeSpace`, `SetSpaceLook`,
+`ResizeSpace`, `FitToContents`, `KeepSize`, `Reflow`, `CustomizeSpace`, `SetSpaceLook`,
 `SortSpace`, `ToggleLock`, `ToggleRollup`, `AddItem`,
 `RemoveItem`, `MoveItem`, `ReorderItem`, `ReorderItems`, `RenameItem`,
 `AutoArrange`, `SnapAll`, `SyncDesktop`, `MoveToDesktop`,
@@ -329,7 +329,13 @@ reject locked spaces and snap to the grid; `SnapAll` skips locked spaces.
 space user-sized, and (with `fit_to_grid`) fits the dragged width to whole
 columns and the height to whole rows, and
 `FitToContents` clears the user size again (so the space grows to fit its
-items). `SortSpace { id, key: SortKey, descending }` sorts by `Name`
+items), while `KeepSize` sets it without moving the rect. The app sends
+`KeepSize` before re-flowing a self-sizing space whose icon factor changed
+(`App::keep_size_on_zoom`: a zoom, the icon-size setting, a preset, or
+Explorer's own size, never a DPI move), so an icon-size change keeps every
+space's size and re-flows its columns, as an Explorer window does. Settings
+Cancel lets the spaces its preview pinned fit their items again
+(`Session::pinned`). `SortSpace { id, key: SortKey, descending }` sorts by `Name`
 (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
 `Size`, or `Modified`. `bounds` is the work area of the monitor nearest the
 action (`work_area_at`). `CommandOutcome::is_applied()` is the usual check.
@@ -1225,8 +1231,10 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   Explorer's display" preset it changes the desktop's own icon size (8 px a
   notch, 16-256 px), as Ctrl+wheel on the desktop does, and the matching
   spaces follow (ROADMAP D9); under Custom it changes the global icon size
-  (10 % a notch). A space with its own Custom look keeps its size. Spaces the
-  user never resized grow and shrink with their icons (`TASKS.md` F15).
+  (10 % a notch). A space with its own Custom look keeps its icon size. Every
+  space keeps its own size and re-flows its icons into more or fewer columns
+  (scrolling when they no longer fit), as an Explorer window does; "Fit to
+  contents" sizes it to its items again.
 - Every zoom shows the zoom pop-up at the top center of the monitor under the
   pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
   icons" is 100 %), zoom out and in (one notch each), and Reset (back to

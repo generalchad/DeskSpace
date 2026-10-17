@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use deskspace_core::geometry::Point;
+use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui};
 
@@ -382,6 +382,23 @@ impl App {
         }
         if relayout {
             self.relayout_all(ui);
+        }
+        self.unpin_spaces(ui, &session.pinned);
+    }
+
+    /// Cancel: spaces an icon-size preview pinned fit their items again,
+    /// unless they were resized since.
+    fn unpin_spaces(&mut self, ui: &mut Ui, pinned: &[(SpaceId, Rect)]) {
+        for (id, rect) in pinned {
+            let still_pinned = self
+                .config
+                .desktop
+                .space(*id)
+                .is_some_and(|space| space.user_sized && space.rect == *rect);
+            if still_pinned && self.dispatch(Command::FitToContents { id: *id }, rect.center()) {
+                self.refresh_space(ui, *id);
+                self.schedule_save(ui);
+            }
         }
     }
 

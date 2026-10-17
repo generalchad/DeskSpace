@@ -451,6 +451,7 @@ impl App {
     /// Re-flows one space for its current grid (icon size and monitor DPI) and
     /// repaints it.
     pub(super) fn reflow_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.keep_size_on_zoom(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -460,6 +461,31 @@ impl App {
             .desktop
             .apply_with_layout(Command::Reflow { id }, layout, bounds);
         self.refresh_space(ui, id);
+    }
+
+    /// When `id`'s icon factor changed since its last re-flow (a zoom, the
+    /// icon-size setting, a preset, or Explorer's own size; never a DPI move,
+    /// which the factor leaves out), pins a space that sizes itself to its
+    /// current size first. It then re-flows into fewer or more columns, as an
+    /// Explorer window does when its icon size changes (`TASKS.md` F15).
+    fn keep_size_on_zoom(&mut self, id: SpaceId) {
+        let factor = self.icon_scale(self.theme_for(id));
+        let previous = self.icon_scales.insert(id, factor);
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        if space.user_sized || previous.is_none_or(|previous| previous == factor) {
+            return;
+        }
+        let rect = space.rect;
+        self.config.desktop.apply_with_layout(
+            Command::KeepSize { id },
+            self.layout_for(id),
+            work_area_at(rect.center()),
+        );
+        if let Some(session) = self.settings.as_mut() {
+            session.pinned.push((id, rect));
+        }
     }
 
     /// A space moved to a monitor with a different DPI: reflow it so icons and

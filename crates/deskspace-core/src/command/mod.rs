@@ -59,6 +59,13 @@ pub enum Command {
     FitToContents {
         id: SpaceId,
     },
+    /// Keeps a space at its current size from now on, as if the user had sized
+    /// it, so later re-flows change its columns rather than its rect. An
+    /// icon-size change uses it, so spaces keep their size as an Explorer
+    /// window does (`TASKS.md` F15).
+    KeepSize {
+        id: SpaceId,
+    },
     /// Re-lays out a space for the current (scaled) grid. A locked space keeps
     /// its rect and takes only the new title height and item positions; an
     /// unlocked one is arranged to fit its items.
@@ -209,6 +216,7 @@ impl Desktop {
                 self.apply_resize_space(id, edges, to, layout, bounds)
             }
             Command::FitToContents { id } => self.apply_fit_to_contents(id, layout, bounds),
+            Command::KeepSize { id } => self.apply_keep_size(id),
             Command::Reflow { id } => self.apply_reflow(id, layout),
             Command::SortSpace {
                 id,
@@ -422,6 +430,46 @@ mod tests {
         desktop.apply(Command::FitToContents { id }, bounds());
         assert!(!desktop.space(id).unwrap().user_sized);
         assert_ne!(desktop.space(id).unwrap().rect.size(), sized.size());
+    }
+
+    #[test]
+    fn a_kept_space_reflows_into_new_columns_instead_of_resizing() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 10, 10));
+        for index in 0..6 {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("file{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds(),
+            );
+        }
+        let auto = desktop.space(id).unwrap().rect;
+        assert_eq!(
+            desktop.apply(Command::KeepSize { id }, bounds()),
+            CommandOutcome::Applied
+        );
+        assert!(desktop.space(id).unwrap().user_sized);
+
+        let zoomed = desktop.layout.scaled(1.5);
+        desktop.apply_with_layout(Command::Reflow { id }, zoomed, bounds());
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.rect, auto);
+        assert_eq!(
+            space.items[1].position.y,
+            zoomed.grid_position_in(1, zoomed.columns_for(auto.width)).y
+        );
+    }
+
+    #[test]
+    fn keeping_the_size_of_a_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(Command::KeepSize { id: SpaceId(9) }, bounds()),
+            CommandOutcome::NotFound
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! The settings session: Cancel snapshots, staged hotkey text, and what
 //! a revert needs to reflow or restyle.
 
+use deskspace_core::Rect;
+
 use super::ids::page;
 use super::tables::HOTKEY_BINDINGS;
 use super::*;
@@ -51,6 +53,9 @@ pub struct Session {
     /// Every space's customization when the window opened or was last
     /// applied, which Cancel restores.
     pub saved_spaces: Vec<SpaceSnapshot>,
+    /// Spaces an icon-size preview pinned at the size they had (`TASKS.md`
+    /// F15). Cancel lets those still at that size fit their items again.
+    pub pinned: Vec<(SpaceId, Rect)>,
 }
 
 /// Every binding's saved text, in `HOTKEY_BINDINGS` order.
@@ -70,6 +75,7 @@ impl Session {
             scope: None,
             page: page::APPEARANCE,
             saved_spaces: snapshot_spaces(config),
+            pinned: Vec::new(),
         }
     }
 
@@ -79,6 +85,7 @@ impl Session {
         self.saved_window = config.window.clone();
         self.saved_layout = config.desktop.layout;
         self.saved_spaces = snapshot_spaces(config);
+        self.pinned.clear();
         self.hotkey_texts = saved_hotkey_texts(&config.window);
         self.hotkey_errors = Default::default();
         self.dirty = false;
@@ -231,6 +238,15 @@ mod tests {
         assert_ne!(config.desktop.layout, Config::new().desktop.layout);
         session.revert(&mut config);
         assert_eq!(config.desktop.layout, Config::new().desktop.layout);
+    }
+
+    #[test]
+    fn apply_forgets_the_spaces_a_preview_pinned() {
+        let (config, id) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.pinned.push((id, Rect::new(0, 0, 200, 150)));
+        session.commit(&config);
+        assert!(session.pinned.is_empty());
     }
 
     #[test]

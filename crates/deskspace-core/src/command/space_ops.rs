@@ -118,6 +118,13 @@ impl Desktop {
         })
     }
 
+    pub(super) fn apply_keep_size(&mut self, id: SpaceId) -> CommandOutcome {
+        self.with_space(id, |space| {
+            space.user_sized = true;
+            CommandOutcome::Applied
+        })
+    }
+
     pub(super) fn apply_reflow(&mut self, id: SpaceId, layout: GridSpec) -> CommandOutcome {
         self.with_space(id, |space| {
             if space.locked {
