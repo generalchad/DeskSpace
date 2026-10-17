@@ -656,7 +656,6 @@ it, outside tests):
 
 | Field | Used in |
 |-------|---------|
-| `settings`, `pending_preview`, `highlighted` | `settings_session` (and one read each in `view`, `menus`, `update`) |
 | `takeover_layer`, `takeover`, `desktop_entries` | `view` |
 | `hotkeys` | `app.rs`, `settings_session` |
 | `system_dark`, `system_accent`, `shell_display` | `app.rs`, `view`, `hit`, `selection`, `zoom`, `rename`, `settings_session` |
@@ -674,12 +673,6 @@ Rules for every N task:
   one-line accessor, stop and ask (rule 4).
 - Update `CONTEXT.md` section 3's module table if a module's "Owns" column
   changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N2. A `SettingsUi` for the open settings window.** In
-  `app/settings_session.rs`: `struct SettingsUi { session: Option<Session>,
-  pending_preview: Preview, highlighted: Option<SpaceId> }`, held as
-  `App::settings_ui`. The reads in `view.rs`, `menus.rs`, and `update.rs`
-  become `self.settings_ui.is_open()` (or the accessor the read needs).
 
 - [ ] **N3. A `LayerState` for the desktop layer.** In `app/view.rs`:
   `struct LayerState { layer_flag: bool, takeover_flag: bool, entries:

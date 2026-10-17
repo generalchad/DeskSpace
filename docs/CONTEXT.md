@@ -93,7 +93,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `files` | drops, delete, prune, `resync_desktop_layer` |
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
-  | `settings_session` | opening, previewing, applying, and cancelling the settings window |
+  | `settings_session` | `SettingsUi`; opening, previewing, applying, and cancelling the settings window |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `info_tip` | the hover info tip |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |

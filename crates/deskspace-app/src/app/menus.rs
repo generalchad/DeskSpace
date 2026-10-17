@@ -138,9 +138,10 @@ impl App {
         self.restyle_space(ui, id);
         self.reflow_space(ui, id);
         self.schedule_save(ui);
-        if let (Some(session), Some(space)) =
-            (self.settings.as_mut(), self.config.desktop.space(id))
-        {
+        if let (Some(session), Some(space)) = (
+            self.settings_ui.session_mut(),
+            self.config.desktop.space(id),
+        ) {
             session.resnapshot(space);
             self.refresh_settings(ui);
         }

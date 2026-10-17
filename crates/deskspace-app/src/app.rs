@@ -9,7 +9,7 @@ use deskspace_platform::{
     parse_hotkey, system_accent_color, system_uses_dark_mode,
 };
 
-use crate::settings::{self, HotkeyAction, Session};
+use crate::settings::{self, HotkeyAction};
 use crate::storage::ItemStore;
 
 mod clipboard;
@@ -31,6 +31,7 @@ mod zoom;
 use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
+use settings_session::SettingsUi;
 use update::UpdateState;
 
 /// How many global hotkeys can be registered at once, one per binding.
@@ -374,12 +375,7 @@ pub struct App {
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: [Option<Hotkey>; HOTKEY_COUNT],
-    /// A settings edit is waiting for `Timer::Preview` to restyle or re-flow
-    /// every space.
-    pending_preview: Preview,
-    settings: Option<Session>,
-    /// The space highlighted for the settings window, until `Timer::Highlight`.
-    highlighted: Option<SpaceId>,
+    settings_ui: SettingsUi,
     open_settings_on_start: bool,
     /// Draw the loose desktop items on a chrome-less layer window (hidden
     /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
@@ -412,9 +408,7 @@ impl App {
             icon_scales: HashMap::new(),
             visible: !hidden,
             hotkeys: [None; HOTKEY_COUNT],
-            pending_preview: Preview::default(),
-            settings: None,
-            highlighted: None,
+            settings_ui: SettingsUi::default(),
             open_settings_on_start: open_settings,
             takeover_layer: false,
             takeover: false,

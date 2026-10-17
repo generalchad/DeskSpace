@@ -315,7 +315,7 @@ impl App {
             return;
         }
         // An open settings window or a rename would lose unapplied edits.
-        let mid_task = self.settings.is_some() || self.edit.is_active();
+        let mid_task = self.settings_ui.is_open() || self.edit.is_active();
         if !mid_task && is_quiet_moment(idle_time(), user_is_presenting()) {
             self.install_ready_update(ui, InstallMode::Silent);
         }

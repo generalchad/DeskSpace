@@ -76,7 +76,8 @@ impl App {
                 ))
             }),
             highlight: self
-                .highlighted
+                .settings_ui
+                .highlighted()
                 .is_some_and(|id| surface == Surface::Space(id)),
             focused: (self.selection.surface == Some(surface))
                 .then_some(self.selection.focused)
@@ -507,7 +508,7 @@ impl App {
             self.layout_for(id),
             work_area_at(rect.center()),
         );
-        if let Some(session) = self.settings.as_mut() {
+        if let Some(session) = self.settings_ui.session_mut() {
             session.pinned.push((id, rect));
         }
     }

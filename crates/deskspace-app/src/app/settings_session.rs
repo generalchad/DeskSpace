@@ -23,6 +23,32 @@ const HIGHLIGHT_MS: u32 = 1200;
 /// 150 %.
 const PREVIEW_ICON_SIZE: i32 = 64;
 
+/// The open settings window's state: its session, the preview it still owes
+/// the spaces, and the space it highlights.
+#[derive(Debug, Default)]
+pub(super) struct SettingsUi {
+    session: Option<Session>,
+    /// A settings edit is waiting for `Timer::Preview` to restyle or re-flow
+    /// every space.
+    pending_preview: Preview,
+    /// The space highlighted for the settings window, until `Timer::Highlight`.
+    highlighted: Option<SpaceId>,
+}
+
+impl SettingsUi {
+    pub(super) fn is_open(&self) -> bool {
+        self.session.is_some()
+    }
+
+    pub(super) fn session_mut(&mut self) -> Option<&mut Session> {
+        self.session.as_mut()
+    }
+
+    pub(super) fn highlighted(&self) -> Option<SpaceId> {
+        self.highlighted
+    }
+}
+
 impl App {
     /// Deletes the space shown in the settings window, from the header's
     /// "Delete space" button. Deletion is immediate and Cancel does not bring
@@ -36,7 +62,7 @@ impl App {
             self.refresh_settings(ui);
             return;
         }
-        if let Some(session) = self.settings.as_mut() {
+        if let Some(session) = self.settings_ui.session.as_mut() {
             session.forget_space(id);
         }
         self.clear_highlight(ui);
@@ -44,9 +70,9 @@ impl App {
     }
 
     fn settings_form(&mut self) -> Option<deskspace_platform::SettingsForm> {
-        let scope = self.settings.as_ref()?.scope;
+        let scope = self.settings_ui.session.as_ref()?.scope;
         let preview = self.space_preview(scope);
-        self.settings.as_ref().map(|session| {
+        self.settings_ui.session.as_ref().map(|session| {
             settings::build_form(
                 &self.config,
                 session,
@@ -99,7 +125,10 @@ impl App {
     /// one is given (a space's "Space settings…"); otherwise where it was.
     pub(super) fn open_settings_with(&mut self, ui: &mut Ui, scope: Option<SpaceId>) {
         let config = &self.config;
-        let session = self.settings.get_or_insert_with(|| Session::new(config));
+        let session = self
+            .settings_ui
+            .session
+            .get_or_insert_with(|| Session::new(config));
         if scope.is_some() {
             session.select_scope(scope);
         }
@@ -114,9 +143,9 @@ impl App {
     /// Highlights a space so it can be found on the desktop, and arms the
     /// timer that clears it. Selecting another space moves the highlight.
     pub(super) fn watch_highlight(&mut self, ui: &mut Ui, id: SpaceId) {
-        if self.highlighted != Some(id) {
+        if self.settings_ui.highlighted != Some(id) {
             self.clear_highlight(ui);
-            self.highlighted = Some(id);
+            self.settings_ui.highlighted = Some(id);
             self.refresh_space(ui, id);
         }
         Self::set_timer(ui, Timer::Highlight, HIGHLIGHT_MS);
@@ -124,7 +153,7 @@ impl App {
 
     /// Removes the settings-window highlight, if any.
     pub(super) fn clear_highlight(&mut self, ui: &mut Ui) {
-        if let Some(id) = self.highlighted.take() {
+        if let Some(id) = self.settings_ui.highlighted.take() {
             Self::clear_timer(ui, Timer::Highlight);
             if self.config.desktop.space(id).is_some() {
                 self.refresh_space(ui, id);
@@ -139,7 +168,7 @@ impl App {
     }
 
     pub(super) fn on_settings_event(&mut self, ui: &mut Ui, event: SettingsEvent) {
-        let Some(session) = self.settings.as_mut() else {
+        let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
         let editing_space = session.scope.is_some();
@@ -206,7 +235,7 @@ impl App {
             }
             SettingsEvent::Ok => {
                 if self.apply_settings(ui) {
-                    self.settings = None;
+                    self.settings_ui.session = None;
                     self.clear_highlight(ui);
                     ui.close_settings();
                 } else {
@@ -221,7 +250,7 @@ impl App {
     }
 
     fn on_settings_button(&mut self, ui: &mut Ui, action: ButtonAction) {
-        let Some(session) = self.settings.as_mut() else {
+        let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
         match (action, session.scope) {
@@ -255,16 +284,16 @@ impl App {
     /// and not restarted, so the spaces keep following a slider drag while the
     /// ticks in between collapse into one pass.
     pub(super) fn schedule_preview(&mut self, ui: &mut Ui, preview: Preview) {
-        if !self.pending_preview.is_pending() {
+        if !self.settings_ui.pending_preview.is_pending() {
             Self::set_timer(ui, Timer::Preview, PREVIEW_DELAY_MS);
         }
-        self.pending_preview.merge(preview);
+        self.settings_ui.pending_preview.merge(preview);
     }
 
     /// Runs the deferred settings preview.
     pub(super) fn flush_preview(&mut self, ui: &mut Ui) {
         Self::clear_timer(ui, Timer::Preview);
-        let preview = std::mem::take(&mut self.pending_preview);
+        let preview = std::mem::take(&mut self.settings_ui.pending_preview);
         if preview.restyle_all {
             self.restyle_all(ui);
         } else {
@@ -284,7 +313,7 @@ impl App {
     /// An edit on a customized space's page: dispatch its `SetSpaceLook`
     /// at once, and preview it on that space alone.
     fn on_space_field(&mut self, ui: &mut Ui, field: u32, value: FieldValue) {
-        let Some(session) = self.settings.as_mut() else {
+        let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
         let edit = settings::space_edit(&self.config, session, field, value, self.system_dark);
@@ -322,7 +351,8 @@ impl App {
     /// when the hotkey cannot be used.
     pub(super) fn apply_settings(&mut self, ui: &mut Ui) -> bool {
         let Some(texts) = self
-            .settings
+            .settings_ui
+            .session
             .as_ref()
             .map(|session| session.hotkey_texts.clone())
         else {
@@ -337,45 +367,45 @@ impl App {
             if let Err(message) = self.register_hotkey(ui, slot, &text) {
                 // Put the previous binding back so the hotkey keeps working.
                 let _ = self.register_hotkey(ui, slot, &current);
-                if let Some(session) = self.settings.as_mut() {
+                if let Some(session) = self.settings_ui.session.as_mut() {
                     session.hotkey_errors[slot] = Some(message);
                 }
                 return false;
             }
             binding.set_text(&mut self.config.window, text);
         }
-        let start_changed = self.settings.as_ref().is_some_and(|session| {
+        let start_changed = self.settings_ui.session.as_ref().is_some_and(|session| {
             session.saved_window.start_with_windows != self.config.window.start_with_windows
         });
         if start_changed {
             self.sync_start_with_windows(self.config.window.start_with_windows);
         }
-        let takeover_changed = self.settings.as_ref().is_some_and(|session| {
+        let takeover_changed = self.settings_ui.session.as_ref().is_some_and(|session| {
             session.saved_window.take_over_desktop != self.config.window.take_over_desktop
         });
         if takeover_changed {
             self.apply_takeover(ui);
         }
-        let update_check_changed = self.settings.as_ref().is_some_and(|session| {
+        let update_check_changed = self.settings_ui.session.as_ref().is_some_and(|session| {
             session.saved_window.check_for_updates != self.config.window.check_for_updates
         });
         if update_check_changed {
             self.sync_update_schedule(ui);
         }
         self.save();
-        if let Some(session) = self.settings.as_mut() {
+        if let Some(session) = self.settings_ui.session.as_mut() {
             session.commit(&self.config);
         }
         true
     }
 
     pub(super) fn cancel_settings(&mut self, ui: &mut Ui) {
-        let Some(session) = self.settings.take() else {
+        let Some(session) = self.settings_ui.session.take() else {
             return;
         };
         // The revert below restyles and re-flows from the saved settings, which
         // covers any preview still waiting for its timer.
-        if std::mem::take(&mut self.pending_preview).is_pending() {
+        if std::mem::take(&mut self.settings_ui.pending_preview).is_pending() {
             Self::clear_timer(ui, Timer::Preview);
         }
         self.clear_highlight(ui);

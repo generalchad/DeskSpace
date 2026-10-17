@@ -1955,3 +1955,9 @@ until I5-I6 all land, so no partial build hides the desktop.
   Both are selection state (type-to-select's prefix, and whether outside
   clicks are watched while something is selected). `Timer::Type` in
   `App::on_timer` clears the buffer through a `Selection` method.
+
+- [x] **N2. A `SettingsUi` for the open settings window.** In
+  `app/settings_session.rs`: `struct SettingsUi { session: Option<Session>,
+  pending_preview: Preview, highlighted: Option<SpaceId> }`, held as
+  `App::settings_ui`. The reads in `view.rs`, `menus.rs`, and `update.rs`
+  become `self.settings_ui.is_open()` (or the accessor the read needs).
