@@ -1861,3 +1861,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     `desktop.apply(command, bounds)`. Read each variant's fields in
     `deskspace-core/src/command/mod.rs`, and copy `bounds` from an existing
     test in that file.
+
+- [x] **B27e. Make `Space`'s fields private.** Change the eight fields to
+  `pub(crate)` for real. `serde` still reads and writes them. Done when: the
+  gates pass with no other change.

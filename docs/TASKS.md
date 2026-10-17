@@ -383,10 +383,6 @@ bypass `Command`. B27a-B27f close that, after B21.
   - Done when: step 1 of B27c compiles with no errors outside
     `deskspace-core`.
 
-- [ ] **B27e. Make `Space`'s fields private.** Change the eight fields to
-  `pub(crate)` for real. `serde` still reads and writes them. Done when: the
-  gates pass with no other change.
-
 - [ ] **B27f. Make the `Desktop` mutators crate-private.**
   - Change `Desktop::spaces` (the field), `space_mut`, `layer_mut`,
     `add_space`, `add_item`, and `remove_item` to `pub(crate)`, as well as

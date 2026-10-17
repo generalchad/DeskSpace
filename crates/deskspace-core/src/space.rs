@@ -60,22 +60,22 @@ impl SpaceLook {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Space {
     pub id: SpaceId,
-    pub title: String,
+    pub(crate) title: String,
     /// The whole space, title bar included, in desktop coordinates.
-    pub rect: Rect,
+    pub(crate) rect: Rect,
     #[serde(default)]
-    pub items: Vec<Item>,
+    pub(crate) items: Vec<Item>,
     #[serde(default)]
-    pub locked: bool,
+    pub(crate) locked: bool,
     #[serde(default)]
-    pub rolled_up: bool,
+    pub(crate) rolled_up: bool,
     /// Whether the space uses its own `look` instead of the global settings.
     #[serde(default)]
-    pub custom: bool,
+    pub(crate) custom: bool,
     /// The space's own settings. Kept while `custom` is off, so turning it
     /// back on restores them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub look: Option<SpaceLook>,
+    pub(crate) look: Option<SpaceLook>,
     // The per-space overrides that `look` replaced: read from older files,
     // folded into `look` by `fold_legacy_overrides`, and never written.
     #[serde(default = "default_opacity", rename = "opacity", skip_serializing)]
@@ -92,7 +92,7 @@ pub struct Space {
     /// size, flows its items into as many columns as its width allows, and
     /// scrolls when they do not fit. Otherwise it grows to fit its items.
     #[serde(default)]
-    pub user_sized: bool,
+    pub(crate) user_sized: bool,
 }
 
 /// Which edges of a space a resize gesture moves.
