@@ -243,17 +243,9 @@ Takeover ships opt-in (D8, D9).
 
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
-**In progress:**
-- *M2:* spaces and their items are complete and behave like Explorer.
-  Desktop takeover is built and opt-in (the layer, hide, restore,
-  Explorer-restart re-hide, the crash watchdog, and the Desktop-folder watch
-  are in); undo remains. Non-file shell drags (F-50), including Start-menu
-  apps, become shortcuts; the Start-menu drop awaits an on-screen check.
-- *M3:* the tray, menus, and settings window work, with all nine pages.
-  "New shortcut ▸" (including "Paste shortcut" and "Add files…") and the
-  settings Shortcuts page are in (F-53..F-55). What
-  remains is desktop verbs (F-52) and entries that depend on later milestones
-  or on design.
+**In progress:** M2 (undo and the stored-file watch remain) and M3 (desktop
+verbs, F-52, and entries that wait on later milestones or design). Section 5
+lists what each has done.
 
 **Next, in order:**
 
@@ -375,28 +367,25 @@ Done:
     ignore `SC_MINIMIZE`);
   - the Desktop folder is watched while the layer is drawn, so loose items
     follow outside changes (I8).
-- **[partial]** Non-file shell drags (F-50). A space accepts a drag that
-  carries only shell items, including a packaged app with no filesystem
-  path, and writes a shortcut into the space storage, as Explorer does when
-  one is dropped on a folder. A drop decides by the effect (`LINK` makes
-  shortcuts, as does Alt) and treats a file list of AppUserModelIDs, which
-  the Start menu sends, as shell items (`TASKS.md` L1-L2); the Start-menu
-  drop awaits an on-screen check.
+- **[done]** Non-file shell drags (F-50; `TASKS.md` L2). A space accepts a
+  drag that carries only shell items, including a packaged app with no
+  filesystem path, and writes a shortcut into the space storage, as Explorer
+  does on a folder. A drop decides by the effects the source allows (`LINK`
+  makes shortcuts, as does Alt), so a Start, taskbar, or Alt drag never moves
+  or lists the source's own `.lnk`, and a file list of AppUserModelIDs, which
+  the Start menu sends, counts as shell items. Awaits the on-screen check and
+  the rest of L1's per-source findings.
+- **[partial]** Right-button drag with Explorer's drop menu (D9): G5a and G5b
+  are done (check pending).
 
 Remaining:
-1. **Start-menu and taskbar drags make shortcuts** (F-50; `TASKS.md`
-   L1-L2): decide a drop by the effects the source allows, so a link drop
-   (Start, the taskbar, Alt+drag) always creates a shortcut and never moves or
-   lists the source's own `.lnk`. Built; awaits the on-screen check and the
-   rest of L1's per-source findings.
-2. **Watch stored files.** Only the Desktop folder is watched; a change to a
+1. **Watch stored files.** Only the Desktop folder is watched; a change to a
    stored file made outside DeskSpace is noticed only by an item action or at
    startup. Lenses will reuse the same watcher (M4 phase 2).
-3. **Undo** for file moves, item removal, and space deletion (open question
+2. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
-4. **Right-button drag** with Explorer's drop menu (D9; `TASKS.md`
-   G5a-G5c). Its "Create shortcuts here" takes the same shortcut path as
-   F-50 (`App::add_shortcuts`).
+3. **"Create shortcuts here"** on a right drop (`TASKS.md` G5c), through the
+   same shortcut path as F-50 (`App::add_shortcuts`).
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -448,22 +437,14 @@ Done:
   preview, hex readout, and OK/Cancel) instead of the system `ChooseColor`
   dialog (`TASKS.md` F14; check pending).
 
+- **[done]** Ways to add items without a drag (`TASKS.md` section L), each
+  ending in the F-50 shortcut path (`App::add_shortcuts`): "New shortcut ▸"
+  ("From installed apps…" and "Custom shortcut…", F-53), a space's Settings
+  page "Shortcuts" (an X per item and a + tile, F-53), "Paste shortcut"
+  (F-54), and "Add files…" (F-55). CONTEXT section 8 describes them.
+
 Remaining:
-1. Ways to add items without a drag (`TASKS.md` section L), every shortcut
-   ending in the F-50 shortcut path (`App::add_shortcuts`):
-   - **[done]** "New shortcut ▸" on the space menu: "From installed apps…",
-     a DeskSpace list over the Applications folder with check boxes and
-     search (Store apps included), and "Custom shortcut…", a target,
-     arguments, and name dialog (F-53);
-   - **[done]** a per-space Shortcuts page in the settings window: a
-     preview of the space whose items each carry an X (delete, after a
-     confirmation), and a + tile that offers the same New shortcut choices
-     (F-53);
-   - **[done]** "Paste shortcut", as in Explorer, in the New shortcut submenu
-     (F-54; check pending);
-   - **[done]** "Add files…", which moves files picked in the standard Open
-     dialog into the space as a drop would (F-55; check pending).
-2. Tray and menu entries:
+1. Tray and menu entries:
    - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
@@ -471,11 +452,11 @@ Remaining:
    - spaces entries on the desktop's own background menu - "New space",
      "DeskSpace Settings", and the like - beside the existing "Show spaces"
      verb, so the desktop is a control surface like the tray (F-52).
-3. An Explorer "Send to" or right-click "Add to a DeskSpace space" entry
+2. An Explorer "Send to" or right-click "Add to a DeskSpace space" entry
    (F-56). Deferred: it needs a hand-off to the running instance (the
    `--show` verb is the model) and, for the Windows 11 top-level menu, the
    M8 item 4 packaging.
-4. More item presets and preset import/export (F-48). The "Item preset"
+3. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
 
@@ -662,23 +643,14 @@ Remaining:
    workspace version.
 6. Documentation: a user guide, and troubleshooting for restoring after
    takeover and for conflicts with Explorer.
-7. **[done]** Auto-update from GitHub Releases (F-45), following the policy in D6.
-   - The `cargo-packager-updater` SDK and the network IO live in a new
-     `deskspace-update` crate, driven by the app; never in `core` or `config`.
-   - It installs the **full** package only (no deltas), from a signed
-     `latest.json` plus a minisign `.sig` published as a release asset.
-   - Settings live in `WindowSettings` as `#[serde(default)]` fields: the
-     automatic check, automatic installs, the last check time, and the skipped
-     version. The General page has two toggles and a "Check for updates now"
-     button, and the tray has a "Check for updates…" entry (or "Restart to
-     update to X" while a downloaded update waits). (The pre-release channel is deferred: the
-     GitHub "latest" feed never serves a pre-release.)
-   - A portable build only notifies (opens the release page).
-   - `cargo deny` passes (the updater's `time` dependency moved the minimum
-     Rust version to 1.88).
-   - Still to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the
-     public `UPDATE_PUBKEY`; then sign before shipping (item 3), because
-     unsigned updates trigger SmartScreen on every version.
+7. **[done]** Auto-update from GitHub Releases (F-45), following D6. The
+   `cargo-packager-updater` SDK and the network IO live in `deskspace-update`,
+   driven by the app, never in `core` or `config`; CONTEXT sections 5, 8, and
+   10 describe the settings, controls, and code. `cargo deny` passes (the
+   updater's `time` dependency moved the minimum Rust version to 1.88). Still
+   to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the public
+   `UPDATE_PUBKEY`, then sign before shipping (item 3), because unsigned
+   updates trigger SmartScreen on every version.
 8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
    per stable release by a workflow step, after the first stable release.
 
@@ -688,14 +660,10 @@ machine.
 
 ## 6. Release mapping
 
-- **v0.2 "Take the desktop"** (released 2026-10-13 as v0.2.0; v0.2.1 added
-  update checking; v0.2.2 added shortcuts to spaces; v0.2.3 added Add files
-  and the right-button drag): M0, M1, most of M2 and
-  M3. D2D rendering and the Windows
-  11 look, desktop takeover as an opt-in setting (D8, D9), and the tray,
-  context menu, and settings. The rest of M2 and M3 (section L, undo, the
-  desktop verbs) ships in a v0.2.x release or with v0.3, as the maintainer
-  decides.
+- **v0.2 "Take the desktop"** (v0.2.0-v0.2.3, section 4): M0, M1, and most
+  of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (undo,
+  the desktop verbs) ships in a v0.2.x release or with v0.3, as the
+  maintainer decides.
 - **v0.3 "Lenses"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
@@ -736,7 +704,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting) |
-| F-25 | Icon size | M3 | Done; check pending (global 50-200 % slider, jumbo icons, per-monitor DPI, per space through its look). Ctrl+wheel changes the desktop's own icon size under Match Explorer and the global size under Custom (D9, `TASKS.md` F13; check pending) |
+| F-25 | Icon size | M3 | Done (50-200 %, jumbo icons, per-monitor DPI, per space; Ctrl+wheel per D9); check pending (`TASKS.md` V: F13, Display) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
 | F-28 | Title bar style | M5 | Open |
@@ -747,7 +715,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-33 | Animations toggle | M5 | Open |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
-| F-36 | Explorer-parity drag (move default, OLE drop target) | M2 | Done; check pending. Right-button drag decided (D9): a right drag starts a shell drag (G5a) and a space shows DeskSpace's own drop menu (G5b); "Create shortcuts here" (G5c) is open |
+| F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a, G5b); check pending; "Create shortcuts here" (G5c) open |
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
@@ -756,19 +724,19 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
 | F-44 | Title bar style (duplicate) | - | Merged into F-28 |
-| F-45 | Auto-update from GitHub Releases | M8 | Done; check pending. The in-app updater (`deskspace-update`) reads a signed `latest.json`, opt-in and manual, can install unattended at a quiet moment (opt-in), and installs the full NSIS package (`TASKS.md` E8-E11); the minisign key is a maintainer setup step |
+| F-45 | Auto-update from GitHub Releases | M8 | Done (D6; `TASKS.md` E8-E11); check pending; the minisign key is a maintainer setup step |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
-| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Built: shell-item, link-only, and Alt drags become a `.lnk` in the space storage, and a dropped shortcut file is copied (`drop_target.rs` `drop_plan`, `App::add_shortcuts`); awaits the on-screen check (`TASKS.md` section V, L1 findings) |
-| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending. DeskSpace's own themed popup (`win32/color_picker.rs`) replaces `ChooseColor` on the Colors page and the Appearance menu (`TASKS.md` F14) |
+| F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending (`TASKS.md` V: L2; L1 findings) |
+| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending (`TASKS.md` V: F14) |
 | F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
 | F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done: the space menu's submenu and a space's Settings page "Shortcuts" (a preview with an X per item and a + tile); checked on screen 2026-10-13 |
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
-| F-55 | "Add ▸ Files…": pick files to add to a space | M3 | Done; check pending. The files move into the space as a drop does (`TASKS.md` L6) |
+| F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
-| F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending. Shown by every zoom (Ctrl+wheel, its buttons), in the global look, hidden 2 s after the last zoom unless hovered |
+| F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
 
 
 ## 8. Open questions
