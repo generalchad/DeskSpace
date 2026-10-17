@@ -770,6 +770,7 @@ each id is in `archive/TASKS-done.md`.
 | B28c | Lock, roll up, sort, and "Fit to contents" (space menu and the settings button) each repaint the space at once and survive a restart. |
 | B29 | Make the scratch config read-only (`attrib +r`) and move a space: one "DeskSpace could not save" box appears; a second move shows none. Clear the attribute and move again: the file is saved. Closing DeskSpace while it is read-only shows no box. |
 | B30 | Overlap two spaces with different icon sizes, then sort or arrange the lower one: its icons land on its own grid. |
+| Spaces above the layer | With takeover on, press Win+D twice, switch tasks a few times, and hide and show the spaces: each space still takes clicks, the wheel, and a drag from Explorer or Start (no "no" cursor). |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
@@ -827,3 +828,8 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `bootstrap.rs` build its `Item` (the desktop layer re-reads them on every
   sync). Suggested task: give `DesktopEntry` an `ItemFacts` and drop its
   `kind` field.
+- `win32/runtime/ui_spaces.rs` `create_desktop_layer`: with a desktop host
+  (`--placement desktop-*`), turning takeover on from Settings creates the
+  layer as the host's newest child, which goes above the hosted spaces, its
+  siblings. At startup it is created before them. Suggested task: place a
+  hosted layer at `HWND_BOTTOM` among its siblings.

@@ -34,14 +34,6 @@ impl Ui {
             register_drop: true,
         };
         let hwnd = space_window::create(options)?;
-        // A top-level space and the (top-level) desktop layer both pin to the
-        // bottom of the z-order. Lower the layer again after the space exists
-        // so the full-screen layer never ends up covering a space.
-        if host.is_none()
-            && let Some(layer) = with_runtime(|runtime| runtime.layer).flatten()
-        {
-            space_window::lower(layer);
-        }
         with_runtime(|runtime| runtime.spaces.insert(id, hwnd));
         Ok(())
     }
@@ -103,8 +95,8 @@ impl Ui {
     /// Creates the chrome-less desktop layer window spanning `rect`, reusing
     /// the space window and painter. Idempotent: calling it again does nothing.
     /// It is a `WS_CHILD` of the desktop host when one is in use and top-level
-    /// otherwise, so it sits behind the spaces (`create_space` lowers it again
-    /// after each top-level space, which shares the bottom of the z-order).
+    /// otherwise, so it sits behind the spaces (a top-level space always
+    /// places itself directly above it).
     pub fn create_desktop_layer(
         &mut self,
         rect: Rect,

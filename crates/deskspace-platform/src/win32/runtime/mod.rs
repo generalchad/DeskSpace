@@ -154,6 +154,11 @@ pub(crate) fn is_space_window(window: HWND) -> bool {
     with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
 }
 
+/// The desktop layer's window, while it exists.
+pub(crate) fn desktop_layer_window() -> Option<HWND> {
+    with_runtime(|runtime| runtime.layer).flatten()
+}
+
 /// The DPI scale factor of a space window (`1.0` at 96 DPI), for per-monitor
 /// layout. Falls back to `1.0` before the window exists or outside the UI
 /// thread.

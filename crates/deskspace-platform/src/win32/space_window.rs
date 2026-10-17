@@ -23,16 +23,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GetClientRect, GetParent, GetWindowRect, HTCLIENT,
-    HWND_BOTTOM, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowPos,
-    ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
-    WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GW_HWNDPREV, GWL_EXSTYLE, GetClientRect,
+    GetParent, GetWindow, GetWindowLongW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_TOP,
+    HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LWA_ALPHA,
+    LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowPos, ShowWindow,
+    WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGING,
+    WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -186,25 +187,6 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
             rect.width.max(1),
             rect.height.max(1),
             SWP_NOZORDER | SWP_NOACTIVATE,
-        );
-    }
-}
-
-/// Sends a window to the bottom of the z-order without moving or resizing it.
-/// The desktop layer uses this after a top-level space is created so the
-/// full-screen layer stays behind the spaces (both pin to the bottom).
-pub(crate) fn lower(hwnd: HWND) {
-    // SAFETY: `hwnd` is a live window. SWP_NOZORDER is not set, so the z-order
-    // change applies; the window procedure then pins it to the bottom.
-    unsafe {
-        let _ = SetWindowPos(
-            hwnd,
-            Some(HWND_BOTTOM),
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
     }
 }
@@ -503,17 +485,59 @@ unsafe fn is_hosted(window: HWND) -> bool {
 }
 
 /// Keeps top-level spaces under every other window so they behave like part
-/// of the desktop.
+/// of the desktop, and above the desktop layer (`insert_after`).
 unsafe fn on_window_pos_changing(window: HWND, lparam: LPARAM) {
     // SAFETY: for WM_WINDOWPOSCHANGING lParam is null or a live WINDOWPOS the
     // system lets us edit; the state borrow is short.
     unsafe {
         let position = lparam.0 as *mut WINDOWPOS;
         let pinned = with_state(window, |state| !state.hosted && !state.on_top);
-        if pinned == Some(true) && !position.is_null() && !(*position).flags.contains(SWP_NOZORDER)
-        {
-            (*position).hwndInsertAfter = HWND_BOTTOM;
+        if pinned != Some(true) || position.is_null() || (*position).flags.contains(SWP_NOZORDER) {
+            return;
         }
+        let layer = runtime::desktop_layer_window();
+        match insert_after(window, layer, layer.and_then(window_above)) {
+            Some(after) => (*position).hwndInsertAfter = after,
+            None => (*position).flags |= SWP_NOZORDER,
+        }
+    }
+}
+
+/// Where a pinned top-level window goes when its z-order changes, as the
+/// `hwndInsertAfter` to use, or `None` to stay where it is. `above_layer` is
+/// the non-topmost window directly above the desktop `layer`, if any.
+///
+/// The layer and the spaces all live at the bottom, and the layer spans the
+/// whole desktop. When every one of them went to `HWND_BOTTOM`, the last to
+/// move ended up lowest, so an outside z-order change (Show desktop, a task
+/// switch) could leave a space under the layer: still visible through it,
+/// but its clicks and drops went to the layer, which refuses drops.
+/// Spaces therefore go directly above the layer, which alone takes the
+/// bottom.
+fn insert_after(window: HWND, layer: Option<HWND>, above_layer: Option<HWND>) -> Option<HWND> {
+    match layer {
+        None => Some(HWND_BOTTOM),
+        Some(layer) if layer == window => Some(HWND_BOTTOM),
+        Some(_) => match above_layer {
+            Some(above) if above == window => None,
+            Some(above) => Some(above),
+            // Only topmost windows are above the layer, so the top of the
+            // non-topmost band is the slot directly above it.
+            None => Some(HWND_TOP),
+        },
+    }
+}
+
+/// The window directly above `window` in the z-order, unless it is topmost.
+/// Then `HWND_TOP` names the same slot for a non-topmost window, without
+/// positioning it relative to a topmost one.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos#remarks
+fn window_above(window: HWND) -> Option<HWND> {
+    // SAFETY: plain z-order and style queries; neither sends a message.
+    unsafe {
+        let above = GetWindow(window, GW_HWNDPREV).ok()?;
+        let style = WINDOW_EX_STYLE(GetWindowLongW(above, GWL_EXSTYLE) as u32);
+        (!style.contains(WS_EX_TOPMOST)).then_some(above)
     }
 }
 
@@ -757,5 +781,33 @@ mod tests {
                 shift: false
             }
         );
+    }
+
+    fn window(id: usize) -> HWND {
+        HWND(id as *mut core::ffi::c_void)
+    }
+
+    #[test]
+    fn without_a_layer_a_space_goes_to_the_bottom() {
+        assert_eq!(insert_after(window(1), None, None), Some(HWND_BOTTOM));
+    }
+
+    #[test]
+    fn the_layer_itself_goes_to_the_bottom() {
+        let layer = window(9);
+        assert_eq!(
+            insert_after(layer, Some(layer), Some(window(1))),
+            Some(HWND_BOTTOM)
+        );
+    }
+
+    #[test]
+    fn a_space_goes_directly_above_the_layer() {
+        let (space, other, layer) = (window(1), window(2), window(9));
+        assert_eq!(insert_after(space, Some(layer), Some(other)), Some(other));
+        // Already directly above the layer: it stays put.
+        assert_eq!(insert_after(space, Some(layer), Some(space)), None);
+        // Nothing but topmost windows above the layer.
+        assert_eq!(insert_after(space, Some(layer), None), Some(HWND_TOP));
     }
 }

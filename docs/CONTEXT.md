@@ -446,10 +446,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   window with a `chrome: false` style and no OLE drop target. It spans the
   virtual desktop (`system::virtual_desktop_rect`) and is a `WS_CHILD` of the
   host when one is in use, else top-level and kept at the bottom, behind the
-  spaces. A top-level layer and top-level spaces all pin to `HWND_BOTTOM`, so
-  `Ui::create_space` lowers the layer after each space (`space_window::lower`);
-  otherwise the full-screen layer would end up above the spaces and swallow
-  their clicks. The app draws the loose items on it
+  spaces. Only the layer pins to `HWND_BOTTOM`; on every z-order change a
+  top-level space goes directly above it (`space_window::insert_after`).
+  When both pinned to the bottom, an outside z-order change could leave a
+  space under the full-screen layer, which then took its clicks and refused
+  its drops. The app draws the loose items on it
   (`scene::desktop_layer_scene`, from `DesktopLayer`) while
   `App::layer_active` holds: takeover is on (`take_over_desktop` or
   `--takeover`), or `--takeover-layer` is set; only with `--takeover-layer`
