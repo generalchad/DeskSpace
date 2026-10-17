@@ -1862,6 +1862,35 @@ until I5-I6 all land, so no partial build hides the desktop.
     `deskspace-core/src/command/mod.rs`, and copy `bounds` from an existing
     test in that file.
 
+    | Write | Command |
+    |-------|---------|
+    | `custom = true` and `look = Some(x)` | `SetSpaceLook { custom: true, look: x, .. }` |
+    | `look = Some(x)` alone | `SetSpaceLook { custom: false, look: x, .. }` |
+    | `custom = true` alone | `CustomizeSpace { on: true, .. }` |
+    | `locked = true` | `ToggleLock` (on a new, unlocked space) |
+    | `rolled_up = true` | `ToggleRollup` |
+    | `user_sized = true` | `KeepSize` |
+    | `items.push(item)` / `add_item(id, item)` | `AddItem` |
+
+  - Assert each fixture command `is_applied()`, so a broken fixture fails
+    loudly.
+  - If a write has no row in the table, stop and ask.
+  - Change the fields back to `pub`, and commit only the test changes.
+  - Done when: step 1 of B27c compiles with no errors outside
+    `deskspace-core`.
+
 - [x] **B27e. Make `Space`'s fields private.** Change the eight fields to
   `pub(crate)` for real. `serde` still reads and writes them. Done when: the
   gates pass with no other change.
+
+- [x] **B27f. Make the `Desktop` mutators crate-private.**
+  - Change `Desktop::spaces` (the field), `space_mut`, `layer_mut`,
+    `add_space`, `add_item`, and `remove_item` to `pub(crate)`, as well as
+    `Space::remove_item` and `DesktopLayer::remove_item`.
+  - Fix each error the same way as B27d. A test that needs a new space's id
+    reads `desktop.next_space_id()` before applying `Command::CreateSpace`.
+  - Change the B27 note in `ENGINEERING.md` section 3 to say that the
+    compiler enforces it. In `CONTRIBUTING.md` "Keep three rules", say the
+    same.
+  - Done when: `rg -n "space_mut|layer_mut|add_space|\.add_item\("
+    crates/deskspace-app crates/deskspace-config` finds nothing.

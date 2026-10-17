@@ -454,14 +454,9 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::apply;
     use deskspace_core::ItemFacts;
     use deskspace_core::{Command, Desktop, Item, Point, Size, SpaceId, SpaceLook};
-
-    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
-
-    fn apply(desktop: &mut Desktop, command: Command) {
-        assert!(desktop.apply(command, BOUNDS).is_applied());
-    }
 
     /// A one-item "Work" space built the way the app builds one, through
     /// `Command`s, with `change` applied last.

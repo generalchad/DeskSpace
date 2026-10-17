@@ -275,7 +275,7 @@ impl Space {
         }
     }
 
-    pub fn remove_item(&mut self, id: ItemId) -> Option<Item> {
+    pub(crate) fn remove_item(&mut self, id: ItemId) -> Option<Item> {
         let index = self.items.iter().position(|item| item.id == id)?;
         Some(self.items.remove(index))
     }

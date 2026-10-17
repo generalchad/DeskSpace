@@ -6,6 +6,8 @@
 mod app;
 mod bootstrap;
 mod cli;
+#[cfg(test)]
+mod fixtures;
 mod scene;
 mod settings;
 mod storage;

@@ -218,7 +218,7 @@ const SORT_PRESETS: [(u32, &str, SortKey, bool); 7] = [
 ];
 
 /// The event id the platform gives the chrome-less desktop layer window
-/// (`Ui::create_desktop_layer`). Real spaces get ids from `Desktop::add_space`
+/// (`Ui::create_desktop_layer`). Real spaces get ids from `Desktop::next_space_id`
 /// starting at 1, so 0 is free to mean the loose-desktop surface.
 const DESKTOP_LAYER_ID: SpaceId = SpaceId(0);
 
@@ -710,6 +710,7 @@ pub(crate) fn tray_tooltip(desktop: &Desktop) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures;
     use deskspace_core::ItemFacts;
     use deskspace_core::{ItemId, Rect};
     use std::path::PathBuf;
@@ -725,37 +726,26 @@ mod tests {
 
     #[test]
     fn item_cells_place_each_dragged_item_in_desktop_coordinates() {
-        use deskspace_core::Item;
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let id = app
-            .config
-            .desktop
-            .add_space("S", Rect::new(100, 100, 240, 200));
-        for (n, position) in [(1, Point::new(12, 12)), (2, Point::new(118, 126))] {
-            let mut item = Item::new(
-                ItemId(n),
-                format!("C:/missing/{n}.txt"),
-                ItemFacts::default(),
-            );
-            item.position = position;
-            app.config.desktop.add_item(id, item);
-        }
-        let content = app.config.desktop.space(id).unwrap().content_rect();
+        let desktop = &mut app.config.desktop;
+        let id = fixtures::create_space(desktop, "S", Rect::new(100, 100, 240, 200));
+        let first = fixtures::add_item(desktop, id, "C:/missing/1.txt");
+        let second = fixtures::add_item(desktop, id, "C:/missing/2.txt");
+        let space = app.config.desktop.space(id).unwrap();
+        let content = space.content_rect();
+        let at = |item| {
+            let position = space.item(item).unwrap().position;
+            Point::new(content.x + position.x, content.y + position.y)
+        };
 
         // Drag order is kept, and an id not in the space is skipped.
-        let cells = app.item_cells(Surface::Space(id), &[ItemId(2), ItemId(9), ItemId(1)]);
+        let cells = app.item_cells(Surface::Space(id), &[second, ItemId(9), first]);
         assert_eq!(
             cells,
             [
-                (
-                    PathBuf::from("C:/missing/2.txt"),
-                    Point::new(content.x + 118, content.y + 126)
-                ),
-                (
-                    PathBuf::from("C:/missing/1.txt"),
-                    Point::new(content.x + 12, content.y + 12)
-                ),
+                (PathBuf::from("C:/missing/2.txt"), at(second)),
+                (PathBuf::from("C:/missing/1.txt"), at(first)),
             ]
         );
     }
@@ -841,18 +831,22 @@ mod tests {
         let mut app = App::new(Config::new(), store, false, false);
         let mut item = Item::new(ItemId(9), "C:/missing/loose.txt", ItemFacts::default());
         item.position = Point::new(40, 60);
-        app.config.desktop.layer_mut().push_item(item);
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SyncDesktop { items: vec![item] },
+        );
+        let loose = app.config.desktop.layer().items()[0].id;
 
         assert_eq!(
             app.surface_item_at(Surface::Desktop, Point::new(50, 70)),
-            Some(ItemId(9))
+            Some(loose)
         );
         assert_eq!(
             app.surface_item_at(Surface::Desktop, Point::new(500, 500)),
             None
         );
         let cell = app.surface_layout(Surface::Desktop).cell();
-        let entry = app.config.desktop.layer().item(ItemId(9)).unwrap();
+        let entry = app.config.desktop.layer().item(loose).unwrap();
         assert_eq!(
             app.surface_cell(Surface::Desktop, entry),
             Rect::new(40, 60, cell.width, cell.height)
@@ -887,7 +881,7 @@ mod tests {
             tray_tooltip(&desktop),
             "DeskSpace \u{2014} 0 spaces, 0 items"
         );
-        desktop.add_space("A", Rect::new(0, 0, 10, 10));
+        fixtures::create_space(&mut desktop, "A", Rect::new(0, 0, 10, 10));
         assert_eq!(
             tray_tooltip(&desktop),
             "DeskSpace \u{2014} 1 space, 0 items"

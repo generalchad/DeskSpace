@@ -9,7 +9,7 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
-- section B (code health; do B27-B30 in order);
+- section B (code health; do B28-B30 in order);
 - K7;
 - Q1-Q6;
 - section N, in order;
@@ -74,6 +74,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Show/hide, desktop verb, start with Windows | `deskspace-app/src/app/visibility.rs` |
 | Update checks, downloads, automatic installs | `deskspace-app/src/app/update.rs`, `deskspace-update/src/lib.rs` |
 | Model → `SpaceScene` (pure) | `deskspace-app/src/scene.rs` |
+| Test fixtures that build the model through `Command`s | `deskspace-app/src/fixtures.rs` |
 | Managed store for dropped files | `deskspace-app/src/storage.rs` |
 | Events the platform raises | `deskspace-platform/src/input.rs` |
 | Menu and settings-form data types | `deskspace-platform/src/ui.rs` |
@@ -354,46 +355,12 @@ lines), `settings/apply.rs` `apply_look_field` (about 110), and
 wired in three places, and R14 (table-driven settings fields) removes that
 cause; splitting them first would be undone by R14.
 
-### Make the compiler enforce the rules (B27-B30)
+### Make the compiler enforce the rules (B28-B30)
 
 `ENGINEERING.md` section 2, rules 1 and 4: a rule the compiler can check
 should not depend on review. Do the tasks in the order listed. Each is one
 commit. Each step says exactly what to type; if the code does not match what
 a step describes, stop and ask (rule 4).
-
-**B27: the model can change only through `Command`.** Today `Space`'s fields
-and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
-`layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
-bypass `Command`. B27a-B27f close that, after B21.
-
-    | Write | Command |
-    |-------|---------|
-    | `custom = true` and `look = Some(x)` | `SetSpaceLook { custom: true, look: x, .. }` |
-    | `look = Some(x)` alone | `SetSpaceLook { custom: false, look: x, .. }` |
-    | `custom = true` alone | `CustomizeSpace { on: true, .. }` |
-    | `locked = true` | `ToggleLock` (on a new, unlocked space) |
-    | `rolled_up = true` | `ToggleRollup` |
-    | `user_sized = true` | `KeepSize` |
-    | `items.push(item)` / `add_item(id, item)` | `AddItem` |
-
-  - Assert each fixture command `is_applied()`, so a broken fixture fails
-    loudly.
-  - If a write has no row in the table, stop and ask.
-  - Change the fields back to `pub`, and commit only the test changes.
-  - Done when: step 1 of B27c compiles with no errors outside
-    `deskspace-core`.
-
-- [ ] **B27f. Make the `Desktop` mutators crate-private.**
-  - Change `Desktop::spaces` (the field), `space_mut`, `layer_mut`,
-    `add_space`, `add_item`, and `remove_item` to `pub(crate)`, as well as
-    `Space::remove_item` and `DesktopLayer::remove_item`.
-  - Fix each error the same way as B27d. A test that needs a new space's id
-    reads `desktop.next_space_id()` before applying `Command::CreateSpace`.
-  - Change the B27 note in `ENGINEERING.md` section 3 to say that the
-    compiler enforces it. In `CONTRIBUTING.md` "Keep three rules", say the
-    same.
-  - Done when: `rg -n "space_mut|layer_mut|add_space|\.add_item\("
-    crates/deskspace-app crates/deskspace-config` finds nothing.
 
 **B28: one commit path that refreshes and saves.** Today each caller of
 `App::dispatch` has to remember to call `refresh_space` and `schedule_save`
@@ -988,6 +955,13 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `drag_item_out` without setting `pointer.drag_image`, so the shell
   substitutes its own oversized image. Suggested task: factor the image build
   out of `begin_drag_visual` and use it for right drags too.
+- `deskspace-core` `Desktop` (B27f): a few ways around `Command` are still
+  public. `Desktop::layer` is a `pub` field, so another crate can call
+  `desktop.layer.push_item`, `item_mut`, or `replace_items`; `remove_space`,
+  `move_item`, and `sort_by_id` are `pub` but used only inside core; and the
+  `layout` field is written directly by `settings/session.rs` (Cancel) and
+  `Config::migrate`. Suggested task: make the first two crate-private, and
+  decide whether the global grid is model (a `Command`) or settings.
 - `win32/desktop_items.rs`: each `DesktopEntry` is stat'ed twice, once for
   its `kind` during enumeration and again by `item_facts` when `view.rs` /
   `bootstrap.rs` build its `Item` (the desktop layer re-reads them on every

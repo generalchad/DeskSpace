@@ -110,7 +110,10 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 - All `unsafe` and Win32 code lives in `deskspace-platform`.
 - Mutate the domain only through `Command` and `Desktop::apply`. Add a
   `Command` variant instead of mutating `Desktop` from UI or platform code.
-  Today review enforces this; `TASKS.md` B27 makes the compiler do it.
+  The compiler enforces it: `Space`'s fields and `Desktop`'s spaces and
+  mutators are private to `deskspace-core`, so other crates read through
+  accessors. App tests build their model with `Command`s too
+  (`deskspace-app/src/fixtures.rs`).
 - Rendering and UI are data-driven. The app turns the model into a
   `SpaceScene` / `SpaceStyle` per space, menus into `MenuEntry` lists, and
   settings into a `SettingsForm`; the platform only turns that data into

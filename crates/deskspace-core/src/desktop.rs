@@ -11,7 +11,7 @@ use crate::theme::Theme;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Desktop {
     #[serde(default)]
-    pub spaces: Vec<Space>,
+    pub(crate) spaces: Vec<Space>,
     /// The desktop's loose items, outside any space (ROADMAP D7).
     #[serde(default)]
     pub layer: DesktopLayer,
@@ -61,7 +61,7 @@ impl Desktop {
         self.spaces.iter().find(|space| space.id == id)
     }
 
-    pub fn space_mut(&mut self, id: SpaceId) -> Option<&mut Space> {
+    pub(crate) fn space_mut(&mut self, id: SpaceId) -> Option<&mut Space> {
         self.spaces.iter_mut().find(|space| space.id == id)
     }
 
@@ -77,10 +77,6 @@ impl Desktop {
         &self.layer
     }
 
-    pub fn layer_mut(&mut self) -> &mut DesktopLayer {
-        &mut self.layer
-    }
-
     pub fn item(&self, id: ItemId) -> Option<&Item> {
         self.spaces
             .iter()
@@ -88,7 +84,7 @@ impl Desktop {
             .or_else(|| self.layer.item(id))
     }
 
-    pub fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> SpaceId {
+    pub(crate) fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> SpaceId {
         let id = self.next_space_id();
         self.spaces.push(Space::new(id, title, rect));
         id
@@ -99,7 +95,7 @@ impl Desktop {
         Some(self.spaces.remove(index))
     }
 
-    pub fn add_item(&mut self, space: SpaceId, item: Item) -> bool {
+    pub(crate) fn add_item(&mut self, space: SpaceId, item: Item) -> bool {
         match self.space_mut(space) {
             Some(target) => {
                 target.push_item(item);
@@ -109,7 +105,7 @@ impl Desktop {
         }
     }
 
-    pub fn remove_item(&mut self, item: ItemId) -> Option<Item> {
+    pub(crate) fn remove_item(&mut self, item: ItemId) -> Option<Item> {
         for space in &mut self.spaces {
             if space.contains_item(item) {
                 return space.remove_item(item);
@@ -213,7 +209,7 @@ mod tests {
             space,
             Item::new(ItemId(5), "C:/missing/a.txt", ItemFacts::default()),
         );
-        desktop.layer_mut().push_item(Item::new(
+        desktop.layer.push_item(Item::new(
             ItemId(9),
             "C:/missing/loose.txt",
             ItemFacts::default(),
@@ -256,7 +252,7 @@ mod tests {
             Item::new(ItemId(1), "in-space.txt", ItemFacts::default()),
         );
         desktop
-            .layer_mut()
+            .layer
             .push_item(Item::new(ItemId(2), "loose.txt", ItemFacts::default()));
         assert_eq!(desktop.space_item_count(), 1);
         assert_eq!(desktop.layer().item_count(), 1);

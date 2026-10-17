@@ -164,9 +164,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = ConfigStore::with_path(dir.path().join("deskspace.toml"));
         let mut config = Config::new();
-        config
-            .desktop
-            .add_space("F", deskspace_core::Rect::new(0, 0, 100, 100));
+        let create = deskspace_core::Command::CreateSpace {
+            title: "F".to_owned(),
+            at: deskspace_core::Point::ZERO,
+            size: deskspace_core::Size::new(100, 100),
+            locked: false,
+        };
+        let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
+        assert!(config.desktop.apply(create, bounds).is_applied());
         store.save(&config).unwrap();
         assert!(store.exists());
         let loaded = store.load().unwrap();

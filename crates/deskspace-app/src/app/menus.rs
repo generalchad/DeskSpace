@@ -540,10 +540,10 @@ fn space_sort_menu() -> MenuEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::ItemFacts;
+    use crate::fixtures;
 
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::{Item, Rect};
+    use deskspace_core::Rect;
 
     #[test]
     fn the_new_shortcut_menu_maps_each_entry_back() {
@@ -600,30 +600,27 @@ mod tests {
     fn keyboard_menu_anchor_follows_the_focus() {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let id = app
-            .config
-            .desktop
-            .add_space("S", Rect::new(100, 100, 240, 200));
-        let mut item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
-        item.position = Point::new(12, 12);
-        app.config.desktop.add_item(id, item);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        let item = fixtures::add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
         app.selection.surface = Some(Surface::Space(id));
 
-        let (rect, content) = {
+        let (rect, content, position) = {
             let space = app.config.desktop.space(id).unwrap();
-            (space.rect(), space.content_rect())
+            let position = space.item(item).unwrap().position;
+            (space.rect(), space.content_rect(), position)
         };
         let layout = app.config.desktop.layout;
 
         app.selection.items.clear();
         assert_eq!(app.menu_anchor(), Some(rect.center()));
 
-        app.selection.items = vec![ItemId(1)];
+        app.selection.items = vec![item];
         assert_eq!(
             app.menu_anchor(),
             Some(Point::new(
-                content.x + 12 + layout.cell_width / 2,
-                content.y + 12 + layout.cell_height / 2,
+                content.x + position.x + layout.cell_width / 2,
+                content.y + position.y + layout.cell_height / 2,
             ))
         );
     }

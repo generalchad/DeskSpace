@@ -166,9 +166,7 @@ the spaces and the layer, and `item` finds an item in either.
 Desktop-folder files no space holds (ROADMAP D7). The shell is the source of
 truth, so it is a refreshed cache (`Command::SyncDesktop` reconciles by path,
 keeping `ItemId`s) with no chrome. A layer item's `position` is absolute, in
-virtual-desktop coordinates. `layer()` / `layer_mut()` reach it; it has
-`items()`, `item` / `item_mut`, `item_at(point, cell)`, `push_item`,
-`remove_item`, `replace_items`, and `item_count`.
+virtual-desktop coordinates. `Desktop::layer()` reads it.
 
 ### Layout engine (`layout.rs`)
 

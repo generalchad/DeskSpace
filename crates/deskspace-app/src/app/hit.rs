@@ -252,36 +252,39 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::ItemFacts;
+    use crate::fixtures;
 
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::Item;
     use deskspace_platform::ShellDisplay;
 
     #[test]
     fn checkbox_hit_test_matches_the_icon_corner() {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let id = app
-            .config
-            .desktop
-            .add_space("S", Rect::new(100, 100, 240, 200));
-        let mut item = Item::new(ItemId(1), "C:/missing/a.txt", ItemFacts::default());
-        item.position = Point::ZERO;
-        app.config.desktop.add_item(id, item);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        let item = fixtures::add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
         app.shell_display = ShellDisplay {
             check_boxes: CheckBoxMode::Selection,
             ..ShellDisplay::default()
         };
         let layout = app.config.desktop.layout;
-        let cell = Rect::new(100, 100 + 28, layout.cell_width, layout.cell_height);
+        let space = app.config.desktop.space(id).unwrap();
+        let content = space.content_rect();
+        let position = space.item(item).unwrap().position;
+        let cell = Rect::new(
+            content.x + position.x,
+            content.y + position.y,
+            layout.cell_width,
+            layout.cell_height,
+        );
         let checkbox = item_check_box_hit(cell, app.metrics_for(id));
         assert_eq!(
             app.checkbox_at(
                 Surface::Space(id),
                 Point::new(checkbox.x + 3, checkbox.y + 3)
             ),
-            Some(ItemId(1))
+            Some(item)
         );
         assert_eq!(
             app.checkbox_at(Surface::Space(id), Point::new(cell.x + 60, cell.y + 60)),
@@ -295,10 +298,8 @@ mod tests {
 
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let id = app
-            .config
-            .desktop
-            .add_space("S", Rect::new(100, 100, 240, 200));
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
         // A registry accent often carries alpha 0; the box forces it opaque.
         app.system_accent = Some(Color::rgba(0x00, 0x78, 0xD4, 0x00));
         assert!(

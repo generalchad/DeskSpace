@@ -173,9 +173,8 @@ pub fn needs_restyle(saved: &Session, config: &Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::{apply, create_space};
     use deskspace_core::Rect;
-
-    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
 
     fn setup() -> (Config, Session) {
         let config = Config::new();
@@ -185,7 +184,7 @@ mod tests {
 
     fn config_with_space(title: &str) -> (Config, SpaceId) {
         let mut config = Config::new();
-        let id = config.desktop.add_space(title, Rect::new(0, 0, 200, 200));
+        let id = create_space(&mut config.desktop, title, Rect::new(0, 0, 200, 200));
         (config, id)
     }
 
@@ -263,18 +262,13 @@ mod tests {
                 look: None
             }
         );
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::SetSpaceLook {
-                        id,
-                        custom: true,
-                        look: Some(SpaceLook::default()),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceLook {
+                id,
+                custom: true,
+                look: Some(SpaceLook::default()),
+            },
         );
         session.resnapshot(config.desktop.space(id).unwrap());
         assert!(session.saved_spaces[0].custom);

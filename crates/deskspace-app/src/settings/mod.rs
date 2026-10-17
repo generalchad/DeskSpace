@@ -258,10 +258,9 @@ pub enum Effect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::{apply, create_space};
     use deskspace_core::Rect;
     use deskspace_platform::FieldKind;
-
-    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
 
     fn setup() -> (Config, Session) {
         let config = Config::new();
@@ -271,7 +270,7 @@ mod tests {
 
     fn config_with_space(title: &str) -> (Config, SpaceId) {
         let mut config = Config::new();
-        let id = config.desktop.add_space(title, Rect::new(0, 0, 200, 200));
+        let id = create_space(&mut config.desktop, title, Rect::new(0, 0, 200, 200));
         (config, id)
     }
 
@@ -357,18 +356,10 @@ mod tests {
     #[test]
     fn every_editable_space_field_has_a_handler() {
         let (mut config, id) = config_with_space("A");
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::CustomizeSpace {
-                        id,
-                        on: true,
-                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
         );
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
@@ -594,19 +585,15 @@ mod tests {
     #[test]
     fn global_lists_every_space_dimmed_until_customized() {
         let (mut config, _) = config_with_space("Work");
-        let games = config.desktop.add_space("Games", Rect::new(0, 0, 200, 200));
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::CustomizeSpace {
-                        id: games,
-                        on: true,
-                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        let games = create_space(&mut config.desktop, "Games", Rect::new(0, 0, 200, 200));
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace {
+                id: games,
+                on: true,
+                seed,
+            },
         );
         let session = Session::new(&config);
         let form = build_form(
@@ -723,18 +710,13 @@ mod tests {
         config.theme.tint_opacity = 70;
         let mut kept = SpaceLook::from_global(&config.theme, &config.desktop.layout);
         kept.theme.tint_opacity = 10;
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::SetSpaceLook {
-                        id,
-                        custom: false,
-                        look: Some(kept),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceLook {
+                id,
+                custom: false,
+                look: Some(kept),
+            },
         );
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
@@ -750,18 +732,10 @@ mod tests {
         assert!(!form.field(field::TINT_OPACITY).unwrap().enabled);
         assert!(!form.field(field::MODE).unwrap().enabled);
 
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::CustomizeSpace {
-                        id,
-                        on: true,
-                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
         );
         let form = build_form(
             &config,
@@ -796,12 +770,7 @@ mod tests {
         );
         assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
 
-        assert!(
-            config
-                .desktop
-                .apply(Command::KeepSize { id }, BOUNDS)
-                .is_applied()
-        );
+        apply(&mut config.desktop, Command::KeepSize { id });
         let form = build_form(
             &config,
             &session,
@@ -812,12 +781,7 @@ mod tests {
         assert!(form.field(field::FIT_CONTENTS).unwrap().enabled);
 
         // A locked space cannot be fit, matching the space menu.
-        assert!(
-            config
-                .desktop
-                .apply(Command::ToggleLock { id }, BOUNDS)
-                .is_applied()
-        );
+        apply(&mut config.desktop, Command::ToggleLock { id });
         let form = build_form(
             &config,
             &session,

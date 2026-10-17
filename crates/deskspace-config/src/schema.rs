@@ -504,9 +504,14 @@ mod tests {
     #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
-        config
-            .desktop
-            .add_space("Work", deskspace_core::Rect::new(10, 20, 300, 200));
+        let create = deskspace_core::Command::CreateSpace {
+            title: "Work".to_owned(),
+            at: Point::new(10, 20),
+            size: deskspace_core::Size::new(300, 200),
+            locked: false,
+        };
+        let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
+        assert!(config.desktop.apply(create, bounds).is_applied());
         config.theme.custom_colors = true;
         let text = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&text).unwrap();

@@ -444,10 +444,9 @@ fn next_prefix_match(labels: &[&str], prefix: &str, start: usize) -> Option<usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::ItemFacts;
+    use crate::fixtures;
 
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::Item;
     use deskspace_platform::ShellDisplay;
 
     fn app_with_selection(space: Option<SpaceId>, item: Option<ItemId>) -> App {
@@ -571,16 +570,9 @@ mod tests {
     fn ctrl_click_toggles_and_shift_click_selects_a_range() {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        let id = app.config.desktop.add_space("S", Rect::new(0, 0, 400, 400));
-        for n in 1..=4u64 {
-            app.config.desktop.add_item(
-                id,
-                Item::new(
-                    ItemId(n),
-                    format!("C:/missing/{n}.txt"),
-                    ItemFacts::default(),
-                ),
-            );
+        let id = fixtures::create_space(&mut app.config.desktop, "S", Rect::new(0, 0, 400, 400));
+        for n in 1..=4 {
+            fixtures::add_item(&mut app.config.desktop, id, &format!("C:/missing/{n}.txt"));
         }
         app.selection.surface = Some(Surface::Space(id));
         // Ctrl+click builds a selection and toggles items off again.

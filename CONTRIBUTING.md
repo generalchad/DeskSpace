@@ -38,8 +38,9 @@ of your editor. `Get-Help ./scripts/dev.ps1` lists the other switches.
 **3. Keep three rules.** Most review comments come from these:
 
 - **The model changes only through a `Command`.** To change a space or item,
-  add or reuse a `Command` variant and apply it with `Desktop::apply`; never
-  edit the model's fields from the app or the platform.
+  add or reuse a `Command` variant and apply it with `Desktop::apply`. The
+  compiler enforces it: the model's fields and mutators are private to
+  `deskspace-core`.
 - **`unsafe` and Win32 live only in `deskspace-platform`.** Every `unsafe`
   block needs a `// SAFETY:` comment (a lint enforces it). `core`, `config`,
   and `update` forbid `unsafe` outright.

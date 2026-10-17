@@ -1132,7 +1132,7 @@ mod tests {
     #[test]
     fn set_desktop_item_position_moves_and_reports_missing() {
         let mut desktop = Desktop::new();
-        desktop.layer_mut().push_item(Item::new(
+        desktop.layer.push_item(Item::new(
             ItemId(1),
             "C:/missing/a.txt",
             ItemFacts::default(),

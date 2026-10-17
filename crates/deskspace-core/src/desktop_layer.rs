@@ -46,11 +46,6 @@ impl DesktopLayer {
         }
     }
 
-    pub fn remove_item(&mut self, id: ItemId) -> Option<Item> {
-        let index = self.items.iter().position(|item| item.id == id)?;
-        Some(self.items.remove(index))
-    }
-
     pub fn replace_items(&mut self, items: Vec<Item>) {
         self.items = items;
     }

@@ -269,10 +269,9 @@ pub fn reset_appearance(config: &mut Config, session: &mut Session) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::{apply, create_space};
     use deskspace_core::Color;
     use deskspace_core::Rect;
-
-    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
 
     fn setup() -> (Config, Session) {
         let config = Config::new();
@@ -282,7 +281,7 @@ mod tests {
 
     fn config_with_space(title: &str) -> (Config, SpaceId) {
         let mut config = Config::new();
-        let id = config.desktop.add_space(title, Rect::new(0, 0, 200, 200));
+        let id = create_space(&mut config.desktop, title, Rect::new(0, 0, 200, 200));
         (config, id)
     }
 
@@ -693,18 +692,10 @@ mod tests {
         };
         assert!(edit(&config, &mut session).is_none(), "follows Global");
 
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::CustomizeSpace {
-                        id,
-                        on: true,
-                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
         );
         let (space, command, effect) = edit(&config, &mut session).unwrap();
         assert_eq!(space, id);
@@ -761,18 +752,10 @@ mod tests {
             match_global(&config, &mut session).is_none(),
             "not customized"
         );
-        assert!(
-            config
-                .desktop
-                .apply(
-                    Command::CustomizeSpace {
-                        id,
-                        on: true,
-                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
-                    },
-                    BOUNDS,
-                )
-                .is_applied()
+        let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
+        apply(
+            &mut config.desktop,
+            Command::CustomizeSpace { id, on: true, seed },
         );
         assert!(matches!(
             match_global(&config, &mut session),
