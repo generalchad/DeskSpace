@@ -188,12 +188,7 @@ impl App {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
                         let near = self.space_center(id);
-                        if self
-                            .dispatch(Command::RenameSpace { id, title }, near)
-                            .is_applied()
-                        {
-                            self.schedule_save(ui);
-                        }
+                        self.commit(ui, Command::RenameSpace { id, title }, near);
                     }
                 }
             }
@@ -251,6 +246,8 @@ impl App {
             .desktop
             .space_containing(id)
             .map_or(Point::ZERO, |space| self.space_center(space));
+        // Not `commit`: the file is already renamed on disk, so this saves at
+        // once below.
         self.dispatch(
             Command::RenameItem {
                 id,
