@@ -565,56 +565,6 @@ the ROADMAP decision ids (`D1`-`D9`).
   read, write-and-clamp, `Effect`), as `HOTKEY_BINDINGS` does for hotkeys, so
   the setting recipe becomes one row. Decide how option tables, look versus
   Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
-- **R17. Pure update, then effects (chosen over R15, archived).** Make the app's
-  decisions a pure function, `fn update(state: &mut AppState, event: Event)
-  -> Vec<Effect>`. `Effect` is a plain enum, such as `RefreshSpace(id)`,
-  `ScheduleSave`, `ShowMenu(..)`, or `SetTimer(..)`. A thin `run(effect, ui)`
-  is then the only code that touches `Ui`, and tests assert the effects that
-  an event produces, with no Win32 and no fake. Settle three things:
-  - modal calls that return an answer (`popup_menu`, `confirm`,
-    `pick_color`): split the flow into a request effect and a follow-up
-    event, or keep those few as direct calls;
-  - how this keeps `runtime::dispatch`'s re-entrancy rules;
-  - the first event family to move as a pilot (timers or zoom).
-
-  Its prerequisites (N1-N6, B28) have landed; B28's `Touched` is the first
-  effect.
-
-  Approved as proposed below (maintainer, 2026-10-17).
-  - Why R17, not R15: a recording `Ui` fake (R15) tests that calls happened
-    in some order, so its tests break whenever the call sequence changes.
-    Effects are plain data, so a test asserts what an event means
-    (`[RelayoutAll, ScheduleSave, ShowZoomBar(..)]`) and survives refactors.
-    It also needs no traits over the 60 `Ui` methods.
-  - Modal calls: keep `popup_menu`, `confirm`, and `pick_color` as direct
-    calls in the thin shell, and make what follows them pure. The menu
-    builders are already pure, so `show_space_menu` becomes: build entries
-    (pure), `ui.popup_menu` (shell), then `space_menu_choice(state, id,
-    choice) -> Vec<Effect>` (pure, tested). No request/response event pairs;
-    they would add a message round trip to every menu for no test gain.
-  - Queries such as `ui.is_zoom_bar_hovered()` are read by the shell before
-    `update` and passed in as an argument, so `update` stays pure.
-  - Re-entrancy: `run(effects, ui)` executes the list in order, inside the
-    same `on_event` call that produced it, so the handler stays checked out
-    exactly as today. An effect that can destroy a window or re-enter
-    (`SyncWindows`, a modal) runs where its direct call runs today; nothing
-    is deferred to a later message.
-  - Pilot: zoom (`app/zoom.rs`). `Effect` starts with only what zoom needs:
-    `RelayoutAll`, `ScheduleSave`, `RefreshSettings`, `RefreshShellDisplay`,
-    `ShowZoomBar(ZoomBar)`, `HideZoomBar`, `SetTimer(Timer, u32)`, and
-    `SetDesktopIconSize(i32)`. `App::commit` then becomes the first
-    non-pilot user (`Refresh(Touched)` plus `ScheduleSave`). Grow the enum
-    one event family at a time, each its own task, and stop if the shell
-    grows instead of shrinking.
-  - Once approved, three commits:
-    - **R17a:** `app/effect.rs` with `enum Effect` and `App::run`, and no
-      callers yet; the gates pass.
-    - **R17b:** zoom's decisions as `fn zoom_effects(state, action) ->
-      Vec<Effect>`, with `App::zoom` reduced to compute, then `run`. Tests
-      assert the effects of each `ZoomAction` at the range ends and at
-      the default (copy `zooming_stops_at_both_ends_of_its_range`).
-    - **R17c:** `App::commit` returns its effects through the same `run`.
-      **[needs human]** check: the F13 and F-57 rows of section V still pass.
 - **R16. Scripting verbs: an out-of-process extension point (F-59).**
   Extensions today mean editing the source. Design a small, stable verb set
   (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
@@ -680,6 +630,7 @@ each id is in `archive/TASKS-done.md`.
 | Spaces above the layer | With takeover on, press Win+D twice, switch tasks a few times, and hide and show the spaces: each space still takes clicks, the wheel, and a drag from Explorer or Start (no "no" cursor). |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
+| R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 
 ## Found while working
 
@@ -746,3 +697,9 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   layer as the host's newest child, which goes above the hosted spaces, its
   siblings. At startup it is created before them. Suggested task: place a
   hosted layer at `HWND_BOTTOM` among its siblings.
+
+- `app/effect.rs` and `settings/mod.rs`: the app crate has two `Effect` enums,
+  R17's (what an event asks the shell to do) and the settings one (what a
+  field edit owes: `None`, `Appearance`, `Layout`, `Pending`). Once R17 reaches
+  the settings family, both meet in `settings_session.rs`. Suggested task:
+  rename the settings one (for example `FieldEffect`) before that step.

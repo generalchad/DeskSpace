@@ -4,9 +4,10 @@
 use std::path::Path;
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, CommandOutcome};
+use deskspace_core::{Command, CommandOutcome, Touched};
 use deskspace_platform::{Ui, work_area_at};
 
+use super::effect::Effect;
 use super::{App, Timer};
 
 /// How long after the last change the configuration is written.
@@ -100,19 +101,18 @@ impl App {
     pub(super) fn commit(&mut self, ui: &mut Ui, command: Command, at: Point) -> CommandOutcome {
         let touched = self.config.desktop.touched_by(&command);
         let outcome = self.dispatch(command, at);
-        if !outcome.is_applied() {
-            return outcome;
-        }
-        // A deleted space is gone; `refresh_space` skips it.
-        for id in touched.spaces {
-            self.refresh_space(ui, id);
-        }
-        if touched.layer {
-            self.refresh_desktop_layer(ui);
-        }
-        self.schedule_save(ui);
+        self.run(ui, commit_effects(outcome, touched));
         outcome
     }
+}
+
+/// What a command owes once dispatched: when it applied, a repaint of what it
+/// changed and a save; otherwise nothing.
+fn commit_effects(outcome: CommandOutcome, touched: Touched) -> Vec<Effect> {
+    if !outcome.is_applied() {
+        return Vec::new();
+    }
+    vec![Effect::Refresh(touched), Effect::ScheduleSave]
 }
 
 /// What the user is told when the configuration cannot be written.
@@ -129,11 +129,36 @@ fn save_failure_text(path: &Path, error: &str) -> String {
 mod tests {
     use super::*;
 
+    use deskspace_core::SpaceId;
+
     #[test]
     fn save_failure_text_names_the_path_and_the_error() {
         let text = save_failure_text(Path::new("C:/cfg/deskspace.toml"), "Access is denied.");
         assert!(text.contains("C:/cfg/deskspace.toml"));
         assert!(text.contains("Access is denied."));
         assert!(text.contains("may be lost"));
+    }
+
+    #[test]
+    fn an_applied_command_repaints_what_it_touched_then_saves() {
+        let touched = Touched {
+            spaces: vec![SpaceId(3), SpaceId(1)],
+            layer: true,
+        };
+        assert_eq!(
+            commit_effects(CommandOutcome::Applied, touched.clone()),
+            vec![Effect::Refresh(touched), Effect::ScheduleSave]
+        );
+    }
+
+    #[test]
+    fn a_command_that_did_not_apply_owes_nothing() {
+        let touched = Touched {
+            spaces: vec![SpaceId(3)],
+            layer: false,
+        };
+        for outcome in [CommandOutcome::NotFound, CommandOutcome::Rejected] {
+            assert_eq!(commit_effects(outcome, touched.clone()), vec![]);
+        }
     }
 }

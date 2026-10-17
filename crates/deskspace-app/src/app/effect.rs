@@ -9,6 +9,7 @@
 //! re-entrancy rules (`ENGINEERING.md` section 6) hold exactly as for a
 //! direct call. Grow the enum one event family at a time.
 
+use deskspace_core::Touched;
 use deskspace_platform::{Ui, set_desktop_icon_size};
 
 use super::{App, Timer};
@@ -16,6 +17,8 @@ use super::{App, Timer};
 /// One thing an event asks the shell to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Effect {
+    /// Repaint the spaces and the desktop layer a command changed.
+    Refresh(Touched),
     /// Re-flow every space and repaint the desktop layer.
     RelayoutAll,
     /// Defer a configuration write (`App::schedule_save`).
@@ -40,6 +43,15 @@ impl App {
     pub(super) fn run(&mut self, ui: &mut Ui, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
+                Effect::Refresh(touched) => {
+                    // A deleted space is gone; `refresh_space` skips it.
+                    for id in touched.spaces {
+                        self.refresh_space(ui, id);
+                    }
+                    if touched.layer {
+                        self.refresh_desktop_layer(ui);
+                    }
+                }
                 Effect::RelayoutAll => self.relayout_all(ui),
                 Effect::ScheduleSave => self.schedule_save(ui),
                 Effect::RefreshSettings => self.refresh_settings(ui),

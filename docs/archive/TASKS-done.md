@@ -2126,3 +2126,54 @@ until I5-I6 all land, so no partial build hides the desktop.
 - [x] **Q1. "Native UI"** (`ui.rs`, `win32/menu.rs`,
   `win32/settings_window/`, `win32/color_picker/`, `win32/dialog.rs`,
   `win32/dark_mode.rs`).
+
+- **R17. Pure update, then effects (chosen over R15, archived).** Make the app's
+  decisions a pure function, `fn update(state: &mut AppState, event: Event)
+  -> Vec<Effect>`. `Effect` is a plain enum, such as `RefreshSpace(id)`,
+  `ScheduleSave`, `ShowMenu(..)`, or `SetTimer(..)`. A thin `run(effect, ui)`
+  is then the only code that touches `Ui`, and tests assert the effects that
+  an event produces, with no Win32 and no fake. Settle three things:
+  - modal calls that return an answer (`popup_menu`, `confirm`,
+    `pick_color`): split the flow into a request effect and a follow-up
+    event, or keep those few as direct calls;
+  - how this keeps `runtime::dispatch`'s re-entrancy rules;
+  - the first event family to move as a pilot (timers or zoom).
+
+  Its prerequisites (N1-N6, B28) have landed; B28's `Touched` is the first
+  effect.
+
+  Approved as proposed below (maintainer, 2026-10-17).
+  - Why R17, not R15: a recording `Ui` fake (R15) tests that calls happened
+    in some order, so its tests break whenever the call sequence changes.
+    Effects are plain data, so a test asserts what an event means
+    (`[RelayoutAll, ScheduleSave, ShowZoomBar(..)]`) and survives refactors.
+    It also needs no traits over the 60 `Ui` methods.
+  - Modal calls: keep `popup_menu`, `confirm`, and `pick_color` as direct
+    calls in the thin shell, and make what follows them pure. The menu
+    builders are already pure, so `show_space_menu` becomes: build entries
+    (pure), `ui.popup_menu` (shell), then `space_menu_choice(state, id,
+    choice) -> Vec<Effect>` (pure, tested). No request/response event pairs;
+    they would add a message round trip to every menu for no test gain.
+  - Queries such as `ui.is_zoom_bar_hovered()` are read by the shell before
+    `update` and passed in as an argument, so `update` stays pure.
+  - Re-entrancy: `run(effects, ui)` executes the list in order, inside the
+    same `on_event` call that produced it, so the handler stays checked out
+    exactly as today. An effect that can destroy a window or re-enter
+    (`SyncWindows`, a modal) runs where its direct call runs today; nothing
+    is deferred to a later message.
+  - Pilot: zoom (`app/zoom.rs`). `Effect` starts with only what zoom needs:
+    `RelayoutAll`, `ScheduleSave`, `RefreshSettings`, `RefreshShellDisplay`,
+    `ShowZoomBar(ZoomBar)`, `HideZoomBar`, `SetTimer(Timer, u32)`, and
+    `SetDesktopIconSize(i32)`. `App::commit` then becomes the first
+    non-pilot user (`Refresh(Touched)` plus `ScheduleSave`). Grow the enum
+    one event family at a time, each its own task, and stop if the shell
+    grows instead of shrinking.
+  - Once approved, three commits:
+    - **R17a:** `app/effect.rs` with `enum Effect` and `App::run`, and no
+      callers yet; the gates pass.
+    - **R17b:** zoom's decisions as `fn zoom_effects(state, action) ->
+      Vec<Effect>`, with `App::zoom` reduced to compute, then `run`. Tests
+      assert the effects of each `ZoomAction` at the range ends and at
+      the default (copy `zooming_stops_at_both_ends_of_its_range`).
+    - **R17c:** `App::commit` returns its effects through the same `run`.
+      **[needs human]** check: the F13 and F-57 rows of section V still pass.
