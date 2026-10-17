@@ -656,7 +656,6 @@ it, outside tests):
 
 | Field | Used in |
 |-------|---------|
-| `hotkeys` | `app.rs`, `settings_session` |
 | `system_dark`, `system_accent`, `shell_display` | `app.rs`, `view`, `hit`, `selection`, `zoom`, `rename`, `settings_session` |
 | `scroll`, `icon_scales` | `hit`, `selection`, `pointer`, `files`, `menus`, `settings_session`; `view` |
 
@@ -672,12 +671,6 @@ Rules for every N task:
   one-line accessor, stop and ask (rule 4).
 - Update `CONTEXT.md` section 3's module table if a module's "Owns" column
   changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N4. A `Hotkeys` for the registered bindings.** In `app.rs` (or a new
-  `app/hotkeys.rs` if it passes about 60 lines): `struct Hotkeys([Option<Hotkey>;
-  HOTKEY_COUNT])` with `register_all(ui, &WindowSettings)` and
-  `unregister_all(ui)`, the bodies the start, Apply, and close paths share
-  today. `App::on_hotkey` keeps the action `match`.
 
 - [ ] **N5. A `SystemLook` for what Windows reports.** In `app/view.rs`:
   `struct SystemLook { dark: bool, accent: Option<Color>, shell: ShellDisplay

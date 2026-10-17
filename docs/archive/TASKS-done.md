@@ -1971,3 +1971,9 @@ until I5-I6 all land, so no partial build hides the desktop.
   the two flags through a constructor. Check `desktop_entries`' doc comment
   ("until then they are only diagnostics"); if the layer now consumes them,
   fix the comment in the same commit.
+
+- [x] **N4. A `Hotkeys` for the registered bindings.** In `app.rs` (or a new
+  `app/hotkeys.rs` if it passes about 60 lines): `struct Hotkeys([Option<Hotkey>;
+  HOTKEY_COUNT])` with `register_all(ui, &WindowSettings)` and
+  `unregister_all(ui)`, the bodies the start, Apply, and close paths share
+  today. `App::on_hotkey` keeps the action `match`.

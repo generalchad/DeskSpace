@@ -361,12 +361,12 @@ impl App {
         for (slot, binding) in settings::HOTKEY_BINDINGS.iter().enumerate() {
             let text = texts[slot].trim().to_string();
             let current = binding.text(&self.config.window).to_string();
-            if text == current && self.hotkeys[slot].is_some() {
+            if text == current && self.hotkeys.is_registered(slot) {
                 continue;
             }
-            if let Err(message) = self.register_hotkey(ui, slot, &text) {
+            if let Err(message) = self.hotkeys.register(ui, slot, &text) {
                 // Put the previous binding back so the hotkey keeps working.
-                let _ = self.register_hotkey(ui, slot, &current);
+                let _ = self.hotkeys.register(ui, slot, &current);
                 if let Some(session) = self.settings_ui.session.as_mut() {
                     session.hotkey_errors[slot] = Some(message);
                 }

@@ -95,6 +95,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `menus` | space, item, and tray menus, `create_space` |
   | `settings_session` | `SettingsUi`; opening, previewing, applying, and cancelling the settings window |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
+  | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
