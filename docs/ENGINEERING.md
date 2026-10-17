@@ -52,6 +52,26 @@ before saving a few lines. DeskSpace grows feature by feature (the ROADMAP
 feature index) through contributors and models of varying strength, so every
 change leaves the code easier to read and extend than it found it.
 
+Four rules come first, because the rest follow from them:
+
+1. **Data structures first.** Get the types right and the code follows.
+   Prefer a type that cannot hold a wrong state over code that checks for
+   one; prefer returning what changed over making each caller remember what
+   to redo.
+2. **No special cases.** A branch for one kind of thing means an abstraction
+   is missing. `Surface` removed the space-versus-desktop branches; do the
+   same when a new `if` appears for "the other kind".
+3. **Never break users.** A config that loaded yesterday loads today
+   (`#[serde(default)]`, `Config::migrate`, clamping on load); stored files
+   are never lost or overwritten; ids, CLI flags, and documented behavior do
+   not change under the user. A regression is a bug even when the new
+   behavior is "better"; changing on purpose is a recorded decision
+   (`ROADMAP.md` section 2).
+4. **The compiler enforces; docs explain.** If a rule can be a type, a
+   private field, an enum, a lint, or a test, make it one and delete the
+   prose. Docs keep only what code cannot say: why, Windows behavior,
+   decisions, and the plan (section 7).
+
 - **Readable.** A function should make sense without scrolling or jumping
   between files: small functions with descriptive names, early returns, named
   constants instead of magic numbers, one concept per module. When a file
@@ -90,6 +110,7 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 - All `unsafe` and Win32 code lives in `deskspace-platform`.
 - Mutate the domain only through `Command` and `Desktop::apply`. Add a
   `Command` variant instead of mutating `Desktop` from UI or platform code.
+  Today review enforces this; `TASKS.md` B27 makes the compiler do it.
 - Rendering and UI are data-driven. The app turns the model into a
   `SpaceScene` / `SpaceStyle` per space, menus into `MenuEntry` lists, and
   settings into a `SettingsForm`; the platform only turns that data into
@@ -146,8 +167,8 @@ Commit after every change; never leave finished work uncommitted. One logical
 unit per commit; split unrelated edits. Working from `TASKS.md`, make one
 commit per task and tick its box in that commit ("How to work a task", rule
 7). Messages are imperative and lowercase with a type prefix: `feat:`,
-`fix:`, `refactor:`, `docs:`, `test:`, `perf:`, `ci:`, `release:`. Run the
-gates (section 1) first.
+`fix:`, `refactor:`, `docs:`, `test:`, `perf:`, `ci:`, `release:`. The body
+says why; the diff already shows what. Run the gates (section 1) first.
 
 ## 6. Gotchas
 
@@ -201,6 +222,31 @@ gates (section 1) first.
 
   Every other key passes through. The watch consumes keys only while the
   desktop shell has the foreground (`desktop_is_foreground`), so other apps
-  keep their own shortcuts, and passes everything through while a popup menu
+  keep their own shortcuts, and
+  passes everything through while a popup menu
   is open (`keyboard::set_menu_open`). The hook is installed only while a flag
   is set.
+
+## 7. Documentation
+
+Docs drift; code does not. Every fact has one home, and the doc that does
+not own it links to it instead of copying it.
+
+| Fact | Home |
+|------|------|
+| Types, fields, defaults, ranges, variants, ids, timers, messages | The code, with `///` docs; the `ALL` lists and uniqueness tests guard ids |
+| Architecture, where code lives, non-obvious behavior, Windows quirks | `CONTEXT.md` |
+| Rules, commands, gotchas | This file |
+| Decisions (`Dx`), milestones, feature status (`F-xx`) | `ROADMAP.md` |
+| Open work, recipes, on-screen checks | `TASKS.md` |
+| What a user sees and does | `README.md` |
+
+- Never copy a list the code holds (struct fields, enum variants, `Ui`
+  methods, ids with their "next free" value). Name the item and its file;
+  `rustdoc` and the compiler keep it true.
+- No hand-kept counts (tests, methods, lines). A dated measurement in a task
+  is fine; a number every commit must update is not.
+- A rule a test can check gets the test, and the doc points at it.
+- Change or delete a sentence in the same commit as the code it describes.
+  When in doubt, delete it.
+- Short sentences, one parenthetical at most, plain words.

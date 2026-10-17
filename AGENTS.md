@@ -27,6 +27,10 @@ written in Rust with native Win32. It builds only on Windows.
   task, tick and archive it in the same commit.
 - If a task needs a design decision it does not state, or no extension point
   fits, stop and ask. Do not improvise.
+- Follow the four rules at the top of `ENGINEERING.md` section 2: data
+  structures first, no special cases, never break users, and the compiler
+  enforces while docs explain. Never copy into a doc a list the code holds
+  (`ENGINEERING.md` section 7).
 - You cannot see the screen. Implement, then hand the on-screen check to a
   human as a **[needs human]** item (`TASKS.md` rule 8).
 

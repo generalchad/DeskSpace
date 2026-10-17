@@ -8,8 +8,8 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Pick a task:** section B (code health), K7, and section N (in order) are
-ready for any contributor; G5c is ready. L1 needs a maintainer's on-screen
+**Pick a task:** section B (code health; B27-B30 in order), K7, and
+section N (in order) are ready for any contributor; G5c is ready. L1 needs a maintainer's on-screen
 findings. Skip tasks marked **[needs decision]** and everything in section D.
 
 ## How to work a task
@@ -344,6 +344,199 @@ lines), `settings/apply.rs` `apply_look_field` (about 110), and
 wired in three places, and R14 (table-driven settings fields) removes that
 cause; splitting them first would be undone by R14.
 
+### Make the compiler enforce the rules (B27-B30)
+
+`ENGINEERING.md` section 2, rules 1 and 4: a rule the compiler can check
+should not depend on review. Do the tasks in the order listed. Each is one
+commit. Each step says exactly what to type; if the code does not match what
+a step describes, stop and ask (rule 4).
+
+**B27: the model can change only through `Command`.** Today `Space`'s fields
+and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
+`layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
+bypass `Command`. B27a-B27f close that, after B21.
+
+- [ ] **B27a. Move `Config::migrate`'s two space loops into core.**
+  - In `deskspace-core/src/desktop.rs`, add two methods to `impl Desktop`:
+    - `pub fn reset_v1_spaces(&mut self)`: the body of the v1 loop in
+      `deskspace-config/src/schema.rs` `Config::migrate` (each space:
+      `clear_legacy_overrides()`, then `position_items(space,
+      self.layout)`).
+    - `pub fn clamp_looks(&mut self)`: `for space in &mut self.spaces {
+      space.look = space.look.take().map(SpaceLook::clamped); }`.
+    - Move each loop's comment into the new method's `///` doc.
+  - In `Config::migrate`, replace the two loops with
+    `self.desktop.reset_v1_spaces();` and `self.desktop.clamp_looks();`.
+  - Tests: the config migrate tests pass unchanged. Add one core test,
+    `clamp_looks_clamps_every_space`: a space with an out-of-range
+    `look` comes back in range (copy an existing `SpaceLook::clamped` test
+    for the values).
+  - Done when: `rg -n "desktop.spaces" crates/deskspace-config/src` finds
+    nothing outside `#[cfg(test)]` modules.
+
+- [ ] **B27b. Add read accessors (core only).**
+  - In `deskspace-core/src/space.rs` `impl Space`, add one-line public
+    getters: `title(&self) -> &str`, `rect(&self) -> Rect`,
+    `items(&self) -> &[Item]`, `locked(&self) -> bool`,
+    `rolled_up(&self) -> bool`, `custom(&self) -> bool`,
+    `look(&self) -> Option<&SpaceLook>`, `user_sized(&self) -> bool`.
+  - In `deskspace-core/src/desktop.rs`, add `spaces(&self) -> &[Space]`.
+  - Leave `id` public: it never changes after creation.
+  - If a method with one of these names already exists, stop and ask.
+  - Change no caller in this commit. Done when: the gates pass.
+
+- [ ] **B27c. Read through the accessors outside core.**
+  1. Temporarily change the eight `Space` fields above and
+     `Desktop::spaces` from `pub` to `pub(crate)`. Do not commit this.
+  2. Run `cargo check --workspace --all-targets`.
+  3. Fix every error that is a **read**: `space.title` becomes
+     `space.title()`, `&space.items` becomes `space.items()`,
+     `desktop.spaces.iter()` becomes `desktop.spaces().iter()`, and so on.
+     Leave every error that is a **write** (`=`, `push`, `&mut`) alone; it
+     belongs to B27d.
+  4. Change the fields back to `pub`, run the gates, and commit only the
+     call-site changes.
+  - Done when: step 1 again leaves only write errors.
+
+- [ ] **B27d. Write test fixtures through `Command`s.**
+  - Find the writes with step 1 of B27c (again uncommitted). They are in
+    tests: `scene.rs`, `settings/mod.rs`, `settings/apply.rs`,
+    `settings/session.rs`, `app.rs`, `app/hit.rs`, `app/menus.rs`,
+    `app/selection.rs`, and the config tests.
+  - Replace each with the command in this table, applied with
+    `desktop.apply(command, bounds)`. Read each variant's fields in
+    `deskspace-core/src/command/mod.rs`, and copy `bounds` from an existing
+    test in that file.
+
+    | Write | Command |
+    |-------|---------|
+    | `custom = true` and `look = Some(x)` | `SetSpaceLook { custom: true, look: x, .. }` |
+    | `look = Some(x)` alone | `SetSpaceLook { custom: false, look: x, .. }` |
+    | `custom = true` alone | `CustomizeSpace { on: true, .. }` |
+    | `locked = true` | `ToggleLock` (on a new, unlocked space) |
+    | `rolled_up = true` | `ToggleRollup` |
+    | `user_sized = true` | `KeepSize` |
+    | `items.push(item)` / `add_item(id, item)` | `AddItem` |
+
+  - Assert each fixture command `is_applied()`, so a broken fixture fails
+    loudly.
+  - If a write has no row in the table, stop and ask.
+  - Change the fields back to `pub`, and commit only the test changes.
+  - Done when: step 1 of B27c compiles with no errors outside
+    `deskspace-core`.
+
+- [ ] **B27e. Make `Space`'s fields private.** Change the eight fields to
+  `pub(crate)` for real. `serde` still reads and writes them. Done when: the
+  gates pass with no other change.
+
+- [ ] **B27f. Make the `Desktop` mutators crate-private.**
+  - Change `Desktop::spaces` (the field), `space_mut`, `layer_mut`,
+    `add_space`, `add_item`, and `remove_item` to `pub(crate)`, as well as
+    `Space::remove_item` and `DesktopLayer::remove_item`.
+  - Fix each error the same way as B27d. A test that needs a new space's id
+    reads `desktop.next_space_id()` before applying `Command::CreateSpace`.
+  - Change the B27 note in `ENGINEERING.md` section 3 to say that the
+    compiler enforces it. In `CONTRIBUTING.md` "Keep three rules", say the
+    same.
+  - Done when: `rg -n "space_mut|layer_mut|add_space|\.add_item\("
+    crates/deskspace-app crates/deskspace-config` finds nothing.
+
+**B28: one commit path that refreshes and saves.** Today each caller of
+`App::dispatch` has to remember to call `refresh_space` and `schedule_save`
+afterwards, and `dispatch` returns a `bool`, so `NotFound` and `Rejected`
+look the same. Do B28a-B28d in order.
+
+- [ ] **B28a. `App::dispatch` returns the `CommandOutcome`.**
+  - In `app/persist.rs`, change `dispatch` to return `CommandOutcome`
+    instead of `bool`. Before returning, when the outcome is not applied,
+    log it once: `tracing::debug!(?outcome, "command not applied")`.
+  - Each caller that used the `bool` adds `.is_applied()`. Find the callers
+    with `rg -n "self\.dispatch\(" crates/deskspace-app/src`.
+  - Pure refactor. Done when: the gates pass.
+
+- [ ] **B28b. Core: `Desktop::touched_by` says what a command will change.**
+  - In `deskspace-core/src/command/mod.rs`, add `pub struct Touched {
+    pub spaces: Vec<SpaceId>, pub layer: bool }` with a `///` doc. Also add
+    `pub fn touched_by(&self, command: &Command) -> Touched` on `Desktop`.
+    It is called **before** the command is applied, so it can still find
+    an item's current space.
+  - Write it as one `match` over every variant with **no `_` arm**, so a new
+    variant cannot compile until someone decides what it touches.
+  - The rules:
+    - A variant with a space `id` touches that space.
+    - An item variant touches the space that holds the item now.
+    - A move touches both spaces. **List the destination first**: its grid
+      lays out the result.
+    - `AutoArrange` and `SnapAll` touch every space.
+    - `SyncDesktop` and `SetDesktopItemPosition` touch only the layer.
+    - `MoveToDesktop` touches its source space and the layer.
+    - If a variant fits none of these rules, stop and ask.
+  - Tests: one per rule above, in `command/mod.rs`.
+
+- [ ] **B28c. `App::commit` replaces `apply_to_space`.**
+  - In `app/persist.rs`, add `pub(super) fn commit(&mut self, ui: &mut Ui,
+    command: Command, at: Point) -> CommandOutcome`. In this order, it:
+    1. reads `self.config.desktop.touched_by(&command)`;
+    2. calls `self.dispatch(command, at)`;
+    3. if the command applied, calls `refresh_space` for each touched space
+       that still exists;
+    4. if `touched.layer` is set, redraws the desktop layer. Use the method
+       `app/view.rs` already calls for that; if it takes more than one call,
+       stop and ask;
+    5. calls `schedule_save`.
+  - Replace each `apply_to_space(ui, id, command, at)` call with
+    `commit(ui, command, at)`. The callers are in `app.rs`, `app/menus.rs`,
+    and `app/settings_session.rs`. Then delete `apply_to_space`.
+  - Done when: `rg -n apply_to_space crates` finds nothing. **[needs
+    human]** check: lock, roll up, sort, and "Fit to contents" each repaint
+    the space at once and survive a restart.
+
+- [ ] **B28d. Move the bare `dispatch` callers to `commit`.** Make one
+  commit per file: `app/menus.rs`, `app/clipboard.rs`, `app/files.rs`,
+  `app/drag.rs`, `app/rename.rs`, and `app/settings_session.rs`. For each
+  `self.dispatch(` call:
+  - If it is followed by `refresh_space` or `schedule_save` for the spaces
+    it changed, replace the call with `commit` and delete those follow-ups.
+  - If it is one of several commands followed by a single refresh, or it is
+    followed by `flush_save` (file moves save at once), keep `dispatch`. Add
+    a one-line comment above it saying which case it is.
+  - Done when: every `self.dispatch(` outside `commit` has such a comment.
+
+- [ ] **B29. Tell the user when the config cannot be saved.** Today
+  `App::save` (`app/persist.rs`) only logs the error, and release builds
+  have no console, so a failed save goes unseen until changes are lost.
+  - Platform, `win32/runtime/ui_chrome.rs`: add `pub fn alert(&mut self,
+    title: &str, text: &str)` right below `confirm`. Copy `confirm`'s body,
+    use `MB_OK | MB_ICONWARNING`, and return nothing.
+  - App, `app.rs`: add `reported_failure: bool` to `struct Autosave`.
+  - App, `app/persist.rs`:
+    - Add a pure `fn save_failure_text(path: &Path, error: &str) -> String`.
+      It names the path, gives the error, and says that changes may be lost
+      when DeskSpace closes.
+    - Change `save` to `save(&mut self, ui: &mut Ui)`. On an error, log as
+      now; then, if `reported_failure` is false, set it and call
+      `ui.alert("DeskSpace could not save", &save_failure_text(..))`. On
+      success, set it back to false.
+    - Add `flush_save_on_close(&mut self, ui: &mut Ui)`. It does what
+      `flush_save` does but never alerts, because a modal box must not
+      block a shutdown. Call it from `Event::CloseRequested` instead of
+      `flush_save`.
+  - Test: `save_failure_text` contains the path and the error.
+  - **[needs human]** check: make the scratch config read-only (`attrib +r`)
+    and move a space. One box appears; a second move shows none. Clear the
+    attribute and move again; the file is saved.
+
+- [ ] **B30. Lay a command out on the grid of the space it targets.**
+  Today `App::dispatch` picks the grid from `space_at(near)`, the topmost
+  space under the point. When spaces overlap, that can be a different space
+  from the one the command changes. After B28b:
+  - In `dispatch`, take `touched_by(&command).spaces.first()`. If it is a
+    space that exists, use `self.layout_for(id)`. Otherwise keep today's
+    `space_at(near)` fallback.
+  - Done when: the gates pass. **[needs human]** check: overlap two spaces
+    with different icon sizes, then sort or arrange the lower one. Its icons
+    land on its own grid.
+
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
 Everything except L1 has landed (L2-L7 archived). Every way of adding a
@@ -609,7 +802,7 @@ flags. Splitting `Ui` so `App` can be tested against a fake is R15.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
-Each needs design work first. Ids are `R1`-`R16` so they do not collide with
+Each needs design work first. Ids are `R1`-`R17` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
 - **R6. Undo design.** Needs an answer to ROADMAP open question 3.
@@ -656,13 +849,27 @@ the ROADMAP decision ids (`D1`-`D9`).
   the setting recipe becomes one row. Decide how option tables, look versus
   Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
 - **R15. Split `Ui` so `App` can be tested against a fake.** `App`'s loose
-  state is section N. What remains is `Ui`: 59 public methods (already filed
-  by area in `runtime/ui_spaces.rs` 15, `ui_input.rs` 10, `ui_shell.rs` 15,
-  `ui_chrome.rs` 18), taken as one concrete type, so no `App` behavior that
+  state is section N. What remains is `Ui`: about 60 public methods (already
+  filed by area in `runtime/ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, and
+  `ui_chrome.rs`), taken as one concrete type, so no `App` behavior that
   touches the screen can be unit-tested; the app's tests reach only the pure
   modules. Design focused traits or handles along those four files, a
   recording fake for tests, and how `EventHandler::on_event` receives them,
-  keeping `runtime::dispatch`'s re-entrancy rules. After N1-N6.
+  keeping `runtime::dispatch`'s re-entrancy rules. After N1-N6. Weigh R17
+  first: it may make the fake unnecessary.
+- **R17. Pure update, then effects (an alternative to R15).** Make the app's
+  decisions a pure function, `fn update(state: &mut AppState, event: Event)
+  -> Vec<Effect>`. `Effect` is a plain enum, such as `RefreshSpace(id)`,
+  `ScheduleSave`, `ShowMenu(..)`, or `SetTimer(..)`. A thin `run(effect, ui)`
+  is then the only code that touches `Ui`, and tests assert the effects that
+  an event produces, with no Win32 and no fake. Settle three things:
+  - modal calls that return an answer (`popup_menu`, `confirm`,
+    `pick_color`): split the flow into a request effect and a follow-up
+    event, or keep those few as direct calls;
+  - how this keeps `runtime::dispatch`'s re-entrancy rules;
+  - the first event family to move as a pilot (timers or zoom).
+
+  After N1-N6 and B28; B28's `Touched` is the first effect.
 - **R16. Scripting verbs: an out-of-process extension point (F-59).**
   Extensions today mean editing the source. Design a small, stable verb set
   (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
