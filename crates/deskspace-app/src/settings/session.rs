@@ -175,6 +175,8 @@ mod tests {
     use super::*;
     use deskspace_core::Rect;
 
+    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
     fn setup() -> (Config, Session) {
         let config = Config::new();
         let session = Session::new(&config);
@@ -261,9 +263,19 @@ mod tests {
                 look: None
             }
         );
-        let space = config.desktop.space_mut(id).unwrap();
-        space.custom = true;
-        space.look = Some(SpaceLook::default());
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::SetSpaceLook {
+                        id,
+                        custom: true,
+                        look: Some(SpaceLook::default()),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         session.resnapshot(config.desktop.space(id).unwrap());
         assert!(session.saved_spaces[0].custom);
         assert_eq!(session.saved_spaces.len(), 1);

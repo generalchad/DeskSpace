@@ -272,6 +272,8 @@ mod tests {
     use deskspace_core::Color;
     use deskspace_core::Rect;
 
+    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
     fn setup() -> (Config, Session) {
         let config = Config::new();
         let session = Session::new(&config);
@@ -691,7 +693,19 @@ mod tests {
         };
         assert!(edit(&config, &mut session).is_none(), "follows Global");
 
-        config.desktop.space_mut(id).unwrap().custom = true;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CustomizeSpace {
+                        id,
+                        on: true,
+                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         let (space, command, effect) = edit(&config, &mut session).unwrap();
         assert_eq!(space, id);
         assert_eq!(effect, Effect::Layout);
@@ -747,7 +761,19 @@ mod tests {
             match_global(&config, &mut session).is_none(),
             "not customized"
         );
-        config.desktop.space_mut(id).unwrap().custom = true;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CustomizeSpace {
+                        id,
+                        on: true,
+                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         assert!(matches!(
             match_global(&config, &mut session),
             Some(Command::SetSpaceLook { custom: true, look: Some(look), .. })

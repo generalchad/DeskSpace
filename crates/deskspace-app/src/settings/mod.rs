@@ -261,6 +261,8 @@ mod tests {
     use deskspace_core::Rect;
     use deskspace_platform::FieldKind;
 
+    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
     fn setup() -> (Config, Session) {
         let config = Config::new();
         let session = Session::new(&config);
@@ -355,7 +357,19 @@ mod tests {
     #[test]
     fn every_editable_space_field_has_a_handler() {
         let (mut config, id) = config_with_space("A");
-        config.desktop.space_mut(id).unwrap().custom = true;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CustomizeSpace {
+                        id,
+                        on: true,
+                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
         let pages = form(&config, &session).pages;
@@ -581,7 +595,19 @@ mod tests {
     fn global_lists_every_space_dimmed_until_customized() {
         let (mut config, _) = config_with_space("Work");
         let games = config.desktop.add_space("Games", Rect::new(0, 0, 200, 200));
-        config.desktop.space_mut(games).unwrap().custom = true;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CustomizeSpace {
+                        id: games,
+                        on: true,
+                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         let session = Session::new(&config);
         let form = build_form(
             &config,
@@ -697,7 +723,19 @@ mod tests {
         config.theme.tint_opacity = 70;
         let mut kept = SpaceLook::from_global(&config.theme, &config.desktop.layout);
         kept.theme.tint_opacity = 10;
-        config.desktop.space_mut(id).unwrap().look = Some(kept);
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::SetSpaceLook {
+                        id,
+                        custom: false,
+                        look: Some(kept),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         let mut session = Session::new(&config);
         session.select_scope(Some(id));
 
@@ -712,7 +750,19 @@ mod tests {
         assert!(!form.field(field::TINT_OPACITY).unwrap().enabled);
         assert!(!form.field(field::MODE).unwrap().enabled);
 
-        config.desktop.space_mut(id).unwrap().custom = true;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CustomizeSpace {
+                        id,
+                        on: true,
+                        seed: SpaceLook::from_global(&config.theme, &config.desktop.layout),
+                    },
+                    BOUNDS,
+                )
+                .is_applied()
+        );
         let form = build_form(
             &config,
             &session,
@@ -746,7 +796,12 @@ mod tests {
         );
         assert!(!form.field(field::FIT_CONTENTS).unwrap().enabled);
 
-        config.desktop.space_mut(id).unwrap().user_sized = true;
+        assert!(
+            config
+                .desktop
+                .apply(Command::KeepSize { id }, BOUNDS)
+                .is_applied()
+        );
         let form = build_form(
             &config,
             &session,
@@ -757,7 +812,12 @@ mod tests {
         assert!(form.field(field::FIT_CONTENTS).unwrap().enabled);
 
         // A locked space cannot be fit, matching the space menu.
-        config.desktop.space_mut(id).unwrap().locked = true;
+        assert!(
+            config
+                .desktop
+                .apply(Command::ToggleLock { id }, BOUNDS)
+                .is_applied()
+        );
         let form = build_form(
             &config,
             &session,

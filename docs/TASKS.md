@@ -366,16 +366,6 @@ and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
 `layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
 bypass `Command`. B27a-B27f close that, after B21.
 
-- [ ] **B27d. Write test fixtures through `Command`s.**
-  - Find the writes with step 1 of B27c (again uncommitted). They are in
-    tests: `scene.rs`, `settings/mod.rs`, `settings/apply.rs`,
-    `settings/session.rs`, `app.rs`, `app/hit.rs`, `app/menus.rs`,
-    `app/selection.rs`, and the config tests.
-  - Replace each with the command in this table, applied with
-    `desktop.apply(command, bounds)`. Read each variant's fields in
-    `deskspace-core/src/command/mod.rs`, and copy `bounds` from an existing
-    test in that file.
-
     | Write | Command |
     |-------|---------|
     | `custom = true` and `look = Some(x)` | `SetSpaceLook { custom: true, look: x, .. }` |

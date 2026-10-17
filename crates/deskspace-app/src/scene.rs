@@ -455,7 +455,39 @@ fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32
 mod tests {
     use super::*;
     use deskspace_core::ItemFacts;
-    use deskspace_core::{Item, Point, SpaceId, SpaceLook};
+    use deskspace_core::{Command, Desktop, Item, Point, Size, SpaceId, SpaceLook};
+
+    const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
+
+    fn apply(desktop: &mut Desktop, command: Command) {
+        assert!(desktop.apply(command, BOUNDS).is_applied());
+    }
+
+    /// A one-item "Work" space built the way the app builds one, through
+    /// `Command`s, with `change` applied last.
+    fn work_space_after(change: impl FnOnce(SpaceId) -> Command) -> Space {
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        apply(
+            &mut desktop,
+            Command::CreateSpace {
+                title: "Work".to_owned(),
+                at: Point::new(500, 300),
+                size: Size::new(240, 200),
+                locked: false,
+            },
+        );
+        apply(
+            &mut desktop,
+            Command::AddItem {
+                space: id,
+                path: "C:/missing/report.txt".into(),
+                facts: ItemFacts::default(),
+            },
+        );
+        apply(&mut desktop, change(id));
+        desktop.space(id).unwrap().clone()
+    }
 
     fn space() -> Space {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(500, 300, 240, 200));
@@ -573,8 +605,7 @@ mod tests {
 
     #[test]
     fn rolled_up_spaces_draw_no_items() {
-        let mut space = space();
-        space.rolled_up = true;
+        let space = work_space_after(|id| Command::ToggleRollup { id });
         let theme = Theme::default();
         let scene = space_scene(
             &space,
@@ -740,15 +771,17 @@ mod tests {
 
     #[test]
     fn a_customized_space_draws_with_its_own_theme() {
-        let mut space = space();
         let global = Theme::default();
         let mut look = SpaceLook::from_global(&global, &GridSpec::default());
         look.theme.custom_colors = true;
         look.theme.tint = Color::rgb(10, 20, 30);
         look.theme.text = Color::rgb(1, 2, 3);
         look.theme.label_lines = 1;
-        space.look = Some(look);
-        space.custom = true;
+        let space = work_space_after(|id| Command::SetSpaceLook {
+            id,
+            custom: true,
+            look: Some(look),
+        });
         let theme = space.theme(&global);
         let palette = theme.palette(true);
         let scene = space_scene(
@@ -783,20 +816,32 @@ mod tests {
         assert!(scene.text_shadow.is_some());
     }
 
+    /// A user-sized space two columns wide holding ten items (ids 1 to 10),
+    /// so they overflow it and it scrolls.
     fn tall_space() -> Space {
-        let layout = GridSpec::default();
-        let mut space = Space::new(SpaceId(1), "Tall", Rect::new(0, 0, 240, 200));
-        space.user_sized = true;
-        for index in 0..10u64 {
-            let mut item = Item::new(
-                ItemId(index + 1),
-                format!("C:/missing/{index}.txt"),
-                ItemFacts::default(),
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        apply(
+            &mut desktop,
+            Command::CreateSpace {
+                title: "Tall".to_owned(),
+                at: Point::ZERO,
+                size: Size::new(240, 200),
+                locked: false,
+            },
+        );
+        apply(&mut desktop, Command::KeepSize { id });
+        for index in 0..10 {
+            apply(
+                &mut desktop,
+                Command::AddItem {
+                    space: id,
+                    path: format!("C:/missing/{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
             );
-            item.position = layout.grid_position_in(index as usize, 2);
-            space.push_item(item);
         }
-        space
+        desktop.space(id).unwrap().clone()
     }
 
     #[test]
