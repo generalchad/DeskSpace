@@ -114,8 +114,8 @@ impl App {
     /// The concrete colors for a surface, with the Windows accent when asked.
     pub(super) fn surface_palette(&self, surface: Surface) -> Palette {
         let theme = self.surface_theme(surface);
-        let mut palette = theme.palette(self.system_dark);
-        if let Some(accent) = self.system_accent {
+        let mut palette = theme.palette(self.system.dark());
+        if let Some(accent) = self.system.accent() {
             // Explorer always fills a checked item check box with the accent,
             // whatever the space's own selection colors are. The registry
             // accent's alpha is unreliable, so force it opaque.
@@ -135,7 +135,7 @@ impl App {
     /// How a surface shows item check boxes, honoring its `match_explorer`.
     pub(super) fn surface_check_box_mode(&self, surface: Surface) -> CheckBoxMode {
         if self.surface_match_explorer(surface) {
-            self.shell_display.check_boxes
+            self.system.shell().check_boxes
         } else {
             CheckBoxMode::Hidden
         }
@@ -264,10 +264,10 @@ mod tests {
         let id =
             fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
         let item = fixtures::add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
-        app.shell_display = ShellDisplay {
+        app.system.set_shell(ShellDisplay {
             check_boxes: CheckBoxMode::Selection,
             ..ShellDisplay::default()
-        };
+        });
         let layout = app.config.desktop.layout;
         let space = app.config.desktop.space(id).unwrap();
         let content = space.content_rect();
@@ -301,7 +301,8 @@ mod tests {
         let id =
             fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
         // A registry accent often carries alpha 0; the box forces it opaque.
-        app.system_accent = Some(Color::rgba(0x00, 0x78, 0xD4, 0x00));
+        app.system
+            .set_accent(Some(Color::rgba(0x00, 0x78, 0xD4, 0x00)));
         assert!(
             !app.config.theme.use_accent,
             "the default selection is not the accent"
@@ -309,7 +310,7 @@ mod tests {
         let palette = app.surface_palette(Surface::Space(id));
         assert_eq!(palette.check_fill, Color::rgb(0x00, 0x78, 0xD4));
         // Without a known accent, the Windows-blue fallback stands.
-        app.system_accent = None;
+        app.system.set_accent(None);
         assert_eq!(
             app.surface_palette(Surface::Space(id)).check_fill,
             deskspace_core::theme::CHECK_ACCENT

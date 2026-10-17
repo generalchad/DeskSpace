@@ -5,12 +5,12 @@ use std::collections::HashSet;
 use deskspace_core::geometry::Rect;
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
-use deskspace_core::{Command, Item, ItemId, Palette, SpaceId, Theme};
+use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog,
-    desktop_directory, desktop_display_since, enumerate_desktop_items, hide_desktop_icons,
-    item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi, virtual_desktop_rect,
-    work_area_at,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui,
+    arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
+    hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
 };
 
 use crate::scene::{
@@ -23,6 +23,57 @@ use super::{App, Surface, Timer};
 /// How often, while takeover is on, to re-hide Explorer's icon layer in case
 /// it recreated it without broadcasting `TaskbarCreated`.
 const HEALTH_MS: u32 = 5_000;
+
+/// What Windows reports and DeskSpace follows: dark mode, the accent color,
+/// and Explorer's desktop display options.
+#[derive(Debug)]
+pub(crate) struct SystemLook {
+    dark: bool,
+    /// Windows' accent color; `None` when it cannot be read.
+    accent: Option<Color>,
+    /// Explorer's display options, refreshed by `App::refresh_shell_display`,
+    /// which also reacts to their change.
+    shell: ShellDisplay,
+}
+
+impl SystemLook {
+    /// Reads dark mode and the accent now. Explorer's display is read once
+    /// OLE is up, on `Started`.
+    pub(crate) fn read() -> Self {
+        Self {
+            dark: system_uses_dark_mode(),
+            accent: system_accent_color(),
+            shell: ShellDisplay::default(),
+        }
+    }
+
+    /// Re-reads dark mode and the accent after a Windows theme change.
+    pub(super) fn refresh(&mut self) {
+        self.dark = system_uses_dark_mode();
+        self.accent = system_accent_color();
+    }
+
+    pub(super) fn dark(&self) -> bool {
+        self.dark
+    }
+
+    pub(super) fn accent(&self) -> Option<Color> {
+        self.accent
+    }
+
+    pub(super) fn shell(&self) -> &ShellDisplay {
+        &self.shell
+    }
+
+    pub(super) fn set_shell(&mut self, shell: ShellDisplay) {
+        self.shell = shell;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_accent(&mut self, accent: Option<Color>) {
+        self.accent = accent;
+    }
+}
 
 /// The desktop layer's state: the hidden command-line flags that turn it on
 /// and the loose items last read from the shell. `App::layer_active` and
@@ -89,9 +140,9 @@ impl App {
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
             checked: self.selection.checked.clone(),
             show_extensions: self.surface_match_explorer(surface)
-                && self.shell_display.show_extensions,
+                && self.system.shell().show_extensions,
             show_compressed_color: self.surface_match_explorer(surface)
-                && self.shell_display.show_compressed_color,
+                && self.system.shell().show_compressed_color,
             cut: self.selection.cut.iter().copied().collect(),
             marquee: self.pointer.marquee_on(surface).and_then(|rect| {
                 let origin = self.surface_window_rect(surface)?.origin();
@@ -146,13 +197,13 @@ impl App {
 
     /// The window style for a space.
     pub(super) fn style_for(&self, id: SpaceId) -> SpaceStyle {
-        space_style(self.theme_for(id), self.system_dark)
+        space_style(self.theme_for(id), self.system.dark())
     }
 
     /// Whether DeskSpace's own chrome (the settings window and menus) is dark.
     /// `Theme.mode` colors the spaces; this follows the global `ui_mode`.
     pub(super) fn ui_dark(&self) -> bool {
-        self.config.theme.ui_mode.resolve(self.system_dark)
+        self.config.theme.ui_mode.resolve(self.system.dark())
     }
 
     /// The item-icon scale of `theme` as a factor, without per-monitor DPI.
@@ -161,7 +212,7 @@ impl App {
     /// icon-size setting applies.
     pub(super) fn icon_scale(&self, theme: &Theme) -> f32 {
         if theme.match_explorer()
-            && let Some(pixels) = self.shell_display.icon_size
+            && let Some(pixels) = self.system.shell().icon_size
         {
             return (pixels as f32 / ITEM_ICON_SIZE as f32).max(0.25);
         }
@@ -174,7 +225,7 @@ impl App {
     pub(super) fn space_scale(&self, id: SpaceId) -> f32 {
         let theme = self.theme_for(id);
         let scale = self.icon_scale(theme);
-        if theme.match_explorer() && self.shell_display.icon_size.is_some() {
+        if theme.match_explorer() && self.system.shell().icon_size.is_some() {
             return scale;
         }
         scale * space_dpi(id.0)
@@ -195,7 +246,7 @@ impl App {
     ) -> GridSpec {
         let mut layout = grid.scaled_with_title(scale, title_scale);
         if theme.match_explorer()
-            && let Some(spacing) = self.shell_display.icon_spacing
+            && let Some(spacing) = self.system.shell().icon_spacing
         {
             layout.cell_width = spacing.width.max(1);
             layout.cell_height = spacing.height.max(1);
@@ -235,12 +286,12 @@ impl App {
     /// changed icon size or item spacing re-flows every surface that matches
     /// Explorer too.
     pub(super) fn refresh_shell_display(&mut self, ui: &mut Ui) {
-        let display = desktop_display_since(self.shell_display.check_boxes);
-        if display == self.shell_display {
+        let display = desktop_display_since(self.system.shell().check_boxes);
+        if display == *self.system.shell() {
             return;
         }
-        let resized = display.icon_size != self.shell_display.icon_size
-            || display.icon_spacing != self.shell_display.icon_spacing;
+        let resized = display.icon_size != self.system.shell().icon_size
+            || display.icon_spacing != self.system.shell().icon_spacing;
         let any_space_matching = self
             .config
             .desktop
@@ -248,9 +299,9 @@ impl App {
             .iter()
             .any(|space| space.theme(&self.config.theme).match_explorer());
         let layer_matching = self.layer_active() && self.config.theme.match_explorer();
-        self.shell_display = display;
+        self.system.shell = display;
         // Independent ticks do not survive a switch out of that mode.
-        if self.shell_display.check_boxes != CheckBoxMode::Independent {
+        if self.system.shell().check_boxes != CheckBoxMode::Independent {
             self.selection.checked.clear();
         }
         if resized && (any_space_matching || layer_matching) {
@@ -299,7 +350,7 @@ impl App {
 
     /// The window style for the desktop layer (chrome-less, transparent).
     pub(super) fn layer_style(&self) -> SpaceStyle {
-        layer_style(&self.config.theme, self.system_dark)
+        layer_style(&self.config.theme, self.system.dark())
     }
 
     /// Whether the desktop layer window is drawn: the additive
@@ -575,7 +626,7 @@ mod tests {
     fn app_with_display(display: ShellDisplay) -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        app.shell_display = display;
+        app.system.set_shell(display);
         app
     }
 

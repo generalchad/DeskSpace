@@ -236,7 +236,7 @@ impl App {
         self.selection.typed.push(ch);
         Self::set_timer(ui, Timer::Type, TYPE_DELAY_MS);
         let show_extensions =
-            self.surface_match_explorer(surface) && self.shell_display.show_extensions;
+            self.surface_match_explorer(surface) && self.system.shell().show_extensions;
         let labels: Vec<String> = self
             .surface_items(surface)
             .iter()
@@ -373,7 +373,7 @@ impl App {
     pub(super) fn active_items(&self) -> Vec<ItemId> {
         // Ticks can only be made in a space that shows check boxes, so any
         // left over in independent mode are the operand.
-        let independent = self.shell_display.check_boxes == CheckBoxMode::Independent;
+        let independent = self.system.shell().check_boxes == CheckBoxMode::Independent;
         if independent && !self.selection.checked.is_empty() {
             self.selection.checked.clone()
         } else {
@@ -565,10 +565,10 @@ mod tests {
     fn independent_checks_are_the_operand() {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
         let mut app = App::new(Config::new(), store, false, false);
-        app.shell_display = ShellDisplay {
+        app.system.set_shell(ShellDisplay {
             check_boxes: CheckBoxMode::Independent,
             ..ShellDisplay::default()
-        };
+        });
         app.selection.items = vec![ItemId(1)];
         app.selection.checked = vec![ItemId(2), ItemId(3)];
         assert_eq!(app.active_items(), vec![ItemId(2), ItemId(3)]);

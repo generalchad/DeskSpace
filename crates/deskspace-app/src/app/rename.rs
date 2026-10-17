@@ -124,7 +124,7 @@ impl App {
     }
 
     pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        let show_extensions = self.match_explorer(space) && self.shell_display.show_extensions;
+        let show_extensions = self.match_explorer(space) && self.system.shell().show_extensions;
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };

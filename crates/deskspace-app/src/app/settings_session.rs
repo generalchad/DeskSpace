@@ -76,7 +76,7 @@ impl App {
             settings::build_form(
                 &self.config,
                 session,
-                self.system_dark,
+                self.system.dark(),
                 self.store.path(),
                 preview,
             )
@@ -92,7 +92,7 @@ impl App {
         };
         let id = space.id;
         let show_extensions =
-            self.surface_match_explorer(Surface::Space(id)) && self.shell_display.show_extensions;
+            self.surface_match_explorer(Surface::Space(id)) && self.system.shell().show_extensions;
         let overlay_size = space.theme(&self.config.theme).overlay_size;
         let title = space.title().to_owned();
         let entries: Vec<(PathBuf, String)> = space
@@ -182,7 +182,7 @@ impl App {
                     session,
                     field,
                     value,
-                    self.system_dark,
+                    self.system.dark(),
                 );
                 if effect == Effect::Appearance {
                     ui.set_ui_dark(self.ui_dark());
@@ -316,7 +316,7 @@ impl App {
         let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
-        let edit = settings::space_edit(&self.config, session, field, value, self.system_dark);
+        let edit = settings::space_edit(&self.config, session, field, value, self.system.dark());
         // Not `commit`: the edit is previewed now and saved by Apply.
         if let Some((id, command, effect)) = edit
             && self.dispatch(command, self.space_center(id)).is_applied()

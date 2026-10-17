@@ -656,7 +656,6 @@ it, outside tests):
 
 | Field | Used in |
 |-------|---------|
-| `system_dark`, `system_accent`, `shell_display` | `app.rs`, `view`, `hit`, `selection`, `zoom`, `rename`, `settings_session` |
 | `scroll`, `icon_scales` | `hit`, `selection`, `pointer`, `files`, `menus`, `settings_session`; `view` |
 
 Rules for every N task:
@@ -671,13 +670,6 @@ Rules for every N task:
   one-line accessor, stop and ask (rule 4).
 - Update `CONTEXT.md` section 3's module table if a module's "Owns" column
   changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N5. A `SystemLook` for what Windows reports.** In `app/view.rs`:
-  `struct SystemLook { dark: bool, accent: Option<Color>, shell: ShellDisplay
-  }` with `refresh(&mut self)` (the reads `Event::SystemThemeChanged` and a
-  space click do now). Do it after N3, and after B25 if `on_event`'s theme arm
-  has moved. Mechanical, but it touches seven modules: one commit, and run
-  the gates before it.
 
 - [ ] **N6. A `ViewCache` for per-space view state.** `scroll` and
   `icon_scales` are per-space, not persisted, and keyed by `SpaceId`. Put them

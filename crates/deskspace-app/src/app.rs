@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Color, Command, Desktop, SortKey, Space, SpaceId};
+use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, SelectionKey, ShellDisplay, TrayEvent, Ui,
-    ZoomAction, cursor_pos, desktop_display_since, system_accent_color, system_uses_dark_mode,
+    ClipboardAction, Event, EventHandler, IconCache, SelectionKey, TrayEvent, Ui, ZoomAction,
+    cursor_pos, desktop_display_since,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -34,7 +34,7 @@ use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
 use update::UpdateState;
-pub(crate) use view::LayerState;
+pub(crate) use view::{LayerState, SystemLook};
 
 /// How many global hotkeys can be registered at once, one per binding.
 /// Width of the band along a space's edges that starts a resize.
@@ -347,12 +347,8 @@ pub struct App {
     pub(crate) store: ConfigStore,
     pub(crate) storage: ItemStore,
     icons: IconCache,
-    system_dark: bool,
-    /// Windows' accent color, refreshed on `SystemThemeChanged`; `None` when it
-    /// cannot be read.
-    system_accent: Option<Color>,
-    /// Explorer's current display options, refreshed on change.
-    shell_display: ShellDisplay,
+    /// What Windows reports: dark mode, the accent, Explorer's display.
+    system: SystemLook,
     /// The item selection: the current surface, its items, the Shift anchor,
     /// the keyboard focus, and the cut and check-box marks.
     selection: Selection,
@@ -388,10 +384,8 @@ impl App {
             storage: ItemStore::new(store.storage_dir()),
             store,
             icons: IconCache::new(),
-            system_dark: system_uses_dark_mode(),
-            system_accent: system_accent_color(),
+            system: SystemLook::read(),
             // Read for real in `Started`, once OLE is initialized.
-            shell_display: ShellDisplay::default(),
             selection: Selection::default(),
             pointer: PointerState::default(),
             edit: EditState::default(),
@@ -520,7 +514,8 @@ impl EventHandler for App {
                     self.sync_start_with_windows(true);
                 }
                 // OLE is up by now, so the desktop view can be queried.
-                self.shell_display = desktop_display_since(self.shell_display.check_boxes);
+                let display = desktop_display_since(self.system.shell().check_boxes);
+                self.system.set_shell(display);
                 self.refresh_desktop_entries();
                 self.apply_takeover(ui);
                 self.sync_windows(ui);
@@ -530,7 +525,7 @@ impl EventHandler for App {
                 self.prune_all_missing(ui);
                 tracing::info!(
                     spaces = self.config.desktop.spaces().len(),
-                    dark = self.system_dark,
+                    dark = self.system.dark(),
                     "spaces created"
                 );
                 if std::mem::take(&mut self.open_settings_on_start) {
@@ -583,8 +578,7 @@ impl EventHandler for App {
             Event::Wake { .. } => {}
             Event::Zoom(action) => self.zoom(ui, action),
             Event::SystemThemeChanged => {
-                self.system_dark = system_uses_dark_mode();
-                self.system_accent = system_accent_color();
+                self.system.refresh();
                 ui.set_ui_dark(self.ui_dark());
                 // The desktop view can change its icon size with the theme;
                 // refresh its display options, then restyle for dark mode.

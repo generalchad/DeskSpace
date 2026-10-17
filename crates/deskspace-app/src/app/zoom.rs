@@ -88,7 +88,7 @@ fn zoom_bar(level: ZoomLevel, theme: &Theme, palette: &Palette, system_dark: boo
 
 impl App {
     pub(super) fn zoom_level(&self) -> ZoomLevel {
-        match self.shell_display.icon_size {
+        match self.system.shell().icon_size {
             Some(pixels) if self.config.theme.match_explorer() => ZoomLevel::Desktop(pixels),
             _ => ZoomLevel::Custom(
                 self.config
@@ -170,7 +170,7 @@ impl App {
             self.zoom_level(),
             &self.config.theme,
             &palette,
-            self.system_dark,
+            self.system.dark(),
         ));
         Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
     }

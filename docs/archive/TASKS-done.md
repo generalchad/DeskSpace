@@ -1977,3 +1977,10 @@ until I5-I6 all land, so no partial build hides the desktop.
   HOTKEY_COUNT])` with `register_all(ui, &WindowSettings)` and
   `unregister_all(ui)`, the bodies the start, Apply, and close paths share
   today. `App::on_hotkey` keeps the action `match`.
+
+- [x] **N5. A `SystemLook` for what Windows reports.** In `app/view.rs`:
+  `struct SystemLook { dark: bool, accent: Option<Color>, shell: ShellDisplay
+  }` with `refresh(&mut self)` (the reads `Event::SystemThemeChanged` and a
+  space click do now). Do it after N3, and after B25 if `on_event`'s theme arm
+  has moved. Mechanical, but it touches seven modules: one commit, and run
+  the gates before it.
