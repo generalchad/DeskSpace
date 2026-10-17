@@ -9,8 +9,12 @@ use deskspace_platform::{
     set_desktop_icon_size,
 };
 
-use super::{App, ICON_SIZE_WHEEL_STEP, Surface, WHEEL_DELTA, ZOOM_BAR_MS, ZOOM_BAR_TIMER};
+use super::{App, ICON_SIZE_WHEEL_STEP, Surface, Timer, WHEEL_DELTA};
 use crate::scene::space_style;
+
+/// How long the zoom pop-up stays after the last zoom, unless the pointer is
+/// over it.
+const ZOOM_BAR_MS: u32 = 2_000;
 
 /// The least tint opacity the pop-up is drawn with, so its text stays readable
 /// over any wallpaper even when the spaces are nearly see-through.
@@ -168,7 +172,7 @@ impl App {
             &palette,
             self.system_dark,
         ));
-        ui.set_timer(ZOOM_BAR_TIMER, ZOOM_BAR_MS);
+        Self::set_timer(ui, Timer::ZoomBar, ZOOM_BAR_MS);
     }
 
     /// Hides the pop-up once the pointer is off it. The timer repeats, so a
@@ -178,7 +182,7 @@ impl App {
             return;
         }
         ui.hide_zoom_bar();
-        ui.clear_timer(ZOOM_BAR_TIMER);
+        Self::clear_timer(ui, Timer::ZoomBar);
     }
 }
 

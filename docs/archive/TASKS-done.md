@@ -1752,3 +1752,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     `render/mod.rs`, if one fits).
   - No allocation in the paint path (`AGENTS.md`).
   - Done when: the three allows are gone.
+
+- [x] **B15. Timer ids as an enum.** The app's timer ids are eight loose
+  `const`s in `app.rs` (`AUTOSAVE_TIMER` ... `HEALTH_TIMER`), declared out of
+  order, and `on_event` matches them with eight `if id == ...` guards.
+  - Add `#[repr(usize)] enum Timer { Autosave = 1, Caret = 2, InfoTip = 3,
+    Update = 4, Highlight = 5, Preview = 6, Type = 7, Health = 8 }` (the
+    existing values; never renumber) with `fn from_id(id: usize) ->
+    Option<Self>`, and small `App` wrappers `set_timer(ui, Timer, ms)` /
+    `clear_timer(ui, Timer)` over `Ui::set_timer` / `clear_timer`. Keep each
+    `*_MS` delay constant beside the module that uses it.
+  - `on_event`: one `Event::Timer { id }` arm that matches
+    `Timer::from_id(id)`.
+  - Test: `from_id` round-trips every variant and rejects 0 and 9.
+  - Docs: the timer table in `CONTEXT.md` section 6 names the variants.
+  - Done with all ten timers: `UpdateIdle = 9` and `ZoomBar = 10` landed
+    after this task was written, so the test rejects 0 and 11 (maintainer,
+    2026-10-16).

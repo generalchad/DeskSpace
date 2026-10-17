@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (402 tests) are green. Update this count whenever a
+  `cargo test --workspace` (403 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -524,22 +524,26 @@ range):
 Next free: 15. A new message also goes in the `ALL` list of the
 `messages.rs` tests, which check the values are unique.
 
-App timer ids (`deskspace-app/src/app.rs`, delivered as `Event::Timer`):
+App timer ids (the `Timer` enum in `deskspace-app/src/app.rs`, delivered as
+`Event::Timer` and dispatched by `App::on_timer`; set and cleared through
+`App::set_timer` / `App::clear_timer`, with each delay constant in the module
+that starts the timer):
 
-| Id | Constant | Period | Purpose |
+| Id | Variant | Period | Purpose |
 |----|----------|--------|---------|
-| 1 | `AUTOSAVE_TIMER` | 700 ms | debounced config save |
-| 2 | `CARET_TIMER` | 530 ms | rename caret blink |
-| 3 | `INFO_TIP_TIMER` | 600 ms | hover delay before an info tip |
-| 4 | `UPDATE_TIMER` | 60 s, then hourly | periodic update check (F-45) |
-| 5 | `HIGHLIGHT_TIMER` | 1200 ms | settings-window highlight on a space |
-| 6 | `PREVIEW_TIMER` | 15 ms | deferred settings preview (fires when the queue is idle) |
-| 7 | `TYPE_TIMER` | 900 ms | type-to-select prefix buffer |
-| 8 | `HEALTH_TIMER` | 5000 ms | re-hide Explorer's icons while takeover is on |
-| 9 | `UPDATE_IDLE_TIMER` | 60 s | quiet-moment poll for a downloaded automatic update |
-| 10 | `ZOOM_BAR_TIMER` | 2000 ms | hide the zoom pop-up once the pointer is off it (F-57) |
+| 1 | `Timer::Autosave` | 700 ms | debounced config save |
+| 2 | `Timer::Caret` | 530 ms | rename caret blink |
+| 3 | `Timer::InfoTip` | 600 ms | hover delay before an info tip |
+| 4 | `Timer::Update` | 60 s, then hourly | periodic update check (F-45) |
+| 5 | `Timer::Highlight` | 1200 ms | settings-window highlight on a space |
+| 6 | `Timer::Preview` | 15 ms | deferred settings preview (fires when the queue is idle) |
+| 7 | `Timer::Type` | 900 ms | type-to-select prefix buffer |
+| 8 | `Timer::Health` | 5000 ms | re-hide Explorer's icons while takeover is on |
+| 9 | `Timer::UpdateIdle` | 60 s | quiet-moment poll for a downloaded automatic update |
+| 10 | `Timer::ZoomBar` | 2000 ms | hide the zoom pop-up once the pointer is off it (F-57) |
 
-Next free: 10. Menu ids are in `app.rs`'s `mod menu` (1-13, 20-28, 30-36,
+Next free: 11 (a new `Timer` variant also joins `Timer::ALL` and the exhaustive
+`App::on_timer`). Menu ids are in `app.rs`'s `mod menu` (1-13, 20-28, 30-36,
 41-48; next free 14, or 49; 9, the removed "Remove from space", stays
 unused); item-menu app ids must stay below
 `0x8000` (`shell_items::SHELL_FIRST_ID`), where the shell's ids start.
@@ -961,7 +965,7 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   percentage, a divider, and Reset, with a hover fill and dimmed disabled
   buttons. `Ui::show_zoom_bar` places it at the top center of that monitor's
   work area; a click on a button (press and release on the same one) raises
-  `Event::Zoom`. The app hides it after `ZOOM_BAR_TIMER` unless
+  `Event::Zoom`. The app hides it after `Timer::ZoomBar` unless
   `Ui::is_zoom_bar_hovered`.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
@@ -1031,7 +1035,7 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   highlights it on the desktop for about 1.2 s so it can be found: the
   space's scene sets `SpaceScene::highlight`, and the painter draws a 2 px
   outline just inside the frame in the space's `selected_fill` at full alpha.
-  `HIGHLIGHT_TIMER` clears it; selecting another space moves it, and Cancel,
+  `Timer::Highlight` clears it; selecting another space moves it, and Cancel,
   OK, and closing the window clear it too.
 - The app's form (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Global lists every page but
@@ -1213,7 +1217,7 @@ after About) and `settings::listed_pages` says which pages a scope lists.
    Apply/OK save at once, and closing flushes any pending write.
 5. Settings edits apply at once as a preview: global edits to the live config,
    a customized space's edits through `SetSpaceLook`. Repainting the spaces is
-   deferred to `PREVIEW_TIMER`, which only fires once the message queue is
+   deferred to `Timer::Preview`, which only fires once the message queue is
    idle, so a slider drag collapses into one restyle or re-flow per pause
    (all spaces for a global edit, one for a space edit). Apply/OK validate and
    re-register every hotkey, sync start-with-Windows, apply or remove

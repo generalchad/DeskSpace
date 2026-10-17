@@ -9,7 +9,10 @@ use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
 use crate::scene::item_label;
 
-use super::{App, CARET_BLINK_MS, CARET_TIMER, Surface};
+use super::{App, Surface, Timer};
+
+/// Caret blink half-period, matching Windows' default.
+const CARET_BLINK_MS: u32 = 530;
 
 /// What an inline edit is renaming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +34,7 @@ pub(super) struct EditSession {
 }
 
 /// The inline-edit state: the active rename session, if any, and whether the
-/// caret is currently shown (toggled by `CARET_TIMER`).
+/// caret is currently shown (toggled by `Timer::Caret`).
 #[derive(Debug, Default)]
 pub(super) struct EditState {
     session: Option<EditSession>,
@@ -100,7 +103,7 @@ impl App {
             original: original.clone(),
             text: TextEdit::new(original),
         });
-        ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
+        Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_space(ui, id);
     }
@@ -144,7 +147,7 @@ impl App {
             original,
             text,
         });
-        ui.set_timer(CARET_TIMER, CARET_BLINK_MS);
+        Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
         self.refresh_space(ui, space);
     }
@@ -174,7 +177,7 @@ impl App {
             return;
         };
         ui.capture_text_input(false);
-        ui.clear_timer(CARET_TIMER);
+        Self::clear_timer(ui, Timer::Caret);
         let surface = session.surface;
         match session.target {
             EditTarget::Title => {
@@ -265,7 +268,7 @@ impl App {
     /// Toggles the edit caret so it blinks, as Windows does.
     pub(super) fn blink_caret(&mut self, ui: &mut Ui) {
         let Some(surface) = self.edit.surface() else {
-            ui.clear_timer(CARET_TIMER);
+            Self::clear_timer(ui, Timer::Caret);
             return;
         };
         self.edit.toggle_caret();

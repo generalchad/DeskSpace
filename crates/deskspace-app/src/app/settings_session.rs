@@ -9,9 +9,14 @@ use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, U
 use crate::scene::item_label;
 use crate::settings::{self, ButtonAction, Effect, Session, SpaceSnapshot};
 
-use super::{
-    App, HIGHLIGHT_MS, HIGHLIGHT_TIMER, PREVIEW_DELAY_MS, PREVIEW_TIMER, Preview, Surface,
-};
+use super::{App, Preview, Surface, Timer};
+
+/// How long a settings preview may lag the edit that caused it. `WM_TIMER`
+/// is only delivered once the queue is empty, so a burst of slider ticks
+/// collapses into one restyle or re-flow.
+const PREVIEW_DELAY_MS: u32 = 15;
+/// How long the space selected in the settings window stays highlighted.
+const HIGHLIGHT_MS: u32 = 1200;
 
 /// The pixel size of the icons rendered for the Shortcuts page preview. The
 /// preview draws them at 40 px at 100 % scaling, so 64 px stays sharp up to
@@ -114,13 +119,13 @@ impl App {
             self.highlighted = Some(id);
             self.refresh_space(ui, id);
         }
-        ui.set_timer(HIGHLIGHT_TIMER, HIGHLIGHT_MS);
+        Self::set_timer(ui, Timer::Highlight, HIGHLIGHT_MS);
     }
 
     /// Removes the settings-window highlight, if any.
     pub(super) fn clear_highlight(&mut self, ui: &mut Ui) {
         if let Some(id) = self.highlighted.take() {
-            ui.clear_timer(HIGHLIGHT_TIMER);
+            Self::clear_timer(ui, Timer::Highlight);
             if self.config.desktop.space(id).is_some() {
                 self.refresh_space(ui, id);
             }
@@ -248,14 +253,14 @@ impl App {
     /// ticks in between collapse into one pass.
     pub(super) fn schedule_preview(&mut self, ui: &mut Ui, preview: Preview) {
         if !self.pending_preview.is_pending() {
-            ui.set_timer(PREVIEW_TIMER, PREVIEW_DELAY_MS);
+            Self::set_timer(ui, Timer::Preview, PREVIEW_DELAY_MS);
         }
         self.pending_preview.merge(preview);
     }
 
     /// Runs the deferred settings preview.
     pub(super) fn flush_preview(&mut self, ui: &mut Ui) {
-        ui.clear_timer(PREVIEW_TIMER);
+        Self::clear_timer(ui, Timer::Preview);
         let preview = std::mem::take(&mut self.pending_preview);
         if preview.restyle_all {
             self.restyle_all(ui);
@@ -366,7 +371,7 @@ impl App {
         // The revert below restyles and re-flows from the saved settings, which
         // covers any preview still waiting for its timer.
         if std::mem::take(&mut self.pending_preview).is_pending() {
-            ui.clear_timer(PREVIEW_TIMER);
+            Self::clear_timer(ui, Timer::Preview);
         }
         self.clear_highlight(ui);
         let restyle = settings::needs_restyle(&session, &self.config);

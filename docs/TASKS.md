@@ -226,20 +226,6 @@ user-visible change is expected. Do them in any order.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
 
-- [ ] **B15. Timer ids as an enum.** The app's timer ids are eight loose
-  `const`s in `app.rs` (`AUTOSAVE_TIMER` ... `HEALTH_TIMER`), declared out of
-  order, and `on_event` matches them with eight `if id == ...` guards.
-  - Add `#[repr(usize)] enum Timer { Autosave = 1, Caret = 2, InfoTip = 3,
-    Update = 4, Highlight = 5, Preview = 6, Type = 7, Health = 8 }` (the
-    existing values; never renumber) with `fn from_id(id: usize) ->
-    Option<Self>`, and small `App` wrappers `set_timer(ui, Timer, ms)` /
-    `clear_timer(ui, Timer)` over `Ui::set_timer` / `clear_timer`. Keep each
-    `*_MS` delay constant beside the module that uses it.
-  - `on_event`: one `Event::Timer { id }` arm that matches
-    `Timer::from_id(id)`.
-  - Test: `from_id` round-trips every variant and rejects 0 and 9.
-  - Docs: the timer table in `CONTEXT.md` section 6 names the variants.
-
 - [ ] **B16. One home for the key list.** The full key list is kept in three
   places (`AGENTS.md` Gotchas, `CONTEXT.md` section 8, `README.md`
   Controls), so the key recipe edits all three.

@@ -17,7 +17,11 @@ use crate::scene::{
 };
 
 use super::rename::EditTarget;
-use super::{App, HEALTH_MS, HEALTH_TIMER, Surface};
+use super::{App, Surface, Timer};
+
+/// How often, while takeover is on, to re-hide Explorer's icon layer in case
+/// it recreated it without broadcasting `TaskbarCreated`.
+const HEALTH_MS: u32 = 5_000;
 
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -351,12 +355,12 @@ impl App {
                 arm_watchdog();
                 hide_desktop_icons();
             }
-            ui.set_timer(HEALTH_TIMER, HEALTH_MS);
+            Self::set_timer(ui, Timer::Health, HEALTH_MS);
         } else {
             if !cfg!(test) {
                 restore_desktop_icons();
             }
-            ui.clear_timer(HEALTH_TIMER);
+            Self::clear_timer(ui, Timer::Health);
         }
         if !self.layer_active() {
             ui.destroy_desktop_layer();

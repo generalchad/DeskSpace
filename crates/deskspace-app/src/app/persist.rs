@@ -5,7 +5,10 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{Ui, work_area_at};
 
-use super::{AUTOSAVE_DELAY_MS, AUTOSAVE_TIMER, App};
+use super::{App, Timer};
+
+/// How long after the last change the configuration is written.
+const AUTOSAVE_DELAY_MS: u32 = 700;
 
 impl App {
     pub(super) fn dispatch(&mut self, command: Command, near: Point) -> bool {
@@ -35,14 +38,14 @@ impl App {
     /// timer on every change so a burst of them writes once.
     pub(super) fn schedule_save(&mut self, ui: &mut Ui) {
         self.autosave.mark();
-        ui.set_timer(AUTOSAVE_TIMER, AUTOSAVE_DELAY_MS);
+        Self::set_timer(ui, Timer::Autosave, AUTOSAVE_DELAY_MS);
     }
 
     /// Writes any deferred change now and stops the autosave timer. Used when
     /// the timer fires and when the app closes, so nothing is lost.
     pub(super) fn flush_save(&mut self, ui: &mut Ui) {
         if self.autosave.take() {
-            ui.clear_timer(AUTOSAVE_TIMER);
+            Self::clear_timer(ui, Timer::Autosave);
         }
         self.save();
     }

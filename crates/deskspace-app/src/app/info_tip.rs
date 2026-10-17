@@ -3,13 +3,13 @@
 use deskspace_core::geometry::Point;
 use deskspace_platform::Ui;
 
-use super::{App, INFO_TIP_TIMER};
+use super::{App, Timer};
 
 impl App {
     /// Shows the info tip for the hovered item, once the pointer has rested on
     /// it, as Explorer does.
     pub(super) fn show_info_tip(&mut self, ui: &mut Ui) {
-        ui.clear_timer(INFO_TIP_TIMER);
+        Self::clear_timer(ui, Timer::InfoTip);
         let Some((surface, item)) = self.pointer.hovered() else {
             return;
         };
@@ -25,6 +25,6 @@ impl App {
     /// drag interrupts the hover.
     pub(super) fn dismiss_info_tip(&mut self, ui: &mut Ui) {
         ui.hide_info_tip();
-        ui.clear_timer(INFO_TIP_TIMER);
+        Self::clear_timer(ui, Timer::InfoTip);
     }
 }

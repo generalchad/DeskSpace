@@ -9,7 +9,10 @@ use deskspace_platform::{CheckBoxMode, NavDir, NavKey, Ui};
 
 use crate::scene::item_label;
 
-use super::{App, ScrollKey, Surface, TYPE_DELAY_MS, TYPE_TIMER};
+use super::{App, ScrollKey, Surface, Timer};
+
+/// How long a type-to-select prefix lasts without another keystroke.
+const TYPE_DELAY_MS: u32 = 900;
 
 /// The item selection and the per-item marks that travel with it: the current
 /// surface, the selected items, the Shift anchor, the keyboard focus, the cut
@@ -214,13 +217,13 @@ impl App {
 
     /// Type-to-select: appends `ch` to the prefix buffer and selects the next
     /// item whose label starts with it, wrapping around. The buffer clears
-    /// after a pause (`TYPE_TIMER`), so a new search starts fresh.
+    /// after a pause (`Timer::Type`), so a new search starts fresh.
     pub(super) fn on_typed(&mut self, ui: &mut Ui, ch: char) {
         let Some(surface) = self.selection.surface else {
             return;
         };
         self.type_buffer.push(ch);
-        ui.set_timer(TYPE_TIMER, TYPE_DELAY_MS);
+        Self::set_timer(ui, Timer::Type, TYPE_DELAY_MS);
         let show_extensions =
             self.surface_match_explorer(surface) && self.shell_display.show_extensions;
         let labels: Vec<String> = self

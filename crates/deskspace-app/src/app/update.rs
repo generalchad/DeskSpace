@@ -24,9 +24,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use deskspace_platform::{Ui, idle_time, user_is_presenting};
 use deskspace_update::{Available, InstallMode, Package};
 
-use super::{
-    App, UPDATE_DOWNLOADED_WAKE, UPDATE_IDLE_TIMER, UPDATE_TIMER, UPDATE_WAKE, tray_tooltip,
-};
+use super::{App, Timer, UPDATE_DOWNLOADED_WAKE, UPDATE_WAKE, tray_tooltip};
 
 /// The first automatic check runs shortly after start, then hourly while the
 /// app is open (each hourly tick checks whether a day has passed).
@@ -125,9 +123,9 @@ impl App {
     /// itself.
     pub(super) fn sync_update_schedule(&mut self, ui: &mut Ui) {
         if self.config.window.check_for_updates && deskspace_update::is_configured() {
-            ui.set_timer(UPDATE_TIMER, UPDATE_FIRST_DELAY_MS);
+            Self::set_timer(ui, Timer::Update, UPDATE_FIRST_DELAY_MS);
         } else {
-            ui.clear_timer(UPDATE_TIMER);
+            Self::clear_timer(ui, Timer::Update);
         }
     }
 
@@ -135,10 +133,10 @@ impl App {
     /// timer is re-armed either way so the schedule keeps ticking.
     pub(super) fn on_update_timer(&mut self, ui: &mut Ui) {
         if !self.config.window.check_for_updates {
-            ui.clear_timer(UPDATE_TIMER);
+            Self::clear_timer(ui, Timer::Update);
             return;
         }
-        ui.set_timer(UPDATE_TIMER, UPDATE_TICK_MS);
+        Self::set_timer(ui, Timer::Update, UPDATE_TICK_MS);
         if check_due(self.config.window.last_update_check, now_unix()) {
             self.start_update_check(ui, false);
         }
@@ -297,7 +295,7 @@ impl App {
                 tracing::info!(version = package.version, "update ready to install");
                 self.update.ready = Some(package);
                 self.refresh_tray(ui);
-                ui.set_timer(UPDATE_IDLE_TIMER, UPDATE_IDLE_POLL_MS);
+                Self::set_timer(ui, Timer::UpdateIdle, UPDATE_IDLE_POLL_MS);
             }
             (Err(error), Some(DownloadReason::UserAsked)) => {
                 tracing::error!(%error, "update download failed");
@@ -313,7 +311,7 @@ impl App {
     /// so the tray can still offer it.
     pub(super) fn on_update_idle_timer(&mut self, ui: &mut Ui) {
         if self.update.ready.is_none() || !self.config.window.install_updates {
-            ui.clear_timer(UPDATE_IDLE_TIMER);
+            Self::clear_timer(ui, Timer::UpdateIdle);
             return;
         }
         // An open settings window or a rename would lose unapplied edits.
@@ -327,7 +325,7 @@ impl App {
     /// or a quiet moment).
     pub(super) fn install_ready_update(&mut self, ui: &mut Ui, mode: InstallMode) {
         if let Some(package) = self.update.ready.take() {
-            ui.clear_timer(UPDATE_IDLE_TIMER);
+            Self::clear_timer(ui, Timer::UpdateIdle);
             self.install_and_quit(ui, package, mode);
         }
     }

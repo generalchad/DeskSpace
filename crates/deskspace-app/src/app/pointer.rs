@@ -11,7 +11,11 @@ use super::drag::Drag;
 use super::files::ShortcutSource;
 use super::selection::marquee_selection;
 
-use super::{App, INFO_TIP_DELAY_MS, INFO_TIP_TIMER, RESIZE_BORDER, Surface, WHEEL_DELTA};
+use super::{App, RESIZE_BORDER, Surface, Timer, WHEEL_DELTA};
+
+/// How long the pointer must rest on an item before its info tip appears,
+/// matching Explorer's tooltip delay.
+const INFO_TIP_DELAY_MS: u32 = 600;
 
 /// A left press on an already-selected item without Ctrl/Shift, resolved on
 /// release if it did not become a drag.
@@ -455,9 +459,9 @@ impl App {
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
-        ui.clear_timer(INFO_TIP_TIMER);
+        Self::clear_timer(ui, Timer::InfoTip);
         if hovered.is_some() {
-            ui.set_timer(INFO_TIP_TIMER, INFO_TIP_DELAY_MS);
+            Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
         }
         if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
             self.refresh_surface(ui, owner);

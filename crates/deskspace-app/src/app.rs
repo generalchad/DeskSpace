@@ -42,52 +42,57 @@ const RESIZE_BORDER: i32 = 6;
 const WHEEL_DELTA: i32 = 120;
 /// Icon-size percent changed by one Ctrl+wheel notch.
 const ICON_SIZE_WHEEL_STEP: i32 = 10;
-/// Timer id for the debounced configuration save.
-const AUTOSAVE_TIMER: usize = 1;
-/// How long after the last change the configuration is written.
-const AUTOSAVE_DELAY_MS: u32 = 700;
-/// Timer id for the blinking edit caret.
-const CARET_TIMER: usize = 2;
-/// Caret blink half-period, matching Windows' default.
-const CARET_BLINK_MS: u32 = 530;
-/// Timer id for the delayed item info tip.
-const INFO_TIP_TIMER: usize = 3;
-/// How long the pointer must rest on an item before its info tip appears,
-/// matching Explorer's tooltip delay.
-const INFO_TIP_DELAY_MS: u32 = 600;
-/// Timer id for the deferred settings preview (id 4 is the update timer).
-const PREVIEW_TIMER: usize = 6;
-/// How long a settings preview may lag the edit that caused it. `WM_TIMER`
-/// is only delivered once the queue is empty, so a burst of slider ticks
-/// collapses into one restyle or re-flow.
-const PREVIEW_DELAY_MS: u32 = 15;
-/// Timer id for the periodic update check (`app/update.rs`).
-const UPDATE_TIMER: usize = 4;
 /// Wake ids passed to `Ui::waker` by the update worker threads: the check
 /// result, then the download result.
 const UPDATE_WAKE: usize = 0;
 const UPDATE_DOWNLOADED_WAKE: usize = 1;
-/// Timer id for the settings-window highlight on a space.
-const HIGHLIGHT_TIMER: usize = 5;
-/// How long the space selected in the settings window stays highlighted.
-const HIGHLIGHT_MS: u32 = 1200;
-/// Timer id for the type-to-select prefix buffer.
-const TYPE_TIMER: usize = 7;
-/// How long a type-to-select prefix lasts without another keystroke.
-const TYPE_DELAY_MS: u32 = 900;
-/// Timer id for the desktop-takeover health check.
-const HEALTH_TIMER: usize = 8;
-/// How often, while takeover is on, to re-hide Explorer's icon layer in case
-/// it recreated it without broadcasting `TaskbarCreated`.
-const HEALTH_MS: u32 = 5_000;
-/// Timer id for the quiet-moment poll of a downloaded automatic update
-/// (`app/update.rs`).
-const UPDATE_IDLE_TIMER: usize = 9;
-/// Timer id for hiding the zoom pop-up (`app/zoom.rs`).
-const ZOOM_BAR_TIMER: usize = 10;
-/// How long the zoom pop-up stays after the last zoom, unless the pointer is
-/// over it.
-const ZOOM_BAR_MS: u32 = 2_000;
+/// The app's timers, delivered back as `Event::Timer` with the variant's
+/// value as the id. The values are cited in `CONTEXT.md` section 6; never
+/// renumber them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+enum Timer {
+    /// The debounced configuration save.
+    Autosave = 1,
+    /// The blinking edit caret.
+    Caret = 2,
+    /// The delayed item info tip.
+    InfoTip = 3,
+    /// The periodic update check (`app/update.rs`).
+    Update = 4,
+    /// The settings-window highlight on a space.
+    Highlight = 5,
+    /// The deferred settings preview.
+    Preview = 6,
+    /// The type-to-select prefix buffer.
+    Type = 7,
+    /// The desktop-takeover health check.
+    Health = 8,
+    /// The quiet-moment poll of a downloaded automatic update
+    /// (`app/update.rs`).
+    UpdateIdle = 9,
+    /// Hiding the zoom pop-up (`app/zoom.rs`).
+    ZoomBar = 10,
+}
+
+impl Timer {
+    const ALL: [Self; 10] = [
+        Self::Autosave,
+        Self::Caret,
+        Self::InfoTip,
+        Self::Update,
+        Self::Highlight,
+        Self::Preview,
+        Self::Type,
+        Self::Health,
+        Self::UpdateIdle,
+        Self::ZoomBar,
+    ];
+
+    fn from_id(id: usize) -> Option<Self> {
+        Self::ALL.into_iter().find(|timer| *timer as usize == id)
+    }
+}
 
 mod menu {
     pub const ROLL: u32 = 1;
@@ -353,7 +358,7 @@ pub struct App {
     pointer: PointerState,
     /// The in-progress inline rename, of a space title or an item label.
     edit: EditState,
-    /// Pending configuration write, debounced by `AUTOSAVE_TIMER`.
+    /// Pending configuration write, debounced by `Timer::Autosave`.
     autosave: Autosave,
     /// Per-space scroll offset in pixels. Not persisted; may exceed the
     /// current maximum after a resize, so read it through `scroll_of`.
@@ -368,13 +373,13 @@ pub struct App {
     /// Whether the platform is reporting clicks outside spaces; kept on only
     /// while an item is selected.
     watching_outside: bool,
-    /// A settings edit is waiting for `PREVIEW_TIMER` to restyle or re-flow
+    /// A settings edit is waiting for `Timer::Preview` to restyle or re-flow
     /// every space.
     pending_preview: Preview,
     settings: Option<Session>,
-    /// The space highlighted for the settings window, until `HIGHLIGHT_TIMER`.
+    /// The space highlighted for the settings window, until `Timer::Highlight`.
     highlighted: Option<SpaceId>,
-    /// The keys typed so far for type-to-select, cleared by `TYPE_TIMER`.
+    /// The keys typed so far for type-to-select, cleared by `Timer::Type`.
     type_buffer: String,
     open_settings_on_start: bool,
     /// Draw the loose desktop items on a chrome-less layer window (hidden
@@ -473,6 +478,33 @@ impl App {
             self.selection.clear();
         }
         self.apply_to_space(ui, id, Command::ToggleRollup { id }, near);
+    }
+
+    // ---- timers --------------------------------------------------------
+
+    fn set_timer(ui: &mut Ui, timer: Timer, millis: u32) {
+        ui.set_timer(timer as usize, millis);
+    }
+
+    fn clear_timer(ui: &mut Ui, timer: Timer) {
+        ui.clear_timer(timer as usize);
+    }
+
+    /// Runs the work of a timer that fired.
+    fn on_timer(&mut self, ui: &mut Ui, timer: Timer) {
+        match timer {
+            Timer::Autosave => self.flush_save(ui),
+            Timer::Caret => self.blink_caret(ui),
+            Timer::InfoTip => self.show_info_tip(ui),
+            Timer::Update => self.on_update_timer(ui),
+            Timer::Highlight => self.clear_highlight(ui),
+            Timer::Preview => self.flush_preview(ui),
+            // The type-to-select prefix expired; the next key starts fresh.
+            Timer::Type => self.type_buffer.clear(),
+            Timer::Health => self.health_tick(),
+            Timer::UpdateIdle => self.on_update_idle_timer(ui),
+            Timer::ZoomBar => self.on_zoom_bar_timer(ui),
+        }
     }
 
     // ---- hotkey --------------------------------------------------------
@@ -596,18 +628,11 @@ impl EventHandler for App {
                 self.show_tray_menu(ui, Point::new(x, y));
             }
             Event::Settings(event) => self.on_settings_event(ui, event),
-            Event::Timer { id } if id == AUTOSAVE_TIMER => self.flush_save(ui),
-            Event::Timer { id } if id == CARET_TIMER => self.blink_caret(ui),
-            Event::Timer { id } if id == INFO_TIP_TIMER => self.show_info_tip(ui),
-            Event::Timer { id } if id == PREVIEW_TIMER => self.flush_preview(ui),
-            Event::Timer { id } if id == HIGHLIGHT_TIMER => self.clear_highlight(ui),
-            // The type-to-select prefix expired; the next key starts fresh.
-            Event::Timer { id } if id == TYPE_TIMER => self.type_buffer.clear(),
-            Event::Timer { id } if id == HEALTH_TIMER => self.health_tick(),
-            Event::Timer { id } if id == UPDATE_TIMER => self.on_update_timer(ui),
-            Event::Timer { id } if id == UPDATE_IDLE_TIMER => self.on_update_idle_timer(ui),
-            Event::Timer { id } if id == ZOOM_BAR_TIMER => self.on_zoom_bar_timer(ui),
-            Event::Timer { .. } => {}
+            Event::Timer { id } => {
+                if let Some(timer) = Timer::from_id(id) {
+                    self.on_timer(ui, timer);
+                }
+            }
             // Worker threads hand their result back through the waker.
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
@@ -684,6 +709,15 @@ mod tests {
     use deskspace_core::ItemFacts;
     use deskspace_core::{ItemId, Rect};
     use std::path::PathBuf;
+
+    #[test]
+    fn timer_ids_round_trip() {
+        for timer in Timer::ALL {
+            assert_eq!(Timer::from_id(timer as usize), Some(timer));
+        }
+        assert_eq!(Timer::from_id(0), None);
+        assert_eq!(Timer::from_id(11), None);
+    }
 
     #[test]
     fn item_cells_place_each_dragged_item_in_desktop_coordinates() {
