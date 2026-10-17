@@ -78,6 +78,7 @@ impl App {
             custom: true,
             look: Some(look),
         };
+        // Not `commit`: a new look needs a restyle and re-flow, not a repaint.
         if self.dispatch(command, at).is_applied() {
             self.space_look_changed(ui, id);
         }
@@ -124,6 +125,7 @@ impl App {
             on: false,
             seed: SpaceLook::from_global(&self.config.theme, &self.config.desktop.layout),
         };
+        // Not `commit`: a new look needs a restyle and re-flow, not a repaint.
         if self.dispatch(command, at).is_applied() {
             self.space_look_changed(ui, id);
         }
@@ -435,6 +437,8 @@ impl App {
             size,
             locked,
         };
+        // Not `commit`: a new space needs a window (`sync_windows`), not a
+        // repaint.
         if self.dispatch(command, origin).is_applied() {
             if !self.visible {
                 self.set_visible(ui, true);
