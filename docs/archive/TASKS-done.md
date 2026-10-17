@@ -2016,3 +2016,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: make the scratch config read-only (`attrib +r`)
     and move a space. One box appears; a second move shows none. Clear the
     attribute and move again; the file is saved.
+
+- [x] **B30. Lay a command out on the grid of the space it targets.**
+  Today `App::dispatch` picks the grid from `space_at(near)`, the topmost
+  space under the point. When spaces overlap, that can be a different space
+  from the one the command changes. After B28b:
+  - In `dispatch`, take `touched_by(&command).spaces.first()`. If it is a
+    space that exists, use `self.layout_for(id)`. Otherwise keep today's
+    `space_at(near)` fallback.
+  - Done when: the gates pass. **[needs human]** check: overlap two spaces
+    with different icon sizes, then sort or arrange the lower one. Its icons
+    land on its own grid.

@@ -15,13 +15,21 @@ const AUTOSAVE_DELAY_MS: u32 = 700;
 impl App {
     pub(super) fn dispatch(&mut self, command: Command, near: Point) -> CommandOutcome {
         let bounds = work_area_at(near);
-        // Use the grid of the space under the action so a command that moves or
-        // arranges items lands on the same monitor's scale.
-        let layout = self
+        // Lay the command out on the grid of the space it changes (for a move,
+        // the destination), so the result matches that space's monitor scale
+        // and icon size even when another space overlaps it at `near`. A
+        // command that names no existing space falls back to the space under
+        // the action.
+        let target = self
             .config
             .desktop
-            .space_at(near)
-            .map_or_else(|| self.effective_layout(), |id| self.layout_for(id));
+            .touched_by(&command)
+            .spaces
+            .first()
+            .copied()
+            .filter(|id| self.config.desktop.space(*id).is_some())
+            .or_else(|| self.config.desktop.space_at(near));
+        let layout = target.map_or_else(|| self.effective_layout(), |id| self.layout_for(id));
         let outcome = self
             .config
             .desktop
