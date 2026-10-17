@@ -1827,3 +1827,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     for the values).
   - Done when: `rg -n "desktop.spaces" crates/deskspace-config/src` finds
     nothing outside `#[cfg(test)]` modules.
+
+- [x] **B27b. Add read accessors (core only).**
+  - In `deskspace-core/src/space.rs` `impl Space`, add one-line public
+    getters: `title(&self) -> &str`, `rect(&self) -> Rect`,
+    `items(&self) -> &[Item]`, `locked(&self) -> bool`,
+    `rolled_up(&self) -> bool`, `custom(&self) -> bool`,
+    `look(&self) -> Option<&SpaceLook>`, `user_sized(&self) -> bool`.
+  - In `deskspace-core/src/desktop.rs`, add `spaces(&self) -> &[Space]`.
+  - Leave `id` public: it never changes after creation.
+  - If a method with one of these names already exists, stop and ask.
+  - Change no caller in this commit. Done when: the gates pass.

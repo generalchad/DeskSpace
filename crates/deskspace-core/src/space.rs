@@ -145,6 +145,38 @@ impl Space {
         }
     }
 
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn rect(&self) -> Rect {
+        self.rect
+    }
+
+    pub fn items(&self) -> &[Item] {
+        &self.items
+    }
+
+    pub fn locked(&self) -> bool {
+        self.locked
+    }
+
+    pub fn rolled_up(&self) -> bool {
+        self.rolled_up
+    }
+
+    pub fn custom(&self) -> bool {
+        self.custom
+    }
+
+    pub fn look(&self) -> Option<&SpaceLook> {
+        self.look.as_ref()
+    }
+
+    pub fn user_sized(&self) -> bool {
+        self.user_sized
+    }
+
     pub fn title_bar(&self) -> Rect {
         Rect::new(self.rect.x, self.rect.y, self.rect.width, self.title_height)
     }

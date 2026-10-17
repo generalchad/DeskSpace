@@ -53,6 +53,10 @@ impl Desktop {
         ItemId(space_max.max(layer_max) + 1)
     }
 
+    pub fn spaces(&self) -> &[Space] {
+        &self.spaces
+    }
+
     pub fn space(&self, id: SpaceId) -> Option<&Space> {
         self.spaces.iter().find(|space| space.id == id)
     }

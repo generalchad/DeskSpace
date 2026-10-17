@@ -366,17 +366,6 @@ and `Desktop::spaces` are `pub`, and so are `Desktop::space_mut`,
 `layer_mut`, `add_space`, `add_item`, and `remove_item`, so any crate can
 bypass `Command`. B27a-B27f close that, after B21.
 
-- [ ] **B27b. Add read accessors (core only).**
-  - In `deskspace-core/src/space.rs` `impl Space`, add one-line public
-    getters: `title(&self) -> &str`, `rect(&self) -> Rect`,
-    `items(&self) -> &[Item]`, `locked(&self) -> bool`,
-    `rolled_up(&self) -> bool`, `custom(&self) -> bool`,
-    `look(&self) -> Option<&SpaceLook>`, `user_sized(&self) -> bool`.
-  - In `deskspace-core/src/desktop.rs`, add `spaces(&self) -> &[Space]`.
-  - Leave `id` public: it never changes after creation.
-  - If a method with one of these names already exists, stop and ask.
-  - Change no caller in this commit. Done when: the gates pass.
-
 - [ ] **B27c. Read through the accessors outside core.**
   1. Temporarily change the eight `Space` fields above and
      `Desktop::spaces` from `pub` to `pub(crate)`. Do not commit this.
