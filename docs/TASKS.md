@@ -656,7 +656,6 @@ it, outside tests):
 
 | Field | Used in |
 |-------|---------|
-| `takeover_layer`, `takeover`, `desktop_entries` | `view` |
 | `hotkeys` | `app.rs`, `settings_session` |
 | `system_dark`, `system_accent`, `shell_display` | `app.rs`, `view`, `hit`, `selection`, `zoom`, `rename`, `settings_session` |
 | `scroll`, `icon_scales` | `hit`, `selection`, `pointer`, `files`, `menus`, `settings_session`; `view` |
@@ -673,16 +672,6 @@ Rules for every N task:
   one-line accessor, stop and ask (rule 4).
 - Update `CONTEXT.md` section 3's module table if a module's "Owns" column
   changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N3. A `LayerState` for the desktop layer.** In `app/view.rs`:
-  `struct LayerState { layer_flag: bool, takeover_flag: bool, entries:
-  Vec<DesktopEntry> }` from `takeover_layer`, `takeover`, and
-  `desktop_entries`. `App::layer_active` and `App::desktop_takeover` read the
-  config's `take_over_desktop` too, so they stay on `App` and call the
-  struct's flag accessors. `bootstrap.rs` sets
-  the two flags through a constructor. Check `desktop_entries`' doc comment
-  ("until then they are only diagnostics"); if the layer now consumes them,
-  fix the comment in the same commit.
 
 - [ ] **N4. A `Hotkeys` for the registered bindings.** In `app.rs` (or a new
   `app/hotkeys.rs` if it passes about 60 lines): `struct Hotkeys([Option<Hotkey>;

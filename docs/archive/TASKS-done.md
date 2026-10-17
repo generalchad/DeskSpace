@@ -1961,3 +1961,13 @@ until I5-I6 all land, so no partial build hides the desktop.
   pending_preview: Preview, highlighted: Option<SpaceId> }`, held as
   `App::settings_ui`. The reads in `view.rs`, `menus.rs`, and `update.rs`
   become `self.settings_ui.is_open()` (or the accessor the read needs).
+
+- [x] **N3. A `LayerState` for the desktop layer.** In `app/view.rs`:
+  `struct LayerState { layer_flag: bool, takeover_flag: bool, entries:
+  Vec<DesktopEntry> }` from `takeover_layer`, `takeover`, and
+  `desktop_entries`. `App::layer_active` and `App::desktop_takeover` read the
+  config's `take_over_desktop` too, so they stay on `App` and call the
+  struct's flag accessors. `bootstrap.rs` sets
+  the two flags through a constructor. Check `desktop_entries`' doc comment
+  ("until then they are only diagnostics"); if the layer now consumes them,
+  fix the comment in the same commit.

@@ -7,7 +7,7 @@ use deskspace_platform::{
     Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode, work_area_at,
 };
 
-use crate::app::{App, tray_tooltip};
+use crate::app::{App, LayerState, tray_tooltip};
 use crate::cli::Cli;
 
 const INITIAL_SPACE: &str = "Desktop";
@@ -150,8 +150,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     let mut app = App::new(config, store, hidden, cli.settings);
-    app.takeover_layer = cli.takeover_layer;
-    app.takeover = cli.takeover;
+    app.layer = LayerState::new(cli.takeover_layer, cli.takeover);
     tracing::info!(
         path = %app.store.path().display(),
         storage = %app.storage.root().display(),

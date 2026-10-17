@@ -4,9 +4,9 @@ use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Color, Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    ClipboardAction, DesktopEntry, Event, EventHandler, Hotkey, IconCache, SelectionKey,
-    ShellDisplay, TrayEvent, Ui, ZoomAction, cursor_pos, desktop_display_since, hotkey_id,
-    parse_hotkey, system_accent_color, system_uses_dark_mode,
+    ClipboardAction, Event, EventHandler, Hotkey, IconCache, SelectionKey, ShellDisplay, TrayEvent,
+    Ui, ZoomAction, cursor_pos, desktop_display_since, hotkey_id, parse_hotkey,
+    system_accent_color, system_uses_dark_mode,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -33,6 +33,7 @@ use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
 use update::UpdateState;
+pub(crate) use view::LayerState;
 
 /// How many global hotkeys can be registered at once, one per binding.
 const HOTKEY_COUNT: usize = settings::HOTKEY_BINDINGS.len();
@@ -352,9 +353,6 @@ pub struct App {
     system_accent: Option<Color>,
     /// Explorer's current display options, refreshed on change.
     shell_display: ShellDisplay,
-    /// The desktop's loose items read from the shell on `Started`. The M2
-    /// desktop layer consumes them; until then they are only diagnostics.
-    desktop_entries: Vec<DesktopEntry>,
     /// The item selection: the current surface, its items, the Shift anchor,
     /// the keyboard focus, and the cut and check-box marks.
     selection: Selection,
@@ -377,13 +375,8 @@ pub struct App {
     hotkeys: [Option<Hotkey>; HOTKEY_COUNT],
     settings_ui: SettingsUi,
     open_settings_on_start: bool,
-    /// Draw the loose desktop items on a chrome-less layer window (hidden
-    /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
-    /// own icons.
-    pub(crate) takeover_layer: bool,
-    /// Hide Explorer's icons and draw the loose items on the layer (hidden
-    /// `--takeover`, M2 takeover). Implies the layer.
-    pub(crate) takeover: bool,
+    /// The desktop layer's flags and the shell entries it draws.
+    pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
 }
@@ -399,7 +392,6 @@ impl App {
             system_accent: system_accent_color(),
             // Read for real in `Started`, once OLE is initialized.
             shell_display: ShellDisplay::default(),
-            desktop_entries: Vec::new(),
             selection: Selection::default(),
             pointer: PointerState::default(),
             edit: EditState::default(),
@@ -410,8 +402,7 @@ impl App {
             hotkeys: [None; HOTKEY_COUNT],
             settings_ui: SettingsUi::default(),
             open_settings_on_start: open_settings,
-            takeover_layer: false,
-            takeover: false,
+            layer: LayerState::default(),
             update: UpdateState::default(),
         }
     }
@@ -794,18 +785,17 @@ mod tests {
         assert!(!app.desktop_takeover());
 
         // The additive dev flag draws the layer but does not hide icons.
-        app.takeover_layer = true;
+        app.layer = LayerState::new(true, false);
         assert!(app.layer_active());
         assert!(!app.desktop_takeover());
 
         // The full takeover flag hides icons and implies the layer.
-        app.takeover_layer = false;
-        app.takeover = true;
+        app.layer = LayerState::new(false, true);
         assert!(app.layer_active());
         assert!(app.desktop_takeover());
 
         // The saved setting alone does the same.
-        app.takeover = false;
+        app.layer = LayerState::default();
         app.config.window.take_over_desktop = true;
         assert!(app.layer_active());
         assert!(app.desktop_takeover());

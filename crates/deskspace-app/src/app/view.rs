@@ -7,9 +7,10 @@ use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog, desktop_directory,
-    desktop_display_since, enumerate_desktop_items, hide_desktop_icons, item_facts,
-    rehide_desktop_icons, restore_desktop_icons, space_dpi, virtual_desktop_rect, work_area_at,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, SpaceStyle, Ui, arm_watchdog,
+    desktop_directory, desktop_display_since, enumerate_desktop_items, hide_desktop_icons,
+    item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi, virtual_desktop_rect,
+    work_area_at,
 };
 
 use crate::scene::{
@@ -22,6 +23,32 @@ use super::{App, Surface, Timer};
 /// How often, while takeover is on, to re-hide Explorer's icon layer in case
 /// it recreated it without broadcasting `TaskbarCreated`.
 const HEALTH_MS: u32 = 5_000;
+
+/// The desktop layer's state: the hidden command-line flags that turn it on
+/// and the loose items last read from the shell. `App::layer_active` and
+/// `App::desktop_takeover` combine the flags with the saved setting.
+#[derive(Debug, Default)]
+pub(crate) struct LayerState {
+    /// Draw the loose desktop items on a chrome-less layer window (hidden
+    /// `--takeover-layer`, M2 takeover). Additive: Explorer still draws its
+    /// own icons.
+    layer_flag: bool,
+    /// Hide Explorer's icons and draw the loose items on the layer (hidden
+    /// `--takeover`, M2 takeover). Implies the layer.
+    takeover_flag: bool,
+    /// The desktop's loose items read from the shell, which the layer draws.
+    entries: Vec<DesktopEntry>,
+}
+
+impl LayerState {
+    pub(crate) fn new(layer_flag: bool, takeover_flag: bool) -> Self {
+        Self {
+            layer_flag,
+            takeover_flag,
+            entries: Vec::new(),
+        }
+    }
+}
 
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
@@ -239,9 +266,9 @@ impl App {
     }
 
     /// Reads the desktop's loose items from the shell, with their positions,
-    /// now that OLE is initialized. The M2 desktop layer will draw them.
+    /// now that OLE is initialized, for the desktop layer to draw.
     pub(super) fn refresh_desktop_entries(&mut self) {
-        self.desktop_entries = match enumerate_desktop_items() {
+        self.layer.entries = match enumerate_desktop_items() {
             Ok(entries) => entries,
             Err(error) => {
                 tracing::warn!(%error, "could not enumerate desktop items");
@@ -249,9 +276,10 @@ impl App {
             }
         };
         tracing::debug!(
-            items = self.desktop_entries.len(),
+            items = self.layer.entries.len(),
             positioned = self
-                .desktop_entries
+                .layer
+                .entries
                 .iter()
                 .filter(|entry| entry.position.is_some())
                 .count(),
@@ -277,20 +305,21 @@ impl App {
     /// Whether the desktop layer window is drawn: the additive
     /// `--takeover-layer`, or the full takeover (`--takeover` or the setting).
     pub(super) fn layer_active(&self) -> bool {
-        self.takeover_layer || self.desktop_takeover()
+        self.layer.layer_flag || self.desktop_takeover()
     }
 
     /// Whether DeskSpace takes over the desktop by hiding Explorer's icons:
     /// the hidden `--takeover` flag or the saved setting.
     pub(super) fn desktop_takeover(&self) -> bool {
-        self.takeover || self.config.window.take_over_desktop
+        self.layer.takeover_flag || self.config.window.take_over_desktop
     }
 
     /// The loose desktop items for the layer: the desktop entries that carry a
     /// position and are not already held by a space. The `ItemId`s are
     /// placeholders; `SyncDesktop` reconciles them by path.
     pub(super) fn desktop_layer_items(&self) -> Vec<Item> {
-        self.desktop_entries
+        self.layer
+            .entries
             .iter()
             .filter_map(|entry| {
                 let position = entry.position?;
