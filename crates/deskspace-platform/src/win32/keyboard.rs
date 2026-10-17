@@ -18,9 +18,10 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY,
-    VK_A, VK_APPS, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE,
-    VK_F2, VK_F5, VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT,
-    VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP, VK_V, VK_X,
+    VK_0, VK_A, VK_ADD, VK_APPS, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
+    VK_ESCAPE, VK_F2, VK_F5, VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
+    VK_NEXT, VK_NUMPAD0, VK_OEM_MINUS, VK_OEM_PLUS, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU,
+    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -41,6 +42,9 @@ pub(crate) const SEL_HOME: usize = 5;
 pub(crate) const SEL_END: usize = 6;
 pub(crate) const SEL_PAGE_UP: usize = 7;
 pub(crate) const SEL_PAGE_DOWN: usize = 8;
+pub(crate) const SEL_ZOOM_IN: usize = 9;
+pub(crate) const SEL_ZOOM_OUT: usize = 10;
+pub(crate) const SEL_ZOOM_RESET: usize = 11;
 
 /// Direction codes packed into `NAV_KEY`'s wParam low bits.
 pub(crate) const NAV_LEFT: usize = 0;
@@ -250,6 +254,10 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
                 && let Some(dir) = arrow_dir(event.vkCode)
             {
                 post_message(messages::NAV_KEY, dir | (1 << 3), 0);
+                return true;
+            }
+            if let Some(zoom) = zoom_key(event.vkCode) {
+                post_message(messages::SELECTION_KEY, zoom, 0);
                 return true;
             }
             return false;
@@ -512,6 +520,21 @@ pub(crate) fn clipboard_action(action: usize) -> Option<ClipboardAction> {
 }
 
 /// Decodes a posted `SELECTION_KEY` wParam into a selection key.
+/// The zoom a key pressed with Ctrl asks for, as browsers and Explorer
+/// windows map it: Plus (the `=`/`+` key or the keypad's) zooms in, Minus
+/// zooms out, and 0 resets.
+fn zoom_key(vk: u32) -> Option<usize> {
+    if is_key(vk, VK_OEM_PLUS) || is_key(vk, VK_ADD) {
+        Some(SEL_ZOOM_IN)
+    } else if is_key(vk, VK_OEM_MINUS) || is_key(vk, VK_SUBTRACT) {
+        Some(SEL_ZOOM_OUT)
+    } else if is_key(vk, VK_0) || is_key(vk, VK_NUMPAD0) {
+        Some(SEL_ZOOM_RESET)
+    } else {
+        None
+    }
+}
+
 pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
     Some(match action {
         SEL_OPEN => SelectionKey::Open,
@@ -523,6 +546,9 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_END => SelectionKey::End,
         SEL_PAGE_UP => SelectionKey::PageUp,
         SEL_PAGE_DOWN => SelectionKey::PageDown,
+        SEL_ZOOM_IN => SelectionKey::ZoomIn,
+        SEL_ZOOM_OUT => SelectionKey::ZoomOut,
+        SEL_ZOOM_RESET => SelectionKey::ZoomReset,
         _ => return None,
     })
 }
@@ -660,7 +686,22 @@ mod tests {
         assert_eq!(selection_key(SEL_END), Some(SelectionKey::End));
         assert_eq!(selection_key(SEL_PAGE_UP), Some(SelectionKey::PageUp));
         assert_eq!(selection_key(SEL_PAGE_DOWN), Some(SelectionKey::PageDown));
+        assert_eq!(selection_key(SEL_ZOOM_IN), Some(SelectionKey::ZoomIn));
+        assert_eq!(selection_key(SEL_ZOOM_OUT), Some(SelectionKey::ZoomOut));
+        assert_eq!(selection_key(SEL_ZOOM_RESET), Some(SelectionKey::ZoomReset));
         assert_eq!(selection_key(99), None);
+    }
+
+    #[test]
+    fn plus_minus_and_zero_map_to_zoom_on_both_keyboards() {
+        let code = |key: VIRTUAL_KEY| key.0 as u32;
+        assert_eq!(zoom_key(code(VK_OEM_PLUS)), Some(SEL_ZOOM_IN));
+        assert_eq!(zoom_key(code(VK_ADD)), Some(SEL_ZOOM_IN));
+        assert_eq!(zoom_key(code(VK_OEM_MINUS)), Some(SEL_ZOOM_OUT));
+        assert_eq!(zoom_key(code(VK_SUBTRACT)), Some(SEL_ZOOM_OUT));
+        assert_eq!(zoom_key(code(VK_0)), Some(SEL_ZOOM_RESET));
+        assert_eq!(zoom_key(code(VK_NUMPAD0)), Some(SEL_ZOOM_RESET));
+        assert_eq!(zoom_key(code(VK_A)), None);
     }
 
     #[test]

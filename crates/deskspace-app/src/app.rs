@@ -5,8 +5,8 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Color, Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
     ClipboardAction, DesktopEntry, Event, EventHandler, Hotkey, IconCache, SelectionKey,
-    ShellDisplay, TrayEvent, Ui, cursor_pos, desktop_display_since, hotkey_id, parse_hotkey,
-    system_accent_color, system_uses_dark_mode,
+    ShellDisplay, TrayEvent, Ui, ZoomAction, cursor_pos, desktop_display_since, hotkey_id,
+    parse_hotkey, system_accent_color, system_uses_dark_mode,
 };
 
 use crate::settings::{self, HotkeyAction, Session};
@@ -442,6 +442,9 @@ impl App {
             SelectionKey::End => self.scroll_current_space(ui, ScrollKey::End),
             SelectionKey::PageUp => self.scroll_current_space(ui, ScrollKey::PageUp),
             SelectionKey::PageDown => self.scroll_current_space(ui, ScrollKey::PageDown),
+            SelectionKey::ZoomIn => self.zoom(ui, ZoomAction::In),
+            SelectionKey::ZoomOut => self.zoom(ui, ZoomAction::Out),
+            SelectionKey::ZoomReset => self.zoom(ui, ZoomAction::Reset),
         }
     }
 

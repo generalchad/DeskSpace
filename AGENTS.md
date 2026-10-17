@@ -265,8 +265,8 @@ Rust specifics:
   cancels the rename and passes through), `WATCH_SELECTION` (an item is
   selected), and `WATCH_PASTE` (a space is current; the name is historical).
   `Ui::watch_selection_keys` sets the last two. Which key needs which flag:
-  - either watch flag: F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, and
-    Shift+F10;
+  - either watch flag: F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key,
+    Shift+F10, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 (zoom);
   - `WATCH_SELECTION`: Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X;
   - `WATCH_PASTE`: Ctrl+V, the arrow keys (Shift extends, Ctrl moves the focus
     only), Home, End, PageUp, PageDown, and typed characters (type-to-select).

@@ -154,6 +154,12 @@ pub enum SelectionKey {
     PageUp,
     /// PageDown: scroll the current space down by one page.
     PageDown,
+    /// Ctrl+Plus (either Plus key): larger icons, as Ctrl+wheel up.
+    ZoomIn,
+    /// Ctrl+Minus (either Minus key): smaller icons, as Ctrl+wheel down.
+    ZoomOut,
+    /// Ctrl+0 (either 0 key): icons back to 100 %.
+    ZoomReset,
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size

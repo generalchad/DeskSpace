@@ -123,7 +123,8 @@ help inspect the look and the desktop layer.
   selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
-  `Shift+F10` opens the context menu.
+  `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
+  icons larger and smaller, and `Ctrl+0` resets them to 100 %.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.

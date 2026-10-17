@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (396 tests) are green. Update this count whenever a
+  `cargo test --workspace` (397 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -843,7 +843,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
   same hook watches keys outside a rename (`Ui::watch_selection_keys`): F2,
-  Alt+Enter, Ctrl+A, Esc, F5, the Menu key, and Shift+F10 whenever an item is
+  Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, and the zoom keys
+  (Ctrl+Plus, Ctrl+Minus, Ctrl+0, main and keypad) whenever an item is
   selected or a space is current; Enter, Delete, Shift+Delete, and Ctrl+C/X
   only with a selection; and Ctrl+V, Home, End, PageUp, PageDown, the arrow
   keys, and typed characters only with a current space. Every other key
@@ -1374,7 +1375,9 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   Alt+Enter opens the selected item's Properties, or DeskSpace Settings when no
   item is selected. With an item selected, Enter opens it, and the Menu key or
   Shift+F10 opens its context menu (the space's menu with no item selected).
-  Escape clears the selection and F5 refreshes the spaces. With a space current,
+  Escape clears the selection and F5 refreshes the spaces. Ctrl+Plus and
+  Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to 100 %, as the
+  zoom pop-up's buttons do (F-57). With a space current,
   typing a letter selects the next item whose label starts with the typed
   letters (the buffer clears after about a second), and Home, End, PageUp, and
   PageDown scroll the space to the top, the bottom, or one page. The arrow keys
