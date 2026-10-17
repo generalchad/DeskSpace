@@ -31,7 +31,8 @@ pub use win32::desktop_items::{
     DesktopEntry, desktop_directory, enumerate_desktop_items, item_facts, notify_moved,
 };
 pub use win32::display_settings::{
-    CheckBoxMode, ShellDisplay, desktop_display, desktop_display_since,
+    CheckBoxMode, DESKTOP_ICON_RANGE, DESKTOP_ICON_STEP, ShellDisplay, desktop_display,
+    desktop_display_since, next_desktop_icon_size, set_desktop_icon_size,
 };
 pub use win32::dpi::enable_per_monitor_awareness;
 pub use win32::drag_image::DragImage;

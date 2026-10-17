@@ -1656,3 +1656,39 @@ until I5-I6 all land, so no partial build hides the desktop.
     matched it byte for byte on a legacy masked icon, a 32 bpp icon, shell
     file icons and every overlay at each image-list size, before it replaced
     it. Two tests pin the mask and premultiply behavior.
+
+- [x] **F13. Ctrl+wheel under "Match Explorer's display" drives the
+  desktop's icon size (ROADMAP D9).** The reason Ctrl+wheel did nothing
+  under any preset is fixed (`fix: read mouse modifiers from the message`;
+  section V); confirm the `Custom` branch on screen before relying on it.
+  - Today `App::adjust_icon_size` (`app/pointer.rs`) changes
+    `Theme.icon_size`, which the default `MatchExplorer` preset replaces with
+    Explorer's size (`App::icon_scale` / `space_scale`, `app/view.rs`). D9
+    says it should change the desktop's own icon size instead.
+  - Platform, `win32/display_settings.rs`:
+    1. `pub const DESKTOP_ICON_RANGE: (i32, i32) = (16, 256);` and
+       `pub const DESKTOP_ICON_STEP: i32 = 8;` (pixels; `///` doc each).
+    2. A pure `pub fn next_desktop_icon_size(current: i32, notches: i32) ->
+       i32` (`current + notches * DESKTOP_ICON_STEP`, clamped). Tests: one
+       notch each way, both clamps.
+    3. `pub fn set_desktop_icon_size(pixels: i32) -> bool`: from
+       `shell_view::desktop_shell_view()`, cast to `IFolderView2`, read the
+       mode with `GetViewModeAndIconSize`, call `SetViewModeAndIconSize(mode,
+       pixels)`; `false` with a `tracing::debug!` on failure. Copy the shape
+       and `// SAFETY:` wording of `view_icon_size`, and link the Microsoft
+       Learn page for `IFolderView2::SetViewModeAndIconSize`.
+    4. Re-export all four from `win32/mod.rs` and `lib.rs` next to
+       `desktop_display`.
+  - App, `App::adjust_icon_size`: convert `delta` to notches (`delta /
+    WHEEL_DELTA`; return on 0). If the *global* preset matches Explorer and
+    `self.shell_display.icon_size` is `Some(current)`, call
+    `set_desktop_icon_size(next_desktop_icon_size(current, notches))` and, on
+    `true`, `self.refresh_shell_display(ui)`. Otherwise keep today's
+    behavior. Update the doc comment for both branches. A space with its own
+    `Custom` look is unaffected either way.
+  - Docs: `CONTEXT.md` section 8 (Ctrl+wheel), `README.md` Controls, and the
+    F-25 row in the ROADMAP feature index (drop "open (F13)").
+  - Done when: the tests pass. **[needs human]** check: under the default
+    preset, Ctrl+wheel over a space changes the desktop's icons and the
+    spaces together, both ways, and stops at both ends; under Custom it
+    changes only the spaces.

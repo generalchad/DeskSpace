@@ -16,6 +16,13 @@ use windows::core::Interface;
 
 use crate::win32::shell_view;
 
+/// The desktop icon sizes Ctrl+wheel steps between, in pixels: Explorer's
+/// small icon up to its largest "extra large" size.
+pub const DESKTOP_ICON_RANGE: (i32, i32) = (16, 256);
+
+/// How many pixels one wheel notch changes the desktop's icon size by.
+pub const DESKTOP_ICON_STEP: i32 = 8;
+
 /// How Explorer's desktop view shows item check boxes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CheckBoxMode {
@@ -125,6 +132,40 @@ fn view_icon_size(view: &IShellView) -> Option<i32> {
     }
 }
 
+/// The desktop icon size `notches` wheel notches away from `current`, kept
+/// within `DESKTOP_ICON_RANGE`.
+pub fn next_desktop_icon_size(current: i32, notches: i32) -> i32 {
+    (current + notches * DESKTOP_ICON_STEP).clamp(DESKTOP_ICON_RANGE.0, DESKTOP_ICON_RANGE.1)
+}
+
+/// Sets the desktop's own icon size, as Ctrl+wheel on the desktop does, and
+/// keeps its view mode. Returns whether Explorer accepted it.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifolderview2-setviewmodeandiconsize
+pub fn set_desktop_icon_size(pixels: i32) -> bool {
+    let Some(view) = shell_view::desktop_shell_view() else {
+        return false;
+    };
+    let Ok(folder) = view.cast::<IFolderView2>() else {
+        return false;
+    };
+    let mut mode = Default::default();
+    let mut current = 0i32;
+    // SAFETY: reading two out-parameters, then setting the size, on a live
+    // folder view.
+    let result = unsafe {
+        folder
+            .GetViewModeAndIconSize(&mut mode, &mut current)
+            .and_then(|()| folder.SetViewModeAndIconSize(mode, pixels))
+    };
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::debug!(%error, pixels, "could not set the desktop icon size");
+            false
+        }
+    }
+}
+
 /// The desktop's item spacing (the full width and height of an item cell).
 fn view_spacing(view: &IShellView) -> Option<Size> {
     let folder = view.cast::<IFolderView>().ok()?;
@@ -177,6 +218,27 @@ mod tests {
         assert_eq!(
             check_box_mode(None, CheckBoxMode::Hidden),
             CheckBoxMode::Hidden
+        );
+    }
+
+    #[test]
+    fn a_notch_steps_the_desktop_icon_size_either_way() {
+        assert_eq!(next_desktop_icon_size(48, 1), 48 + DESKTOP_ICON_STEP);
+        assert_eq!(next_desktop_icon_size(48, -1), 48 - DESKTOP_ICON_STEP);
+        assert_eq!(next_desktop_icon_size(48, 3), 48 + 3 * DESKTOP_ICON_STEP);
+    }
+
+    #[test]
+    fn the_desktop_icon_size_stops_at_both_ends() {
+        assert_eq!(next_desktop_icon_size(20, -1), DESKTOP_ICON_RANGE.0);
+        assert_eq!(
+            next_desktop_icon_size(DESKTOP_ICON_RANGE.0, -5),
+            DESKTOP_ICON_RANGE.0
+        );
+        assert_eq!(next_desktop_icon_size(252, 1), DESKTOP_ICON_RANGE.1);
+        assert_eq!(
+            next_desktop_icon_size(DESKTOP_ICON_RANGE.1, 5),
+            DESKTOP_ICON_RANGE.1
         );
     }
 }

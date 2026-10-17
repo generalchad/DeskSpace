@@ -9,8 +9,7 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** section B (code health) and K7 are ready for any
-contributor; G5c is ready. L1 needs a maintainer's on-screen findings, and F13
-(Ctrl+wheel under "Match Explorer's display") is unblocked. Skip
+contributor; G5c is ready. L1 needs a maintainer's on-screen findings. Skip
 tasks marked **[needs decision]** and everything in section D.
 
 ## How to work a task
@@ -360,41 +359,27 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
 
 ## F. Ad-hoc features
 
-- [ ] **F13. Ctrl+wheel under "Match Explorer's display" drives the
-  desktop's icon size (ROADMAP D9).** The reason Ctrl+wheel did nothing
-  under any preset is fixed (`fix: read mouse modifiers from the message`;
-  section V); confirm the `Custom` branch on screen before relying on it.
-  - Today `App::adjust_icon_size` (`app/pointer.rs`) changes
-    `Theme.icon_size`, which the default `MatchExplorer` preset replaces with
-    Explorer's size (`App::icon_scale` / `space_scale`, `app/view.rs`). D9
-    says it should change the desktop's own icon size instead.
-  - Platform, `win32/display_settings.rs`:
-    1. `pub const DESKTOP_ICON_RANGE: (i32, i32) = (16, 256);` and
-       `pub const DESKTOP_ICON_STEP: i32 = 8;` (pixels; `///` doc each).
-    2. A pure `pub fn next_desktop_icon_size(current: i32, notches: i32) ->
-       i32` (`current + notches * DESKTOP_ICON_STEP`, clamped). Tests: one
-       notch each way, both clamps.
-    3. `pub fn set_desktop_icon_size(pixels: i32) -> bool`: from
-       `shell_view::desktop_shell_view()`, cast to `IFolderView2`, read the
-       mode with `GetViewModeAndIconSize`, call `SetViewModeAndIconSize(mode,
-       pixels)`; `false` with a `tracing::debug!` on failure. Copy the shape
-       and `// SAFETY:` wording of `view_icon_size`, and link the Microsoft
-       Learn page for `IFolderView2::SetViewModeAndIconSize`.
-    4. Re-export all four from `win32/mod.rs` and `lib.rs` next to
-       `desktop_display`.
-  - App, `App::adjust_icon_size`: convert `delta` to notches (`delta /
-    WHEEL_DELTA`; return on 0). If the *global* preset matches Explorer and
-    `self.shell_display.icon_size` is `Some(current)`, call
-    `set_desktop_icon_size(next_desktop_icon_size(current, notches))` and, on
-    `true`, `self.refresh_shell_display(ui)`. Otherwise keep today's
-    behavior. Update the doc comment for both branches. A space with its own
-    `Custom` look is unaffected either way.
-  - Docs: `CONTEXT.md` section 8 (Ctrl+wheel), `README.md` Controls, and the
-    F-25 row in the ROADMAP feature index (drop "open (F13)").
-  - Done when: the tests pass. **[needs human]** check: under the default
-    preset, Ctrl+wheel over a space changes the desktop's icons and the
-    spaces together, both ways, and stops at both ends; under Custom it
-    changes only the spaces.
+- [ ] **F15. An icon-size change keeps every space's size (Explorer
+  parity).** **[needs decision]** on what an auto-sized space's `columns`
+  means afterwards. Explorer never resizes a window when its icon size
+  changes: the icons re-flow into fewer or more columns and a scrollbar
+  appears when they no longer fit. Today `arrange_space` (`layout.rs`) keeps
+  a user-sized space's rect but recomputes an auto-sized one from
+  `GridSpec.columns`, so Ctrl+wheel and the icon-size slider grow and shrink
+  every space the user never resized (maintainer, 2026-10-16: keep every
+  space's size, as Explorer does).
+  - Decide: does an icon-size change pin an auto-sized space (set
+    `user_sized`, through a `Command`), or does an auto-sized space derive its
+    columns from its current width once it has one, and keep growing only in
+    height as items are added?
+  - Both Ctrl+wheel (`App::adjust_icon_size`, both branches) and the
+    Settings icon-size slider (and a Match Explorer size change read in
+    `refresh_shell_display`) follow the same rule; no special case for one
+    path.
+  - Done when: an icon-size change leaves every space's rect unchanged, with
+    a core test per kind of space. **[needs human]** check: Ctrl+wheel over
+    an auto-sized and a resized space; neither changes size, both re-flow and
+    scroll.
 
 ## G. More Explorer-standard controls
 
@@ -565,7 +550,8 @@ each id is in `archive/TASKS-done.md`.
 | Selection (F-41, F-42) | A space click focuses the desktop and clears its selection; check boxes in both Explorer modes; rubber-band and Ctrl+A. |
 | Clipboard and rename (F-38, F-02) | Cut, copy, and paste, with cut ghosting and its clearing when another app takes the clipboard; F2 item rename. |
 | Display (F-25, F-43) | Compressed/encrypted label colors; info tips; jumbo icons; per-monitor DPI on a mixed-DPI setup. |
-| Mouse modifiers | Under the `Custom` item preset, Ctrl+wheel over a space changes the icon size both ways (the G2 check, redone); Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
+| Mouse modifiers | Ctrl+wheel reaching a space with Ctrl set was confirmed from a log on 2026-10-16. Ctrl+click and Shift+click in a space toggle and extend the selection without first using the settings window or a menu. (Ctrl and Shift now come from the mouse message, not `GetKeyState`.) |
+| F13 (F-25) | Under the default "Match Explorer's display" preset, Ctrl+wheel over a space changes the desktop's own icons and the spaces together, both ways, and stops at 16 and 256 px; under Custom it changes only the spaces; a space with its own Custom look keeps its size either way. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working

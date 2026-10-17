@@ -40,7 +40,7 @@ context menus, and a settings window in the first usable release (v0.2).
 ## 2. Current status
 
 - `cargo build`, `cargo clippy --workspace --all-targets -D warnings`, and
-  `cargo test --workspace` (387 tests) are green. Update this count whenever a
+  `cargo test --workspace` (389 tests) are green. Update this count whenever a
   test is added or removed.
 - Released: v0.2.0 (the first public release), v0.2.1 (update checking),
   v0.2.2 (adding shortcuts to spaces), and v0.2.3 (the space menu's Add files
@@ -687,8 +687,11 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   of the last keyboard message the thread read, and a space's thread reads
   none. `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state) becomes `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
   "scroll inactive windows" setting (on by default). Ctrl+wheel changes the
-  global icon size (`App::adjust_icon_size`), as it does on the desktop; a
-  customized space keeps its own size.
+  icon size (`App::adjust_icon_size`), as it does on the desktop: under
+  "Match Explorer's display" the desktop's own size
+  (`set_desktop_icon_size`, `IFolderView2::SetViewModeAndIconSize`), which
+  the matching spaces follow; otherwise the global icon size. A customized
+  space keeps its own size.
 - File drops (`win32/drop_target.rs`): every space is an OLE `IDropTarget`
   (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
   window, so it chooses the drop effect and the shell shows the move/copy
@@ -1200,11 +1203,12 @@ after About) and `settings::listed_pages` says which pages a scope lists.
 
 - Drag a space title bar to move it (snaps to the grid).
 - Drag a space edge or corner to resize it; the wheel scrolls overflowing
-  content, and Ctrl+wheel changes the global icon size (10 % a notch). Under
-  the default "Match Explorer's display" preset Explorer's icon size wins, so
-  Ctrl+wheel has no visible effect there yet. ROADMAP D9 decides it should
-  change the desktop's own icon size instead, as Ctrl+wheel on the desktop
-  does (`TASKS.md` F13).
+  content. Ctrl+wheel changes the icon size: under the default "Match
+  Explorer's display" preset it changes the desktop's own icon size (8 px a
+  notch, 16-256 px), as Ctrl+wheel on the desktop does, and the matching
+  spaces follow (ROADMAP D9); under Custom it changes the global icon size
+  (10 % a notch). A space with its own Custom look keeps its size. Spaces the
+  user never resized grow and shrink with their icons (`TASKS.md` F15).
 - A right-button press on an item selects it; holding it and dragging past
   the drag threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a), which
   never rearranges inside the space, so a right-drag onto Explorer or the

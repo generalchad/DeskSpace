@@ -6,6 +6,7 @@ use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
+    next_desktop_icon_size, set_desktop_icon_size,
 };
 
 use super::drag::Drag;
@@ -429,11 +430,35 @@ impl App {
         ui.set_space_cursor(id.0, cursor_for(edges));
     }
 
-    /// Ctrl+wheel changes the global icon size, as it does on the desktop:
-    /// spaces that follow Global resize together, while a customized space
-    /// keeps its own size. Persisted through the settings, not the config's
-    /// base grid.
+    /// Ctrl+wheel changes the icon size, as it does on the desktop. A space
+    /// with its own `Custom` look keeps its size either way.
+    ///
+    /// Under "Match Explorer's display" (ROADMAP D9) it changes the desktop's
+    /// own icon size, which the spaces that match Explorer then follow, so
+    /// they stay 1:1 with the desktop. Otherwise, or when the desktop's size
+    /// cannot be read, it changes DeskSpace's global icon size, persisted
+    /// through the settings rather than the config's base grid.
     pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
+        if self.config.theme.match_explorer()
+            && let Some(current) = self.shell_display.icon_size
+        {
+            self.adjust_desktop_icon_size(ui, current, delta);
+        } else {
+            self.adjust_global_icon_size(ui, delta);
+        }
+    }
+
+    fn adjust_desktop_icon_size(&mut self, ui: &mut Ui, current: i32, delta: i32) {
+        let notches = delta / WHEEL_DELTA;
+        if notches == 0 {
+            return;
+        }
+        if set_desktop_icon_size(next_desktop_icon_size(current, notches)) {
+            self.refresh_shell_display(ui);
+        }
+    }
+
+    fn adjust_global_icon_size(&mut self, ui: &mut Ui, delta: i32) {
         let step = delta * ICON_SIZE_WHEEL_STEP / WHEEL_DELTA;
         if step == 0 {
             return;
