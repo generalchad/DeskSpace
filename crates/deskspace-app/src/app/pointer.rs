@@ -246,17 +246,17 @@ impl App {
                 paths,
                 action,
             } => {
-                // Only a space registers an OLE drop target, so `id` is a
-                // space here.
-                if let Surface::Space(space) = surface {
-                    self.add_dropped(ui, space, Point::new(x, y), paths, action);
-                }
+                let at = Point::new(x, y);
+                self.drop_onto(ui, surface, at, |app, ui, space| {
+                    app.add_dropped(ui, space, at, paths, action);
+                });
             }
             SpaceEvent::ShellItemsDropped { x, y, items } => {
-                if let Surface::Space(space) = surface {
-                    let sources = items.into_iter().map(ShortcutSource::Shell).collect();
-                    self.add_shortcuts(ui, space, Point::new(x, y), sources);
-                }
+                let at = Point::new(x, y);
+                let sources = items.into_iter().map(ShortcutSource::Shell).collect();
+                self.drop_onto(ui, surface, at, |app, ui, space| {
+                    app.add_shortcuts(ui, space, at, sources);
+                });
             }
             SpaceEvent::DpiChanged { .. } => {
                 if let Surface::Space(id) = surface {

@@ -31,7 +31,6 @@ impl Ui {
             click_through,
             on_top,
             visible,
-            register_drop: true,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.spaces.insert(id, hwnd));
@@ -123,7 +122,6 @@ impl Ui {
             click_through,
             on_top,
             visible: true,
-            register_drop: false,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.layer = Some(hwnd));

@@ -1,4 +1,5 @@
-//! OLE drop target for space windows.
+//! OLE drop target for space windows, the desktop layer's included: the app
+//! opens a new space for a drop on the layer (ROADMAP D7).
 //!
 //! Registering an `IDropTarget` makes a space accept file drags directly and,
 //! unlike the legacy `WM_DROPFILES` path, lets it choose the drop effect. That

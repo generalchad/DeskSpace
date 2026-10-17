@@ -2,7 +2,7 @@
 
 use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::placement::{DEFAULT_SPACE_GAP, new_space_origin};
+use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, monitor_dpi_at, scale_for, work_area_at,
@@ -414,16 +414,32 @@ impl App {
         }
     }
 
+    /// New space (menus and the hotkey): in line with the top row of spaces
+    /// on the monitor at `at` (ROADMAP D10).
     pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) {
+        let size = self.new_space_size();
+        let spaces = self.space_rects();
+        let origin = new_space_origin(&spaces, size, work_area_at(at), gap_at(at)).unwrap_or(at);
+        self.open_new_space(ui, origin, size);
+    }
+
+    /// A space for items dropped on the desktop layer (ROADMAP D7): as near
+    /// the drop point `at` as it fits with a gutter around it, else where
+    /// New space would put it. Returns its id.
+    pub(super) fn create_space_for_drop(&mut self, ui: &mut Ui, at: Point) -> Option<SpaceId> {
+        let size = self.new_space_size();
+        let spaces = self.space_rects();
+        let (bounds, gap) = (work_area_at(at), gap_at(at));
+        let origin = drop_space_origin(at, &spaces, size, bounds, gap)
+            .or_else(|| new_space_origin(&spaces, size, bounds, gap))
+            .unwrap_or(at);
+        self.open_new_space(ui, origin, size)
+    }
+
+    /// Creates a space at `origin` with the configured title and lock state,
+    /// shows it, and returns its id.
+    fn open_new_space(&mut self, ui: &mut Ui, origin: Point, size: Size) -> Option<SpaceId> {
         let window = &self.config.window;
-        let size = Size::new(
-            window
-                .new_space_width
-                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
-            window
-                .new_space_height
-                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
-        );
         let title = window.new_space_title.trim();
         let title = if title.is_empty() {
             "New space".to_string()
@@ -431,7 +447,7 @@ impl App {
             title.to_string()
         };
         let locked = window.new_space_locked;
-        let origin = self.place_new_space(size, at);
+        let id = self.config.desktop.next_space_id();
         let command = Command::CreateSpace {
             title,
             at: origin,
@@ -440,30 +456,44 @@ impl App {
         };
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.
-        if self.dispatch(command, origin).is_applied() {
-            if !self.visible {
-                self.set_visible(ui, true);
-            }
-            self.sync_windows(ui);
-            self.schedule_save(ui);
+        if !self.dispatch(command, origin).is_applied() {
+            return None;
         }
+        if !self.visible {
+            self.set_visible(ui, true);
+        }
+        self.sync_windows(ui);
+        self.schedule_save(ui);
+        Some(id)
     }
 
-    /// Where a new space of `size` goes on the monitor at `near` (the click or
-    /// the pointer): in line with that monitor's top row of spaces, or at
-    /// `near` itself when the monitor has no free slot.
-    fn place_new_space(&self, size: Size, near: Point) -> Point {
-        let spaces: Vec<Rect> = self
-            .config
+    /// The configured size of a new space, clamped to its range.
+    fn new_space_size(&self) -> Size {
+        let window = &self.config.window;
+        Size::new(
+            window
+                .new_space_width
+                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+            window
+                .new_space_height
+                .clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1),
+        )
+    }
+
+    fn space_rects(&self) -> Vec<Rect> {
+        self.config
             .desktop
             .spaces()
             .iter()
             .map(|space| space.rect())
-            .collect();
-        let scale = scale_for(monitor_dpi_at(near));
-        let default_gap = (DEFAULT_SPACE_GAP as f32 * scale).round() as i32;
-        new_space_origin(&spaces, size, work_area_at(near), default_gap).unwrap_or(near)
+            .collect()
     }
+}
+
+/// The default gutter around a new space, scaled for the monitor at `at`.
+fn gap_at(at: Point) -> i32 {
+    let scale = scale_for(monitor_dpi_at(at));
+    (DEFAULT_SPACE_GAP as f32 * scale).round() as i32
 }
 
 /// The "Appearance" submenu for a space drawn with `theme`: tint-opacity

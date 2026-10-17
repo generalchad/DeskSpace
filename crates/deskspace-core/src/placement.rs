@@ -1,5 +1,7 @@
 //! Where a new space goes: in line with the top row of spaces on its
-//! monitor, one typical gutter to the right of them (ROADMAP D10).
+//! monitor, one typical gutter to the right of them (ROADMAP D10), or, for
+//! one opened by a drop on the desktop, as near the drop point as it fits
+//! (ROADMAP D7).
 
 use crate::geometry::{Point, Rect, Size};
 
@@ -37,6 +39,55 @@ pub fn new_space_origin(
         .map(|origin| Rect::from_point_size(origin, size))
         .find(|rect| fits(*rect, bounds) && is_clear(*rect, spaces, gap))
         .map(Rect::origin)
+}
+
+/// Where a space of `size` opened by a drop at `at` goes: its top-left
+/// corner as near `at` as it can be while keeping a full `gap` from every
+/// space in `spaces` and from the edges of `bounds`, the work area, so the
+/// taskbar keeps a gutter too.
+///
+/// The nearest such spot either keeps `at`'s coordinate on an axis or sits
+/// one gutter beside a space on it, so only those positions are tried.
+/// `None` when the work area has no such spot.
+pub fn drop_space_origin(
+    at: Point,
+    spaces: &[Rect],
+    size: Size,
+    bounds: Rect,
+    gap: i32,
+) -> Option<Point> {
+    let inner = bounds.inset(gap);
+    let (max_x, max_y) = (inner.right() - size.width, inner.bottom() - size.height);
+    if max_x < inner.x || max_y < inner.y {
+        return None;
+    }
+    let xs: Vec<i32> = std::iter::once(at.x)
+        .chain(
+            spaces
+                .iter()
+                .flat_map(|space| [space.x - gap - size.width, space.right() + gap]),
+        )
+        .map(|x| x.clamp(inner.x, max_x))
+        .collect();
+    let ys: Vec<i32> = std::iter::once(at.y)
+        .chain(
+            spaces
+                .iter()
+                .flat_map(|space| [space.y - gap - size.height, space.bottom() + gap]),
+        )
+        .map(|y| y.clamp(inner.y, max_y))
+        .collect();
+    let distance = |origin: Point| {
+        let (dx, dy) = (i64::from(origin.x - at.x), i64::from(origin.y - at.y));
+        dx * dx + dy * dy
+    };
+    xs.iter()
+        .flat_map(|x| ys.iter().map(move |y| Point::new(*x, *y)))
+        .filter(|origin| {
+            let margin = Rect::from_point_size(*origin, size).inset(-gap);
+            !spaces.iter().any(|space| space.intersects(margin))
+        })
+        .min_by_key(|origin| distance(*origin))
 }
 
 /// The slots to try, best first: the end of each row, top to bottom, then a
@@ -254,5 +305,58 @@ mod tests {
     #[test]
     fn a_full_monitor_has_no_slot() {
         assert_eq!(place(&[BOUNDS]), None);
+    }
+
+    fn drop_at(x: i32, y: i32, spaces: &[Rect]) -> Option<Point> {
+        drop_space_origin(Point::new(x, y), spaces, SIZE, BOUNDS, DEFAULT_SPACE_GAP)
+    }
+
+    #[test]
+    fn a_drop_on_open_desktop_opens_the_space_at_the_drop_point() {
+        assert_eq!(drop_at(500, 400, &[]), Some(Point::new(500, 400)));
+    }
+
+    #[test]
+    fn a_drop_near_the_edge_keeps_a_gutter_from_the_work_area() {
+        // The work area ends above the taskbar, so the bottom gutter is
+        // kept from the taskbar too.
+        assert_eq!(drop_at(5, 1030, &[]), Some(Point::new(32, 1040 - 32 - 120)));
+        assert_eq!(
+            drop_at(1900, 10, &[]),
+            Some(Point::new(1920 - 32 - 240, 32))
+        );
+    }
+
+    #[test]
+    fn a_drop_on_a_space_moves_to_the_nearest_clear_side() {
+        // Dropped just inside the space's right edge: beside it is nearer
+        // than below it.
+        let space = Rect::new(400, 300, 300, 400);
+        assert_eq!(drop_at(680, 450, &[space]), Some(Point::new(700 + 32, 450)));
+        // Just inside its bottom edge: below it is nearer.
+        assert_eq!(drop_at(450, 690, &[space]), Some(Point::new(450, 700 + 32)));
+    }
+
+    #[test]
+    fn a_drop_between_spaces_keeps_a_full_gutter_from_both() {
+        // A 300 px gap between two spaces fits the 240 px space but not its
+        // two 32 px gutters, so it goes past one of them.
+        let left = Rect::new(100, 100, 300, 300);
+        let right = Rect::new(700, 100, 300, 300);
+        let origin = drop_at(420, 150, &[left, right]).unwrap();
+        let placed = Rect::from_point_size(origin, SIZE);
+        for space in [left, right] {
+            assert!(!space.intersects(placed.inset(-DEFAULT_SPACE_GAP)));
+        }
+    }
+
+    #[test]
+    fn a_full_work_area_has_no_spot_for_a_drop() {
+        assert_eq!(drop_at(500, 400, &[BOUNDS]), None);
+        let tiny = Rect::new(0, 0, 200, 100);
+        assert_eq!(
+            drop_space_origin(Point::new(0, 0), &[], SIZE, tiny, DEFAULT_SPACE_GAP),
+            None
+        );
     }
 }

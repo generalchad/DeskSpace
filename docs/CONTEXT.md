@@ -443,7 +443,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   on a settings edit only touches the ones that changed.
 - **The desktop layer** (`Ui::create_desktop_layer`,
   `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
-  window with a `chrome: false` style and no OLE drop target. It spans the
+  window with a `chrome: false` style. It spans the
   virtual desktop (`system::virtual_desktop_rect`) and is a `WS_CHILD` of the
   host when one is in use, else top-level and kept at the bottom, behind the
   spaces. Only the layer pins to `HWND_BOTTOM`; on every z-order change a
@@ -472,7 +472,9 @@ one arm in `App::on_event`, whose match is exhaustive.
     move, roll up, scroll, inline rename, delete, clipboard paste) stay keyed
     on a space; a loose item's menu is Explorer's alone, an empty spot gets
     the desktop menu (section 8), and Delete does
-    nothing on the layer.
+    nothing on the layer. A drop on the layer opens a new space at the drop
+    point and drops into it (`App::drop_onto`; ROADMAP D7, amended
+    2026-10-17); a drop that adds nothing closes that space again.
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
   never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /
@@ -527,9 +529,10 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 ### Drops (`win32/drop_target.rs`)
 
-- Every space is an OLE `IDropTarget` (`RegisterDragDrop`, revoked in
-  `WM_DESTROY`), not a `WS_EX_ACCEPTFILES` window, so it chooses the drop
-  effect and the shell shows the move/copy cursor. `drag_kind` says what a
+- Every space and the desktop layer is an OLE `IDropTarget`
+  (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
+  window, so it chooses the drop effect and the shell shows the move/copy
+  cursor. `drag_kind` says what a
   drag carries (`DragKind`: real files, shell items, or nothing), and the pure
   `drop_plan` decides what a drop does (`DropPlan`) and which effect to
   report. Every `DragEnter` logs the allowed effects, keys, kind, and offered
@@ -1158,6 +1161,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   the new order sticks until a Sort by reorders it.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
+  With takeover on, a drop on the desktop instead opens a new space at the
+  drop point, clear of the other spaces and the taskbar, holding what was
+  dropped, whatever its source (ROADMAP D7, amended 2026-10-17).
   When the grabbed item is part of the selection, the whole selection drags.
 - A right-button press on an item selects it; dragging past the drag
   threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a) that never
@@ -1170,7 +1176,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   space menu. "Create shortcuts here" (G5c) is still open.
 - Delete sends the selected items' files to the Recycle Bin (undoable, no
   prompt), as Explorer does; Shift+Delete removes them for good. A stored file
-  goes back to the desktop only by dragging it there or deleting its space.
+  goes back to the desktop only by dragging it there (not with takeover on)
+  or deleting its space.
 - Ctrl+X, Ctrl+C, and Ctrl+V cut, copy, and paste. Cut items are ghosted until
   pasted; paste goes into the current space, moving (cut) or duplicating
   (copy) the files through the shell's file operation.

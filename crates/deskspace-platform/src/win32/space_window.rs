@@ -63,10 +63,6 @@ pub(crate) struct SpaceWindowOptions {
     pub click_through: bool,
     pub on_top: bool,
     pub visible: bool,
-    /// Whether to register an OLE drop target. The desktop layer skips it: it
-    /// is display-only, and a drop target that does not move the files would
-    /// still tell a shell source the drop was performed.
-    pub register_drop: bool,
 }
 
 struct SpaceState {
@@ -163,9 +159,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         if options.visible {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         }
-        if options.register_drop
-            && let Err(error) = drop_target::register(hwnd, options.id, hosted)
-        {
+        if let Err(error) = drop_target::register(hwnd, options.id, hosted) {
             tracing::warn!(%error, "space will not accept dropped files");
         }
         Ok(hwnd)

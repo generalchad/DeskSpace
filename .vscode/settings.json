@@ -1,0 +1,6 @@
+{
+    "sonarlint.connectedMode.project": {
+        "connectionId": "generalchad",
+        "projectKey": "generalchad_DeskSpace"
+    }
+}

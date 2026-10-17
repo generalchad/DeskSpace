@@ -13,6 +13,36 @@ use deskspace_platform::{
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 
 impl App {
+    /// Runs `add` on the space a drop on `surface` at `at` goes into: that
+    /// space, or, for the desktop layer, a new space opened at the drop point
+    /// (ROADMAP D7). A new space the drop left empty, because nothing could
+    /// be added, closes again.
+    pub(super) fn drop_onto(
+        &mut self,
+        ui: &mut Ui,
+        surface: Surface,
+        at: Point,
+        add: impl FnOnce(&mut Self, &mut Ui, SpaceId),
+    ) {
+        let target = match surface {
+            Surface::Space(id) => id,
+            Surface::Desktop => match self.create_space_for_drop(ui, at) {
+                Some(id) => id,
+                None => return,
+            },
+        };
+        add(self, ui, target);
+        let left_empty = surface == Surface::Desktop
+            && self
+                .config
+                .desktop
+                .space(target)
+                .is_some_and(|space| space.items().is_empty());
+        if left_empty {
+            self.delete_space(ui, target);
+        }
+    }
+
     pub(super) fn add_dropped(
         &mut self,
         ui: &mut Ui,

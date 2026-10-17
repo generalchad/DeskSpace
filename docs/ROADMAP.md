@@ -72,7 +72,8 @@ A native, lightweight, offline Windows desktop organizer that:
       goes to the Recycle Bin, as the Delete key and Explorer's Delete do, and
       an item listed in place (Shift-dropped, or on another drive) is only
       unlisted, so the user's original is never deleted. The one way to take
-      an item out of a space onto the desktop is to drag it there. The item
+      an item out of a space onto the desktop is to drag it there (not while
+      takeover is on; D7, amended 2026-10-17). The item
       menu's old "Remove from space" / "Move back to desktop" entry is gone.
   - *Deleting a lens never deletes its folder.* A lens is only a view, so
     deleting the lens removes the view and leaves the bound folder and every
@@ -158,6 +159,17 @@ A native, lightweight, offline Windows desktop organizer that:
     into storage, then `Command::MoveItem`); moving a space item back to the
     desktop is `Command::MoveToDesktop`; dragging a loose item repositions it
     (`Command::SetDesktopItemPosition`).
+  - *Amended 2026-10-17 (maintainer):* a drop on the taken-over desktop
+    (the layer) opens a new space holding what was dropped: files from
+    Explorer, Start-menu and taskbar apps (as shortcuts), and items dragged
+    out of another space alike, with the drop's usual modifiers and right-drop
+    menu. The space opens at the drop point, nudged so it keeps one gutter
+    from every space and from the work area's edges, the taskbar included
+    (`placement::drop_space_origin`); it has the configured new-space title,
+    size, and lock. So while takeover is on, an item leaves its space for the
+    desktop only when the space is deleted. Before this the layer refused
+    every drop. Later, an option may allow loose items on a taken-over
+    desktop (DeskSpace drawing its own desktop).
 
 - **D8. Takeover placement and safety (2026-10-10).** Resolves open questions
   1 and 2.
@@ -587,7 +599,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
 | F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
-| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); check pending for the layer |
+| F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |

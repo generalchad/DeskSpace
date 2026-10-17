@@ -119,7 +119,8 @@ help inspect the look and the desktop layer.
   desktop.
 - Double-click an item to open it; right-click for Explorer's context menu,
   with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
-  and dragging an item onto the desktop takes it out of the space. Click a selected
+  and dragging an item onto the desktop takes it out of the space (with the
+  desktop takeover on, it opens a new space instead). Click a selected
   item again (slowly) to rename it.
 - With the desktop takeover on, right-click an empty spot of the desktop for
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
@@ -140,6 +141,8 @@ help inspect the look and the desktop layer.
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
   A right drag onto a space opens a menu to move, copy, or just show the files.
   Apps dragged from the Start menu or the taskbar become shortcuts.
+- With the desktop takeover on, dropping anything on the desktop itself opens
+  a new space there with it, an item dragged out of another space included.
 - Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
   the desktop takeover on, your loose desktop icons stay visible.
 - The tray icon opens Settings on left-click and offers Settings, hide/show
