@@ -1,6 +1,8 @@
 //! `App` persistence: command dispatch and the debounced configuration write
 //! (R1).
 
+use std::path::Path;
+
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, CommandOutcome};
 use deskspace_platform::{Ui, work_area_at};
@@ -30,11 +32,31 @@ impl App {
         outcome
     }
 
-    pub(super) fn save(&self) {
-        if let Err(error) = self.store.save(&self.config) {
-            tracing::error!(%error, "failed to persist configuration");
-        } else {
-            tracing::debug!(path = %self.store.path().display(), "configuration saved");
+    /// Writes the configuration now. The first failure since the last
+    /// success is shown to the user: release builds have no console, so a
+    /// log line alone would go unseen until changes were lost.
+    pub(super) fn save(&mut self, ui: &mut Ui) {
+        match self.write_config() {
+            Ok(()) => self.autosave.reported_failure = false,
+            Err(error) => {
+                if !std::mem::replace(&mut self.autosave.reported_failure, true) {
+                    let text = save_failure_text(self.store.path(), &error);
+                    ui.alert("DeskSpace could not save", &text);
+                }
+            }
+        }
+    }
+
+    fn write_config(&self) -> Result<(), String> {
+        match self.store.save(&self.config) {
+            Ok(()) => {
+                tracing::debug!(path = %self.store.path().display(), "configuration saved");
+                Ok(())
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to persist configuration");
+                Err(error.to_string())
+            }
         }
     }
 
@@ -46,12 +68,22 @@ impl App {
     }
 
     /// Writes any deferred change now and stops the autosave timer. Used when
-    /// the timer fires and when the app closes, so nothing is lost.
+    /// the timer fires, so nothing is lost.
     pub(super) fn flush_save(&mut self, ui: &mut Ui) {
         if self.autosave.take() {
             Self::clear_timer(ui, Timer::Autosave);
         }
-        self.save();
+        self.save(ui);
+    }
+
+    /// `flush_save` for a shutdown (closing, or quitting to install an
+    /// update): a failure is only logged, because a modal box must not block
+    /// the exit or an unattended install.
+    pub(super) fn flush_save_on_close(&mut self, ui: &mut Ui) {
+        if self.autosave.take() {
+            Self::clear_timer(ui, Timer::Autosave);
+        }
+        let _ = self.write_config();
     }
 
     /// Applies `command`, then, when it applied, repaints what it changed
@@ -72,5 +104,28 @@ impl App {
         }
         self.schedule_save(ui);
         outcome
+    }
+}
+
+/// What the user is told when the configuration cannot be written.
+fn save_failure_text(path: &Path, error: &str) -> String {
+    format!(
+        "DeskSpace could not save its settings and spaces to\n{}\n\n{error}\n\n\
+         Changes made since the last successful save may be lost when \
+         DeskSpace closes.",
+        path.display()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_failure_text_names_the_path_and_the_error() {
+        let text = save_failure_text(Path::new("C:/cfg/deskspace.toml"), "Access is denied.");
+        assert!(text.contains("C:/cfg/deskspace.toml"));
+        assert!(text.contains("Access is denied."));
+        assert!(text.contains("may be lost"));
     }
 }

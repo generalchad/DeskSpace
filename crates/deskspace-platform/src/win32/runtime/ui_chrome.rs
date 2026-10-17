@@ -157,6 +157,28 @@ impl Ui {
         answer == IDYES
     }
 
+    /// Tells the user something went wrong, in a modal message box with an
+    /// OK button. Blocks until it is dismissed.
+    pub fn alert(&mut self, title: &str, text: &str) {
+        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller));
+        let title = wide(title);
+        let text = wide(text);
+        // SAFETY: both strings are NUL-terminated and outlive the modal call.
+        unsafe {
+            if let Some(owner) = owner {
+                // A message box owned by a background window opens behind the
+                // active app unless its owner is made foreground first.
+                let _ = SetForegroundWindow(owner);
+            }
+            MessageBoxW(
+                owner,
+                PCWSTR(text.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_OK | MB_ICONWARNING,
+            );
+        }
+    }
+
     /// Asks a question with `buttons` labels, returning the index of the button
     /// the user chose, or `None` if the dialog was dismissed (Escape, the close
     /// button). `default` marks the default button. Blocks in a modal loop.

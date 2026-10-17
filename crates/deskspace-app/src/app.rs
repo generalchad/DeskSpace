@@ -327,6 +327,9 @@ impl Preview {
 #[derive(Debug, Default)]
 struct Autosave {
     dirty: bool,
+    /// A failed save was already reported, so the next failure stays quiet
+    /// until a save succeeds again.
+    reported_failure: bool,
 }
 
 impl Autosave {
@@ -584,7 +587,7 @@ impl EventHandler for App {
                 // discarded.
                 self.cancel_edit(ui);
                 self.cancel_settings(ui);
-                self.flush_save(ui);
+                self.flush_save_on_close(ui);
                 self.remove_desktop_show_entry();
             }
         }

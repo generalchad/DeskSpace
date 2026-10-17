@@ -1992,3 +1992,27 @@ until I5-I6 all land, so no partial build hides the desktop.
   both maps keep a deleted space's entry, so check and note it under **Found
   while working** if that is still true), and the `icon_scales` reads. After
   N5.
+
+- [x] **B29. Tell the user when the config cannot be saved.** Today
+  `App::save` (`app/persist.rs`) only logs the error, and release builds
+  have no console, so a failed save goes unseen until changes are lost.
+  - Platform, `win32/runtime/ui_chrome.rs`: add `pub fn alert(&mut self,
+    title: &str, text: &str)` right below `confirm`. Copy `confirm`'s body,
+    use `MB_OK | MB_ICONWARNING`, and return nothing.
+  - App, `app.rs`: add `reported_failure: bool` to `struct Autosave`.
+  - App, `app/persist.rs`:
+    - Add a pure `fn save_failure_text(path: &Path, error: &str) -> String`.
+      It names the path, gives the error, and says that changes may be lost
+      when DeskSpace closes.
+    - Change `save` to `save(&mut self, ui: &mut Ui)`. On an error, log as
+      now; then, if `reported_failure` is false, set it and call
+      `ui.alert("DeskSpace could not save", &save_failure_text(..))`. On
+      success, set it back to false.
+    - Add `flush_save_on_close(&mut self, ui: &mut Ui)`. It does what
+      `flush_save` does but never alerts, because a modal box must not
+      block a shutdown. Call it from `Event::CloseRequested` instead of
+      `flush_save`.
+  - Test: `save_failure_text` contains the path and the error.
+  - **[needs human]** check: make the scratch config read-only (`attrib +r`)
+    and move a space. One box appears; a second move shows none. Clear the
+    attribute and move again; the file is saved.

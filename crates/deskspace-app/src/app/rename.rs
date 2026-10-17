@@ -256,7 +256,7 @@ impl App {
             },
             near,
         );
-        self.save();
+        self.save(ui);
     }
 
     pub(super) fn cancel_edit(&mut self, ui: &mut Ui) {

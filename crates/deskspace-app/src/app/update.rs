@@ -333,7 +333,7 @@ impl App {
     /// Queues the installer and quits; `bootstrap::run` runs it once the
     /// teardown has restored the desktop.
     fn install_and_quit(&mut self, ui: &mut Ui, package: Package, mode: InstallMode) {
-        self.flush_save(ui);
+        self.flush_save_on_close(ui);
         self.update.on_exit.queue(package, mode);
         ui.quit();
     }

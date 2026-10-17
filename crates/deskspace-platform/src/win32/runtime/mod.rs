@@ -33,7 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SetTimer, ShowWindow, TranslateMessage, WM_CLOSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_YESNO, MessageBoxW, SetForegroundWindow,
+    IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxW, SetForegroundWindow,
 };
 use windows::core::PCWSTR;
 

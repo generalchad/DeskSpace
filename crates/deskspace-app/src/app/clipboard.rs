@@ -192,7 +192,7 @@ impl App {
             self.refresh_space(ui, *id);
         }
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
     }
 }
 

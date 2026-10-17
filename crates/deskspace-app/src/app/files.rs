@@ -69,7 +69,7 @@ impl App {
             self.resync_desktop_layer(ui);
         }
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
     }
 
     /// Creates a shortcut in the store for each source and lists it in
@@ -114,7 +114,7 @@ impl App {
         }
         self.refresh_space(ui, target);
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
         self.refresh_settings(ui);
     }
 
@@ -271,7 +271,7 @@ impl App {
         }
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
     }
 
     /// Deletes the `index`-th item of space `space` after asking, from the X
@@ -307,7 +307,7 @@ impl App {
         self.dispatch(Command::RemoveItem { id: item }, near);
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
         self.refresh_settings(ui);
     }
 
@@ -361,7 +361,7 @@ impl App {
         }
         self.refresh_space(ui, id);
         self.refresh_tray(ui);
-        self.save();
+        self.save(ui);
     }
 
     pub(super) fn delete_space(&mut self, ui: &mut Ui, id: SpaceId) {
@@ -396,7 +396,7 @@ impl App {
                 "space kept because some files could not be moved back"
             );
             self.refresh_space(ui, id);
-            self.save();
+            self.save(ui);
             return;
         }
         let near = self.space_center(id);
@@ -411,7 +411,7 @@ impl App {
             self.pointer.clear_hover_on(Surface::Space(id));
             self.view_cache.forget(id);
             self.sync_windows(ui);
-            self.save();
+            self.save(ui);
         }
     }
 }

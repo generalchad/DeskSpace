@@ -392,7 +392,7 @@ impl App {
         if update_check_changed {
             self.sync_update_schedule(ui);
         }
-        self.save();
+        self.save(ui);
         if let Some(session) = self.settings_ui.session.as_mut() {
             session.commit(&self.config);
         }

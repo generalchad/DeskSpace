@@ -364,30 +364,6 @@ should not depend on review. Do the tasks in the order listed. Each is one
 commit. Each step says exactly what to type; if the code does not match what
 a step describes, stop and ask (rule 4).
 
-- [ ] **B29. Tell the user when the config cannot be saved.** Today
-  `App::save` (`app/persist.rs`) only logs the error, and release builds
-  have no console, so a failed save goes unseen until changes are lost.
-  - Platform, `win32/runtime/ui_chrome.rs`: add `pub fn alert(&mut self,
-    title: &str, text: &str)` right below `confirm`. Copy `confirm`'s body,
-    use `MB_OK | MB_ICONWARNING`, and return nothing.
-  - App, `app.rs`: add `reported_failure: bool` to `struct Autosave`.
-  - App, `app/persist.rs`:
-    - Add a pure `fn save_failure_text(path: &Path, error: &str) -> String`.
-      It names the path, gives the error, and says that changes may be lost
-      when DeskSpace closes.
-    - Change `save` to `save(&mut self, ui: &mut Ui)`. On an error, log as
-      now; then, if `reported_failure` is false, set it and call
-      `ui.alert("DeskSpace could not save", &save_failure_text(..))`. On
-      success, set it back to false.
-    - Add `flush_save_on_close(&mut self, ui: &mut Ui)`. It does what
-      `flush_save` does but never alerts, because a modal box must not
-      block a shutdown. Call it from `Event::CloseRequested` instead of
-      `flush_save`.
-  - Test: `save_failure_text` contains the path and the error.
-  - **[needs human]** check: make the scratch config read-only (`attrib +r`)
-    and move a space. One box appears; a second move shows none. Clear the
-    attribute and move again; the file is saved.
-
 - [ ] **B30. Lay a command out on the grid of the space it targets.**
   Today `App::dispatch` picks the grid from `space_at(near)`, the topmost
   space under the point. When spaces overlap, that can be a different space
@@ -810,6 +786,7 @@ each id is in `archive/TASKS-done.md`.
 | F-57 zoom pop-up | Still to check: the look in light mode and on the Blur, Solid, and Clear backdrops (Clear shows as Acrylic); the scale at 150 %, where the percentage should read 100 % at "Medium icons". |
 | F15 | Still to check: the icon-size slider and the Match Explorer preset leave every space's size alone; "Fit to contents" then fits the space to its items; Cancel after a slider preview leaves a never-resized space growing with new items again; moving a space to a monitor with another DPI still scales it (title bar included). |
 | B28c | Lock, roll up, sort, and "Fit to contents" (space menu and the settings button) each repaint the space at once and survive a restart. |
+| B29 | Make the scratch config read-only (`attrib +r`) and move a space: one "DeskSpace could not save" box appears; a second move shows none. Clear the attribute and move again: the file is saved. Closing DeskSpace while it is read-only shows no box. |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 
 ## Found while working
