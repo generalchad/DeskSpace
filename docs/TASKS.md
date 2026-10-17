@@ -151,8 +151,9 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    the code to the variant in `fn selection_key` (and its test).
 3. `deskspace-app/src/app.rs`: handle it in `App::on_selection_key`, calling
    a method in the `app/` module that owns the behavior.
-4. Update the key lists in `ENGINEERING.md` (Keys), `CONTEXT.md` section 8, and
-   `README.md` Controls (B16 reduces this to one place).
+4. Add the key to the `ENGINEERING.md` Keys table (the one flag-by-key
+   list), what it does to `CONTEXT.md` section 8, and a user-facing line to
+   `README.md` Controls.
 
 ### Recipe: a new global hotkey
 
@@ -225,14 +226,6 @@ user-visible change is expected. Do them in any order.
   - Done when: no method in `build.rs` is over about 80 lines.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
-
-- [ ] **B16. One home for the key list.** The full key list is kept in three
-  places (`ENGINEERING.md` Keys, `CONTEXT.md` section 8, `README.md`
-  Controls), so the key recipe edits all three.
-  - Keep the flag-by-key table in `ENGINEERING.md` only. `CONTEXT.md` section 8
-    links to it instead of restating which flag a key needs. `README.md`
-    keeps its user-facing prose (it is for users, not contributors).
-  - Update the key recipe's step 4.
 
 - [ ] **B17. Fix stale statements in CONTEXT and ROADMAP.**
   - `CONTEXT.md` section 2, "Code health": no non-test file is over 800

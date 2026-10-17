@@ -1769,3 +1769,11 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done with all ten timers: `UpdateIdle = 9` and `ZoomBar = 10` landed
     after this task was written, so the test rejects 0 and 11 (maintainer,
     2026-10-16).
+
+- [x] **B16. One home for the key list.** The full key list is kept in three
+  places (`ENGINEERING.md` Keys, `CONTEXT.md` section 8, `README.md`
+  Controls), so the key recipe edits all three.
+  - Keep the flag-by-key table in `ENGINEERING.md` only. `CONTEXT.md` section 8
+    links to it instead of restating which flag a key needs. `README.md`
+    keeps its user-facing prose (it is for users, not contributors).
+  - Update the key recipe's step 4.

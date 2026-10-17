@@ -854,13 +854,9 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   rename is committed with `IFileOperation::RenameItem`
   (undoable; the extension is preserved when the label hid it) and applied
   through `Command::RenameItem`, which updates the item's path and label. The
-  same hook watches keys outside a rename (`Ui::watch_selection_keys`): F2,
-  Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, and the zoom keys
-  (Ctrl+Plus, Ctrl+Minus, Ctrl+0, main and keypad) whenever an item is
-  selected or a space is current; Enter, Delete, Shift+Delete, and Ctrl+C/X
-  only with a selection; and Ctrl+V, Home, End, PageUp, PageDown, the arrow
-  keys, and typed characters only with a current space. Every other key
-  passes through. ENGINEERING.md's Keys table has the flag-by-key list. Alt+Enter
+  same hook watches keys outside a rename (`Ui::watch_selection_keys`);
+  `ENGINEERING.md`'s Keys table is the one list of which key needs which
+  flag. Alt+Enter
   shows the focused item's Properties (`Ui::show_properties`) or DeskSpace
   Settings; Enter opens the focused item, Esc clears the selection, F5 refreshes
   the spaces, the Menu key or Shift+F10 opens the item's or space's context
@@ -870,12 +866,10 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   nearest item in that direction (`Event::Navigate`), Shift+arrow extends the
   selection from the anchor, and Ctrl+arrow moves the item focus without
   changing the selection; the moved item is scrolled into view. The focused
-  item is drawn with a dotted rectangle (`SpaceScene.focused_item`). While a popup menu is open it owns every key, so the hook passes them
-  through (`keyboard::set_menu_open`). The watch
-  only consumes those keys while the desktop shell has the foreground
-  (`desktop_is_foreground`), because the selection is kept when another app is
-  focused, as Explorer keeps a desktop selection; otherwise DeskSpace would
-  steal that app's own Ctrl+C/V. IME composition and clipboard are not
+  item is drawn with a dotted rectangle (`SpaceScene.focused_item`). The
+  watch is limited to the desktop's foreground because the selection is kept
+  when another app is focused, as Explorer keeps a desktop selection;
+  otherwise DeskSpace would steal that app's own Ctrl+C/V. IME composition and clipboard are not
   supported in a rename. Each watched key is posted to the controller as its
   own `WM_APP` message (see the table above) and becomes one `Event`; a new
   key either reuses `SELECTION_KEY` with a new `SelectionKey` variant (the
@@ -892,9 +886,7 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   items are listed and selected. `Ui::clipboard_shell_items` reads the
   clipboard's shell items through `OleGetClipboard` and `drop_target::shell_items`
   (sharing `open_clipboard`'s retry) for "New shortcut ▸ Paste shortcut"
-  (F-54). The keys arrive through the same low-level
-  keyboard hook as Delete, now gated on a selection (Ctrl+C/X) or a current
-  space (Ctrl+V). Delete sends the selection to the Recycle Bin
+  (F-54). Delete sends the selection to the Recycle Bin
   (`Ui::delete_files(paths, permanent)` → `IFileOperation::DeleteItem` with
   `FOF_ALLOWUNDO | FOF_NOCONFIRMATION`, no prompt, undoable; Shift+Delete
   passes `permanent`, which drops `FOF_ALLOWUNDO`) and drops the items whose
@@ -1396,7 +1388,8 @@ after About) and `settings::listed_pages` says which pages a scope lists.
   letters (the buffer clears after about a second), and Home, End, PageUp, and
   PageDown scroll the space to the top, the bottom, or one page. The arrow keys
   move the selection across the grid (Shift extends, Ctrl moves the dotted
-  focus rectangle only).
+  focus rectangle only). When each key is watched is in `ENGINEERING.md`'s
+  Keys table.
 - The Settings → Hotkeys page binds the global hotkeys: show/hide spaces
   (`Ctrl+Alt+D` by default), create a new space at the pointer, and open
   settings (both unbound). While spaces are hidden, a "Show DeskSpace spaces"
