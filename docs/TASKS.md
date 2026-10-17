@@ -25,8 +25,8 @@ findings. Skip tasks marked **[needs decision]** and everything in section D.
    the code more readable than you found it, within the task's scope. If no
    extension point fits, stop and ask rather than special-casing.
 6. Done means: fmt, clippy `-D warnings` (no new `#[allow]`), and tests pass
-   (`ENGINEERING.md` has the commands), with new tests for new logic and the test
-   count in `CONTEXT.md` section 2 updated; `CONTEXT.md` updated where
+   (`ENGINEERING.md` has the commands), with new tests for new logic;
+   `CONTEXT.md` updated where
    behavior changed, and the `ROADMAP.md` feature index (section 7) where a
    feature's status changed; and the task's own "Done when" list.
 7. Commit in the `ENGINEERING.md` style with the task id in parentheses
@@ -264,19 +264,6 @@ user-visible change is expected. Do them in any order.
   `ENGINEERING.md` section 3, `CONTEXT.md` section 3 ("Crate
   responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
   - Done when: the gates pass and the docs say four crates forbid `unsafe`.
-
-- [ ] **B20. Stop hand-counting tests in the docs.** `CONTEXT.md` section 2
-  states the test count ("403 tests") and `How to work a task` rule 6 asks
-  every task to update it, so it drifts. `cargo test` already reports the
-  number.
-  - `CONTEXT.md` section 2: drop the number and the "Update this count"
-    sentence.
-  - This file: rule 6 drops "and the test count in `CONTEXT.md` section 2
-    updated"; section K's "Done when" keeps "with the same test count" (it
-    is checked from `cargo test` output, not the docs); section B's intro is
-    unchanged.
-  - Done when: `grep -rn "403\|test count" docs/*.md` finds only the K rule
-    and the section B intro.
 
 - [ ] **B21. Seed the first space through `Command`s.** `bootstrap.rs`
   builds the initial "Desktop" space by calling `Desktop::add_item` and

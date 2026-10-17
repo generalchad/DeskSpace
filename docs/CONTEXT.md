@@ -23,8 +23,7 @@ finished product. The direction is decided in `ROADMAP.md` section 2.
 
 ## 2. Current status
 
-- Build, clippy `-D warnings`, and `cargo test --workspace` (403 tests) are
-  green. Update this count whenever a test is added or removed.
+- Build, clippy `-D warnings`, and `cargo test --workspace` are green.
 - Releases and what is in progress: `ROADMAP.md` section 4; feature status:
   its section 7. In short, spaces, their Explorer-like items (section 8 lists
   every control), the tray, menus, and settings window are in; desktop

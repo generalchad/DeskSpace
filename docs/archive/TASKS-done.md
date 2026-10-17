@@ -1785,3 +1785,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     L1's findings left and item 4 lists G5a-G5b, which have landed; reduce
     them to L1 and G5c.
   - Done when: the two statements match this file.
+
+- [x] **B20. Stop hand-counting tests in the docs.** `CONTEXT.md` section 2
+  states the test count ("403 tests") and `How to work a task` rule 6 asks
+  every task to update it, so it drifts. `cargo test` already reports the
+  number.
+  - `CONTEXT.md` section 2: drop the number and the "Update this count"
+    sentence.
+  - This file: rule 6 drops "and the test count in `CONTEXT.md` section 2
+    updated"; section K's "Done when" keeps "with the same test count" (it
+    is checked from `cargo test` output, not the docs); section B's intro is
+    unchanged.
+  - Done when: `grep -rn "403\|test count" docs/*.md` finds only the K rule
+    and the section B intro.
