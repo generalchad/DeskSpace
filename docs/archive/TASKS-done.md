@@ -1902,3 +1902,22 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Each caller that used the `bool` adds `.is_applied()`. Find the callers
     with `rg -n "self\.dispatch\(" crates/deskspace-app/src`.
   - Pure refactor. Done when: the gates pass.
+
+- [x] **B28b. Core: `Desktop::touched_by` says what a command will change.**
+  - In `deskspace-core/src/command/mod.rs`, add `pub struct Touched {
+    pub spaces: Vec<SpaceId>, pub layer: bool }` with a `///` doc. Also add
+    `pub fn touched_by(&self, command: &Command) -> Touched` on `Desktop`.
+    It is called **before** the command is applied, so it can still find
+    an item's current space.
+  - Write it as one `match` over every variant with **no `_` arm**, so a new
+    variant cannot compile until someone decides what it touches.
+  - The rules:
+    - A variant with a space `id` touches that space.
+    - An item variant touches the space that holds the item now.
+    - A move touches both spaces. **List the destination first**: its grid
+      lays out the result.
+    - `AutoArrange` and `SnapAll` touch every space.
+    - `SyncDesktop` and `SetDesktopItemPosition` touch only the layer.
+    - `MoveToDesktop` touches its source space and the layer.
+    - If a variant fits none of these rules, stop and ask.
+  - Tests: one per rule above, in `command/mod.rs`.

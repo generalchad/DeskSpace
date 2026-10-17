@@ -9,6 +9,7 @@ mod item_ops;
 mod layer_ops;
 mod sort;
 mod space_ops;
+mod touched;
 
 use std::path::PathBuf;
 
@@ -18,6 +19,8 @@ use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::space::{ResizeEdges, SpaceLook};
+
+pub use touched::Touched;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {

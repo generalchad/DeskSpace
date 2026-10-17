@@ -11,7 +11,7 @@ pub mod placement;
 pub mod space;
 pub mod theme;
 
-pub use command::{Command, CommandOutcome, SortKey};
+pub use command::{Command, CommandOutcome, SortKey, Touched};
 pub use desktop::Desktop;
 pub use desktop_layer::DesktopLayer;
 pub use geometry::{Point, Rect, Size};
