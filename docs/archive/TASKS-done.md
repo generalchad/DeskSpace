@@ -2056,3 +2056,13 @@ until I5-I6 all land, so no partial build hides the desktop.
     its `ALL` entry". Move the `mod menu` doc comment onto the enum.
   - Done when: `mod menu` is gone and no `u32` menu id literal is left in the
     app.
+
+- [x] **B19. Forbid `unsafe` in `deskspace-app`.** The app crate has no
+  `unsafe` today, but nothing enforces "all `unsafe` lives in the platform"
+  there. Add `#![forbid(unsafe_code)]` at the top of both binary roots,
+  `src/main.rs` and `src/watchdog_main.rs` (after the existing
+  `windows_subsystem` attribute and its comment). Leave `build.rs` alone; it
+  is its own crate. Update the three places that list which crates forbid it:
+  `ENGINEERING.md` section 3, `CONTEXT.md` section 3 ("Crate
+  responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
+  - Done when: the gates pass and the docs say four crates forbid `unsafe`.

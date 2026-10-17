@@ -59,7 +59,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
 
 ### Crate responsibilities
 
-`core`, `config`, and `update` are `#![forbid(unsafe_code)]`.
+`core`, `config`, `update`, and `app` are `#![forbid(unsafe_code)]`.
 
 - `deskspace-core`: the pure domain: geometry, ids, items, spaces, desktop,
   layout engine, command layer, theme and palette. No OS dependencies, no IO.

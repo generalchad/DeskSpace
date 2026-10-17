@@ -237,16 +237,6 @@ user-visible change is expected. Do them in any order.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
 
-- [ ] **B19. Forbid `unsafe` in `deskspace-app`.** The app crate has no
-  `unsafe` today, but nothing enforces "all `unsafe` lives in the platform"
-  there. Add `#![forbid(unsafe_code)]` at the top of both binary roots,
-  `src/main.rs` and `src/watchdog_main.rs` (after the existing
-  `windows_subsystem` attribute and its comment). Leave `build.rs` alone; it
-  is its own crate. Update the three places that list which crates forbid it:
-  `ENGINEERING.md` section 3, `CONTEXT.md` section 3 ("Crate
-  responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
-  - Done when: the gates pass and the docs say four crates forbid `unsafe`.
-
 - [ ] **B22. Mark the process-wide state where it lives.** The platform keeps
   a number of `static`s and `thread_local!`s. Most are needed, because hooks
   and Win32 callbacks get no context pointer. But none says why, which makes

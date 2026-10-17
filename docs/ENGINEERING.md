@@ -105,8 +105,8 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 
 - Dependencies point one way: `app -> {config, platform, update} -> core`.
   `core` depends on nothing in the workspace. Never add an upward dependency.
-- `deskspace-core`, `deskspace-config`, and `deskspace-update` use
-  `#![forbid(unsafe_code)]`. Keep OS and IO concerns out of `core`.
+- `deskspace-core`, `deskspace-config`, `deskspace-update`, and
+  `deskspace-app` use `#![forbid(unsafe_code)]`. Keep OS and IO concerns out of `core`.
 - All `unsafe` and Win32 code lives in `deskspace-platform`.
 - Mutate the domain only through `Command` and `Desktop::apply`. Add a
   `Command` variant instead of mutating `Desktop` from UI or platform code.

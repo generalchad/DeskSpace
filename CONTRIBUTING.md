@@ -43,7 +43,7 @@ of your editor. `Get-Help ./scripts/dev.ps1` lists the other switches.
   `deskspace-core`.
 - **`unsafe` and Win32 live only in `deskspace-platform`.** Every `unsafe`
   block needs a `// SAFETY:` comment (a lint enforces it). `core`, `config`,
-  and `update` forbid `unsafe` outright.
+  `update`, and `app` forbid `unsafe` outright.
 - **The app describes and the platform draws.** The app builds plain data
   (`SpaceScene`, `MenuEntry`, `SettingsForm`), and the platform turns it into
   windows and pixels. Keep Win32 types out of the app.

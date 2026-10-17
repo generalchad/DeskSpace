@@ -2,6 +2,7 @@
 // started from the installer, a shortcut, or a terminal. Debug builds keep the
 // console so `-v` logging and Ctrl+C work while developing.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![forbid(unsafe_code)]
 
 mod app;
 mod bootstrap;

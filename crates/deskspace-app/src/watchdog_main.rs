@@ -7,6 +7,7 @@
 //! signaled a clean exit. See `deskspace_platform::arm_watchdog`.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![forbid(unsafe_code)]
 
 use std::process::ExitCode;
 
