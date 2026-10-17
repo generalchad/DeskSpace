@@ -1984,3 +1984,11 @@ until I5-I6 all land, so no partial build hides the desktop.
   space click do now). Do it after N3, and after B25 if `on_event`'s theme arm
   has moved. Mechanical, but it touches seven modules: one commit, and run
   the gates before it.
+
+- [x] **N6. A `ViewCache` for per-space view state.** `scroll` and
+  `icon_scales` are per-space, not persisted, and keyed by `SpaceId`. Put them
+  in `struct ViewCache` in `app/view.rs` with `scroll_of(id)`,
+  `set_scroll(id, px)`, `forget(id)` (call it where a space is deleted; today
+  both maps keep a deleted space's entry, so check and note it under **Found
+  while working** if that is still true), and the `icon_scales` reads. After
+  N5.

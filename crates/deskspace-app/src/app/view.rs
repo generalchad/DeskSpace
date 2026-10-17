@@ -1,6 +1,6 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use deskspace_core::geometry::Rect;
 use deskspace_core::layout::GridSpec;
@@ -72,6 +72,40 @@ impl SystemLook {
     #[cfg(test)]
     pub(super) fn set_accent(&mut self, accent: Option<Color>) {
         self.accent = accent;
+    }
+}
+
+/// Per-space view state that is not persisted, keyed by `SpaceId`.
+#[derive(Debug, Default)]
+pub(crate) struct ViewCache {
+    /// Scroll offset in pixels. May exceed the current maximum after a
+    /// resize, so the app reads it through `App::scroll_of`, which clamps.
+    scroll: HashMap<SpaceId, i32>,
+    /// Each space's icon factor (`icon_scale`, without DPI) at its last
+    /// re-flow, so a change to it can keep the space's size first
+    /// (`App::keep_size_on_zoom`).
+    icon_scales: HashMap<SpaceId, f32>,
+}
+
+impl ViewCache {
+    /// The stored scroll offset, unclamped; 0 when never scrolled.
+    pub(super) fn scroll_of(&self, id: SpaceId) -> i32 {
+        self.scroll.get(&id).copied().unwrap_or(0)
+    }
+
+    pub(super) fn set_scroll(&mut self, id: SpaceId, px: i32) {
+        self.scroll.insert(id, px);
+    }
+
+    /// Records `id`'s icon factor and returns the one from its last re-flow.
+    fn record_icon_scale(&mut self, id: SpaceId, factor: f32) -> Option<f32> {
+        self.icon_scales.insert(id, factor)
+    }
+
+    /// Drops everything kept for a deleted space.
+    pub(super) fn forget(&mut self, id: SpaceId) {
+        self.scroll.remove(&id);
+        self.icon_scales.remove(&id);
     }
 }
 
@@ -575,7 +609,7 @@ impl App {
     /// Explorer window does when its icon size changes (`TASKS.md` F15).
     fn keep_size_on_zoom(&mut self, id: SpaceId) {
         let factor = self.icon_scale(self.theme_for(id));
-        let previous = self.icon_scales.insert(id, factor);
+        let previous = self.view_cache.record_icon_scale(id, factor);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -620,6 +654,21 @@ mod tests {
     use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn view_cache_forgets_a_deleted_space() {
+        let mut cache = ViewCache::default();
+        let id = SpaceId(1);
+        assert_eq!(cache.scroll_of(id), 0);
+        cache.set_scroll(id, 40);
+        assert_eq!(cache.record_icon_scale(id, 1.0), None);
+        assert_eq!(cache.record_icon_scale(id, 1.5), Some(1.0));
+        assert_eq!(cache.scroll_of(id), 40);
+
+        cache.forget(id);
+        assert_eq!(cache.scroll_of(id), 0);
+        assert_eq!(cache.record_icon_scale(id, 1.5), None, "no stale factor");
+    }
 
     /// An app with a known Explorer display snapshot. `space_dpi` is `1.0`
     /// outside the UI thread, so the scale assertions are deterministic.

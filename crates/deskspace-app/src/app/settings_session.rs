@@ -270,7 +270,7 @@ impl App {
                     .commit(ui, Command::FitToContents { id }, at)
                     .is_applied()
                 {
-                    self.scroll.remove(&id);
+                    self.view_cache.set_scroll(id, 0);
                 }
                 self.refresh_settings(ui);
             }

@@ -18,7 +18,7 @@ impl App {
             .desktop
             .space(id)
             .map_or(0, |space| space.max_scroll(layout.cell(), layout.padding));
-        self.scroll.get(&id).copied().unwrap_or(0).clamp(0, max)
+        self.view_cache.scroll_of(id).clamp(0, max)
     }
 
     /// A surface's items, in model order.

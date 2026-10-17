@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
@@ -34,7 +32,7 @@ use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
 use update::UpdateState;
-pub(crate) use view::{LayerState, SystemLook};
+pub(crate) use view::{LayerState, SystemLook, ViewCache};
 
 /// How many global hotkeys can be registered at once, one per binding.
 /// Width of the band along a space's edges that starts a resize.
@@ -359,13 +357,8 @@ pub struct App {
     edit: EditState,
     /// Pending configuration write, debounced by `Timer::Autosave`.
     autosave: Autosave,
-    /// Per-space scroll offset in pixels. Not persisted; may exceed the
-    /// current maximum after a resize, so read it through `scroll_of`.
-    scroll: HashMap<SpaceId, i32>,
-    /// Each space's icon factor (`icon_scale`, without DPI) at its last
-    /// re-flow, so a change to it can keep the space's size first
-    /// (`App::keep_size_on_zoom`).
-    icon_scales: HashMap<SpaceId, f32>,
+    /// Per-space view state that is not persisted: scroll and icon factor.
+    view_cache: ViewCache,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -390,8 +383,7 @@ impl App {
             pointer: PointerState::default(),
             edit: EditState::default(),
             autosave: Autosave::default(),
-            scroll: HashMap::new(),
-            icon_scales: HashMap::new(),
+            view_cache: ViewCache::default(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),

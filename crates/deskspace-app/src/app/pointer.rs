@@ -436,7 +436,7 @@ impl App {
         if next == current {
             return;
         }
-        self.scroll.insert(id, next);
+        self.view_cache.set_scroll(id, next);
         // Items moved under a still cursor, so the hovered one changed too.
         let surface = Surface::Space(id);
         self.pointer.hovered = self

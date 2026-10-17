@@ -409,7 +409,7 @@ impl App {
                 self.selection.clear();
             }
             self.pointer.clear_hover_on(Surface::Space(id));
-            self.scroll.remove(&id);
+            self.view_cache.forget(id);
             self.sync_windows(ui);
             self.save();
         }

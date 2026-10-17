@@ -12,7 +12,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health; do B29-B30 in order);
 - K7;
 - Q1-Q6;
-- section N, in order;
 - G5c.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -644,44 +643,6 @@ Rules for every Q task:
 
   The key recipe and the menu-entry recipe then name the one place to edit.
 
-## N. Narrow `App` (state ownership)
-
-`App` has 25 fields and about 300 methods spread over the `app/` modules,
-and every module can reach every field. The split by file is mostly sound:
-the large shared fields are already owned structs (`Selection`,
-`PointerState`, `EditState`, `UpdateState`), and `config` is the model, so
-reading it everywhere is expected. What is left is loose fields that belong
-to one concept. Measured on 2026-10-16 (field: the `app/` modules that use
-it, outside tests):
-
-| Field | Used in |
-|-------|---------|
-| `scroll`, `icon_scales` | `hit`, `selection`, `pointer`, `files`, `menus`, `settings_session`; `view` |
-
-Rules for every N task:
-
-- Each task moves loose fields into one owned struct, in the module that
-  already owns their behavior, with the methods that touch only those
-  fields. Copy how `Selection` (`app/selection.rs`) is declared and held.
-- Behavior-preserving: same test count or more, no user-visible change, no
-  logic edits beyond `self.x` becoming `self.group.x` or a method call.
-- A use outside the owning module goes through a small method (`is_open()`,
-  `layer_active()`), not a `pub(super)` field. If a use needs more than a
-  one-line accessor, stop and ask (rule 4).
-- Update `CONTEXT.md` section 3's module table if a module's "Owns" column
-  changes. Commit as `refactor: <what> (Nn)`.
-
-- [ ] **N6. A `ViewCache` for per-space view state.** `scroll` and
-  `icon_scales` are per-space, not persisted, and keyed by `SpaceId`. Put them
-  in `struct ViewCache` in `app/view.rs` with `scroll_of(id)`,
-  `set_scroll(id, px)`, `forget(id)` (call it where a space is deleted; today
-  both maps keep a deleted space's entry, so check and note it under **Found
-  while working** if that is still true), and the `icon_scales` reads. After
-  N5.
-
-After N1-N6, `App` holds the model and its stores, the owned groups, and a few
-flags. Splitting `Ui` so `App` can be tested against a fake is R15.
-
 ## D. Reserved (strong model or maintainer; do not start)
 
 Each needs design work first. Ids are `R1`-`R17` so they do not collide with
@@ -731,13 +692,13 @@ the ROADMAP decision ids (`D1`-`D9`).
   the setting recipe becomes one row. Decide how option tables, look versus
   Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
 - **R15. Split `Ui` so `App` can be tested against a fake.** `App`'s loose
-  state is section N. What remains is `Ui`: about 60 public methods (already
+  state is grouped into owned structs (N1-N6, archived). What remains is `Ui`: about 60 public methods (already
   filed by area in `runtime/ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, and
   `ui_chrome.rs`), taken as one concrete type, so no `App` behavior that
   touches the screen can be unit-tested; the app's tests reach only the pure
   modules. Design focused traits or handles along those four files, a
   recording fake for tests, and how `EventHandler::on_event` receives them,
-  keeping `runtime::dispatch`'s re-entrancy rules. After N1-N6. Weigh R17
+  keeping `runtime::dispatch`'s re-entrancy rules. Weigh R17
   first: it may make the fake unnecessary.
 - **R17. Pure update, then effects (an alternative to R15).** Make the app's
   decisions a pure function, `fn update(state: &mut AppState, event: Event)
@@ -751,7 +712,8 @@ the ROADMAP decision ids (`D1`-`D9`).
   - how this keeps `runtime::dispatch`'s re-entrancy rules;
   - the first event family to move as a pilot (timers or zoom).
 
-  After N1-N6 and B28; B28's `Touched` is the first effect.
+  Its prerequisites (N1-N6, B28) have landed; B28's `Touched` is the first
+  effect.
 - **R16. Scripting verbs: an out-of-process extension point (F-59).**
   Extensions today mean editing the source. Design a small, stable verb set
   (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that

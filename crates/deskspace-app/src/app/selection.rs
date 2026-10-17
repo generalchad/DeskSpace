@@ -220,7 +220,7 @@ impl App {
         if offset == current {
             return;
         }
-        self.scroll.insert(id, offset);
+        self.view_cache.set_scroll(id, offset);
         // The items moved under a still cursor, so the hovered one changed.
         self.pointer.clear_hover_on(Surface::Space(id));
         self.refresh_space(ui, id);
@@ -331,7 +331,7 @@ impl App {
         };
         let content_height = space.content_rect().height;
         let max = space.max_scroll(layout.cell(), layout.padding);
-        let scroll = self.scroll.get(&id).copied().unwrap_or(0);
+        let scroll = self.view_cache.scroll_of(id);
         let top = item.position.y;
         let bottom = top + layout.cell_height;
         let offset = if top - scroll < 0 {
@@ -341,7 +341,7 @@ impl App {
         } else {
             return;
         };
-        self.scroll.insert(id, offset.clamp(0, max));
+        self.view_cache.set_scroll(id, offset.clamp(0, max));
     }
 
     /// Selects every item between the anchor and `item` in the space's order,

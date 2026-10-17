@@ -83,7 +83,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | Module | Owns |
   |--------|------|
   | `persist` | `dispatch`, `commit`, `save` / `schedule_save` / `flush_save` |
-  | `view` | resolving a space's look (`theme_for`, `grid_for`, `palette_for`, `layout_for`), `refresh_space`, `reflow_space`, what Windows reports (`SystemLook`), the desktop layer and takeover (`LayerState`) |
+  | `view` | resolving a space's look (`theme_for`, `grid_for`, `palette_for`, `layout_for`), `refresh_space`, `reflow_space`, what Windows reports (`SystemLook`), per-space scroll and icon factor (`ViewCache`), the desktop layer and takeover (`LayerState`) |
   | `hit` | surface lookups (`surface_item_at`, `surface_palette`, `find_item_by_file`) |
   | `selection` | `Selection`, keyboard selection (`on_navigate`, `on_typed`), `active_items` |
   | `pointer` | `PointerState`, mouse events, resize, hover, marquee |
