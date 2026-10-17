@@ -8,9 +8,15 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Pick a task:** section B (code health; B27-B30 in order), K7, and
-section N (in order) are ready for any contributor; G5c is ready. L1 needs a maintainer's on-screen
-findings. Skip tasks marked **[needs decision]** and everything in section D.
+**Pick a task:** these are ready for any contributor:
+- section B (code health; do B27-B30 in order);
+- K7;
+- Q1-Q6;
+- section N, in order;
+- G5c.
+
+L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
+decision]** and everything in section D.
 
 ## How to work a task
 
@@ -656,8 +662,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
-## F. Ad-hoc features
-
 ## G. More Explorer-standard controls
 
 - [ ] **G5c. "Create shortcuts here" on a right drop (ROADMAP D9).** G5a and
@@ -736,6 +740,67 @@ Rules for every K task:
     `draw_check`, `draw_label`, `draw_hex`, `draw_button`, `fill_image`.
   - `pick` keeps its path, used by `runtime/ui_chrome.rs` and
     `settings_window/commands.rs`.
+
+## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
+
+`CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
+they justify. `ENGINEERING.md` section 4 (rules 5 and 8) wants that why in a
+comment beside the code, and section 7 wants no doc to restate the code. Each
+Q task moves one subsection. Take any order; one task per commit, as
+`docs: move <subsection>'s why into the code (Qn)`.
+
+Rules for every Q task:
+
+1. Read the subsection one paragraph or bullet at a time. Put each sentence
+   in exactly one of three buckets:
+   - **(a) Restates the code**: a field list, a variant list, or what a
+     function does that its name or `///` doc already says. Open the code
+     and check that it really says it. If it does, delete the sentence. If
+     it does not, add the missing words to the item's `///` doc first, then
+     delete the sentence.
+   - **(b) Explains one function or constant**: why it is written an unusual
+     way, a Windows behavior it works around, a bug it fixed, or a Microsoft
+     Learn link. Move it into a `//` comment (or the `///` doc) on that item,
+     reworded to fit, with its link and date. Then delete the sentence.
+   - **(c) Spans several files**: how parts fit together, an ordering or
+     re-entrancy rule, or a decision. Keep it, shortened if you can.
+2. If you are not sure which bucket a sentence is in, keep it (bucket c).
+   Never delete a fact you could not find in the code.
+3. Change comments only; no code changes. Every edited `unsafe` block keeps
+   its `// SAFETY:` comment.
+4. Keep the subsection's heading, because other docs cite it. If nothing is
+   left under it, write one line naming the files it covers.
+5. The commit body lists each bucket-(b) move as "`<file>`: `<item>`".
+6. Done when: the gates pass, the subsection is at most half its length
+   before, and `rg -n "<a distinctive phrase from each moved sentence>"
+   crates` finds it in the code.
+
+- [ ] **Q1. "Native UI"** (`ui.rs`, `win32/menu.rs`,
+  `win32/settings_window/`, `win32/color_picker.rs`, `win32/dialog.rs`,
+  `win32/dark_mode.rs`). Do it after K7, which moves `color_picker.rs`.
+- [ ] **Q2. "Selection, display matching, keys, and clipboard"**
+  (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
+  `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The
+  ENGINEERING.md Keys table stays where it is.
+- [ ] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
+  the desktop-layer and `Surface` paragraph (bucket c).
+- [ ] **Q4. "Desktop shell, shell items, DPI, hotkeys"**
+  (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
+  `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
+  `system.rs`, `info_tip.rs`, `hotkey.rs`).
+- [ ] **Q5. "Drops" and "Drag out and the drag image"**
+  (`win32/drop_target.rs`, `shell_items.rs`, `drag_image.rs`,
+  `drag_ghost.rs`).
+- [ ] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
+  `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).
+- [ ] **Q7. One home for the controls.** **[needs decision]**: `CONTEXT.md`
+  section 8 and `README.md` "Controls" describe the same controls, one for
+  contributors and one for users. Decide one of these:
+  - README keeps the user prose, and section 8 keeps only the rules README
+    leaves out (exact steps, ranges, and edge cases); or
+  - section 8 moves into a `docs/CONTROLS.md` that both link to.
+
+  The key recipe and the menu-entry recipe then name the one place to edit.
 
 ## N. Narrow `App` (state ownership)
 
