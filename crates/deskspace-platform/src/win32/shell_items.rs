@@ -21,7 +21,7 @@ use windows::Win32::UI::Shell::{
     IContextMenu, IContextMenu2, IContextMenu3, IDataObjectAsyncCapability, IDragSourceHelper,
     IDragSourceHelper2, ILCreateFromPathW, ILFindChild, ILFree, IShellItem, SEE_MASK_INVOKEIDLIST,
     SEE_MASK_NOASYNC, SHCreateDataObject, SHCreateItemFromParsingName, SHDRAGIMAGE, SHDoDragDrop,
-    SHELLEXECUTEINFOW, ShellExecuteExW,
+    SHELLEXECUTEINFOW, SVGIO_BACKGROUND, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, AppendMenuW, CreatePopupMenu, DestroyMenu, MF_SEPARATOR,
@@ -54,7 +54,8 @@ pub enum ItemMenuChoice {
     /// One of the app's own entries.
     App(u32),
     /// A shell command (Open, Cut, Delete, Properties, ...) ran. The item may
-    /// have been moved or deleted.
+    /// have been moved or deleted; a desktop background command (New, Paste,
+    /// Sort by, ...) may have changed the desktop's items.
     Shell,
 }
 
@@ -181,7 +182,42 @@ pub(crate) fn track_item_menu(
         })
         .map_err(|error| tracing::debug!(%error, path = %path.display(), "no shell menu"))
         .ok();
+    track_shell_menu(owner, shell_menu, entries, at)
+}
 
+/// Shows the app's `entries`, a separator, and then the desktop's background
+/// menu (View, Sort by, Refresh, New, Personalize, ...) at `at`, as Explorer
+/// shows it on an empty spot of the desktop. Takeover hides Explorer's view,
+/// so the desktop layer offers this menu in its place.
+pub(crate) fn track_desktop_menu(
+    owner: HWND,
+    entries: &[MenuEntry],
+    at: Point,
+) -> Option<ItemMenuChoice> {
+    track_shell_menu(owner, desktop_background_menu(), entries, at)
+}
+
+/// The desktop view's own background menu. Asking the view (not the Desktop
+/// folder) is what brings in its View and Sort by submenus and the
+/// `DesktopBackground` shell extensions:
+/// <https://learn.microsoft.com/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellview-getitemobject>
+fn desktop_background_menu() -> Option<IContextMenu> {
+    let view = crate::win32::shell_view::desktop_shell_view()?;
+    // SAFETY: `view` is the live desktop view; the call fills an out-parameter
+    // with an owned interface.
+    unsafe { view.GetItemObject::<IContextMenu>(SVGIO_BACKGROUND) }
+        .map_err(|error| tracing::debug!(%error, "no desktop background menu"))
+        .ok()
+}
+
+/// Tracks `entries`, a separator, and `shell_menu` (when there is one) as one
+/// popup, and runs the shell command chosen.
+fn track_shell_menu(
+    owner: HWND,
+    shell_menu: Option<IContextMenu>,
+    entries: &[MenuEntry],
+    at: Point,
+) -> Option<ItemMenuChoice> {
     // SAFETY: the menu is created, tracked, and destroyed within this call;
     // labels outlive the AppendMenuW calls that copy them. The context menu
     // is kept alive in ACTIVE_MENU while tracking and released afterwards.

@@ -46,6 +46,14 @@ impl Ui {
         shell_items::track_item_menu(owner, path, entries, at)
     }
 
+    /// Shows `entries` followed by Explorer's desktop background menu (View,
+    /// Sort by, Refresh, New, ...), for a right-click on an empty spot of the
+    /// desktop layer. Blocks like `item_menu`, with the same id limit.
+    pub fn desktop_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<ItemMenuChoice> {
+        let owner = with_runtime(|runtime| runtime.controller)?;
+        shell_items::track_desktop_menu(owner, entries, at)
+    }
+
     /// Drags `paths` out like Explorer does and blocks until it is dropped,
     /// showing `image` under the pointer (the shell's default otherwise).
     /// `positions` are the items' cells in desktop coordinates, in the same

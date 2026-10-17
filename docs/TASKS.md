@@ -983,6 +983,7 @@ each id is in `archive/TASKS-done.md`.
 | G5b | Right-drag a file from Explorer onto a space: DeskSpace's Move here / Copy here / Show here without moving / Cancel menu appears; each entry does what it says; the source file is left alone on Copy, Show here, and Cancel; a left drag still moves and Shift still keeps in place. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
+| Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
 | L5 (F-54) | Copy a file and a folder in Explorer; "New shortcut ▸ Paste shortcut" in a space (and from the Shortcuts page's + tile) makes two shortcuts and the originals stay; with nothing on the clipboard the entry is grey. |
 | L6 (F-55) | "Add files…" on a space lists the standard Open dialog on the Desktop; picking two files moves them into that space (as a drop does), and Cancel adds nothing. |
@@ -999,6 +1000,19 @@ each id is in `archive/TASKS-done.md`.
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
+
+- `app/menus.rs` `show_desktop_menu`: New › Folder (or any New entry) from
+  the takeover desktop menu starts Explorer's rename in its hidden view, so
+  the rename box is invisible. Suggested task: start DeskSpace's inline
+  rename on the new layer item instead.
+- `win32/shell_items.rs` `track_shell_menu`: commands run with
+  `CMINVOKECOMMANDINFO`, which has no `ptInvoke`, so Paste and New from the
+  desktop menu may land in Explorer's next free slot rather than at the
+  click. Suggested task: invoke with `CMINVOKECOMMANDINFOEX` and
+  `CMIC_MASK_PTINVOKE`.
+- `win32/shell_items.rs` `track_shell_menu`: with no app entries (a loose
+  item's menu) the separator is still added, so the menu may open with a
+  leading separator. Check on screen; skip it when `entries` is empty.
 
 - `win32/controller.rs` treats `WM_SETTINGCHANGE` "ImmersiveColorSet" as
   `Event::SystemThemeChanged`, which refreshes the accent. Windows also

@@ -466,7 +466,8 @@ one arm in `App::on_event`, whose match is exhaustive.
     normal shell drag, so dropping it there moves the file into that space
     and the layer reconciles from the shell. Space-only gestures (resize,
     move, roll up, scroll, inline rename, delete, clipboard paste) stay keyed
-    on a space; a loose item's menu is Explorer's alone, and Delete does
+    on a space; a loose item's menu is Explorer's alone, an empty spot gets
+    the desktop menu (section 8), and Delete does
     nothing on the layer.
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
@@ -1125,6 +1126,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   file to the Recycle Bin; ROADMAP D3); right-clicking an item in a
   multi-selection keeps the selection. A loose item on the desktop layer gets
   Explorer's menu alone. Rest the pointer on an item for Explorer's info tip.
+- Right-click an empty spot of the desktop layer (or press the Menu key with
+  nothing selected there) for "New space", "DeskSpace settings…", and
+  Hide/Show spaces above Explorer's own desktop background menu
+  (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
+  that menu would be unreachable. A shell command re-syncs the layer.
 - Item check boxes follow Explorer's mode (when the desktop shows them and the
   `MatchExplorer` preset is on). A checked box is filled with the Windows
   accent under a white tick (`Palette::check_fill`; Windows blue when the

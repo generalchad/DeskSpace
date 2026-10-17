@@ -24,11 +24,15 @@ impl App {
         };
         match self.selection.items.last().copied() {
             Some(item) => self.show_item_menu(ui, surface, item, at),
-            None => {
-                if let Surface::Space(id) = surface {
-                    self.show_space_menu(ui, id, at);
-                }
-            }
+            None => self.show_surface_menu(ui, surface, at),
+        }
+    }
+
+    /// The menu for an empty spot of `surface`.
+    pub(super) fn show_surface_menu(&mut self, ui: &mut Ui, surface: Surface, at: Point) {
+        match surface {
+            Surface::Space(id) => self.show_space_menu(ui, id, at),
+            Surface::Desktop => self.show_desktop_menu(ui, at),
         }
     }
 
@@ -185,6 +189,22 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// The menu for an empty spot of the desktop layer: DeskSpace's own
+    /// entries, then Explorer's desktop background menu, which takeover would
+    /// otherwise leave unreachable under the layer.
+    fn show_desktop_menu(&mut self, ui: &mut Ui, at: Point) {
+        let entries = [
+            MenuEntry::item(menu::NEW_SPACE, "New space"),
+            MenuEntry::item(menu::SETTINGS, "DeskSpace settings\u{2026}"),
+            self.visibility_entry(),
+        ];
+        match ui.desktop_menu(&entries, at) {
+            Some(ItemMenuChoice::App(choice)) => self.run_common_menu(ui, choice, at),
+            Some(ItemMenuChoice::Shell) => self.resync_desktop_layer(ui),
+            None => {}
         }
     }
 

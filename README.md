@@ -117,6 +117,10 @@ help inspect the look and the desktop layer.
   with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
   and dragging an item onto the desktop takes it out of the space. Click a selected
   item again (slowly) to rename it.
+- With the desktop takeover on, right-click an empty spot of the desktop for
+  the classic desktop menu (View, Sort by, New, Personalize, ...; on
+  Windows 11 the one "Show more options" opens) with New space, DeskSpace
+  settings, and hide/show spaces on top.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is

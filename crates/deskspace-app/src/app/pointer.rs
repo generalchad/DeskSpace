@@ -224,11 +224,7 @@ impl App {
                 } else {
                     match self.surface_item_at(surface, point) {
                         Some(item) => self.show_item_menu(ui, surface, item, point),
-                        None => {
-                            if let Surface::Space(id) = surface {
-                                self.show_space_menu(ui, id, point);
-                            }
-                        }
+                        None => self.show_surface_menu(ui, surface, point),
                     }
                 }
             }
