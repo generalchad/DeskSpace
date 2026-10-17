@@ -87,8 +87,10 @@ context menus, and a settings window in the first usable release (v0.2).
   a live update feed. `ROADMAP.md` section 7 is the full feature list.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
-- Code health: no non-test file is over the ~800-line guideline (the R1 and
-  K1-K6 splits; section 3 lists the `app/` modules).
+- Code health: one non-test file is over the ~800-line guideline,
+  `win32/color_picker.rs` (about 1,400 lines; `TASKS.md` K7 splits it). The
+  R1 and K1-K6 splits brought the rest under it; section 3 lists the `app/`
+  modules.
 
 ## 3. Architecture
 

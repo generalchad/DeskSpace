@@ -1777,3 +1777,11 @@ until I5-I6 all land, so no partial build hides the desktop.
     links to it instead of restating which flag a key needs. `README.md`
     keeps its user-facing prose (it is for users, not contributors).
   - Update the key recipe's step 4.
+
+- [x] **B17. Fix stale statements in CONTEXT and ROADMAP.**
+  - `CONTEXT.md` section 2, "Code health": no non-test file is over 800
+    lines is false until K7 lands; reword it to name `color_picker.rs`.
+  - `ROADMAP.md` section 4, "Next, in order": item 1 (section L) has only
+    L1's findings left and item 4 lists G5a-G5b, which have landed; reduce
+    them to L1 and G5c.
+  - Done when: the two statements match this file.

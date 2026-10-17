@@ -257,15 +257,15 @@ Takeover ships opt-in (D8, D9).
 
 **Next, in order:**
 
-1. **Adding items to spaces** (`TASKS.md` section L): Start-menu and
-   taskbar drags create shortcuts (F-50), and "New shortcut ▸", "Paste
-   shortcut", and "Add files…" are in (F-53..F-55); only L1's on-screen
-   findings remain.
+1. **L1's on-screen findings** (`TASKS.md` section L): record what each
+   drag source offers. The rest of adding items to spaces (F-50,
+   F-53..F-55) has landed.
 2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
    built-but-unchecked behaviors before more work builds on them.
 3. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **Right-button drag** (`TASKS.md` G5a-G5c).
+4. **"Create shortcuts here" on a right drop** (`TASKS.md` G5c); G5a and
+   G5b have landed.
 5. **M2 undo** for file moves and space deletion. First settle open
    question 3.
 

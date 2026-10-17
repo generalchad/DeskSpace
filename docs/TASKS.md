@@ -227,14 +227,6 @@ user-visible change is expected. Do them in any order.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
 
-- [ ] **B17. Fix stale statements in CONTEXT and ROADMAP.**
-  - `CONTEXT.md` section 2, "Code health": no non-test file is over 800
-    lines is false until K7 lands; reword it to name `color_picker.rs`.
-  - `ROADMAP.md` section 4, "Next, in order": item 1 (section L) has only
-    L1's findings left and item 4 lists G5a-G5b, which have landed; reduce
-    them to L1 and G5c.
-  - Done when: the two statements match this file.
-
 ## L. Adding items to spaces (ROADMAP F-50, F-53..F-55)
 
 Everything except L1 has landed (L2-L7 archived). Every way of adding a
