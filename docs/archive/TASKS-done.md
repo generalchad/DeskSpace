@@ -2087,3 +2087,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   recording fake for tests, and how `EventHandler::on_event` receives them,
   keeping `runtime::dispatch`'s re-entrancy rules. Weigh R17
   first: it may make the fake unnecessary.
+
+- [x] **B23. Make the keyboard watch a pure, tested table.**
+  `win32/keyboard.rs` `fn handle` is about 160 lines of `if` chains that both
+  decide which key means what and post the message, so none of the key
+  routing is unit-tested, and the `ENGINEERING.md` Keys table is kept in step
+  by hand.
+  - Extract `fn watched_key(vk: u32, mods: Mods, watch: Watch) ->
+    Option<(u32, usize)>` (the message and its `wparam`) as a pure function,
+    where `Mods { ctrl, shift, alt }` and `Watch { selection, paste }` are
+    small `Copy` structs. `handle` reads the modifiers, the flags, and
+    `desktop_is_foreground` (still checked first), calls it, and posts. Keep
+    the editing path (`EDITING`) as it is, in its own function.
+  - Tests: one per row of the `ENGINEERING.md` Keys table, each asserting the
+    key is routed under its flag and ignored without it (for example Ctrl+V
+    with only `selection` set is `None`).
+  - Done when: `handle` is under about 50 lines and every key in the Keys
+    table has a test. **[needs human]** check: the F1-F5, G1, and G3 rows of
+    section V still pass.

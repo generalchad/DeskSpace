@@ -79,7 +79,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | `Ui` methods, the message loop | `deskspace-platform/src/win32/runtime/` (`mod.rs`, `ui_spaces.rs`, `ui_input.rs`, `ui_shell.rs`, `ui_chrome.rs`) |
 | Controller window (tray, hotkeys, timers, `WM_APP` dispatch) | `deskspace-platform/src/win32/controller.rs` |
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
-| Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn handle`) |
+| Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
@@ -155,8 +155,9 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    a `///` doc. Only a key that carries data gets its own `Event` variant and
    `WM_APP` id (in `win32/messages.rs`, decoded in `event_for` in
    `win32/controller.rs`).
-2. `win32/keyboard.rs`: a `SEL_*` code and a branch in `fn handle` under the
-   right flag (the `ENGINEERING.md` Keys table) that posts `SELECTION_KEY`; map
+2. `win32/keyboard.rs`: a `SEL_*` code and a branch in `fn watched_key` under
+   the right flag (the `ENGINEERING.md` Keys table) that returns
+   `SELECTION_KEY` with it, plus a row in that flag's `keys_for_*` test; map
    the code to the variant in `fn selection_key` (and its test).
 3. `deskspace-app/src/app.rs`: handle it in `App::on_selection_key`, calling
    a method in the `app/` module that owns the behavior.
@@ -262,24 +263,6 @@ user-visible change is expected. Do them in any order.
      passed, and who clears it; `rg -n "Process state:"` lists them."
   - Comments only; no code changes. Make one commit for the platform crate.
   - Done when: every match from step 1 that holds state has the comment.
-
-- [ ] **B23. Make the keyboard watch a pure, tested table.**
-  `win32/keyboard.rs` `fn handle` is about 160 lines of `if` chains that both
-  decide which key means what and post the message, so none of the key
-  routing is unit-tested, and the `ENGINEERING.md` Keys table is kept in step
-  by hand.
-  - Extract `fn watched_key(vk: u32, mods: Mods, watch: Watch) ->
-    Option<(u32, usize)>` (the message and its `wparam`) as a pure function,
-    where `Mods { ctrl, shift, alt }` and `Watch { selection, paste }` are
-    small `Copy` structs. `handle` reads the modifiers, the flags, and
-    `desktop_is_foreground` (still checked first), calls it, and posts. Keep
-    the editing path (`EDITING`) as it is, in its own function.
-  - Tests: one per row of the `ENGINEERING.md` Keys table, each asserting the
-    key is routed under its flag and ignored without it (for example Ctrl+V
-    with only `selection` set is `None`).
-  - Done when: `handle` is under about 50 lines and every key in the Keys
-    table has a test. **[needs human]** check: the F1-F5, G1, and G3 rows of
-    section V still pass.
 
 - [ ] **B24. Split `App::on_space_event`.** `app/pointer.rs`
   `on_space_event` is about 135 lines: a preamble (the surface still exists,
@@ -716,6 +699,7 @@ each id is in `archive/TASKS-done.md`.
 | Desktop drop (D7) | With takeover on, drag onto an empty spot of the desktop: a Start "Pinned" app, a Store app, an Explorer file (plain, Shift, Alt, and a right drag), and an item out of a space. Each shows a move/copy/link cursor, not "no", and opens a new space at the drop point holding it. Drop next to a space and near the taskbar: the new space keeps a gutter from both and never overlaps. Right drag, then Cancel: no space is left behind. |
 | Spaces above the layer | With takeover on, press Win+D twice, switch tasks a few times, and hide and show the spaces: each space still takes clicks, the wheel, and a drag from Explorer or Start (no "no" cursor). |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
+| B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
 
 ## Found while working
 

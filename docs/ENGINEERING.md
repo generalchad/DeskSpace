@@ -208,10 +208,11 @@ says why; the diff already shows what. Run the gates (section 1) first.
 - **Dragging** an item inside its space rearranges it (`ReorderItem`); only
   once the pointer leaves the space does the app start an OLE shell drag,
   which is what moves the real file.
-- **Keys.** The keyboard hook (`win32/keyboard.rs`, `fn handle`) is the only
+- **Keys.** The keyboard hook (`win32/keyboard.rs`) is the only
   way DeskSpace sees keys, because spaces are never activated, so new key
   handling goes there, not in a window procedure. This table is the one list
-  of which key needs which flag (`fn handle` is the source of truth). The
+  of which key needs which flag (`fn watched_key` is the source of truth, and
+  its `keys_for_*` tests check every row). The
   hook's flags: `EDITING` (inline rename; consumes every editing key, and an
   Alt or Win combination cancels the rename and passes through),
   `WATCH_SELECTION` (an item is selected), and `WATCH_PASTE` (a space is

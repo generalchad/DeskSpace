@@ -5,8 +5,8 @@
 //! a `WH_KEYBOARD_LL` hook, translates each key press into an `EditKey`, posts
 //! it to the controller, and consumes the event so it does not reach the
 //! focused app. Outside a rename the same hook can watch keys for the current
-//! selection or space instead of editing; `fn handle` is the source of truth for
-//! which key needs which flag, and the docs/ENGINEERING.md "Keys" table repeats it. The
+//! selection or space instead of editing; `fn watched_key` is the source of truth
+//! for which key needs which flag, and the docs/ENGINEERING.md "Keys" table repeats it. The
 //! hook runs for every key in the session and Windows drops it if this thread is
 //! slow to pump messages (`LowLevelHooksTimeout`), so it is installed only
 //! while one of those modes is active.
@@ -51,6 +51,10 @@ pub(crate) const NAV_LEFT: usize = 0;
 pub(crate) const NAV_RIGHT: usize = 1;
 pub(crate) const NAV_UP: usize = 2;
 pub(crate) const NAV_DOWN: usize = 3;
+/// Shift: extend the selection along the move.
+const NAV_EXTEND: usize = 1 << 2;
+/// Ctrl: move only the focus, leaving the selection.
+const NAV_FOCUS: usize = 1 << 3;
 
 pub(crate) const ACTION_COPY: usize = 0;
 pub(crate) const ACTION_CUT: usize = 1;
@@ -210,6 +214,39 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
+/// The modifiers held with a watched key.
+#[derive(Clone, Copy, Debug, Default)]
+struct Mods {
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+}
+
+impl Mods {
+    fn current() -> Self {
+        Self {
+            ctrl: key_down(VK_CONTROL),
+            shift: key_down(VK_SHIFT),
+            alt: key_down(VK_MENU),
+        }
+    }
+}
+
+/// Which watch flags are set (the docs/ENGINEERING.md Keys table's columns).
+#[derive(Clone, Copy, Debug, Default)]
+struct Watch {
+    /// An item is selected (`WATCH_SELECTION`).
+    selection: bool,
+    /// A space is current (`WATCH_PASTE`).
+    paste: bool,
+}
+
+impl Watch {
+    fn any(self) -> bool {
+        self.selection || self.paste
+    }
+}
+
 /// Handles one key press. Returns whether the event was consumed; when it
 /// returns `false`, the caller passes the event on unchanged.
 fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
@@ -218,137 +255,159 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
     if MENU_OPEN.get() {
         return false;
     }
-    // Selection watch: capture Delete and the clipboard keys that act on a
-    // selection or a current space, and pass every other key through untouched.
-    // The selection is kept while another app is focused, as Explorer keeps a
-    // desktop selection, so these keys belong to a space only while the desktop
-    // shell has the foreground; otherwise an app's own Ctrl+C/V is stolen.
-    if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && !EDITING.get() {
-        if !desktop_is_foreground() {
-            return false;
-        }
-        if key_down(VK_MENU) && is_key(event.vkCode, VK_RETURN) {
-            post_message(messages::PROPERTIES_KEY, 0, 0);
-            return true;
-        }
-        if key_down(VK_CONTROL) {
-            if is_key(event.vkCode, VK_A) {
-                post_message(messages::SELECT_ALL_KEY, 0, 0);
-                return true;
-            }
-            let action = if WATCH_SELECTION.get() && is_key(event.vkCode, VK_C) {
-                Some(ACTION_COPY)
-            } else if WATCH_SELECTION.get() && is_key(event.vkCode, VK_X) {
-                Some(ACTION_CUT)
-            } else if WATCH_PASTE.get() && is_key(event.vkCode, VK_V) {
-                Some(ACTION_PASTE)
-            } else {
-                None
-            };
-            if let Some(action) = action {
-                post_message(messages::CLIPBOARD_KEY, action, 0);
-                return true;
-            }
-            // Ctrl+arrow moves the focus only, leaving the selection.
-            if WATCH_PASTE.get()
-                && let Some(dir) = arrow_dir(event.vkCode)
-            {
-                post_message(messages::NAV_KEY, dir | (1 << 3), 0);
-                return true;
-            }
-            if let Some(zoom) = zoom_key(event.vkCode) {
-                post_message(messages::SELECTION_KEY, zoom, 0);
-                return true;
-            }
-            return false;
-        }
-        if WATCH_SELECTION.get() && is_key(event.vkCode, VK_RETURN) {
-            post_message(messages::SELECTION_KEY, SEL_OPEN, 0);
-            return true;
-        }
-        if (WATCH_SELECTION.get() || WATCH_PASTE.get()) && is_key(event.vkCode, VK_F2) {
-            post_message(messages::RENAME_KEY, 0, 0);
-            return true;
-        }
-        if WATCH_SELECTION.get() && key_down(VK_SHIFT) && is_key(event.vkCode, VK_DELETE) {
-            post_message(messages::SELECTION_KEY, SEL_PERMANENT_DELETE, 0);
-            return true;
-        }
-        if WATCH_SELECTION.get() && is_key(event.vkCode, VK_DELETE) {
-            post_message(messages::DELETE_KEY, 0, 0);
-            return true;
-        }
-        if is_key(event.vkCode, VK_ESCAPE) {
-            post_message(messages::SELECTION_KEY, SEL_CLEAR, 0);
-            return true;
-        }
-        if is_key(event.vkCode, VK_F5) {
-            post_message(messages::SELECTION_KEY, SEL_REFRESH, 0);
-            return true;
-        }
-        // The Menu key and Shift+F10 open the context menu, as on the desktop.
-        if is_key(event.vkCode, VK_APPS) || (key_down(VK_SHIFT) && is_key(event.vkCode, VK_F10)) {
-            post_message(messages::SELECTION_KEY, SEL_MENU, 0);
-            return true;
-        }
-        // Scrolling, arrows, and type-to-select need a current space, not just
-        // a selection (the paste watch tracks that).
-        if WATCH_PASTE.get() {
-            if let Some(dir) = arrow_dir(event.vkCode) {
-                let extend = if key_down(VK_SHIFT) { 1 << 2 } else { 0 };
-                post_message(messages::NAV_KEY, dir | extend, 0);
-                return true;
-            }
-            let scroll = if is_key(event.vkCode, VK_HOME) {
-                Some(SEL_HOME)
-            } else if is_key(event.vkCode, VK_END) {
-                Some(SEL_END)
-            } else if is_key(event.vkCode, VK_PRIOR) {
-                Some(SEL_PAGE_UP)
-            } else if is_key(event.vkCode, VK_NEXT) {
-                Some(SEL_PAGE_DOWN)
-            } else {
-                None
-            };
-            if let Some(scroll) = scroll {
-                post_message(messages::SELECTION_KEY, scroll, 0);
-                return true;
-            }
-            if let Some(character) = typeahead_char(event.vkCode) {
-                post_message(messages::TYPE_KEY, character as usize, 0);
-                return true;
-            }
-        }
+    let watch = Watch {
+        selection: WATCH_SELECTION.get(),
+        paste: WATCH_PASTE.get(),
+    };
+    if watch.any() && !EDITING.get() {
+        return handle_watched(event.vkCode, watch);
+    }
+    handle_editing(event.vkCode)
+}
+
+/// Posts the message for a key the watch routes. The selection is kept while
+/// another app is focused, as Explorer keeps a desktop selection, so these
+/// keys belong to a space only while the desktop shell has the foreground;
+/// otherwise an app's own Ctrl+C/V is stolen.
+fn handle_watched(vk: u32, watch: Watch) -> bool {
+    if !desktop_is_foreground() {
         return false;
     }
+    let mods = Mods::current();
+    if let Some((message, wparam)) = watched_key(vk, mods, watch) {
+        post_message(message, wparam, 0);
+        return true;
+    }
+    // Type-to-select reads the keyboard layout, so it is not part of the pure
+    // table; it is the last key a current space takes, never with Ctrl.
+    if watch.paste
+        && !mods.ctrl
+        && let Some(character) = typeahead_char(vk)
+    {
+        post_message(messages::TYPE_KEY, character as usize, 0);
+        return true;
+    }
+    false
+}
 
+/// The message and `wparam` the watch posts for `vk`, or `None` to pass the
+/// key through. This is the source of truth for the docs/ENGINEERING.md Keys
+/// table, except type-to-select (`handle_watched`).
+fn watched_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
+    if !watch.any() {
+        return None;
+    }
+    if mods.alt && is_key(vk, VK_RETURN) {
+        return Some((messages::PROPERTIES_KEY, 0));
+    }
+    if mods.ctrl {
+        return watched_ctrl_key(vk, watch);
+    }
+    if watch.selection && is_key(vk, VK_RETURN) {
+        return Some((messages::SELECTION_KEY, SEL_OPEN));
+    }
+    if is_key(vk, VK_F2) {
+        return Some((messages::RENAME_KEY, 0));
+    }
+    if watch.selection && is_key(vk, VK_DELETE) {
+        return Some(if mods.shift {
+            (messages::SELECTION_KEY, SEL_PERMANENT_DELETE)
+        } else {
+            (messages::DELETE_KEY, 0)
+        });
+    }
+    if is_key(vk, VK_ESCAPE) {
+        return Some((messages::SELECTION_KEY, SEL_CLEAR));
+    }
+    if is_key(vk, VK_F5) {
+        return Some((messages::SELECTION_KEY, SEL_REFRESH));
+    }
+    // The Menu key and Shift+F10 open the context menu, as on the desktop.
+    if is_key(vk, VK_APPS) || (mods.shift && is_key(vk, VK_F10)) {
+        return Some((messages::SELECTION_KEY, SEL_MENU));
+    }
+    // Scrolling and arrows need a current space, not just a selection (the
+    // paste watch tracks that).
+    if !watch.paste {
+        return None;
+    }
+    if let Some(dir) = arrow_dir(vk) {
+        let extend = if mods.shift { NAV_EXTEND } else { 0 };
+        return Some((messages::NAV_KEY, dir | extend));
+    }
+    scroll_key(vk).map(|scroll| (messages::SELECTION_KEY, scroll))
+}
+
+/// `watched_key` for a key pressed with Ctrl.
+fn watched_ctrl_key(vk: u32, watch: Watch) -> Option<(u32, usize)> {
+    if is_key(vk, VK_A) {
+        return Some((messages::SELECT_ALL_KEY, 0));
+    }
+    let clipboard = if watch.selection && is_key(vk, VK_C) {
+        Some(ACTION_COPY)
+    } else if watch.selection && is_key(vk, VK_X) {
+        Some(ACTION_CUT)
+    } else if watch.paste && is_key(vk, VK_V) {
+        Some(ACTION_PASTE)
+    } else {
+        None
+    };
+    if let Some(action) = clipboard {
+        return Some((messages::CLIPBOARD_KEY, action));
+    }
+    // Ctrl+arrow moves the focus only, leaving the selection.
+    if watch.paste
+        && let Some(dir) = arrow_dir(vk)
+    {
+        return Some((messages::NAV_KEY, dir | NAV_FOCUS));
+    }
+    zoom_key(vk).map(|zoom| (messages::SELECTION_KEY, zoom))
+}
+
+/// The `SEL_*` scroll code for Home, End, PageUp, and PageDown.
+fn scroll_key(vk: u32) -> Option<usize> {
+    if is_key(vk, VK_HOME) {
+        Some(SEL_HOME)
+    } else if is_key(vk, VK_END) {
+        Some(SEL_END)
+    } else if is_key(vk, VK_PRIOR) {
+        Some(SEL_PAGE_UP)
+    } else if is_key(vk, VK_NEXT) {
+        Some(SEL_PAGE_DOWN)
+    } else {
+        None
+    }
+}
+
+/// Handles a key during an inline rename, posting it as an `EDIT_KEY`.
+fn handle_editing(vk: u32) -> bool {
     // Alt and Windows combinations belong to the system (Alt+Tab, Win+D,
     // Start menu): cancel the rename and let them through.
-    if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(event.vkCode) {
+    if key_down(VK_MENU) || key_down(VK_LWIN) || key_down(VK_RWIN) || is_system_key(vk) {
         post(KIND_CANCEL, 0);
         return false;
     }
     if key_down(VK_CONTROL) {
-        if is_key(event.vkCode, VK_A) {
+        if is_key(vk, VK_A) {
             post(KIND_SELECT_ALL, 0);
             return true;
         }
         let shift = key_down(VK_SHIFT);
-        let kind = if event.vkCode == VK_LEFT.0 as u32 {
+        let kind = if vk == VK_LEFT.0 as u32 {
             Some(if shift {
                 KIND_SELECT_WORD_LEFT
             } else {
                 KIND_WORD_LEFT
             })
-        } else if event.vkCode == VK_RIGHT.0 as u32 {
+        } else if vk == VK_RIGHT.0 as u32 {
             Some(if shift {
                 KIND_SELECT_WORD_RIGHT
             } else {
                 KIND_WORD_RIGHT
             })
-        } else if event.vkCode == VK_BACK.0 as u32 {
+        } else if vk == VK_BACK.0 as u32 {
             Some(KIND_BACKSPACE_WORD)
-        } else if event.vkCode == VK_DELETE.0 as u32 {
+        } else if vk == VK_DELETE.0 as u32 {
             Some(KIND_DELETE_WORD)
         } else {
             None
@@ -362,7 +421,7 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
         };
     }
 
-    match classify(event.vkCode, key_down(VK_SHIFT)) {
+    match classify(vk, key_down(VK_SHIFT)) {
         Some((kind, ch)) => {
             post(kind, ch);
             true
@@ -393,8 +452,8 @@ pub(crate) fn nav_key(action: usize) -> Option<NavKey> {
     };
     Some(NavKey {
         dir,
-        extend: action & (1 << 2) != 0,
-        focus: action & (1 << 3) != 0,
+        extend: action & NAV_EXTEND != 0,
+        focus: action & NAV_FOCUS != 0,
     })
 }
 
@@ -605,6 +664,7 @@ unsafe fn char_for(vk: u32) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_Z;
 
     #[test]
     fn set_bit_sets_and_clears_a_key_status_byte() {
@@ -744,6 +804,134 @@ mod tests {
         }
         assert!(!is_system_key(VK_A.0 as u32));
         assert!(!is_system_key(VK_BACK.0 as u32));
+    }
+
+    const PLAIN: Mods = Mods {
+        ctrl: false,
+        shift: false,
+        alt: false,
+    };
+    const CTRL: Mods = Mods {
+        ctrl: true,
+        ..PLAIN
+    };
+    const SHIFT: Mods = Mods {
+        shift: true,
+        ..PLAIN
+    };
+    const ALT: Mods = Mods { alt: true, ..PLAIN };
+    const NO_WATCH: Watch = Watch {
+        selection: false,
+        paste: false,
+    };
+    const SELECTION: Watch = Watch {
+        selection: true,
+        paste: false,
+    };
+    const PASTE: Watch = Watch {
+        selection: false,
+        paste: true,
+    };
+
+    type Case = (VIRTUAL_KEY, Mods, (u32, usize));
+
+    /// Asserts each case is routed under every flag in `routed` and passed
+    /// through under every flag in `ignored`.
+    fn assert_routes(cases: &[Case], routed: &[Watch], ignored: &[Watch]) {
+        for &(key, mods, expected) in cases {
+            for &watch in routed {
+                assert_eq!(
+                    watched_key(key.0 as u32, mods, watch),
+                    Some(expected),
+                    "{key:?} {mods:?} under {watch:?}"
+                );
+            }
+            for &watch in ignored {
+                assert_eq!(
+                    watched_key(key.0 as u32, mods, watch),
+                    None,
+                    "{key:?} {mods:?} under {watch:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn keys_for_either_watch_flag() {
+        let sel = |code| (messages::SELECTION_KEY, code);
+        assert_routes(
+            &[
+                (VK_F2, PLAIN, (messages::RENAME_KEY, 0)),
+                (VK_RETURN, ALT, (messages::PROPERTIES_KEY, 0)),
+                (VK_A, CTRL, (messages::SELECT_ALL_KEY, 0)),
+                (VK_ESCAPE, PLAIN, sel(SEL_CLEAR)),
+                (VK_F5, PLAIN, sel(SEL_REFRESH)),
+                (VK_APPS, PLAIN, sel(SEL_MENU)),
+                (VK_F10, SHIFT, sel(SEL_MENU)),
+                (VK_OEM_PLUS, CTRL, sel(SEL_ZOOM_IN)),
+                (VK_ADD, CTRL, sel(SEL_ZOOM_IN)),
+                (VK_OEM_MINUS, CTRL, sel(SEL_ZOOM_OUT)),
+                (VK_SUBTRACT, CTRL, sel(SEL_ZOOM_OUT)),
+                (VK_0, CTRL, sel(SEL_ZOOM_RESET)),
+                (VK_NUMPAD0, CTRL, sel(SEL_ZOOM_RESET)),
+            ],
+            &[SELECTION, PASTE],
+            &[NO_WATCH],
+        );
+    }
+
+    #[test]
+    fn keys_for_the_selection_watch() {
+        assert_routes(
+            &[
+                (VK_RETURN, PLAIN, (messages::SELECTION_KEY, SEL_OPEN)),
+                (VK_DELETE, PLAIN, (messages::DELETE_KEY, 0)),
+                (
+                    VK_DELETE,
+                    SHIFT,
+                    (messages::SELECTION_KEY, SEL_PERMANENT_DELETE),
+                ),
+                (VK_C, CTRL, (messages::CLIPBOARD_KEY, ACTION_COPY)),
+                (VK_X, CTRL, (messages::CLIPBOARD_KEY, ACTION_CUT)),
+            ],
+            &[SELECTION],
+            &[PASTE, NO_WATCH],
+        );
+    }
+
+    #[test]
+    fn keys_for_the_paste_watch() {
+        let nav = |code| (messages::NAV_KEY, code);
+        let sel = |code| (messages::SELECTION_KEY, code);
+        assert_routes(
+            &[
+                (VK_V, CTRL, (messages::CLIPBOARD_KEY, ACTION_PASTE)),
+                (VK_LEFT, PLAIN, nav(NAV_LEFT)),
+                (VK_RIGHT, PLAIN, nav(NAV_RIGHT)),
+                (VK_UP, PLAIN, nav(NAV_UP)),
+                (VK_DOWN, SHIFT, nav(NAV_DOWN | NAV_EXTEND)),
+                (VK_UP, CTRL, nav(NAV_UP | NAV_FOCUS)),
+                (VK_HOME, PLAIN, sel(SEL_HOME)),
+                (VK_END, PLAIN, sel(SEL_END)),
+                (VK_PRIOR, PLAIN, sel(SEL_PAGE_UP)),
+                (VK_NEXT, PLAIN, sel(SEL_PAGE_DOWN)),
+            ],
+            &[PASTE],
+            &[SELECTION, NO_WATCH],
+        );
+    }
+
+    #[test]
+    fn other_keys_pass_through_to_type_to_select_or_the_app() {
+        for watch in [SELECTION, PASTE] {
+            // Typed characters are left to `handle_watched`'s type-to-select.
+            assert_eq!(watched_key(VK_A.0 as u32, PLAIN, watch), None);
+            assert_eq!(watched_key(VK_A.0 as u32, SHIFT, watch), None);
+            // Ctrl, Alt, and Shift combinations the table does not name.
+            assert_eq!(watched_key(VK_Z.0 as u32, CTRL, watch), None);
+            assert_eq!(watched_key(VK_F2.0 as u32, CTRL, watch), None);
+            assert_eq!(watched_key(VK_F10.0 as u32, PLAIN, watch), None);
+        }
     }
 
     #[test]
