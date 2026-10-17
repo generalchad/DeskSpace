@@ -84,10 +84,9 @@ enum DragKind {
 enum DropPlan {
     /// The space refuses the drag.
     None,
-    /// The files move into the space storage.
-    MoveFiles,
-    /// The files stay where they are and the space lists them (Shift).
-    KeepFiles,
+    /// The files go into the space as the action says: moved into the
+    /// storage, copied there, or listed where they are.
+    Files(DropAction),
     /// The space gets a shortcut to each dragged item; nothing is moved.
     Shortcuts,
 }
@@ -183,42 +182,35 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         let data = data.as_ref();
         let kind = drag_kind(data);
         let right = self.right_drag.replace(false);
-        // A right drag carrying files shows a menu, and the chosen action
-        // decides the effect. The menu returns before this does, so the effect
-        // is known to the source when the drag resumes. The image is removed
-        // first: the menu can be open a while and must not hold it on screen.
-        if right && kind == DragKind::Files {
+        self.accepts.set(DragKind::None);
+        // The image is removed before the app runs: handling the drop can take
+        // a moment (file moves) and must not leave the image frozen on screen.
+        let (plan, chosen) = if right && kind == DragKind::Files {
+            // A right drag carrying files shows a menu, and the chosen entry
+            // decides the plan and the effect. The menu returns before this
+            // does, so the effect is known to the source when the drag
+            // resumes. The menu can be open a while, so the image goes first.
             // SAFETY: forwarding this call's own arguments.
             with_image_helper(|helper| unsafe {
                 helper.Drop(data, &screen(point), DROPEFFECT_NONE)
             });
-            let action = ask_right_drop(self.window, point);
-            let chosen = action.map_or(DROPEFFECT_NONE, drop_action_effect);
-            // SAFETY: as above.
-            unsafe { *effect = chosen };
-            self.accepts.set(DragKind::None);
-            if let (Some(data), Some(action)) = (data, action) {
-                let (x, y) = desktop_point(self.window, self.hosted, point);
-                self.drop_files(data, x, y, action);
-            }
-            return Ok(());
-        }
-        let (plan, chosen) = drop_plan(kind, keys, allowed);
+            let plan = ask_right_drop(self.window, point, allowed);
+            (plan, right_drop_effect(plan))
+        } else {
+            let (plan, chosen) = drop_plan(kind, keys, allowed);
+            // SAFETY: forwarding this call's own arguments.
+            with_image_helper(|helper| unsafe { helper.Drop(data, &screen(point), chosen) });
+            (plan, chosen)
+        };
         // SAFETY: as above.
         unsafe { *effect = chosen };
-        self.accepts.set(DragKind::None);
-        // The image is removed before the app runs: handling the drop can take
-        // a moment (file moves) and must not leave the image frozen on screen.
-        // SAFETY: forwarding this call's own arguments.
-        with_image_helper(|helper| unsafe { helper.Drop(data, &screen(point), chosen) });
         let Some(data) = data else {
             return Ok(());
         };
         let (x, y) = desktop_point(self.window, self.hosted, point);
         match plan {
             DropPlan::None => {}
-            DropPlan::MoveFiles => self.drop_files(data, x, y, DropAction::Move),
-            DropPlan::KeepFiles => self.drop_files(data, x, y, DropAction::KeepInPlace),
+            DropPlan::Files(action) => self.drop_files(data, x, y, action),
             DropPlan::Shortcuts => self.drop_shortcuts(data, x, y),
         }
         Ok(())
@@ -441,8 +433,8 @@ fn drop_plan(
             (DropPlan::Shortcuts, DROPEFFECT_LINK)
         }
         DragKind::Files => match file_drop_effect(keys, allowed) {
-            DROPEFFECT_MOVE => (DropPlan::MoveFiles, DROPEFFECT_MOVE),
-            DROPEFFECT_COPY => (DropPlan::KeepFiles, DROPEFFECT_COPY),
+            DROPEFFECT_MOVE => (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE),
+            DROPEFFECT_COPY => (DropPlan::Files(DropAction::KeepInPlace), DROPEFFECT_COPY),
             _ if allows(DROPEFFECT_LINK) => (DropPlan::Shortcuts, DROPEFFECT_LINK),
             _ => (DropPlan::None, DROPEFFECT_NONE),
         },
@@ -481,13 +473,15 @@ fn drag_effect(
     }
 }
 
-/// The effect a right drop reports for a chosen action: a move moves, so the
+/// The effect a right drop reports for a chosen plan: a move moves, so the
 /// source deletes its original; a copy or keep-in-place leaves it alone, which
-/// `COPY` tells the source.
-fn drop_action_effect(action: DropAction) -> DROPEFFECT {
-    match action {
-        DropAction::Move => DROPEFFECT_MOVE,
-        DropAction::Copy | DropAction::KeepInPlace => DROPEFFECT_COPY,
+/// `COPY` tells the source; shortcuts link.
+fn right_drop_effect(plan: DropPlan) -> DROPEFFECT {
+    match plan {
+        DropPlan::None => DROPEFFECT_NONE,
+        DropPlan::Files(DropAction::Move) => DROPEFFECT_MOVE,
+        DropPlan::Files(DropAction::Copy | DropAction::KeepInPlace) => DROPEFFECT_COPY,
+        DropPlan::Shortcuts => DROPEFFECT_LINK,
     }
 }
 
@@ -497,36 +491,44 @@ const DROP_MOVE: u32 = 1;
 const DROP_COPY: u32 = 2;
 const DROP_KEEP: u32 = 3;
 const DROP_CANCEL: u32 = 4;
+const DROP_LINK: u32 = 5;
 
-/// The entries of the menu a right drag shows on a space, in order.
-fn right_drop_entries() -> Vec<MenuEntry> {
+/// The entries of the menu a right drag shows on a space, in order. "Create
+/// shortcuts here" is greyed when the source does not `allow` a link, so the
+/// menu never reports an effect the source refused.
+fn right_drop_entries(allowed: DROPEFFECT) -> Vec<MenuEntry> {
     vec![
         MenuEntry::item(DROP_MOVE, "Move here"),
         MenuEntry::item(DROP_COPY, "Copy here"),
+        MenuEntry::item(DROP_LINK, "Create shortcuts here")
+            .enabled(allowed.0 & DROPEFFECT_LINK.0 != 0),
         MenuEntry::item(DROP_KEEP, "Show here without moving"),
         MenuEntry::Separator,
         MenuEntry::item(DROP_CANCEL, "Cancel"),
     ]
 }
 
-/// What a chosen menu entry means. `None` for Cancel, and for a dismissed menu
-/// (whose id 0 matches no arm), so the drop reports no effect and raises no
-/// event.
-fn right_drop_choice(id: u32) -> Option<DropAction> {
+/// What a chosen menu entry means. `DropPlan::None` for Cancel, and for a
+/// dismissed menu (whose id 0 matches no arm), so the drop reports no effect
+/// and raises no event.
+fn right_drop_choice(id: u32) -> DropPlan {
     match id {
-        DROP_MOVE => Some(DropAction::Move),
-        DROP_COPY => Some(DropAction::Copy),
-        DROP_KEEP => Some(DropAction::KeepInPlace),
-        _ => None,
+        DROP_MOVE => DropPlan::Files(DropAction::Move),
+        DROP_COPY => DropPlan::Files(DropAction::Copy),
+        DROP_KEEP => DropPlan::Files(DropAction::KeepInPlace),
+        DROP_LINK => DropPlan::Shortcuts,
+        _ => DropPlan::None,
     }
 }
 
 /// Shows the right-drag menu at the (screen) drop `point` and returns the
-/// chosen action, or `None` when the user cancelled or dismissed it. The menu
-/// is owned by the space window; no runtime state is read across the call.
-fn ask_right_drop(window: HWND, point: &POINTL) -> Option<DropAction> {
-    let entries = right_drop_entries();
-    menu::track(window, &entries, Point::new(point.x, point.y)).and_then(right_drop_choice)
+/// chosen plan, `DropPlan::None` when the user cancelled or dismissed it. The
+/// menu is owned by the space window; no runtime state is read across the
+/// call.
+fn ask_right_drop(window: HWND, point: &POINTL, allowed: DROPEFFECT) -> DropPlan {
+    let entries = right_drop_entries(allowed);
+    menu::track(window, &entries, Point::new(point.x, point.y))
+        .map_or(DropPlan::None, right_drop_choice)
 }
 
 fn drop_files_format() -> FORMATETC {
@@ -715,19 +717,25 @@ mod tests {
     #[test]
     fn files_move_by_default_and_stay_with_shift() {
         let plan = |keys| drop_plan(DragKind::Files, keys, ALL);
-        assert_eq!(plan(NO_KEYS), (DropPlan::MoveFiles, DROPEFFECT_MOVE));
-        assert_eq!(plan(MK_SHIFT), (DropPlan::KeepFiles, DROPEFFECT_COPY));
+        assert_eq!(
+            plan(NO_KEYS),
+            (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
+        );
+        assert_eq!(
+            plan(MK_SHIFT),
+            (DropPlan::Files(DropAction::KeepInPlace), DROPEFFECT_COPY)
+        );
     }
 
     #[test]
     fn files_fall_back_when_the_preferred_effect_is_not_allowed() {
         assert_eq!(
             drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_COPY),
-            (DropPlan::KeepFiles, DROPEFFECT_COPY)
+            (DropPlan::Files(DropAction::KeepInPlace), DROPEFFECT_COPY)
         );
         assert_eq!(
             drop_plan(DragKind::Files, MK_SHIFT, DROPEFFECT_MOVE),
-            (DropPlan::MoveFiles, DROPEFFECT_MOVE)
+            (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
         );
     }
 
@@ -748,7 +756,7 @@ mod tests {
         let move_or_copy = DROPEFFECT(DROPEFFECT_MOVE.0 | DROPEFFECT_COPY.0);
         assert_eq!(
             drop_plan(DragKind::Files, ALT_KEY, move_or_copy),
-            (DropPlan::MoveFiles, DROPEFFECT_MOVE)
+            (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
         );
     }
 
@@ -800,21 +808,70 @@ mod tests {
         assert!(!is_file_list(&mixed));
     }
 
-    #[test]
-    fn right_drop_choice_maps_each_entry() {
-        assert_eq!(right_drop_choice(DROP_MOVE), Some(DropAction::Move));
-        assert_eq!(right_drop_choice(DROP_COPY), Some(DropAction::Copy));
-        assert_eq!(right_drop_choice(DROP_KEEP), Some(DropAction::KeepInPlace));
-        assert_eq!(right_drop_choice(DROP_CANCEL), None);
-        // A dismissed menu reports 0, which matches no entry.
-        assert_eq!(right_drop_choice(0), None);
+    /// The ids of `entries`' items, and whether each is enabled, in order.
+    fn item_states(entries: &[MenuEntry]) -> Vec<(u32, bool)> {
+        entries
+            .iter()
+            .filter_map(|entry| match entry {
+                MenuEntry::Item { id, enabled, .. } => Some((*id, *enabled)),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
-    fn a_right_drop_reports_the_effect_of_its_action() {
-        assert_eq!(drop_action_effect(DropAction::Move), DROPEFFECT_MOVE);
-        assert_eq!(drop_action_effect(DropAction::Copy), DROPEFFECT_COPY);
-        assert_eq!(drop_action_effect(DropAction::KeepInPlace), DROPEFFECT_COPY);
+    fn the_right_drop_menu_offers_shortcuts_after_copy() {
+        let ids: Vec<u32> = item_states(&right_drop_entries(ALL))
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(
+            ids,
+            [DROP_MOVE, DROP_COPY, DROP_LINK, DROP_KEEP, DROP_CANCEL]
+        );
+    }
+
+    #[test]
+    fn create_shortcuts_is_greyed_when_the_source_refuses_a_link() {
+        let link_enabled = |allowed| {
+            item_states(&right_drop_entries(allowed))
+                .into_iter()
+                .find(|&(id, _)| id == DROP_LINK)
+                .map(|(_, enabled)| enabled)
+        };
+        assert_eq!(link_enabled(ALL), Some(true));
+        let move_or_copy = DROPEFFECT(DROPEFFECT_MOVE.0 | DROPEFFECT_COPY.0);
+        assert_eq!(link_enabled(move_or_copy), Some(false));
+    }
+
+    #[test]
+    fn right_drop_choice_maps_each_entry() {
+        assert_eq!(
+            right_drop_choice(DROP_MOVE),
+            DropPlan::Files(DropAction::Move)
+        );
+        assert_eq!(
+            right_drop_choice(DROP_COPY),
+            DropPlan::Files(DropAction::Copy)
+        );
+        assert_eq!(
+            right_drop_choice(DROP_KEEP),
+            DropPlan::Files(DropAction::KeepInPlace)
+        );
+        assert_eq!(right_drop_choice(DROP_LINK), DropPlan::Shortcuts);
+        assert_eq!(right_drop_choice(DROP_CANCEL), DropPlan::None);
+        // A dismissed menu reports 0, which matches no entry.
+        assert_eq!(right_drop_choice(0), DropPlan::None);
+    }
+
+    #[test]
+    fn a_right_drop_reports_the_effect_of_its_plan() {
+        let effect = |action| right_drop_effect(DropPlan::Files(action));
+        assert_eq!(effect(DropAction::Move), DROPEFFECT_MOVE);
+        assert_eq!(effect(DropAction::Copy), DROPEFFECT_COPY);
+        assert_eq!(effect(DropAction::KeepInPlace), DROPEFFECT_COPY);
+        assert_eq!(right_drop_effect(DropPlan::Shortcuts), DROPEFFECT_LINK);
+        assert_eq!(right_drop_effect(DropPlan::None), DROPEFFECT_NONE);
     }
 
     #[test]

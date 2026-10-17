@@ -2066,3 +2066,11 @@ until I5-I6 all land, so no partial build hides the desktop.
   `ENGINEERING.md` section 3, `CONTEXT.md` section 3 ("Crate
   responsibilities"), and `CONTRIBUTING.md` "First 15 minutes" rule 2.
   - Done when: the gates pass and the docs say four crates forbid `unsafe`.
+
+- [x] **G5c. "Create shortcuts here" on a right drop (ROADMAP D9).** G5a and
+  G5b (the right-drag menus) have landed and await their checks (section V).
+  Add the entry between "Copy here" and "Show here without moving".
+  Choosing it takes L2's `DropPlan::Shortcuts` path: read the items with
+  `shell_items(data)`, raise `ShellItemsDropped`, and return `LINK`, so
+  `App::add_shortcuts` writes the shortcuts (or copies a dropped `.lnk`). No
+  new `DropAction` variant and no second shortcut writer.

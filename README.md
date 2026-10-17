@@ -139,7 +139,8 @@ help inspect the look and the desktop layer.
   `PageDown` scroll the space.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
-  A right drag onto a space opens a menu to move, copy, or just show the files.
+  A right drag onto a space opens a menu to move or copy the files, create
+  shortcuts to them, or just show them.
   Apps dragged from the Start menu or the taskbar become shortcuts.
 - With the desktop takeover on, dropping anything on the desktop itself opens
   a new space there with it, an item dragged out of another space included.

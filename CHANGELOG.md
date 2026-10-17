@@ -13,6 +13,9 @@ Notable changes to DeskSpace, newest first. The format follows
   downloads a new release in the background and installs it after you have
   been away for 10 minutes, or when you choose "Restart to update" in the tray
   menu. Off by default.
+- "Create shortcuts here" in the menu a right drag shows on a space, as in
+  Explorer: the files stay where they are and the space gets a shortcut to
+  each.
 
 ### Fixed
 

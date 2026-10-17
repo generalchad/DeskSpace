@@ -539,12 +539,14 @@ one arm in `App::on_event`, whose match is exhaustive.
   formats at `debug`.
 - A file drop becomes `SpaceEvent::FilesDropped` with a `DropAction`: `Move`
   by default (`MOVE`), `KeepInPlace` while Shift is down (`COPY`), or `Copy`
-  from a right drop's menu. A right drag over a space reports `MOVE` while
-  hovering and, on `Drop`, shows a Move here / Copy here / Show here without
-  moving / Cancel menu owned by the space window; the choice becomes the
-  `DropAction`, reporting `MOVE` for Move and `COPY` otherwise (G5b; "Create
-  shortcuts here" is G5c). A drag carrying neither files nor shell items
-  reports `DROPEFFECT_NONE`.
+  from a right drop's menu. A right drag carrying files reports `MOVE` while
+  hovering over a space and, on `Drop`, shows the menu `right_drop_entries`
+  builds, owned by the space window (G5b, G5c). The chosen entry becomes the
+  `DropPlan`, the same type a left drop gets from `drop_plan`, so both take
+  one path: "Create shortcuts here" is `DropPlan::Shortcuts` (greyed when the
+  source refuses `LINK`), and `right_drop_effect` reports what each entry
+  means to the source. A drag carrying neither files nor shell items reports
+  `DROPEFFECT_NONE`.
 - As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
   Alt is held and the source allows a link, or when the source offers neither
   `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is an
@@ -1117,7 +1119,7 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Drop files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them in place and only show them in the space, or Alt to
   add a shortcut instead. A right drag onto a space shows a menu to move,
-  copy, or just show the files (G5b). An app dragged from the Start menu or
+  copy, link, or just show the files (G5b, G5c). An app dragged from the Start menu or
   the taskbar (or any drag that offers only a link) becomes a shortcut in the
   space, as Explorer does on a folder; a dropped shortcut file is copied, and
   its original stays.
@@ -1169,11 +1171,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a) that never
   rearranges inside the space, so a right drag onto Explorer or the desktop
   shows the shell's Move / Copy / Create shortcut menu. A right drag onto a
-  space shows DeskSpace's Move here / Copy here / Show here without moving /
-  Cancel menu (G5b): "Copy here" copies the files into the store and leaves
-  the originals, "Show here without moving" lists them where they are, and
-  Cancel drops nothing. A right click without moving still opens the item or
-  space menu. "Create shortcuts here" (G5c) is still open.
+  space shows DeskSpace's Move here / Copy here / Create shortcuts here /
+  Show here without moving / Cancel menu (G5b, G5c): "Copy here" copies the
+  files into the store and leaves the originals, "Create shortcuts here" adds
+  a shortcut to each (a dropped shortcut file is copied) and is grey when the
+  source refuses a link, "Show here without moving" lists them where they
+  are, and Cancel drops nothing. A right click without moving still opens the
+  item or space menu.
 - Delete sends the selected items' files to the Recycle Bin (undoable, no
   prompt), as Explorer does; Shift+Delete removes them for good. A stored file
   goes back to the desktop only by dragging it there (not with takeover on)

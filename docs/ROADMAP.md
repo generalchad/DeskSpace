@@ -285,9 +285,7 @@ lists what each has done.
    built-but-unchecked behaviors before more work builds on them.
 3. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **"Create shortcuts here" on a right drop** (`TASKS.md` G5c); G5a and
-   G5b have landed.
-5. **M2 undo** for file moves and space deletion. First settle open
+4. **M2 undo** for file moves and space deletion. First settle open
    question 3.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
@@ -322,7 +320,7 @@ Done (each feature's status is in section 7; the full list is archived with
 M0's): space chrome (F-02, F-03, F-05, F-14), the managed store (D3),
 Explorer-like items in spaces (F-06, F-36..F-43), shell-sourced icons, the
 opt-in desktop takeover (D7, D8), non-file shell drags (F-50), and the right
-drag's G5a and G5b (check pending).
+drag's G5a-G5c (check pending).
 
 Remaining:
 1. **Watch stored files.** Only the Desktop folder is watched; a change to a
@@ -330,8 +328,6 @@ Remaining:
    startup. Lenses will reuse the same watcher (M4 phase 2).
 2. **Undo** for file moves, item removal, and space deletion (open question
    3). F-02's "delete with undo" depends on it.
-3. **"Create shortcuts here"** on a right drop (`TASKS.md` G5c), through the
-   same shortcut path as F-50 (`App::add_shortcuts`).
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -629,7 +625,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-33 | Animations toggle | M5 | Open |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
-| F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a, G5b); check pending; "Create shortcuts here" (G5c) open |
+| F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
