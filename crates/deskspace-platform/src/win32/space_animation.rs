@@ -348,6 +348,8 @@ unsafe fn finish(window: HWND) {
         }
         let _ = InvalidateRect(Some(window), None, false);
     }
+    // An exit waits for the last space to leave (ROADMAP D13).
+    runtime::space_left();
 }
 
 /// What `space_window::set_rect` should do with `rect` while `window`

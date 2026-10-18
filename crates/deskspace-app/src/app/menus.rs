@@ -412,7 +412,7 @@ impl App {
             MenuId::NewSpace => self.create_space(ui, at),
             MenuId::Settings => self.open_settings(ui),
             MenuId::ToggleVisible => self.set_visible(ui, !self.visible),
-            MenuId::Exit => ui.quit(),
+            MenuId::Exit => self.exit(ui),
             _ => {}
         }
     }

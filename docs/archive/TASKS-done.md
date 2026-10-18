@@ -2361,3 +2361,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     into Startup; Delete follows Startup; the pages and their greying.
     **[needs human]** check: the three pages; each Startup effect on hide,
     show, a new space, and startup.
+
+- [x] **T16. Graceful exit (platform, app; D13).**
+  - Platform: `Ui::quit_after(plays: Vec<(u64, Play)>, limit: Duration)`
+    plays each space's Out (a hide, `space_animation`) and posts the usual
+    `WM_CLOSE` to the controller when the last one ends, or at `limit`
+    through a timer of its own (a `TIMERPROC`, so it takes no app `Timer`
+    id). Called again while leaving, or with nothing to play, it quits at
+    once. `WM_ENDSESSION` and console close keep closing at once.
+  - App: `App::exit` builds the plays (Startup's Out, staggered in reverse
+    reading order, the stagger shrunk so the last space ends within
+    `EXIT_LIMIT`, 2 s) and is what the Exit menu entries and the update
+    install call instead of `ui.quit`.
+  - Tests: the exit plays: reverse order, the stagger shrunk to fit,
+    nothing for hidden spaces, instant while Windows' switch is off.
+    **[needs human]** check: Exit from the tray and a space menu with
+    several spaces; with takeover on the icons come back only after the
+    spaces have left; a second Exit mid-way quits at once; signing out
+    does not wait.

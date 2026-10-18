@@ -539,23 +539,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T16. Graceful exit (platform, app; D13).**
-  - Platform: `Ui::quit_after(plays: Vec<(u64, Play)>, limit: Duration)`
-    plays each space's Out (a hide, `space_animation`) and posts the usual
-    `WM_CLOSE` to the controller when the last one ends, or at `limit`
-    through a timer of its own (a `TIMERPROC`, so it takes no app `Timer`
-    id). Called again while leaving, or with nothing to play, it quits at
-    once. `WM_ENDSESSION` and console close keep closing at once.
-  - App: `App::exit` builds the plays (Startup's Out, staggered in reverse
-    reading order, the stagger shrunk so the last space ends within
-    `EXIT_LIMIT`, 2 s) and is what the Exit menu entries and the update
-    install call instead of `ui.quit`.
-  - Tests: the exit plays: reverse order, the stagger shrunk to fit,
-    nothing for hidden spaces, instant while Windows' switch is off.
-    **[needs human]** check: Exit from the tray and a space menu with
-    several spaces; with takeover on the icons come back only after the
-    spaces have left; a second Exit mid-way quits at once; signing out
-    does not wait.
 - [ ] **T17. Burn like paper (platform; D12 amended).** Replace Burn's
   cell dissolve in the painter:
   - A burn field made once per animation: smooth noise (a few octaves of
@@ -861,6 +844,7 @@ each id is in `archive/TASKS-done.md`.
 | T10 (D12) | Each Startup effect on a new space from the space menu, the tray, the hotkey, and a drop on the taken-over desktop: the space appears with it and no empty frame or early blur shows first; at startup with several spaces, "One after another" brings them in reading order at the set delay and "All at once" together; "Start with spaces hidden" shows nothing until shown; Fly from each edge and on a second monitor; hiding during the startup stagger hides every space, waiting ones included. |
 | T11 (D12) | Each Delete effect, and "Same as startup", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |
 | T15 (D12) | Settings > Animations lists Startup, Delete, and Fold; a config last saved with the Hide and show page keeps that page's effect as Startup's; Startup's effect plays on hiding, showing, a new space, and startup (staggered only at startup). |
+| T16 (D13) | Exit from the tray and from a space menu with several spaces: they leave one after another in reverse reading order (all together with "All at once"), then DeskSpace closes, within about 2 s; with takeover on, Explorer's icons come back only after the spaces have left; a second Exit mid-way closes at once; with the spaces hidden, Exit closes at once; signing out of Windows is not held up. |
 
 ## Found while working
 

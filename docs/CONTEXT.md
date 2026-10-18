@@ -433,6 +433,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   `Event::PointerDownOutside { on_desktop }` unless the press hit a space or
   a popup menu. A press on the desktop layer counts as outside, because
   `is_space_window` checks only the spaces.
+- Graceful exit (ROADMAP D13): Exit and the update install call
+  `App::exit`, which hands `Ui::quit_after` each shown space's Startup Out
+  (reverse reading order, the stagger shrunk to fit `EXIT_LIMIT`). The
+  spaces play it; the last one to finish (`runtime::space_left`), or a
+  thread timer at the limit, posts the same `WM_CLOSE` as `Ui::quit`, so
+  the teardown, and the takeover restore after it, run only once the
+  spaces have left. A second Exit while leaving closes at once.
 - `Ui::quit`, console Ctrl+C or close (`console.rs` posts `WM_CLOSE` and waits
   up to 4.5 s; meaningful only with a console attached, as in debug builds),
   and `WM_ENDSESSION` all lead to exactly one `Event::CloseRequested`; then

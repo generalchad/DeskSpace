@@ -335,7 +335,7 @@ impl App {
     fn install_and_quit(&mut self, ui: &mut Ui, package: Package, mode: InstallMode) {
         self.flush_save_on_close(ui);
         self.update.on_exit.queue(package, mode);
-        ui.quit();
+        self.exit(ui);
     }
 
     /// The tray tooltip: the space summary, plus a waiting update.

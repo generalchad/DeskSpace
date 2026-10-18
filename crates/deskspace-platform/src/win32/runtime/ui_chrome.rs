@@ -2,6 +2,10 @@
 //! menus, dark mode, the settings window, the zoom pop-up, the tray tooltip,
 //! and quitting.
 
+use std::time::Duration;
+
+use windows::Win32::UI::WindowsAndMessaging::KillTimer;
+
 use super::*;
 use crate::input::ShellItem;
 use crate::render::ZoomBar;
@@ -290,16 +294,47 @@ impl Ui {
     /// Ends the message loop after the current event. `CloseRequested` is
     /// delivered first.
     pub fn quit(&mut self) {
-        if let Some(controller) = with_runtime(|runtime| runtime.controller) {
-            // SAFETY: posting to our own live window.
-            unsafe {
-                let _ = PostMessageW(
-                    Some(controller),
-                    WM_CLOSE,
-                    Default::default(),
-                    Default::default(),
-                );
+        post_close();
+    }
+
+    /// Quits once each space in `plays` has played its way out (ROADMAP
+    /// D13), or after `limit` whatever is still playing. Asked again while
+    /// leaving, or with nothing to play, it quits at once.
+    pub fn quit_after(&mut self, plays: Vec<(u64, Play)>, limit: Duration) {
+        let already =
+            with_runtime(|runtime| std::mem::replace(&mut runtime.leaving, true)).unwrap_or(true);
+        if already {
+            post_close();
+            return;
+        }
+        let mut playing = false;
+        for (id, play) in plays {
+            if let Some(hwnd) = space_hwnd(id) {
+                // SAFETY: a live space window, and no runtime borrow is held.
+                unsafe { space_animation::set_visible(hwnd, false, play) };
+                playing |= space_animation::is_leaving(hwnd);
             }
         }
+        if !playing {
+            post_close();
+            return;
+        }
+        let millis = u32::try_from(limit.as_millis()).unwrap_or(u32::MAX);
+        // A thread timer with its own procedure, so it takes none of the
+        // app's `Timer` ids on the controller.
+        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer
+        // SAFETY: `close_at_limit` matches TIMERPROC and lives forever.
+        unsafe {
+            let _ = SetTimer(None, 0, millis, Some(close_at_limit));
+        }
     }
+}
+
+/// Closes when the exit animation outlives its limit (`Ui::quit_after`).
+unsafe extern "system" fn close_at_limit(_: HWND, _: u32, id: usize, _: u32) {
+    // SAFETY: killing this thread timer, which fires only once.
+    unsafe {
+        let _ = KillTimer(None, id);
+    }
+    post_close();
 }

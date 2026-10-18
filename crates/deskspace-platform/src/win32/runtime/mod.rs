@@ -92,6 +92,9 @@ struct Runtime {
     menus_dark: Option<bool>,
     tray_tooltip: String,
     close_dispatched: bool,
+    /// Set by `Ui::quit_after` while the spaces play their way out before
+    /// the teardown (ROADMAP D13).
+    leaving: bool,
     /// Created on the first in-space item drag and kept for reuse.
     drag_ghost: Option<DragGhost>,
     /// Created on the first item hover and reused for every info tip.
@@ -137,6 +140,37 @@ pub(crate) fn dispatch(event: Event) {
         handler.on_event(event, &mut ui);
     }
     with_runtime(|runtime| runtime.handler = Some(handler));
+}
+
+/// Posts the close that tears the runtime down (`Ui::quit`).
+pub(crate) fn post_close() {
+    if let Some(controller) = with_runtime(|runtime| runtime.controller) {
+        // SAFETY: posting to our own live window.
+        unsafe {
+            let _ = PostMessageW(
+                Some(controller),
+                WM_CLOSE,
+                Default::default(),
+                Default::default(),
+            );
+        }
+    }
+}
+
+/// While DeskSpace is leaving (`Ui::quit_after`), closes once no space is
+/// still playing its way out. Called whenever a space's animation ends.
+pub(crate) fn space_left() {
+    let Some((true, windows)) = with_runtime(|runtime| {
+        (
+            runtime.leaving,
+            runtime.spaces.values().copied().collect::<Vec<_>>(),
+        )
+    }) else {
+        return;
+    };
+    if !windows.into_iter().any(space_animation::is_leaving) {
+        post_close();
+    }
 }
 
 /// Sends `CloseRequested` the first time it is called; later calls (for
@@ -318,6 +352,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             menus_dark: None,
             tray_tooltip: options.tray_tooltip.clone(),
             close_dispatched: false,
+            leaving: false,
             drag_ghost: None,
             info_tip: None,
             zoom_bar: None,

@@ -10,8 +10,9 @@ Notable changes to DeskSpace, newest first. The format follows
 ### Added
 
 - Hiding and showing the spaces, folding one, a new space appearing (at
-  startup too, one after another), and deleting one are animated, a roll by
-  default. Settings >
+  startup too, one after another), deleting one, and exiting DeskSpace are
+  animated, a roll by default. Settings > Animations has a page each for
+  Startup, Delete, and Fold. Settings >
   Animations picks the effect (roll, fade, pixelate, gradient, dissolve, fly,
   CRT, or burn) and its speed, and DeskSpace follows Windows' "Animation
   effects" switch.

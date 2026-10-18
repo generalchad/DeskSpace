@@ -149,11 +149,12 @@ help inspect the look and the desktop layer.
   the desktop takeover on, your loose desktop icons stay visible. Hiding and
   showing are animated (a roll by default); pick the effect and its speed
   under Settings > Animations > Startup, which also animates new spaces and
-  the spaces appearing at startup (one after another by default). Delete
+  the spaces appearing at startup (one after another by default) and
+  leaving at exit, before Explorer's icons come back (within 2 s). Delete
   and Fold have their own pages; deleting plays Startup's effect by
-  default. Press the
-  hotkey again mid-way and the animation turns around. DeskSpace follows Windows' "Animation effects"
-  switch: with it off, nothing animates.
+  default. Press the hotkey again mid-way and the animation turns around.
+  DeskSpace follows Windows' "Animation effects" switch: with it off,
+  nothing animates.
 - The tray icon opens Settings on left-click and offers Settings, hide/show
   spaces, new space, and exit on right-click.
 - Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page
