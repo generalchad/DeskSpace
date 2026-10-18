@@ -792,7 +792,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   target and brush live in a `HwndCanvas` (`d2d/canvas.rs`) every window
   painter shares; the factories and text formats are shared per thread
   (`Graphics`, released in the runtime teardown). `D2DERR_RECREATE_TARGET`
-  drops device resources for recreation on the next paint.
+  drops device resources and invalidates the window, so the next paint
+  recreates them; without that, the lost frame left the window blank until
+  a click repainted it.
 - Text uses DirectWrite (Segoe UI Variable Text when installed; the lock glyph
   from Segoe Fluent Icons or MDL2): grayscale antialiasing on translucent
   surfaces and ClearType on opaque ones, ellipsis trimming, one or two wrapped

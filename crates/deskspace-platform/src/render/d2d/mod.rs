@@ -51,7 +51,9 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, HBITMAP, HPALETTE, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, EndPaint, HBITMAP, HPALETTE, InvalidateRect, PAINTSTRUCT,
+};
 use windows::Win32::Graphics::Imaging::{
     CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmap, IWICImagingFactory,
     WICBitmapCacheOnLoad, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
@@ -293,7 +295,7 @@ impl Painter {
         if let Err(error) = end {
             if error.code() == D2DERR_RECREATE_TARGET {
                 tracing::debug!("direct2d target lost; recreating on next paint");
-                self.release_device_resources();
+                self.release_device_resources(hwnd);
                 return Ok(());
             }
             return Err(error.into());
@@ -576,8 +578,8 @@ impl Painter {
         });
     }
 
-    fn release_device_resources(&mut self) {
-        self.canvas.release();
+    fn release_device_resources(&mut self, hwnd: HWND) {
+        self.canvas.release(hwnd);
         self.icons.clear();
         self.effects.release();
     }

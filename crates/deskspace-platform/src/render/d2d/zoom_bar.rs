@@ -132,7 +132,7 @@ impl ZoomBarPainter {
         if let Err(error) = end {
             if error.code() == D2DERR_RECREATE_TARGET {
                 tracing::debug!("direct2d target lost; recreating on next paint");
-                self.canvas.release();
+                self.canvas.release(hwnd);
                 return Ok(());
             }
             return Err(error.into());

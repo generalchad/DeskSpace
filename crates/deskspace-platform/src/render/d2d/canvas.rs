@@ -89,10 +89,21 @@ impl HwndCanvas {
         Ok((target, brush))
     }
 
-    /// Drops the device-dependent resources, so the next `ensure` recreates
-    /// them (after `D2DERR_RECREATE_TARGET`).
-    pub(super) fn release(&mut self) {
+    /// Drops the device-dependent resources after `D2DERR_RECREATE_TARGET`
+    /// and invalidates `hwnd`, so a new paint recreates them and draws the
+    /// frame that was lost.
+    pub(super) fn release(&mut self, hwnd: HWND) {
         self.target = None;
         self.brush = None;
+        // The lost frame was never presented, and EndPaint validates the
+        // window, so without this it stays blank (only its DWM blur shows)
+        // until something else invalidates it, such as a click. Spaces
+        // painted while the device was lost at startup were left that way
+        // (seen 2026-10-18). Invalidating between BeginPaint and EndPaint
+        // queues one more WM_PAINT.
+        // SAFETY: `hwnd` is the window being painted.
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
     }
 }
