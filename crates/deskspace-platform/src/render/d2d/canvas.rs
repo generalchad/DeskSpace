@@ -16,21 +16,14 @@ impl HwndCanvas {
         self.size
     }
 
-    pub(super) fn target(&self) -> Option<&ID2D1HwndRenderTarget> {
-        self.target.as_ref()
-    }
-
-    pub(super) fn brush(&self) -> Option<ID2D1SolidColorBrush> {
-        self.brush.clone()
-    }
-
     /// The target and brush for `hwnd`, created or resized to its client
-    /// area.
+    /// area. The painters draw on any `ID2D1RenderTarget`, so the HWND
+    /// target's own type stays here.
     pub(super) fn ensure(
         &mut self,
         graphics: &Graphics,
         hwnd: HWND,
-    ) -> Result<(ID2D1HwndRenderTarget, ID2D1SolidColorBrush), PlatformError> {
+    ) -> Result<(ID2D1RenderTarget, ID2D1SolidColorBrush), PlatformError> {
         let mut client = RECT::default();
         // SAFETY: `hwnd` is the window being painted.
         unsafe { GetClientRect(hwnd, &mut client)? };
@@ -50,7 +43,7 @@ impl HwndCanvas {
                 };
                 self.size = size;
             }
-            return Ok((target.clone(), brush.clone()));
+            return Ok((target.clone().into(), brush.clone()));
         }
 
         let properties = D2D1_RENDER_TARGET_PROPERTIES {
@@ -86,7 +79,7 @@ impl HwndCanvas {
         self.target = Some(target.clone());
         self.brush = Some(brush.clone());
         self.size = size;
-        Ok((target, brush))
+        Ok((target.into(), brush))
     }
 
     /// Drops the device-dependent resources after `D2DERR_RECREATE_TARGET`

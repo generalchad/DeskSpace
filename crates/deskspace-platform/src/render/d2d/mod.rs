@@ -222,14 +222,9 @@ impl Painter {
         // Pixelate first draws the scene small on its own target, so it must
         // finish before the window's target begins.
         let pixelated = match transition {
-            Some(transition) if transition.block > 1 => Some(self.draw_small(
-                &graphics,
-                &target,
-                prepared,
-                frame,
-                size,
-                transition.block,
-            )?),
+            Some(transition) if transition.block > 1 => {
+                Some(self.draw_small(ctx, prepared, frame, size, transition.block)?)
+            }
             _ => None,
         };
         let layer = match transition {
@@ -304,26 +299,21 @@ impl Painter {
     }
 
     /// Draws the scene at 1 / `block` of `size` on Pixelate's offscreen
-    /// target, and returns that bitmap with the part of it the scene covers.
+    /// target, made from `window`'s, and returns that bitmap with the part of
+    /// it the scene covers.
     fn draw_small(
         &mut self,
-        graphics: &Graphics,
-        target: &ID2D1HwndRenderTarget,
+        window: DrawContext,
         prepared: &PreparedScene,
         frame: PaintFrame,
         size: (f32, f32),
         block: u32,
     ) -> Result<(ID2D1Bitmap, D2D_RECT_F), PlatformError> {
-        let offscreen = self.effects.pixel_target(target, size)?;
-        let brush = match self.canvas.brush() {
-            Some(brush) => brush,
-            None => return Err(PlatformError::NotRunning),
-        };
+        let offscreen = self.effects.pixel_target(window.target, size)?;
         let (scale, source) = effects::pixelated(size, block);
         let ctx = DrawContext {
-            graphics,
             target: &offscreen,
-            brush: &brush,
+            ..window
         };
         // SAFETY: drawing on a live offscreen target between its own
         // BeginDraw and EndDraw, before the window's target begins.
@@ -501,7 +491,10 @@ impl Painter {
             if Some(item.id) == editing {
                 continue;
             }
-            let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
+            let bitmap = item
+                .icon
+                .as_ref()
+                .and_then(|icon| self.bitmap_for(ctx.target, icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
             unsafe { draw_item(ctx, scene, item, label, bitmap.as_ref(), None) };
         }
@@ -518,7 +511,10 @@ impl Painter {
         else {
             return;
         };
-        let bitmap = item.icon.as_ref().and_then(|icon| self.bitmap_for(icon));
+        let bitmap = item
+            .icon
+            .as_ref()
+            .and_then(|icon| self.bitmap_for(ctx.target, icon));
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
             draw_item(
@@ -532,11 +528,11 @@ impl Painter {
         };
     }
 
-    fn bitmap_for(&mut self, icon: &Icon) -> Option<ID2D1Bitmap> {
+    /// `icon` on the GPU, uploaded through `target` the first time.
+    fn bitmap_for(&mut self, target: &ID2D1RenderTarget, icon: &Icon) -> Option<ID2D1Bitmap> {
         if let Some(bitmap) = self.icons.get(&icon.id()) {
             return Some(bitmap.clone());
         }
-        let target = self.canvas.target()?;
         let properties = D2D1_BITMAP_PROPERTIES {
             pixelFormat: D2D1_PIXEL_FORMAT {
                 format: DXGI_FORMAT_B8G8R8A8_UNORM,

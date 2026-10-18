@@ -145,7 +145,7 @@ impl ZoomBarPainter {
 /// glyph or text, dimmed when disabled.
 unsafe fn draw_button(
     graphics: &Graphics,
-    target: &ID2D1HwndRenderTarget,
+    target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     bar: &ZoomBar,
     layout: &ZoomBarLayout,
