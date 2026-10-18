@@ -2846,3 +2846,18 @@ until I5-I6 all land, so no partial build hides the desktop.
     space, the tray's controller window, and the debug and settings
     windows, in z-order, and follows a space moved to another monitor;
     the monitor table matches Windows' display settings.
+
+- [x] **X15. System facts (platform).** In `win32/debug_info.rs`:
+  - `pub fn transparency_enabled() -> Option<bool>`: the `EnableTransparency`
+    DWORD under
+    `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`.
+  - `Ui::hook_state() -> HookState { editing: bool, watch_selection: bool,
+    watch_paste: bool, outside_clicks: bool }`, read from the flags
+    `win32/keyboard.rs` and `win32/outside_click.rs` already keep. If one
+    is not kept anywhere, report `false` and add a **Found while
+    working** line rather than adding state.
+  - `pub fn watchdog_running() -> Option<bool>`: whether the watchdog
+    process `arm_watchdog` launched is still alive. If `watchdog.rs`
+    keeps no handle or id for it, return `None` and add a **Found while
+    working** line.
+  - Re-export them from `lib.rs`. Tests: none beyond compiling.

@@ -183,6 +183,11 @@ impl Ui {
         debug_hwnd().is_some()
     }
 
+    /// The keyboard and mouse hooks' flags, for the debug window.
+    pub fn hook_state(&self) -> crate::win32::debug_info::HookState {
+        crate::win32::debug_info::hook_state()
+    }
+
     /// This process's windows for the debug window's table: top-level ones
     /// in z-order, then desktop-hosted spaces.
     pub fn debug_windows(&self) -> Vec<WindowRow> {

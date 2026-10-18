@@ -23,12 +23,13 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_SUCCESS, GetLastError, HANDLE, SetLastError,
-    WAIT_OBJECT_0,
+    CloseHandle, ERROR_ALREADY_EXISTS, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, GetLastError, HANDLE,
+    SetLastError, WAIT_OBJECT_0,
 };
 use windows::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CreateEventW, CreateMutexW, DETACHED_PROCESS, INFINITE, OpenEventW,
-    OpenProcess, PROCESS_SYNCHRONIZE, SYNCHRONIZATION_SYNCHRONIZE, SetEvent, WaitForSingleObject,
+    OpenMutexW, OpenProcess, PROCESS_SYNCHRONIZE, SYNCHRONIZATION_SYNCHRONIZE, SetEvent,
+    WaitForSingleObject,
 };
 use windows::core::PCWSTR;
 
@@ -97,6 +98,29 @@ pub fn signal_clean_exit() {
     unsafe {
         let _ = SetEvent(HANDLE(handle as *mut c_void));
         let _ = CloseHandle(HANDLE(handle as *mut c_void));
+    }
+}
+
+/// Whether the takeover watchdog for this process is alive: it holds its
+/// per-parent mutex (`mutex_name`) for as long as it runs. `Some(false)`
+/// when it was never armed or has exited; `None` when the mutex cannot be
+/// checked.
+/// https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-openmutexw
+pub fn is_running() -> Option<bool> {
+    if !ARMED.load(Ordering::SeqCst) {
+        return Some(false);
+    }
+    let name = wide(&mutex_name(std::process::id()));
+    // SAFETY: `name` is NUL-terminated; an opened handle is closed at once.
+    unsafe {
+        match OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, PCWSTR(name.as_ptr())) {
+            Ok(handle) => {
+                let _ = CloseHandle(handle);
+                Some(true)
+            }
+            Err(error) if error.code() == ERROR_FILE_NOT_FOUND.to_hresult() => Some(false),
+            Err(_) => None,
+        }
     }
 }
 

@@ -57,6 +57,11 @@ pub(crate) fn watch(controller: HWND, enabled: bool) {
 }
 
 /// Removes the hook if it is installed.
+/// Whether outside clicks are being watched now (the hook is installed).
+pub(crate) fn is_watching() -> bool {
+    HOOK.with(|hook| hook.get().is_some())
+}
+
 pub(crate) fn stop() {
     if let Some(hook) = HOOK.take() {
         // SAFETY: `hook` was returned by SetWindowsHookExW on this thread.

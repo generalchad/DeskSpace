@@ -25,7 +25,9 @@ pub use ui::{
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;
-pub use win32::debug_info::{MonitorRow, ProcessStats, WindowRow, monitors, process_stats};
+pub use win32::debug_info::{
+    HookState, MonitorRow, ProcessStats, WindowRow, monitors, process_stats, transparency_enabled,
+};
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,
@@ -49,7 +51,7 @@ pub use win32::system::{
     system_uses_dark_mode, user_is_presenting, virtual_desktop_rect, windows_build, work_area_at,
 };
 pub use win32::watchdog::{
-    arm as arm_watchdog, is_watchdog, run_watchdog,
+    arm as arm_watchdog, is_running as watchdog_running, is_watchdog, run_watchdog,
     signal_clean_exit as signal_watchdog_clean_exit, watchdog_pid,
 };
 pub use win32::{ClipboardFiles, EventHandler, RunOptions, Ui, Waker, run, space_dpi};

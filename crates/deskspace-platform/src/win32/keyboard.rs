@@ -95,6 +95,12 @@ thread_local! {
     static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
 }
 
+/// The hook's flags now: editing, watching a selection, and watching a
+/// current space (`WATCH_PASTE`), for the debug window.
+pub(crate) fn flags() -> (bool, bool, bool) {
+    (EDITING.get(), WATCH_SELECTION.get(), WATCH_PASTE.get())
+}
+
 /// Marks a popup menu as open, so the hook stops consuming keys (Esc, Enter,
 /// arrows) that belong to the menu while it is tracked.
 pub(crate) fn set_menu_open(open: bool) {

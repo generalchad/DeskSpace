@@ -716,21 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X15. System facts (platform).** In `win32/debug_info.rs`:
-  - `pub fn transparency_enabled() -> Option<bool>`: the `EnableTransparency`
-    DWORD under
-    `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`.
-  - `Ui::hook_state() -> HookState { editing: bool, watch_selection: bool,
-    watch_paste: bool, outside_clicks: bool }`, read from the flags
-    `win32/keyboard.rs` and `win32/outside_click.rs` already keep. If one
-    is not kept anywhere, report `false` and add a **Found while
-    working** line rather than adding state.
-  - `pub fn watchdog_running() -> Option<bool>`: whether the watchdog
-    process `arm_watchdog` launched is still alive. If `watchdog.rs`
-    keeps no handle or id for it, return `None` and add a **Found while
-    working** line.
-  - Re-export them from `lib.rs`. Tests: none beyond compiling.
-
 - [ ] **X16. System (app).** Needs X5 and X15. **[needs human]** Section
   System, all `Readout`s refreshed by `Timer::DebugRefresh`:
   - `Theme`: Windows dark or light (`system_uses_dark_mode`), the accent
