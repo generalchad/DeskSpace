@@ -62,7 +62,7 @@ fn yes_no(value: bool) -> &'static str {
 }
 
 /// `rect` as `x, y  w × h`.
-fn rect_text(rect: Rect) -> String {
+pub(super) fn rect_text(rect: Rect) -> String {
     format!(
         "{}, {}  {} \u{00D7} {}",
         rect.x, rect.y, rect.width, rect.height

@@ -12,6 +12,13 @@ impl App {
         self.on_event(Event::SystemThemeChanged, ui);
     }
 
+    /// Delivers the event Windows sends when its "Animation effects" switch
+    /// changes, so DeskSpace reads the switch again.
+    pub(super) fn simulate_animations_change(&mut self, ui: &mut Ui) {
+        tracing::info!("debug: simulating an Animation effects change");
+        self.on_event(Event::SystemAnimationsChanged, ui);
+    }
+
     /// Posts `TaskbarCreated`, the message Explorer broadcasts when it
     /// restarts.
     pub(super) fn simulate_explorer_restart(&mut self, ui: &mut Ui) {

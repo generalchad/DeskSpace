@@ -44,10 +44,15 @@ pub(crate) enum DebugId {
     ExplorerRestarted = 36,
     ReadOnlyConfig = 37,
     CrashNow = 38,
+    SpaceTable = 39,
+    ReflowAll = 40,
+    SaveNow = 41,
+    ClearIconCache = 42,
+    AnimationsChanged = 43,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 38] = [
+    pub(crate) const ALL: [Self; 43] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -86,6 +91,11 @@ impl DebugId {
         Self::ExplorerRestarted,
         Self::ReadOnlyConfig,
         Self::CrashNow,
+        Self::SpaceTable,
+        Self::ReflowAll,
+        Self::SaveNow,
+        Self::ClearIconCache,
+        Self::AnimationsChanged,
     ];
 
     pub(crate) fn id(self) -> u32 {

@@ -130,9 +130,16 @@ impl App {
                 text: self.hooks_text(ui),
             },
             DebugId::Speed => self.speed_choice(),
-            DebugId::ThemeChanged | DebugId::ExplorerRestarted | DebugId::CrashNow => {
-                DebugControlKind::Button { enabled: true }
-            }
+            DebugId::ThemeChanged
+            | DebugId::AnimationsChanged
+            | DebugId::ExplorerRestarted
+            | DebugId::CrashNow
+            | DebugId::SaveNow
+            | DebugId::ClearIconCache => DebugControlKind::Button { enabled: true },
+            DebugId::ReflowAll => DebugControlKind::Button {
+                enabled: has_spaces,
+            },
+            DebugId::SpaceTable => self.space_table(),
             DebugId::ReadOnlyConfig => DebugControlKind::Toggle {
                 on: self.config_read_only(),
             },
@@ -255,6 +262,17 @@ impl App {
                 }
             }
             DebugId::CrashNow => self.crash_now(ui),
+            DebugId::SpaceTable => {}
+            DebugId::ReflowAll => {
+                self.relayout_all(ui);
+                tracing::info!("debug: re-flowed every space");
+            }
+            DebugId::SaveNow => {
+                self.flush_save(ui);
+                tracing::info!("debug: saved now");
+            }
+            DebugId::ClearIconCache => self.clear_icon_cache(ui),
+            DebugId::AnimationsChanged => self.simulate_animations_change(ui),
             DebugId::IgnoreWindows => {
                 if let DebugInput::Toggle(on) = input {
                     self.animation_tweak.ignore_windows = on;

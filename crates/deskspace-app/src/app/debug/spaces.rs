@@ -1,10 +1,11 @@
 //! The debug window's Spaces section: making, clearing, and resetting test
 //! spaces through the paths the menus already use.
 
-use deskspace_core::{Command, Desktop, SpaceId};
-use deskspace_platform::{Ui, cursor_pos};
+use deskspace_core::{Command, Desktop, Space, SpaceId};
+use deskspace_platform::{DebugControlKind, Ui, cursor_pos};
 
 use super::test_spaces::{STRESS_SIZES, TEST_SPACES, stress_shortcuts};
+use super::windows::rect_text;
 use crate::app::App;
 use crate::app::files::{ShortcutSource, StoredFiles, stored_paths};
 
@@ -81,6 +82,26 @@ impl App {
         Some(id)
     }
 
+    /// Every space in model order, as the table shows it.
+    pub(super) fn space_table(&self) -> DebugControlKind {
+        let columns = [
+            "Id", "Title", "Rect", "Items", "Folded", "Locked", "Own look",
+        ];
+        DebugControlKind::Table {
+            columns: columns.iter().map(|column| column.to_string()).collect(),
+            rows: self.config.desktop.spaces().iter().map(space_row).collect(),
+        }
+    }
+
+    /// Forgets every cached icon and redraws, so each icon is read from the
+    /// shell again.
+    pub(super) fn clear_icon_cache(&mut self, ui: &mut Ui) {
+        let cleared = self.icons.len();
+        self.icons.clear();
+        self.refresh_spaces(ui);
+        tracing::info!(cleared, "debug: cleared the icon cache");
+    }
+
     /// Unfolds every folded space as the space menu's Fold does.
     pub(super) fn unfold_all(&mut self, ui: &mut Ui) {
         let folded = folded_spaces(&self.config.desktop);
@@ -99,6 +120,20 @@ impl App {
         }
         tracing::info!(count = locked.len(), "debug: unlocked spaces");
     }
+}
+
+/// One space's row in the Spaces table.
+fn space_row(space: &Space) -> Vec<String> {
+    let yes_no = |value: bool| if value { "yes" } else { "no" }.to_string();
+    vec![
+        space.id.0.to_string(),
+        space.title().to_string(),
+        rect_text(space.rect()),
+        space.items().len().to_string(),
+        yes_no(space.folded()),
+        yes_no(space.locked()),
+        yes_no(space.custom()),
+    ]
 }
 
 /// The spaces that are folded now.
@@ -174,6 +209,18 @@ mod tests {
                 .iter()
                 .all(|space| !space.folded() && !space.locked())
         );
+    }
+
+    #[test]
+    fn a_space_row_names_its_state() {
+        let mut desktop = Desktop::default();
+        let id = fixtures::create_space(&mut desktop, "Work", Rect::new(10, 20, 300, 200));
+        fixtures::add_item(&mut desktop, id, "C:/missing/a.txt");
+        fixtures::apply(&mut desktop, Command::ToggleLock { id });
+        let row = space_row(desktop.space(id).unwrap());
+        assert_eq!(row[1], "Work");
+        assert_eq!(row[3], "1");
+        assert_eq!(&row[4..6], ["no", "yes"]);
     }
 
     #[test]

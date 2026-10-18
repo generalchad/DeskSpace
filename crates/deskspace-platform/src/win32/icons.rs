@@ -73,6 +73,11 @@ impl IconCache {
         self.entries.retain(|(entry, _, _), _| entry != path);
     }
 
+    /// Forgets every cached icon, so each is rendered again on next use.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }

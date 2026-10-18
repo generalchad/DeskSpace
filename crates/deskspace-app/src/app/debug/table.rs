@@ -53,6 +53,11 @@ pub(crate) struct DebugRow {
 /// Every debug control, in the order each section shows them.
 pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
     DebugRow {
+        id: DebugId::SpaceTable,
+        section: DebugSectionId::Spaces,
+        label: "Spaces",
+    },
+    DebugRow {
         id: DebugId::SpacesVisible,
         section: DebugSectionId::Windows,
         label: "Show spaces",
@@ -101,6 +106,21 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         id: DebugId::RefreshAll,
         section: DebugSectionId::Spaces,
         label: "Refresh every space",
+    },
+    DebugRow {
+        id: DebugId::ReflowAll,
+        section: DebugSectionId::Spaces,
+        label: "Re-flow every space",
+    },
+    DebugRow {
+        id: DebugId::ClearIconCache,
+        section: DebugSectionId::Spaces,
+        label: "Clear the icon cache",
+    },
+    DebugRow {
+        id: DebugId::SaveNow,
+        section: DebugSectionId::Spaces,
+        label: "Save now",
     },
     DebugRow {
         id: DebugId::PruneNow,
@@ -226,6 +246,11 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         id: DebugId::ThemeChanged,
         section: DebugSectionId::Simulate,
         label: "Windows theme changed",
+    },
+    DebugRow {
+        id: DebugId::AnimationsChanged,
+        section: DebugSectionId::Simulate,
+        label: "Windows Animation effects changed",
     },
     DebugRow {
         id: DebugId::ExplorerRestarted,
