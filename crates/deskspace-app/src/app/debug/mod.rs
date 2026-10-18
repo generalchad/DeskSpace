@@ -10,6 +10,7 @@ mod config;
 mod diagnostics;
 mod ids;
 mod spaces;
+mod system;
 mod table;
 mod test_spaces;
 mod windows;
@@ -100,6 +101,18 @@ impl App {
             DebugId::Updates => DebugControlKind::Readout {
                 text: self.updates_text(),
             },
+            DebugId::Theme => DebugControlKind::Readout {
+                text: self.theme_text(),
+            },
+            DebugId::Explorer => DebugControlKind::Readout {
+                text: self.explorer_text(),
+            },
+            DebugId::Hotkeys => DebugControlKind::Readout {
+                text: self.hotkeys_text(),
+            },
+            DebugId::Hooks => DebugControlKind::Readout {
+                text: self.hooks_text(ui),
+            },
             DebugId::ConfigPath => DebugControlKind::Readout {
                 text: self.config_path_text(),
             },
@@ -161,7 +174,11 @@ impl App {
             | DebugId::Build
             | DebugId::Model
             | DebugId::Resources
-            | DebugId::Updates => {}
+            | DebugId::Updates
+            | DebugId::Theme
+            | DebugId::Explorer
+            | DebugId::Hotkeys
+            | DebugId::Hooks => {}
             DebugId::CopyDiagnostics => self.copy_diagnostics(ui),
             DebugId::DumpConfig => self.dump_config(),
             DebugId::OpenConfigFolder => self.open_config_folder(ui),

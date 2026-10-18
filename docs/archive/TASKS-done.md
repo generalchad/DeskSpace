@@ -2861,3 +2861,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     keeps no handle or id for it, return `None` and add a **Found while
     working** line.
   - Re-export them from `lib.rs`. Tests: none beyond compiling.
+
+- [x] **X16. System (app).** Needs X5 and X15. **[needs human]** Section
+  System, all `Readout`s refreshed by `Timer::DebugRefresh`:
+  - `Theme`: Windows dark or light (`system_uses_dark_mode`), the accent
+    (`system_accent_color` as `#RRGGBB`, or "unknown"), Windows'
+    "Animation effects" (the value `Event::SystemAnimationsChanged`
+    keeps), and transparency effects (`transparency_enabled`).
+  - `Explorer`: the app's `SystemLook`, printed with `{:#?}` (derive
+    `Debug` on it if it lacks one).
+  - `Hotkeys`: one line per `HOTKEY_BINDINGS` row: its label, its binding
+    (or "unbound"), and whether it registered, if `app/hotkeys.rs` keeps
+    that; otherwise the binding alone.
+  - `Hooks`: `ui.hook_state()`, one line per flag.
+  - **[needs human]** check: switching Windows between dark and light,
+    changing the accent, and turning off transparency each show within a
+    second; selecting an item turns on `watch_selection`; a rename turns
+    on `editing`.

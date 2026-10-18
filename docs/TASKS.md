@@ -716,23 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X16. System (app).** Needs X5 and X15. **[needs human]** Section
-  System, all `Readout`s refreshed by `Timer::DebugRefresh`:
-  - `Theme`: Windows dark or light (`system_uses_dark_mode`), the accent
-    (`system_accent_color` as `#RRGGBB`, or "unknown"), Windows'
-    "Animation effects" (the value `Event::SystemAnimationsChanged`
-    keeps), and transparency effects (`transparency_enabled`).
-  - `Explorer`: the app's `SystemLook`, printed with `{:#?}` (derive
-    `Debug` on it if it lacks one).
-  - `Hotkeys`: one line per `HOTKEY_BINDINGS` row: its label, its binding
-    (or "unbound"), and whether it registered, if `app/hotkeys.rs` keeps
-    that; otherwise the binding alone.
-  - `Hooks`: `ui.hook_state()`, one line per flag.
-  - **[needs human]** check: switching Windows between dark and light,
-    changing the accent, and turning off transparency each show within a
-    second; selecting an item turns on `watch_selection`; a rename turns
-    on `editing`.
-
 - [ ] **X17. Slow motion and ignoring Windows' switch (app; pure).**
   Needs X5.
   - `app/animation.rs`: `#[derive(Default)] pub(super) struct
@@ -1015,6 +998,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X16 (F-61) | Debug → System: switching Windows between dark and light, changing the accent, and turning off transparency each show within a second; selecting an item turns on Watch selection; a rename turns on Editing; Hotkeys says which bindings registered. |
 | X14 (F-61) | Debug → Windows: "Keep spaces above other windows" lifts the spaces above Notepad and off drops them back to the desktop; the Windows table lists every space, the tray's controller window, and the debug and settings windows in z-order, and follows a space moved to another monitor; the Monitors table matches Windows' display settings. |
 | X12 (F-61) | Debug → Diagnostics: the Build, Model, Resources, and Updates values look right and Resources ticks once a second; creating and deleting spaces moves the counts; "Copy diagnostics" pastes into Notepad as a readable report. |
 | X10 (F-61) | Debug → Config: the Configuration and Storage readouts match `--config` ("scratch", or "real" without it); "Write the configuration to the log" shows every space in the console; both Open buttons open the folder in Explorer. |

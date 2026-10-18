@@ -28,10 +28,14 @@ pub(crate) enum DebugId {
     OnTop = 20,
     WindowTable = 21,
     MonitorTable = 22,
+    Theme = 23,
+    Explorer = 24,
+    Hotkeys = 25,
+    Hooks = 26,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 22] = [
+    pub(crate) const ALL: [Self; 26] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -54,6 +58,10 @@ impl DebugId {
         Self::OnTop,
         Self::WindowTable,
         Self::MonitorTable,
+        Self::Theme,
+        Self::Explorer,
+        Self::Hotkeys,
+        Self::Hooks,
     ];
 
     pub(crate) fn id(self) -> u32 {

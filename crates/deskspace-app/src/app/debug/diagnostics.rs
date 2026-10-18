@@ -88,6 +88,10 @@ impl App {
             ("Model", self.model_text()),
             ("Resources", self.resources_text()),
             ("Updates", self.updates_text()),
+            ("Theme", self.theme_text()),
+            ("Explorer", self.explorer_text()),
+            ("Hotkeys", self.hotkeys_text()),
+            ("Hooks", self.hooks_text(ui)),
         ];
         let sections: Vec<(&str, &str)> = sections
             .iter()

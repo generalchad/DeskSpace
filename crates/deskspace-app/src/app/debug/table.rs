@@ -162,6 +162,26 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Diagnostics,
         label: "Copy diagnostics",
     },
+    DebugRow {
+        id: DebugId::Theme,
+        section: DebugSectionId::System,
+        label: "Theme",
+    },
+    DebugRow {
+        id: DebugId::Explorer,
+        section: DebugSectionId::System,
+        label: "Explorer",
+    },
+    DebugRow {
+        id: DebugId::Hotkeys,
+        section: DebugSectionId::System,
+        label: "Hotkeys",
+    },
+    DebugRow {
+        id: DebugId::Hooks,
+        section: DebugSectionId::System,
+        label: "Hooks",
+    },
 ];
 
 #[cfg(test)]
