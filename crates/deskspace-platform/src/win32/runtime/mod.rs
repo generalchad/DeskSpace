@@ -78,6 +78,10 @@ struct Runtime {
     on_top: bool,
     spaces_visible: bool,
     spaces: HashMap<u64, HWND>,
+    /// Windows of deleted spaces still playing their Delete animation
+    /// (ROADMAP D12); each destroys itself at the end, and teardown destroys
+    /// any left.
+    dying: Vec<HWND>,
     settings: Option<HWND>,
     /// The desktop layer window (ROADMAP D7), chrome-less and behind the
     /// spaces. Created only when the app asks for it (`--takeover-layer`).
@@ -182,6 +186,11 @@ pub(crate) fn settings_closed(window: HWND) {
     });
 }
 
+/// Forgets a dying window that has destroyed itself (`space_animation`).
+pub(crate) fn forget_dying(window: HWND) {
+    with_runtime(|runtime| runtime.dying.retain(|dying| *dying != window));
+}
+
 /// Destroys every space window and the settings window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
@@ -192,6 +201,7 @@ pub(crate) fn destroy_ui_windows() {
     drop(watch);
     let (windows, ghost, info_tip) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
+        windows.append(&mut runtime.dying);
         windows.extend(runtime.settings.take());
         windows.extend(runtime.layer.take());
         windows.extend(runtime.zoom_bar.take());
@@ -301,6 +311,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             on_top: options.on_top,
             spaces_visible: true,
             spaces: HashMap::new(),
+            dying: Vec::new(),
             settings: None,
             layer: None,
             ui_dark: false,

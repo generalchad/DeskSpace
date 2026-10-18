@@ -148,8 +148,9 @@ help inspect the look and the desktop layer.
 - Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
   the desktop takeover on, your loose desktop icons stay visible. Hiding and
   showing are animated (a roll by default); pick the effect and its speed
-  under Settings > Animations, which also animates new spaces and the
-  spaces appearing at startup (one after another by default). Press the
+  under Settings > Animations, which also animates new spaces, the spaces
+  appearing at startup (one after another by default), and deleting a
+  space (the new-space effect in reverse by default). Press the
   hotkey again mid-way and the animation turns around. DeskSpace follows Windows' "Animation effects"
   switch: with it off, nothing animates.
 - The tray icon opens Settings on left-click and offers Settings, hide/show

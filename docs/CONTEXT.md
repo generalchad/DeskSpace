@@ -510,6 +510,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   space windows are made) pushes its scene, then `Ui::show_space` brings it
   in with New space's play, staggered at startup (`sync_windows_at_startup`,
   `startup_delays`). A window waiting its turn stays hidden, blur included.
+  A deleted space's window leaves the runtime's spaces map at once, so it
+  is gone to every lookup, and waits in `Runtime::dying` while it plays
+  Delete's Out (a space still arriving turns around instead); its input no
+  longer reaches the app, it refuses drops, and it destroys itself at the
+  end, or with the rest at teardown.
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
   never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /

@@ -2,12 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use deskspace_core::animation::Kind;
 use deskspace_core::geometry::Rect;
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
     arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
     hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
     system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
@@ -186,8 +187,9 @@ impl App {
         for (id, play) in self.arrival_plays(&arrived, arrival) {
             ui.show_space(id.0, play);
         }
+        let delete = self.play(Kind::Delete, Way::Out);
         for stale in existing.difference(&ids.iter().map(|id| id.0).collect()) {
-            ui.destroy_space(*stale);
+            ui.destroy_space(*stale, delete);
         }
         self.refresh_tray(ui);
     }

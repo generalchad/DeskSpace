@@ -532,15 +532,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T11. Play delete (platform, app).** **[needs human]**
-  - `Ui::destroy_space(id, Option<Play>)` takes the window out of the
-    runtime's spaces map at once (so it is gone to every lookup and to
-    hiding), plays the Out, refuses drops and ignores input meanwhile, and
-    destroys the window at the end. "Same as new space" plays New space's
-    effect. Teardown destroys a dying window at once.
-  - **[needs human]** check: each effect on delete, from the menu and the
-    settings header; deleting a space still flying in turns it around;
-    quitting mid-animation leaves nothing behind.
 - [ ] **T12. Composition device and space tree (platform).** **[needs
   decision]** until T1's findings are recorded, then **[needs human]**.
   - `win32/composition.rs`: one per UI thread, released in the runtime
@@ -812,6 +803,7 @@ each id is in `archive/TASKS-done.md`.
 | T8 (D12) | Each Hide and show effect (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows. |
 | T9 (D12) | Fold and unfold from the space menu and a title double-click on each backdrop: the body rolls up into the title bar with its items in place, and rolls down showing them; a second double-click mid-way turns it around; Fold set to None folds at once; moving a space right after folding it is not fought by the roll; hiding a space mid-fold hides it folded (or unfolded) and shows it the same way. |
 | T10 (D12) | Each New space effect from the space menu, the tray, the hotkey, and a drop on the taken-over desktop: the space appears with it and no empty frame or early blur shows first; at startup with several spaces, "One after another" brings them in reading order at the set delay and "All at once" together; "Start with spaces hidden" shows nothing until shown; Fly from each edge and on a second monitor; hiding during the startup stagger hides every space, waiting ones included. |
+| T11 (D12) | Each Delete effect, and "Same as new space", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |
 
 ## Found while working
 

@@ -48,13 +48,21 @@ impl Ui {
         }
     }
 
-    pub fn destroy_space(&mut self, id: u64) {
-        if let Some(hwnd) = with_runtime(|runtime| runtime.spaces.remove(&id)).flatten() {
-            // SAFETY: the window was created by this runtime.
-            unsafe {
-                let _ = DestroyWindow(hwnd);
-            }
-        }
+    /// Destroys space `id`'s window after it plays `play` (ROADMAP D12).
+    /// The space is gone at once to every lookup, hiding included; the window
+    /// stays only for the animation, taking no input or drops, and quitting
+    /// destroys it with the rest.
+    pub fn destroy_space(&mut self, id: u64, play: Play) {
+        let Some(hwnd) = with_runtime(|runtime| {
+            let hwnd = runtime.spaces.remove(&id)?;
+            runtime.dying.push(hwnd);
+            Some(hwnd)
+        })
+        .flatten() else {
+            return;
+        };
+        // SAFETY: a live space window, and no runtime borrow is held.
+        unsafe { space_animation::dismiss(hwnd, play) };
     }
 
     pub fn space_ids(&self) -> Vec<u64> {

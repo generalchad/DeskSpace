@@ -488,6 +488,11 @@ unsafe fn paint(window: HWND) {
 
 /// Raises `event` for this window's space. Same contract as `with_state`.
 unsafe fn space_event(window: HWND, event: SpaceEvent) {
+    // A deleted space's window, still animating away, is not the app's any
+    // more.
+    if space_animation::is_dying(window) {
+        return;
+    }
     // SAFETY: the caller's contract; the borrow ends before the dispatch.
     if let Some(id) = unsafe { with_state(window, |state| state.id) } {
         runtime::dispatch(Event::Space { id, event });

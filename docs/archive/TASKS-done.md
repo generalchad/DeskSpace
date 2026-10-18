@@ -2333,3 +2333,13 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: `startup_plays` order and delays. **[needs human]** check:
     every New space effect from the menu and at startup, both startup
     orders, Fly from each edge and on a second monitor.
+
+- [x] **T11. Play delete (platform, app).** **[needs human]**
+  - `Ui::destroy_space(id, Option<Play>)` takes the window out of the
+    runtime's spaces map at once (so it is gone to every lookup and to
+    hiding), plays the Out, refuses drops and ignores input meanwhile, and
+    destroys the window at the end. "Same as new space" plays New space's
+    effect. Teardown destroys a dying window at once.
+  - **[needs human]** check: each effect on delete, from the menu and the
+    settings header; deleting a space still flying in turns it around;
+    quitting mid-animation leaves nothing behind.

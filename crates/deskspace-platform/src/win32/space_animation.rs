@@ -14,11 +14,12 @@ use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{InvalidateRect, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    IsWindowVisible, KillTimer, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
-    SetWindowPos, ShowWindow,
+    DestroyWindow, IsWindowVisible, KillTimer, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
+    SWP_NOZORDER, SetTimer, SetWindowPos, ShowWindow,
 };
 
 use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::win32::runtime;
 use crate::win32::space_window::{SpaceState, current_rect, with_state};
 use crate::win32::system::work_area_at;
 
@@ -36,6 +37,8 @@ enum Purpose {
     Visibility,
     /// Folding to the title bar or unfolding: the window stays either way.
     Fold,
+    /// A deleted space's window going away: it destroys itself at the end.
+    Dying,
 }
 
 /// A space window's running animation.
@@ -172,6 +175,61 @@ pub(crate) unsafe fn fold(window: HWND, rect: Rect, play: Play) {
     };
 }
 
+/// Plays `play` on a deleted space's `window`, then destroys it. A space
+/// still arriving turns around from where it is; a fold ends first. A
+/// hidden window, or an instant play, is destroyed at once.
+///
+/// # Safety
+/// `window` is a live space window the runtime no longer lists as a space;
+/// call it outside any state borrow.
+pub(crate) unsafe fn dismiss(window: HWND, play: Play) {
+    let now = now();
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    let arriving = unsafe {
+        with_state(window, |state| {
+            let animation = state
+                .animation
+                .as_mut()
+                .filter(|animation| animation.purpose != Purpose::Fold)?;
+            if animation.transition.way() == Way::In {
+                animation.transition.reverse(now);
+            }
+            animation.purpose = Purpose::Dying;
+            Some(())
+        })
+    };
+    if arriving.flatten().is_some() {
+        return;
+    }
+    // SAFETY: the caller's contract.
+    unsafe { finish(window) };
+    // SAFETY: a plain visibility query on a live window.
+    let shown = unsafe { IsWindowVisible(window) }.as_bool();
+    let rect = current_rect(window).filter(|_| shown && !is_instant(play));
+    let Some(rect) = rect else {
+        // SAFETY: the caller's contract.
+        unsafe { destroy(window) };
+        return;
+    };
+    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), play.edge);
+    let play = Play {
+        way: Way::Out,
+        ..play
+    };
+    // SAFETY: the caller's contract.
+    unsafe { start(window, play, geometry, Purpose::Dying) };
+}
+
+/// Destroys a dying window and drops it from the runtime's list.
+unsafe fn destroy(window: HWND) {
+    runtime::forget_dying(window);
+    // SAFETY: the caller's contract: a window of this thread no state borrow
+    // holds. It frees its own state in WM_NCDESTROY.
+    unsafe {
+        let _ = DestroyWindow(window);
+    }
+}
+
 /// Turns a running animation for `purpose` around if it is not already
 /// heading `way`. Returns whether one was running.
 unsafe fn turn_around(window: HWND, purpose: Purpose, way: Way) -> bool {
@@ -263,21 +321,25 @@ unsafe fn finish(window: HWND) {
     let ended = unsafe {
         with_state(window, |state| {
             let mut animation = state.animation.take()?;
-            let hide =
-                animation.purpose == Purpose::Visibility && animation.transition.way() == Way::Out;
+            let gone = animation.transition.way() == Way::Out;
             let rect = animation.end_rect();
             if let Some(scene) = animation.deferred.take() {
                 state.scene = Some(scene);
             }
-            Some((rect, hide))
+            Some((rect, animation.purpose, gone))
         })
     };
     // SAFETY: the caller's contract.
     unsafe {
         let _ = KillTimer(Some(window), TIMER_ID);
-        let Some(Some((rect, hide))) = ended else {
+        let Some(Some((rect, purpose, gone))) = ended else {
             return;
         };
+        if purpose == Purpose::Dying {
+            destroy(window);
+            return;
+        }
+        let hide = purpose == Purpose::Visibility && gone;
         move_to(window, rect);
         if hide {
             let _ = ShowWindow(window, SW_HIDE);
@@ -304,7 +366,7 @@ pub(crate) unsafe fn retarget(window: HWND, rect: Rect) -> bool {
                 return (false, false);
             };
             match animation.purpose {
-                Purpose::Visibility => {
+                Purpose::Visibility | Purpose::Dying => {
                     let geometry = Geometry::for_visibility(
                         rect,
                         work_area_at(rect.center()),
@@ -326,8 +388,23 @@ pub(crate) unsafe fn retarget(window: HWND, rect: Rect) -> bool {
     taken
 }
 
-/// Whether `window` is on its way out (hiding, or folding away its items),
-/// so it takes no drops.
+/// Whether `window` is a deleted space's, playing its way out, so its
+/// input no longer reaches the app.
+pub(crate) fn is_dying(window: HWND) -> bool {
+    // SAFETY: the borrow does not re-enter.
+    unsafe {
+        with_state(window, |state: &mut SpaceState| {
+            state
+                .animation
+                .as_ref()
+                .is_some_and(|animation| animation.purpose == Purpose::Dying)
+        })
+    }
+    .unwrap_or(false)
+}
+
+/// Whether `window` is on its way out (hiding, folding away its items, or
+/// deleted), so it takes no drops.
 pub(crate) fn is_leaving(window: HWND) -> bool {
     // SAFETY: space windows and the desktop layer share this state; the
     // borrow does not re-enter.
