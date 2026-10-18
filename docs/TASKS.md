@@ -716,28 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X12. Diagnostics (app).** Needs X5 and X11. **[needs human]**
-  Section Diagnostics:
-  - `Build`, a `Readout`: the version (`CARGO_PKG_VERSION`), "debug" or
-    "release" (`cfg!(debug_assertions)`), and the executable's path.
-  - `Model`, a `Readout`: the number of spaces, items, stored files, and
-    desktop-layer items.
-  - `Resources`, a `Readout`: uptime (from `DebugTools::started`), the
-    working set in MB, GDI and USER objects, and icon-cache entries.
-    `Timer::DebugRefresh` keeps it current.
-  - `Updates`, a `Readout`: `deskspace_update::is_configured()`,
-    `is_installed()`, and the ready version or "none".
-  - `CopyDiagnostics`, "Copy diagnostics": these readouts, X16's System
-    readout once it exists, and the last 200 log lines (`format_line`
-    style, from `LogBuffer::since`), joined into one text and put on the
-    clipboard with `ui.set_clipboard_text`.
-  - Tests: a pure `fn diagnostics_text(sections: &[(&str, &str)], lines:
-    &[LogLine]) -> String` puts a heading before each readout and the
-    lines last.
-  - **[needs human]** check: the values look right and Resources ticks
-    once a second; creating and deleting spaces moves the counts; Copy
-    diagnostics pastes into Notepad as a readable report.
-
 - [ ] **X13. Window and monitor tables, live on-top (platform).** Needs
   X11.
   - In `win32/debug_info.rs`: `pub struct WindowRow { class: String,
@@ -1088,6 +1066,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X12 (F-61) | Debug → Diagnostics: the Build, Model, Resources, and Updates values look right and Resources ticks once a second; creating and deleting spaces moves the counts; "Copy diagnostics" pastes into Notepad as a readable report. |
 | X10 (F-61) | Debug → Config: the Configuration and Storage readouts match `--config` ("scratch", or "real" without it); "Write the configuration to the log" shows every space in the console; both Open buttons open the folder in Explorer. |
 | X9 (F-61) | Debug → Spaces: Unfold, Unlock, Refresh, and Prune each do what they say on folded, locked, and stale spaces; a 1000-item stress space opens and scrolls smoothly, and "Delete all spaces" removes it. |
 | X8 (F-61) | Debug → Spaces → "Create test spaces" opens four spaces in a row beside the existing ones, titled Test: Apps, Tools, Places, and Web; every shortcut opens what it names (the Tools ones show the test text); a second press makes four more without overlapping; then "Delete all spaces" removes them and leaves nothing on the desktop. |

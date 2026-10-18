@@ -6,6 +6,7 @@ mod render;
 mod ui;
 mod win32;
 
+pub use debug_console::format_line;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{

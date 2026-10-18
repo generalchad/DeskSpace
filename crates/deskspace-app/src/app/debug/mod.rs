@@ -7,6 +7,7 @@
 //! named for it.
 
 mod config;
+mod diagnostics;
 mod ids;
 mod spaces;
 mod table;
@@ -81,7 +82,20 @@ impl App {
             | DebugId::CreateStress
             | DebugId::DumpConfig
             | DebugId::OpenConfigFolder
-            | DebugId::OpenStorageFolder => DebugControlKind::Button { enabled: true },
+            | DebugId::OpenStorageFolder
+            | DebugId::CopyDiagnostics => DebugControlKind::Button { enabled: true },
+            DebugId::Build => DebugControlKind::Readout {
+                text: self.build_text(),
+            },
+            DebugId::Model => DebugControlKind::Readout {
+                text: self.model_text(),
+            },
+            DebugId::Resources => DebugControlKind::Readout {
+                text: self.resources_text(),
+            },
+            DebugId::Updates => DebugControlKind::Readout {
+                text: self.updates_text(),
+            },
             DebugId::ConfigPath => DebugControlKind::Readout {
                 text: self.config_path_text(),
             },
@@ -132,7 +146,13 @@ impl App {
                 tracing::info!("debug: pruned missing items");
             }
             DebugId::DeleteAllSpaces => self.delete_all_spaces(ui),
-            DebugId::ConfigPath | DebugId::StoragePath => {}
+            DebugId::ConfigPath
+            | DebugId::StoragePath
+            | DebugId::Build
+            | DebugId::Model
+            | DebugId::Resources
+            | DebugId::Updates => {}
+            DebugId::CopyDiagnostics => self.copy_diagnostics(ui),
             DebugId::DumpConfig => self.dump_config(),
             DebugId::OpenConfigFolder => self.open_config_folder(ui),
             DebugId::OpenStorageFolder => self.open_storage_folder(ui),

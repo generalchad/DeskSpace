@@ -122,6 +122,31 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Config,
         label: "Open the storage folder",
     },
+    DebugRow {
+        id: DebugId::Build,
+        section: DebugSectionId::Diagnostics,
+        label: "Build",
+    },
+    DebugRow {
+        id: DebugId::Model,
+        section: DebugSectionId::Diagnostics,
+        label: "Model",
+    },
+    DebugRow {
+        id: DebugId::Resources,
+        section: DebugSectionId::Diagnostics,
+        label: "Resources",
+    },
+    DebugRow {
+        id: DebugId::Updates,
+        section: DebugSectionId::Diagnostics,
+        label: "Updates",
+    },
+    DebugRow {
+        id: DebugId::CopyDiagnostics,
+        section: DebugSectionId::Diagnostics,
+        label: "Copy diagnostics",
+    },
 ];
 
 #[cfg(test)]

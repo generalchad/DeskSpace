@@ -2788,3 +2788,25 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Test: `process_stats()` reports a nonzero working set and at least
     one USER object once a window exists (create a message-only window in
     the test, or skip the USER part if that is not possible and say so).
+
+- [x] **X12. Diagnostics (app).** Needs X5 and X11. **[needs human]**
+  Section Diagnostics:
+  - `Build`, a `Readout`: the version (`CARGO_PKG_VERSION`), "debug" or
+    "release" (`cfg!(debug_assertions)`), and the executable's path.
+  - `Model`, a `Readout`: the number of spaces, items, stored files, and
+    desktop-layer items.
+  - `Resources`, a `Readout`: uptime (from `DebugTools::started`), the
+    working set in MB, GDI and USER objects, and icon-cache entries.
+    `Timer::DebugRefresh` keeps it current.
+  - `Updates`, a `Readout`: `deskspace_update::is_configured()`,
+    `is_installed()`, and the ready version or "none".
+  - `CopyDiagnostics`, "Copy diagnostics": these readouts, X16's System
+    readout once it exists, and the last 200 log lines (`format_line`
+    style, from `LogBuffer::since`), joined into one text and put on the
+    clipboard with `ui.set_clipboard_text`.
+  - Tests: a pure `fn diagnostics_text(sections: &[(&str, &str)], lines:
+    &[LogLine]) -> String` puts a heading before each readout and the
+    lines last.
+  - **[needs human]** check: the values look right and Resources ticks
+    once a second; creating and deleting spaces moves the counts; Copy
+    diagnostics pastes into Notepad as a readable report.

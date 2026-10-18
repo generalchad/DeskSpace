@@ -117,7 +117,7 @@ pub(crate) fn format_time(millis: u64) -> String {
 }
 
 /// One line as text: `mm:ss.mmm LEVEL target message`.
-pub(crate) fn format_line(line: &LogLine) -> String {
+pub fn format_line(line: &LogLine) -> String {
     format!(
         "{} {:<5} {} {}",
         format_time(line.millis),
