@@ -277,44 +277,76 @@ A native, lightweight, offline Windows desktop organizer that:
     items").
   - Work items: `TASKS.md` section U.
 
-- **D12. Hide and show animations (2026-10-17).** Decides F-33 and M5
-  item 5.
-  - *What animates:* hiding and showing the spaces (tray, space menu,
-    hotkey, desktop verb), and a space's own roll-up and roll-down. M5's
-    hide-all, auto-hide, and peek (F-11, F-13) reuse the same mechanism when
-    they land. Startup, the desktop layer, and a space's create or delete
-    are not animated.
-  - *Effects:* None, Roll (the space rolls up into its top edge and back
-    down), Fade, Pixelate, Gradient (a soft-edged fade that sweeps down
-    from the title bar), and Dissolve. Showing plays the effect in reverse.
-    A space's roll-up is always a roll, at the same speed; None makes it
-    instant too.
-  - *Settings:* Global only, on the General page: the effect, and its
-    duration as a slider (100 to 1000 ms, 250 by default). The default
-    effect is Roll, for new and upgraded installs alike, so an upgrade
-    starts animating; this change is on purpose (section 3, "never break
-    users"). When Windows' "Animation effects" is off
-    (`SPI_GETCLIENTAREAANIMATION`), every effect plays as None.
-  - *Interrupting:* hiding during a show (or the reverse) turns the running
-    animation around from where it is, so nothing jumps.
-  - *The app sends data:* the app gives the platform the effect and
-    duration (`Ui::set_animation`) and asks for a hide, show, or roll as
-    today. The platform runs the frames itself with a window timer and pure
-    frame math in `render/`, so there is still no per-frame callback into
-    the app.
+- **D12. Animations (2026-10-17).** Decides F-33 and M5 item 5.
+  - *Kinds:* four moments animate, each its own kind with its own
+    settings. The desktop layer never animates.
+    - **Hide and show:** hiding and showing the spaces (tray, space menu,
+      hotkey, desktop verb). M5's hide-all, auto-hide, and peek (F-11,
+      F-13) reuse it when they land.
+    - **New space:** a space coming into being: created from a menu, the
+      hotkey, or a drop, brought back by undo, and every space at startup.
+      Startup plays it all at once or one space after another (by
+      position, left to right, then top to bottom) with a set delay,
+      50 ms by default. "Start with spaces hidden" plays nothing.
+    - **Delete:** a space going away, by delete or undo. The model changes
+      at once; only the window stays for the animation. Its default is
+      "Same as new space", played in reverse.
+    - **Fold:** a space folding to its title bar and unfolding (until now
+      called roll-up; see below). Always a roll.
+  - *Effects:* one shared list, so a new effect is one row and every kind
+    gets it. Each effect has an "in" and an "out"; the out is the in played
+    backwards. None, Roll (into the top edge and back down), Fade,
+    Pixelate, Gradient (a soft edge sweeping down from the title bar),
+    Dissolve, Fly (to and from the nearest edge of the space's monitor's
+    work area, clipped to that work area so it never shows on another
+    monitor or over the taskbar), CRT (a bright line that opens to the
+    full space, and closes to a line, then a dot), and Burn (a dissolve
+    with a glowing edge). Black hole (the space swallowed by a hole that
+    opens on the desktop) is planned after composition (T14). A kind can
+    limit the list: Fold offers only Roll.
+  - *Controls:* each kind has the common ones: its effect and a duration
+    (100 to 1000 ms). An effect adds only the options it uses: Detail (the
+    block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
+    Direction (which edge) for Roll, Gradient, and Fly. A control the
+    chosen effect does not use is greyed, so each page keeps its shape. The
+    controls live on a new, Global-only Animations page. Defaults: Roll at
+    250 ms for Hide and show, New space, and Fold; startup one after
+    another at 50 ms; Delete the same as New space. An upgrade starts
+    animating; this change is on purpose (section 3, "never break users").
+  - *Windows' setting:* when Windows' "Animation effects" is off
+    (`SPI_GETCLIENTAREAANIMATION`), nothing animates, the page's controls
+    are greyed, and a note says why, with a button that opens the Windows
+    page holding the switch (`ms-settings:easeofaccess-visualeffects` on
+    Windows 11, `ms-settings:easeofaccess-display` on Windows 10). The
+    page follows a change made in Windows while it is open.
+  - *Reversing:* any animation can turn around at any frame and play back
+    from exactly where it is. An action that interrupts an animation
+    reverses it rather than starting another effect over it: hiding a
+    space that is still flying in flies it back out. A space that is
+    hiding ignores drops; other input works as usual.
+  - *The app decides, the platform plays:* the app turns the settings and
+    Windows' switch into a `Play` (effect, in or out, duration, delay,
+    detail, direction) for each window and passes it with the request
+    (show, hide, create, destroy, fold). A window timer in the platform
+    runs the frames from pure frame math in `render/`, so there is still
+    no per-frame callback into the app.
   - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
-    whole window (the accent policy, D2) and can only be on or off. Roll
-    changes the window's size, so the blur follows it exactly. The other
-    effects change pixels: the painter applies them to the tint and the
-    contents, which is the same on every path. For the blur to follow them
-    too, spaces move to the Windows composition engine
-    (`Windows.UI.Composition`), where the blur is a host backdrop brush that
-    takes the same opacity and masks. That needs a spike first (`TASKS.md`
-    T1), because spaces are never activated. Until it lands, and wherever
-    it is not available (Windows 10, or when composition fails to start),
-    spaces keep the accent blur: it appears at the start of a show and goes
-    at the end of a hide, in one step. Clear and Solid spaces have no blur,
-    so they animate fully either way.
+    whole window (the accent policy, D2) and can only be on or off. Roll,
+    Fly, and CRT's opening change the window's rect, so the blur follows
+    them exactly. The other effects change pixels: the painter applies them
+    to the tint and the contents, the same on every path. For the blur to
+    follow those too, spaces move to the Windows composition engine
+    (`Windows.UI.Composition`), where the blur is a host backdrop brush
+    that takes the same opacity and masks. That needs a spike first
+    (`TASKS.md` T1), because spaces are never activated. Until it lands,
+    and wherever it is not available (Windows 10, or when composition fails
+    to start), spaces keep the accent blur: it appears at the start of an
+    "in" and goes at the end of an "out", in one step. Clear and Solid
+    spaces have no blur, so they animate fully either way.
+  - *Fold, not roll-up:* "roll up" read like a kind of hiding, so a space
+    collapsed to its title bar is now **folded**, and the menu says "Fold"
+    and "Unfold". The config key stays `rolled_up`, so every config still
+    loads, and an older DeskSpace still reads a newer file.
   - Work items: `TASKS.md` section T.
 
 ## 3. Guiding principles
@@ -363,7 +395,7 @@ lists what each has done.
    before turning on the update feed.
 4. **M2 undo** for layout changes, file moves, and space deletion (D11;
    `TASKS.md` section U).
-5. **Hide and show animations** (M5 item 5, D12; `TASKS.md` section T),
+5. **Animations** (M5 item 5, D12; `TASKS.md` section T),
    ahead of the rest of M5. The composition spike (T1) runs alongside.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
@@ -520,9 +552,10 @@ Remaining:
 4. Title bar style: hidden, hover-only, or always shown, with alignment and
    size (F-28). A hidden title bar needs another way to move the space, such
    as Alt+drag or a grip.
-5. Smooth show/hide/roll animations with a choice of effects and a duration
-   setting (F-33, D12; `TASKS.md` section T). The composition groundwork
-   they need for the blur (T1, T7, T8) is also the start of item 6.
+5. Animations for hide and show, new spaces and startup, delete, and fold,
+   from one shared list of effects (F-33, D12; `TASKS.md` section T). The
+   composition groundwork they need for the blur (T1, T12, T13) is also the
+   start of item 6.
 6. Blurred spaces with corner radii beyond DWM's 8 px, using a composition
    backdrop clipped to an anti-aliased rounded shape.
    - Today the accent blur ignores window and blur regions, so blurred spaces
@@ -757,7 +790,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Hide/show and roll-up animations (effect and duration) | M5 | Open; decided in D12 (`TASKS.md` section T) |
+| F-33 | Animations: hide/show, new space and startup, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |

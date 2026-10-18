@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- T2-T4 (animations; pure or without callers, so no screen needed).
+- T2, T3, T5-T7 (animations; pure or without callers, so no screen needed).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -493,19 +493,22 @@ changes nothing and says so.
   the Recycle Bin between a delete and its undo: the undo says it can't and
   changes nothing.
 
-## T. Hide and show animations (ROADMAP D12, F-33)
+## T. Animations (ROADMAP D12, F-33)
 
-Read D12 first; it is the spec. T1 is a spike that only a human can judge,
-and T2-T6 do not wait for it: they animate today's windows, where the
-accent blur steps on and off. T7 and T8 then move spaces to composition so
-the blur follows every effect, if T1 says it can. One commit each.
+Read D12 first; it is the spec. T1 is a spike only a human can judge, and
+T2-T11 do not wait for it: they animate today's windows, where the accent
+blur steps on and off. T12 and T13 then move spaces to composition so the
+blur follows every effect, if T1 says it can. One commit each, in order
+(T1 can run alongside).
 
-The app sends data, and the platform plays it: the effect and duration
-(`Ui::set_animation`), then a hide, show, or roll as today. A window timer
-in the platform runs the frames, so there is no per-frame callback into the
-app. Paint code applies a frame without allocating; whatever an animation
-needs (an offscreen bitmap, a mask) is made when it starts. `space_window.rs`
-is at the 800-line guideline, so the window side goes in a new module.
+Two tables carry the design, so a new effect or kind is one row: the
+effects (what each one uses) and the kinds (which effects and controls each
+offers). The app turns them into a `Play` per window; the platform plays it
+with a window timer and pure frame math, and never calls back into the app
+per frame. Paint code applies a frame without allocating; whatever an
+animation needs (an offscreen bitmap, a mask) is made when it starts.
+`space_window.rs` is at the 800-line guideline, so the window side goes in
+a new module.
 
 - [ ] **T1. Composition backdrop spike.** **[needs human]**
   - `crates/deskspace-platform/examples/backdrop_spike.rs`, never shipped: a
@@ -529,84 +532,141 @@ is at the 800-line guideline, so the window side goes in a new module.
     beside it: how close are the two materials? Note the idle CPU and GPU.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
-    record that in D12, delete T7 and T8, and delete the example.
-- [ ] **T2. The setting (core, config, settings; pure).** The "new global
-  setting" recipe.
-  - `deskspace-core/src/animation.rs`: `Animation { None, Roll, Fade,
-    Pixelate, Gradient, Dissolve }` (`snake_case` serde, `Roll` the
-    default) and `ANIMATION_MS_RANGE` (100 to 1000) with
-    `ANIMATION_MS_DEFAULT` (250). It lives in core, as `Backdrop` does, so
-    the platform can take it without depending on config.
-  - `WindowSettings.animation` and `animation_ms`, clamped on load.
-  - General page: an "Animation" heading, a "Hide and show" choice (None,
-    Roll, Fade, Pixelate, "Gradient from the top", Dissolve; the table in
-    `tables.rs`), and a "Duration" slider with a " ms" suffix, greyed while
-    the effect is None. `apply_field` arms return `Effect::Pending`; T5
-    makes Apply hand them to the platform.
-  - Tests: a config without the fields loads Roll and 250; out-of-range
-    durations clamp; the `apply_field` arms.
-- [ ] **T3. Frame math (platform, pure).** `render/transition.rs`, beside
+    record that in D12, delete T12-T14, and delete the example.
+- [ ] **T2. Call roll-up "fold" (all crates; no behavior change).**
+  - Rename in code: `Space::rolled_up` to `folded` (the field keeps
+    `#[serde(rename = "rolled_up")]`, so the key on disk is unchanged),
+    `Command::ToggleRollup` to `ToggleFold`, `SpaceScene::rolled_up` to
+    `folded`, the app's `toggle_rollup`, and any `MenuId` (its value
+    stays). Menu labels: "Fold" and "Unfold".
+  - Docs: every current mention in `CONTEXT.md`, `ROADMAP.md`, `TASKS.md`,
+    and `README.md` (not `archive/`).
+  - Tests: a config holding `rolled_up = true` loads folded and saves
+    `rolled_up` again. Done when `rg -i "roll.?up" crates docs README.md
+    --glob '!docs/archive/**'` finds only D12, this task, and that test.
+- [ ] **T3. The animation model (core, config; pure).**
+  - `deskspace-core/src/animation.rs`:
+    - `Effect { None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt,
+      Burn }` (`snake_case` serde) and `EFFECTS`, one row per effect: its
+      label and the options it uses (`EffectOption::{Detail,
+      Direction}`).
+    - `Kind { HideShow, NewSpace, Delete, Fold }` and `KINDS`, one row per
+      kind: its label, the effects it offers, whether it offers "Same as
+      new space" (Delete), and whether it has startup controls (New
+      space).
+    - `Edge { Top, Bottom, Left, Right, Nearest }`, the ranges
+      (`DURATION_MS_RANGE` 100 to 1000, `DETAIL_RANGE`, `STAGGER_MS_RANGE`)
+      and defaults.
+  - Config: `WindowSettings.animations: Animations`, one
+    `AnimationSettings { effect, duration_ms, detail, direction }` per kind
+    (Delete's effect also has `SameAsNewSpace`), plus `startup:
+    StartupOrder { AllAtOnce, OneAfterAnother }` and `stagger_ms`; the
+    defaults are D12's, and values clamp on load (an effect a kind does
+    not offer falls back to its default).
+  - Tests: a config without `animations` loads D12's defaults; values
+    clamp; every kind offers None and its default; every `EFFECTS` row's
+    options match a test table.
+- [ ] **T4. The Animations page (app, platform).** **[needs human]**
+  - Platform: `deskspace_platform::system_animations() -> bool`
+    (`SPI_GETCLIENTAREAANIMATION`) and `Event::SystemAnimationsChanged`,
+    raised by the controller for a `WM_SETTINGCHANGE` whose `wParam` is
+    `SPI_SETCLIENTAREAANIMATION`.
+  - App: `SystemLook` holds the switch, read at start and on the event,
+    which refreshes an open form. A new Global-only page (at the end of
+    `mod page`) built from `KINDS` and `EFFECTS`: per kind a heading,
+    Effect, Duration, Detail, and Direction, each greyed when the chosen
+    effect does not use it, and for New space the startup order and the
+    delay (greyed for "All at once"). With Windows' switch off, every
+    control is greyed and a note at the top says why, beside an "Open
+    Windows animation settings…" button (`ButtonAction`) that opens D12's
+    URI for the running Windows version with `Ui::open_url`. The field ids
+    come from the tables, so `field_ids_are_unique` and the handler tests
+    cover them.
+  - Tests: the page per effect (greying), the switch off greys all, the
+    button's URI per version, `apply_field` for each control.
+    **[needs human]** check: the page at 100 % and 150 %, and flipping
+    "Animation effects" in Windows while it is open.
+- [ ] **T5. Frame math (platform, pure).** `render/transition.rs`, beside
   `zoom_bar.rs`, with no Win32:
-  - `Transition { animation, direction: Show | Hide, duration, elapsed }`
-    and `frame() -> TransitionFrame`: how much of the window is rolled out
-    (Roll), the opacity (Fade), the block size (Pixelate), the gradient's
-    edge and feather from the top (Gradient), and the noise threshold
-    (Dissolve). Ease out when showing and in when hiding. `reverse()`
-    turns it around from the frame it is on, so a hide during a show starts
-    exactly where the show was. `is_done()`.
-  - `roll_rect(from, to, frame)`: the window rect partway through a roll,
-    the top edge fixed, used by both hiding and a space's roll-up.
-  - Tests: each effect at 0 and at the end (fully shown and fully hidden),
-    monotonic in between, `reverse` continuous for every effect, None done
-    at once, and the roll never below zero height or past its target.
-- [ ] **T4. The painter draws a frame (platform; no callers yet).**
-  `Painter::paint` takes `Option<&TransitionFrame>` and applies it to the
-  tint and the contents, after the scene is drawn:
-  - Fade: a layer at the frame's opacity. Gradient: a layer whose opacity
-    brush is a linear gradient from the frame's edge. Dissolve: an opacity
-    mask from a noise bitmap, made once per window size and thresholded
-    per frame. Pixelate: the scene drawn into a compatible render target
-    (made when the animation starts) at 1 / block size, then drawn back
-    scaled with nearest-neighbor interpolation. Roll needs nothing here.
-  - Done when: `None` paints exactly as today (the gates pass, no visible
-    change), and the masks' pure parts (the noise pattern, the gradient
-    stops) have tests.
-- [ ] **T5. Animate hide and show (platform, app).** **[needs human]**
-  - Platform: a new `win32/space_animation.rs` holds a window's running
-    `Transition` (in its `SpaceState`) and a per-window timer, about 16 ms,
-    that advances it, resizes the window for Roll (`roll_rect`), and
-    repaints with the frame. `Ui::set_animation(animation, duration)`
-    stores the choice in the runtime. `set_spaces_visible` plays it: a show
-    paints frame 0 before `SW_SHOWNOACTIVATE`; a hide plays to the end,
-    then `SW_HIDE` and puts the rect back. A toggle mid-way calls
-    `reverse()`. With `SPI_GETCLIENTAREAANIMATION` off, or None, it is
-    instant, as today. A hiding space takes no input or drops.
-    `set_rect` during an animation retargets it; `destroy_space` ends it.
-  - App: `Event::Started` and `App::apply_settings` call
-    `ui.set_animation` from `WindowSettings`. Startup itself does not
-    animate.
-  - Docs: `CONTEXT.md` section 6 (Space windows and Rendering) and section
-    8, and `README.md`.
-  - **[needs human]** check: each effect hides and shows on Acrylic, Blur,
-    Solid, and Clear spaces at 100 % and 150 % (the blur steps at the start
-    of a show and the end of a hide); the hotkey pressed twice quickly
-    turns the animation around without a jump; a slider change applies
-    after Apply; with Windows' "Animation effects" off, hiding is instant.
-- [ ] **T6. Animate roll-up (platform, app).** **[needs human]**
-  - `Ui::roll_space(id, rect)` plays a Roll at the configured duration
-    from the window's rect to `rect`, the top edge fixed; with None (or
-    Windows' animations off) it sets the rect at once. While it runs,
-    `space_window::set_rect` compares a new rect with the roll's target,
-    so the refresh that follows does not cut it short; a different rect (a
-    move) ends the roll there.
-  - App: an `Effect::RollSpace(id)` (`app/effect.rs`) that calls
-    `ui.roll_space` with the space's `visible_rect`. `App::toggle_rollup`
+  - `Play { effect, way: In | Out, duration, delay, detail, edge }`, the
+    data the app sends, and `Transition`, a running `Play`:
+    `frame(now) -> TransitionFrame` (the window rect relative to the
+    space's rect, the opacity, the mask, the block size, the glow) and
+    `reverse(now)`, which turns it around so the next frame equals the
+    current one. Reversing works at any frame, including during the delay.
+  - Rects: Roll and Fold keep the top edge; Fly moves toward its edge and
+    returns the part inside the work area, with the content offset the
+    painter applies; CRT opens from the middle line, then closes to a dot.
+  - Tests: per effect, in and out at 0 and at the end, monotonic between;
+    `reverse` continuous at many points for every effect; None done at
+    once; a delay holds frame 0; Fly never leaves the work area.
+- [ ] **T6. The painter draws a frame: Fade, Gradient, Dissolve, Pixelate
+  (platform; no callers yet).** `Painter::paint` takes
+  `Option<&TransitionFrame>` and applies it to the tint and the contents
+  after the scene is drawn: Fade as a layer at the frame's opacity;
+  Gradient as a layer whose opacity brush is a linear gradient; Dissolve
+  as an opacity mask from a noise bitmap made once per window size and
+  thresholded per frame; Pixelate by drawing the scene into a compatible
+  render target (made when the animation starts) at 1 / block size, then
+  back with nearest-neighbor scaling. Done when `None` paints exactly as
+  today and the masks' pure parts (the noise, the gradient stops) have
+  tests.
+- [ ] **T7. The painter draws CRT and Burn (platform; no callers yet).**
+  CRT's bright line and fading glow over the opening rect; Burn as
+  Dissolve plus a glowing band at the threshold, its width from Detail.
+  The same done-when as T6.
+- [ ] **T8. Play hide and show (platform, app).** **[needs human]**
+  - Platform: `win32/space_animation.rs` keeps a window's `Transition` in
+    its `SpaceState` and a per-window timer, about 16 ms, that advances it,
+    sets the window rect, and repaints with the frame.
+    `set_spaces_visible(visible, play)`: an In paints frame 0 before
+    `SW_SHOWNOACTIVATE`; an Out plays to the end, then `SW_HIDE` and puts
+    the rect back. A request that finds a transition running reverses it.
+    A hiding space refuses drops (`DROPEFFECT_NONE`). `set_rect` during a
+    transition moves its target; `destroy_space` ends it.
+  - App: `app/animation.rs` (pure) builds each `Play` from the settings
+    and `SystemLook` (None while Windows' switch is off).
+  - Docs: `CONTEXT.md` section 6 (Space windows and Rendering), section 8,
+    `README.md`.
+  - Tests: the `Play`s for each setting. **[needs human]** check: each
+    effect hides and shows on Acrylic, Blur, Solid, and Clear spaces at
+    100 % and 150 % (the blur steps at the start of a show and the end of
+    a hide); the hotkey pressed twice quickly turns it around without a
+    jump; a drop on a hiding space is refused; with Windows' "Animation
+    effects" off, hiding is instant.
+- [ ] **T9. Play fold and unfold (platform, app).** **[needs human]**
+  - `Ui::fold_space(id, rect, play)` plays a Roll from the window's rect
+    to `rect`. While it runs, `space_window::set_rect` compares a new rect
+    with its target, so the refresh after the command does not cut it
+    short; a different rect (a move) ends it there.
+  - App: an `Effect::FoldSpace(id)` (`app/effect.rs`) that calls
+    `ui.fold_space` with the space's `visible_rect`; `App::toggle_fold`
     runs it before `commit`'s refresh. Hit tests read the model, which
-    changes at once, as they do today.
-  - Tests: `toggle_rollup`'s effects. **[needs human]** check: roll up and
-    down from the space menu at each backdrop; a roll interrupted by a
-    second toggle turns around; None rolls at once.
-- [ ] **T7. Composition device and space tree (platform).** **[needs
+    changes at once, as today.
+  - Tests: `toggle_fold`'s effects. **[needs human]** check: fold and
+    unfold from the menu and a title double-click at each backdrop; a
+    second double-click mid-way turns it around.
+- [ ] **T10. Play new spaces and startup (platform, app).** **[needs
+  human]**
+  - `Ui::create_space` takes an `Option<Play>`: the window is created
+    hidden and starts the In. The app passes New space's `Play` for every
+    space that comes into being (menu, hotkey, a drop on the desktop,
+    undo) and, at startup, one per space with `delay` from the startup
+    order (pure: `startup_plays(spaces, order, stagger)`, sorted by
+    position). "Start with spaces hidden" passes none.
+  - Tests: `startup_plays` order and delays. **[needs human]** check:
+    every New space effect from the menu and at startup, both startup
+    orders, Fly from each edge and on a second monitor.
+- [ ] **T11. Play delete (platform, app).** **[needs human]**
+  - `Ui::destroy_space(id, Option<Play>)` takes the window out of the
+    runtime's spaces map at once (so it is gone to every lookup and to
+    hiding), plays the Out, refuses drops and ignores input meanwhile, and
+    destroys the window at the end. "Same as new space" plays New space's
+    effect. Teardown destroys a dying window at once.
+  - **[needs human]** check: each effect on delete, from the menu and the
+    settings header; deleting a space still flying in turns it around;
+    quitting mid-animation leaves nothing behind.
+- [ ] **T12. Composition device and space tree (platform).** **[needs
   decision]** until T1's findings are recorded, then **[needs human]**.
   - `win32/composition.rs`: one per UI thread, released in the runtime
     teardown before `OleUninitialize`, as `Graphics` is: a
@@ -624,14 +684,19 @@ is at the 800-line guideline, so the window side goes in a new module.
     startup and logged.
   - **[needs human]** check: the R3 list passes unchanged on Windows 11
     with each backdrop, and on Windows 10 nothing changes at all.
-- [ ] **T8. The blur follows the frame (platform).** **[needs human]**
+- [ ] **T13. The blur follows the frame (platform).** **[needs human]**
   - On composition spaces, each frame also sets the backdrop sprite: its
-    opacity (Fade), a mask brush over the same mask the painter uses
-    (Gradient, Dissolve, and Pixelate's blocks), and its size (Roll). The
-    blur no longer steps on composition spaces.
+    opacity, a mask brush over the same mask the painter uses, and its
+    rect. The blur no longer steps there.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
-  - **[needs human]** check: T5's list on Windows 11, with no step in the
+  - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
+- [ ] **T14. Black hole (platform).** **[needs decision]**: after T13. A
+  dark disk opens on the desktop beside the space (a layered, click-through
+  window, as `drag_ghost.rs` is) and the space spirals into it: a
+  composition visual can rotate and scale with its blur, which the accent
+  path cannot. Decide where the hole opens and what Windows 10 plays
+  instead, then it is one `EFFECTS` row plus its frame math and drawing.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
