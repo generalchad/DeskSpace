@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- T6, T7 (animations; pure or without callers, so no screen needed).
+- T7 (animations; pure or without callers, so no screen needed).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -533,17 +533,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T6. The painter draws a frame: Fade, Gradient, Dissolve, Pixelate
-  (platform; no callers yet).** `Painter::paint` takes
-  `Option<&TransitionFrame>` and applies it to the tint and the contents
-  after the scene is drawn: Fade as a layer at the frame's opacity;
-  Gradient as a layer whose opacity brush is a linear gradient; Dissolve
-  as an opacity mask from a noise bitmap made once per window size and
-  thresholded per frame; Pixelate by drawing the scene into a compatible
-  render target (made when the animation starts) at 1 / block size, then
-  back with nearest-neighbor scaling. Done when `None` paints exactly as
-  today and the masks' pure parts (the noise, the gradient stops) have
-  tests.
 - [ ] **T7. The painter draws CRT and Burn (platform; no callers yet).**
   CRT's bright line and fading glow over the opening rect; Burn as
   Dissolve plus a glowing band at the threshold, its width from Detail.
@@ -866,6 +855,7 @@ each id is in `archive/TASKS-done.md`.
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Settings shows an Animations group (Hide and show, New space, Delete, Fold) at 100 % and 150 %, nothing clipped; choosing each effect greys the options it does not use, Delete's "Same as new space" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; "Open Windows animation settings…" opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
+| T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
 
 ## Found while working
 

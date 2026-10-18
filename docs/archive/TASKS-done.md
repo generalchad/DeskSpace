@@ -2271,3 +2271,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: per effect, in and out at 0 and at the end, monotonic between;
     `reverse` continuous at many points for every effect; None done at
     once; a delay holds frame 0; Fly never leaves the work area.
+
+- [x] **T6. The painter draws a frame: Fade, Gradient, Dissolve, Pixelate
+  (platform; no callers yet).** `Painter::paint` takes
+  `Option<&TransitionFrame>` and applies it to the tint and the contents
+  after the scene is drawn: Fade as a layer at the frame's opacity;
+  Gradient as a layer whose opacity brush is a linear gradient; Dissolve
+  as an opacity mask from a noise bitmap made once per window size and
+  thresholded per frame; Pixelate by drawing the scene into a compatible
+  render target (made when the animation starts) at 1 / block size, then
+  back with nearest-neighbor scaling. Done when `None` paints exactly as
+  today and the masks' pure parts (the noise, the gradient stops) have
+  tests.

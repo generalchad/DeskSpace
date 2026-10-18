@@ -4,7 +4,7 @@
 use super::*;
 
 pub(super) unsafe fn fill_rounded(
-    target: &ID2D1HwndRenderTarget,
+    target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     rect: D2D_RECT_F,
     radius: f32,

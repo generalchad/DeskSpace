@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
-use deskspace_core::geometry::{Point, Rect};
+use deskspace_core::geometry::{Point, Rect, Size};
 
 /// Which way a play runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +118,9 @@ pub struct TransitionFrame {
     pub shown: f32,
     /// The window's rect, in desktop coordinates; empty when nothing shows.
     pub rect: Rect,
+    /// The size of the whole space, which the painter draws at whatever the
+    /// window's size, shifted by `content_offset`.
+    pub space: Size,
     /// Where the space's own top-left lands, relative to the window's, so
     /// content can stay put while the window around it moves or crops.
     pub content_offset: Point,
@@ -239,6 +242,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
     let whole = TransitionFrame {
         shown,
         rect: geometry.rect,
+        space: geometry.rect.size(),
         content_offset: Point::new(0, 0),
         opacity: 1.0,
         mask: Mask::None,

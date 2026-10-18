@@ -10,6 +10,7 @@
 mod bitmap;
 mod canvas;
 mod edit;
+mod effects;
 mod geometry;
 mod graphics;
 mod item;
@@ -30,12 +31,12 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_PROPERTIES, D2D1_DASH_STYLE_DOT,
-    D2D1_DRAW_TEXT_OPTIONS_CLIP, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
-    D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
+    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+    D2D1_BITMAP_PROPERTIES, D2D1_DASH_STYLE_DOT, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
     D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory,
     ID2D1HwndRenderTarget, ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
@@ -65,10 +66,12 @@ use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
+use crate::render::transition::TransitionFrame;
 
 use bitmap::to_icon;
 use canvas::HwndCanvas;
 use edit::draw_edit_title;
+use effects::Effects;
 use geometry::{color_f, draw_text, fill_rounded, inset, rect_f, to_rect_f};
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
@@ -151,6 +154,8 @@ pub struct Painter {
     canvas: HwndCanvas,
     /// GPU copies of `Icon`s, keyed by `Icon::id`.
     icons: HashMap<u64, ID2D1Bitmap>,
+    /// What an animation's frames are drawn with.
+    effects: Effects,
 }
 
 impl Painter {
@@ -158,19 +163,21 @@ impl Painter {
         Self::default()
     }
 
-    /// Paints `scene` in response to `WM_PAINT`.
+    /// Paints `scene` in response to `WM_PAINT`, through `transition`'s
+    /// frame while one is running (ROADMAP D12).
     pub(crate) fn paint(
         &mut self,
         hwnd: HWND,
         scene: Option<&PreparedScene>,
         frame: PaintFrame,
+        transition: Option<&TransitionFrame>,
     ) -> Result<(), PlatformError> {
         let mut ps = PAINTSTRUCT::default();
         // SAFETY: BeginPaint/EndPaint bracket the paint for this window; the
         // render target draws to the same HWND in between.
         unsafe { BeginPaint(hwnd, &mut ps) };
         let result = match scene {
-            Some(scene) => self.render(hwnd, scene, frame),
+            Some(scene) => self.render(hwnd, scene, frame, transition),
             None => Ok(()),
         };
         // SAFETY: matches the BeginPaint above.
@@ -185,6 +192,7 @@ impl Painter {
         hwnd: HWND,
         prepared: &PreparedScene,
         frame: PaintFrame,
+        transition: Option<&TransitionFrame>,
     ) -> Result<(), PlatformError> {
         let graphics = graphics()?;
         let (target, brush) = self.canvas.ensure(&graphics, hwnd)?;
@@ -194,10 +202,39 @@ impl Painter {
             brush: &brush,
         };
         let scene = &prepared.scene;
-        let (width, height) = self.canvas.size();
-        let (width, height) = (width as f32, height as f32);
-        let whole = rect_f(0.0, 0.0, width, height);
-        let radius = frame.radius as f32;
+        // The space is drawn whole even while the window around it is smaller
+        // (a roll crops it, a fly clips it at the screen's edge).
+        let size = match transition {
+            Some(transition) => (
+                transition.space.width as f32,
+                transition.space.height as f32,
+            ),
+            None => {
+                let (width, height) = self.canvas.size();
+                (width as f32, height as f32)
+            }
+        };
+        // Pixelate first draws the scene small on its own target, so it must
+        // finish before the window's target begins.
+        let pixelated = match transition {
+            Some(transition) if transition.block > 1 => Some(self.draw_small(
+                &graphics,
+                &target,
+                prepared,
+                frame,
+                size,
+                transition.block,
+            )?),
+            _ => None,
+        };
+        let layer = match transition {
+            Some(_) => Some(self.effects.layer(&target)?),
+            None => None,
+        };
+        let mask = match transition {
+            Some(transition) => self.effects.mask_brush(&target, transition.mask, size)?,
+            None => None,
+        };
 
         // SAFETY: all calls are on live COM objects owned by this painter,
         // between BeginDraw and EndDraw on the UI thread.
@@ -211,7 +248,105 @@ impl Painter {
                 // translucent surface it leaves colored fringes.
                 target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
                 target.Clear(Some(&color_f(Color::TRANSPARENT)));
-                fill_rounded(&target, &brush, whole, radius, scene.tint);
+            }
+            match (transition, layer) {
+                (Some(transition), Some(layer)) => {
+                    let offset = transition.content_offset;
+                    target.SetTransform(&Matrix3x2::translation(offset.x as f32, offset.y as f32));
+                    effects::with_layer(&target, &layer, transition.opacity, mask, || {
+                        match &pixelated {
+                            Some((bitmap, source)) => target.DrawBitmap(
+                                bitmap,
+                                Some(&rect_f(0.0, 0.0, size.0, size.1)),
+                                1.0,
+                                D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                                Some(source),
+                            ),
+                            None => self.draw_scene(ctx, prepared, frame, size),
+                        }
+                    });
+                    target.SetTransform(&Matrix3x2::identity());
+                }
+                _ => self.draw_scene(ctx, prepared, frame, size),
+            }
+            target.EndDraw(None, None)
+        };
+        if let Err(error) = end {
+            if error.code() == D2DERR_RECREATE_TARGET {
+                tracing::debug!("direct2d target lost; recreating on next paint");
+                self.release_device_resources();
+                return Ok(());
+            }
+            return Err(error.into());
+        }
+        Ok(())
+    }
+
+    /// Draws the scene at 1 / `block` of `size` on Pixelate's offscreen
+    /// target, and returns that bitmap with the part of it the scene covers.
+    fn draw_small(
+        &mut self,
+        graphics: &Graphics,
+        target: &ID2D1HwndRenderTarget,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        size: (f32, f32),
+        block: u32,
+    ) -> Result<(ID2D1Bitmap, D2D_RECT_F), PlatformError> {
+        let offscreen = self.effects.pixel_target(target, size)?;
+        let brush = match self.canvas.brush() {
+            Some(brush) => brush,
+            None => return Err(PlatformError::NotRunning),
+        };
+        let (scale, source) = effects::pixelated(size, block);
+        let ctx = DrawContext {
+            graphics,
+            target: &offscreen,
+            brush: &brush,
+        };
+        // SAFETY: drawing on a live offscreen target between its own
+        // BeginDraw and EndDraw, before the window's target begins.
+        unsafe {
+            offscreen.BeginDraw();
+            offscreen.Clear(Some(&color_f(Color::TRANSPARENT)));
+            offscreen.SetTransform(&Matrix3x2 {
+                M11: scale,
+                M12: 0.0,
+                M21: 0.0,
+                M22: scale,
+                M31: 0.0,
+                M32: 0.0,
+            });
+            self.draw_scene(ctx, prepared, frame, size);
+            offscreen.SetTransform(&Matrix3x2::identity());
+            offscreen.EndDraw(None, None)?;
+            Ok((offscreen.GetBitmap()?, source))
+        }
+    }
+
+    /// Draws the whole space, `size` large, on `ctx`'s target under its
+    /// current transform: the tint (unless the window is opaque, which its
+    /// clear already filled), the title bar, the items, the border, and the
+    /// highlight.
+    ///
+    /// # Safety
+    /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+    unsafe fn draw_scene(
+        &mut self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        (width, height): (f32, f32),
+    ) {
+        let DrawContext { target, brush, .. } = ctx;
+        let scene = &prepared.scene;
+        let whole = rect_f(0.0, 0.0, width, height);
+        let radius = frame.radius as f32;
+
+        // SAFETY: the caller is inside BeginDraw/EndDraw on `target`.
+        unsafe {
+            if !frame.opaque {
+                fill_rounded(target, brush, whole, radius, scene.tint);
             }
 
             // The title fill is the body's rounded shape cut at the title's
@@ -222,7 +357,7 @@ impl Painter {
                     &rect_f(0.0, 0.0, width, title_height.min(height)),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
-                fill_rounded(&target, &brush, whole, radius, scene.title_fill);
+                fill_rounded(target, brush, whole, radius, scene.title_fill);
                 target.PopAxisAlignedClip();
                 self.draw_title(ctx, prepared, width, title_height);
             }
@@ -238,8 +373,8 @@ impl Painter {
                 self.draw_items(ctx, prepared);
                 if let Some(marquee) = scene.marquee {
                     draw_marquee(
-                        &target,
-                        &brush,
+                        target,
+                        brush,
                         marquee,
                         scene.marquee_color,
                         scene.show_marquee_border,
@@ -252,8 +387,8 @@ impl Painter {
                     let thumb = to_rect_f(thumb);
                     let thumb_radius = (thumb.right - thumb.left) / 2.0;
                     fill_rounded(
-                        &target,
-                        &brush,
+                        target,
+                        brush,
                         thumb,
                         thumb_radius,
                         scene.item_text.fade(SCROLL_THUMB_ALPHA),
@@ -269,7 +404,7 @@ impl Painter {
                         radiusX: radius,
                         radiusY: radius,
                     },
-                    &brush,
+                    brush,
                     1.0,
                     None,
                 );
@@ -286,22 +421,12 @@ impl Painter {
                         radiusX: (radius - gap).max(0.0),
                         radiusY: (radius - gap).max(0.0),
                     },
-                    &brush,
+                    brush,
                     2.0,
                     None,
                 );
             }
-            target.EndDraw(None, None)
-        };
-        if let Err(error) = end {
-            if error.code() == D2DERR_RECREATE_TARGET {
-                tracing::debug!("direct2d target lost; recreating on next paint");
-                self.release_device_resources();
-                return Ok(());
-            }
-            return Err(error.into());
         }
-        Ok(())
     }
 
     unsafe fn draw_title(
@@ -435,6 +560,7 @@ impl Painter {
     fn release_device_resources(&mut self) {
         self.canvas.release();
         self.icons.clear();
+        self.effects.release();
     }
 }
 

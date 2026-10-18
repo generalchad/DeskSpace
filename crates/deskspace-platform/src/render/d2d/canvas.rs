@@ -20,6 +20,10 @@ impl HwndCanvas {
         self.target.as_ref()
     }
 
+    pub(super) fn brush(&self) -> Option<ID2D1SolidColorBrush> {
+        self.brush.clone()
+    }
+
     /// The target and brush for `hwnd`, created or resized to its client
     /// area.
     pub(super) fn ensure(

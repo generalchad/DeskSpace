@@ -452,7 +452,7 @@ unsafe fn paint(window: HWND) {
             let _ = ValidateRect(Some(window), None);
             return;
         };
-        if let Err(error) = painter.paint(window, scene.as_ref(), frame) {
+        if let Err(error) = painter.paint(window, scene.as_ref(), frame, None) {
             tracing::error!(%error, "space paint failed");
         }
         with_state(window, |state| {
