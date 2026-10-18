@@ -716,22 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X14. Windows (app).** Needs X5 and X13. **[needs human]** Section
-  Windows, after X5's "Show spaces":
-  - `OnTop`, "Keep spaces above other windows", a `Toggle`: starts as
-    `--on-top` and calls `ui.set_on_top(on)`.
-  - `WindowTable`, "Windows", a `Table` with columns Class, Title,
-    Space, Rect, DPI, Visible, from `ui.debug_windows()`.
-  - `MonitorTable`, "Monitors", a `Table` with columns Rect, Work area,
-    DPI, Primary, from `monitors()`.
-  - Both tables refresh with `Timer::DebugRefresh`.
-  - Tests: a pure `fn rect_text(Rect) -> String` ("x, y  w × h").
-  - **[needs human]** check: on-top lifts the spaces above Notepad and
-    off drops them back to the desktop; the window table lists every
-    space, the tray's controller window, and the debug and settings
-    windows, in z-order, and follows a space moved to another monitor;
-    the monitor table matches Windows' display settings.
-
 - [ ] **X15. System facts (platform).** In `win32/debug_info.rs`:
   - `pub fn transparency_enabled() -> Option<bool>`: the `EnableTransparency`
     DWORD under
@@ -1046,6 +1030,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X14 (F-61) | Debug → Windows: "Keep spaces above other windows" lifts the spaces above Notepad and off drops them back to the desktop; the Windows table lists every space, the tray's controller window, and the debug and settings windows in z-order, and follows a space moved to another monitor; the Monitors table matches Windows' display settings. |
 | X12 (F-61) | Debug → Diagnostics: the Build, Model, Resources, and Updates values look right and Resources ticks once a second; creating and deleting spaces moves the counts; "Copy diagnostics" pastes into Notepad as a readable report. |
 | X10 (F-61) | Debug → Config: the Configuration and Storage readouts match `--config` ("scratch", or "real" without it); "Write the configuration to the log" shows every space in the console; both Open buttons open the folder in Explorer. |
 | X9 (F-61) | Debug → Spaces: Unfold, Unlock, Refresh, and Prune each do what they say on folded, locked, and stale spaces; a 1000-item stress space opens and scrolls smoothly, and "Delete all spaces" removes it. |

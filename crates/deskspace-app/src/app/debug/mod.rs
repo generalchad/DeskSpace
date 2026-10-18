@@ -12,6 +12,7 @@ mod ids;
 mod spaces;
 mod table;
 mod test_spaces;
+mod windows;
 
 use std::path::Path;
 use std::time::Instant;
@@ -74,10 +75,13 @@ enum DebugInput {
 
 impl App {
     /// What control `id` shows now.
-    fn debug_control(&self, id: DebugId) -> DebugControlKind {
+    fn debug_control(&self, ui: &Ui, id: DebugId) -> DebugControlKind {
         let has_spaces = !self.config.desktop.spaces().is_empty();
         match id {
             DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
+            DebugId::OnTop => DebugControlKind::Toggle { on: ui.is_on_top() },
+            DebugId::WindowTable => self.window_table(ui),
+            DebugId::MonitorTable => self.monitor_table(),
             DebugId::CreateTestSpaces
             | DebugId::CreateStress
             | DebugId::DumpConfig
@@ -126,6 +130,12 @@ impl App {
                     tracing::info!(visible = on, "debug: spaces shown or hidden");
                 }
             }
+            DebugId::OnTop => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_on_top(ui, on);
+                }
+            }
+            DebugId::WindowTable | DebugId::MonitorTable => {}
             DebugId::CreateTestSpaces => self.create_test_spaces(ui),
             DebugId::StressSize => {
                 if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut())
@@ -163,7 +173,7 @@ impl App {
     /// log feed and the panel refresh. A reopened window gets the whole ring
     /// again; one already open keeps what it has.
     pub(super) fn open_debug(&mut self, ui: &mut Ui) {
-        let panel = self.debug_panel();
+        let panel = self.debug_panel(ui);
         let Some(tools) = self.debug.as_mut() else {
             return;
         };
@@ -183,7 +193,7 @@ impl App {
 
     /// One section per `DebugSectionId` that has rows, each control from its
     /// row and its current value.
-    fn debug_panel(&self) -> DebugPanel {
+    fn debug_panel(&self, ui: &Ui) -> DebugPanel {
         let sections = DebugSectionId::ALL
             .into_iter()
             .filter_map(|section| {
@@ -193,7 +203,7 @@ impl App {
                     .map(|row| DebugControl {
                         id: row.id.id(),
                         label: row.label.to_string(),
-                        kind: self.debug_control(row.id),
+                        kind: self.debug_control(ui, row.id),
                     })
                     .collect();
                 (!controls.is_empty()).then(|| DebugSection {
@@ -224,7 +234,7 @@ impl App {
     /// Sends the panel to the window when its values changed since the last
     /// push.
     fn push_debug_panel(&mut self, ui: &mut Ui) {
-        let panel = self.debug_panel();
+        let panel = self.debug_panel(ui);
         let Some(tools) = self.debug.as_mut() else {
             return;
         };

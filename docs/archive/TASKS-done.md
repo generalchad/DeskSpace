@@ -2830,3 +2830,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     second placement rule.
   - Tests: none possible without windows beyond `monitors()` returning at
     least one primary monitor.
+
+- [x] **X14. Windows (app).** Needs X5 and X13. **[needs human]** Section
+  Windows, after X5's "Show spaces":
+  - `OnTop`, "Keep spaces above other windows", a `Toggle`: starts as
+    `--on-top` and calls `ui.set_on_top(on)`.
+  - `WindowTable`, "Windows", a `Table` with columns Class, Title,
+    Space, Rect, DPI, Visible, from `ui.debug_windows()`.
+  - `MonitorTable`, "Monitors", a `Table` with columns Rect, Work area,
+    DPI, Primary, from `monitors()`.
+  - Both tables refresh with `Timer::DebugRefresh`.
+  - Tests: a pure `fn rect_text(Rect) -> String` ("x, y  w × h").
+  - **[needs human]** check: on-top lifts the spaces above Notepad and
+    off drops them back to the desktop; the window table lists every
+    space, the tray's controller window, and the debug and settings
+    windows, in z-order, and follows a space moved to another monitor;
+    the monitor table matches Windows' display settings.

@@ -58,6 +58,21 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Show spaces",
     },
     DebugRow {
+        id: DebugId::OnTop,
+        section: DebugSectionId::Windows,
+        label: "Keep spaces above other windows",
+    },
+    DebugRow {
+        id: DebugId::WindowTable,
+        section: DebugSectionId::Windows,
+        label: "Windows",
+    },
+    DebugRow {
+        id: DebugId::MonitorTable,
+        section: DebugSectionId::Windows,
+        label: "Monitors",
+    },
+    DebugRow {
         id: DebugId::CreateTestSpaces,
         section: DebugSectionId::Spaces,
         label: "Create test spaces",

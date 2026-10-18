@@ -25,10 +25,13 @@ pub(crate) enum DebugId {
     Resources = 17,
     Updates = 18,
     CopyDiagnostics = 19,
+    OnTop = 20,
+    WindowTable = 21,
+    MonitorTable = 22,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 19] = [
+    pub(crate) const ALL: [Self; 22] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -48,6 +51,9 @@ impl DebugId {
         Self::Resources,
         Self::Updates,
         Self::CopyDiagnostics,
+        Self::OnTop,
+        Self::WindowTable,
+        Self::MonitorTable,
     ];
 
     pub(crate) fn id(self) -> u32 {
