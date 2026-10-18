@@ -492,7 +492,7 @@ changes nothing and says so.
   the Recycle Bin between a delete and its undo: the undo says it can't and
   changes nothing.
 
-## T. Animations (ROADMAP D12, F-33)
+## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
 T2-T11 do not wait for it: they animate today's windows, where the accent
@@ -539,6 +539,67 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
+- [ ] **T15. Three kinds: Startup, Delete, Fold (core, config, settings;
+  D12 amended 2026-10-18).** Merge Hide and show and New space into
+  Startup.
+  - Core: `Kind::{Startup, Delete, Fold}`; Startup has the startup
+    controls, and Delete follows Startup (`"same_as_startup"`). The kind
+    rows' keys stay stored names.
+  - Config: `Animations.startup_exit` holds Startup's settings, reading
+    the old `hide_show` table through a serde alias; the old `new_space`
+    table is ignored. `startup` (the order) and `stagger_ms` keep their
+    keys, so a config written since T3 still loads. A stored
+    `"same_as_new_space"` becomes Delete's default, Same as startup.
+  - App: hiding, showing, and a new space play Startup with no stagger;
+    startup staggers as before. The pages: Startup, Delete, Fold.
+  - Tests: an old config with `hide_show` and `new_space` tables loads
+    into Startup; Delete follows Startup; the pages and their greying.
+    **[needs human]** check: the three pages; each Startup effect on hide,
+    show, a new space, and startup.
+- [ ] **T16. Graceful exit (platform, app; D13).**
+  - Platform: `Ui::quit_after(plays: Vec<(u64, Play)>, limit: Duration)`
+    plays each space's Out (a hide, `space_animation`) and posts the usual
+    `WM_CLOSE` to the controller when the last one ends, or at `limit`
+    through a timer of its own (a `TIMERPROC`, so it takes no app `Timer`
+    id). Called again while leaving, or with nothing to play, it quits at
+    once. `WM_ENDSESSION` and console close keep closing at once.
+  - App: `App::exit` builds the plays (Startup's Out, staggered in reverse
+    reading order, the stagger shrunk so the last space ends within
+    `EXIT_LIMIT`, 2 s) and is what the Exit menu entries and the update
+    install call instead of `ui.quit`.
+  - Tests: the exit plays: reverse order, the stagger shrunk to fit,
+    nothing for hidden spaces, instant while Windows' switch is off.
+    **[needs human]** check: Exit from the tray and a space menu with
+    several spaces; with takeover on the icons come back only after the
+    spaces have left; a second Exit mid-way quits at once; signing out
+    does not wait.
+- [ ] **T17. Burn like paper (platform; D12 amended).** Replace Burn's
+  cell dissolve in the painter:
+  - A burn field made once per animation: smooth noise (a few octaves of
+    value noise, bilinearly upsampled from a coarse grid) plus a bias that
+    burns from the bottom up, so the front is ragged and organic. Detail
+    sets the noise's scale.
+  - Per frame, from the field and the progress, three bands ahead of the
+    front: a soft scorch (browning), a char edge (near black), and the
+    glowing edge (yellow through orange to red), with everything behind
+    the front gone. Written into a coarse premultiplied bitmap drawn with
+    linear interpolation: one as the content's opacity mask, one as the
+    color laid over it.
+  - Pure parts tested: the field's range and its bottom-up bias, and the
+    bands at a given threshold. Dissolve keeps the cell mask.
+- [ ] **T18. Flames around the frame (platform).** A click-through,
+  layered, never-activated overlay window (as `drag_ghost.rs`), sized to
+  the space plus a margin above and beside it, placed directly above the
+  space in z-order while Burn plays and destroyed after. Each frame draws
+  flame tongues rising from the burning front and up the frame's edges:
+  tapered gradients (yellow core, orange, red, transparent) whose heights
+  flicker over time, with a few embers drifting up, then
+  `UpdateLayeredWindow`. The flame layout (where tongues stand and how
+  high, per progress and time) is pure and tested. **[needs human]**
+  check (with T17): Burn on Startup and Delete looks like burning paper
+  on each backdrop, the flames rise past the frame without a box around
+  them, reversing mid-burn un-burns, and nothing is left behind.
+
 - [ ] **T12. Composition device and space tree (platform).** **[needs
   decision]** until T1's findings are recorded, then **[needs human]**.
   - `win32/composition.rs`: one per UI thread, released in the runtime

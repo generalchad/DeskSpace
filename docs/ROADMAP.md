@@ -278,19 +278,23 @@ A native, lightweight, offline Windows desktop organizer that:
   - Work items: `TASKS.md` section U.
 
 - **D12. Animations (2026-10-17).** Decides F-33 and M5 item 5.
-  - *Kinds:* four moments animate, each its own kind with its own
-    settings. The desktop layer never animates.
-    - **Hide and show:** hiding and showing the spaces (tray, space menu,
-      hotkey, desktop verb). M5's hide-all, auto-hide, and peek (F-11,
-      F-13) reuse it when they land.
-    - **New space:** a space coming into being: created from a menu, the
-      hotkey, or a drop, brought back by undo, and every space at startup.
-      Startup plays it all at once or one space after another (in
-      reading order: top to bottom, left to right where tops are level)
-      with a set delay, 50 ms by default. "Start with spaces hidden" plays nothing.
+  - *Kinds:* three moments animate, each its own kind with its own
+    settings (amended 2026-10-18, maintainer: Hide and show and New space
+    merged into Startup). The desktop layer never animates.
+    - **Startup:** spaces coming onto the screen and leaving it. Its In
+      plays when DeskSpace starts, when the spaces are shown (tray, space
+      menu, hotkey, desktop verb), and when a space comes into being (a
+      menu, the hotkey, a drop, or undo); its Out when DeskSpace exits
+      (D13) and when the spaces are hidden. Only startup and exit stagger:
+      all at once, or one space after another (startup in reading order:
+      top to bottom, left to right where tops are level; exit in reverse)
+      with a set delay, 50 ms by default. Showing, hiding, and a new space
+      move every space together. "Start with spaces hidden" plays nothing.
+      M5's hide-all, auto-hide, and peek (F-11, F-13) reuse it when they
+      land.
     - **Delete:** a space going away, by delete or undo. The model changes
       at once; only the window stays for the animation. Its default is
-      "Same as new space", played in reverse.
+      "Same as startup", played as its Out.
     - **Fold:** a space folding to its title bar and unfolding (until now
       called roll-up; see below). Always a roll.
   - *Effects:* one shared list, so a new effect is one row and every kind
@@ -300,8 +304,12 @@ A native, lightweight, offline Windows desktop organizer that:
     Dissolve, Fly (to and from the nearest edge of the space's monitor's
     work area, clipped to that work area so it never shows on another
     monitor or over the taskbar), CRT (a bright line that opens to the
-    full space, and closes to a line, then a dot), and Burn (a dissolve
-    with a glowing edge). Black hole (the space swallowed by a hole that
+    full space, and closes to a line, then a dot), and Burn (amended
+    2026-10-18: the space burns up like a sheet of paper, from the bottom
+    up along a ragged front, charring ahead of a glowing edge, with flames
+    licking up around its frame; the flames rise past the space, so they
+    are drawn on a click-through overlay window above it, since the
+    space's own window carries the blur over its whole rect). Black hole (the space swallowed by a hole that
     opens on the desktop) is planned after composition (T14). A kind can
     limit the list: Fold offers only None and Roll.
   - *Controls:* each kind has the common ones: its effect and a duration
@@ -312,8 +320,8 @@ A native, lightweight, offline Windows desktop organizer that:
     chosen effect does not use is greyed, so each page keeps its shape. The
     controls live in a Global-only Animations group of pages, one per kind,
     so no page grows too tall for a 1080-pixel display. Defaults: Roll at
-    250 ms for Hide and show, New space, and Fold; startup one after
-    another at 50 ms; Delete the same as New space. An upgrade starts
+    250 ms for Startup and Fold; startup one after another at 50 ms;
+    Delete the same as Startup. An upgrade starts
     animating; this change is on purpose (section 3, "never break users").
   - *Windows' setting:* when Windows' "Animation effects" is off
     (`SPI_GETCLIENTAREAANIMATION`), nothing animates, the page's controls
@@ -350,6 +358,30 @@ A native, lightweight, offline Windows desktop organizer that:
     and "Unfold". The config key stays `rolled_up`, so every config still
     loads, and an older DeskSpace still reads a newer file.
   - Work items: `TASKS.md` section T.
+
+- **D13. Graceful startup and exit (2026-10-18).** DeskSpace comes onto
+  the screen and leaves it the way a space does, with the Startup
+  animation (D12).
+  - *Startup:* already so (T10): every window is created hidden, gets its
+    scene, and then plays Startup's In, staggered; with takeover on,
+    Explorer's icons are hidden and the desktop layer drawn first.
+  - *Exit:* Exit from the tray or a space menu, and the quiet-moment
+    update install, play Startup's Out on every shown space, staggered in
+    reverse reading order, and only then tear down. Explorer's icons come
+    back after the spaces have left, as the teardown already restores them
+    after destroying every window; the watchdog still covers a crash.
+  - *Limits:* the whole exit takes at most `EXIT_LIMIT` (2 s): the stagger
+    shrinks to fit, and a timer tears down at the limit whatever is still
+    playing. A second Exit while leaving quits at once. Signing out or
+    shutting down Windows skips the animation (Windows allows an app only
+    seconds there), and so do Ctrl+C in a console and a forced end, which
+    nothing can animate.
+  - *The app decides, the platform plays:* the app builds each space's
+    `Play` and calls `Ui::quit_after(plays, limit)`; the platform plays
+    them and posts the usual close when the last one ends or the limit
+    passes. `Event::CloseRequested`, the save, and the teardown are
+    unchanged.
+  - Work items: `TASKS.md` T16.
 
 ## 3. Guiding principles
 
@@ -397,7 +429,8 @@ lists what each has done.
    before turning on the update feed.
 4. **M2 undo** for layout changes, file moves, and space deletion (D11;
    `TASKS.md` section U).
-5. **Animations** (M5 item 5, D12; `TASKS.md` section T),
+5. **Animations** and graceful startup and exit (M5 item 5, D12, D13;
+   `TASKS.md` section T),
    ahead of the rest of M5. The composition spike (T1) runs alongside.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
@@ -555,7 +588,8 @@ Remaining:
    size (F-28). A hidden title bar needs another way to move the space, such
    as Alt+drag or a grip.
 5. Animations for hide and show, new spaces and startup, delete, and fold,
-   from one shared list of effects (F-33, D12; `TASKS.md` section T). The
+   from one shared list of effects, and spaces that animate in at startup
+   and out at exit (F-33, D12, D13; `TASKS.md` section T). The
    composition groundwork they need for the blur (T1, T12, T13) is also the
    start of item 6.
 6. Blurred spaces with corner radii beyond DWM's 8 px, using a composition
@@ -792,7 +826,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: hide/show, new space and startup, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
@@ -847,7 +881,7 @@ Resolve each one during the milestone that raises it.
      every key the code uses has English text.
 
 Every other question raised so far is answered by a decision in section 2
-(D2, D3, D6-D9, D11, D12).
+(D2, D3, D6-D9, D11-D13).
 
 ## 9. Risks
 
