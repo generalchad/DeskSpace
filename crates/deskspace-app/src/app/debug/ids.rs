@@ -49,10 +49,13 @@ pub(crate) enum DebugId {
     SaveNow = 41,
     ClearIconCache = 42,
     AnimationsChanged = 43,
+    MarkLog = 44,
+    LogEvents = 45,
+    InputState = 46,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 43] = [
+    pub(crate) const ALL: [Self; 46] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -96,6 +99,9 @@ impl DebugId {
         Self::SaveNow,
         Self::ClearIconCache,
         Self::AnimationsChanged,
+        Self::MarkLog,
+        Self::LogEvents,
+        Self::InputState,
     ];
 
     pub(crate) fn id(self) -> u32 {

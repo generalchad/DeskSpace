@@ -10,6 +10,7 @@ mod animations;
 mod config;
 mod diagnostics;
 mod ids;
+mod input;
 mod simulate;
 mod spaces;
 mod system;
@@ -61,6 +62,10 @@ pub(crate) struct DebugTools {
     /// The configuration file's permissions before the debug window made it
     /// read-only, put back when it is turned off or DeskSpace closes.
     writable: Option<std::fs::Permissions>,
+    /// Whether every event the app receives is logged (`trace_event`).
+    log_events: bool,
+    /// How many marker lines "Mark the log" has written.
+    marks: u32,
 }
 
 impl DebugTools {
@@ -76,6 +81,8 @@ impl DebugTools {
             preview_space: None,
             preview_kind: 0,
             writable: None,
+            log_events: false,
+            marks: 0,
         }
     }
 }
@@ -140,6 +147,13 @@ impl App {
                 enabled: has_spaces,
             },
             DebugId::SpaceTable => self.space_table(),
+            DebugId::MarkLog => DebugControlKind::Button { enabled: true },
+            DebugId::LogEvents => DebugControlKind::Toggle {
+                on: self.debug.as_ref().is_some_and(|tools| tools.log_events),
+            },
+            DebugId::InputState => DebugControlKind::Readout {
+                text: self.input_text(),
+            },
             DebugId::ReadOnlyConfig => DebugControlKind::Toggle {
                 on: self.config_read_only(),
             },
@@ -262,7 +276,13 @@ impl App {
                 }
             }
             DebugId::CrashNow => self.crash_now(ui),
-            DebugId::SpaceTable => {}
+            DebugId::SpaceTable | DebugId::InputState => {}
+            DebugId::MarkLog => self.mark_log(),
+            DebugId::LogEvents => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_log_events(on);
+                }
+            }
             DebugId::ReflowAll => {
                 self.relayout_all(ui);
                 tracing::info!("debug: re-flowed every space");

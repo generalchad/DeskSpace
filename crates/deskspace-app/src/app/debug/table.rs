@@ -9,6 +9,7 @@ pub(crate) enum DebugSectionId {
     Spaces,
     Config,
     Diagnostics,
+    Input,
     Windows,
     System,
     Animations,
@@ -17,10 +18,11 @@ pub(crate) enum DebugSectionId {
 }
 
 impl DebugSectionId {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Spaces,
         Self::Config,
         Self::Diagnostics,
+        Self::Input,
         Self::Windows,
         Self::System,
         Self::Animations,
@@ -33,6 +35,7 @@ impl DebugSectionId {
             Self::Spaces => "Spaces",
             Self::Config => "Config",
             Self::Diagnostics => "Diagnostics",
+            Self::Input => "Input",
             Self::Windows => "Windows",
             Self::System => "System",
             Self::Animations => "Animations",
@@ -131,6 +134,21 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         id: DebugId::DeleteAllSpaces,
         section: DebugSectionId::Spaces,
         label: "Delete all spaces",
+    },
+    DebugRow {
+        id: DebugId::MarkLog,
+        section: DebugSectionId::Input,
+        label: "Mark the log",
+    },
+    DebugRow {
+        id: DebugId::LogEvents,
+        section: DebugSectionId::Input,
+        label: "Log events (not timers or pointer moves)",
+    },
+    DebugRow {
+        id: DebugId::InputState,
+        section: DebugSectionId::Input,
+        label: "State",
     },
     DebugRow {
         id: DebugId::ConfigPath,

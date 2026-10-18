@@ -576,6 +576,7 @@ impl App {
 
 impl EventHandler for App {
     fn on_event(&mut self, event: Event, ui: &mut Ui) {
+        self.trace_event(&event);
         match event {
             Event::Started => {
                 // DeskSpace's own menus and settings window follow the
