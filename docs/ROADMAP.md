@@ -310,8 +310,24 @@ A native, lightweight, offline Windows desktop organizer that:
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
     space's own window carries the blur over its whole rect). Black hole (the space swallowed by a hole that
-    opens on the desktop) is planned after composition (T14). A kind can
-    limit the list: Fold offers only None and Roll.
+    opens on the desktop) is planned after composition (T14). Also
+    planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
+    - **Bounce:** the space drops in from beyond an edge of its monitor's
+      work area (Automatic is the top), lands on its place, and settles in
+      a few shrinking bounces; out, it plays that backwards. It moves the
+      window's rect, as Fly does, so the blur follows it.
+    - **Scroll:** the space rolls up like a paper scroll. The body curls
+      into a shaded cylinder, with the contents wrapped around it, that
+      travels toward the edge (Automatic is the top) and grows as it
+      winds, so it reads as 3D; in, it unrolls. The rect shrinks as Roll's
+      does, so the blur follows it.
+    - **Magic lamp:** the macOS genie. The space narrows along curved sides
+      and pours into a point, and comes back out of it. It warps the
+      shape, which the rect-wide blur cannot follow, so it is drawn on a
+      click-through overlay (as Burn's flames are) while the space's own
+      window is hidden. Where the point is waits on a decision (T21).
+
+    A kind can limit the list: Fold offers only None, Roll, and Scroll.
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
@@ -826,7 +842,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T); Bounce, Scroll, and Magic lamp planned (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |

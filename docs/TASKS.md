@@ -576,6 +576,109 @@ a new module.
   path cannot. Decide where the hole opens and what Windows 10 plays
   instead, then it is one `EFFECTS` row plus its frame math and drawing.
 
+T19-T21 add the effects D12 plans (amended 2026-10-18). They animate
+today's windows and do not wait for T1 or T12. Each one adds an effect the
+same way:
+
+1. `deskspace-core/src/animation.rs`: an `Effect` variant with a `///`
+   doc, and an `EFFECTS` row naming its key and options. The key is saved
+   in the config, so it is never renamed. A kind lists it only where the
+   task says (`KINDS`; Startup and Delete take `EVERY_EFFECT`, so they get
+   it with no edit).
+2. `deskspace-app/src/settings/tables.rs`: a row in `EFFECT_LABELS` (grow
+   the array's length by one).
+3. `deskspace-platform/src/render/transition.rs`: the effect's arm in the
+   frame `match` (the compiler asks for it), next to the effect it builds
+   on. Pure frame math goes in its own `render/<effect>.rs` when it is
+   more than a few lines, as `render/burn.rs` is.
+4. Tests beside the pure math. Then add the effect to the T8 row in
+   section V ("Each Startup effect") rather than adding a new row, unless
+   the task asks for its own check.
+
+- [ ] **T19. Bounce (core, platform).** **[needs human]**
+  - Row: `effect(Effect::Bounce, "bounce", &[Direction])`. Not in Fold.
+  - Frame math: the rect moves as Fly's does (from beyond `edge` of
+    `work_area`, clipped to it; Automatic is the top, not the nearest
+    edge), but its progress goes through a pure `bounce_ease(t: f32) ->
+    f32` instead of Fly's easing: Robert Penner's "easeOutBounce" (four
+    parabolic arcs; cite https://easings.net/#easeOutBounce beside it).
+    The out is the in played backwards, as for every effect.
+  - Tests: `bounce_ease` is 0 at 0 and 1 at 1, stays within 0..=1, and
+    touches 1 at least three times (the landings); the frame at progress
+    0 is wholly outside the work area on the chosen edge, at 1 it is the
+    space's rect, and it never leaves the work area's span on the other
+    axis (copy Fly's transition test).
+  - **[needs human]** check: Bounce on Startup (show, a new space,
+    startup) and Delete from each edge, on Acrylic and Solid at 100 % and
+    150 %: it drops in, bounces about three times shrinking, and settles
+    exactly in place; it never shows on a second monitor or over the
+    taskbar.
+- [ ] **T20. Scroll (core, platform).** **[needs human]**
+  - Row: `effect(Effect::Scroll, "scroll", &[Direction])`, and add
+    `Effect::Scroll` to Fold's `effects` list in `KINDS`.
+  - Rect: Roll's (it collapses into `edge`; Automatic is the top), made
+    taller by the cylinder's radius toward the moving edge and clamped to
+    the space's full rect, so the cylinder fits inside the window.
+  - Pure math in `render/scroll.rs`: `scroll_radius(rolled_px, scale) ->
+    f32`, growing with the square root of the rolled length between
+    `SCROLL_RADIUS_MIN` (6 px) and `SCROLL_RADIUS_MAX` (28 px) at 96 DPI,
+    times `scale`; and `scroll_strips(progress, body, radius, out: &mut
+    [Strip; SCROLL_STRIPS])`, with `SCROLL_STRIPS` = 24. The cylinder's
+    front half is cut into that many bands by angle θ from -π/2 to π/2.
+    A band's destination is centred on the moving edge at `radius ·
+    sin θ`, its source is the content row at arc length `radius · (θ +
+    π/2)` past the edge, and its `shade` is `cos θ` (dark at the rims,
+    full at the middle). `Strip { src: (f32, f32), dst: (f32, f32), shade:
+    f32 }` along the rolling axis only.
+  - Painter (`render/d2d/effects.rs`): the flat part draws as Roll's
+    does. The cylinder draws each strip from the snapshot the animation
+    already makes at its start (`DrawBitmap` from the source band to the
+    destination band), then fills the band with black at `(1 - shade) ·
+    0.6` alpha. No allocation per frame: the strips live in a fixed array
+    in the painter.
+  - Tests: the bands are contiguous and in order, lie within `radius` of
+    the edge, start their sources at the edge's row, and their shade
+    peaks in the middle band; at progress 0 nothing is rolled (radius at
+    its minimum, no source rows used); the radius grows with the rolled
+    length and stays within its range.
+  - **[needs human]** check: Scroll on Fold (menu and title
+    double-click), Startup, and Delete, from each edge, on every backdrop
+    at 100 % and 150 %: the body curls into a round, shaded roll that
+    grows as it winds; the items stay legible on the roll; reversing
+    mid-way unrolls from where it is; folded, only the title bar is left.
+- [ ] **T21. Magic lamp (core, platform).** **[needs decision]**: where
+  the space pours to. Proposed: the DeskSpace tray icon when it is on the
+  space's monitor (`Shell_NotifyIconGetRect`), else the middle of the
+  bottom edge of the space's monitor work area. Once decided, remove this
+  marker; the task is then **[needs human]**:
+  - Row: `effect(Effect::MagicLamp, "magic_lamp", &[])`. Not in Fold.
+  - Pure mesh in `render/lamp.rs`: `lamp_slices(progress, rect, target,
+    out: &mut [Slice; LAMP_SLICES])`, `LAMP_SLICES` = 48 horizontal slices
+    of the space. Phase one (progress 0 to 0.5) narrows the slices toward
+    the target, the narrowing growing toward the target's side, with the
+    sides following a smoothstep curve, so the outline bends like a lamp's
+    smoke. Phase two (0.5 to 1) slides the slices along that outline into
+    the target, each shrinking to nothing as it arrives. `Slice { src_y:
+    (f32, f32), dst: Rect }`.
+  - Window: `win32/lamp_overlay.rs`, a click-through, layered,
+    never-activated overlay over the space's monitor work area, copied
+    from `win32/flame_overlay.rs`. While Magic lamp plays, the space's own
+    window is hidden and the overlay draws each slice from the start
+    snapshot, then `UpdateLayeredWindow`. At the end of an in the window
+    shows again and the overlay goes; at the end of an out the overlay
+    goes (and the window is destroyed for a Delete). There is no blur
+    while it plays.
+  - Tests: at progress 0 the slices tile the space's rect exactly; at 1
+    every slice is empty and at the target; widths only shrink as
+    progress grows; slices never overlap and never leave the monitor's
+    work area.
+  - **[needs human]** check: Magic lamp on Startup and Delete, on every
+    backdrop at 100 % and 150 %, with the space above, below, and beside
+    the target: the space pours smoothly into the point and back out,
+    with no rectangle of blur or tint left behind; reversing mid-way
+    turns it around; no overlay window is left after it ends, after a
+    delete, or after quitting mid-way.
+
 ## J. Tabs in spaces (ROADMAP F-49)
 
 Off by default. When a space's tabs are on, its items are paginated, one page
