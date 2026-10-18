@@ -132,7 +132,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     let theme = config.theme.clone();
     if config
         .desktop
-        .fold_legacy_overrides(&theme, system_uses_dark_mode())
+        .merge_legacy_overrides(&theme, system_uses_dark_mode())
         && let Err(error) = store.save(&config)
     {
         tracing::warn!(%error, "could not save the converted space appearance");

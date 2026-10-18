@@ -5,7 +5,7 @@ use crate::id::ItemId;
 use crate::item::Item;
 
 /// The desktop's loose items: the Desktop-folder files no space holds. It has
-/// no chrome (no title bar, border, lock, resize, roll-up, or sort) and is
+/// no chrome (no title bar, border, lock, resize, fold, or sort) and is
 /// drawn on a chrome-less desktop-hosted window behind the spaces (ROADMAP D7).
 ///
 /// The shell is the source of truth for membership and positions; the layer is

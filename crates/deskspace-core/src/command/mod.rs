@@ -110,7 +110,7 @@ pub enum Command {
     ToggleLock {
         id: SpaceId,
     },
-    ToggleRollup {
+    ToggleFold {
         id: SpaceId,
     },
     /// Lists `path` in `space`. The caller reads `facts` from the file
@@ -243,7 +243,7 @@ impl Desktop {
             }
             Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces),
             Command::ToggleLock { id } => self.apply_toggle_lock(id),
-            Command::ToggleRollup { id } => self.apply_toggle_rollup(id),
+            Command::ToggleFold { id } => self.apply_toggle_fold(id),
             Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
             Command::SnapAll => self.apply_snap_all(layout, bounds),
             Command::AddItem { space, path, facts } => {
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_and_rolled_up_spaces_reject_resize() {
+    fn locked_and_folded_spaces_reject_resize() {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 300, 300));
         let resize = Command::ResizeSpace {
@@ -601,12 +601,12 @@ mod tests {
             },
             to: Point::new(600, 100),
         };
-        desktop.space_mut(id).unwrap().rolled_up = true;
+        desktop.space_mut(id).unwrap().folded = true;
         assert_eq!(
             desktop.apply(resize.clone(), bounds()),
             CommandOutcome::Rejected
         );
-        desktop.space_mut(id).unwrap().rolled_up = false;
+        desktop.space_mut(id).unwrap().folded = false;
         desktop.space_mut(id).unwrap().locked = true;
         assert_eq!(desktop.apply(resize, bounds()), CommandOutcome::Rejected);
     }
@@ -721,13 +721,13 @@ mod tests {
     }
 
     #[test]
-    fn toggle_rollup_flips_both_ways() {
+    fn toggle_fold_flips_both_ways() {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
-        desktop.apply(Command::ToggleRollup { id }, bounds());
-        assert!(desktop.space(id).unwrap().rolled_up);
-        desktop.apply(Command::ToggleRollup { id }, bounds());
-        assert!(!desktop.space(id).unwrap().rolled_up);
+        desktop.apply(Command::ToggleFold { id }, bounds());
+        assert!(desktop.space(id).unwrap().folded);
+        desktop.apply(Command::ToggleFold { id }, bounds());
+        assert!(!desktop.space(id).unwrap().folded);
     }
 
     #[test]

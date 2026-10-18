@@ -136,7 +136,7 @@ impl Desktop {
         bounds: Rect,
     ) -> CommandOutcome {
         self.with_space(id, |space| {
-            if space.locked || space.rolled_up || !edges.any() {
+            if space.locked || space.folded || !edges.any() {
                 return CommandOutcome::Rejected;
             }
             let min = layout.min_space_size();
@@ -244,9 +244,9 @@ impl Desktop {
         })
     }
 
-    pub(super) fn apply_toggle_rollup(&mut self, id: SpaceId) -> CommandOutcome {
+    pub(super) fn apply_toggle_fold(&mut self, id: SpaceId) -> CommandOutcome {
         self.with_space(id, |space| {
-            space.rolled_up = !space.rolled_up;
+            space.folded = !space.folded;
             CommandOutcome::Applied
         })
     }

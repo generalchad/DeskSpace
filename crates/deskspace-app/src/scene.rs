@@ -97,7 +97,7 @@ pub fn space_scene(
     let cell = layout.cell();
     let content_top = space.title_height;
     let content_bottom = space.rect().height;
-    let items = if space.rolled_up() {
+    let items = if space.folded() {
         Vec::new()
     } else {
         space
@@ -170,7 +170,7 @@ pub fn space_scene(
             .label_size
             .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
         locked: space.locked(),
-        rolled_up: space.rolled_up(),
+        folded: space.folded(),
         highlight: view.highlight,
         focused_item: view.focused.map(|id| id.0),
         editing: None,
@@ -265,7 +265,7 @@ pub fn desktop_layer_scene(
             .label_size
             .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1),
         locked: false,
-        rolled_up: false,
+        folded: false,
         highlight: false,
         focused_item: view.focused.map(|id| id.0),
         editing: None,
@@ -424,7 +424,7 @@ fn thumb_bottom_margin(corner_radius: i32) -> i32 {
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
 fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32) -> Option<Rect> {
-    if space.rolled_up() {
+    if space.folded() {
         return None;
     }
     let max_scroll = space.max_scroll(layout.cell(), layout.padding);
@@ -599,8 +599,8 @@ mod tests {
     }
 
     #[test]
-    fn rolled_up_spaces_draw_no_items() {
-        let space = work_space_after(|id| Command::ToggleRollup { id });
+    fn folded_spaces_draw_no_items() {
+        let space = work_space_after(|id| Command::ToggleFold { id });
         let theme = Theme::default();
         let scene = space_scene(
             &space,
@@ -609,7 +609,7 @@ mod tests {
             &mut IconCache::new(),
         );
         assert!(scene.items.is_empty());
-        assert!(scene.rolled_up);
+        assert!(scene.folded);
     }
 
     #[test]

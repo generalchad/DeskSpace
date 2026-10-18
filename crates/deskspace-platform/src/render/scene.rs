@@ -62,7 +62,7 @@ pub struct SpaceScene {
     /// Item label font size as a percent of the default (100).
     pub label_size: u8,
     pub locked: bool,
-    pub rolled_up: bool,
+    pub folded: bool,
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,

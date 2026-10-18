@@ -56,7 +56,7 @@ impl Desktop {
             | Command::CustomizeSpace { id, .. }
             | Command::SetSpaceLook { id, .. }
             | Command::ToggleLock { id }
-            | Command::ToggleRollup { id }
+            | Command::ToggleFold { id }
             | Command::AutoArrange { id } => Touched::spaces([*id]),
             Command::RestoreSpaces { spaces } => Touched::spaces(spaces.iter().map(|(id, _)| *id)),
             Command::AddItem { space, .. } => Touched::spaces([*space]),

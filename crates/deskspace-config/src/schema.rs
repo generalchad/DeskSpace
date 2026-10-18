@@ -257,7 +257,7 @@ mod tests {
         );
         assert_ne!(space.items()[0].position, Point::new(412, 340));
         let theme = parsed.theme.clone();
-        assert!(!parsed.desktop.fold_legacy_overrides(&theme, false));
+        assert!(!parsed.desktop.merge_legacy_overrides(&theme, false));
     }
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn v2_space_overrides_fold_into_a_custom_look_that_round_trips() {
+    fn v2_space_overrides_merge_into_a_custom_look_that_round_trips() {
         let text = r#"
             version = 2
 
@@ -358,7 +358,7 @@ mod tests {
         "#;
         let mut parsed: Config = toml::from_str(text).unwrap();
         let theme = parsed.theme.clone();
-        assert!(parsed.desktop.fold_legacy_overrides(&theme, false));
+        assert!(parsed.desktop.merge_legacy_overrides(&theme, false));
         assert!(!parsed.desktop.spaces()[0].custom());
         let big = &parsed.desktop.spaces()[1];
         assert!(big.custom());
@@ -367,6 +367,25 @@ mod tests {
         let written = toml::to_string(&parsed).unwrap();
         let reread: Config = toml::from_str(&written).unwrap();
         assert_eq!(reread, parsed);
+    }
+
+    #[test]
+    fn a_folded_space_keeps_the_rolled_up_key() {
+        let text = r#"
+            version = 2
+
+            [[desktop.spaces]]
+            id = 1
+            title = "Work"
+            rect = { x = 0, y = 0, width = 100, height = 100 }
+            rolled_up = true
+        "#;
+        let parsed: Config = toml::from_str(text).unwrap();
+        assert!(parsed.desktop.spaces()[0].folded());
+
+        let written = toml::to_string(&parsed).unwrap();
+        assert!(written.contains("rolled_up = true"), "{written}");
+        assert!(!written.contains("folded"), "{written}");
     }
 
     #[test]

@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- T2, T3, T5-T7 (animations; pure or without callers, so no screen needed).
+- T3, T5-T7 (animations; pure or without callers, so no screen needed).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -439,7 +439,7 @@ changes nothing and says so.
     while an entry is open. Wrap each user action in `begin`/`finish` at its
     entry point (menu choice, drag end, resize end, rename commit, new
     space, delete space): move, resize, reorder, sort, arrange, snap all,
-    fit to contents, lock, roll-up, rename a space, create a space, and move
+    fit to contents, lock, fold, rename a space, create a space, and move
     items between spaces. A drag records once, on release, not per mouse
     move.
   - `App::undo` and `App::redo` (in `app/undo.rs`): check the top entry; if
@@ -533,17 +533,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T2. Call roll-up "fold" (all crates; no behavior change).**
-  - Rename in code: `Space::rolled_up` to `folded` (the field keeps
-    `#[serde(rename = "rolled_up")]`, so the key on disk is unchanged),
-    `Command::ToggleRollup` to `ToggleFold`, `SpaceScene::rolled_up` to
-    `folded`, the app's `toggle_rollup`, and any `MenuId` (its value
-    stays). Menu labels: "Fold" and "Unfold".
-  - Docs: every current mention in `CONTEXT.md`, `ROADMAP.md`, `TASKS.md`,
-    and `README.md` (not `archive/`).
-  - Tests: a config holding `rolled_up = true` loads folded and saves
-    `rolled_up` again. Done when `rg -i "roll.?up" crates docs README.md
-    --glob '!docs/archive/**'` finds only D12, this task, and that test.
 - [ ] **T3. The animation model (core, config; pure).**
   - `deskspace-core/src/animation.rs`:
     - `Effect { None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt,
@@ -924,7 +913,7 @@ each id is in `archive/TASKS-done.md`.
 | F13 (F-25) | Under the default preset, Ctrl+wheel stops at 16 and 256 px; under Custom it changes the spaces (and, with takeover, the layer's icons) but not Explorer's; a space with its own Custom look keeps its size either way. |
 | F-57 zoom pop-up | Still to check: the look in light mode and on the Blur, Solid, and Clear backdrops (Clear shows as Acrylic); the scale at 150 %, where the percentage should read 100 % at "Medium icons". |
 | F15 | Still to check: the icon-size slider and the Match Explorer preset leave every space's size alone; "Fit to contents" then fits the space to its items; Cancel after a slider preview leaves a never-resized space growing with new items again; moving a space to a monitor with another DPI still scales it (title bar included). |
-| B28c | Lock, roll up, sort, and "Fit to contents" (space menu and the settings button) each repaint the space at once and survive a restart. |
+| B28c | Lock, fold, sort, and "Fit to contents" (space menu and the settings button) each repaint the space at once and survive a restart. |
 | B29 | Make the scratch config read-only (`attrib +r`) and move a space: one "DeskSpace could not save" box appears; a second move shows none. Clear the attribute and move again: the file is saved. Closing DeskSpace while it is read-only shows no box. |
 | B30 | Overlap two spaces with different icon sizes, then sort or arrange the lower one: its icons land on its own grid. |
 | Desktop drop (D7) | With takeover on, drag onto an empty spot of the desktop: a Start "Pinned" app, a Store app, an Explorer file (plain, Shift, Alt, and a right drag), and an item out of a space. Each shows a move/copy/link cursor, not "no", and opens a new space at the drop point holding it. Drop next to a space and near the taskbar: the new space keeps a gutter from both and never overlaps. Right drag, then Cancel: no space is left behind. |

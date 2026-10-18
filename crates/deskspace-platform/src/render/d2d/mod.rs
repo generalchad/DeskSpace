@@ -230,7 +230,7 @@ impl Painter {
             // A chrome-less layer (the desktop layer) draws its items from the
             // top; a space leaves room for the title bar.
             let content_top = if scene.chrome { title_height } else { 0.0 };
-            if !scene.rolled_up && height > content_top {
+            if !scene.folded && height > content_top {
                 target.PushAxisAlignedClip(
                     &rect_f(0.0, content_top, width, height),
                     D2D1_ANTIALIAS_MODE_ALIASED,

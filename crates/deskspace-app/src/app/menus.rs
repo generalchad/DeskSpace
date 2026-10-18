@@ -223,13 +223,9 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let roll = if space.rolled_up() {
-            "Roll down"
-        } else {
-            "Roll up"
-        };
+        let fold = if space.folded() { "Unfold" } else { "Fold" };
         let mut entries = vec![
-            menu_item(MenuId::Roll, roll),
+            menu_item(MenuId::Fold, fold),
             menu_item(MenuId::Rename, "Rename"),
             menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
         ];
@@ -264,7 +260,7 @@ impl App {
             menu_item(MenuId::Exit, "Exit DeskSpace"),
         ]);
         match ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
-            Some(MenuId::Roll) => self.toggle_rollup(ui, id),
+            Some(MenuId::Fold) => self.toggle_fold(ui, id),
             Some(MenuId::Rename) => self.begin_rename(ui, id),
             Some(MenuId::Delete) => self.delete_space(ui, id),
             Some(MenuId::Fit) => {
@@ -615,7 +611,7 @@ mod tests {
             new_shortcut_choice(MenuId::PasteShortcut),
             Some(NewShortcut::Paste)
         );
-        assert_eq!(new_shortcut_choice(MenuId::Roll), None);
+        assert_eq!(new_shortcut_choice(MenuId::Fold), None);
     }
 
     #[test]

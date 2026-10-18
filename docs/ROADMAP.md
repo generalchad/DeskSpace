@@ -27,7 +27,7 @@ A native, lightweight, offline Windows desktop organizer that:
 - owns the desktop icon layer and draws real desktop items itself,
 - groups items into movable, resizable, lockable spaces,
 - mirrors folders as live lenses,
-- hides and reveals everything quickly (roll-up, auto-hide, peek),
+- hides and reveals everything quickly (folding, auto-hide, peek),
 - looks and feels modern (per-pixel alpha, blur, animation),
 - stays fully configurable from a tray app, context menus, and a settings
   window,
@@ -145,7 +145,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - The desktop's loose icons - the Desktop-folder files that are not in any
     space - are their own model type, `DesktopLayer`, not a `Space`. It holds
     items with free positions in virtual-desktop coordinates, one entry per
-    loose file, and no chrome (no title bar, border, lock, resize, roll-up, or
+    loose file, and no chrome (no title bar, border, lock, resize, fold, or
     sort). It is drawn on a chrome-less desktop-hosted window and sits behind
     the spaces.
   - The shell is the source of truth for membership and positions.
@@ -249,7 +249,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Session only:* the history lives in the app, like scroll state, and is
     cleared on exit. Nothing is added to the config.
   - *Scope:* every change DeskSpace makes through a user action: arranging,
-    moving, resizing, sorting, locking, rolling up, and renaming spaces;
+    moving, resizing, sorting, locking, folding, and renaming spaces;
     creating and deleting spaces; moving items between spaces; and the
     files behind them. Files dropped into the store go back where they came
     from. Files a space's deletion returned to the desktop go back into the
@@ -541,8 +541,8 @@ updates the lens within about 150 ms, and the sort and view settings persist.
 Goal: hide, reveal, and peek instantly; then animate it.
 
 Remaining:
-1. Roll-up policy: manual (done), automatic after idle, and roll up on
-   mouse-out / expand on hover (F-04). Add a per-space roll-up button.
+1. Fold policy: manual (done), automatic after idle, and fold on
+   mouse-out / unfold on hover (F-04). Add a per-space fold button.
 2. Hide all: hide spaces and icons (including the takeover layer, which
    "Hide spaces" leaves visible, D9), and reveal them on a desktop click, a
    hotkey, or a peek (F-11, F-13). Double-clicking empty desktop toggles them,
@@ -563,7 +563,7 @@ Remaining:
    - First check that a host backdrop renders on windows that are never
      activated.
 
-Exit criteria: hide-all and peek are instant and reversible, and the roll-up
+Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
 
 ### M6 - Multi-monitor, snapshots, pages
@@ -761,7 +761,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
-| F-04 | Roll-up spaces | M2 (manual), M5 (policy) | Manual done; policy open |
+| F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Open |

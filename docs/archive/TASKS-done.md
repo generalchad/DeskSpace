@@ -2200,3 +2200,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: a delete then a create gets a new id; a restore round-trips a
     deleted space with its items, look, and place in the order; a clashing
     item id is rejected; `None` removes.
+
+- [x] **T2. Call roll-up "fold" (all crates; no behavior change).**
+  - Rename in code: `Space::rolled_up` to `folded` (the field keeps
+    `#[serde(rename = "rolled_up")]`, so the key on disk is unchanged),
+    `Command::ToggleRollup` to `ToggleFold`, `SpaceScene::rolled_up` to
+    `folded`, the app's `toggle_rollup`, and any `MenuId` (its value
+    stays). Menu labels: "Fold" and "Unfold".
+  - Docs: every current mention in `CONTEXT.md`, `ROADMAP.md`, `TASKS.md`,
+    and `README.md` (not `archive/`).
+  - Tests: a config holding `rolled_up = true` loads folded and saves
+    `rolled_up` again. Done when `rg -i "roll.?up" crates docs README.md
+    --glob '!docs/archive/**'` finds only D12, this task, and that test.

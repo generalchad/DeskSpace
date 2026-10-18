@@ -22,7 +22,7 @@ not a finished product yet.
 ## Features
 
 - **Spaces.** Movable, resizable, lockable boxes for your desktop icons, each
-  with its own title bar. Roll a space up to just its title when you need room.
+  with its own title bar. Fold a space up to just its title when you need room.
 - **Real files.** Everything in a space is a real file. Dropping something into
   a space moves the file into a private store (nothing is copied), so items can
   move between spaces without being duplicated.
@@ -104,8 +104,8 @@ help inspect the look and the desktop layer.
   or pointed at, to the right of the top row of spaces there, lined up with
   them and spaced like them. When that row is full it goes to the next row,
   or a new row underneath.
-- Double-click a space title bar to roll it up or down. Right-click a space for
-  roll up, rename, lock, fit to contents, new shortcut, appearance, sort,
+- Double-click a space title bar to fold or unfold it. Right-click a space for
+  fold, rename, lock, fit to contents, new shortcut, appearance, sort,
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or

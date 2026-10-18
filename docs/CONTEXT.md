@@ -8,7 +8,7 @@ plan, decisions (D1-D9), and feature status.
 
 A free and open-source desktop space organizer for Windows. It groups desktop
 items into movable containers ("spaces") and, eventually, mirrors folders as
-live "lenses" (comparable tools call these Folder Portals), with roll-up,
+live "lenses" (comparable tools call these Folder Portals), with folding,
 auto-hide, and per-space appearance control. The long-term goal is
 feature-for-feature parity with comparable tools while staying native,
 lightweight, and offline. The tree is an early but usable framework, not a
@@ -144,15 +144,15 @@ drawn with.
 
 Files from before `look` stored per-space `opacity`, `tint`, `text`, and
 `icon_size`. They are still read (private, never written), and
-`fold_legacy_overrides` turns them into a customized look at startup:
+`merge_legacy_overrides` turns them into a customized look at startup:
 opacity becomes the tint opacity it produced, and a tint or text color turns
 on custom colors, taking the other color from the palette shown at the time.
 
-Helpers: `title_bar()`, `visible_rect()` (the title bar when rolled up, else
+Helpers: `title_bar()`, `visible_rect()` (the title bar when folded, else
 `rect`; used for window size and hit-testing), `content_rect()` (empty when
-rolled up), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
-`resize_edges_at(point, border) -> ResizeEdges` (none when locked or rolled
-up; corners twice as wide as edges), item lookup/insert/remove, and
+folded), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
+`resize_edges_at(point, border) -> ResizeEdges` (none when locked or
+folded; corners twice as wide as edges), item lookup/insert/remove, and
 `set_position`.
 
 ### Desktop and desktop layer
@@ -230,7 +230,7 @@ variant's doc cannot show.
 - `CreateSpace { title, at, size, locked }` clamps to the work area (no
   snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
   reject locked spaces and snap to the grid; `SnapAll` skips locked spaces.
-- `ResizeSpace` also rejects rolled-up spaces and an empty edge set, marks
+- `ResizeSpace` also rejects folded spaces and an empty edge set, marks
   the space user-sized, and (with `fit_to_grid`) fits to whole columns and
   rows. `FitToContents` clears the user size, so the space grows to fit its
   items; `KeepSize` sets it without moving the rect. The app sends `KeepSize`
@@ -475,7 +475,7 @@ one arm in `App::on_event`, whose match is exhaustive.
     (`Command::SetDesktopItemPosition`); dragging it over a space starts the
     normal shell drag, so dropping it there moves the file into that space
     and the layer reconciles from the shell. Space-only gestures (resize,
-    move, roll up, scroll, inline rename, delete, clipboard paste) stay keyed
+    move, fold, scroll, inline rename, delete, clipboard paste) stay keyed
     on a space; a loose item's menu is Explorer's alone, an empty spot gets
     the desktop menu (section 8), and Delete does
     nothing on the layer. A drop on the layer opens a new space at the drop
@@ -525,7 +525,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   the pointer with `Ui::set_space_cursor(CursorShape)`, which the window
   applies at once (`WM_SETCURSOR` is not sent while the mouse is captured)
   and on `WM_SETCURSOR`. The border band is 6 px on edges and 12 px at
-  corners; locked or rolled-up spaces cannot be resized. A press on a border
+  corners; locked or folded spaces cannot be resized. A press on a border
   resizes only once the pointer leaves a half-cell dead zone around the grab
   (`pointer::resize_edges_now`), so a click or a tiny drag never resizes, and
   each axis joins separately: a corner grab that moves on one axis resizes
@@ -910,7 +910,7 @@ in `ui.rs`. What spans them:
 2. `bootstrap::run`: with `--show`, hands off to a running instance and exits
    before loading anything. Otherwise it enables DPI awareness, loads or
    creates `Config` (migrating older files; `--reset` backs up the old file
-   and refuses to start if the backup fails), folds legacy per-space overrides
+   and refuses to start if the backup fails), merges legacy per-space overrides
    into looks (saving if anything changed), seeds a "Desktop" space if there
    are none (filled from the desktop folder unless `--no-icons`), and calls
    `deskspace_platform::run`. Placement is `--placement` when given, else
@@ -924,12 +924,12 @@ in `ui.rs`. What spans them:
 4. Pointer events update selection and hover (re-pushing that space's scene),
    drag spaces through `SetSpaceRect` (moving the window), resize them through
    `ResizeSpace` from the border band, scroll them on the wheel (per-space
-   offsets live in the app, not the config), toggle roll-up on a title-bar
+   offsets live in the app, not the config), toggle folding on a title-bar
    double-click, and open the space menu on right-click. Items open on
    double-click, show the item menu on right-click, and start a shell drag
    past the system drag threshold. Drops add items (moving new files into
    storage through `storage::ItemStore`) or move them between spaces. Saves
-   are debounced: drags, resizes, roll-up, lock, and space creation schedule a
+   are debounced: drags, resizes, folding, lock, and space creation schedule a
    save about 700 ms after the last change, while file-moving operations
    (drops, item removal, delete) and Apply/OK save at once, and closing
    flushes any pending write.
@@ -952,7 +952,7 @@ in `ui.rs`. What spans them:
 **Spaces**
 
 - Drag a space's title bar to move it (snaps to the grid); double-click it to
-  roll the space up or down.
+  fold or unfold the space.
 - Drag an edge or corner to resize; the wheel scrolls overflowing content.
 - Ctrl+wheel changes the icon size. Under the default "Match Explorer's
   display" preset it changes the desktop's own icon size (8 px a notch,
@@ -972,7 +972,7 @@ in `ui.rs`. What spans them:
 
 **Menus**
 
-- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Roll up/down,
+- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Fold/Unfold,
   Rename, Lock position, Fit to contents (resized, unlocked spaces only); New
   shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
   unless the space is empty); New space; Settings…, Hide/Show spaces, Exit
@@ -1060,7 +1060,7 @@ in `ui.rs`. What spans them:
   selects the range from the last click. Drag from empty space to rubber-band
   select (Ctrl or Shift adds), and Ctrl+A selects every item in the current
   space. Clicking empty space in a space or the desktop clears the selection
-  (so do hiding spaces and rolling up); clicking another application keeps
+  (so do hiding spaces and folding one); clicking another application keeps
   it, as Explorer keeps a desktop selection. Clicking anywhere on a space acts
   like a desktop click: it focuses the desktop (deactivating the app in
   front) and clears the desktop icon selection, leaving any selection inside
@@ -1265,7 +1265,8 @@ section numbers stable.
   lens removes only the view, never the folder (ROADMAP D3).
 - **User-sized**: a space the user resized; it keeps its size, re-flows items
   to its width, and scrolls instead of growing.
-- **Roll-up**: collapsing a space to its title bar.
+- **Fold**: collapsing a space to its title bar (called roll-up before D12;
+  the config key is still `rolled_up`).
 - **Auto-hide**: hiding all spaces and desktop icons until the desktop is
   interacted with.
 - **Placement**: where space windows live: top-level windows or children of

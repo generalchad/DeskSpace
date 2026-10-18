@@ -489,7 +489,7 @@ impl App {
         match target {
             DoubleClickTarget::TitleBar => {
                 if let Surface::Space(id) = surface {
-                    self.toggle_rollup(ui, id);
+                    self.toggle_fold(ui, id);
                 }
             }
             DoubleClickTarget::Item(item) => {
@@ -572,7 +572,7 @@ fn cursor_for(edges: ResizeEdges) -> CursorShape {
 /// What a double-click at `point` (desktop coordinates) acts on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DoubleClickTarget {
-    /// Rolls the space up or down.
+    /// Folds or unfolds the space.
     TitleBar,
     /// Opens the item.
     Item(ItemId),

@@ -29,6 +29,8 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Changed
 
+- "Roll up" is now called "Fold" (and "Roll down" "Unfold") in the space
+  menu, so it no longer sounds like hiding. Nothing else changes.
 - A new space opens beside the row of spaces at the top of the monitor,
   with the same gap as the others, instead of on top of whatever is under the
   pointer.

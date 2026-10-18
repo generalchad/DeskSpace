@@ -103,7 +103,7 @@ impl Timer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 enum MenuId {
-    Roll = 1,
+    Fold = 1,
     Lock = 2,
     NewSpace = 3,
     Settings = 4,
@@ -144,7 +144,7 @@ enum MenuId {
 
 impl MenuId {
     const ALL: [Self; 36] = [
-        Self::Roll,
+        Self::Fold,
         Self::Lock,
         Self::NewSpace,
         Self::Settings,
@@ -491,13 +491,13 @@ impl App {
         }
     }
 
-    fn toggle_rollup(&mut self, ui: &mut Ui, id: SpaceId) {
+    fn toggle_fold(&mut self, ui: &mut Ui, id: SpaceId) {
         let near = self.space_center(id);
-        // A rolled-up space hides its items, so it cannot keep one selected.
+        // A folded space hides its items, so it cannot keep one selected.
         if self.selection.surface == Some(Surface::Space(id)) {
             self.selection.clear();
         }
-        self.commit(ui, Command::ToggleRollup { id }, near);
+        self.commit(ui, Command::ToggleFold { id }, near);
     }
 
     // ---- timers --------------------------------------------------------

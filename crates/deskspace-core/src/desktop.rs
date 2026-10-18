@@ -199,20 +199,20 @@ impl Desktop {
     }
 
     /// Folds every space's per-space overrides from older files into a
-    /// customized look (`Space::fold_legacy_overrides`). Returns whether any
+    /// customized look (`Space::merge_legacy_overrides`). Returns whether any
     /// space changed, so the caller knows to save.
-    pub fn fold_legacy_overrides(&mut self, global: &Theme, system_dark: bool) -> bool {
+    pub fn merge_legacy_overrides(&mut self, global: &Theme, system_dark: bool) -> bool {
         let layout = self.layout;
-        let mut folded = false;
+        let mut merged = false;
         for space in &mut self.spaces {
-            folded |= space.fold_legacy_overrides(global, &layout, system_dark);
+            merged |= space.merge_legacy_overrides(global, &layout, system_dark);
         }
-        folded
+        merged
     }
 
     /// Resets every space loaded from a v1 file. v1 stored 210 as the fill
     /// alpha, which no later setting means, so it is dropped rather than
-    /// folded into a custom look. v1 also stored absolute item positions that
+    /// merged into a custom look. v1 also stored absolute item positions that
     /// went stale when the space moved; positions are now space-relative grid
     /// cells, so the items are placed again.
     pub fn reset_v1_spaces(&mut self) {
@@ -321,10 +321,10 @@ mod tests {
     }
 
     #[test]
-    fn rolled_up_space_is_only_hit_on_its_title_bar() {
+    fn folded_space_is_only_hit_on_its_title_bar() {
         let mut desktop = Desktop::new();
         let id = desktop.add_space("A", Rect::new(0, 0, 200, 200));
-        desktop.space_mut(id).unwrap().rolled_up = true;
+        desktop.space_mut(id).unwrap().folded = true;
         assert_eq!(
             desktop.space_at(crate::geometry::Point::new(10, 10)),
             Some(id)

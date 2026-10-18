@@ -67,8 +67,10 @@ pub struct Space {
     pub(crate) items: Vec<Item>,
     #[serde(default)]
     pub(crate) locked: bool,
-    #[serde(default)]
-    pub(crate) rolled_up: bool,
+    /// Folded to its title bar. The key keeps its old name, `rolled_up`, so
+    /// configs from before the rename load and older versions read new ones.
+    #[serde(default, rename = "rolled_up")]
+    pub(crate) folded: bool,
     /// Whether the space uses its own `look` instead of the global settings.
     #[serde(default)]
     pub(crate) custom: bool,
@@ -77,7 +79,7 @@ pub struct Space {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) look: Option<SpaceLook>,
     // The per-space overrides that `look` replaced: read from older files,
-    // folded into `look` by `fold_legacy_overrides`, and never written.
+    // merged into `look` by `merge_legacy_overrides`, and never written.
     #[serde(default = "default_opacity", rename = "opacity", skip_serializing)]
     legacy_opacity: u8,
     #[serde(default, rename = "tint", skip_serializing)]
@@ -133,7 +135,7 @@ impl Space {
             rect,
             items: Vec::new(),
             locked: false,
-            rolled_up: false,
+            folded: false,
             custom: false,
             look: None,
             legacy_opacity: default_opacity(),
@@ -161,8 +163,8 @@ impl Space {
         self.locked
     }
 
-    pub fn rolled_up(&self) -> bool {
-        self.rolled_up
+    pub fn folded(&self) -> bool {
+        self.folded
     }
 
     pub fn custom(&self) -> bool {
@@ -183,7 +185,7 @@ impl Space {
 
     /// The area the space occupies on screen: only the title bar while rolled up.
     pub fn visible_rect(&self) -> Rect {
-        if self.rolled_up {
+        if self.folded {
             self.title_bar()
         } else {
             self.rect
@@ -191,7 +193,7 @@ impl Space {
     }
 
     pub fn content_rect(&self) -> Rect {
-        if self.rolled_up {
+        if self.folded {
             return Rect::new(
                 self.rect.x,
                 self.rect.y + self.title_height,
@@ -236,10 +238,10 @@ impl Space {
     }
 
     /// The edges a resize grabbed at `point` would move. Corners are wider
-    /// than `border` so they are easy to hit. Locked and rolled-up spaces
+    /// than `border` so they are easy to hit. Locked and folded spaces
     /// cannot be resized.
     pub fn resize_edges_at(&self, point: Point, border: i32) -> ResizeEdges {
-        if self.locked || self.rolled_up || !self.rect.contains(point) {
+        if self.locked || self.folded || !self.rect.contains(point) {
             return ResizeEdges::NONE;
         }
         let corner = border * 2;
@@ -318,8 +320,8 @@ impl Space {
     /// icon size) into a customized `look` that starts from the global
     /// settings. Opacity becomes the tint opacity it produced, and a tint or
     /// text color turns on custom colors, taking the other color from the
-    /// palette shown at the time. Returns whether anything was folded.
-    pub fn fold_legacy_overrides(
+    /// palette shown at the time. Returns whether anything was merged.
+    pub fn merge_legacy_overrides(
         &mut self,
         global: &Theme,
         layout: &GridSpec,
@@ -358,10 +360,10 @@ mod tests {
     use crate::item::ItemFacts;
 
     #[test]
-    fn rolled_up_space_collapses_to_title_bar() {
+    fn folded_space_collapses_to_title_bar() {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(10, 20, 200, 300));
         assert_eq!(space.visible_rect(), space.rect);
-        space.rolled_up = true;
+        space.folded = true;
         assert_eq!(
             space.visible_rect(),
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
@@ -379,7 +381,7 @@ mod tests {
         let inside = Point::new(100 + 20, 100 + DEFAULT_TITLE_HEIGHT + 20);
         assert_eq!(space.item_at(inside, cell, 0), Some(ItemId(7)));
         assert_eq!(space.item_at(Point::new(100 + 200, 300), cell, 0), None);
-        space.rolled_up = true;
+        space.folded = true;
         assert_eq!(space.item_at(inside, cell, 0), None);
     }
 
@@ -443,14 +445,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_overrides_fold_into_a_custom_look() {
+    fn legacy_overrides_merge_into_a_custom_look() {
         let global = Theme::default();
         let grid = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "Old", Rect::new(0, 0, 200, 200));
         space.legacy_opacity = 51;
         space.legacy_text = Some(Color::rgb(1, 2, 3));
         space.legacy_icon_size = Some(150);
-        assert!(space.fold_legacy_overrides(&global, &grid, true));
+        assert!(space.merge_legacy_overrides(&global, &grid, true));
         assert!(space.custom);
         let look = space.look.as_ref().unwrap();
         assert_eq!(look.theme.icon_size, 150);
@@ -458,13 +460,13 @@ mod tests {
         assert!(look.theme.custom_colors);
         assert_eq!(look.theme.text, Color::rgb(1, 2, 3));
         assert_eq!(look.theme.tint, global.palette(true).tint.with_alpha(255));
-        assert!(!space.fold_legacy_overrides(&global, &grid, true), "once");
+        assert!(!space.merge_legacy_overrides(&global, &grid, true), "once");
     }
 
     #[test]
-    fn a_plain_space_folds_nothing() {
+    fn a_plain_space_merges_nothing() {
         let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 200, 200));
-        assert!(!space.fold_legacy_overrides(&Theme::default(), &GridSpec::default(), false));
+        assert!(!space.merge_legacy_overrides(&Theme::default(), &GridSpec::default(), false));
         assert!(!space.custom && space.look.is_none());
     }
 
