@@ -2379,3 +2379,18 @@ until I5-I6 all land, so no partial build hides the desktop.
     several spaces; with takeover on the icons come back only after the
     spaces have left; a second Exit mid-way quits at once; signing out
     does not wait.
+
+- [x] **T17. Burn like paper (platform; D12 amended).** Replace Burn's
+  cell dissolve in the painter:
+  - A burn field made once per animation: smooth noise (a few octaves of
+    value noise, bilinearly upsampled from a coarse grid) plus a bias that
+    burns from the bottom up, so the front is ragged and organic. Detail
+    sets the noise's scale.
+  - Per frame, from the field and the progress, three bands ahead of the
+    front: a soft scorch (browning), a char edge (near black), and the
+    glowing edge (yellow through orange to red), with everything behind
+    the front gone. Written into a coarse premultiplied bitmap drawn with
+    linear interpolation: one as the content's opacity mask, one as the
+    color laid over it.
+  - Pure parts tested: the field's range and its bottom-up bias, and the
+    bands at a given threshold. Dissolve keeps the cell mask.

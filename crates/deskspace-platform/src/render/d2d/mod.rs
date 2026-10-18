@@ -83,8 +83,6 @@ const SCROLL_THUMB_ALPHA: u8 = 110;
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
 const CUT_ALPHA: u8 = 110;
-/// The color of Burn's glowing edge.
-const BURN_EMBER: Color = Color::rgb(0xFF, 0x8C, 0x1A);
 /// CRT's bright line at full glow: a cool white, slightly translucent so the
 /// line still reads as light over the contents.
 const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
@@ -240,10 +238,7 @@ impl Painter {
             Some(transition) => self.effects.mask_brush(&target, transition.mask, size)?,
             None => None,
         };
-        let embers = match transition {
-            Some(transition) => self.effects.ember_brush(&target, transition.mask, size)?,
-            None => None,
-        };
+        let burn_marks = transition.and_then(|transition| self.effects.burn_marks(transition.mask));
 
         // SAFETY: all calls are on live COM objects owned by this painter,
         // between BeginDraw and EndDraw on the UI thread.
@@ -275,11 +270,14 @@ impl Painter {
                         }
                     });
                     let whole = rect_f(0.0, 0.0, size.0, size.1);
-                    if embers.is_some() {
-                        effects::with_layer(&target, &layer, transition.opacity, embers, || {
-                            brush.SetColor(&color_f(BURN_EMBER));
-                            target.FillRectangle(&whole, &brush);
-                        });
+                    if let Some(marks) = &burn_marks {
+                        target.DrawBitmap(
+                            marks,
+                            Some(&whole),
+                            transition.opacity,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                            None,
+                        );
                     }
                     if transition.glow > 0.0 {
                         let alpha = (transition.glow * f32::from(CRT_GLOW.a)).round() as u8;

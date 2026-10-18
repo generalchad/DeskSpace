@@ -13,6 +13,8 @@ use std::time::Duration;
 use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
+use super::burn;
+
 /// Which way a play runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Way {
@@ -102,12 +104,16 @@ pub enum Mask {
         feather: f32,
     },
     /// Grain-sized cells, each shown while its noise value (0 to 1) is at or
-    /// above `threshold`. `glow` is the width of the band above the threshold
-    /// drawn as embers (Burn); 0 for none.
+    /// above `threshold` (Dissolve).
     Noise {
         threshold: f32,
         grain: u8,
-        glow: f32,
+    },
+    /// Paper burning up from the bottom (`render::burn`): `front` is how far
+    /// the burn has got, and `detail` how ragged its edge is.
+    Burn {
+        front: f32,
+        detail: u8,
     },
 }
 
@@ -236,8 +242,6 @@ const GRADIENT_FEATHER: f32 = 0.25;
 const PIXELATE_BLOCK_PER_DETAIL: f32 = 4.0;
 /// Pixelate fades out over the last part of hiding (the first of showing).
 const PIXELATE_FADE: f32 = 0.35;
-/// Burn's ember band per step of detail, as a fraction of the noise range.
-const BURN_GLOW_PER_DETAIL: f32 = 0.012;
 /// CRT spends this much of its time drawing the line, and the rest opening it.
 const CRT_LINE: f32 = 0.3;
 /// The thickness of CRT's line, and the size of its dot, in pixels.
@@ -289,11 +293,17 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             ..whole
         },
         Effect::Dissolve => TransitionFrame {
-            mask: noise(play, gone, 0.0),
+            mask: Mask::Noise {
+                threshold: gone,
+                grain: play.detail,
+            },
             ..whole
         },
         Effect::Burn => TransitionFrame {
-            mask: noise(play, gone, f32::from(play.detail) * BURN_GLOW_PER_DETAIL),
+            mask: Mask::Burn {
+                front: burn::front(gone),
+                detail: play.detail,
+            },
             ..whole
         },
         Effect::Fly => {
@@ -307,16 +317,6 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             }
         }
         Effect::Crt => crt(geometry.rect, shown, whole),
-    }
-}
-
-/// A noise mask that hides everything at `gone == 1`. The threshold runs
-/// slightly past 1 with a glow, so the last embers burn out too.
-fn noise(play: &Play, gone: f32, glow: f32) -> Mask {
-    Mask::Noise {
-        threshold: gone * (1.0 + glow),
-        grain: play.detail,
-        glow,
     }
 }
 
@@ -466,6 +466,7 @@ mod tests {
                     position, feather, ..
                 } => position - feather <= 0.0,
                 Mask::Noise { threshold, .. } => threshold <= 0.0,
+                Mask::Burn { front, .. } => front <= -burn::BANDS,
             }
     }
 
@@ -476,9 +477,8 @@ mod tests {
             || match frame.mask {
                 Mask::None => false,
                 Mask::Gradient { position, .. } => position >= 1.0,
-                Mask::Noise {
-                    threshold, glow, ..
-                } => threshold >= 1.0 + glow,
+                Mask::Noise { threshold, .. } => threshold >= 1.0,
+                Mask::Burn { front, .. } => front >= 1.0,
             }
     }
 

@@ -1,3 +1,4 @@
+pub mod burn;
 pub mod d2d;
 pub mod scene;
 pub mod transition;

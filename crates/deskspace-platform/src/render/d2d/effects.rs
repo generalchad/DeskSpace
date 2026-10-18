@@ -1,6 +1,6 @@
 //! The device resources a `TransitionFrame` is drawn with (ROADMAP D12): a
-//! layer, the gradient and noise masks, and the offscreen target Pixelate
-//! draws small. Each is made the first time a frame needs it and kept, so a
+//! layer, the gradient, noise, and burn masks, and the offscreen target
+//! Pixelate draws small. Each is made the first time a frame needs it and kept, so a
 //! frame only updates them; they go with the device.
 
 use std::mem::ManuallyDrop;
@@ -8,16 +8,18 @@ use std::mem::ManuallyDrop;
 use deskspace_core::animation::Edge;
 use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_U, D2D_SIZE_F, D2D1_GRADIENT_STOP};
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2,
-    D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
-    ID2D1BitmapBrush, ID2D1BitmapRenderTarget, ID2D1Brush, ID2D1Layer, ID2D1LinearGradientBrush,
+    D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE,
+    D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+    D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, ID2D1BitmapBrush, ID2D1BitmapRenderTarget, ID2D1Brush,
+    ID2D1Layer, ID2D1LinearGradientBrush,
 };
 
 use super::*;
+use crate::render::burn::{self, BurnField};
 use crate::render::transition::Mask;
 
-/// Dissolve's and Burn's grain, in pixels per step of detail.
+/// Dissolve's grain, in pixels per step of detail.
 const NOISE_CELL_PER_DETAIL: u32 = 2;
 
 #[derive(Default)]
@@ -25,6 +27,7 @@ pub(super) struct Effects {
     layer: Option<ID2D1Layer>,
     gradient: Option<ID2D1LinearGradientBrush>,
     noise: Option<NoiseMask>,
+    burn: Option<BurnMask>,
     pixels: Option<PixelTarget>,
 }
 
@@ -38,8 +41,16 @@ struct NoiseMask {
     values: Vec<u8>,
     /// The cells still shown.
     shown: CellMask,
-    /// The cells burning right now: Burn's glowing edge.
-    embers: CellMask,
+}
+
+/// Burn's paper: one pixel per `burn::CELL`-sized cell, drawn smoothly.
+struct BurnMask {
+    field: BurnField,
+    detail: u8,
+    /// Where the paper still shows: the contents' opacity mask.
+    paper: CellMask,
+    /// The glowing edge, the char, and the scorch, laid over the paper.
+    marks: CellMask,
 }
 
 /// One pixel per cell, rewritten each frame and stretched over the space by
@@ -107,33 +118,52 @@ impl Effects {
                 noise.shown.upload(noise.cols, noise.rows)?;
                 Ok(Some(noise.shown.brush.clone().into()))
             }
+            Mask::Burn { front, detail } => {
+                let burn = self.burn(target, detail, size)?;
+                fill_burn(
+                    burn.field.values(),
+                    front,
+                    &mut burn.paper.pixels,
+                    &mut burn.marks.pixels,
+                );
+                let (cols, rows) = (burn.field.cols(), burn.field.rows());
+                burn.paper.upload(cols, rows)?;
+                burn.marks.upload(cols, rows)?;
+                Ok(Some(burn.paper.brush.clone().into()))
+            }
         }
     }
 
-    /// The opacity brush for Burn's glowing edge this frame: the cells whose
-    /// noise is within the mask's glow above its threshold. `None` for any
-    /// other mask. Call after `mask_brush` for the same frame.
-    pub(super) fn ember_brush(
+    /// The color Burn lays over the paper this frame (`render::burn`), for a
+    /// space of `size`; `None` for any other mask. Call after `mask_brush`
+    /// for the same frame, which writes it.
+    pub(super) fn burn_marks(&self, mask: Mask) -> Option<ID2D1Bitmap> {
+        let Mask::Burn { .. } = mask else {
+            return None;
+        };
+        self.burn.as_ref().map(|burn| burn.marks.bitmap.clone())
+    }
+
+    fn burn(
         &mut self,
         target: &ID2D1RenderTarget,
-        mask: Mask,
+        detail: u8,
         size: (f32, f32),
-    ) -> Result<Option<ID2D1Brush>, PlatformError> {
-        let Mask::Noise {
-            threshold,
-            grain,
-            glow,
-        } = mask
-        else {
-            return Ok(None);
-        };
-        if glow <= 0.0 {
-            return Ok(None);
+    ) -> Result<&mut BurnMask, PlatformError> {
+        let cols = (size.0 / burn::CELL as f32).ceil().max(1.0) as u32;
+        let rows = (size.1 / burn::CELL as f32).ceil().max(1.0) as u32;
+        let fits = self.burn.as_ref().is_some_and(|burn| {
+            (burn.field.cols(), burn.field.rows(), burn.detail) == (cols, rows, detail)
+        });
+        if !fits {
+            self.burn = Some(BurnMask {
+                field: BurnField::new(cols, rows, detail),
+                detail,
+                paper: CellMask::new(target, cols, rows, burn::CELL, SMOOTH)?,
+                marks: CellMask::new(target, cols, rows, burn::CELL, SMOOTH)?,
+            });
         }
-        let noise = self.noise(target, grain, size)?;
-        fill_ember_mask(&noise.values, threshold, glow, &mut noise.embers.pixels);
-        noise.embers.upload(noise.cols, noise.rows)?;
-        Ok(Some(noise.embers.brush.clone().into()))
+        Ok(self.burn.as_mut().expect("made above"))
     }
 
     fn gradient(
@@ -254,11 +284,15 @@ impl NoiseMask {
             rows,
             cell,
             values,
-            shown: CellMask::new(target, cols, rows, cell)?,
-            embers: CellMask::new(target, cols, rows, cell)?,
+            shown: CellMask::new(target, cols, rows, cell, BLOCKY)?,
         })
     }
 }
+
+/// How a cell mask stretches over the space: hard-edged cells (Dissolve's
+/// grain) or smooth ones (Burn's paper).
+const BLOCKY: D2D1_BITMAP_INTERPOLATION_MODE = D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR;
+const SMOOTH: D2D1_BITMAP_INTERPOLATION_MODE = D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
 
 impl CellMask {
     fn new(
@@ -266,6 +300,7 @@ impl CellMask {
         cols: u32,
         rows: u32,
         cell: u32,
+        interpolation: D2D1_BITMAP_INTERPOLATION_MODE,
     ) -> Result<Self, PlatformError> {
         let properties = D2D1_BITMAP_PROPERTIES {
             pixelFormat: D2D1_PIXEL_FORMAT {
@@ -292,7 +327,7 @@ impl CellMask {
                 Some(&D2D1_BITMAP_BRUSH_PROPERTIES {
                     extendModeX: D2D1_EXTEND_MODE_CLAMP,
                     extendModeY: D2D1_EXTEND_MODE_CLAMP,
-                    interpolationMode: D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                    interpolationMode: interpolation,
                 }),
                 None,
             )?;
@@ -409,17 +444,11 @@ fn fill_noise_mask(values: &[u8], threshold: f32, pixels: &mut [u32]) {
     }
 }
 
-/// Writes each cell's ember pixel: opaque while its noise is at or above
-/// `threshold` but within `glow` of it (both 0 to 1), the band about to burn.
-fn fill_ember_mask(values: &[u8], threshold: f32, glow: f32, pixels: &mut [u32]) {
-    let (low, high) = (threshold * 256.0, (threshold + glow) * 256.0);
-    for (pixel, value) in pixels.iter_mut().zip(values) {
-        let value = f32::from(*value);
-        *pixel = if value >= low && value < high {
-            u32::MAX
-        } else {
-            0
-        };
+/// Writes each cell's two Burn pixels for a burn at `front`: whether the
+/// paper still shows, and the glow, char, or scorch over it.
+fn fill_burn(values: &[f32], front: f32, paper: &mut [u32], marks: &mut [u32]) {
+    for ((value, paper), marks) in values.iter().zip(paper.iter_mut()).zip(marks.iter_mut()) {
+        (*paper, *marks) = burn::cell_pixels(burn::stage(value - front));
     }
 }
 
@@ -453,13 +482,18 @@ mod tests {
     }
 
     #[test]
-    fn embers_are_the_band_just_above_the_threshold() {
-        let values = [0, 100, 128, 140, 255];
-        let mut pixels = [7; 5];
-        fill_ember_mask(&values, 0.5, 0.1, &mut pixels);
-        assert_eq!(pixels, [0, 0, u32::MAX, u32::MAX, 0]);
-        fill_ember_mask(&values, 1.0, 0.1, &mut pixels);
-        assert_eq!(pixels, [0; 5], "nothing left to burn");
+    fn a_burn_writes_both_pixels_of_every_cell() {
+        let values = [0.0, 0.5, 1.0];
+        let (mut paper, mut marks) = ([7; 3], [7; 3]);
+        fill_burn(&values, 0.5, &mut paper, &mut marks);
+        assert_eq!(paper[0], 0, "below the front is gone");
+        assert_eq!(paper[1], u32::MAX, "the front itself still burns");
+        assert_eq!(marks[1] >> 24, 255, "and glows");
+        assert_eq!(
+            (paper[2], marks[2]),
+            (u32::MAX, 0),
+            "far above is untouched"
+        );
     }
 
     #[test]
