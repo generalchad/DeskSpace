@@ -1,5 +1,5 @@
 //! The debug window's Animations section: slow motion, ignoring Windows'
-//! switch, and playing an effect on a space on demand.
+//! switch, and playing an effect on one space or every space on demand.
 
 use deskspace_core::SpaceId;
 use deskspace_core::animation::Kind;
@@ -82,12 +82,30 @@ impl App {
         let Some(id) = ids.get(chosen_index(&ids, tools.preview_space)).copied() else {
             return;
         };
-        let (kind, label) = PREVIEW_KINDS[tools.preview_kind.min(PREVIEW_KINDS.len() - 1)];
+        let (kind, label) = preview_kind(tools.preview_kind);
         ui.preview_play(id.0, self.play(kind, Way::Out), self.play(kind, Way::In));
         tracing::info!(
             space = id.0,
             kind = label,
             "debug: played an effect preview"
+        );
+    }
+
+    /// Plays the chosen kind's Out and then its In on every space at once.
+    pub(super) fn play_preview_all(&mut self, ui: &mut Ui) {
+        let Some(tools) = self.debug.as_ref() else {
+            return;
+        };
+        let (kind, label) = preview_kind(tools.preview_kind);
+        let (out, back) = (self.play(kind, Way::Out), self.play(kind, Way::In));
+        let spaces = self.config.desktop.spaces();
+        for space in spaces {
+            ui.preview_play(space.id.0, out, back);
+        }
+        tracing::info!(
+            spaces = spaces.len(),
+            kind = label,
+            "debug: played an effect preview on every space"
         );
     }
 
@@ -97,6 +115,11 @@ impl App {
             tracing::info!(speed = label, "debug: animation speed");
         }
     }
+}
+
+/// The preview kind at `index`, or the last one when it is out of range.
+fn preview_kind(index: usize) -> (Kind, &'static str) {
+    PREVIEW_KINDS[index.min(PREVIEW_KINDS.len() - 1)]
 }
 
 /// Where `chosen` is in `ids`, or the first space when it is gone or was

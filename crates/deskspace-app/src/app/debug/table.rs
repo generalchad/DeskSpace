@@ -251,6 +251,11 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Play on the space",
     },
     DebugRow {
+        id: DebugId::PreviewPlayAll,
+        section: DebugSectionId::Animations,
+        label: "Play on all spaces",
+    },
+    DebugRow {
         id: DebugId::Takeover,
         section: DebugSectionId::Takeover,
         label: "Take over the desktop (this session)",

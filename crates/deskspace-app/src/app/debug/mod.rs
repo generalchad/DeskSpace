@@ -172,7 +172,7 @@ impl App {
             },
             DebugId::PreviewSpace => self.preview_space_choice(),
             DebugId::PreviewKind => self.preview_kind_choice(),
-            DebugId::PreviewPlay => DebugControlKind::Button {
+            DebugId::PreviewPlay | DebugId::PreviewPlayAll => DebugControlKind::Button {
                 enabled: has_spaces,
             },
             DebugId::IgnoreWindows => DebugControlKind::Toggle {
@@ -261,6 +261,7 @@ impl App {
                 }
             }
             DebugId::PreviewPlay => self.play_preview(ui),
+            DebugId::PreviewPlayAll => self.play_preview_all(ui),
             DebugId::Takeover => {
                 if let DebugInput::Toggle(on) = input {
                     self.set_session_takeover(ui, on);
