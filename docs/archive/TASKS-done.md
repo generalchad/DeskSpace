@@ -2650,3 +2650,52 @@ until I5-I6 all land, so no partial build hides the desktop.
     tray has no "Debug…"; the window themes dark and light, resizes
     (the console grows), and stops at its minimum size; Tab moves
     between controls.
+
+- [x] **X6. Split the confirmation out of `delete_space` (app; pure
+  refactor).** In `app/files.rs`:
+  - `pub(super) enum StoredFiles { ToDesktop, ToRecycleBin }` with a
+    `///` doc on each.
+  - `delete_space(ui, id)` keeps the confirmation and then calls the new
+    `pub(super) fn delete_space_now(&mut self, ui, id, stored:
+    StoredFiles)`, which holds the rest of today's body unchanged. With
+    `ToRecycleBin` it first sends the space's stored files that still
+    exist (a pure `fn stored_paths(space: &Space, storage: &ItemStore) ->
+    Vec<PathBuf>`) to the Recycle Bin with `ui.delete_files(&paths,
+    false)`; if that returns false, it logs an `error`, refreshes and
+    saves the space, and returns, keeping it. Then the existing release
+    loop runs: `release_item` skips files that no longer exist, so it only
+    removes the items.
+  - Every existing caller keeps `ToDesktop` (through `delete_space`), so
+    nothing a user sees changes.
+  - Tests: `stored_paths` lists a stored item and skips one listed in
+    place (copy the fixtures in `files.rs`'s tests).
+  - Done when: the gates pass, and the test count only grows.
+
+- [x] **X7. Delete all spaces (app).** Needs X5 and X6.
+  **[needs human]**
+  - Control: `DeleteAllSpaces`, section Spaces, "Delete all spaces", a
+    `Button` enabled when there is at least one space.
+  - First, in `app/debug/mod.rs` (moved here from X5, which had no caller
+    for it, so it would have been dead code):
+    - `debug_confirm(ui, question) -> bool`: `ui.confirm("DeskSpace
+      Debug", ..)` with the question, a blank line, `Configuration:
+      <path>`, and, when `real_config`, a blank line and "This is your
+      real configuration, not a scratch --config." Test the text through a
+      pure `fn debug_question(question, path, real) -> String`.
+  - Handler: count the spaces, their items, and their stored files that
+    exist; ask with `debug_confirm` and the question from a pure `fn
+    delete_all_question(spaces, items, stored) -> String`: "Delete all
+    {spaces} spaces?" then a blank line and "They hold {items} items.
+    {stored} stored files go to the Recycle Bin; items shown in place
+    are only removed from their spaces." Then collect the ids first and
+    call `delete_space_now(ui, id, StoredFiles::ToRecycleBin)` for each.
+    Log how many were deleted and how many were kept.
+  - Tests: `delete_all_question`, including one space and no stored
+    files.
+  - **[needs human]** check: with three spaces holding dropped files and
+    one Shift-dropped file, "Delete all spaces" asks once with the right
+    counts and the scratch config's path; Cancel changes nothing; OK
+    plays each space's Delete animation; the dropped files are in the
+    Recycle Bin, the Shift-dropped file is where it was, and nothing new
+    is on the desktop. Then start without `--config` and check that the
+    warning line shows. Press Cancel there.

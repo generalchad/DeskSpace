@@ -4,13 +4,25 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, ItemId, SpaceId};
+use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
     CustomShortcut, DropAction, ShellItem, Ui, create_custom_shortcut, create_shortcut,
     desktop_directory, item_facts, notify_moved,
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
+use crate::storage::ItemStore;
+
+/// Where a deleted space's stored files go. Items listed in place are only
+/// unlisted either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StoredFiles {
+    /// Back to the desktop, as Delete space does (ROADMAP D3).
+    ToDesktop,
+    /// To the Recycle Bin, as the debug window's Delete all spaces does
+    /// (ROADMAP D14), so test files never pile up on the desktop.
+    ToRecycleBin,
+}
 
 impl App {
     /// Runs `add` on the space a drop on `surface` at `at` goes into: that
@@ -413,8 +425,36 @@ impl App {
                 return;
             }
         }
-        // Return stored files to the desktop before the space goes; if any
-        // cannot be moved, keep the space so its files stay reachable.
+        self.delete_space_now(ui, id, StoredFiles::ToDesktop);
+    }
+
+    /// Deletes space `id` without asking, sending its stored files where
+    /// `stored` says. If any cannot be moved, the space stays, so its files
+    /// stay reachable.
+    pub(super) fn delete_space_now(&mut self, ui: &mut Ui, id: SpaceId, stored: StoredFiles) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        if stored == StoredFiles::ToRecycleBin {
+            let paths = stored_paths(space, &self.storage);
+            let recycled = paths.is_empty()
+                || (ui.delete_files(&paths, false) && !paths.iter().any(|path| path.exists()));
+            if !recycled {
+                tracing::error!(
+                    space = space.title(),
+                    "space kept because its files could not be recycled"
+                );
+                self.refresh_space(ui, id);
+                self.save(ui);
+                return;
+            }
+        }
+        // Any stored files still here go back to the desktop before the
+        // space goes; recycled ones are gone, so `release_item` only unlists
+        // them.
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
         let items: Vec<ItemId> = space.items().iter().map(|item| item.id).collect();
         let kept = items
             .into_iter()
@@ -444,6 +484,17 @@ impl App {
             self.save(ui);
         }
     }
+}
+
+/// The stored files of `space` that still exist: what Delete all spaces
+/// sends to the Recycle Bin.
+pub(super) fn stored_paths(space: &Space, storage: &ItemStore) -> Vec<PathBuf> {
+    space
+        .items()
+        .iter()
+        .map(|item| item.path.clone())
+        .filter(|path| storage.contains(path) && path.exists())
+        .collect()
 }
 
 /// The confirmation for deleting one item, saying what happens to its file:
@@ -545,6 +596,35 @@ mod tests {
         let in_place = delete_item_question("Notes", false);
         assert!(in_place.contains("stays where it is"));
         assert!(!in_place.contains("Recycle Bin"));
+    }
+
+    #[test]
+    fn stored_paths_lists_stored_files_and_skips_items_in_place() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-stored-paths-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let stored = root.join("dropped.txt");
+        std::fs::write(&stored, "x").unwrap();
+        let in_place = std::env::current_exe().unwrap();
+        let mut desktop = deskspace_core::Desktop::default();
+        let space = crate::fixtures::create_space(
+            &mut desktop,
+            "S",
+            deskspace_core::Rect::new(0, 0, 300, 200),
+        );
+        crate::fixtures::add_item(&mut desktop, space, &stored.to_string_lossy());
+        crate::fixtures::add_item(&mut desktop, space, &in_place.to_string_lossy());
+        crate::fixtures::add_item(
+            &mut desktop,
+            space,
+            &root.join("gone.txt").to_string_lossy(),
+        );
+        let paths = stored_paths(desktop.space(space).unwrap(), &ItemStore::new(&root));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(paths, vec![stored]);
     }
 
     #[test]

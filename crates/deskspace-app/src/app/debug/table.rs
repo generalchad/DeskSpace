@@ -51,11 +51,18 @@ pub(crate) struct DebugRow {
 }
 
 /// Every debug control, in the order each section shows them.
-pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[DebugRow {
-    id: DebugId::SpacesVisible,
-    section: DebugSectionId::Windows,
-    label: "Show spaces",
-}];
+pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
+    DebugRow {
+        id: DebugId::SpacesVisible,
+        section: DebugSectionId::Windows,
+        label: "Show spaces",
+    },
+    DebugRow {
+        id: DebugId::DeleteAllSpaces,
+        section: DebugSectionId::Spaces,
+        label: "Delete all spaces",
+    },
+];
 
 #[cfg(test)]
 mod tests {

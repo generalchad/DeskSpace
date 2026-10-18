@@ -7,10 +7,11 @@
 #[repr(u32)]
 pub(crate) enum DebugId {
     SpacesVisible = 1,
+    DeleteAllSpaces = 2,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 1] = [Self::SpacesVisible];
+    pub(crate) const ALL: [Self; 2] = [Self::SpacesVisible, Self::DeleteAllSpaces];
 
     pub(crate) fn id(self) -> u32 {
         self as u32

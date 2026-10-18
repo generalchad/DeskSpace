@@ -8,12 +8,14 @@
 mod ids;
 mod table;
 
+use std::path::Path;
 use std::time::Instant;
 
 use deskspace_platform::{
     DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui,
 };
 
+use super::files::{StoredFiles, stored_paths};
 use super::{App, Timer};
 use crate::debug_log::DebugLog;
 use ids::DebugId;
@@ -116,6 +118,9 @@ impl App {
     fn debug_control(&self, id: DebugId) -> DebugControlKind {
         match id {
             DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
+            DebugId::DeleteAllSpaces => DebugControlKind::Button {
+                enabled: !self.config.desktop.spaces().is_empty(),
+            },
         }
     }
 
@@ -126,8 +131,48 @@ impl App {
                 self.set_visible(ui, on);
                 tracing::info!(visible = on, "debug: spaces shown or hidden");
             }
-            (DebugId::SpacesVisible, DebugInput::Press | DebugInput::Choose(_)) => {}
+            (DebugId::DeleteAllSpaces, DebugInput::Press) => self.delete_all_spaces(ui),
+            (DebugId::SpacesVisible, DebugInput::Press | DebugInput::Choose(_))
+            | (DebugId::DeleteAllSpaces, DebugInput::Toggle(_) | DebugInput::Choose(_)) => {}
         }
+    }
+
+    /// Asks `question` before a destructive debug action, naming the
+    /// configuration file and warning when it is the real one.
+    fn debug_confirm(&self, ui: &mut Ui, question: &str) -> bool {
+        let real = self.debug.as_ref().is_some_and(|tools| tools.real_config);
+        ui.confirm(
+            "DeskSpace Debug",
+            &debug_question(question, self.store.path(), real),
+        )
+    }
+
+    /// Delete all spaces (ROADMAP D14): every space goes as Delete space
+    /// would, but stored files go to the Recycle Bin instead of the desktop.
+    fn delete_all_spaces(&mut self, ui: &mut Ui) {
+        let spaces = self.config.desktop.spaces();
+        let items = spaces.iter().map(|space| space.items().len()).sum();
+        let stored = spaces
+            .iter()
+            .map(|space| stored_paths(space, &self.storage).len())
+            .sum();
+        let ids: Vec<_> = spaces.iter().map(|space| space.id).collect();
+        let question = delete_all_question(ids.len(), items, stored);
+        if !self.debug_confirm(ui, &question) {
+            return;
+        }
+        for id in &ids {
+            self.delete_space_now(ui, *id, StoredFiles::ToRecycleBin);
+        }
+        let kept = ids
+            .iter()
+            .filter(|id| self.config.desktop.space(**id).is_some())
+            .count();
+        tracing::info!(
+            deleted = ids.len() - kept,
+            kept,
+            "debug: deleted all spaces"
+        );
     }
 
     /// Sends the panel to the window when its values changed since the last
@@ -193,5 +238,73 @@ impl App {
             self.on_debug_control(ui, id, input);
         }
         self.push_debug_panel(ui);
+    }
+}
+
+/// A destructive action's question with the configuration file under it,
+/// and a warning when that is the real configuration.
+fn debug_question(question: &str, config: &Path, real: bool) -> String {
+    let mut text = format!("{question}\n\nConfiguration: {}", config.display());
+    if real {
+        text.push_str("\n\nThis is your real configuration, not a scratch --config.");
+    }
+    text
+}
+
+/// `count` and `noun`, plural unless `count` is 1.
+fn counted(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
+
+/// Delete all spaces' question: how many spaces and items go, and where the
+/// files go.
+fn delete_all_question(spaces: usize, items: usize, stored: usize) -> String {
+    let (ask, hold) = if spaces == 1 {
+        ("Delete the only space?".to_string(), "It holds")
+    } else {
+        (format!("Delete all {spaces} spaces?"), "They hold")
+    };
+    let go = if stored == 1 { "goes" } else { "go" };
+    format!(
+        "{ask}\n\n{hold} {}. {} {go} to the Recycle Bin; items shown in place \
+         are only removed from their spaces.",
+        counted(items, "item"),
+        counted(stored, "stored file"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_question_names_the_config_and_warns_when_it_is_real() {
+        let scratch = debug_question("Delete?", Path::new(r"C:\Temp\deskspace.toml"), false);
+        assert_eq!(
+            scratch,
+            "Delete?\n\nConfiguration: C:\\Temp\\deskspace.toml"
+        );
+        let real = debug_question("Delete?", Path::new(r"C:\Temp\deskspace.toml"), true);
+        assert!(real.starts_with(&scratch));
+        assert!(real.ends_with("This is your real configuration, not a scratch --config."));
+    }
+
+    #[test]
+    fn delete_all_says_how_many_and_where_files_go() {
+        assert_eq!(
+            delete_all_question(3, 12, 5),
+            "Delete all 3 spaces?\n\nThey hold 12 items. 5 stored files go to the \
+             Recycle Bin; items shown in place are only removed from their spaces."
+        );
+        assert_eq!(
+            delete_all_question(1, 1, 0),
+            "Delete the only space?\n\nIt holds 1 item. 0 stored files go to the \
+             Recycle Bin; items shown in place are only removed from their spaces."
+        );
+        assert!(delete_all_question(2, 2, 1).contains("1 stored file goes"));
     }
 }
