@@ -1,4 +1,4 @@
-use crate::ui::FieldValue;
+use crate::ui::{FieldValue, LogLevel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
@@ -224,6 +224,22 @@ pub enum SettingsEvent {
     Apply,
 }
 
+/// Input from the debug window (ROADMAP D14). Each `id` is a
+/// `DebugControl::id`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DebugEvent {
+    /// A `Button` was pressed.
+    Pressed { id: u32 },
+    /// A `Toggle` was turned on or off.
+    Toggled { id: u32, on: bool },
+    /// A `Choice` moved to option `index`.
+    Chose { id: u32, index: usize },
+    /// The console's Level box moved to `level`.
+    ConsoleLevel { level: LogLevel },
+    /// The window was closed; DeskSpace keeps running.
+    Closed,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// The runtime is ready; create space windows now.
@@ -237,6 +253,8 @@ pub enum Event {
     },
     Tray(TrayEvent),
     Settings(SettingsEvent),
+    /// Input from the debug window (`Ui::open_debug`).
+    Debug(DebugEvent),
     /// A key decoded while the app is capturing text for an inline rename (see
     /// `Ui::capture_text_input`).
     EditKey(crate::edit::EditKey),

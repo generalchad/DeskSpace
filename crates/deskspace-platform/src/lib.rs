@@ -8,17 +8,18 @@ mod win32;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
-    ClipboardAction, DropAction, Event, MouseButton, NavDir, NavKey, SelectionKey, SettingsEvent,
-    ShellItem, SpaceEvent, TrayEvent, ZoomAction,
+    ClipboardAction, DebugEvent, DropAction, Event, MouseButton, NavDir, NavKey, SelectionKey,
+    SettingsEvent, ShellItem, SpaceEvent, TrayEvent, ZoomAction,
 };
 pub use render::{
     Geometry, ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, Mask, Play, SpaceScene,
     SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box, item_check_box_hit,
 };
 pub use ui::{
-    CursorShape, CustomShortcut, Field, FieldKind, FieldValue, MenuEntry, PreviewItem,
-    SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup,
-    SettingsPage, SettingsScope, SettingsSwitch, ShortcutTarget, SliderMark, SpacePreview,
+    CursorShape, CustomShortcut, DebugControl, DebugControlKind, DebugPanel, DebugSection, Field,
+    FieldKind, FieldValue, LogLevel, LogLine, MenuEntry, PreviewItem, SettingsButton, SettingsForm,
+    SettingsHeader, SettingsNav, SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope,
+    SettingsSwitch, ShortcutTarget, SliderMark, SpacePreview,
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;

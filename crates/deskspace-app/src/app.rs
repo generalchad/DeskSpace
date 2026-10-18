@@ -620,6 +620,8 @@ impl EventHandler for App {
                 self.show_tray_menu(ui, Point::new(x, y));
             }
             Event::Settings(event) => self.on_settings_event(ui, event),
+            // TODO(X4): the debug window's events.
+            Event::Debug(_) => {}
             Event::Timer { id } => {
                 if let Some(timer) = Timer::from_id(id) {
                     self.on_timer(ui, timer);

@@ -2407,3 +2407,37 @@ until I5-I6 all land, so no partial build hides the desktop.
   check (with T17): Burn on Startup and Delete looks like burning paper
   on each backdrop, the flames rise past the frame without a box around
   them, reversing mid-burn un-burns, and nothing is left behind.
+
+- [x] **X1. The debug data types (platform; data only, no window).**
+  - `deskspace-platform/src/ui.rs`, each with a `///` doc:
+    - `enum LogLevel { Error, Warn, Info, Debug, Trace }` (`Copy`,
+      `PartialEq`, `Eq`, `Debug`), with `pub const ALL: [Self; 5]` in that
+      order and `pub fn label(self) -> &'static str` ("Error", "Warn",
+      "Info", "Debug", "Trace").
+    - `struct LogLine { seq: u64, millis: u64, level: LogLevel, target:
+      String, message: String }`, all `pub` (`Clone`, `Debug`,
+      `PartialEq`). `seq` counts from 1 and never repeats; `millis` is the
+      time since the process started.
+    - `struct DebugPanel { sections: Vec<DebugSection>, console_level:
+      LogLevel }`, `struct DebugSection { title: String, controls:
+      Vec<DebugControl> }`, `struct DebugControl { id: u32, label: String,
+      kind: DebugControlKind }`, and `enum DebugControlKind { Button {
+      enabled: bool }, Toggle { on: bool }, Choice { options: Vec<String>,
+      selected: usize }, Readout { text: String }, Table { columns:
+      Vec<String>, rows: Vec<Vec<String>> } }`. All `Clone`, `Debug`,
+      `PartialEq`.
+    - `DebugPanel::same_shape(&self, other) -> bool`: the same section
+      titles, and in each the same control ids, labels, and kind variants
+      (values may differ).
+  - `deskspace-platform/src/input.rs`: `enum DebugEvent { Pressed { id:
+    u32 }, Toggled { id: u32, on: bool }, Chose { id: u32, index: usize },
+    ConsoleLevel { level: LogLevel }, Closed }`, and the variant
+    `Event::Debug(DebugEvent)`, both with `///` docs.
+  - `lib.rs`: re-export the new types beside the other `ui` and `input`
+    ones.
+  - `deskspace-app/src/app.rs` `on_event`: the arm `Event::Debug(_) => {}`
+    with `// TODO(X4): the debug window's events.` above it.
+  - Tests in `ui.rs`: `LogLevel::ALL` labels are unique, and `same_shape`
+    is true for a changed value and false for a changed id, label, kind,
+    or section title.
+  - Done when: the gates pass. No docs change yet.

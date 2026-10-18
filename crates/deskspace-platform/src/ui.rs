@@ -525,6 +525,115 @@ impl SettingsForm {
     }
 }
 
+/// How severe a log line is, most severe first (ROADMAP D14).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    pub const ALL: [Self; 5] = [
+        Self::Error,
+        Self::Warn,
+        Self::Info,
+        Self::Debug,
+        Self::Trace,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Error => "Error",
+            Self::Warn => "Warn",
+            Self::Info => "Info",
+            Self::Debug => "Debug",
+            Self::Trace => "Trace",
+        }
+    }
+}
+
+/// One line of the debug window's log console.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LogLine {
+    /// Counts from 1 and never repeats, so a reader can ask for what is new.
+    pub seq: u64,
+    /// Milliseconds since the process started.
+    pub millis: u64,
+    pub level: LogLevel,
+    pub target: String,
+    pub message: String,
+}
+
+/// The debug window's contents (ROADMAP D14): sections of controls the app
+/// describes and the platform builds. Its shape is fixed for a session; only
+/// the values change.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DebugPanel {
+    pub sections: Vec<DebugSection>,
+    /// The level the console records at, shown in its Level box.
+    pub console_level: LogLevel,
+}
+
+/// One entry of the debug window's section list and the controls it shows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DebugSection {
+    pub title: String,
+    pub controls: Vec<DebugControl>,
+}
+
+/// One row of a debug section. `id` comes back in `DebugEvent`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DebugControl {
+    pub id: u32,
+    pub label: String,
+    pub kind: DebugControlKind,
+}
+
+/// What a debug control is, with its current value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DebugControlKind {
+    /// A push button captioned with the control's label.
+    Button {
+        enabled: bool,
+    },
+    Toggle {
+        on: bool,
+    },
+    Choice {
+        options: Vec<String>,
+        selected: usize,
+    },
+    /// Read-only text, one or more lines.
+    Readout {
+        text: String,
+    },
+    Table {
+        columns: Vec<String>,
+        rows: Vec<Vec<String>>,
+    },
+}
+
+impl DebugPanel {
+    /// Whether `other` has the same sections and controls (ids, labels, and
+    /// kinds) in the same order, so the window can update values in place
+    /// instead of rebuilding.
+    pub fn same_shape(&self, other: &Self) -> bool {
+        self.sections.len() == other.sections.len()
+            && self.sections.iter().zip(&other.sections).all(|(a, b)| {
+                a.title == b.title
+                    && a.controls.len() == b.controls.len()
+                    && a.controls.iter().zip(&b.controls).all(|(x, y)| {
+                        x.id == y.id
+                            && x.label == y.label
+                            && std::mem::discriminant(&x.kind) == std::mem::discriminant(&y.kind)
+                    })
+            })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,5 +802,38 @@ mod tests {
         });
         assert_eq!(settings.field(2).map(|f| f.label.as_str()), Some("hello"));
         assert!(settings.field(3).is_none());
+    }
+
+    #[test]
+    fn log_level_labels_are_unique() {
+        let labels: std::collections::HashSet<_> =
+            LogLevel::ALL.iter().map(|level| level.label()).collect();
+        assert_eq!(labels.len(), LogLevel::ALL.len());
+    }
+
+    fn panel(title: &str, id: u32, label: &str, kind: DebugControlKind) -> DebugPanel {
+        DebugPanel {
+            sections: vec![DebugSection {
+                title: title.into(),
+                controls: vec![DebugControl {
+                    id,
+                    label: label.into(),
+                    kind,
+                }],
+            }],
+            console_level: LogLevel::Debug,
+        }
+    }
+
+    #[test]
+    fn debug_same_shape_ignores_values_only() {
+        let toggle = |on| DebugControlKind::Toggle { on };
+        let a = panel("Windows", 1, "Show spaces", toggle(true));
+        assert!(a.same_shape(&panel("Windows", 1, "Show spaces", toggle(false))));
+        assert!(!a.same_shape(&panel("Windows", 2, "Show spaces", toggle(true))));
+        assert!(!a.same_shape(&panel("Windows", 1, "Hide spaces", toggle(true))));
+        assert!(!a.same_shape(&panel("Spaces", 1, "Show spaces", toggle(true))));
+        let button = DebugControlKind::Button { enabled: true };
+        assert!(!a.same_shape(&panel("Windows", 1, "Show spaces", button)));
     }
 }
