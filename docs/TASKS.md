@@ -12,8 +12,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section X, in order through X6 (X1-X3 and X6 need no screen), then any
-  task whose "Needs" have landed.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -684,13 +682,9 @@ same way:
 
 ## X. The debug window (ROADMAP D14, F-61)
 
-Read D14 first; it is the spec. Do X1-X6 in order, one commit each. After
-X6, the section tasks (X7-X20) can go in any order, except where a task
-says it needs another. Each task is small on purpose: do exactly what it
-lists, and if the code does not match what it names, stop and ask ("How to
-work a task", rule 4).
-
-Rules for every X task:
+Every planned task here is done (`archive/TASKS-done.md`); what remains
+are their on-screen checks in section V. D14 is the spec. These rules hold
+for any new debug control:
 
 1. **One way to change things.** An action calls the `App` method or sends
    the `Command` that the menus, settings, or drops already use. If none
@@ -700,21 +694,23 @@ Rules for every X task:
    toggle. Every toggle starts off, or reads the live state, on each run.
 3. **No undo entries.** Debug actions record none (D14), even after
    section U lands.
-4. **A control is three edits** (once X5 has landed): a `DebugId` variant
+4. **A control is three edits**: a `DebugId` variant
    (`app/debug/ids.rs`, the next free value, plus its `ALL` entry), a
    `DEBUG_CONTROLS` row (`app/debug/table.rs`: id, section, label), and an
    arm in both `App::debug_control` (what it shows now) and
    `App::on_debug_control` (what it does). The compiler and
    `every_control_has_one_row` point at whatever is missing.
 5. **Ask before anything destructive** with `self.debug_confirm(ui,
-   question)` (X7 adds it, as its first caller). It adds the config path and the real-config warning,
-   so a handler never writes those lines itself.
+   question)`. It adds the config path and the real-config warning, so a
+   handler never writes those lines itself.
 6. **Log what an action did** with one `tracing::info!` line starting
    `debug:` (for example `debug: deleted 4 spaces`), so the console shows
    it.
-7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --
-   --debug` (a scratch config) unless the check says otherwise. Each task
-   that has one adds its row to section V, named for the task.
+7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --debug`
+   (a scratch config) unless the check says otherwise, and add a row to
+   section V.
+8. **One file per section** in `app/debug/` holds its actions; `mod.rs`
+   keeps only the framework and the two routing matches.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
@@ -911,6 +907,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| F-61 extras | With `--debug`: the Spaces table follows moves, folds, locks, and renames within a second; "Clear the icon cache" redraws every icon without gaps; "Save now" writes the file at once; Input → "Log events" logs one line per click, key, wheel, and drop and none for pointer moves; Input → State follows a selection and a hover; each "Mark the log" adds the next numbered line; Simulate → "Windows Animation effects changed" re-reads the switch. |
 | X20 (F-61) | Debug → Simulate: "Windows theme changed" repaints the spaces and the settings window; "Explorer restarted" re-adds the tray icon and, with takeover on, re-hides Explorer's icons; with the config read-only, moving a space shows B29's one "could not save" box, and after Exit the file is writable again; "Crash now" with takeover on ends DeskSpace and the watchdog brings Explorer's icons back within a few seconds, and a debug build's console shows the panic line. |
 | X19 (F-61) | Debug → Takeover, with takeover on: the toggle off brings Explorer's icons back at once and they stay back past the 5-second health timer; on hides them and draws the layer; Re-sync picks up a file added to the Desktop folder; State shows the watchdog running while takeover is on; the saved config's `take_over_desktop` is unchanged afterwards. |
 | X18 (F-61) | Debug → Animations: every effect, played on a space at ¼×, leaves and comes back in place; pressing Play again mid-way turns it around; hiding the spaces from the tray mid-preview keeps them hidden; the other spaces and the model do not change. |

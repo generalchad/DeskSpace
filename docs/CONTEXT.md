@@ -872,6 +872,18 @@ in `ui.rs`. What spans them:
 - **Dark mode.** The app calls `Ui::set_ui_dark` with `Theme.ui_mode`
   resolved against Windows on start, on `SystemThemeChanged`, and while the
   choice is edited. The spaces follow their own `mode`.
+- **The debug window** (`--debug`, ROADMAP D14; `win32/debug_window/`,
+  `app/debug/`). Modeless and data-driven like settings: the app builds a
+  `DebugPanel` from `DEBUG_CONTROLS` and pushes it only when a value
+  changed (every second, `Timer::DebugRefresh`, and after each control).
+  Every section is built at once as a page inside a scrolled pane, so an
+  update never recreates controls. The console is a virtual list view over
+  the platform's `ConsoleModel`; the app feeds it from `debug_log.rs`'s
+  ring on `Timer::DebugLog`, a timer so a line logged while draining cannot
+  feed itself. Its actions call the paths the menus, settings, and drops
+  use, save nothing, and ask first (`debug_confirm`) when destructive. The
+  only state it adds outside `DebugTools` is the session-only
+  `AnimationTweak` and the takeover override in `LayerState`.
 
 ### Desktop shell, shell items, DPI, hotkeys
 

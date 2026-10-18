@@ -927,7 +927,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
-| F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Open; decided in D14 (`TASKS.md` section X) |
+| F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
 
 
 ## 8. Open questions
