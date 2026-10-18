@@ -14,6 +14,10 @@
 //! - Ctrl+Alt+Shift+T: toggle topmost.
 //! - Ctrl+Alt+Shift+Q: quit.
 //!
+//! Each demo rests fully out for a moment before coming back. F fades the
+//! whole window; G, M, and D leave the grey tint in place, so what should
+//! go is only the blur under it, leaving the background sharp.
+//!
 //! Found while building it: `CompositionMaskBrush` refuses a host backdrop
 //! brush as its source ("Unsupported source brush type"), so G sweeps thin
 //! strips of backdrop at graded opacities. M is the way T13 chose to mask
@@ -84,6 +88,10 @@ mod spike {
     const TIMER: usize = 1;
     /// Each demo runs out for this many ticks and back for as many.
     const HALF_TICKS: u32 = 60;
+    /// Ticks it rests fully out in between, long enough to see that the
+    /// blur is gone.
+    const HOLD_TICKS: u32 = 45;
+    const TOTAL_TICKS: u32 = 2 * HALF_TICKS + HOLD_TICKS;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Demo {
@@ -91,6 +99,24 @@ mod spike {
         Sweep,
         MaskedSweep,
         Dissolve,
+    }
+
+    /// Which of the three copies of the backdrop shows.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Backdrop {
+        Strips,
+        Masked,
+        Cells,
+    }
+
+    impl Demo {
+        fn backdrop(self) -> Backdrop {
+            match self {
+                Demo::Fade | Demo::Sweep => Backdrop::Strips,
+                Demo::MaskedSweep => Backdrop::Masked,
+                Demo::Dissolve => Backdrop::Cells,
+            }
+        }
     }
 
     /// The backdrop masked by an effect graph, for MaskedSweep.
@@ -440,13 +466,7 @@ mod spike {
                 b'Q' => return unsafe { PostQuitMessage(0) },
                 _ => return,
             };
-            let _ = spike.cells.SetIsVisible(demo == Demo::Dissolve);
-            let _ = spike
-                .strips
-                .SetIsVisible(matches!(demo, Demo::Fade | Demo::Sweep));
-            if let Some(masked) = &spike.masked {
-                let _ = masked.sprite.SetIsVisible(demo == Demo::MaskedSweep);
-            }
+            let _ = show_backdrop(spike, demo.backdrop());
             spike.running = Some((demo, 0));
             // SAFETY: a timer on our own window.
             unsafe {
@@ -464,15 +484,12 @@ mod spike {
             let Some((demo, tick)) = spike.running else {
                 return;
             };
-            // 1 shown, 0 gone: out for HALF_TICKS, back for as many.
-            let shown = if tick < HALF_TICKS {
-                1.0 - tick as f32 / HALF_TICKS as f32
-            } else {
-                (tick - HALF_TICKS) as f32 / HALF_TICKS as f32
-            };
-            let _ = step(spike, demo, shown);
-            if tick >= 2 * HALF_TICKS {
+            let _ = step(spike, demo, shown(tick));
+            if tick >= TOTAL_TICKS {
                 spike.running = None;
+                // Back to the strips, so the cells' or the effect's look
+                // shows only while its own demo plays.
+                let _ = show_backdrop(spike, Backdrop::Strips);
                 // SAFETY: our own window's timer.
                 unsafe {
                     let _ = KillTimer(Some(spike.window), TIMER);
@@ -481,6 +498,27 @@ mod spike {
                 spike.running = Some((demo, tick + 1));
             }
         });
+    }
+
+    /// 1 shown, 0 gone: out for `HALF_TICKS`, gone for `HOLD_TICKS`, then
+    /// back for `HALF_TICKS`.
+    fn shown(tick: u32) -> f32 {
+        if tick < HALF_TICKS {
+            1.0 - tick as f32 / HALF_TICKS as f32
+        } else if tick < HALF_TICKS + HOLD_TICKS {
+            0.0
+        } else {
+            ((tick - HALF_TICKS - HOLD_TICKS) as f32 / HALF_TICKS as f32).min(1.0)
+        }
+    }
+
+    fn show_backdrop(spike: &Spike, backdrop: Backdrop) -> Result<()> {
+        spike.strips.SetIsVisible(backdrop == Backdrop::Strips)?;
+        spike.cells.SetIsVisible(backdrop == Backdrop::Cells)?;
+        if let Some(masked) = &spike.masked {
+            masked.sprite.SetIsVisible(backdrop == Backdrop::Masked)?;
+        }
+        Ok(())
     }
 
     fn step(spike: &Spike, demo: Demo, shown: f32) -> Result<()> {

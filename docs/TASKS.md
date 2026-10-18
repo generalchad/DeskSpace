@@ -534,13 +534,23 @@ a new module.
     noise surface drawn by Direct2D, its threshold stepped by a timer; T
     toggles topmost. Add the `windows` features it needs to
     `deskspace-platform` only; `cargo deny check all` must still pass.
-  - Check (maintainer), over a high-contrast window, on Windows 11 and on
-    Windows 10: the blur shows while the window has never been activated
-    and while another app is focused; F, G, and D fade, sweep, and dissolve
-    the blur itself, not only the tint; the rounded clip is anti-aliased;
-    and what shows with "Transparency effects" off, with Energy Saver on,
-    after Win+D, and on a 150 % monitor. Compare it with an Acrylic space
-    beside it: how close are the two materials? Note the idle CPU and GPU.
+  - Findings so far (2026-10-18, maintainer, Windows 11 build 26300): the
+    blur shows at once on a window that is never activated; the rounded
+    clip is smooth; the window stays after Win+D; idle CPU reads 0.00 %.
+    With "Transparency effects" off, the blur stays, so T12 must decide
+    what a composition space shows then (match what an accent space shows
+    today). The demos "never fully disappeared" and Dissolve "got stuck
+    pixelated": the spike held the gone state for one frame only, and
+    left the backdrop split into cells after Dissolve, whose seams look
+    tiled (one more mark against strips and cells). Both are fixed (a hold
+    at gone, and the strips come back after each demo), and the doc
+    comment now says the tint stays in G, M, and D.
+  - Still to check (maintainer): with the fixed spike, F, G, M, and D take
+    the blur itself fully away and back, leaving the background sharp
+    under the tint; M's edge is smooth, with no bands; Dissolve's cells
+    show seams even at full. Energy Saver on, a 150 % monitor, and
+    Windows 10. Beside an Acrylic space: how close are the two materials,
+    and do they differ with "Transparency effects" off? Idle GPU.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
