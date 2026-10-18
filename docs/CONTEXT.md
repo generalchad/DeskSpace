@@ -366,7 +366,7 @@ pure layout and hit test), and `d2d/` (the painters). Everything with
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
-| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
+| Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
 | Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
@@ -540,6 +540,20 @@ one arm in `App::on_event`, whose match is exhaustive.
   the accent after a blur turned the space black until it was recreated. The
   documented `DWMWA_SYSTEMBACKDROP_TYPE` was tried first and does not work:
   system backdrops render only on active windows.
+- **Composition** (`win32/composition.rs`, ROADMAP D12, TASKS T12): on
+  Windows 11 a top-level space is made with `WS_EX_NOREDIRECTIONBITMAP`
+  and shows a visual tree instead of the accent blur: a root clipped to the
+  space's corners, a sprite with the host backdrop brush (shown for Acrylic
+  and Blur; `DWMWA_USE_HOSTBACKDROPBRUSH`), and a sprite showing the drawing
+  surface the painter draws into. The rest of `dwm::apply_style` (corners,
+  border, dark mode) applies as before. `composition::start` decides once,
+  at startup, and logs it: Windows 10, "Transparency effects" off (the host
+  backdrop ignores the switch, T1), desktop-hosted or click-through spaces,
+  and a failure to start keep the accent blur, and the desktop layer always
+  does; a window whose tree cannot be built is made again with it. The
+  compositor and its devices are per thread, released in the teardown
+  before `OleUninitialize`. The blur still fills the whole window, so
+  animations show it as the accent blur does until T13 masks it.
 - **Desktop-hosted placement** (`--placement desktop-*`, a visible CLI option
   with no config setting since the "Keep spaces on the desktop" toggle was
   removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
@@ -790,15 +804,21 @@ one arm in `App::on_event`, whose match is exhaustive.
   (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
   through WIC (`d2d::decode_icon`, which applies a legacy icon's AND mask) and
   destroy it at once, so scenes never point at freed handles.
-- `Painter` owns an `ID2D1HwndRenderTarget` (premultiplied alpha, 96 DPI so
-  one DIP is one pixel), a brush, and a per-target bitmap cache keyed by
-  `Icon::id`, pruned to the current scene's icons on every scene. The render
-  target and brush live in a `HwndCanvas` (`d2d/canvas.rs`) every window
-  painter shares; the factories and text formats are shared per thread
-  (`Graphics`, released in the runtime teardown). `D2DERR_RECREATE_TARGET`
-  drops device resources and invalidates the window, so the next paint
-  recreates them; without that, the lost frame left the window blank until
-  a click repainted it.
+- `Painter` draws on a `Canvas` (`d2d/canvas.rs`; premultiplied alpha, 96
+  DPI so one DIP is one pixel) with a brush and a per-target bitmap cache
+  keyed by `Icon::id`, pruned to the current scene's icons on every scene.
+  The canvas is the window's own `ID2D1HwndRenderTarget` (`HwndCanvas`,
+  which the zoom pop-up uses too), or a composition space's drawing
+  surface (`SurfaceCanvas`), whose Direct2D context exists only during a
+  draw and sits at an offset in a shared atlas, so the painter draws
+  relative to the origin the canvas gives it. The factories and text
+  formats are shared per thread (`Graphics`, released in the runtime
+  teardown). A lost device (`D2DERR_RECREATE_TARGET`, or the Direct3D
+  device under a surface removed or reset) drops device resources and
+  invalidates the window, so the next paint recreates them; without that,
+  the lost frame left the window blank until a click repainted it. The
+  first surface to find its device lost gives the composition graphics
+  device a new one, and every space repaints (`runtime::invalidate_spaces`).
 - Text uses DirectWrite (Segoe UI Variable Text when installed; the lock glyph
   from Segoe Fluent Icons or MDL2): grayscale antialiasing on translucent
   surfaces and ClearType on opaque ones, ellipsis trimming, one or two wrapped

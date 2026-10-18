@@ -1,10 +1,10 @@
 //! Direct2D + DirectWrite painter for space windows.
 //!
-//! Each space window owns a `Painter` with an `ID2D1HwndRenderTarget` using
-//! premultiplied alpha. Because the window's frame is extended over the whole
-//! client area (`dwm::apply_style`), DWM composites those alpha values over the
-//! blur material: transparent pixels show the acrylic/blur material and the
-//! tint is laid on top of it.
+//! Each space window owns a `Painter` that draws with premultiplied alpha,
+//! on an `ID2D1HwndRenderTarget` or on the composition drawing surface the
+//! window shows (`canvas.rs`). Either way the window's pixels are composited
+//! over the blur material: transparent pixels show the acrylic/blur material
+//! and the tint is laid on top of it.
 //! https://learn.microsoft.com/en-us/windows/win32/direct2d/supported-pixel-formats-and-alpha-modes
 
 mod bitmap;
@@ -25,6 +25,7 @@ use std::rc::Rc;
 
 use deskspace_core::geometry::Rect;
 use deskspace_core::theme::{Color, EditColors, LABEL_SIZE_RANGE};
+use windows::UI::Composition::{CompositionDrawingSurface, CompositionGraphicsDevice};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
@@ -37,7 +38,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
-    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Factory,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Device, ID2D1Factory,
     ID2D1HwndRenderTarget, ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
@@ -51,6 +52,7 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
+use windows::Win32::Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, EndPaint, HBITMAP, HPALETTE, InvalidateRect, PAINTSTRUCT,
 };
@@ -71,7 +73,7 @@ use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
 use crate::render::transition::TransitionFrame;
 
 use bitmap::to_icon;
-use canvas::HwndCanvas;
+use canvas::{Canvas, HwndCanvas, SurfaceCanvas};
 use edit::draw_edit_title;
 use effects::Effects;
 use geometry::{color_f, draw_text, fill_rounded, inset, rect_f, to_rect_f};
@@ -96,6 +98,24 @@ const LOCK_GLYPH: &[u16] = &[0xE72E];
 /// resource must be recreated.
 /// https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-error-codes
 const D2DERR_RECREATE_TARGET: HRESULT = HRESULT(0x8899_000C_u32 as i32);
+
+/// A new Direct2D device for composition drawing surfaces (`Painter::on_surface`),
+/// from the shared factory.
+pub(crate) fn create_device() -> Result<ID2D1Device, PlatformError> {
+    graphics()?.create_device()
+}
+
+/// Whether `code` means the device is gone, and every device resource with
+/// it: Direct2D's own error, or the Direct3D device under a composition
+/// surface removed or reset.
+fn is_device_lost(code: HRESULT) -> bool {
+    [
+        D2DERR_RECREATE_TARGET,
+        DXGI_ERROR_DEVICE_REMOVED,
+        DXGI_ERROR_DEVICE_RESET,
+    ]
+    .contains(&code)
+}
 
 /// Releases the shared factories. Must run before `CoUninitialize`, because
 /// thread-local destructors would otherwise release COM objects after COM is
@@ -156,7 +176,7 @@ impl PreparedScene {
 
 #[derive(Default)]
 pub struct Painter {
-    canvas: HwndCanvas,
+    canvas: Canvas,
     /// GPU copies of `Icon`s, keyed by `Icon::id`.
     icons: HashMap<u64, ID2D1Bitmap>,
     /// What an animation's frames are drawn with.
@@ -166,6 +186,19 @@ pub struct Painter {
 impl Painter {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A painter that draws into `surface`, the composition drawing surface
+    /// its window shows (`win32::composition`), made on `device`, instead of
+    /// the window.
+    pub(crate) fn on_surface(
+        surface: &CompositionDrawingSurface,
+        device: &CompositionGraphicsDevice,
+    ) -> Result<Self, PlatformError> {
+        Ok(Self {
+            canvas: Canvas::Surface(SurfaceCanvas::new(surface, device)?),
+            ..Self::default()
+        })
     }
 
     /// Paints `scene` in response to `WM_PAINT`, through `transition`'s
@@ -192,6 +225,8 @@ impl Painter {
         result
     }
 
+    /// Renders, and starts over with new device resources when the device
+    /// was lost.
     fn render(
         &mut self,
         hwnd: HWND,
@@ -199,11 +234,28 @@ impl Painter {
         frame: PaintFrame,
         transition: Option<&TransitionFrame>,
     ) -> Result<(), PlatformError> {
+        match self.draw(hwnd, prepared, frame, transition) {
+            Err(PlatformError::Win32(error)) if is_device_lost(error.code()) => {
+                tracing::debug!("direct2d device lost; recreating on next paint");
+                self.release_device_resources(hwnd);
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    fn draw(
+        &mut self,
+        hwnd: HWND,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        transition: Option<&TransitionFrame>,
+    ) -> Result<(), PlatformError> {
         let graphics = graphics()?;
-        let (target, brush) = self.canvas.ensure(&graphics, hwnd)?;
+        let (resources, brush) = self.canvas.ensure(&graphics, hwnd)?;
         let ctx = DrawContext {
             graphics: &graphics,
-            target: &target,
+            target: &resources,
             brush: &brush,
         };
         let scene = &prepared.scene;
@@ -228,19 +280,25 @@ impl Painter {
             _ => None,
         };
         let layer = match transition {
-            Some(_) => Some(self.effects.layer(&target)?),
+            Some(_) => Some(self.effects.layer(&resources)?),
             None => None,
         };
         let mask = match transition {
-            Some(transition) => self.effects.mask_brush(&target, transition.mask, size)?,
+            Some(transition) => self.effects.mask_brush(&resources, transition.mask, size)?,
             None => None,
         };
         let burn_marks = transition.and_then(|transition| self.effects.burn_marks(transition.mask));
 
+        let (target, origin) = self.canvas.begin()?;
+        let ctx = DrawContext {
+            target: &target,
+            ..ctx
+        };
+        let at = |offset: Vector2| Matrix3x2::translation(origin.X + offset.X, origin.Y + offset.Y);
         // SAFETY: all calls are on live COM objects owned by this painter,
-        // between BeginDraw and EndDraw on the UI thread.
-        let end = unsafe {
-            target.BeginDraw();
+        // between the canvas's begin and end on the UI thread.
+        unsafe {
+            target.SetTransform(&at(Vector2::zero()));
             if frame.opaque {
                 target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
                 target.Clear(Some(&color_f(scene.tint.with_alpha(255))));
@@ -253,7 +311,7 @@ impl Painter {
             match (transition, layer) {
                 (Some(transition), Some(layer)) => {
                     let offset = transition.content_offset;
-                    target.SetTransform(&Matrix3x2::translation(offset.x as f32, offset.y as f32));
+                    target.SetTransform(&at(Vector2::new(offset.x as f32, offset.y as f32)));
                     effects::with_layer(&target, &layer, transition.opacity, mask, || {
                         match &pixelated {
                             Some((bitmap, source)) => target.DrawBitmap(
@@ -281,21 +339,11 @@ impl Painter {
                         brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
                         target.FillRectangle(&whole, &brush);
                     }
-                    target.SetTransform(&Matrix3x2::identity());
                 }
                 _ => self.draw_scene(ctx, prepared, frame, size),
             }
-            target.EndDraw(None, None)
-        };
-        if let Err(error) = end {
-            if error.code() == D2DERR_RECREATE_TARGET {
-                tracing::debug!("direct2d target lost; recreating on next paint");
-                self.release_device_resources(hwnd);
-                return Ok(());
-            }
-            return Err(error.into());
         }
-        Ok(())
+        Ok(self.canvas.end()?)
     }
 
     /// Draws the scene at 1 / `block` of `size` on Pixelate's offscreen

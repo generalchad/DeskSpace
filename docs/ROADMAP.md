@@ -369,7 +369,11 @@ A native, lightweight, offline Windows desktop organizer that:
     (`TASKS.md` T1), because spaces are never activated. Until it lands,
     and wherever it is not available (Windows 10, or when composition fails
     to start), spaces keep the accent blur: it appears at the start of an
-    "in" and goes at the end of an "out", in one step. Clear and Solid
+    "in" and goes at the end of an "out", in one step. The host backdrop
+    ignores Windows' "Transparency effects" switch (T1), so with the switch
+    off when DeskSpace starts, spaces keep the accent blur too, and a
+    change while it runs applies at the next start (amended 2026-10-18,
+    maintainer). Clear and Solid
     spaces have no blur, so they animate fully either way.
   - *Fold, not roll-up:* "roll up" read like a kind of hiding, so a space
     collapsed to its title bar is now **folded**, and the menu says "Fold"

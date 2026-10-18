@@ -3,6 +3,7 @@ mod app_picker;
 pub(crate) mod autostart;
 mod clipboard;
 mod color_picker;
+mod composition;
 mod console;
 mod controller;
 mod dark_mode;

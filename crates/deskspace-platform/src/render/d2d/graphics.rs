@@ -1,6 +1,17 @@
 //! Shared Direct2D, DirectWrite, and WIC factories and the text formats
 //! built from them, cached per UI thread.
 
+use windows::Win32::Foundation::{E_POINTER, HMODULE};
+use windows::Win32::Graphics::Direct2D::ID2D1Factory1;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP,
+};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
+};
+use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+use windows::core::Interface;
+
 use super::*;
 
 /// Device-independent resources shared by every painter on the UI thread.
@@ -137,6 +148,20 @@ impl Graphics {
         }
     }
 
+    /// A Direct2D device over a new Direct3D 11 device, for composition
+    /// drawing surfaces. It comes from this factory, as every resource the
+    /// painters draw with must. The hardware device, else WARP (the
+    /// software rasterizer), as when no GPU driver is installed.
+    /// https://learn.microsoft.com/en-us/windows/win32/direct2d/devices-and-device-contexts
+    pub(super) fn create_device(&self) -> Result<ID2D1Device, PlatformError> {
+        let factory: ID2D1Factory1 = self.d2d.cast()?;
+        let d3d = create_d3d_device(D3D_DRIVER_TYPE_HARDWARE)
+            .or_else(|_| create_d3d_device(D3D_DRIVER_TYPE_WARP))?;
+        let dxgi: IDXGIDevice = d3d.cast()?;
+        // SAFETY: `dxgi` is a live device made for Direct2D (BGRA support).
+        Ok(unsafe { factory.CreateDevice(&dxgi)? })
+    }
+
     /// The label format for a size percent, rounded to the nearest cached
     /// step, falling back to the default size.
     pub(super) fn label_format_for(&self, scale: u8) -> IDWriteTextFormat {
@@ -146,6 +171,26 @@ impl Graphics {
             .unwrap_or(&self.label_format)
             .clone()
     }
+}
+
+/// Direct2D draws only on a Direct3D device made with BGRA support.
+fn create_d3d_device(driver: D3D_DRIVER_TYPE) -> windows::core::Result<ID3D11Device> {
+    let mut device = None;
+    // SAFETY: the out-pointer is a valid local; no adapter or module.
+    unsafe {
+        D3D11CreateDevice(
+            None,
+            driver,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&mut device),
+            None,
+            None,
+        )?;
+    }
+    device.ok_or_else(|| E_POINTER.into())
 }
 
 fn character_trimming() -> DWRITE_TRIMMING {

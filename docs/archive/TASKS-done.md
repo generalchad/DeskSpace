@@ -2965,3 +2965,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     after Exit the file is writable again; "Crash now" with takeover on
     ends DeskSpace and the watchdog brings Explorer's icons back within a
     few seconds, and a debug build's console shows the panic line.
+- [x] **T12. Composition device and space tree (platform).** **[needs
+  decision]** until T1's findings are recorded, then **[needs human]**.
+  - `win32/composition.rs`: one per UI thread, released in the runtime
+    teardown before `OleUninitialize`, as `Graphics` is: a
+    `DispatcherQueueController`, the `Compositor`, a Direct3D 11 and
+    Direct2D device, and a `CompositionGraphicsDevice`, recreated on device
+    loss.
+  - A top-level space window gets `WS_EX_NOREDIRECTIONBITMAP` and a
+    desktop window target: a root visual (the corner clip), a backdrop
+    sprite (the host backdrop brush for Acrylic and Blur, nothing for Clear
+    and Solid), and a content sprite whose `CompositionDrawingSurface` the
+    painter draws into. Split the painter from `HwndCanvas` first if the
+    drawing code needs it, as its own commit.
+  - The accent policy stays for Windows 10, desktop-hosted spaces, the
+    desktop layer, and any failure to start composition, chosen once at
+    startup and logged.
+  - **[needs human]** check: the R3 list passes unchanged on Windows 11
+    with each backdrop, and on Windows 10 nothing changes at all.

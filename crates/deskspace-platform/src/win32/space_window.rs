@@ -2,7 +2,8 @@
 //!
 //! Top-level spaces are `WS_POPUP` windows kept at the bottom of the z-order,
 //! styled by DWM (`dwm::apply_style`) with the Windows 11 backdrop and rounded
-//! corners, and painted with per-pixel alpha by `render::d2d::Painter`.
+//! corners, and painted with per-pixel alpha by `render::d2d::Painter`. Where
+//! composition runs, they show a visual tree instead (`composition`).
 //!
 //! Desktop-hosted spaces are `WS_CHILD` windows of the desktop's Progman or
 //! WorkerW. Child windows get neither DWM backdrops nor composited alpha, so
@@ -23,17 +24,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GW_HWNDPREV, GWL_EXSTYLE, GetClientRect,
-    GetParent, GetWindow, GetWindowLongW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_NOTOPMOST,
-    HWND_TOP, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GW_HWNDPREV, GWL_EXSTYLE,
+    GetClientRect, GetParent, GetWindow, GetWindowLongW, GetWindowRect, HTCLIENT, HWND_BOTTOM,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE,
+    IDC_SIZEWE, KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes,
     SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY,
     WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
     WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
     WM_TIMER, WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -41,6 +42,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
+use crate::win32::composition::SpaceVisuals;
 use crate::win32::space_animation::{self, Animation};
 use crate::win32::system::{hiword, loword};
 use crate::win32::window_class::{self, WindowClass};
@@ -71,6 +73,9 @@ pub(crate) struct SpaceWindowOptions {
     pub click_through: bool,
     pub on_top: bool,
     pub visible: bool,
+    /// Blur through composition rather than the accent policy; top-level
+    /// spaces only, and only once `composition::start` said so.
+    pub composition: bool,
 }
 
 pub(super) struct SpaceState {
@@ -89,6 +94,8 @@ pub(super) struct SpaceState {
     cursor: CursorShape,
     /// The animation playing on the window, if any (`space_animation`).
     pub(super) animation: Option<Animation>,
+    /// The window's visual tree, when composition gives it its blur.
+    visuals: Option<SpaceVisuals>,
 }
 
 pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -104,6 +111,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         tracking_leave: false,
         cursor: CursorShape::Arrow,
         animation: None,
+        visuals: None,
     }));
 
     // An OLE drop target (registered below) makes the space accept file drags
@@ -111,6 +119,10 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
     let mut ex_style: WINDOW_EX_STYLE = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
     if options.on_top {
         ex_style |= WS_EX_TOPMOST;
+    }
+    if options.composition {
+        // The visual tree is the window's only content.
+        ex_style |= WS_EX_NOREDIRECTIONBITMAP;
     }
     if options.click_through {
         // WS_EX_TRANSPARENT only makes a window click-through when it is also
@@ -151,8 +163,20 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
             let _ = SetLayeredWindowAttributes(hwnd, Default::default(), 255, LWA_ALPHA);
         }
         update_region(hwnd);
+        if options.composition
+            && let Err(error) = attach_visuals(hwnd, options.style)
+        {
+            // Without its tree the window shows nothing at all, so it is
+            // made again with the accent blur.
+            tracing::warn!(%error, "space composition failed; using the accent blur");
+            let _ = DestroyWindow(hwnd);
+            return create(SpaceWindowOptions {
+                composition: false,
+                ..options
+            });
+        }
         if !hosted {
-            dwm::apply_style(hwnd, options.style);
+            dwm::apply_style(hwnd, options.style, material(options.composition));
             let _ = SetWindowPos(
                 hwnd,
                 Some(if options.on_top {
@@ -174,6 +198,32 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
             tracing::warn!(%error, "space will not accept dropped files");
         }
         Ok(hwnd)
+    }
+}
+
+/// Builds `hwnd`'s visual tree and points its painter at the tree's surface.
+///
+/// # Safety
+/// `hwnd` is a live space window made with `WS_EX_NOREDIRECTIONBITMAP`.
+unsafe fn attach_visuals(hwnd: HWND, style: SpaceStyle) -> Result<(), PlatformError> {
+    // SAFETY: the caller's contract.
+    let visuals = unsafe { SpaceVisuals::create(hwnd, style)? };
+    let painter = visuals.painter()?;
+    // SAFETY: the borrow does not re-enter.
+    unsafe {
+        with_state(hwnd, |state| {
+            state.painter = Some(painter);
+            state.visuals = Some(visuals);
+        })
+    };
+    Ok(())
+}
+
+fn material(composition: bool) -> dwm::Material {
+    if composition {
+        dwm::Material::Composition
+    } else {
+        dwm::Material::Accent
     }
 }
 
@@ -347,21 +397,27 @@ fn apply_cursor(shape: CursorShape) {
 }
 
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
-    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
-    let Some(Some(hosted)) = (unsafe {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
+    // (composition property changes send no window messages).
+    let Some(Some((hosted, composition))) = (unsafe {
         with_state(hwnd, |state| {
             if state.style == style {
                 return None;
             }
             state.style = style;
             state.frame = Frame::for_style(style, state.hosted);
-            Some(state.hosted)
+            if let Some(visuals) = &state.visuals
+                && let Err(error) = visuals.set_style(style)
+            {
+                tracing::warn!(%error, "space composition not restyled");
+            }
+            Some((state.hosted, state.visuals.is_some()))
         })
     }) else {
         return;
     };
     if !hosted {
-        dwm::apply_style(hwnd, style);
+        dwm::apply_style(hwnd, style, material(composition));
     }
     // SAFETY: `hwnd` is a live space window.
     unsafe {
@@ -422,6 +478,19 @@ fn ensure_class() -> Result<(), PlatformError> {
             .style(CS_DBLCLKS)
             .arrow_cursor(),
     )
+}
+
+/// Sizes the window's visual tree, if it has one, to its new client area.
+unsafe fn fit_visuals(hwnd: HWND) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
+    let fitted = unsafe {
+        with_state(hwnd, |state| {
+            state.visuals.as_ref().map(|visuals| visuals.fit(hwnd))
+        })
+    };
+    if let Some(Some(Err(error))) = fitted {
+        tracing::warn!(%error, "space composition not resized");
+    }
 }
 
 /// Applies the frame's rounded window region, or removes it.
@@ -748,6 +817,7 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_SIZE => {
+                fit_visuals(window);
                 update_region(window);
                 let _ = InvalidateRect(Some(window), None, false);
                 LRESULT(0)

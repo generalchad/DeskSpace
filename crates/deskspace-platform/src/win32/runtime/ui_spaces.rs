@@ -11,11 +11,12 @@ impl Ui {
         rect: Rect,
         style: SpaceStyle,
     ) -> Result<(), PlatformError> {
-        let Some((host, click_through, on_top, exists)) = with_runtime(|runtime| {
+        let Some((host, click_through, on_top, composition, exists)) = with_runtime(|runtime| {
             (
                 runtime.host,
                 runtime.click_through,
                 runtime.on_top,
+                runtime.composition,
                 runtime.spaces.contains_key(&id),
             )
         }) else {
@@ -32,6 +33,7 @@ impl Ui {
             click_through,
             on_top,
             visible: false,
+            composition,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.spaces.insert(id, hwnd));
@@ -179,6 +181,8 @@ impl Ui {
             click_through,
             on_top,
             visible: true,
+            // The layer never animates, so it keeps the accent blur (T12).
+            composition: false,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.layer = Some(hwnd));

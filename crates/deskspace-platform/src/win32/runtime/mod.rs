@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
-use windows::Win32::Graphics::Gdi::MapWindowPoints;
+use windows::Win32::Graphics::Gdi::{InvalidateRect, MapWindowPoints};
 use windows::Win32::System::Ole::{OleInitialize, OleUninitialize};
 use windows::Win32::UI::Controls::{
     ICC_BAR_CLASSES, ICC_STANDARD_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX,
@@ -51,9 +51,10 @@ use crate::win32::info_tip::{self, InfoTip};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    clipboard, console, controller, dark_mode, debug_window, desktop_icons, desktop_shell,
-    drop_target, file_op, folder_watch, menu, messages, outside_click, settings_window,
-    shell_selection, shell_view, space_animation, space_window, tray, watchdog, zoom_bar,
+    clipboard, composition, console, controller, dark_mode, debug_window, desktop_icons,
+    desktop_shell, drop_target, file_op, folder_watch, menu, messages, outside_click,
+    settings_window, shell_selection, shell_view, space_animation, space_window, tray, watchdog,
+    zoom_bar,
 };
 
 pub trait EventHandler {
@@ -78,6 +79,9 @@ struct Runtime {
     host: Option<HWND>,
     click_through: bool,
     on_top: bool,
+    /// Top-level spaces get their blur through composition, as decided at
+    /// startup (`composition::start`).
+    composition: bool,
     spaces_visible: bool,
     spaces: HashMap<u64, HWND>,
     /// Windows of deleted spaces still playing their Delete animation
@@ -232,6 +236,23 @@ pub(crate) fn debug_closed(window: HWND) {
     });
 }
 
+/// Paints every space window again, the dying ones too: their composition
+/// surfaces lost their content with the device that drew it.
+pub(crate) fn invalidate_spaces() {
+    let windows = with_runtime(|runtime| {
+        let mut windows: Vec<HWND> = runtime.spaces.values().copied().collect();
+        windows.extend(&runtime.dying);
+        windows
+    })
+    .unwrap_or_default();
+    for window in windows {
+        // SAFETY: a live window of this runtime; invalidating sends nothing.
+        unsafe {
+            let _ = InvalidateRect(Some(window), None, false);
+        }
+    }
+}
+
 /// Forgets a dying window that has destroyed itself (`space_animation`).
 pub(crate) fn forget_dying(window: HWND) {
     with_runtime(|runtime| runtime.dying.retain(|dying| *dying != window));
@@ -351,6 +372,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
         tracing::warn!("no desktop host window found; spaces will be top-level windows");
     }
 
+    let composition = composition::start(host.is_some(), options.click_through);
     let controller = controller::create()?;
     RUNTIME.with(|cell| {
         *cell.borrow_mut() = Some(Runtime {
@@ -360,6 +382,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             host,
             click_through: options.click_through,
             on_top: options.on_top,
+            composition,
             spaces_visible: true,
             spaces: HashMap::new(),
             dying: Vec::new(),
@@ -393,6 +416,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
     }
     let runtime = RUNTIME.with(|cell| cell.borrow_mut().take());
     drop(runtime);
+    composition::release();
     d2d::release_graphics();
     drop_target::release_image_helper();
     shell_view::release();

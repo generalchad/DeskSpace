@@ -8,6 +8,10 @@
 //! no transparency at all. The accent policy is undocumented but has been
 //! stable since Windows 10 1803 and blurs regardless of activation.
 //!
+//! On Windows 11 spaces usually get their blur from composition instead
+//! (`composition`, `Material::Composition`); the frame attributes here apply
+//! either way.
+//!
 //! Every attribute is best-effort: on builds that lack one, the space keeps
 //! its translucent tint without blur or rounding.
 
@@ -41,6 +45,20 @@ const ACRYLIC_GRADIENT: u32 = 0x0100_0000;
 /// Accent flag that makes the gradient states use `gradient_color`; without
 /// it the transparent gradient is filled with the Windows accent color.
 const ACCENT_FLAG_GRADIENT_COLOR: u32 = 2;
+
+/// `DWMWA_USE_HOSTBACKDROPBRUSH` (Windows 11), not in the `windows` crate's
+/// enum: lets the window's composition tree use a host backdrop brush.
+/// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+const DWMWA_USE_HOSTBACKDROPBRUSH: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(17);
+
+/// What draws the blur behind a top-level window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Material {
+    /// DWM, through the accent policy, behind the whole window.
+    Accent,
+    /// The window's composition tree, with a host backdrop brush.
+    Composition,
+}
 
 #[repr(C)]
 struct AccentPolicy {
@@ -76,7 +94,7 @@ fn set_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
     })
 }
 
-pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle) {
+pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
     // Negative margins extend the frame over the whole client area ("sheet of
     // glass"), so DWM composites the client's per-pixel alpha over the
     // material instead of treating the client as opaque.
@@ -109,7 +127,10 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle) {
         DWMWA_COLOR_NONE
     };
     set(hwnd, DWMWA_BORDER_COLOR, border);
-    set_accent(hwnd, accent_state(style.backdrop));
+    match material {
+        Material::Accent => set_accent(hwnd, accent_state(style.backdrop)),
+        Material::Composition => set(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, BOOL::from(true)),
+    }
 }
 
 fn accent_state(backdrop: Backdrop) -> u32 {

@@ -107,7 +107,7 @@ pub(crate) fn show(hwnd: HWND, bar: ZoomBar) {
         })
     };
     if restyle == Some(true) {
-        dwm::apply_style(hwnd, bar.style);
+        dwm::apply_style(hwnd, bar.style, dwm::Material::Accent);
     }
     // SAFETY: `hwnd` is live. The messages SetWindowPos sends go to
     // DefWindowProcW, which does not touch the runtime.

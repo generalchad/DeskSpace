@@ -497,8 +497,8 @@ changes nothing and says so.
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
 T2-T11 do not wait for it: they animate today's windows, where the accent
-blur steps on and off. T12 and T13 then move spaces to composition so the
-blur follows every effect, if T1 says it can. One commit each, in order
+blur steps on and off. T12 (done) moved spaces to composition, and T13
+makes the blur follow every effect. One commit each, in order
 (T1 can run alongside).
 
 Two tables carry the design, so a new effect or kind is one row: the
@@ -537,9 +537,9 @@ a new module.
   - Findings so far (2026-10-18, maintainer, Windows 11 build 26300): the
     blur shows at once on a window that is never activated; the rounded
     clip is smooth; the window stays after Win+D; idle CPU reads 0.00 %.
-    With "Transparency effects" off, the blur stays, so T12 must decide
-    what a composition space shows then (match what an accent space shows
-    today). The demos "never fully disappeared" and Dissolve "got stuck
+    With "Transparency effects" off, the blur stays; so with the switch
+    off at startup, spaces keep the accent blur (decided in D12, built in
+    T12). The demos "never fully disappeared" and Dissolve "got stuck
     pixelated": the spike held the gone state for one frame only, and
     left the backdrop split into cells after Dissolve, whose seams look
     tiled (one more mark against strips and cells). Both are fixed (a hold
@@ -554,24 +554,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T12. Composition device and space tree (platform).** **[needs
-  decision]** until T1's findings are recorded, then **[needs human]**.
-  - `win32/composition.rs`: one per UI thread, released in the runtime
-    teardown before `OleUninitialize`, as `Graphics` is: a
-    `DispatcherQueueController`, the `Compositor`, a Direct3D 11 and
-    Direct2D device, and a `CompositionGraphicsDevice`, recreated on device
-    loss.
-  - A top-level space window gets `WS_EX_NOREDIRECTIONBITMAP` and a
-    desktop window target: a root visual (the corner clip), a backdrop
-    sprite (the host backdrop brush for Acrylic and Blur, nothing for Clear
-    and Solid), and a content sprite whose `CompositionDrawingSurface` the
-    painter draws into. Split the painter from `HwndCanvas` first if the
-    drawing code needs it, as its own commit.
-  - The accent policy stays for Windows 10, desktop-hosted spaces, the
-    desktop layer, and any failure to start composition, chosen once at
-    startup and logged.
-  - **[needs human]** check: the R3 list passes unchanged on Windows 11
-    with each backdrop, and on Windows 10 nothing changes at all.
 - [ ] **T13. The blur follows the frame (platform).** **[needs human]**
   - On composition spaces, each frame also sets the backdrop: its opacity
     and rect, and the frame's mask. A `CompositionMaskBrush` cannot take
@@ -985,6 +967,7 @@ each id is in `archive/TASKS-done.md`.
 | T11 (D12) | Each Delete effect, and "Same as startup", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |
 | T15 (D12) | Settings > Animations lists Startup, Delete, and Fold; a config last saved with the Hide and show page keeps that page's effect as Startup's; Startup's effect plays on hiding, showing, a new space, and startup (staggered only at startup). |
 | T16 (D13) | Exit from the tray and from a space menu with several spaces: they leave one after another in reverse reading order (all together with "All at once"), then DeskSpace closes, within about 2 s; with takeover on, Explorer's icons come back only after the spaces have left; a second Exit mid-way closes at once; with the spaces hidden, Exit closes at once; signing out of Windows is not held up. |
+| T12 (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 
 ## Found while working
