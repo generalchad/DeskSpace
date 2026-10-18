@@ -237,7 +237,16 @@ impl Effects {
         {
             return Ok(pixels.target.clone());
         }
-        // SAFETY: a live render target and a fully initialised size.
+        // The format is named rather than inherited: a composition surface's
+        // resources come from a device context with no target bound, whose
+        // format is unknown, and Direct2D refused it with
+        // WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT on every Pixelate frame (seen
+        // 2026-10-18).
+        let format = D2D1_PIXEL_FORMAT {
+            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+        };
+        // SAFETY: a live render target and fully initialised locals.
         let offscreen = unsafe {
             let offscreen = target.CreateCompatibleRenderTarget(
                 Some(&D2D_SIZE_F {
@@ -245,7 +254,7 @@ impl Effects {
                     height: size.1,
                 }),
                 None,
-                None,
+                Some(&format),
                 D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
             )?;
             offscreen.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
