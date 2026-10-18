@@ -26,13 +26,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, GW_HWNDPREV, GWL_EXSTYLE, GetClientRect,
     GetParent, GetWindow, GetWindowLongW, GetWindowRect, HTCLIENT, HWND_BOTTOM, HWND_NOTOPMOST,
     HWND_TOP, HWND_TOPMOST, IDC_ARROW, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes, SetWindowPos,
-    ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_TIMER,
-    WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    KillTimer, LWA_ALPHA, LoadCursorW, MA_NOACTIVATE, SC_MINIMIZE, SW_SHOWNOACTIVATE,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetLayeredWindowAttributes,
+    SetTimer, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY,
+    WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND,
+    WM_TIMER, WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
@@ -47,6 +47,13 @@ use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{drop_target, dwm, runtime, window_state};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
+
+/// The id of a space window's one-shot timer that paints it again after
+/// `show`. Like `space_animation::TIMER_ID`, it is set on the window itself.
+const REPAINT_TIMER_ID: usize = 2;
+const _: () = assert!(REPAINT_TIMER_ID != space_animation::TIMER_ID);
+/// Long enough for DWM to have composed the shown window a few times.
+const REPAINT_DELAY_MS: u32 = 100;
 
 /// Mouse-button bits of the `wParam` key state on mouse messages. Defined here
 /// to avoid pulling in `Win32_System_SystemServices` for three constants.
@@ -161,12 +168,34 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
             );
         }
         if options.visible {
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            show(hwnd);
         }
         if let Err(error) = drop_target::register(hwnd, options.id, hosted) {
             tracing::warn!(%error, "space will not accept dropped files");
         }
         Ok(hwnd)
+    }
+}
+
+/// Shows `hwnd` without activating it, and paints it again a moment later.
+///
+/// The first frame a space presents right after it is shown sometimes never
+/// reaches the screen: the window shows only its DWM blur, with no tint,
+/// title, or items, until something repaints it, such as a hover. An
+/// animation's later frames paint over a lost first frame, but a window
+/// shown with one paint (an instant play, or a startup play whose frames the
+/// UI thread was too busy to draw, as with `--debug` opening its window) kept
+/// it (seen 2026-10-18 with Roll and `--debug`). The second paint costs one
+/// redraw per show.
+///
+/// # Safety
+/// `hwnd` is a live space window of this thread; call it outside any state
+/// borrow.
+pub(crate) unsafe fn show(hwnd: HWND) {
+    // SAFETY: the caller's contract.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        let _ = SetTimer(Some(hwnd), REPAINT_TIMER_ID, REPAINT_DELAY_MS, None);
     }
 }
 
@@ -711,6 +740,11 @@ unsafe extern "system" fn wndproc(
             WM_ERASEBKGND => LRESULT(1),
             WM_TIMER if wparam.0 == space_animation::TIMER_ID => {
                 space_animation::on_timer(window);
+                LRESULT(0)
+            }
+            WM_TIMER if wparam.0 == REPAINT_TIMER_ID => {
+                let _ = KillTimer(Some(window), REPAINT_TIMER_ID);
+                let _ = InvalidateRect(Some(window), None, false);
                 LRESULT(0)
             }
             WM_SIZE => {

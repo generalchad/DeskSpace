@@ -518,6 +518,10 @@ one arm in `App::on_event`, whose match is exhaustive.
   space windows are made) pushes its scene, then `Ui::show_space` brings it
   in with Startup's play, staggered at startup only (`sync_windows_at_startup`,
   `startup_delays`). A window waiting its turn stays hidden, blur included.
+  Every show goes through `space_window::show`, which paints the window
+  once more about 100 ms later: the first frame presented right after a
+  show is sometimes lost, which left a space blank (blur only) until a
+  hover repainted it.
   A deleted space's window leaves the runtime's spaces map at once, so it
   is gone to every lookup, and waits in `Runtime::dying` while it plays
   Delete's Out (a space still arriving turns around instead); its input no

@@ -14,14 +14,14 @@ use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{InvalidateRect, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, IsWindowVisible, KillTimer, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOZORDER, SetTimer, SetWindowPos, ShowWindow,
+    DestroyWindow, IsWindowVisible, KillTimer, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
+    SetWindowPos, ShowWindow,
 };
 
 use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
 use crate::win32::flame_overlay::FlameOverlay;
 use crate::win32::runtime;
-use crate::win32::space_window::{SpaceState, current_rect, with_state};
+use crate::win32::space_window::{SpaceState, current_rect, show, with_state};
 use crate::win32::system::work_area_at;
 
 /// The id of a space window's own animation timer. It is set on the space
@@ -133,7 +133,11 @@ pub(crate) unsafe fn set_visible(window: HWND, visible: bool, play: Play) {
     if is_instant(play) {
         // SAFETY: a live window owned by this thread.
         unsafe {
-            let _ = ShowWindow(window, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE });
+            if visible {
+                show(window);
+            } else {
+                let _ = ShowWindow(window, SW_HIDE);
+            }
         }
         return;
     }
@@ -461,7 +465,7 @@ unsafe fn finish(window: HWND) {
         if hide {
             let _ = ShowWindow(window, SW_HIDE);
         } else if !IsWindowVisible(window).as_bool() {
-            let _ = ShowWindow(window, SW_SHOWNOACTIVATE);
+            show(window);
         }
         let _ = InvalidateRect(Some(window), None, false);
         if let Some(back) = then {
@@ -554,7 +558,7 @@ unsafe fn apply(window: HWND, frame: TransitionFrame) {
         }
         move_to(window, frame.rect);
         if !IsWindowVisible(window).as_bool() {
-            let _ = ShowWindow(window, SW_SHOWNOACTIVATE);
+            show(window);
         }
         // Paint now rather than at the next idle moment, so the window never
         // shows the previous frame at the new size.
