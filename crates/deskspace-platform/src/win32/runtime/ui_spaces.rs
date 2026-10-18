@@ -91,6 +91,16 @@ impl Ui {
         }
     }
 
+    /// Folds space `id` to `rect` (its title bar) or unfolds it to `rect`,
+    /// playing `play` (ROADMAP D12). The model has already changed; the
+    /// `set_space_rect` that follows with the same rect leaves the roll be.
+    pub fn fold_space(&mut self, id: u64, rect: Rect, play: Play) {
+        if let Some(hwnd) = space_hwnd(id) {
+            // SAFETY: a live space window, and no runtime borrow is held.
+            unsafe { space_animation::fold(hwnd, rect, play) };
+        }
+    }
+
     /// Creates the chrome-less desktop layer window spanning `rect`, reusing
     /// the space window and painter. Idempotent: calling it again does nothing.
     /// It is a `WS_CHILD` of the desktop host when one is in use and top-level

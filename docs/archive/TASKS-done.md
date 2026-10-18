@@ -2308,3 +2308,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     a hide); the hotkey pressed twice quickly turns it around without a
     jump; a drop on a hiding space is refused; with Windows' "Animation
     effects" off, hiding is instant.
+
+- [x] **T9. Play fold and unfold (platform, app).** **[needs human]**
+  - `Ui::fold_space(id, rect, play)` plays a Roll from the window's rect
+    to `rect`. While it runs, `space_window::set_rect` compares a new rect
+    with its target, so the refresh after the command does not cut it
+    short; a different rect (a move) ends it there.
+  - App: an `Effect::FoldSpace(id)` (`app/effect.rs`) that calls
+    `ui.fold_space` with the space's `visible_rect`; `App::toggle_fold`
+    runs it before `commit`'s refresh. Hit tests read the model, which
+    changes at once, as today.
+  - Tests: `toggle_fold`'s effects. **[needs human]** check: fold and
+    unfold from the menu and a title double-click at each backdrop; a
+    second double-click mid-way turns it around.

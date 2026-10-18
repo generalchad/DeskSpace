@@ -9,8 +9,9 @@
 //! re-entrancy rules (`ENGINEERING.md` section 6) hold exactly as for a
 //! direct call. Grow the enum one event family at a time.
 
-use deskspace_core::Touched;
-use deskspace_platform::{Ui, set_desktop_icon_size};
+use deskspace_core::animation::Kind;
+use deskspace_core::{SpaceId, Touched};
+use deskspace_platform::{Ui, Way, set_desktop_icon_size};
 
 use super::{App, Timer};
 
@@ -36,6 +37,10 @@ pub(super) enum Effect {
     ClearTimer(Timer),
     /// Ask Explorer to set the desktop's own icon size, in pixels.
     SetDesktopIconSize(i32),
+    /// Fold or unfold a space's window to its rect, animated (ROADMAP D12).
+    /// It reads the model when it runs, so it goes after the command and
+    /// before the repaint that would otherwise move the window at once.
+    FoldSpace(SpaceId),
 }
 
 impl App {
@@ -65,6 +70,13 @@ impl App {
                 // Explorer has.
                 Effect::SetDesktopIconSize(pixels) => {
                     set_desktop_icon_size(pixels);
+                }
+                Effect::FoldSpace(id) => {
+                    if let Some(space) = self.config.desktop.space(id) {
+                        let way = if space.folded() { Way::Out } else { Way::In };
+                        let play = self.play(Kind::Fold, way);
+                        ui.fold_space(id.0, space.visible_rect(), play);
+                    }
                 }
             }
         }

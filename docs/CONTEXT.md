@@ -499,8 +499,14 @@ one arm in `App::on_event`, whose match is exhaustive.
   that finds an animation heading the other way reverses it, `set_rect`
   while animating moves its target instead of the window, and a window on
   its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
-  takes the `Play` the app built (`app/animation.rs`); the accent blur is
-  there for the whole show and gone at the end of a hide (D12, "The blur").
+  and `Ui::fold_space` take the `Play` the app built (`app/animation.rs`);
+  the accent blur is there for the whole show and gone at the end of a hide
+  (D12, "The blur"). A fold is a Roll between the space's rect and its title
+  bar: `App::toggle_fold` runs `Effect::FoldSpace` before the repaint, whose
+  `set_rect` to the same rect then leaves the roll be, and a folding window
+  keeps drawing its unfolded scene (the folded one has no items) until the
+  fold ends (`Animation::defer`). Hiding a space mid-fold ends the fold
+  first.
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
   never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /

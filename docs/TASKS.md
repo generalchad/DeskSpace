@@ -532,18 +532,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T9. Play fold and unfold (platform, app).** **[needs human]**
-  - `Ui::fold_space(id, rect, play)` plays a Roll from the window's rect
-    to `rect`. While it runs, `space_window::set_rect` compares a new rect
-    with its target, so the refresh after the command does not cut it
-    short; a different rect (a move) ends it there.
-  - App: an `Effect::FoldSpace(id)` (`app/effect.rs`) that calls
-    `ui.fold_space` with the space's `visible_rect`; `App::toggle_fold`
-    runs it before `commit`'s refresh. Hit tests read the model, which
-    changes at once, as today.
-  - Tests: `toggle_fold`'s effects. **[needs human]** check: fold and
-    unfold from the menu and a title double-click at each backdrop; a
-    second double-click mid-way turns it around.
 - [ ] **T10. Play new spaces and startup (platform, app).** **[needs
   human]**
   - `Ui::create_space` takes an `Option<Play>`: the window is created
@@ -833,6 +821,7 @@ each id is in `archive/TASKS-done.md`.
 | T4 (D12) | Settings shows an Animations group (Hide and show, New space, Delete, Fold) at 100 % and 150 %, nothing clipped; choosing each effect greys the options it does not use, Delete's "Same as new space" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; "Open Windows animation settings…" opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
 | T8 (D12) | Each Hide and show effect (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows. |
+| T9 (D12) | Fold and unfold from the space menu and a title double-click on each backdrop: the body rolls up into the title bar with its items in place, and rolls down showing them; a second double-click mid-way turns it around; Fold set to None folds at once; moving a space right after folding it is not fought by the roll; hiding a space mid-fold hides it folded (or unfolded) and shows it the same way. |
 
 ## Found while working
 

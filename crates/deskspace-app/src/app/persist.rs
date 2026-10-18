@@ -99,20 +99,35 @@ impl App {
     /// (`Desktop::touched_by`) and schedules a save. The one path for a change
     /// whose repaint and save need nothing special.
     pub(super) fn commit(&mut self, ui: &mut Ui, command: Command, at: Point) -> CommandOutcome {
+        self.commit_led_by(ui, command, at, Vec::new())
+    }
+
+    /// `commit`, running `lead` first when the command applied: what must
+    /// happen before the repaint, such as a fold's animation, whose rect the
+    /// repaint then leaves alone.
+    pub(super) fn commit_led_by(
+        &mut self,
+        ui: &mut Ui,
+        command: Command,
+        at: Point,
+        lead: Vec<Effect>,
+    ) -> CommandOutcome {
         let touched = self.config.desktop.touched_by(&command);
         let outcome = self.dispatch(command, at);
-        self.run(ui, commit_effects(outcome, touched));
+        self.run(ui, commit_effects(outcome, touched, lead));
         outcome
     }
 }
 
-/// What a command owes once dispatched: when it applied, a repaint of what it
-/// changed and a save; otherwise nothing.
-fn commit_effects(outcome: CommandOutcome, touched: Touched) -> Vec<Effect> {
+/// What a command owes once dispatched: when it applied, `lead`, then a
+/// repaint of what it changed and a save; otherwise nothing.
+fn commit_effects(outcome: CommandOutcome, touched: Touched, lead: Vec<Effect>) -> Vec<Effect> {
     if !outcome.is_applied() {
         return Vec::new();
     }
-    vec![Effect::Refresh(touched), Effect::ScheduleSave]
+    lead.into_iter()
+        .chain([Effect::Refresh(touched), Effect::ScheduleSave])
+        .collect()
 }
 
 /// What the user is told when the configuration cannot be written.
@@ -146,8 +161,37 @@ mod tests {
             layer: true,
         };
         assert_eq!(
-            commit_effects(CommandOutcome::Applied, touched.clone()),
+            commit_effects(CommandOutcome::Applied, touched.clone(), Vec::new()),
             vec![Effect::Refresh(touched), Effect::ScheduleSave]
+        );
+    }
+
+    #[test]
+    fn a_fold_animates_before_the_repaint() {
+        let touched = Touched {
+            spaces: vec![SpaceId(2)],
+            layer: false,
+        };
+        assert_eq!(
+            commit_effects(
+                CommandOutcome::Applied,
+                touched.clone(),
+                vec![Effect::FoldSpace(SpaceId(2))]
+            ),
+            vec![
+                Effect::FoldSpace(SpaceId(2)),
+                Effect::Refresh(touched.clone()),
+                Effect::ScheduleSave
+            ]
+        );
+        assert_eq!(
+            commit_effects(
+                CommandOutcome::Rejected,
+                touched,
+                vec![Effect::FoldSpace(SpaceId(2))]
+            ),
+            vec![],
+            "a fold that did not apply does not animate"
         );
     }
 
@@ -158,7 +202,7 @@ mod tests {
             layer: false,
         };
         for outcome in [CommandOutcome::NotFound, CommandOutcome::Rejected] {
-            assert_eq!(commit_effects(outcome, touched.clone()), vec![]);
+            assert_eq!(commit_effects(outcome, touched.clone(), Vec::new()), vec![]);
         }
     }
 }

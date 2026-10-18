@@ -8,6 +8,7 @@ use deskspace_platform::{
 
 use crate::settings::{self, HotkeyAction};
 use crate::storage::ItemStore;
+use effect::Effect;
 
 mod animation;
 mod clipboard;
@@ -498,7 +499,12 @@ impl App {
         if self.selection.surface == Some(Surface::Space(id)) {
             self.selection.clear();
         }
-        self.commit(ui, Command::ToggleFold { id }, near);
+        self.commit_led_by(
+            ui,
+            Command::ToggleFold { id },
+            near,
+            vec![Effect::FoldSpace(id)],
+        );
     }
 
     // ---- timers --------------------------------------------------------

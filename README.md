@@ -104,7 +104,8 @@ help inspect the look and the desktop layer.
   or pointed at, to the right of the top row of spaces there, lined up with
   them and spaced like them. When that row is full it goes to the next row,
   or a new row underneath.
-- Double-click a space title bar to fold or unfold it. Right-click a space for
+- Double-click a space title bar to fold or unfold it (animated; Settings >
+  Animations > Fold sets the speed). Right-click a space for
   fold, rename, lock, fit to contents, new shortcut, appearance, sort,
   delete, new space, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,

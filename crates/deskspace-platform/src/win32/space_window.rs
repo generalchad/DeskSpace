@@ -77,7 +77,7 @@ pub(super) struct SpaceState {
     frame: Frame,
     /// `None` while `WM_PAINT` has it checked out.
     painter: Option<Painter>,
-    scene: Option<PreparedScene>,
+    pub(super) scene: Option<PreparedScene>,
     tracking_leave: bool,
     cursor: CursorShape,
     /// The animation playing on the window, if any (`space_animation`).
@@ -243,6 +243,15 @@ pub(crate) fn set_scene(hwnd: HWND, scene: SpaceScene) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter.
     unsafe {
         with_state(hwnd, |state| {
+            // A folding window keeps drawing its unfolded scene until the
+            // fold ends (`Animation::defer`).
+            let prepared = match state.animation.as_mut() {
+                Some(animation) => animation.defer(prepared),
+                None => Some(prepared),
+            };
+            let Some(prepared) = prepared else {
+                return;
+            };
             if let Some(painter) = state.painter.as_mut() {
                 painter.retain_icons(prepared.scene());
             }
