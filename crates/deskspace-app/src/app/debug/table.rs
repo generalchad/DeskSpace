@@ -192,6 +192,21 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Animations,
         label: "Animate even when Windows' Animation effects is off",
     },
+    DebugRow {
+        id: DebugId::PreviewSpace,
+        section: DebugSectionId::Animations,
+        label: "Space",
+    },
+    DebugRow {
+        id: DebugId::PreviewKind,
+        section: DebugSectionId::Animations,
+        label: "Kind",
+    },
+    DebugRow {
+        id: DebugId::PreviewPlay,
+        section: DebugSectionId::Animations,
+        label: "Play on the space",
+    },
 ];
 
 #[cfg(test)]

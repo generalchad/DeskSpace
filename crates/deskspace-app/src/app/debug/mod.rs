@@ -19,6 +19,8 @@ mod windows;
 use std::path::Path;
 use std::time::Instant;
 
+use deskspace_core::SpaceId;
+
 use deskspace_platform::{
     DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui,
 };
@@ -49,6 +51,11 @@ pub(crate) struct DebugTools {
     shown: Option<DebugPanel>,
     /// The chosen `STRESS_SIZES` index.
     stress_size: usize,
+    /// The space an effect preview plays on; a deleted one falls back to the
+    /// first space.
+    preview_space: Option<SpaceId>,
+    /// The chosen `PREVIEW_KINDS` index.
+    preview_kind: usize,
 }
 
 impl DebugTools {
@@ -61,6 +68,8 @@ impl DebugTools {
             console_level: LogLevel::Debug,
             shown: None,
             stress_size: 0,
+            preview_space: None,
+            preview_kind: 0,
         }
     }
 }
@@ -115,6 +124,11 @@ impl App {
                 text: self.hooks_text(ui),
             },
             DebugId::Speed => self.speed_choice(),
+            DebugId::PreviewSpace => self.preview_space_choice(),
+            DebugId::PreviewKind => self.preview_kind_choice(),
+            DebugId::PreviewPlay => DebugControlKind::Button {
+                enabled: has_spaces,
+            },
             DebugId::IgnoreWindows => DebugControlKind::Toggle {
                 on: self.animation_tweak.ignore_windows,
             },
@@ -190,6 +204,17 @@ impl App {
                     self.set_speed(index);
                 }
             }
+            DebugId::PreviewSpace => {
+                if let DebugInput::Choose(index) = input {
+                    self.choose_preview_space(index);
+                }
+            }
+            DebugId::PreviewKind => {
+                if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut()) {
+                    tools.preview_kind = index;
+                }
+            }
+            DebugId::PreviewPlay => self.play_preview(ui),
             DebugId::IgnoreWindows => {
                 if let DebugInput::Toggle(on) = input {
                     self.animation_tweak.ignore_windows = on;

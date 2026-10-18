@@ -34,10 +34,13 @@ pub(crate) enum DebugId {
     Hooks = 26,
     Speed = 27,
     IgnoreWindows = 28,
+    PreviewSpace = 29,
+    PreviewKind = 30,
+    PreviewPlay = 31,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 28] = [
+    pub(crate) const ALL: [Self; 31] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -66,6 +69,9 @@ impl DebugId {
         Self::Hooks,
         Self::Speed,
         Self::IgnoreWindows,
+        Self::PreviewSpace,
+        Self::PreviewKind,
+        Self::PreviewPlay,
     ];
 
     pub(crate) fn id(self) -> u32 {

@@ -54,6 +54,9 @@ pub(crate) struct Animation {
     deferred: Option<PreparedScene>,
     /// Burn's flames, on their own window above the space.
     flames: Option<FlameOverlay>,
+    /// What plays once a hide ends, bringing the window back: the debug
+    /// window's preview (`preview`).
+    then: Option<Play>,
 }
 
 impl Animation {
@@ -101,6 +104,16 @@ fn is_instant(play: Play) -> bool {
 /// `window` is a live space window; call it outside any state borrow.
 pub(crate) unsafe fn set_visible(window: HWND, visible: bool, play: Play) {
     let way = if visible { Way::In } else { Way::Out };
+    // A real hide or show (the tray, the hotkey, exit) cancels a preview's
+    // way back, so a hidden space stays hidden.
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    unsafe {
+        with_state(window, |state| {
+            if let Some(animation) = state.animation.as_mut() {
+                animation.then = None;
+            }
+        });
+    }
     // SAFETY: the caller's contract.
     if unsafe { turn_around(window, Purpose::Visibility, way) } {
         return;
@@ -127,6 +140,67 @@ pub(crate) unsafe fn set_visible(window: HWND, visible: bool, play: Play) {
     let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), play.edge);
     // SAFETY: the caller's contract.
     unsafe { start(window, Play { way, ..play }, geometry, Purpose::Visibility) };
+}
+
+/// Plays `out` on a shown `window` and then `back`, leaving it shown where
+/// it was: the debug window's preview of an effect. Pressed again mid-way,
+/// it turns around like any hide or show. It never touches the model.
+///
+/// # Safety
+/// `window` is a live space window; call it outside any state borrow.
+pub(crate) unsafe fn preview(window: HWND, out: Play, back: Play) {
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    let heading = unsafe {
+        with_state(window, |state| {
+            state
+                .animation
+                .as_ref()
+                .filter(|animation| animation.purpose == Purpose::Visibility)
+                .map(|animation| animation.transition.way())
+        })
+    }
+    .flatten();
+    match heading {
+        // Leaving: come straight back instead, and stay.
+        Some(Way::Out) => {
+            // SAFETY: the caller's contract.
+            unsafe {
+                with_state(window, |state| {
+                    if let Some(animation) = state.animation.as_mut() {
+                        animation.then = None;
+                    }
+                });
+                turn_around(window, Purpose::Visibility, Way::In);
+            }
+        }
+        // Coming back: leave again, and come back once more after.
+        Some(Way::In) => {
+            // SAFETY: the caller's contract.
+            unsafe {
+                turn_around(window, Purpose::Visibility, Way::Out);
+                with_state(window, |state| {
+                    if let Some(animation) = state.animation.as_mut() {
+                        animation.then = Some(back);
+                    }
+                });
+            }
+        }
+        None => {
+            // SAFETY: a plain visibility query on a live window.
+            if is_instant(out) || !unsafe { IsWindowVisible(window) }.as_bool() {
+                return;
+            }
+            // SAFETY: the caller's contract.
+            unsafe {
+                set_visible(window, false, out);
+                with_state(window, |state| {
+                    if let Some(animation) = state.animation.as_mut() {
+                        animation.then = Some(back);
+                    }
+                });
+            }
+        }
+    }
 }
 
 /// Folds `window` to `rect` (its title bar) or unfolds it to `rect` with
@@ -277,6 +351,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 frame,
                 deferred: None,
                 flames,
+                then: None,
             });
         });
         let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
@@ -365,13 +440,14 @@ unsafe fn finish(window: HWND) {
             if let Some(scene) = animation.deferred.take() {
                 state.scene = Some(scene);
             }
-            Some((rect, animation.purpose, gone, animation.flames.take()))
+            let then = animation.then.filter(|_| gone);
+            Some((rect, animation.purpose, gone, animation.flames.take(), then))
         })
     };
     // SAFETY: the caller's contract.
     unsafe {
         let _ = KillTimer(Some(window), TIMER_ID);
-        let Some(Some((rect, purpose, gone, flames))) = ended else {
+        let Some(Some((rect, purpose, gone, flames, then))) = ended else {
             return;
         };
         // The flames' window goes outside any state borrow.
@@ -388,6 +464,10 @@ unsafe fn finish(window: HWND) {
             let _ = ShowWindow(window, SW_SHOWNOACTIVATE);
         }
         let _ = InvalidateRect(Some(window), None, false);
+        if let Some(back) = then {
+            set_visible(window, true, back);
+            return;
+        }
     }
     // An exit waits for the last space to leave (ROADMAP D13).
     runtime::space_left();

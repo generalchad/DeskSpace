@@ -2898,3 +2898,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     changes nothing.
   - Add the two controls to the T8 row in section V ("checked at ¼×
     too") rather than a new row.
+
+- [x] **X18. Play an effect on a space (platform, app).** Needs X17.
+  **[needs human]**
+  - Platform, `win32/space_animation.rs`: `Ui::preview_play(id: u64,
+    out: Play, back: Play)` plays `out` on that space's window and, when
+    it ends, `back`, leaving the window shown. Use the machinery
+    `show_space` and `destroy_space` use, so it can turn around mid-way
+    like any animation. It never touches the model.
+  - App, section Animations: `PreviewSpace`, "Space", a `Choice` of the
+    space titles in model order (keep the ids in `DebugTools`; a deleted
+    space falls back to the first); `PreviewKind`, "Kind", a `Choice` of
+    Startup and Delete (Fold is checked from its own menu); and
+    `PreviewPlay`, "Play on the space", a `Button` that calls
+    `ui.preview_play(id, self.play(kind, Way::Out), self.play(kind,
+    Way::In))`, so the current settings and X17's tweak apply.
+  - Tests: through a pure helper, the chosen index maps to the right id
+    and a stale index falls back to the first space.
+  - **[needs human]** check: every effect, played on a space at ¼×,
+    leaves and comes back in place; pressing Play again mid-way turns it
+    around; the other spaces and the model do not change.

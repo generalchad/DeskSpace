@@ -38,6 +38,16 @@ impl Ui {
         Ok(())
     }
 
+    /// Plays `out` on space `id`'s window and then `back`, leaving it shown:
+    /// the debug window's effect preview. Pressed again mid-way, it turns
+    /// around. Does nothing while the spaces are hidden.
+    pub fn preview_play(&mut self, id: u64, out: Play, back: Play) {
+        if let Some(hwnd) = space_hwnd(id) {
+            // SAFETY: a live space window, and no runtime borrow is held.
+            unsafe { space_animation::preview(hwnd, out, back) };
+        }
+    }
+
     /// Moves every space above other windows, or back to the bottom, as
     /// `--on-top` places them; spaces created later follow too.
     pub fn set_on_top(&mut self, on_top: bool) {

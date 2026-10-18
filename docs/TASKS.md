@@ -716,26 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X18. Play an effect on a space (platform, app).** Needs X17.
-  **[needs human]**
-  - Platform, `win32/space_animation.rs`: `Ui::preview_play(id: u64,
-    out: Play, back: Play)` plays `out` on that space's window and, when
-    it ends, `back`, leaving the window shown. Use the machinery
-    `show_space` and `destroy_space` use, so it can turn around mid-way
-    like any animation. It never touches the model.
-  - App, section Animations: `PreviewSpace`, "Space", a `Choice` of the
-    space titles in model order (keep the ids in `DebugTools`; a deleted
-    space falls back to the first); `PreviewKind`, "Kind", a `Choice` of
-    Startup and Delete (Fold is checked from its own menu); and
-    `PreviewPlay`, "Play on the space", a `Button` that calls
-    `ui.preview_play(id, self.play(kind, Way::Out), self.play(kind,
-    Way::In))`, so the current settings and X17's tweak apply.
-  - Tests: through a pure helper, the chosen index maps to the right id
-    and a stale index falls back to the first space.
-  - **[needs human]** check: every effect, played on a space at ¼×,
-    leaves and comes back in place; pressing Play again mid-way turns it
-    around; the other spaces and the model do not change.
-
 - [ ] **X19. Takeover (app).** Needs X5 and X15. **[needs human]** Section
   Takeover:
   - `Takeover`, "Take over the desktop (this session)", a `Toggle`
@@ -978,6 +958,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X18 (F-61) | Debug → Animations: every effect, played on a space at ¼×, leaves and comes back in place; pressing Play again mid-way turns it around; hiding the spaces from the tray mid-preview keeps them hidden; the other spaces and the model do not change. |
 | X16 (F-61) | Debug → System: switching Windows between dark and light, changing the accent, and turning off transparency each show within a second; selecting an item turns on Watch selection; a rename turns on Editing; Hotkeys says which bindings registered. |
 | X14 (F-61) | Debug → Windows: "Keep spaces above other windows" lifts the spaces above Notepad and off drops them back to the desktop; the Windows table lists every space, the tray's controller window, and the debug and settings windows in z-order, and follows a space moved to another monitor; the Monitors table matches Windows' display settings. |
 | X12 (F-61) | Debug → Diagnostics: the Build, Model, Resources, and Updates values look right and Resources ticks once a second; creating and deleting spaces moves the counts; "Copy diagnostics" pastes into Notepad as a readable report. |
