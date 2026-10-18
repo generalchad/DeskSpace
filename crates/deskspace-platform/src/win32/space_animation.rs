@@ -19,9 +19,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::win32::debug_info::transparency_enabled;
 use crate::win32::flame_overlay::FlameOverlay;
 use crate::win32::runtime;
-use crate::win32::space_window::{SpaceState, current_rect, show, with_state};
+use crate::win32::space_window::{SpaceState, current_rect, show, show_material, with_state};
 use crate::win32::system::work_area_at;
 
 /// The id of a space window's own animation timer. It is set on the space
@@ -57,6 +58,11 @@ pub(crate) struct Animation {
     /// What plays once a hide ends, bringing the window back: the debug
     /// window's preview (`preview`).
     then: Option<Play>,
+    /// Windows draws the material flat ("Transparency effects" off), so it
+    /// steps aside while a frame leaves the window see-through: a flat
+    /// material stayed as a dark box under a fading space (seen 2026-10-18).
+    /// A real blur stays, and steps at the end, until T13.
+    flat_material: bool,
 }
 
 impl Animation {
@@ -345,6 +351,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
     let flames = (play.effect == Effect::Burn)
         .then(|| FlameOverlay::create(window, geometry.rect, play.detail))
         .flatten();
+    let flat_material = transparency_enabled() == Some(false);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
         with_state(window, |state| {
@@ -356,11 +363,12 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 deferred: None,
                 flames,
                 then: None,
+                flat_material,
             });
         });
         let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
         if !waiting {
-            apply(window, frame);
+            apply(window, frame, flat_material);
             draw_flames(window, frame, now);
         }
     }
@@ -411,10 +419,11 @@ pub(crate) unsafe fn on_timer(window: HWND) {
                 animation.frame,
                 animation.transition.is_done(now),
                 animation.transition.is_waiting(now),
+                animation.flat_material,
             ))
         })
     };
-    let Some(Some((frame, done, waiting))) = step else {
+    let Some(Some((frame, done, waiting, flat_material))) = step else {
         // SAFETY: killing this window's own timer.
         unsafe {
             let _ = KillTimer(Some(window), TIMER_ID);
@@ -426,7 +435,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
         if done {
             finish(window);
         } else if !waiting {
-            apply(window, frame);
+            apply(window, frame, flat_material);
             draw_flames(window, frame, now);
         }
     }
@@ -467,6 +476,8 @@ unsafe fn finish(window: HWND) {
         } else if !IsWindowVisible(window).as_bool() {
             show(window);
         }
+        // After the hide, so a flat material never shows under a gone space.
+        show_material(window, true);
         let _ = InvalidateRect(Some(window), None, false);
         if let Some(back) = then {
             set_visible(window, true, back);
@@ -547,8 +558,9 @@ pub(crate) fn is_leaving(window: HWND) -> bool {
 }
 
 /// Puts `window` where `frame` says, hidden while the frame's rect is empty,
-/// and repaints it through the frame.
-unsafe fn apply(window: HWND, frame: TransitionFrame) {
+/// and repaints it through the frame. A `flat_material` steps aside while the
+/// frame leaves the window see-through.
+unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
     // SAFETY: a live window owned by this thread; SetWindowPos sends only
     // WM_WINDOWPOSCHANGING and WM_SIZE, which do not reach the app.
     unsafe {
@@ -557,6 +569,7 @@ unsafe fn apply(window: HWND, frame: TransitionFrame) {
             return;
         }
         move_to(window, frame.rect);
+        show_material(window, !flat_material || frame.covers_window());
         if !IsWindowVisible(window).as_bool() {
             show(window);
         }

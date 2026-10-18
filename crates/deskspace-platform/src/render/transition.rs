@@ -117,6 +117,20 @@ pub enum Mask {
     },
 }
 
+impl Mask {
+    /// Whether the mask leaves every pixel showing.
+    pub fn hides_nothing(self) -> bool {
+        match self {
+            Mask::None => true,
+            Mask::Gradient {
+                position, feather, ..
+            } => position - feather <= 0.0,
+            Mask::Noise { threshold, .. } => threshold <= 0.0,
+            Mask::Burn { front, .. } => front <= -burn::BANDS,
+        }
+    }
+}
+
 /// How a window looks at one moment of a transition.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionFrame {
@@ -137,6 +151,15 @@ pub struct TransitionFrame {
     pub block: u32,
     /// How strongly a CRT's bright line glows over the contents, 0 to 1.
     pub glow: f32,
+}
+
+impl TransitionFrame {
+    /// Whether the frame's contents are as opaque as at rest over the whole
+    /// window, so nothing behind them shows through: what moves is only the
+    /// window's rect (Roll, Fly, CRT).
+    pub fn covers_window(&self) -> bool {
+        self.opacity >= 1.0 && self.block <= 1 && self.mask.hides_nothing()
+    }
 }
 
 /// A running `Play`. Every method takes `now`, a time on any one clock, so
@@ -460,14 +483,7 @@ mod tests {
             && frame.opacity == 1.0
             && frame.block == 1
             && frame.glow == 0.0
-            && match frame.mask {
-                Mask::None => true,
-                Mask::Gradient {
-                    position, feather, ..
-                } => position - feather <= 0.0,
-                Mask::Noise { threshold, .. } => threshold <= 0.0,
-                Mask::Burn { front, .. } => front <= -burn::BANDS,
-            }
+            && frame.mask.hides_nothing()
     }
 
     /// Whether `frame` draws nothing at all.
@@ -498,6 +514,31 @@ mod tests {
                     "{effect:?} Out starts whole"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn only_effects_that_change_pixels_uncover_the_window_midway() {
+        // None has no midway: its Out is gone at once.
+        for effect in EVERY_EFFECT
+            .into_iter()
+            .filter(|effect| *effect != Effect::None)
+        {
+            let transition = start(effect, Way::Out);
+            let midway = transition.frame(ms(100));
+            let pixels = matches!(
+                effect,
+                Effect::Fade
+                    | Effect::Pixelate
+                    | Effect::Gradient
+                    | Effect::Dissolve
+                    | Effect::Burn
+            );
+            assert_eq!(!midway.covers_window(), pixels, "{effect:?}");
+            assert!(
+                transition.frame(ms(0)).covers_window(),
+                "{effect:?} starts whole"
+            );
         }
     }
 

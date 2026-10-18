@@ -133,6 +133,20 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
     }
 }
 
+/// Steps an accent material aside while an animation leaves the window
+/// see-through, or brings it back. A flat material (Windows' "Transparency
+/// effects" off) would otherwise stay as a dark box under the fading
+/// contents. Aside is the fully transparent gradient Clear uses, not
+/// `ACCENT_DISABLED`, which turns a window that had a blur black.
+pub(crate) fn show_accent(hwnd: HWND, backdrop: Backdrop, shown: bool) {
+    let state = if shown {
+        accent_state(backdrop)
+    } else {
+        ACCENT_ENABLE_TRANSPARENTGRADIENT
+    };
+    set_accent(hwnd, state);
+}
+
 fn accent_state(backdrop: Backdrop) -> u32 {
     match backdrop {
         Backdrop::Acrylic => ACCENT_ENABLE_ACRYLICBLURBEHIND,

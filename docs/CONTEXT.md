@@ -509,7 +509,12 @@ one arm in `App::on_event`, whose match is exhaustive.
   its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
   and `Ui::fold_space` take the `Play` the app built (`app/animation.rs`);
   the accent blur is there for the whole show and gone at the end of a hide
-  (D12, "The blur"). A fold is a Roll between the space's rect and its title
+  (D12, "The blur"). With Windows' "Transparency effects" off, Windows
+  draws the material flat, which left a dark box under a fading space, so
+  while a frame leaves the window see-through (`TransitionFrame::
+  covers_window`: Fade, Pixelate, Gradient, Dissolve, Burn) the material
+  steps aside (`space_window::show_material`) and comes back when the
+  animation ends. A fold is a Roll between the space's rect and its title
   bar: `App::toggle_fold` runs `Effect::FoldSpace` before the repaint, whose
   `set_rect` to the same rect then leaves the roll be, and a folding window
   keeps drawing its unfolded scene (the folded one has no items) until the

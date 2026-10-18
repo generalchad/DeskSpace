@@ -96,6 +96,9 @@ pub(super) struct SpaceState {
     pub(super) animation: Option<Animation>,
     /// The window's visual tree, when composition gives it its blur.
     visuals: Option<SpaceVisuals>,
+    /// False while an animation has stepped the material aside
+    /// (`show_material`).
+    material_shown: bool,
 }
 
 pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -112,6 +115,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         cursor: CursorShape::Arrow,
         animation: None,
         visuals: None,
+        material_shown: true,
     }));
 
     // An OLE drop target (registered below) makes the space accept file drags
@@ -399,30 +403,61 @@ fn apply_cursor(shape: CursorShape) {
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
     // (composition property changes send no window messages).
-    let Some(Some((hosted, composition))) = (unsafe {
+    let Some(Some((hosted, composition, material_shown))) = (unsafe {
         with_state(hwnd, |state| {
             if state.style == style {
                 return None;
             }
             state.style = style;
             state.frame = Frame::for_style(style, state.hosted);
-            if let Some(visuals) = &state.visuals
+            if let Some(visuals) = &mut state.visuals
                 && let Err(error) = visuals.set_style(style)
             {
                 tracing::warn!(%error, "space composition not restyled");
             }
-            Some((state.hosted, state.visuals.is_some()))
+            Some((state.hosted, state.visuals.is_some(), state.material_shown))
         })
     }) else {
         return;
     };
     if !hosted {
         dwm::apply_style(hwnd, style, material(composition));
+        if !composition && !material_shown {
+            dwm::show_accent(hwnd, style.backdrop, false);
+        }
     }
     // SAFETY: `hwnd` is a live space window.
     unsafe {
         update_region(hwnd);
         let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+}
+
+/// Steps the window's material (the blur, or what Windows draws instead of
+/// it) aside while an animation leaves the window see-through, or brings it
+/// back (`space_animation`). Does nothing when it is already so, and for a
+/// desktop-hosted window, which has none.
+pub(crate) fn show_material(hwnd: HWND, shown: bool) {
+    // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
+    // (composition property changes send no window messages).
+    let accent = unsafe {
+        with_state(hwnd, |state| {
+            if state.hosted || std::mem::replace(&mut state.material_shown, shown) == shown {
+                return None;
+            }
+            match &mut state.visuals {
+                Some(visuals) => {
+                    if let Err(error) = visuals.show_material(shown) {
+                        tracing::warn!(%error, "space composition backdrop not changed");
+                    }
+                    None
+                }
+                None => Some(state.style.backdrop),
+            }
+        })
+    };
+    if let Some(Some(backdrop)) = accent {
+        dwm::show_accent(hwnd, backdrop, shown);
     }
 }
 

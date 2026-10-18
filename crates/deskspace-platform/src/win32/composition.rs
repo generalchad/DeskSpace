@@ -151,6 +151,10 @@ pub(crate) struct SpaceVisuals {
     root: ContainerVisual,
     corners: CompositionRoundedRectangleGeometry,
     backdrop: SpriteVisual,
+    /// The style asks for the blur (Acrylic, Blur).
+    blurred: bool,
+    /// The blur is not stepped aside (`show_material`).
+    material_shown: bool,
     surface: CompositionDrawingSurface,
     graphics: CompositionGraphicsDevice,
     // Kept alive for as long as the window shows the tree.
@@ -209,10 +213,12 @@ impl SpaceVisuals {
         children.InsertAtBottom(&backdrop)?;
         children.InsertAtTop(&content)?;
 
-        let visuals = Self {
+        let mut visuals = Self {
             root,
             corners,
             backdrop,
+            blurred: false,
+            material_shown: true,
             surface,
             graphics,
             _target: target,
@@ -229,9 +235,9 @@ impl SpaceVisuals {
 
     /// Shows the blur for Acrylic and Blur, and rounds the corners as the
     /// window's frame does (`space_window::Frame`).
-    pub(crate) fn set_style(&self, style: SpaceStyle) -> Result<(), PlatformError> {
-        let blurred = matches!(style.backdrop, Backdrop::Acrylic | Backdrop::Blur);
-        self.backdrop.SetIsVisible(blurred)?;
+    pub(crate) fn set_style(&mut self, style: SpaceStyle) -> Result<(), PlatformError> {
+        self.blurred = matches!(style.backdrop, Backdrop::Acrylic | Backdrop::Blur);
+        self.sync_backdrop()?;
         let radius = if style.chrome {
             style.corner_radius.max(0) as f32
         } else {
@@ -239,6 +245,18 @@ impl SpaceVisuals {
         };
         self.corners.SetCornerRadius(Vector2::new(radius, radius))?;
         Ok(())
+    }
+
+    /// Steps the blur aside, or brings it back (`space_window::show_material`).
+    pub(crate) fn show_material(&mut self, shown: bool) -> Result<(), PlatformError> {
+        self.material_shown = shown;
+        self.sync_backdrop()
+    }
+
+    fn sync_backdrop(&self) -> Result<(), PlatformError> {
+        Ok(self
+            .backdrop
+            .SetIsVisible(self.blurred && self.material_shown)?)
     }
 
     /// Sizes the tree to `window`'s client area.
