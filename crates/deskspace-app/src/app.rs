@@ -12,6 +12,7 @@ use effect::Effect;
 
 mod animation;
 mod clipboard;
+mod debug;
 mod drag;
 mod effect;
 mod files;
@@ -29,6 +30,7 @@ mod view;
 mod visibility;
 mod zoom;
 
+pub(crate) use debug::DebugTools;
 use hotkeys::Hotkeys;
 use pointer::PointerState;
 use rename::EditState;
@@ -77,10 +79,13 @@ enum Timer {
     UpdateIdle = 9,
     /// Hiding the zoom pop-up (`app/zoom.rs`).
     ZoomBar = 10,
+    /// Moving new log lines into the debug window's console
+    /// (`app/debug.rs`).
+    DebugLog = 11,
 }
 
 impl Timer {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -91,6 +96,7 @@ impl Timer {
         Self::Health,
         Self::UpdateIdle,
         Self::ZoomBar,
+        Self::DebugLog,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -422,6 +428,8 @@ pub struct App {
     pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
+    /// The debug window's state, only with `--debug` (`app/debug.rs`).
+    pub(crate) debug: Option<DebugTools>,
 }
 
 impl App {
@@ -444,6 +452,7 @@ impl App {
             open_settings_on_start: open_settings,
             layer: LayerState::default(),
             update: UpdateState::default(),
+            debug: None,
         }
     }
 
@@ -531,6 +540,7 @@ impl App {
             Timer::Health => self.health_tick(),
             Timer::UpdateIdle => self.on_update_idle_timer(ui),
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),
+            Timer::DebugLog => self.feed_debug_log(ui),
         }
     }
 
@@ -588,6 +598,9 @@ impl EventHandler for App {
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
+                if self.debug.is_some() {
+                    self.open_debug(ui);
+                }
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
@@ -620,8 +633,7 @@ impl EventHandler for App {
                 self.show_tray_menu(ui, Point::new(x, y));
             }
             Event::Settings(event) => self.on_settings_event(ui, event),
-            // TODO(X4): the debug window's events.
-            Event::Debug(_) => {}
+            Event::Debug(event) => self.on_debug(ui, event),
             Event::Timer { id } => {
                 if let Some(timer) = Timer::from_id(id) {
                     self.on_timer(ui, timer);
@@ -711,8 +723,14 @@ mod tests {
         for timer in Timer::ALL {
             assert_eq!(Timer::from_id(timer as usize), Some(timer));
         }
+        let next_free = Timer::ALL
+            .iter()
+            .map(|timer| *timer as usize)
+            .max()
+            .unwrap_or(0)
+            + 1;
         assert_eq!(Timer::from_id(0), None);
-        assert_eq!(Timer::from_id(11), None);
+        assert_eq!(Timer::from_id(next_free), None);
     }
 
     #[test]

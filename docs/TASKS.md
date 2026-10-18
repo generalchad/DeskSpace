@@ -87,7 +87,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
-| The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs` |
+| The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug.rs` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs`, `layout.rs`, `paint.rs`, `draw.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
@@ -716,82 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X4. Capture the log, and `--debug` (app).** Needs X3.
-  **[needs human]**
-  - `cli.rs`: `pub debug: bool` with `#[arg(long, hide = true)]` and a
-    `///` doc in the style of `on_top`'s ("Development aid: open the
-    debug window, with a live log console and test tools (ROADMAP
-    D14).").
-  - New `deskspace-app/src/debug_log.rs` (declare it in `main.rs`):
-    - `LogBuffer`, a `Clone` handle over `Arc<Mutex<..>>` holding at most
-      `CAPACITY` (10,000) `LogLine`s and the next `seq`: `push(level,
-      target, message)` stamps `seq` and `millis` (from a
-      `static START: OnceLock<Instant>` set on first use) and drops the
-      oldest past the capacity; `since(seq) -> Vec<LogLine>` returns the
-      lines with a higher `seq`.
-    - `ConsoleLayer { buffer: LogBuffer }`, implementing
-      `tracing_subscriber::Layer<S>`. `on_event` reads the fields with a
-      `LineVisitor` (`tracing::field::Visit`): the `message` field first,
-      then a space and `key=value` for each other field, in order.
-    - `ConsoleLevel`, wrapping a `tracing_subscriber::reload::Handle` to
-      a `LevelFilter`, with `set(LogLevel)` that logs a `warn` if the
-      reload fails.
-    - `pub struct DebugLog { pub buffer: LogBuffer, pub level:
-      ConsoleLevel }`.
-    - Tests: the ring drops the oldest and `seq` keeps counting; `since`
-      returns only newer lines; under
-      `tracing::subscriber::with_default`, `info!(count = 2, "hello")`
-      records level Info, this module's target, and the message `hello
-      count=2`.
-  - `main.rs`:
-    - `init_tracing(verbosity, debug: bool) -> Option<DebugLog>`. Build
-      `tracing_subscriber::registry()` with the existing `fmt` layer
-      (`with_target(false)`, under the same `EnvFilter`, as a per-layer
-      filter), plus, only when `debug` is set, `ConsoleLayer` under a
-      `reload::Layer` of `LevelFilter::DEBUG`. `RUST_LOG` and `-v` still
-      decide stderr alone. If the locked `tracing-subscriber` will not
-      accept a reloadable per-layer filter, stop and ask; do not change
-      the dependency.
-    - Right after `init_tracing`, in every build, with or without
-      `--debug`: a panic hook (`std::panic::set_hook`) that logs
-      `tracing::error!(%info, "panic")` and then calls the previous hook
-      (taken with `std::panic::take_hook`).
-    - Pass the `Option<DebugLog>` to `bootstrap::run`.
-  - `bootstrap.rs`: after `App::new`, set `app.debug =
-    debug_log.map(|log| DebugTools::new(log, cli.config.is_none()))`, as
-    `app.layer` is set.
-  - New `app/debug.rs` (`mod debug;` in `app.rs`): `pub(super) struct
-    DebugTools { log: DebugLog, sent: u64, real_config: bool, started:
-    Instant }` and an `App` field `debug: Option<DebugTools>` (`None` in
-    `App::new`).
-    - `App::open_debug(ui)`: sets `sent` to 0 (so a reopened window gets
-      the whole ring again), `ui.open_debug(&self.debug_panel())`, and
-      starts the timer. `debug_panel` returns an empty `sections` list for
-      now, with `console_level` as last set (start at `Debug`).
-    - A `Timer::DebugLog` variant (the next free value; add it to
-      `Timer::ALL` and an arm in `App::on_timer`), re-armed every
-      `DEBUG_LOG_MS` (100) while `ui.is_debug_open()`: push
-      `log.buffer.since(sent)` with `ui.append_debug_log` and move `sent`.
-      A timer, not a waker, so a line logged while draining cannot feed
-      itself.
-    - `App::on_debug(ui, DebugEvent)`: `ConsoleLevel` calls
-      `log.level.set`, `Closed` clears the timer, the rest is ignored
-      until X5. Replace X1's TODO arm with `Event::Debug(event) =>
-      self.on_debug(ui, event)`.
-    - On `Started`, when `self.debug` is set, call `open_debug` last.
-  - Docs: `CONTEXT.md` section 3, the `app/` table: a `debug` row ("the
-    debug window's panel and actions, and the log console's feed (ROADMAP
-    D14)"). Section 7 step 1: one sentence that `--debug` adds a console
-    layer with its own level and every build logs panics. Section 8's CLI
-    flags: add `--debug` to the hidden development flags. The file map
-    row from X2 also names `debug_log.rs` and `app/debug.rs`.
-  - **[needs human]** check: the window opens with the console already
-    holding the startup lines; moving a space adds lines live; Level
-    Trace shows trace lines and Info stops new debug ones; Filter, Pause
-    and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save
-    log…" work; a `-Release` build shows the log with no console window;
-    without `--debug` nothing opens and stderr logs as before.
-
 - [ ] **X5. The panel framework and the tray entry (app).** Needs X4.
   **[needs human]**
   - Turn `app/debug.rs` into `app/debug/mod.rs` (pure move first, in the
@@ -1342,6 +1266,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X4 (F-61) | With `--debug`, the window opens with the console already holding the startup lines; moving a space adds lines live; Level Trace shows trace lines and Info stops new debug ones; Filter, Pause and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save log…" work; a `-Release` build shows the log with no console window; without `--debug` nothing opens and stderr logs as before. |
 | C2 (F-29) | With "Use Windows accent" on, selection and border take the accent and follow it live when it changes in Windows Settings (watch for the `WM_DWMCOLORIZATIONCOLORCHANGED` note under **Found while working**). |
 | C3 (F-30) | Switching "Settings and menus" between Dark and Light repaints the open settings window and the next popup menu. |
 | C4 (F-34) | "Start DeskSpace when you sign in" adds and removes the `Run` value, and DeskSpace starts at sign-in. |

@@ -98,6 +98,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
+  | `debug` | the debug window's panel and actions, and the log console's feed (ROADMAP D14) |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
 ## 4. Domain model (`deskspace-core`)
@@ -964,7 +965,9 @@ in `ui.rs`. What spans them:
 ## 7. Runtime flow
 
 1. `main` parses the CLI and initializes `tracing` (`-v` debug, `-vv` trace;
-   `RUST_LOG` overrides both), then calls `bootstrap::run`.
+   `RUST_LOG` overrides both), then calls `bootstrap::run`. `--debug` adds a
+   console layer (`debug_log.rs`) with its own level, and every build logs
+   panics at error.
 2. `bootstrap::run`: with `--show`, hands off to a running instance and exits
    before loading anything. Otherwise it enables DPI awareness, loads or
    creates `Config` (migrating older files; `--reset` backs up the old file
@@ -1206,8 +1209,8 @@ in `ui.rs`. What spans them:
 - CLI flags (`cli.rs`): `--config`, `--placement` (`top-level` |
   `desktop-background` | `desktop-foreground`), `--reset`, `--hidden`,
   `--show`, `--settings`, `--no-icons`, `--click-through`, `-v` / `-vv`, and
-  the hidden development flags `--on-top`, `--takeover-layer`, and
-  `--takeover`.
+  the hidden development flags `--on-top`, `--takeover-layer`,
+  `--takeover`, and `--debug`.
 
 ## 9. Feature parity
 

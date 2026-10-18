@@ -7,8 +7,9 @@ use deskspace_platform::{
     Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode, work_area_at,
 };
 
-use crate::app::{App, LayerState, tray_tooltip};
+use crate::app::{App, DebugTools, LayerState, tray_tooltip};
 use crate::cli::Cli;
+use crate::debug_log::DebugLog;
 
 const INITIAL_SPACE: &str = "Desktop";
 const INITIAL_RECT: Rect = Rect::new(60, 60, 440, 320);
@@ -91,7 +92,7 @@ fn apply_seed(desktop: &mut Desktop, command: Command, bounds: Rect) -> bool {
     outcome.is_applied()
 }
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
+pub fn run(cli: Cli, debug_log: Option<DebugLog>) -> anyhow::Result<()> {
     deskspace_platform::enable_per_monitor_awareness();
 
     // `--show` from the desktop menu (or a shortcut): hand it to a running
@@ -151,6 +152,7 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 
     let mut app = App::new(config, store, hidden, cli.settings);
     app.layer = LayerState::new(cli.takeover_layer, cli.takeover);
+    app.debug = debug_log.map(|log| DebugTools::new(log, cli.config.is_none()));
     tracing::info!(
         path = %app.store.path().display(),
         storage = %app.storage.root().display(),

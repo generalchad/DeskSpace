@@ -71,6 +71,11 @@ pub struct Cli {
     #[arg(long, hide = true)]
     pub on_top: bool,
 
+    /// Development aid: open the debug window, with a live log console and
+    /// test tools (ROADMAP D14).
+    #[arg(long, hide = true)]
+    pub debug: bool,
+
     /// Development aid: draw the loose desktop items on a chrome-less layer
     /// window (M2 takeover). Additive: Explorer still draws its own icons.
     #[arg(long, hide = true)]
