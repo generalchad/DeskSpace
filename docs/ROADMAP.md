@@ -277,6 +277,46 @@ A native, lightweight, offline Windows desktop organizer that:
     items").
   - Work items: `TASKS.md` section U.
 
+- **D12. Hide and show animations (2026-10-17).** Decides F-33 and M5
+  item 5.
+  - *What animates:* hiding and showing the spaces (tray, space menu,
+    hotkey, desktop verb), and a space's own roll-up and roll-down. M5's
+    hide-all, auto-hide, and peek (F-11, F-13) reuse the same mechanism when
+    they land. Startup, the desktop layer, and a space's create or delete
+    are not animated.
+  - *Effects:* None, Roll (the space rolls up into its top edge and back
+    down), Fade, Pixelate, Gradient (a soft-edged fade that sweeps down
+    from the title bar), and Dissolve. Showing plays the effect in reverse.
+    A space's roll-up is always a roll, at the same speed; None makes it
+    instant too.
+  - *Settings:* Global only, on the General page: the effect, and its
+    duration as a slider (100 to 1000 ms, 250 by default). The default
+    effect is Roll, for new and upgraded installs alike, so an upgrade
+    starts animating; this change is on purpose (section 3, "never break
+    users"). When Windows' "Animation effects" is off
+    (`SPI_GETCLIENTAREAANIMATION`), every effect plays as None.
+  - *Interrupting:* hiding during a show (or the reverse) turns the running
+    animation around from where it is, so nothing jumps.
+  - *The app sends data:* the app gives the platform the effect and
+    duration (`Ui::set_animation`) and asks for a hide, show, or roll as
+    today. The platform runs the frames itself with a window timer and pure
+    frame math in `render/`, so there is still no per-frame callback into
+    the app.
+  - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
+    whole window (the accent policy, D2) and can only be on or off. Roll
+    changes the window's size, so the blur follows it exactly. The other
+    effects change pixels: the painter applies them to the tint and the
+    contents, which is the same on every path. For the blur to follow them
+    too, spaces move to the Windows composition engine
+    (`Windows.UI.Composition`), where the blur is a host backdrop brush that
+    takes the same opacity and masks. That needs a spike first (`TASKS.md`
+    T1), because spaces are never activated. Until it lands, and wherever
+    it is not available (Windows 10, or when composition fails to start),
+    spaces keep the accent blur: it appears at the start of a show and goes
+    at the end of a hide, in one step. Clear and Solid spaces have no blur,
+    so they animate fully either way.
+  - Work items: `TASKS.md` section T.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -323,6 +363,8 @@ lists what each has done.
    before turning on the update feed.
 4. **M2 undo** for layout changes, file moves, and space deletion (D11;
    `TASKS.md` section U).
+5. **Hide and show animations** (M5 item 5, D12; `TASKS.md` section T),
+   ahead of the rest of M5. The composition spike (T1) runs alongside.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -478,8 +520,9 @@ Remaining:
 4. Title bar style: hidden, hover-only, or always shown, with alignment and
    size (F-28). A hidden title bar needs another way to move the space, such
    as Alt+drag or a grip.
-5. DirectComposition groundwork, then smooth show/hide/roll animations, with
-   an on/off switch and a speed setting (F-33).
+5. Smooth show/hide/roll animations with a choice of effects and a duration
+   setting (F-33, D12; `TASKS.md` section T). The composition groundwork
+   they need for the blur (T1, T7, T8) is also the start of item 6.
 6. Blurred spaces with corner radii beyond DWM's 8 px, using a composition
    backdrop clipped to an anti-aliased rounded shape.
    - Today the accent blur ignores window and blur regions, so blurred spaces
@@ -714,7 +757,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations toggle | M5 | Open |
+| F-33 | Hide/show and roll-up animations (effect and duration) | M5 | Open; decided in D12 (`TASKS.md` section T) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
@@ -769,7 +812,7 @@ Resolve each one during the milestone that raises it.
      every key the code uses has English text.
 
 Every other question raised so far is answered by a decision in section 2
-(D2, D3, D6-D9, D11).
+(D2, D3, D6-D9, D11, D12).
 
 ## 9. Risks
 
