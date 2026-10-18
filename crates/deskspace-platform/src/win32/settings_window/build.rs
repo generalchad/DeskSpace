@@ -13,19 +13,33 @@ pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
     (value as i64 * dpi as i64 / 96) as i32
 }
 
-/// The UI font (Segoe UI 9pt on Windows 11) at `dpi`, a larger semibold
-/// variant for section headings, and the symbol font for glyphs such as the
-/// color eyedropper.
-unsafe fn create_fonts(dpi: u32) -> (HFONT, HFONT, HFONT) {
+/// The window's fonts at `dpi`.
+struct Fonts {
+    /// The UI font (Segoe UI 9pt on Windows 11).
+    body: HFONT,
+    /// A larger semibold variant for section headings.
+    heading: HFONT,
+    /// The UI font in semibold, for the rail's group titles.
+    strong: HFONT,
+    /// The symbol font for glyphs such as the color eyedropper.
+    glyph: HFONT,
+}
+
+unsafe fn create_fonts(dpi: u32) -> Fonts {
     let body = message_logfont(dpi);
-    let mut heading = body;
-    heading.lfWeight = 600;
+    let mut strong = body;
+    strong.lfWeight = 600;
+    let mut heading = strong;
     heading.lfHeight = body.lfHeight * 4 / 3;
-    // SAFETY: both LOGFONTs are fully initialised locals.
-    let (body_font, heading_font) =
-        unsafe { (CreateFontIndirectW(&body), CreateFontIndirectW(&heading)) };
-    let glyph_font = crate::win32::system::glyph_font(dpi);
-    (body_font, heading_font, glyph_font)
+    // SAFETY: the LOGFONTs are fully initialised locals.
+    unsafe {
+        Fonts {
+            body: CreateFontIndirectW(&body),
+            heading: CreateFontIndirectW(&heading),
+            strong: CreateFontIndirectW(&strong),
+            glyph: crate::win32::system::glyph_font(dpi),
+        }
+    }
 }
 
 struct Builder {
@@ -476,12 +490,12 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         let page_width = scaled(540, dpi);
         let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
 
-        let (font, heading_font, glyph_font) = create_fonts(dpi);
+        let fonts = create_fonts(dpi);
         let builder = Builder {
             instance,
             dpi,
-            font,
-            heading_font,
+            font: fonts.body,
+            heading_font: fonts.heading,
         };
         let s = |value| builder.s(value);
         let margin = s(12);
@@ -668,9 +682,10 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             state.header_button = header_button;
             state.dividers = dividers;
             state.apply = apply;
-            state.font = font;
-            state.heading_font = heading_font;
-            state.glyph_font = glyph_font;
+            state.font = fonts.body;
+            state.heading_font = fonts.heading;
+            state.strong_font = fonts.strong;
+            state.glyph_font = fonts.glyph;
             state.dpi = dpi;
             state.command_bar_top = command_bar_top;
             state.updating = false;

@@ -434,11 +434,8 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
                 ANIMATIONS_OFF_NOTE
             },
         ),
-        Field::button(
-            page.open_settings,
-            "",
-            "Open Windows animation settings\u{2026}",
-        ),
+        // Buttons have a fixed width; the note above says what this opens.
+        Field::button(page.open_settings, "", "Windows settings\u{2026}"),
         Field::choice(page.effect, "Effect", &choice_refs, selected).enabled(system_on),
         Field::slider(
             page.duration,
@@ -458,6 +455,7 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
                 (DETAIL_RANGE.0.into(), DETAIL_RANGE.1.into()),
                 resolved.detail.into(),
             )
+            .suffix("")
             .marks(vec![
                 SliderMark::new(DETAIL_RANGE.0.into(), "Fine"),
                 SliderMark::new(DETAIL_RANGE.1.into(), "Coarse"),

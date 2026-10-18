@@ -8,7 +8,12 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum NavRow {
     Title(String),
-    Entry { label: String, marked: bool },
+    /// `nested` entries sit under a group title and are indented below it.
+    Entry {
+        label: String,
+        marked: bool,
+        nested: bool,
+    },
 }
 
 impl NavRow {
@@ -32,9 +37,11 @@ pub(super) fn nav_rows(nav: &SettingsNav) -> Vec<NavRow> {
         if !group.title.is_empty() {
             rows.push(NavRow::Title(group.title.clone()));
         }
+        let nested = !group.title.is_empty();
         rows.extend(group.entries.iter().map(|entry| NavRow::Entry {
             label: entry.label.clone(),
             marked: entry.marked,
+            nested,
         }));
     }
     rows
@@ -203,6 +210,42 @@ mod tests {
         // The row showing a flattened entry, and the fallback past the end.
         assert_eq!(entry_row(&rows, 2), 4);
         assert_eq!(entry_row(&rows, 9), 1);
+    }
+
+    #[test]
+    fn only_entries_under_a_title_are_nested() {
+        let mut nav = SettingsNav {
+            groups: vec![
+                SettingsNavGroup {
+                    title: String::new(),
+                    entries: vec![SettingsNavEntry {
+                        label: "General".into(),
+                        page: 0,
+                        marked: false,
+                    }],
+                },
+                SettingsNavGroup {
+                    title: "Animations".into(),
+                    entries: vec![SettingsNavEntry {
+                        label: "Fold".into(),
+                        page: 1,
+                        marked: false,
+                    }],
+                },
+            ],
+            ..Default::default()
+        };
+        let nested = |rows: &[NavRow]| -> Vec<bool> {
+            rows.iter()
+                .filter_map(|row| match row {
+                    NavRow::Entry { nested, .. } => Some(*nested),
+                    NavRow::Title(_) => None,
+                })
+                .collect()
+        };
+        assert_eq!(nested(&nav_rows(&nav)), [false, true]);
+        nav.groups[1].title.clear();
+        assert_eq!(nested(&nav_rows(&nav)), [false, false]);
     }
 
     #[test]

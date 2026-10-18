@@ -165,6 +165,8 @@ pub(super) struct SettingsState {
     apply: Option<HWND>,
     font: HFONT,
     heading_font: HFONT,
+    /// Semibold body text, for the rail's group titles.
+    strong_font: HFONT,
     /// The symbol font for the color field's eyedropper glyph.
     glyph_font: HFONT,
     /// The layout DPI, for scaling the rail's paint metrics.
@@ -239,6 +241,7 @@ impl Drop for SettingsState {
         unsafe {
             let _ = DeleteObject(HGDIOBJ(self.font.0));
             let _ = DeleteObject(HGDIOBJ(self.heading_font.0));
+            let _ = DeleteObject(HGDIOBJ(self.strong_font.0));
             let _ = DeleteObject(HGDIOBJ(self.glyph_font.0));
             let _ = DeleteObject(HGDIOBJ(self.body_brush.0));
             let _ = DeleteObject(HGDIOBJ(self.command_bar_brush.0));
@@ -268,6 +271,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             apply: None,
             font: HFONT::default(),
             heading_font: HFONT::default(),
+            strong_font: HFONT::default(),
             glyph_font: HFONT::default(),
             dpi: 0,
             command_bar_top: 0,

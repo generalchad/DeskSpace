@@ -75,12 +75,13 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
     // SAFETY: `item.hDC` is a live DC owned by the list box during
     // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
     unsafe {
-        let Some((colors, body, accent, font, dpi, row)) = with_state(window, |state| {
+        let Some((colors, body, accent, font, strong, dpi, row)) = with_state(window, |state| {
             Some((
                 state.colors,
                 state.body_brush,
                 state.accent_brush,
                 state.font,
+                state.strong_font,
                 state.dpi,
                 state.nav_rows.get(item.itemID as usize).cloned(),
             ))
@@ -93,10 +94,20 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
             return;
         };
         let selected = item.itemState.0 & ODS_SELECTED.0 != 0;
-        let text = match &row {
-            NavRow::Title(_) => colors.secondary_text,
-            NavRow::Entry { .. } if selected => colors.text,
-            NavRow::Entry { .. } => colors.secondary_text,
+        // A group title is semibold in the primary text color, and the
+        // pages under it are indented, so it reads as a section header
+        // rather than one more page.
+        let (text, row_font, indent) = match &row {
+            NavRow::Title(_) => (colors.text, strong, 0),
+            NavRow::Entry { nested, .. } => (
+                if selected {
+                    colors.text
+                } else {
+                    colors.secondary_text
+                },
+                font,
+                if *nested { scaled(12, dpi) } else { 0 },
+            ),
         };
         let inset = scaled(12, dpi);
         if selected && row.is_entry() {
@@ -109,10 +120,10 @@ pub(super) unsafe fn on_draw_item(window: HWND, item: &DRAWITEMSTRUCT) {
         }
         SetBkMode(item.hDC, TRANSPARENT);
         SetTextColor(item.hDC, colorref(text));
-        let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
+        let previous = SelectObject(item.hDC, HGDIOBJ(row_font.0));
         let mut label: Vec<u16> = row.label().encode_utf16().collect();
         let mut rect = item.rcItem;
-        rect.left += inset;
+        rect.left += inset + indent;
         rect.right -= inset;
         DrawTextW(
             item.hDC,
