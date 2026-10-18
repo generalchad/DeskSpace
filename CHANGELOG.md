@@ -20,7 +20,8 @@ Notable changes to DeskSpace, newest first. The format follows
 - "Install updates automatically" in Settings > General: the installed version
   downloads a new release in the background and installs it after you have
   been away for 10 minutes, or when you choose "Restart to update" in the tray
-  menu. Off by default.
+  menu. Off by default. If an update cannot be installed, DeskSpace starts
+  again on the current version and tells you why.
 - "Create shortcuts here" in the menu a right drag shows on a space, as in
   Explorer: the files stay where they are and the space gets a shortcut to
   each.
