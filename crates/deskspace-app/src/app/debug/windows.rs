@@ -2,7 +2,7 @@
 //! windows and of the monitors.
 
 use deskspace_core::geometry::Rect;
-use deskspace_platform::{DebugControlKind, Ui, monitors};
+use deskspace_platform::{DebugControlKind, TaskbarRow, Ui, monitors};
 
 use crate::app::App;
 
@@ -50,6 +50,30 @@ impl App {
     }
 }
 
+/// Each taskbar: topmost or not, and whether it is above the desktop layer
+/// (under it, its clicks go to the layer).
+pub(super) fn taskbars_text(taskbars: &[TaskbarRow]) -> String {
+    if taskbars.is_empty() {
+        return "none found".to_string();
+    }
+    taskbars
+        .iter()
+        .map(|taskbar| {
+            let layer = match taskbar.above_layer {
+                None => "no layer",
+                Some(true) => "above the layer",
+                Some(false) => "UNDER THE LAYER (clicks go to the layer)",
+            };
+            format!(
+                "{}: topmost {}, {layer}",
+                taskbar.class,
+                yes_no(taskbar.topmost)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn table(columns: &[&str], rows: Vec<Vec<String>>) -> DebugControlKind {
     DebugControlKind::Table {
         columns: columns.iter().map(|column| column.to_string()).collect(),
@@ -72,6 +96,23 @@ pub(super) fn rect_text(rect: Rect) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_taskbar_under_the_layer_stands_out() {
+        let row = |above_layer| TaskbarRow {
+            class: "Shell_TrayWnd".into(),
+            rect: Rect::new(0, 1032, 2560, 48),
+            topmost: false,
+            above_layer,
+        };
+        assert!(row(Some(false)).is_blocked());
+        assert!(!row(None).is_blocked());
+        let text = taskbars_text(&[row(Some(false))]);
+        assert_eq!(
+            text,
+            "Shell_TrayWnd: topmost no, UNDER THE LAYER (clicks go to the layer)"
+        );
+    }
 
     #[test]
     fn rects_read_as_origin_then_size() {

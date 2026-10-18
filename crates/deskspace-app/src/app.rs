@@ -548,7 +548,7 @@ impl App {
             Timer::Preview => self.flush_preview(ui),
             // The type-to-select prefix expired; the next key starts fresh.
             Timer::Type => self.selection.clear_typed(),
-            Timer::Health => self.health_tick(),
+            Timer::Health => self.health_tick(ui),
             Timer::UpdateIdle => self.on_update_idle_timer(ui),
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),
             Timer::DebugLog => self.feed_debug_log(ui),

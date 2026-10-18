@@ -12,8 +12,9 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GetClassNameW, GetWindowRect, GetWindowThreadProcessId,
-    IsWindowVisible, MONITORINFOF_PRIMARY,
+    EnumChildWindows, EnumWindows, GWL_EXSTYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW,
+    GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, MONITORINFOF_PRIMARY,
+    WINDOW_EX_STYLE, WS_EX_TOPMOST,
 };
 use windows::core::{BOOL, w};
 
@@ -108,6 +109,62 @@ pub struct WindowRow {
     pub rect: Rect,
     pub dpi: u32,
     pub visible: bool,
+}
+
+/// One taskbar and where it stands against the desktop layer, which spans
+/// the whole desktop: a taskbar under the layer cannot be clicked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskbarRow {
+    /// `Shell_TrayWnd` (primary) or `Shell_SecondaryTrayWnd`.
+    pub class: String,
+    pub rect: Rect,
+    pub topmost: bool,
+    /// Whether it is above the layer in z-order; `None` without a layer.
+    pub above_layer: Option<bool>,
+}
+
+impl TaskbarRow {
+    /// Whether the layer covers it, so its clicks go to the layer.
+    pub fn is_blocked(&self) -> bool {
+        self.above_layer == Some(false)
+    }
+}
+
+/// Every taskbar, primary first in z-order terms, against `layer`.
+pub(crate) fn taskbars(layer: Option<HWND>) -> Vec<TaskbarRow> {
+    let windows = enumerate(None);
+    let layer_index = layer.and_then(|layer| windows.iter().position(|window| *window == layer));
+    windows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, window)| {
+            let row = window_row(*window, None);
+            matches!(
+                row.class.as_str(),
+                "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
+            )
+            .then(|| TaskbarRow {
+                class: row.class,
+                rect: row.rect,
+                topmost: is_topmost(*window),
+                above_layer: layer_index.map(|layer| index < layer),
+            })
+        })
+        .collect()
+}
+
+/// The foreground window, of any process: what Explorer's full-screen
+/// detection looks at.
+pub fn foreground_window() -> Option<WindowRow> {
+    // SAFETY: a plain query; the handle is only read from.
+    let window = unsafe { GetForegroundWindow() };
+    (!window.is_invalid()).then(|| window_row(window, None))
+}
+
+fn is_topmost(window: HWND) -> bool {
+    // SAFETY: a plain style query on a window from the enumeration.
+    let style = unsafe { GetWindowLongW(window, GWL_EXSTYLE) } as u32;
+    WINDOW_EX_STYLE(style).contains(WS_EX_TOPMOST)
 }
 
 /// One display, as Windows reports it.

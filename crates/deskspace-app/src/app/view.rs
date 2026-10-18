@@ -10,8 +10,8 @@ use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
     arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
-    hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
-    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    foreground_window, hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons,
+    space_dpi, system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
 };
 
@@ -139,6 +139,8 @@ pub(crate) struct LayerState {
     takeover_flag: bool,
     /// The desktop's loose items read from the shell, which the layer draws.
     entries: Vec<DesktopEntry>,
+    /// Whether a taskbar was last seen under the layer (`check_taskbars`).
+    taskbar_blocked: bool,
     /// The debug window's takeover switch for this session (ROADMAP D14),
     /// which wins over the flag and the setting and is never saved.
     session_takeover: Option<bool>,
@@ -151,6 +153,7 @@ impl LayerState {
             takeover_flag,
             entries: Vec::new(),
             session_takeover: None,
+            taskbar_blocked: false,
         }
     }
 }
@@ -533,7 +536,43 @@ impl App {
 
     /// The health timer: re-hide Explorer's icons if it recreated its layer
     /// without broadcasting `TaskbarCreated`.
-    pub(super) fn health_tick(&self) {
+    /// Logs when a taskbar falls under the desktop layer, which then takes
+    /// its clicks, and when it is clear again, with what Windows reports at
+    /// that moment. Diagnostic only: an open bug whose trigger is unknown.
+    pub(super) fn check_taskbars(&mut self, ui: &Ui) {
+        if !self.layer_active() {
+            self.layer.taskbar_blocked = false;
+            return;
+        }
+        let taskbars = ui.taskbars();
+        let blocked = taskbars.iter().any(|taskbar| taskbar.is_blocked());
+        if blocked == std::mem::replace(&mut self.layer.taskbar_blocked, blocked) {
+            return;
+        }
+        let state: Vec<String> = taskbars
+            .iter()
+            .map(|taskbar| {
+                format!(
+                    "{} topmost={} above_layer={:?} rect={:?}",
+                    taskbar.class, taskbar.topmost, taskbar.above_layer, taskbar.rect
+                )
+            })
+            .collect();
+        let foreground = foreground_window()
+            .map(|window| format!("{} {:?} {:?}", window.class, window.title, window.rect));
+        if blocked {
+            tracing::warn!(
+                taskbars = ?state,
+                ?foreground,
+                "a taskbar is under the desktop layer; its clicks go to the layer"
+            );
+        } else {
+            tracing::info!(taskbars = ?state, "every taskbar is above the desktop layer again");
+        }
+    }
+
+    pub(super) fn health_tick(&mut self, ui: &mut Ui) {
+        self.check_taskbars(ui);
         if !cfg!(test) {
             rehide_desktop_icons();
         }

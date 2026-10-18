@@ -33,6 +33,7 @@ use crate::debug_log::DebugLog;
 use ids::DebugId;
 use table::{DEBUG_CONTROLS, DebugSectionId};
 use test_spaces::STRESS_SIZES;
+use windows::taskbars_text;
 
 /// How often new log lines are moved into the console, in milliseconds.
 const DEBUG_LOG_MS: u32 = 100;
@@ -105,6 +106,9 @@ impl App {
             DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
             DebugId::OnTop => DebugControlKind::Toggle { on: ui.is_on_top() },
             DebugId::WindowTable => self.window_table(ui),
+            DebugId::Taskbars => DebugControlKind::Readout {
+                text: taskbars_text(&ui.taskbars()),
+            },
             DebugId::MonitorTable => self.monitor_table(),
             DebugId::CreateTestSpaces
             | DebugId::CreateStress
@@ -209,7 +213,7 @@ impl App {
                     self.set_on_top(ui, on);
                 }
             }
-            DebugId::WindowTable | DebugId::MonitorTable => {}
+            DebugId::WindowTable | DebugId::MonitorTable | DebugId::Taskbars => {}
             DebugId::CreateTestSpaces => self.create_test_spaces(ui),
             DebugId::StressSize => {
                 if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut())
@@ -388,6 +392,7 @@ impl App {
             Self::clear_timer(ui, Timer::DebugRefresh);
             return;
         }
+        self.check_taskbars(ui);
         self.push_debug_panel(ui);
     }
 

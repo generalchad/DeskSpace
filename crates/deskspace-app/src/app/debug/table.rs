@@ -71,6 +71,11 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Keep spaces above other windows",
     },
     DebugRow {
+        id: DebugId::Taskbars,
+        section: DebugSectionId::Windows,
+        label: "Taskbars",
+    },
+    DebugRow {
         id: DebugId::WindowTable,
         section: DebugSectionId::Windows,
         label: "Windows",

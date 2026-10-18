@@ -26,7 +26,8 @@ pub use ui::{
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;
 pub use win32::debug_info::{
-    HookState, MonitorRow, ProcessStats, WindowRow, monitors, process_stats, transparency_enabled,
+    HookState, MonitorRow, ProcessStats, TaskbarRow, WindowRow, foreground_window, monitors,
+    process_stats, transparency_enabled,
 };
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::desktop_icons::{

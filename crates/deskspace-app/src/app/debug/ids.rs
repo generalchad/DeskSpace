@@ -52,10 +52,11 @@ pub(crate) enum DebugId {
     MarkLog = 44,
     LogEvents = 45,
     InputState = 46,
+    Taskbars = 47,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 46] = [
+    pub(crate) const ALL: [Self; 47] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -102,6 +103,7 @@ impl DebugId {
         Self::MarkLog,
         Self::LogEvents,
         Self::InputState,
+        Self::Taskbars,
     ];
 
     pub(crate) fn id(self) -> u32 {

@@ -200,6 +200,12 @@ impl Ui {
         }
     }
 
+    /// Every taskbar's topmost flag and whether it is above the desktop
+    /// layer, which would otherwise take its clicks.
+    pub fn taskbars(&self) -> Vec<crate::win32::debug_info::TaskbarRow> {
+        crate::win32::debug_info::taskbars(desktop_layer_window())
+    }
+
     /// The keyboard and mouse hooks' flags, for the debug window.
     pub fn hook_state(&self) -> crate::win32::debug_info::HookState {
         crate::win32::debug_info::hook_state()

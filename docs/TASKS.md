@@ -973,6 +973,17 @@ each id is in `archive/TASKS-done.md`.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
+- **Open bug, needs decision:** with takeover on, the primary taskbar
+  sometimes stops taking clicks; they reach the desktop layer instead
+  (seen 2026-10-18). `scripts/zorder.ps1` showed `Shell_TrayWnd` with
+  topmost cleared and below the layer, which spans the whole desktop;
+  the secondary taskbar was fine; a restart cleared it. Hypothesis:
+  Explorer's full-screen detection takes the layer, which covers the
+  monitor, for a full-screen app. `App::check_taskbars` now logs a warning
+  (with the taskbars and the foreground window) when it happens and Debug
+  → Windows → Taskbars shows it, to find the trigger. Fix options: one
+  layer per monitor sized to its work area (robust), or re-sinking the
+  layer on the health tick (a 5-second band-aid).
 - `app/menus.rs` `show_desktop_menu`: New › Folder (or any New entry) from
   the takeover desktop menu starts Explorer's rename in its hidden view, so
   the rename box is invisible. Suggested task: start DeskSpace's inline
