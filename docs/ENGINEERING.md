@@ -36,7 +36,8 @@ executable is locked), builds, and runs the app with a scratch config at
 `%TEMP%\deskspace-dev\deskspace.toml`. Switches: `-Release`, `-Fresh` (delete
 the scratch config), `-RealConfig`, `-OnTop`, `-Settings`, `-NoIcons`, `-Check`
 (fmt, clippy `-D warnings`, and tests first), `-NoRun`, `-Verbosity 0..2`;
-anything after `--` goes to the app. `Get-Help ./scripts/dev.ps1` has
+arguments the script does not know (such as `--debug`) go to the app,
+with or without a `--` before them. `Get-Help ./scripts/dev.ps1` has
 examples.
 
 **The gates.** Before a change is complete, and before every commit, run

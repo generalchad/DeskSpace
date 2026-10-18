@@ -27,8 +27,15 @@
 .EXAMPLE
     ./scripts/dev.ps1 -RealConfig -- --placement desktop-background
     Use the real configuration and pass extra arguments to DeskSpace.
+
+.EXAMPLE
+    ./scripts/dev.ps1 -Fresh --debug
+    Open the debug window. Arguments the script does not know go to
+    DeskSpace, with or without a `--` before them.
 #>
-[CmdletBinding()]
+# No positional binding: a bare app flag such as `--debug` would otherwise
+# bind to -Verbosity, the first non-switch parameter, and fail as an int.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     # Build with optimizations.
     [switch]$Release,
