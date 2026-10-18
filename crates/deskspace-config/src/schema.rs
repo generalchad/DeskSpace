@@ -1,3 +1,4 @@
+use deskspace_core::animation::Animations;
 use deskspace_core::{Desktop, Theme};
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +63,8 @@ pub struct WindowSettings {
     /// A version the user chose to skip; an automatic check does not offer it
     /// again.
     pub skipped_version: Option<String>,
+    /// What each kind of moment plays (ROADMAP D12), clamped on load.
+    pub animations: Animations,
 }
 
 impl Default for WindowSettings {
@@ -81,18 +84,21 @@ impl Default for WindowSettings {
             install_updates: false,
             last_update_check: None,
             skipped_version: None,
+            animations: Animations::default(),
         }
     }
 }
 
 impl WindowSettings {
     /// The settings with `new_space_width` and `new_space_height` brought into
-    /// `NEW_SPACE_SIZE_RANGE`, so a hand-edited file loads in range.
+    /// `NEW_SPACE_SIZE_RANGE` and the animations into their ranges, so a
+    /// hand-edited file loads in range.
     pub fn clamped(self) -> Self {
         let size = |value: i32| value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
         Self {
             new_space_width: size(self.new_space_width),
             new_space_height: size(self.new_space_height),
+            animations: self.animations.clamped(),
             ..self
         }
     }
@@ -365,6 +371,62 @@ mod tests {
         assert_eq!(big.look().unwrap().theme.icon_size, 150);
 
         let written = toml::to_string(&parsed).unwrap();
+        let reread: Config = toml::from_str(&written).unwrap();
+        assert_eq!(reread, parsed);
+    }
+
+    #[test]
+    fn animations_load_their_defaults_and_clamp() {
+        use deskspace_core::animation::{
+            DURATION_MS_RANGE, Effect, EffectChoice, Kind, STAGGER_MS_RANGE,
+        };
+
+        let parsed: Config = toml::from_str(
+            "version = 2
+[window]
+",
+        )
+        .unwrap();
+        assert_eq!(parsed.window.animations, Animations::default());
+
+        let text = r#"
+            version = 2
+
+            [window.animations]
+            stagger_ms = 0
+
+            [window.animations.hide_show]
+            effect = "black_hole"
+            duration_ms = 5
+
+            [window.animations.delete]
+            effect = "same_as_new_space"
+            duration_ms = 400
+
+            [window.animations.fold]
+            effect = "fade"
+        "#;
+        let mut parsed: Config = toml::from_str(text).unwrap();
+        parsed.migrate();
+        let animations = parsed.window.animations;
+        assert_eq!(
+            animations.hide_show.effect,
+            EffectChoice::Effect(Effect::Roll)
+        );
+        assert_eq!(animations.hide_show.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(
+            animations.delete.effect,
+            EffectChoice::SameAs(Kind::NewSpace)
+        );
+        assert_eq!(animations.delete.duration_ms, 400);
+        assert_eq!(animations.fold.effect, EffectChoice::Effect(Effect::Roll));
+        assert_eq!(animations.stagger_ms, STAGGER_MS_RANGE.0);
+
+        let written = toml::to_string(&parsed).unwrap();
+        assert!(
+            written.contains("effect = \"same_as_new_space\""),
+            "{written}"
+        );
         let reread: Config = toml::from_str(&written).unwrap();
         assert_eq!(reread, parsed);
     }

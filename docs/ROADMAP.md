@@ -303,11 +303,12 @@ A native, lightweight, offline Windows desktop organizer that:
     full space, and closes to a line, then a dot), and Burn (a dissolve
     with a glowing edge). Black hole (the space swallowed by a hole that
     opens on the desktop) is planned after composition (T14). A kind can
-    limit the list: Fold offers only Roll.
+    limit the list: Fold offers only None and Roll.
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
-    Direction (which edge) for Roll, Gradient, and Fly. A control the
+    Direction (which edge; Automatic is the effect's own: the top for Roll
+    and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The
     controls live on a new, Global-only Animations page. Defaults: Roll at
     250 ms for Hide and show, New space, and Fold; startup one after

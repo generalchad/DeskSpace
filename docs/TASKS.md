@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- T3, T5-T7 (animations; pure or without callers, so no screen needed).
+- T5-T7 (animations; pure or without callers, so no screen needed).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -533,28 +533,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T3. The animation model (core, config; pure).**
-  - `deskspace-core/src/animation.rs`:
-    - `Effect { None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt,
-      Burn }` (`snake_case` serde) and `EFFECTS`, one row per effect: its
-      label and the options it uses (`EffectOption::{Detail,
-      Direction}`).
-    - `Kind { HideShow, NewSpace, Delete, Fold }` and `KINDS`, one row per
-      kind: its label, the effects it offers, whether it offers "Same as
-      new space" (Delete), and whether it has startup controls (New
-      space).
-    - `Edge { Top, Bottom, Left, Right, Nearest }`, the ranges
-      (`DURATION_MS_RANGE` 100 to 1000, `DETAIL_RANGE`, `STAGGER_MS_RANGE`)
-      and defaults.
-  - Config: `WindowSettings.animations: Animations`, one
-    `AnimationSettings { effect, duration_ms, detail, direction }` per kind
-    (Delete's effect also has `SameAsNewSpace`), plus `startup:
-    StartupOrder { AllAtOnce, OneAfterAnother }` and `stagger_ms`; the
-    defaults are D12's, and values clamp on load (an effect a kind does
-    not offer falls back to its default).
-  - Tests: a config without `animations` loads D12's defaults; values
-    clamp; every kind offers None and its default; every `EFFECTS` row's
-    options match a test table.
 - [ ] **T4. The Animations page (app, platform).** **[needs human]**
   - Platform: `deskspace_platform::system_animations() -> bool`
     (`SPI_GETCLIENTAREAANIMATION`) and `Event::SystemAnimationsChanged`,

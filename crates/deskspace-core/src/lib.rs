@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod animation;
 pub mod command;
 pub mod desktop;
 pub mod desktop_layer;

@@ -289,6 +289,16 @@ beside it.
   "square"` ("round" and unknown strings load as 8 px, `corner::WINDOWS`), and
   `preset` reads `match_explorer = true|false`.
 
+### Animations (`animation.rs`)
+
+What each kind of moment plays (ROADMAP D12), as data. `EFFECTS` and `KINDS`
+are the two tables: an effect's row names the options it uses, and a kind's
+row the effects and options it offers, the kind it may follow ("Same as new
+space"), and whether it has the startup controls. `Animations` holds one
+`AnimationSettings` per kind in `WindowSettings`; `resolve(kind)` follows
+"same as" to an effect, and `clamped` replaces an effect a kind does not
+offer, or one from a newer version, with the kind's default.
+
 ## 5. Configuration (`deskspace-config`)
 
 `Config { version, desktop, theme, window }` and `WindowSettings`, the

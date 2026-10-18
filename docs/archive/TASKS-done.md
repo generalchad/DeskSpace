@@ -2212,3 +2212,26 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: a config holding `rolled_up = true` loads folded and saves
     `rolled_up` again. Done when `rg -i "roll.?up" crates docs README.md
     --glob '!docs/archive/**'` finds only D12, this task, and that test.
+
+- [x] **T3. The animation model (core, config; pure).**
+  - `deskspace-core/src/animation.rs`:
+    - `Effect { None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt,
+      Burn }` (`snake_case` serde) and `EFFECTS`, one row per effect: its
+      label and the options it uses (`EffectOption::{Detail,
+      Direction}`).
+    - `Kind { HideShow, NewSpace, Delete, Fold }` and `KINDS`, one row per
+      kind: its label, the effects it offers, whether it offers "Same as
+      new space" (Delete), and whether it has startup controls (New
+      space).
+    - `Edge { Top, Bottom, Left, Right, Nearest }`, the ranges
+      (`DURATION_MS_RANGE` 100 to 1000, `DETAIL_RANGE`, `STAGGER_MS_RANGE`)
+      and defaults.
+  - Config: `WindowSettings.animations: Animations`, one
+    `AnimationSettings { effect, duration_ms, detail, direction }` per kind
+    (Delete's effect also has `SameAsNewSpace`), plus `startup:
+    StartupOrder { AllAtOnce, OneAfterAnother }` and `stagger_ms`; the
+    defaults are D12's, and values clamp on load (an effect a kind does
+    not offer falls back to its default).
+  - Tests: a config without `animations` loads D12's defaults; values
+    clamp; every kind offers None and its default; every `EFFECTS` row's
+    options match a test table.
