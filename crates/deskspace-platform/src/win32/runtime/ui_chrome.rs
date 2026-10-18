@@ -183,6 +183,23 @@ impl Ui {
         debug_hwnd().is_some()
     }
 
+    /// Posts `TaskbarCreated` to the controller, as Explorer does when it
+    /// restarts, so the tray icon and takeover recover as they would then.
+    pub fn simulate_taskbar_created(&mut self) {
+        let Some(controller) = with_runtime(|runtime| runtime.controller) else {
+            return;
+        };
+        // SAFETY: posting to our own live window.
+        unsafe {
+            let _ = PostMessageW(
+                Some(controller),
+                controller::taskbar_created_message(),
+                WPARAM(0),
+                LPARAM(0),
+            );
+        }
+    }
+
     /// The keyboard and mouse hooks' flags, for the debug window.
     pub fn hook_state(&self) -> crate::win32::debug_info::HookState {
         crate::win32::debug_info::hook_state()

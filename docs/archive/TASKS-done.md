@@ -2938,3 +2938,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     health timer; on hides them and draws the layer; Re-sync picks up a
     file added to the Desktop folder; the saved config's
     `take_over_desktop` is unchanged afterwards.
+
+- [x] **X20. Simulate (platform, app).** Needs X5. **[needs human]**
+  Section Simulate:
+  - Platform: `Ui::simulate_taskbar_created()` posts the registered
+    `TaskbarCreated` message to the controller, the same value the
+    controller already registers and handles.
+  - `ThemeChanged`, "Windows theme changed", a `Button`:
+    `self.on_event(ui, Event::SystemThemeChanged)`, the event Windows
+    sends.
+  - `ExplorerRestarted`, "Explorer restarted", a `Button`:
+    `ui.simulate_taskbar_created()`.
+  - `ReadOnlyConfig`, "Make the configuration file read-only", a `Toggle`
+    (it asks first when turning on): sets or clears the read-only
+    attribute of the config file with `std::fs::set_permissions`. On
+    `CloseRequested`, clear it again if this toggle set it, before
+    `flush_save`, so a session never leaves the file read-only.
+  - `CrashNow`, "Crash now", a `Button` that asks first, then
+    `panic!("crash requested from the debug window")`. The panic hook
+    (X4) logs it; the process then ends where the panic leaves the window
+    procedure, as a real bug would.
+  - **[needs human]** check: "Windows theme changed" repaints the spaces
+    and the settings window; "Explorer restarted" re-adds the tray icon
+    and, with takeover on, re-hides Explorer's icons; with the config
+    read-only, moving a space shows B29's one "could not save" box, and
+    after Exit the file is writable again; "Crash now" with takeover on
+    ends DeskSpace and the watchdog brings Explorer's icons back within a
+    few seconds, and a debug build's console shows the panic line.

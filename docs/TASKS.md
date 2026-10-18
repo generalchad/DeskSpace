@@ -716,33 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X20. Simulate (platform, app).** Needs X5. **[needs human]**
-  Section Simulate:
-  - Platform: `Ui::simulate_taskbar_created()` posts the registered
-    `TaskbarCreated` message to the controller, the same value the
-    controller already registers and handles.
-  - `ThemeChanged`, "Windows theme changed", a `Button`:
-    `self.on_event(ui, Event::SystemThemeChanged)`, the event Windows
-    sends.
-  - `ExplorerRestarted`, "Explorer restarted", a `Button`:
-    `ui.simulate_taskbar_created()`.
-  - `ReadOnlyConfig`, "Make the configuration file read-only", a `Toggle`
-    (it asks first when turning on): sets or clears the read-only
-    attribute of the config file with `std::fs::set_permissions`. On
-    `CloseRequested`, clear it again if this toggle set it, before
-    `flush_save`, so a session never leaves the file read-only.
-  - `CrashNow`, "Crash now", a `Button` that asks first, then
-    `panic!("crash requested from the debug window")`. The panic hook
-    (X4) logs it; the process then ends where the panic leaves the window
-    procedure, as a real bug would.
-  - **[needs human]** check: "Windows theme changed" repaints the spaces
-    and the settings window; "Explorer restarted" re-adds the tray icon
-    and, with takeover on, re-hides Explorer's icons; with the config
-    read-only, moving a space shows B29's one "could not save" box, and
-    after Exit the file is writable again; "Crash now" with takeover on
-    ends DeskSpace and the watchdog brings Explorer's icons back within a
-    few seconds, and a debug build's console shows the panic line.
-
 ## J. Tabs in spaces (ROADMAP F-49)
 
 Off by default. When a space's tabs are on, its items are paginated, one page
@@ -938,6 +911,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X20 (F-61) | Debug → Simulate: "Windows theme changed" repaints the spaces and the settings window; "Explorer restarted" re-adds the tray icon and, with takeover on, re-hides Explorer's icons; with the config read-only, moving a space shows B29's one "could not save" box, and after Exit the file is writable again; "Crash now" with takeover on ends DeskSpace and the watchdog brings Explorer's icons back within a few seconds, and a debug build's console shows the panic line. |
 | X19 (F-61) | Debug → Takeover, with takeover on: the toggle off brings Explorer's icons back at once and they stay back past the 5-second health timer; on hides them and draws the layer; Re-sync picks up a file added to the Desktop folder; State shows the watchdog running while takeover is on; the saved config's `take_over_desktop` is unchanged afterwards. |
 | X18 (F-61) | Debug → Animations: every effect, played on a space at ¼×, leaves and comes back in place; pressing Play again mid-way turns it around; hiding the spaces from the tray mid-preview keeps them hidden; the other spaces and the model do not change. |
 | X16 (F-61) | Debug → System: switching Windows between dark and light, changing the accent, and turning off transparency each show within a second; selecting an item turns on Watch selection; a rename turns on Editing; Hotkeys says which bindings registered. |

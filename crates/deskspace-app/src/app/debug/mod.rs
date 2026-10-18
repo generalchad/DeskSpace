@@ -10,6 +10,7 @@ mod animations;
 mod config;
 mod diagnostics;
 mod ids;
+mod simulate;
 mod spaces;
 mod system;
 mod table;
@@ -57,6 +58,9 @@ pub(crate) struct DebugTools {
     preview_space: Option<SpaceId>,
     /// The chosen `PREVIEW_KINDS` index.
     preview_kind: usize,
+    /// The configuration file's permissions before the debug window made it
+    /// read-only, put back when it is turned off or DeskSpace closes.
+    writable: Option<std::fs::Permissions>,
 }
 
 impl DebugTools {
@@ -71,6 +75,7 @@ impl DebugTools {
             stress_size: 0,
             preview_space: None,
             preview_kind: 0,
+            writable: None,
         }
     }
 }
@@ -125,6 +130,12 @@ impl App {
                 text: self.hooks_text(ui),
             },
             DebugId::Speed => self.speed_choice(),
+            DebugId::ThemeChanged | DebugId::ExplorerRestarted | DebugId::CrashNow => {
+                DebugControlKind::Button { enabled: true }
+            }
+            DebugId::ReadOnlyConfig => DebugControlKind::Toggle {
+                on: self.config_read_only(),
+            },
             DebugId::Takeover => DebugControlKind::Toggle {
                 on: self.desktop_takeover(),
             },
@@ -236,6 +247,14 @@ impl App {
                 tracing::info!("debug: re-synced the desktop layer");
             }
             DebugId::TakeoverState => {}
+            DebugId::ThemeChanged => self.simulate_theme_change(ui),
+            DebugId::ExplorerRestarted => self.simulate_explorer_restart(ui),
+            DebugId::ReadOnlyConfig => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_config_read_only(ui, on);
+                }
+            }
+            DebugId::CrashNow => self.crash_now(ui),
             DebugId::IgnoreWindows => {
                 if let DebugInput::Toggle(on) = input {
                     self.animation_tweak.ignore_windows = on;

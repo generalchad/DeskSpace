@@ -677,6 +677,9 @@ impl EventHandler for App {
                 // discarded.
                 self.cancel_edit(ui);
                 self.cancel_settings(ui);
+                // A config the debug window made read-only must take this
+                // last save and stay writable (ROADMAP D14).
+                self.restore_config_writable();
                 self.flush_save_on_close(ui);
                 self.remove_desktop_show_entry();
             }

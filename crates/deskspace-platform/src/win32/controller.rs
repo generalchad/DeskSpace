@@ -36,6 +36,12 @@ const NIN_KEYSELECT: u32 = NIN_SELECT | 0x1;
 
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
+/// The registered `TaskbarCreated` message, which Explorer broadcasts when
+/// it restarts.
+pub(crate) fn taskbar_created_message() -> u32 {
+    TASKBAR_CREATED.load(Ordering::SeqCst)
+}
+
 pub(crate) fn create() -> Result<HWND, PlatformError> {
     // SAFETY: plain window class registration and creation on the UI thread.
     unsafe {

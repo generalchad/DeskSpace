@@ -40,10 +40,14 @@ pub(crate) enum DebugId {
     Takeover = 32,
     ResyncLayer = 33,
     TakeoverState = 34,
+    ThemeChanged = 35,
+    ExplorerRestarted = 36,
+    ReadOnlyConfig = 37,
+    CrashNow = 38,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 34] = [
+    pub(crate) const ALL: [Self; 38] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -78,6 +82,10 @@ impl DebugId {
         Self::Takeover,
         Self::ResyncLayer,
         Self::TakeoverState,
+        Self::ThemeChanged,
+        Self::ExplorerRestarted,
+        Self::ReadOnlyConfig,
+        Self::CrashNow,
     ];
 
     pub(crate) fn id(self) -> u32 {

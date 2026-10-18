@@ -222,6 +222,26 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Takeover,
         label: "State",
     },
+    DebugRow {
+        id: DebugId::ThemeChanged,
+        section: DebugSectionId::Simulate,
+        label: "Windows theme changed",
+    },
+    DebugRow {
+        id: DebugId::ExplorerRestarted,
+        section: DebugSectionId::Simulate,
+        label: "Explorer restarted",
+    },
+    DebugRow {
+        id: DebugId::ReadOnlyConfig,
+        section: DebugSectionId::Simulate,
+        label: "Make the configuration file read-only",
+    },
+    DebugRow {
+        id: DebugId::CrashNow,
+        section: DebugSectionId::Simulate,
+        label: "Crash now",
+    },
 ];
 
 #[cfg(test)]
