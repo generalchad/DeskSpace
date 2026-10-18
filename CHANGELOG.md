@@ -7,6 +7,8 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-18
+
 ### Added
 
 - Hiding and showing the spaces, folding one, a new space appearing (at
@@ -131,7 +133,8 @@ The first public release (preceded by `0.2.0-alpha.1` the same day).
   settings window with live preview.
 - A portable zip and an NSIS installer.
 
-[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/generalchad/DeskSpace/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/generalchad/DeskSpace/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/generalchad/DeskSpace/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/generalchad/DeskSpace/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/generalchad/DeskSpace/compare/v0.2.0...v0.2.1

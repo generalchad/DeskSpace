@@ -253,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "deskspace-app"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "deskspace-config"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "deskspace-core",
  "directories",
@@ -282,14 +282,14 @@ dependencies = [
 
 [[package]]
 name = "deskspace-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "deskspace-platform"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "deskspace-core",
  "thiserror 2.0.21",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "deskspace-update"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "cargo-packager-updater",
  "thiserror 2.0.21",
