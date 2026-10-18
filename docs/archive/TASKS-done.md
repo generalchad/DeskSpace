@@ -2762,3 +2762,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: each button does what it says; a 1000-item
     stress space opens and scrolls smoothly, and "Delete all spaces"
     removes it.
+
+- [x] **X10. Config (app).** Needs X5. **[needs human]** Section Config:
+  - `ConfigPath`, "Configuration", a `Readout`: the config file path and
+    "(scratch)" or "(real)"; `StoragePath`, "Storage", a `Readout`: the
+    storage folder.
+  - `DumpConfig`, "Write the configuration to the log": serialize
+    `self.config` with the same TOML writer `ConfigStore::save` uses and
+    log it at `info`, one line per TOML line.
+  - `OpenConfigFolder` and `OpenStorageFolder`: `ui.open_path` on the
+    config file's folder and on the storage folder (create the storage
+    folder first if it is missing, as `add_shortcuts` does).
+  - **[needs human]** check: the readouts match `--config`; the dump shows
+    every space in the console; both folders open in Explorer.

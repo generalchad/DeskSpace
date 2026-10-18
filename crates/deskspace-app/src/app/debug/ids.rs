@@ -15,10 +15,15 @@ pub(crate) enum DebugId {
     PruneNow = 7,
     StressSize = 8,
     CreateStress = 9,
+    ConfigPath = 10,
+    StoragePath = 11,
+    DumpConfig = 12,
+    OpenConfigFolder = 13,
+    OpenStorageFolder = 14,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -28,6 +33,11 @@ impl DebugId {
         Self::PruneNow,
         Self::StressSize,
         Self::CreateStress,
+        Self::ConfigPath,
+        Self::StoragePath,
+        Self::DumpConfig,
+        Self::OpenConfigFolder,
+        Self::OpenStorageFolder,
     ];
 
     pub(crate) fn id(self) -> u32 {

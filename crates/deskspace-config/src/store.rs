@@ -121,11 +121,16 @@ impl ConfigStore {
         }
     }
 
+    /// `config` as the TOML text `save` writes.
+    pub fn serialize(config: &Config) -> Result<String, ConfigError> {
+        Ok(toml::to_string_pretty(config)?)
+    }
+
     pub fn save(&self, config: &Config) -> Result<(), ConfigError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|source| ConfigError::io(parent, source))?;
         }
-        let text = toml::to_string_pretty(config)?;
+        let text = Self::serialize(config)?;
         let temp = self.path.with_extension("toml.tmp");
         std::fs::write(&temp, text.as_bytes())
             .map_err(|source| ConfigError::io(temp.clone(), source))?;

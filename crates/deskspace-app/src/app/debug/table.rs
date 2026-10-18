@@ -97,6 +97,31 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Spaces,
         label: "Delete all spaces",
     },
+    DebugRow {
+        id: DebugId::ConfigPath,
+        section: DebugSectionId::Config,
+        label: "Configuration",
+    },
+    DebugRow {
+        id: DebugId::StoragePath,
+        section: DebugSectionId::Config,
+        label: "Storage",
+    },
+    DebugRow {
+        id: DebugId::DumpConfig,
+        section: DebugSectionId::Config,
+        label: "Write the configuration to the log",
+    },
+    DebugRow {
+        id: DebugId::OpenConfigFolder,
+        section: DebugSectionId::Config,
+        label: "Open the configuration folder",
+    },
+    DebugRow {
+        id: DebugId::OpenStorageFolder,
+        section: DebugSectionId::Config,
+        label: "Open the storage folder",
+    },
 ];
 
 #[cfg(test)]

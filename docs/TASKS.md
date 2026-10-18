@@ -716,19 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X10. Config (app).** Needs X5. **[needs human]** Section Config:
-  - `ConfigPath`, "Configuration", a `Readout`: the config file path and
-    "(scratch)" or "(real)"; `StoragePath`, "Storage", a `Readout`: the
-    storage folder.
-  - `DumpConfig`, "Write the configuration to the log": serialize
-    `self.config` with the same TOML writer `ConfigStore::save` uses and
-    log it at `info`, one line per TOML line.
-  - `OpenConfigFolder` and `OpenStorageFolder`: `ui.open_path` on the
-    config file's folder and on the storage folder (create the storage
-    folder first if it is missing, as `add_shortcuts` does).
-  - **[needs human]** check: the readouts match `--config`; the dump shows
-    every space in the console; both folders open in Explorer.
-
 - [ ] **X11. Process and cache facts (platform).** New module
   `win32/debug_info.rs` (one `//!` line; `mod` in `win32/mod.rs`):
   - `pub fn process_stats() -> ProcessStats { working_set: u64,
@@ -1114,6 +1101,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X10 (F-61) | Debug → Config: the Configuration and Storage readouts match `--config` ("scratch", or "real" without it); "Write the configuration to the log" shows every space in the console; both Open buttons open the folder in Explorer. |
 | X9 (F-61) | Debug → Spaces: Unfold, Unlock, Refresh, and Prune each do what they say on folded, locked, and stale spaces; a 1000-item stress space opens and scrolls smoothly, and "Delete all spaces" removes it. |
 | X8 (F-61) | Debug → Spaces → "Create test spaces" opens four spaces in a row beside the existing ones, titled Test: Apps, Tools, Places, and Web; every shortcut opens what it names (the Tools ones show the test text); a second press makes four more without overlapping; then "Delete all spaces" removes them and leaves nothing on the desktop. |
 | X7 (F-61) | With three spaces holding dropped files and one Shift-dropped file, Debug → Spaces → "Delete all spaces" asks once with the right counts and the scratch config's path; Cancel changes nothing; OK plays each space's Delete animation; the dropped files are in the Recycle Bin, the Shift-dropped file is where it was, and nothing new is on the desktop. Started without `--config`, the question shows the real-configuration warning (press Cancel). |

@@ -6,6 +6,7 @@
 //! `on_debug_control` (what it does). Each section's actions live in a file
 //! named for it.
 
+mod config;
 mod ids;
 mod spaces;
 mod table;
@@ -76,9 +77,17 @@ impl App {
         let has_spaces = !self.config.desktop.spaces().is_empty();
         match id {
             DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
-            DebugId::CreateTestSpaces | DebugId::CreateStress => {
-                DebugControlKind::Button { enabled: true }
-            }
+            DebugId::CreateTestSpaces
+            | DebugId::CreateStress
+            | DebugId::DumpConfig
+            | DebugId::OpenConfigFolder
+            | DebugId::OpenStorageFolder => DebugControlKind::Button { enabled: true },
+            DebugId::ConfigPath => DebugControlKind::Readout {
+                text: self.config_path_text(),
+            },
+            DebugId::StoragePath => DebugControlKind::Readout {
+                text: self.storage_path_text(),
+            },
             DebugId::DeleteAllSpaces
             | DebugId::UnfoldAll
             | DebugId::UnlockAll
@@ -123,6 +132,10 @@ impl App {
                 tracing::info!("debug: pruned missing items");
             }
             DebugId::DeleteAllSpaces => self.delete_all_spaces(ui),
+            DebugId::ConfigPath | DebugId::StoragePath => {}
+            DebugId::DumpConfig => self.dump_config(),
+            DebugId::OpenConfigFolder => self.open_config_folder(ui),
+            DebugId::OpenStorageFolder => self.open_storage_folder(ui),
         }
     }
 
