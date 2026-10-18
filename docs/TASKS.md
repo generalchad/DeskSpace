@@ -87,6 +87,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
+| The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`) |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs`, `layout.rs`, `paint.rs`, `draw.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
@@ -714,55 +715,6 @@ Rules for every X task:
 7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
-
-- [ ] **X2. The debug window and its panel (platform).** Needs X1.
-  - New module `win32/debug_window/` (add `mod debug_window;` in
-    `win32/mod.rs`), with a one-line `//!` header on each file:
-    - `layout.rs` (pure): `fn debug_layout(width: i32, height: i32, scale:
-      f32) -> DebugLayout`, where `DebugLayout { rail: Rect, panel: Rect,
-      console: Rect }`. Constants at 96 DPI, scaled: `RAIL_WIDTH` 168,
-      `EDGE` 12, `MIN_WIDTH` 760, `MIN_HEIGHT` 560, `CONSOLE_MIN` 200. The
-      rail is the left column; the panel fills the rest of the top half;
-      the console takes the bottom half of the client (at least
-      `CONSOLE_MIN`) across the full width. Tests: no rect overlaps
-      another, all fit the client, and the console grows with the height.
-    - `build.rs`: creates the controls. The rail is a list box of section
-      titles. Every section is built at once into a panel child window
-      (`WS_VSCROLL`, scrolled with the wheel and the bar when the section
-      is taller than the panel); only the chosen section's controls are
-      shown. One row per control: a label on the left (`LABEL_WIDTH` 220
-      at 96 DPI) and the control right of it, except a `Button`, which is
-      a push button captioned with its label. `Toggle` is a check box,
-      `Choice` a drop-down list combo box, `Readout` a read-only multi-line
-      edit (as tall as its lines, at most 8, then it scrolls), and `Table`
-      a report-view list view with the given columns, 8 rows tall.
-      Control ids are `CONTROL_BASE + DebugControl::id`, with
-      `CONTROL_BASE` = 1000.
-    - `mod.rs`: the window class (`window_class` and `window_state`, as
-      every window does), `WS_OVERLAPPEDWINDOW`, titled "DeskSpace
-      Debug", minimum size from `layout.rs` (`WM_GETMINMAXINFO`),
-      re-laid out on `WM_SIZE` and `WM_DPICHANGED`. Colors, fonts, and
-      brushes come from `dialog::DialogChrome`, and controls are themed
-      with `dark_mode` as `shortcut_dialog.rs` does. A button press,
-      toggle, or choice raises the matching `DebugEvent` through
-      `runtime::dispatch` (the last statement in its branch;
-      `ENGINEERING.md` "Re-entrancy"). Closing destroys the window and
-      raises `DebugEvent::Closed`.
-  - `win32/runtime/`: a `debug: Option<HWND>` field on `Runtime`, beside
-    `settings`. In `ui_chrome.rs`: `Ui::open_debug(&DebugPanel)` (create,
-    or bring the open one to front), `Ui::update_debug(&DebugPanel)`
-    (when `same_shape`, set only the changed values; otherwise log a
-    `warn` and rebuild, as `warn_on_shape_change` does for settings),
-    `Ui::close_debug()`, and `Ui::is_debug_open() -> bool`. The message
-    loop passes the debug window to `IsDialogMessageW`, as it does the
-    settings window, so Tab moves between controls. The teardown destroys
-    it with the settings window.
-  - Leave the console rect empty; X3 fills it.
-  - Docs: `CONTEXT.md` section 6 module map, the "Windows" row: add
-    `debug_window`. The file map in this file: a row "The debug window
-    (`--debug`)" naming `win32/debug_window/`.
-  - Done when: the gates pass and the layout tests pass. Its on-screen
-    check is X5's.
 
 - [ ] **X3. The console (platform).** Needs X2.
   - Pure model, `deskspace-platform/src/debug_console.rs` (crate root, no

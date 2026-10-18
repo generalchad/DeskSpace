@@ -40,7 +40,7 @@ use windows::core::PCWSTR;
 use crate::error::PlatformError;
 use crate::input::{Event, ShellItem};
 use crate::render::{Play, SpaceScene, SpaceStyle, d2d};
-use crate::ui::{CursorShape, MenuEntry, SettingsForm};
+use crate::ui::{CursorShape, DebugPanel, MenuEntry, SettingsForm};
 use crate::win32::clipboard::ClipboardFiles;
 use crate::win32::drag_ghost::DragGhost;
 use crate::win32::drag_image::DragImage;
@@ -49,9 +49,9 @@ use crate::win32::info_tip::{self, InfoTip};
 use crate::win32::shell_items::{self, DragResult, ItemMenuChoice};
 use crate::win32::system::wide;
 use crate::win32::{
-    clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
-    folder_watch, menu, messages, outside_click, settings_window, shell_selection, shell_view,
-    space_animation, space_window, tray, watchdog, zoom_bar,
+    clipboard, console, controller, dark_mode, debug_window, desktop_icons, desktop_shell,
+    drop_target, file_op, folder_watch, menu, messages, outside_click, settings_window,
+    shell_selection, shell_view, space_animation, space_window, tray, watchdog, zoom_bar,
 };
 
 pub trait EventHandler {
@@ -83,6 +83,8 @@ struct Runtime {
     /// any left.
     dying: Vec<HWND>,
     settings: Option<HWND>,
+    /// The debug window (`--debug`, ROADMAP D14), while it is open.
+    debug: Option<HWND>,
     /// The desktop layer window (ROADMAP D7), chrome-less and behind the
     /// spaces. Created only when the app asks for it (`--takeover-layer`).
     layer: Option<HWND>,
@@ -220,12 +222,20 @@ pub(crate) fn settings_closed(window: HWND) {
     });
 }
 
+pub(crate) fn debug_closed(window: HWND) {
+    with_runtime(|runtime| {
+        if runtime.debug == Some(window) {
+            runtime.debug = None;
+        }
+    });
+}
+
 /// Forgets a dying window that has destroyed itself (`space_animation`).
 pub(crate) fn forget_dying(window: HWND) {
     with_runtime(|runtime| runtime.dying.retain(|dying| *dying != window));
 }
 
-/// Destroys every space window and the settings window. Called from the
+/// Destroys every space window, the settings window, and the debug window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
     // Stop the folder watch first: its worker posts to the controller, which
@@ -237,6 +247,7 @@ pub(crate) fn destroy_ui_windows() {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.append(&mut runtime.dying);
         windows.extend(runtime.settings.take());
+        windows.extend(runtime.debug.take());
         windows.extend(runtime.layer.take());
         windows.extend(runtime.zoom_bar.take());
         (windows, runtime.drag_ghost.take(), runtime.info_tip.take())
@@ -304,6 +315,10 @@ fn settings_hwnd() -> Option<HWND> {
     with_runtime(|runtime| runtime.settings).flatten()
 }
 
+fn debug_hwnd() -> Option<HWND> {
+    with_runtime(|runtime| runtime.debug).flatten()
+}
+
 /// Refreshes the settings window in place. A form whose page shape differs
 /// cannot be diffed onto the existing controls, so the update is skipped. That
 /// would leave the window showing stale values, so the invariant is asserted
@@ -347,6 +362,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             spaces: HashMap::new(),
             dying: Vec::new(),
             settings: None,
+            debug: None,
             layer: None,
             ui_dark: false,
             menus_dark: None,
@@ -406,14 +422,20 @@ fn message_loop() -> Result<(), PlatformError> {
             -1 => return Err(PlatformError::Win32(windows::core::Error::from_thread())),
             _ => {}
         }
-        // IsDialogMessage gives the settings window Tab/Shift+Tab focus
-        // movement, Enter for OK and Escape for Cancel, like a dialog box.
+        // IsDialogMessage gives the settings and debug windows Tab/Shift+Tab
+        // focus movement, and the settings window Enter for OK and Escape
+        // for Cancel, like a dialog box.
         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-isdialogmessagew
-        if let Some(settings) = settings_hwnd() {
-            // SAFETY: `settings` is our live window and `message` is filled in.
-            if unsafe { IsDialogMessageW(settings, &message) }.as_bool() {
-                continue;
-            }
+        let is_dialog_message = |dialog: HWND| {
+            // SAFETY: `dialog` is our live window and `message` is filled in.
+            unsafe { IsDialogMessageW(dialog, &message) }.as_bool()
+        };
+        if [settings_hwnd(), debug_hwnd()]
+            .into_iter()
+            .flatten()
+            .any(is_dialog_message)
+        {
+            continue;
         }
         // SAFETY: `message` was just filled in by GetMessageW.
         unsafe {

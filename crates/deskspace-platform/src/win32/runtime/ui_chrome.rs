@@ -1,6 +1,6 @@
 //! Ui methods for DeskSpace's own chrome: the color picker, popup
-//! menus, dark mode, the settings window, the zoom pop-up, the tray tooltip,
-//! and quitting.
+//! menus, dark mode, the settings and debug windows, the zoom pop-up, the
+//! tray tooltip, and quitting.
 
 use std::time::Duration;
 
@@ -106,6 +106,9 @@ impl Ui {
         if let Some(settings) = settings_hwnd() {
             settings_window::set_dark(settings, dark);
         }
+        if let Some(debug) = debug_hwnd() {
+            debug_window::set_dark(debug, dark);
+        }
     }
 
     /// Opens the settings window, or brings it to the front and refreshes it.
@@ -137,6 +140,46 @@ impl Ui {
                 let _ = DestroyWindow(hwnd);
             }
         }
+    }
+
+    /// Opens the debug window (ROADMAP D14) showing `panel`, or brings the
+    /// open one to the front and shows `panel` in it. Its input arrives as
+    /// `Event::Debug`.
+    pub fn open_debug(&mut self, panel: &DebugPanel) {
+        if let Some(existing) = debug_hwnd() {
+            debug_window::update(existing, panel);
+            debug_window::bring_to_front(existing);
+            return;
+        }
+        let dark = with_runtime(|runtime| runtime.ui_dark).unwrap_or(false);
+        match debug_window::create(panel, dark) {
+            Ok(hwnd) => {
+                with_runtime(|runtime| runtime.debug = Some(hwnd));
+            }
+            Err(error) => tracing::error!(%error, "could not open the debug window"),
+        }
+    }
+
+    /// Shows `panel` in the open debug window: in place when only values
+    /// changed, otherwise rebuilt with a warning (the panel's shape is meant
+    /// to be fixed for a session). Does nothing while it is closed.
+    pub fn update_debug(&mut self, panel: &DebugPanel) {
+        if let Some(hwnd) = debug_hwnd() {
+            debug_window::update(hwnd, panel);
+        }
+    }
+
+    pub fn close_debug(&mut self) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.debug.take()).flatten() {
+            // SAFETY: the debug window was created by this runtime.
+            unsafe {
+                let _ = DestroyWindow(hwnd);
+            }
+        }
+    }
+
+    pub fn is_debug_open(&self) -> bool {
+        debug_hwnd().is_some()
     }
 
     /// Asks a yes/no question in a modal message box; "No" is the default.
