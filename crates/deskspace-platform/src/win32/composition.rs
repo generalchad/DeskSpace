@@ -5,8 +5,10 @@
 //! space's corners, a backdrop sprite filled with the host backdrop brush
 //! (the blur, for Acrylic and Blur), and a content sprite showing the
 //! drawing surface the painter draws into. The blur is then a brush
-//! DeskSpace owns, so it can take an animation's opacity and masks (T13),
-//! which the accent policy (`dwm`) cannot. It renders on a window that is
+//! DeskSpace owns, so it follows an animation's opacity and masks (T13),
+//! which the accent policy (`dwm`) cannot: while a frame leaves the window
+//! see-through, the backdrop is shown through `alpha_mask` with a second
+//! surface, the blur's mask, which the painter draws with the same frame. It renders on a window that is
 //! never activated, as spaces never are (T1, seen on build 26300).
 //!
 //! The choice is made once, at startup (`start`). Windows 10, "Transparency
@@ -21,8 +23,9 @@ use windows::Graphics::DirectX::{DirectXAlphaMode, DirectXPixelFormat};
 use windows::System::DispatcherQueueController;
 use windows::UI::Composition::Desktop::DesktopWindowTarget;
 use windows::UI::Composition::{
-    CompositionDrawingSurface, CompositionGraphicsDevice, CompositionRoundedRectangleGeometry,
-    CompositionStretch, Compositor, ContainerVisual, SpriteVisual,
+    CompositionBackdropBrush, CompositionDrawingSurface, CompositionEffectBrush,
+    CompositionEffectFactory, CompositionGraphicsDevice, CompositionRoundedRectangleGeometry,
+    CompositionStretch, CompositionSurfaceBrush, Compositor, ContainerVisual, SpriteVisual,
 };
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::System::WinRT::Composition::{ICompositorDesktopInterop, ICompositorInterop};
@@ -30,13 +33,14 @@ use windows::Win32::System::WinRT::{
     CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT, DispatcherQueueOptions,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
-use windows::core::Interface;
+use windows::core::{HSTRING, Interface};
 use windows_numerics::Vector2;
 
 use deskspace_core::theme::Backdrop;
 
 use crate::error::PlatformError;
 use crate::render::{Painter, SpaceStyle, d2d};
+use crate::win32::alpha_mask;
 use crate::win32::debug_info::transparency_enabled;
 use crate::win32::runtime;
 use crate::win32::system::windows_build;
@@ -49,6 +53,8 @@ struct Composition {
     // Fields drop in order: the devices and the compositor go before the
     // dispatcher queue that runs them.
     graphics: CompositionGraphicsDevice,
+    /// Makes each space's masked blur (`alpha_mask`).
+    masked_blur: CompositionEffectFactory,
     compositor: Compositor,
     _queue: DispatcherQueueController,
 }
@@ -138,8 +144,10 @@ impl Composition {
             runtime::invalidate_spaces();
             Ok(())
         }))?;
+        let masked_blur = compositor.CreateEffectFactory(&alpha_mask::effect()?)?;
         Ok(Self {
             graphics,
+            masked_blur,
             compositor,
             _queue: queue,
         })
@@ -151,11 +159,20 @@ pub(crate) struct SpaceVisuals {
     root: ContainerVisual,
     corners: CompositionRoundedRectangleGeometry,
     backdrop: SpriteVisual,
+    /// The backdrop's brush at rest: the blur, whole.
+    blur: CompositionBackdropBrush,
+    /// The backdrop's brush while a frame masks it: the blur through
+    /// `blur_mask`'s alpha.
+    masked_blur: CompositionEffectBrush,
+    /// Whether the backdrop shows `masked_blur` (`mask_blur`).
+    masked: bool,
     /// The style asks for the blur (Acrylic, Blur).
     blurred: bool,
     /// The blur is not stepped aside (`show_material`).
     material_shown: bool,
     surface: CompositionDrawingSurface,
+    /// Where the painter draws how much of the blur shows (T13).
+    blur_mask: CompositionDrawingSurface,
     graphics: CompositionGraphicsDevice,
     // Kept alive for as long as the window shows the tree.
     _target: DesktopWindowTarget,
@@ -169,10 +186,14 @@ impl SpaceVisuals {
     /// `window` is a live top-level window of this thread made with
     /// `WS_EX_NOREDIRECTIONBITMAP`.
     pub(crate) unsafe fn create(window: HWND, style: SpaceStyle) -> Result<Self, PlatformError> {
-        let (compositor, graphics) = COMPOSITION
+        let (compositor, graphics, masked_blur) = COMPOSITION
             .with(|cell| {
                 cell.borrow().as_ref().map(|composition| {
-                    (composition.compositor.clone(), composition.graphics.clone())
+                    (
+                        composition.compositor.clone(),
+                        composition.graphics.clone(),
+                        composition.masked_blur.CreateBrush(),
+                    )
                 })
             })
             .ok_or(PlatformError::NotRunning)?;
@@ -187,27 +208,29 @@ impl SpaceVisuals {
         target.SetRoot(&root)?;
 
         let whole = Vector2::new(1.0, 1.0);
+        let blur = compositor.CreateHostBackdropBrush()?;
         let backdrop = compositor.CreateSpriteVisual()?;
         backdrop.SetRelativeSizeAdjustment(whole)?;
-        backdrop.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+        backdrop.SetBrush(&blur)?;
 
-        // The surface is resized with the window by its painter; drawn at
-        // its own size from the top-left corner, never stretched.
-        let surface = graphics.CreateDrawingSurface(
-            Size {
-                Width: 1.0,
-                Height: 1.0,
-            },
-            DirectXPixelFormat::B8G8R8A8UIntNormalized,
-            DirectXAlphaMode::Premultiplied,
+        // Both surfaces are resized with the window by its painter.
+        let surface = drawing_surface(&graphics)?;
+        let blur_mask = drawing_surface(&graphics)?;
+        let masked_blur = masked_blur?;
+        // The effect gets a backdrop brush of its own, so the plain one is
+        // never two brushes' source at once.
+        masked_blur.SetSourceParameter(
+            &HSTRING::from(alpha_mask::SOURCE),
+            &compositor.CreateHostBackdropBrush()?,
         )?;
-        let content_brush = compositor.CreateSurfaceBrushWithSurface(&surface)?;
-        content_brush.SetStretch(CompositionStretch::None)?;
-        content_brush.SetHorizontalAlignmentRatio(0.0)?;
-        content_brush.SetVerticalAlignmentRatio(0.0)?;
+        masked_blur.SetSourceParameter(
+            &HSTRING::from(alpha_mask::MASK),
+            &surface_brush(&compositor, &blur_mask)?,
+        )?;
+
         let content = compositor.CreateSpriteVisual()?;
         content.SetRelativeSizeAdjustment(whole)?;
-        content.SetBrush(&content_brush)?;
+        content.SetBrush(&surface_brush(&compositor, &surface)?)?;
 
         let children = root.Children()?;
         children.InsertAtBottom(&backdrop)?;
@@ -217,9 +240,13 @@ impl SpaceVisuals {
             root,
             corners,
             backdrop,
+            blur,
+            masked_blur,
+            masked: false,
             blurred: false,
             material_shown: true,
             surface,
+            blur_mask,
             graphics,
             _target: target,
         };
@@ -230,7 +257,7 @@ impl SpaceVisuals {
 
     /// A painter that draws into this tree's content.
     pub(crate) fn painter(&self) -> Result<Painter, PlatformError> {
-        Painter::on_surface(&self.surface, &self.graphics)
+        Painter::on_surface(&self.surface, &self.blur_mask, &self.graphics)
     }
 
     /// Shows the blur for Acrylic and Blur, and rounds the corners as the
@@ -253,6 +280,21 @@ impl SpaceVisuals {
         self.sync_backdrop()
     }
 
+    /// Shows the blur through the mask the painter last drew, or whole.
+    /// Call after painting a frame, so a new mask is drawn before it shows.
+    pub(crate) fn mask_blur(&mut self, masked: bool) -> Result<(), PlatformError> {
+        if self.masked == masked {
+            return Ok(());
+        }
+        self.masked = masked;
+        if masked {
+            self.backdrop.SetBrush(&self.masked_blur)?;
+        } else {
+            self.backdrop.SetBrush(&self.blur)?;
+        }
+        Ok(())
+    }
+
     fn sync_backdrop(&self) -> Result<(), PlatformError> {
         Ok(self
             .backdrop
@@ -272,6 +314,33 @@ impl SpaceVisuals {
         self.corners.SetSize(size)?;
         Ok(())
     }
+}
+
+/// A drawing surface to resize before drawing: 1 px until then.
+fn drawing_surface(
+    graphics: &CompositionGraphicsDevice,
+) -> Result<CompositionDrawingSurface, PlatformError> {
+    Ok(graphics.CreateDrawingSurface(
+        Size {
+            Width: 1.0,
+            Height: 1.0,
+        },
+        DirectXPixelFormat::B8G8R8A8UIntNormalized,
+        DirectXAlphaMode::Premultiplied,
+    )?)
+}
+
+/// A brush showing `surface` at its own size from the top-left corner,
+/// never stretched.
+fn surface_brush(
+    compositor: &Compositor,
+    surface: &CompositionDrawingSurface,
+) -> Result<CompositionSurfaceBrush, PlatformError> {
+    let brush = compositor.CreateSurfaceBrushWithSurface(surface)?;
+    brush.SetStretch(CompositionStretch::None)?;
+    brush.SetHorizontalAlignmentRatio(0.0)?;
+    brush.SetVerticalAlignmentRatio(0.0)?;
+    Ok(brush)
 }
 
 #[cfg(test)]

@@ -498,7 +498,7 @@ changes nothing and says so.
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
 T2-T11 do not wait for it: they animate today's windows, where the accent
 blur steps on and off. T12 (done) moved spaces to composition, and T13
-makes the blur follow every effect. One commit each, in order
+(done) made the blur follow every effect. One commit each, in order
 (T1 can run alongside).
 
 Two tables carry the design, so a new effect or kind is one row: the
@@ -554,19 +554,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T13. The blur follows the frame (platform).** **[needs human]**
-  - On composition spaces, each frame also sets the backdrop: its opacity
-    and rect, and the frame's mask. A `CompositionMaskBrush` cannot take
-    the backdrop (T1), so the backdrop sprite's brush is an effect brush
-    whose graph is D2D's AlphaMask, with the backdrop as its source and the
-    painter's mask as its mask (decided 2026-10-18, maintainer, over
-    splitting the backdrop into strips and cells). The spike's `AlphaMask`
-    (`IGraphicsEffect` and `IGraphicsEffectD2D1Interop`) is the pattern; if
-    T1's M key does not render, stop and ask. The blur no longer steps
-    there.
-  - Update D12's "The blur" and `CONTEXT.md` section 6.
-  - **[needs human]** check: T8's list on Windows 11, with no step in the
-    blur; the same on Windows 10, where it still steps.
 - [ ] **T14. Black hole (platform).** **[needs decision]**: after T13. A
   dark disk opens on the desktop beside the space (a layered, click-through
   window, as `drag_ghost.rs` is) and the space spirals into it: a
@@ -968,8 +955,9 @@ each id is in `archive/TASKS-done.md`.
 | T15 (D12) | Settings > Animations lists Startup, Delete, and Fold; a config last saved with the Hide and show page keeps that page's effect as Startup's; Startup's effect plays on hiding, showing, a new space, and startup (staggered only at startup). |
 | T16 (D13) | Exit from the tray and from a space menu with several spaces: they leave one after another in reverse reading order (all together with "All at once"), then DeskSpace closes, within about 2 s; with takeover on, Explorer's icons come back only after the spaces have left; a second Exit mid-way closes at once; with the spaces hidden, Exit closes at once; signing out of Windows is not held up. |
 | Debug animation settings (D14) | With `--debug`, Animations shows one "Animation settings" box below the preview controls, in light and dark mode, at 100 % and 150 %; choosing Startup, Delete, or Fold in Kind shows that kind's values at once, with the rows it or its effect does not use greyed (as on its settings page), and the window stays on Animations; scrolling the section leaves no stale pixels; every choice takes effect on the next play (Play on the space; Fold plays its effect out and back) and is in the config file at once; with the settings window open, its Animations pages show the change, and Cancel there keeps it. |
-| Flat material | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, the blur still steps (T13); Roll, Fly, and CRT look as before. |
+| Flat material | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
+| T13 (D12) | Windows 11 with "Transparency effects" on, an Acrylic and a Blur space, over a high-contrast window: Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, delete, and the debug preview take the blur away with the tint and items, with no step at the end (or at the start of a show) and no "space paint failed" in the log; Gradient's edge and Burn's paper cut the blur where they cut the contents; reversing mid-way (the hotkey twice) retraces it; at rest the blur looks as before. Roll, Fly, and CRT look as before. On Windows 10 the blur still steps. Idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 
 ## Found while working

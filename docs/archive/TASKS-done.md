@@ -2983,3 +2983,17 @@ until I5-I6 all land, so no partial build hides the desktop.
     startup and logged.
   - **[needs human]** check: the R3 list passes unchanged on Windows 11
     with each backdrop, and on Windows 10 nothing changes at all.
+
+- [x] **T13. The blur follows the frame (platform).** **[needs human]**
+  - On composition spaces, each frame also sets the backdrop: its opacity
+    and rect, and the frame's mask. A `CompositionMaskBrush` cannot take
+    the backdrop (T1), so the backdrop sprite's brush is an effect brush
+    whose graph is D2D's AlphaMask, with the backdrop as its source and the
+    painter's mask as its mask (decided 2026-10-18, maintainer, over
+    splitting the backdrop into strips and cells). The spike's `AlphaMask`
+    (`IGraphicsEffect` and `IGraphicsEffectD2D1Interop`) is the pattern; if
+    T1's M key does not render, stop and ask. The blur no longer steps
+    there.
+  - Update D12's "The blur" and `CONTEXT.md` section 6.
+  - **[needs human]** check: T8's list on Windows 11, with no step in the
+    blur; the same on Windows 10, where it still steps.

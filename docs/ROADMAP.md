@@ -365,11 +365,14 @@ A native, lightweight, offline Windows desktop organizer that:
     to the tint and the contents, the same on every path. For the blur to
     follow those too, spaces move to the Windows composition engine
     (`Windows.UI.Composition`), where the blur is a host backdrop brush
-    that takes the same opacity and masks. That needs a spike first
-    (`TASKS.md` T1), because spaces are never activated. Until it lands,
-    and wherever it is not available (Windows 10, or when composition fails
-    to start), spaces keep the accent blur: it appears at the start of an
-    "in" and goes at the end of an "out", in one step. The host backdrop
+    that takes the same opacity and masks (T12, T13). The painter draws
+    each see-through frame's opacity and mask a second time, into the
+    blur's mask, which the backdrop shows through D2D's AlphaMask effect
+    (a `CompositionMaskBrush` refuses a host backdrop); Pixelate's blocks
+    are not masked, so the blur only fades with them. Wherever composition
+    is not available (Windows 10, or when it fails to start), spaces keep
+    the accent blur: it appears at the start of an "in" and goes at the end
+    of an "out", in one step. The host backdrop
     ignores Windows' "Transparency effects" switch (T1), so with the switch
     off when DeskSpace starts, spaces keep the accent blur too, and a
     change while it runs applies at the next start (amended 2026-10-18,

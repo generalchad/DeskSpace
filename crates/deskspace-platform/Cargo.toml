@@ -23,6 +23,7 @@ windows-numerics = "0.3"
 windows = { workspace = true, features = [
     "Foundation",
     "Graphics_DirectX",
+    "Graphics_Effects",
     "System",
     "UI",
     "UI_Composition",
@@ -58,6 +59,7 @@ windows = { workspace = true, features = [
     "Win32_System_Variant",
     "Win32_System_WinRT",
     "Win32_System_WinRT_Composition",
+    "Win32_System_WinRT_Graphics_Direct2D",
     "Win32_UI_Controls",
     "Win32_UI_Controls_Dialogs",
     "Win32_UI_Shell_Common",
@@ -65,14 +67,6 @@ windows = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
-] }
-
-# Only the composition spike (`examples/backdrop_spike.rs`, TASKS.md T1)
-# uses these, so the shipped library does not compile them.
-[target.'cfg(windows)'.dev-dependencies]
-windows = { workspace = true, features = [
-    "Graphics_Effects",
-    "Win32_System_WinRT_Graphics_Direct2D",
 ] }
 
 [lints]

@@ -663,13 +663,25 @@ unsafe fn paint(window: HWND) {
             let _ = ValidateRect(Some(window), None);
             return;
         };
-        if let Err(error) = painter.paint(window, scene.as_ref(), frame, transition.as_ref()) {
+        let painted = painter.paint(window, scene.as_ref(), frame, transition.as_ref());
+        if let Err(error) = &painted {
             tracing::error!(%error, "space paint failed");
         }
+        // The painter drew the blur's mask with a frame that leaves the
+        // window see-through; only then does the blur show through it.
+        let masked = painted.is_ok()
+            && transition
+                .as_ref()
+                .is_some_and(|transition| !transition.covers_window());
         with_state(window, |state| {
             state.painter = Some(painter);
             if state.scene.is_none() {
                 state.scene = scene;
+            }
+            if let Some(visuals) = &mut state.visuals
+                && let Err(error) = visuals.mask_blur(masked)
+            {
+                tracing::warn!(%error, "space composition backdrop not masked");
             }
         });
     }

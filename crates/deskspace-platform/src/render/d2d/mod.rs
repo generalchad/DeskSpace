@@ -38,8 +38,9 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE,
-    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Device, ID2D1Factory,
-    ID2D1HwndRenderTarget, ID2D1RenderTarget, ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE, D2D1CreateFactory, ID2D1Bitmap, ID2D1Brush, ID2D1Device,
+    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1Layer, ID2D1RenderTarget, ID2D1SolidColorBrush,
+    ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -190,13 +191,14 @@ impl Painter {
 
     /// A painter that draws into `surface`, the composition drawing surface
     /// its window shows (`win32::composition`), made on `device`, instead of
-    /// the window.
+    /// the window, and an animation's frames into `blur_mask` too.
     pub(crate) fn on_surface(
         surface: &CompositionDrawingSurface,
+        blur_mask: &CompositionDrawingSurface,
         device: &CompositionGraphicsDevice,
     ) -> Result<Self, PlatformError> {
         Ok(Self {
-            canvas: Canvas::Surface(SurfaceCanvas::new(surface, device)?),
+            canvas: Canvas::Surface(SurfaceCanvas::new(surface, blur_mask, device)?),
             ..Self::default()
         })
     }
@@ -308,11 +310,11 @@ impl Painter {
                 target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
                 target.Clear(Some(&color_f(Color::TRANSPARENT)));
             }
-            match (transition, layer) {
+            match (transition, &layer) {
                 (Some(transition), Some(layer)) => {
                     let offset = transition.content_offset;
                     target.SetTransform(&at(Vector2::new(offset.x as f32, offset.y as f32)));
-                    effects::with_layer(&target, &layer, transition.opacity, mask, || {
+                    effects::with_layer(&target, layer, transition.opacity, mask.clone(), || {
                         match &pixelated {
                             Some((bitmap, source)) => target.DrawBitmap(
                                 bitmap,
@@ -343,7 +345,41 @@ impl Painter {
                 _ => self.draw_scene(ctx, prepared, frame, size),
             }
         }
-        Ok(self.canvas.end()?)
+        self.canvas.end()?;
+        match (transition, layer) {
+            (Some(transition), Some(layer)) if !transition.covers_window() => {
+                Ok(self.draw_blur_mask(transition, &layer, mask, &brush, size)?)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Draws how much of the blur `transition`'s frame leaves (T13): the
+    /// space's whole rect through the same opacity and mask as its contents.
+    /// Pixelate's blocks are not drawn; the blur only fades with them.
+    fn draw_blur_mask(
+        &mut self,
+        transition: &TransitionFrame,
+        layer: &ID2D1Layer,
+        mask: Option<ID2D1Brush>,
+        brush: &ID2D1SolidColorBrush,
+        size: (f32, f32),
+    ) -> windows::core::Result<()> {
+        let offset = transition.content_offset;
+        self.canvas.draw_blur_mask(|target, origin| {
+            // SAFETY: inside the mask surface's draw, on live objects made on
+            // its device.
+            unsafe {
+                target.SetTransform(&Matrix3x2::translation(
+                    origin.X + offset.x as f32,
+                    origin.Y + offset.y as f32,
+                ));
+                effects::with_layer(target, layer, transition.opacity, mask, || {
+                    brush.SetColor(&color_f(Color::rgba(255, 255, 255, 255)));
+                    target.FillRectangle(&rect_f(0.0, 0.0, size.0, size.1), brush);
+                });
+            }
+        })
     }
 
     /// Draws the scene at 1 / `block` of `size` on Pixelate's offscreen

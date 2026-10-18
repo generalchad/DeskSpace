@@ -508,8 +508,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   while animating moves its target instead of the window, and a window on
   its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
   and `Ui::fold_space` take the `Play` the app built (`app/animation.rs`);
-  the accent blur is there for the whole show and gone at the end of a hide
-  (D12, "The blur"). With Windows' "Transparency effects" off, Windows
+  the accent blur is there for the whole show and gone at the end of a hide,
+  while a composition space's follows each frame (D12, "The blur"). With Windows' "Transparency effects" off, Windows
   draws the material flat, which left a dark box under a fading space, so
   while a frame leaves the window see-through (`TransitionFrame::
   covers_window`: Fade, Pixelate, Gradient, Dissolve, Burn) the material
@@ -558,8 +558,12 @@ one arm in `App::on_event`, whose match is exhaustive.
   and a failure to start keep the accent blur, and the desktop layer always
   does; a window whose tree cannot be built is made again with it. The
   compositor and its devices are per thread, released in the teardown
-  before `OleUninitialize`. The blur still fills the whole window, so
-  animations show it as the accent blur does until T13 masks it.
+  before `OleUninitialize`. While a frame leaves the window see-through,
+  the painter also draws its opacity and mask into a second surface, the
+  blur's mask, and after that paint the backdrop sprite swaps its brush for
+  an effect brush that shows the backdrop through the mask's alpha
+  (`win32/alpha_mask.rs`, D2D's AlphaMask; T13). At rest it shows the plain
+  backdrop brush again, so an idle space costs no effect.
 - **Desktop-hosted placement** (`--placement desktop-*`, a visible CLI option
   with no config setting since the "Keep spaces on the desktop" toggle was
   removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
