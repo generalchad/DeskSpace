@@ -2603,3 +2603,50 @@ until I5-I6 all land, so no partial build hides the desktop.
     and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save
     log…" work; a `-Release` build shows the log with no console window;
     without `--debug` nothing opens and stderr logs as before.
+
+- [x] **X5. The panel framework and the tray entry (app).** Needs X4.
+  **[needs human]**
+  - Turn `app/debug.rs` into `app/debug/mod.rs` (pure move first, in the
+    same commit) and add:
+    - `ids.rs`: `#[repr(u32)] enum DebugId` with `ALL`, `fn id(self) ->
+      u32`, and `fn from_id(u32) -> Option<Self>`, copying `MenuId`'s
+      pattern; first variant `SpacesVisible = 1`. Tests
+      `debug_ids_round_trip` and `debug_ids_are_unique`.
+    - `table.rs`: `enum DebugSectionId { Spaces, Config, Diagnostics,
+      Windows, System, Animations, Takeover, Simulate }` with `ALL` and
+      `title()` (those words), and `DEBUG_CONTROLS: &[DebugRow]`, where
+      `DebugRow { id: DebugId, section: DebugSectionId, label: &'static
+      str }`. First row: `SpacesVisible`, `Windows`, "Show spaces". Test
+      `every_control_has_one_row` (each `DebugId::ALL` entry appears
+      exactly once).
+    - `mod.rs`: `debug_panel` builds one `DebugSection` per
+      `DebugSectionId` that has rows, in `ALL` order, each control from
+      its row and `self.debug_control(id) -> DebugControlKind`, an
+      exhaustive `match` on `DebugId` (`SpacesVisible` is `Toggle { on:
+      self.visible }`). `on_debug` maps `Pressed`, `Toggled`, and `Chose`
+      through `DebugId::from_id` to `self.on_debug_control(ui, id,
+      input)`, where `enum DebugInput { Press, Toggle(bool),
+      Choose(usize) }`, an exhaustive `match` (`SpacesVisible` calls
+      `self.set_visible(ui, on)`). After any control, push the panel
+      again.
+    - `debug_confirm(ui, question) -> bool`: `ui.confirm("DeskSpace
+      Debug", ..)` with the question, a blank line, `Configuration:
+      <path>`, and, when `real_config`, a blank line and "This is your
+      real configuration, not a scratch --config." Test the text through a
+      pure `fn debug_question(question, path, real) -> String`.
+    - A `Timer::DebugRefresh` (next free) every `DEBUG_REFRESH_MS` (1000)
+      while the window is open: build the panel and call
+      `ui.update_debug` only when it differs from the last one pushed
+      (keep it in `DebugTools`).
+  - Tray (the menu-entry recipe): `MenuId::Debug` (next free) with
+    "Debug…", after "Settings…" in `show_tray_menu`, only when
+    `self.debug.is_some()`; its arm calls `self.open_debug(ui)`.
+  - Docs: `CONTEXT.md` section 8's tray line: "and, with `--debug`,
+    Debug…".
+  - **[needs human]** check: the rail lists "Windows" with a "Show
+    spaces" check box that hides and shows the spaces, and follows the
+    tray's Hide/Show within a second; close the window, and the tray's
+    "Debug…" brings it back with the earlier log; without `--debug` the
+    tray has no "Debug…"; the window themes dark and light, resizes
+    (the console grows), and stops at its minimum size; Tab moves
+    between controls.

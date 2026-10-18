@@ -87,7 +87,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
-| The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug.rs` |
+| The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs`, `layout.rs`, `paint.rs`, `draw.rs`) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
@@ -707,7 +707,7 @@ Rules for every X task:
    `App::on_debug_control` (what it does). The compiler and
    `every_control_has_one_row` point at whatever is missing.
 5. **Ask before anything destructive** with `self.debug_confirm(ui,
-   question)` (X5). It adds the config path and the real-config warning,
+   question)` (X7 adds it, as its first caller). It adds the config path and the real-config warning,
    so a handler never writes those lines itself.
 6. **Log what an action did** with one `tracing::info!` line starting
    `debug:` (for example `debug: deleted 4 spaces`), so the console shows
@@ -715,53 +715,6 @@ Rules for every X task:
 7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
-
-- [ ] **X5. The panel framework and the tray entry (app).** Needs X4.
-  **[needs human]**
-  - Turn `app/debug.rs` into `app/debug/mod.rs` (pure move first, in the
-    same commit) and add:
-    - `ids.rs`: `#[repr(u32)] enum DebugId` with `ALL`, `fn id(self) ->
-      u32`, and `fn from_id(u32) -> Option<Self>`, copying `MenuId`'s
-      pattern; first variant `SpacesVisible = 1`. Tests
-      `debug_ids_round_trip` and `debug_ids_are_unique`.
-    - `table.rs`: `enum DebugSectionId { Spaces, Config, Diagnostics,
-      Windows, System, Animations, Takeover, Simulate }` with `ALL` and
-      `title()` (those words), and `DEBUG_CONTROLS: &[DebugRow]`, where
-      `DebugRow { id: DebugId, section: DebugSectionId, label: &'static
-      str }`. First row: `SpacesVisible`, `Windows`, "Show spaces". Test
-      `every_control_has_one_row` (each `DebugId::ALL` entry appears
-      exactly once).
-    - `mod.rs`: `debug_panel` builds one `DebugSection` per
-      `DebugSectionId` that has rows, in `ALL` order, each control from
-      its row and `self.debug_control(id) -> DebugControlKind`, an
-      exhaustive `match` on `DebugId` (`SpacesVisible` is `Toggle { on:
-      self.visible }`). `on_debug` maps `Pressed`, `Toggled`, and `Chose`
-      through `DebugId::from_id` to `self.on_debug_control(ui, id,
-      input)`, where `enum DebugInput { Press, Toggle(bool),
-      Choose(usize) }`, an exhaustive `match` (`SpacesVisible` calls
-      `self.set_visible(ui, on)`). After any control, push the panel
-      again.
-    - `debug_confirm(ui, question) -> bool`: `ui.confirm("DeskSpace
-      Debug", ..)` with the question, a blank line, `Configuration:
-      <path>`, and, when `real_config`, a blank line and "This is your
-      real configuration, not a scratch --config." Test the text through a
-      pure `fn debug_question(question, path, real) -> String`.
-    - A `Timer::DebugRefresh` (next free) every `DEBUG_REFRESH_MS` (1000)
-      while the window is open: build the panel and call
-      `ui.update_debug` only when it differs from the last one pushed
-      (keep it in `DebugTools`).
-  - Tray (the menu-entry recipe): `MenuId::Debug` (next free) with
-    "Debug…", after "Settings…" in `show_tray_menu`, only when
-    `self.debug.is_some()`; its arm calls `self.open_debug(ui)`.
-  - Docs: `CONTEXT.md` section 8's tray line: "and, with `--debug`,
-    Debug…".
-  - **[needs human]** check: the rail lists "Windows" with a "Show
-    spaces" check box that hides and shows the spaces, and follows the
-    tray's Hide/Show within a second; close the window, and the tray's
-    "Debug…" brings it back with the earlier log; without `--debug` the
-    tray has no "Debug…"; the window themes dark and light, resizes
-    (the console grows), and stops at its minimum size; Tab moves
-    between controls.
 
 - [ ] **X6. Split the confirmation out of `delete_space` (app; pure
   refactor).** In `app/files.rs`:
@@ -787,6 +740,13 @@ Rules for every X task:
   **[needs human]**
   - Control: `DeleteAllSpaces`, section Spaces, "Delete all spaces", a
     `Button` enabled when there is at least one space.
+  - First, in `app/debug/mod.rs` (moved here from X5, which had no caller
+    for it, so it would have been dead code):
+    - `debug_confirm(ui, question) -> bool`: `ui.confirm("DeskSpace
+      Debug", ..)` with the question, a blank line, `Configuration:
+      <path>`, and, when `real_config`, a blank line and "This is your
+      real configuration, not a scratch --config." Test the text through a
+      pure `fn debug_question(question, path, real) -> String`.
   - Handler: count the spaces, their items, and their stored files that
     exist; ask with `debug_confirm` and the question from a pure `fn
     delete_all_question(spaces, items, stored) -> String`: "Delete all
@@ -1266,6 +1226,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X5 (F-61) | With `--debug`, the rail lists "Windows" with a "Show spaces" check box that hides and shows the spaces and follows the tray's Hide/Show within a second; closing the window and choosing the tray's "Debug…" brings it back with the earlier log; without `--debug` the tray has no "Debug…"; the window themes dark and light, resizes (the console grows), and stops at its minimum size; Tab moves between controls. |
 | X4 (F-61) | With `--debug`, the window opens with the console already holding the startup lines; moving a space adds lines live; Level Trace shows trace lines and Info stops new debug ones; Filter, Pause and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save log…" work; a `-Release` build shows the log with no console window; without `--debug` nothing opens and stderr logs as before. |
 | C2 (F-29) | With "Use Windows accent" on, selection and border take the accent and follow it live when it changes in Windows Settings (watch for the `WM_DWMCOLORIZATIONCOLORCHANGED` note under **Found while working**). |
 | C3 (F-30) | Switching "Settings and menus" between Dark and Light repaints the open settings window and the next popup menu. |

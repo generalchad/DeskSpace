@@ -82,10 +82,12 @@ enum Timer {
     /// Moving new log lines into the debug window's console
     /// (`app/debug.rs`).
     DebugLog = 11,
+    /// Reading the debug window's values again (`app/debug/`).
+    DebugRefresh = 12,
 }
 
 impl Timer {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -97,6 +99,7 @@ impl Timer {
         Self::UpdateIdle,
         Self::ZoomBar,
         Self::DebugLog,
+        Self::DebugRefresh,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -148,10 +151,12 @@ enum MenuId {
     NewShortcutCustom = 46,
     PasteShortcut = 47,
     AddFiles = 48,
+    /// The tray's "Debug…", only with `--debug` (ROADMAP D14).
+    Debug = 49,
 }
 
 impl MenuId {
-    const ALL: [Self; 36] = [
+    const ALL: [Self; 37] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -188,6 +193,7 @@ impl MenuId {
         Self::NewShortcutCustom,
         Self::PasteShortcut,
         Self::AddFiles,
+        Self::Debug,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -428,7 +434,7 @@ pub struct App {
     pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
-    /// The debug window's state, only with `--debug` (`app/debug.rs`).
+    /// The debug window's state, only with `--debug` (`app/debug/`).
     pub(crate) debug: Option<DebugTools>,
 }
 
@@ -541,6 +547,7 @@ impl App {
             Timer::UpdateIdle => self.on_update_idle_timer(ui),
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),
             Timer::DebugLog => self.feed_debug_log(ui),
+            Timer::DebugRefresh => self.refresh_debug(ui),
         }
     }
 

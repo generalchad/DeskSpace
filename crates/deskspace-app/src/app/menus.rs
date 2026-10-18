@@ -373,17 +373,21 @@ impl App {
     }
 
     pub(super) fn show_tray_menu(&mut self, ui: &mut Ui, at: Point) {
-        let entries = [
-            menu_item(MenuId::Settings, "Settings\u{2026}"),
+        let mut entries = vec![menu_item(MenuId::Settings, "Settings\u{2026}")];
+        if self.debug.is_some() {
+            entries.push(menu_item(MenuId::Debug, "Debug\u{2026}"));
+        }
+        entries.extend([
             self.visibility_entry(),
             menu_item(MenuId::NewSpace, "New space"),
             MenuEntry::Separator,
             self.update_entry(),
             MenuEntry::Separator,
             menu_item(MenuId::Exit, "Exit DeskSpace"),
-        ];
+        ]);
         if let Some(choice) = ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
             match choice {
+                MenuId::Debug => return self.open_debug(ui),
                 MenuId::CheckUpdates => return self.start_update_check(ui, true),
                 MenuId::InstallUpdate => {
                     return self.install_ready_update(ui, InstallMode::Passive);

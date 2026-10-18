@@ -1074,7 +1074,7 @@ in `ui.rs`. What spans them:
 - Tray icon: left-click (or keyboard select) opens Settings; right-click
   offers Settings…, Hide/Show spaces, New space, Check for updates… (or
   "Restart to update to X" once an automatic update is downloaded), and Exit
-  DeskSpace. A space created from the tray goes to the center of the work
+  DeskSpace, and, with `--debug`, Debug…. A space created from the tray goes to the center of the work
   area, and creating a space while spaces are hidden shows them.
 
 **Settings**
