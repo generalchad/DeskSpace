@@ -716,19 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X11. Process and cache facts (platform).** New module
-  `win32/debug_info.rs` (one `//!` line; `mod` in `win32/mod.rs`):
-  - `pub fn process_stats() -> ProcessStats { working_set: u64,
-    gdi_objects: u32, user_objects: u32 }` over `GetProcessMemoryInfo`
-    and `GetGuiResources` (cite their Microsoft Learn pages). If a
-    `windows` crate feature is needed, add it to `deskspace-platform`
-    only, and `cargo deny check all` must still pass.
-  - `IconCache::len(&self) -> usize` in `win32/icons.rs`.
-  - Re-export `process_stats` and `ProcessStats` from `lib.rs`.
-  - Test: `process_stats()` reports a nonzero working set and at least
-    one USER object once a window exists (create a message-only window in
-    the test, or skip the USER part if that is not possible and say so).
-
 - [ ] **X12. Diagnostics (app).** Needs X5 and X11. **[needs human]**
   Section Diagnostics:
   - `Build`, a `Readout`: the version (`CARGO_PKG_VERSION`), "debug" or

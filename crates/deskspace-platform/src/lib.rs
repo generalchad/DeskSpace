@@ -24,6 +24,7 @@ pub use ui::{
 };
 pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;
+pub use win32::debug_info::{ProcessStats, process_stats};
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,

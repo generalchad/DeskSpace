@@ -6,6 +6,7 @@ mod color_picker;
 mod console;
 mod controller;
 mod dark_mode;
+pub(crate) mod debug_info;
 mod debug_window;
 pub(crate) mod desktop_entry;
 pub(crate) mod desktop_icons;
