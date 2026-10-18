@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- T5-T7 (animations; pure or without callers, so no screen needed).
+- T6, T7 (animations; pure or without callers, so no screen needed).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -533,20 +533,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T5. Frame math (platform, pure).** `render/transition.rs`, beside
-  `zoom_bar.rs`, with no Win32:
-  - `Play { effect, way: In | Out, duration, delay, detail, edge }`, the
-    data the app sends, and `Transition`, a running `Play`:
-    `frame(now) -> TransitionFrame` (the window rect relative to the
-    space's rect, the opacity, the mask, the block size, the glow) and
-    `reverse(now)`, which turns it around so the next frame equals the
-    current one. Reversing works at any frame, including during the delay.
-  - Rects: Roll and Fold keep the top edge; Fly moves toward its edge and
-    returns the part inside the work area, with the content offset the
-    painter applies; CRT opens from the middle line, then closes to a dot.
-  - Tests: per effect, in and out at 0 and at the end, monotonic between;
-    `reverse` continuous at many points for every effect; None done at
-    once; a delay holds frame 0; Fly never leaves the work area.
 - [ ] **T6. The painter draws a frame: Fade, Gradient, Dissolve, Pixelate
   (platform; no callers yet).** `Painter::paint` takes
   `Option<&TransitionFrame>` and applies it to the tint and the contents

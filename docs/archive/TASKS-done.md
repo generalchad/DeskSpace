@@ -2256,3 +2256,18 @@ until I5-I6 all land, so no partial build hides the desktop.
     button's URI per version, `apply_field` for each control.
     **[needs human]** check: the page at 100 % and 150 %, and flipping
     "Animation effects" in Windows while it is open.
+
+- [x] **T5. Frame math (platform, pure).** `render/transition.rs`, beside
+  `zoom_bar.rs`, with no Win32:
+  - `Play { effect, way: In | Out, duration, delay, detail, edge }`, the
+    data the app sends, and `Transition`, a running `Play`:
+    `frame(now) -> TransitionFrame` (the window rect relative to the
+    space's rect, the opacity, the mask, the block size, the glow) and
+    `reverse(now)`, which turns it around so the next frame equals the
+    current one. Reversing works at any frame, including during the delay.
+  - Rects: Roll and Fold keep the top edge; Fly moves toward its edge and
+    returns the part inside the work area, with the content offset the
+    painter applies; CRT opens from the middle line, then closes to a dot.
+  - Tests: per effect, in and out at 0 and at the end, monotonic between;
+    `reverse` continuous at many points for every effect; None done at
+    once; a delay holds frame 0; Fly never leaves the work area.

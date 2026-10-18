@@ -767,6 +767,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   label lines at the configured size (formats cached per 10 % size step), and
   a 1 px shadow when the scene asks (label shadow `Auto` below 25 % tint
   alpha, or `On`).
+- Animations (ROADMAP D12): `render/transition.rs` is the pure frame math.
+  A `Transition` tracks one linear progress and a direction, and every
+  frame is a function of the eased progress alone, so an Out is the In
+  played backwards and `reverse` continues from the very frame it is on.
+  A `TransitionFrame` gives the window rect (Roll, Fly, and CRT move or crop
+  it; Fly is clipped to the work area), where the space's content sits in
+  it, and the opacity, mask, block size, and glow the painter applies.
 - The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
   `WS_POPUP` with the space material (`dwm::apply_style` from the global
   look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so

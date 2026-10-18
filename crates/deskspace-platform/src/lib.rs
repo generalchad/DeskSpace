@@ -12,8 +12,8 @@ pub use input::{
     ShellItem, SpaceEvent, TrayEvent, ZoomAction,
 };
 pub use render::{
-    ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle, ZoomBar,
-    item_check_box, item_check_box_hit,
+    Geometry, ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, Mask, Play, SpaceScene,
+    SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box, item_check_box_hit,
 };
 pub use ui::{
     CursorShape, CustomShortcut, Field, FieldKind, FieldValue, MenuEntry, PreviewItem,
