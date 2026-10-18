@@ -38,6 +38,24 @@ impl Ui {
         Ok(())
     }
 
+    /// Moves every space above other windows, or back to the bottom, as
+    /// `--on-top` places them; spaces created later follow too.
+    pub fn set_on_top(&mut self, on_top: bool) {
+        let Some(windows) = with_runtime(|runtime| {
+            runtime.on_top = on_top;
+            runtime.spaces.values().copied().collect::<Vec<_>>()
+        }) else {
+            return;
+        };
+        for hwnd in windows {
+            space_window::set_on_top(hwnd, on_top);
+        }
+    }
+
+    pub fn is_on_top(&self) -> bool {
+        with_runtime(|runtime| runtime.on_top).unwrap_or(false)
+    }
+
     /// Brings a new space's window in with `play` (ROADMAP D12), unless the
     /// spaces are hidden; then it shows with the rest.
     pub fn show_space(&mut self, id: u64, play: Play) {

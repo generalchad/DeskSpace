@@ -10,6 +10,7 @@ use super::*;
 use crate::input::ShellItem;
 use crate::render::ZoomBar;
 use crate::ui::{CustomShortcut, LogLine};
+use crate::win32::debug_info::WindowRow;
 
 impl Ui {
     /// Opens DeskSpace's color picker and returns the chosen color. Blocks in a
@@ -180,6 +181,28 @@ impl Ui {
 
     pub fn is_debug_open(&self) -> bool {
         debug_hwnd().is_some()
+    }
+
+    /// This process's windows for the debug window's table: top-level ones
+    /// in z-order, then desktop-hosted spaces.
+    pub fn debug_windows(&self) -> Vec<WindowRow> {
+        let Some((host, spaces)) = with_runtime(|runtime| {
+            let spaces: Vec<(HWND, u64)> = runtime
+                .spaces
+                .iter()
+                .map(|(id, hwnd)| (*hwnd, *id))
+                .collect();
+            (runtime.host, spaces)
+        }) else {
+            return Vec::new();
+        };
+        let space_of = |window: HWND| {
+            spaces
+                .iter()
+                .find(|(hwnd, _)| *hwnd == window)
+                .map(|(_, id)| *id)
+        };
+        crate::win32::debug_info::windows_of_this_process(host, space_of)
     }
 
     /// Adds `lines` to the open debug window's console. Does nothing while

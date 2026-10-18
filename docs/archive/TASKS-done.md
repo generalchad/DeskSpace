@@ -2810,3 +2810,23 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: the values look right and Resources ticks
     once a second; creating and deleting spaces moves the counts; Copy
     diagnostics pastes into Notepad as a readable report.
+
+- [x] **X13. Window and monitor tables, live on-top (platform).** Needs
+  X11.
+  - In `win32/debug_info.rs`: `pub struct WindowRow { class: String,
+    title: String, space: Option<u64>, rect: Rect, dpi: u32, visible:
+    bool }`, and `Ui::debug_windows() -> Vec<WindowRow>`: every top-level
+    window of this process in z-order, top first (`EnumWindows` filtered
+    by `GetWindowThreadProcessId`), then, with a desktop host, the host's
+    child windows that are spaces. `space` is the id when the window is
+    in the runtime's spaces map. `scripts/zorder.ps1` does the same from
+    outside; follow it.
+  - `pub struct MonitorRow { rect: Rect, work: Rect, dpi: u32, primary:
+    bool }` and `pub fn monitors() -> Vec<MonitorRow>` over
+    `EnumDisplayMonitors`.
+  - `Ui::set_on_top(bool)`: sets `Runtime::on_top` and moves every space
+    window to where a space created with that setting goes. Read every
+    place `on_top` is read today and use the same call; do not add a
+    second placement rule.
+  - Tests: none possible without windows beyond `monitors()` returning at
+    least one primary monitor.
