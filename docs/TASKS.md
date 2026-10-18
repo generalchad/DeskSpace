@@ -1004,6 +1004,11 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   layer but never calls `IconCache::invalidate`, so a desktop file whose icon
   changes in place keeps its old icon until restart. Suggested task:
   invalidate the paths whose `modified` changed during `resync_desktop_layer`.
+- `win32/space_window.rs` is about 900 lines of non-test code after T12
+  (2026-10-18), past the 800-line guideline. Suggested section K task:
+  move the z-order pinning (`on_window_pos_changing`, `insert_after`,
+  `window_above`, `set_on_top`) and the mouse handlers into their own
+  modules.
 - `win32/runtime/mod.rs`: `is_space_window` checks only the spaces map, so a
   press on the desktop layer is reported as `PointerDownOutside` as well as
   the layer's own `MouseDown`. Check whether that clears a layer selection
