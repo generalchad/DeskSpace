@@ -2699,3 +2699,46 @@ until I5-I6 all land, so no partial build hides the desktop.
     Recycle Bin, the Shift-dropped file is where it was, and nothing new
     is on the desktop. Then start without `--config` and check that the
     warning line shows. Press Cancel there.
+
+- [x] **X8. Create test spaces (app).** Needs X5. **[needs human]**
+  - `menus.rs`: `create_space` returns the `Option<SpaceId>` that
+    `open_new_space` already gives; the menu callers ignore it.
+  - `lib.rs` of the platform: re-export `win32::shortcuts::resolve_path`
+    (it is `pub(crate)` today; make it `pub`).
+  - New `app/debug/test_spaces.rs`: `struct TestSpace { title: &'static
+    str, shortcuts: &'static [TestShortcut] }`, `struct TestShortcut {
+    name: &'static str, target: &'static str, arguments: &'static str }`,
+    and `TEST_SPACES`:
+
+    | Title | Name | Target | Arguments |
+    |-------|------|--------|-----------|
+    | Test: Apps | Notepad | `%WINDIR%\System32\notepad.exe` | |
+    | | Calculator | `%WINDIR%\System32\calc.exe` | |
+    | | Character Map | `%WINDIR%\System32\charmap.exe` | |
+    | Test: Tools | Command Prompt | `%WINDIR%\System32\cmd.exe` | `/k echo DeskSpace test shortcut` |
+    | | PowerShell | `%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe` | `-NoExit -Command "Write-Output 'DeskSpace test shortcut'"` |
+    | | Task Manager | `%WINDIR%\System32\Taskmgr.exe` | |
+    | Test: Places | Documents | `%USERPROFILE%\Documents` | |
+    | | Downloads | `%USERPROFILE%\Downloads` | |
+    | | Windows | `%WINDIR%` | |
+    | | Temp | `%TEMP%` | |
+    | Test: Web | DeskSpace on GitHub | `https://github.com/generalchad/DeskSpace` | |
+    | | Example | `https://example.com` | |
+
+  - Control: `CreateTestSpaces`, section Spaces, "Create test spaces", a
+    `Button`, always enabled.
+  - Handler: for each `TestSpace`, `create_space(ui, cursor_pos())`
+    (New space's own placement, ROADMAP D10), then `commit`
+    `Command::RenameSpace` with its title. Turn each shortcut into a
+    `ShortcutSource::Custom(CustomShortcut { .. })`: `ShortcutTarget::parse`
+    the target; a `Path` goes through `resolve_path`, and one that does
+    not resolve is logged at `warn` and skipped. Hand them all to
+    `add_shortcuts(ui, id, at, sources)`. Log the count made.
+  - Tests: every `TEST_SPACES` target parses (`ShortcutTarget::parse` is
+    `Some`), the web targets parse as `Url` and the rest as `Path`, and
+    titles are unique.
+  - **[needs human]** check: four spaces open in a row beside the
+    existing ones, titled as above; every shortcut opens what it names
+    (the Tools ones show the test text); a second press makes four more
+    without overlapping; then "Delete all spaces" removes them and leaves
+    nothing on the desktop.

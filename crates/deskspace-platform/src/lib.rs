@@ -41,7 +41,7 @@ pub use win32::drag_image::DragImage;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
-pub use win32::shortcuts::{create_custom_shortcut, create_shortcut};
+pub use win32::shortcuts::{create_custom_shortcut, create_shortcut, resolve_path};
 pub use win32::system::{
     cursor_pos, drag_threshold, idle_time, system_accent_color, system_animations,
     system_uses_dark_mode, user_is_presenting, virtual_desktop_rect, windows_build, work_area_at,

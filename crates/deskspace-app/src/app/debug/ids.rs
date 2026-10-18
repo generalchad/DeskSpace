@@ -8,10 +8,15 @@
 pub(crate) enum DebugId {
     SpacesVisible = 1,
     DeleteAllSpaces = 2,
+    CreateTestSpaces = 3,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 2] = [Self::SpacesVisible, Self::DeleteAllSpaces];
+    pub(crate) const ALL: [Self; 3] = [
+        Self::SpacesVisible,
+        Self::DeleteAllSpaces,
+        Self::CreateTestSpaces,
+    ];
 
     pub(crate) fn id(self) -> u32 {
         self as u32

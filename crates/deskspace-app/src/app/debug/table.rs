@@ -58,6 +58,11 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Show spaces",
     },
     DebugRow {
+        id: DebugId::CreateTestSpaces,
+        section: DebugSectionId::Spaces,
+        label: "Create test spaces",
+    },
+    DebugRow {
         id: DebugId::DeleteAllSpaces,
         section: DebugSectionId::Spaces,
         label: "Delete all spaces",

@@ -413,7 +413,9 @@ impl App {
 
     pub(super) fn run_common_menu(&mut self, ui: &mut Ui, choice: MenuId, at: Point) {
         match choice {
-            MenuId::NewSpace => self.create_space(ui, at),
+            MenuId::NewSpace => {
+                self.create_space(ui, at);
+            }
             MenuId::Settings => self.open_settings(ui),
             MenuId::ToggleVisible => self.set_visible(ui, !self.visible),
             MenuId::Exit => self.exit(ui),
@@ -421,13 +423,14 @@ impl App {
         }
     }
 
-    /// New space (menus and the hotkey): in line with the top row of spaces
-    /// on the monitor at `at` (ROADMAP D10).
-    pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) {
+    /// New space (menus, the hotkey, and the debug window's test spaces): in
+    /// line with the top row of spaces on the monitor at `at` (ROADMAP D10).
+    /// Returns its id.
+    pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) -> Option<SpaceId> {
         let size = self.new_space_size();
         let spaces = self.space_rects();
         let origin = new_space_origin(&spaces, size, work_area_at(at), gap_at(at)).unwrap_or(at);
-        self.open_new_space(ui, origin, size);
+        self.open_new_space(ui, origin, size)
     }
 
     /// A space for items dropped on the desktop layer (ROADMAP D7): as near

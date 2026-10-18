@@ -7,19 +7,22 @@
 
 mod ids;
 mod table;
+mod test_spaces;
 
 use std::path::Path;
 use std::time::Instant;
 
+use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{
-    DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui,
+    DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui, cursor_pos,
 };
 
-use super::files::{StoredFiles, stored_paths};
+use super::files::{ShortcutSource, StoredFiles, stored_paths};
 use super::{App, Timer};
 use crate::debug_log::DebugLog;
 use ids::DebugId;
 use table::{DEBUG_CONTROLS, DebugSectionId};
+use test_spaces::TEST_SPACES;
 
 /// How often new log lines are moved into the console, in milliseconds.
 const DEBUG_LOG_MS: u32 = 100;
@@ -121,6 +124,7 @@ impl App {
             DebugId::DeleteAllSpaces => DebugControlKind::Button {
                 enabled: !self.config.desktop.spaces().is_empty(),
             },
+            DebugId::CreateTestSpaces => DebugControlKind::Button { enabled: true },
         }
     }
 
@@ -132,9 +136,46 @@ impl App {
                 tracing::info!(visible = on, "debug: spaces shown or hidden");
             }
             (DebugId::DeleteAllSpaces, DebugInput::Press) => self.delete_all_spaces(ui),
+            (DebugId::CreateTestSpaces, DebugInput::Press) => self.create_test_spaces(ui),
             (DebugId::SpacesVisible, DebugInput::Press | DebugInput::Choose(_))
-            | (DebugId::DeleteAllSpaces, DebugInput::Toggle(_) | DebugInput::Choose(_)) => {}
+            | (
+                DebugId::DeleteAllSpaces | DebugId::CreateTestSpaces,
+                DebugInput::Toggle(_) | DebugInput::Choose(_),
+            ) => {}
         }
+    }
+
+    /// Create test spaces: one ordinary space per `TEST_SPACES` row, made
+    /// through New space and filled through the one shortcut writer.
+    fn create_test_spaces(&mut self, ui: &mut Ui) {
+        let mut made = 0;
+        for space in TEST_SPACES {
+            let sources = space
+                .shortcuts
+                .iter()
+                .filter_map(|shortcut| shortcut.source())
+                .collect();
+            if self.create_test_space(ui, space.title, sources).is_some() {
+                made += 1;
+            }
+        }
+        tracing::info!(made, "debug: created test spaces");
+    }
+
+    /// A space where New space puts one, titled `title`, holding a shortcut
+    /// for each source. Returns its id.
+    fn create_test_space(
+        &mut self,
+        ui: &mut Ui,
+        title: &str,
+        sources: Vec<ShortcutSource>,
+    ) -> Option<SpaceId> {
+        let id = self.create_space(ui, cursor_pos())?;
+        let near = self.space_center(id);
+        let title = title.to_string();
+        self.commit(ui, Command::RenameSpace { id, title }, near);
+        self.add_shortcuts(ui, id, near, sources);
+        Some(id)
     }
 
     /// Asks `question` before a destructive debug action, naming the

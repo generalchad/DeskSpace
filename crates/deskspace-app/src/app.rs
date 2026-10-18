@@ -561,7 +561,9 @@ impl App {
         };
         match binding.action {
             HotkeyAction::ToggleSpaces => self.set_visible(ui, !self.visible),
-            HotkeyAction::NewSpace => self.create_space(ui, cursor_pos()),
+            HotkeyAction::NewSpace => {
+                self.create_space(ui, cursor_pos());
+            }
             HotkeyAction::OpenSettings => self.open_settings(ui),
         }
     }

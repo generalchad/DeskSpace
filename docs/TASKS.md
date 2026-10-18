@@ -716,49 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X8. Create test spaces (app).** Needs X5. **[needs human]**
-  - `menus.rs`: `create_space` returns the `Option<SpaceId>` that
-    `open_new_space` already gives; the menu callers ignore it.
-  - `lib.rs` of the platform: re-export `win32::shortcuts::resolve_path`
-    (it is `pub(crate)` today; make it `pub`).
-  - New `app/debug/test_spaces.rs`: `struct TestSpace { title: &'static
-    str, shortcuts: &'static [TestShortcut] }`, `struct TestShortcut {
-    name: &'static str, target: &'static str, arguments: &'static str }`,
-    and `TEST_SPACES`:
-
-    | Title | Name | Target | Arguments |
-    |-------|------|--------|-----------|
-    | Test: Apps | Notepad | `%WINDIR%\System32\notepad.exe` | |
-    | | Calculator | `%WINDIR%\System32\calc.exe` | |
-    | | Character Map | `%WINDIR%\System32\charmap.exe` | |
-    | Test: Tools | Command Prompt | `%WINDIR%\System32\cmd.exe` | `/k echo DeskSpace test shortcut` |
-    | | PowerShell | `%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe` | `-NoExit -Command "Write-Output 'DeskSpace test shortcut'"` |
-    | | Task Manager | `%WINDIR%\System32\Taskmgr.exe` | |
-    | Test: Places | Documents | `%USERPROFILE%\Documents` | |
-    | | Downloads | `%USERPROFILE%\Downloads` | |
-    | | Windows | `%WINDIR%` | |
-    | | Temp | `%TEMP%` | |
-    | Test: Web | DeskSpace on GitHub | `https://github.com/generalchad/DeskSpace` | |
-    | | Example | `https://example.com` | |
-
-  - Control: `CreateTestSpaces`, section Spaces, "Create test spaces", a
-    `Button`, always enabled.
-  - Handler: for each `TestSpace`, `create_space(ui, cursor_pos())`
-    (New space's own placement, ROADMAP D10), then `commit`
-    `Command::RenameSpace` with its title. Turn each shortcut into a
-    `ShortcutSource::Custom(CustomShortcut { .. })`: `ShortcutTarget::parse`
-    the target; a `Path` goes through `resolve_path`, and one that does
-    not resolve is logged at `warn` and skipped. Hand them all to
-    `add_shortcuts(ui, id, at, sources)`. Log the count made.
-  - Tests: every `TEST_SPACES` target parses (`ShortcutTarget::parse` is
-    `Some`), the web targets parse as `Url` and the rest as `Path`, and
-    titles are unique.
-  - **[needs human]** check: four spaces open in a row beside the
-    existing ones, titled as above; every shortcut opens what it names
-    (the Tools ones show the test text); a second press makes four more
-    without overlapping; then "Delete all spaces" removes them and leaves
-    nothing on the desktop.
-
 - [ ] **X9. The rest of Spaces (app).** Needs X5. **[needs human]** Each
   is a `Button` in section Spaces, enabled when there is a space:
   - `UnfoldAll`, "Unfold every space": `commit` `Command::ToggleFold` for
@@ -1177,6 +1134,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X8 (F-61) | Debug → Spaces → "Create test spaces" opens four spaces in a row beside the existing ones, titled Test: Apps, Tools, Places, and Web; every shortcut opens what it names (the Tools ones show the test text); a second press makes four more without overlapping; then "Delete all spaces" removes them and leaves nothing on the desktop. |
 | X7 (F-61) | With three spaces holding dropped files and one Shift-dropped file, Debug → Spaces → "Delete all spaces" asks once with the right counts and the scratch config's path; Cancel changes nothing; OK plays each space's Delete animation; the dropped files are in the Recycle Bin, the Shift-dropped file is where it was, and nothing new is on the desktop. Started without `--config`, the question shows the real-configuration warning (press Cancel). |
 | X5 (F-61) | With `--debug`, the rail lists "Windows" with a "Show spaces" check box that hides and shows the spaces and follows the tray's Hide/Show within a second; closing the window and choosing the tray's "Debug…" brings it back with the earlier log; without `--debug` the tray has no "Debug…"; the window themes dark and light, resizes (the console grows), and stops at its minimum size; Tab moves between controls. |
 | X4 (F-61) | With `--debug`, the window opens with the console already holding the startup lines; moving a space adds lines live; Level Trace shows trace lines and Info stops new debug ones; Filter, Pause and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save log…" work; a `-Release` build shows the log with no console window; without `--debug` nothing opens and stderr logs as before. |

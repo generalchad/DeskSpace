@@ -96,7 +96,7 @@ fn internet_shortcut(url: &str) -> String {
 /// dialog reads it: `%VARIABLES%` are expanded, and a bare program name
 /// (`notepad`) is looked up on the search path with `.exe` assumed. `None`
 /// when nothing exists there.
-pub(crate) fn resolve_path(typed: &Path) -> Option<PathBuf> {
+pub fn resolve_path(typed: &Path) -> Option<PathBuf> {
     let expanded = expand_environment(&typed.to_string_lossy());
     let path = PathBuf::from(&expanded);
     if path.exists() {
