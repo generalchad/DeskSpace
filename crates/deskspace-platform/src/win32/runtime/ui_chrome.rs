@@ -9,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::KillTimer;
 use super::*;
 use crate::input::ShellItem;
 use crate::render::ZoomBar;
-use crate::ui::CustomShortcut;
+use crate::ui::{CustomShortcut, LogLine};
 
 impl Ui {
     /// Opens DeskSpace's color picker and returns the chosen color. Blocks in a
@@ -180,6 +180,27 @@ impl Ui {
 
     pub fn is_debug_open(&self) -> bool {
         debug_hwnd().is_some()
+    }
+
+    /// Adds `lines` to the open debug window's console. Does nothing while
+    /// it is closed.
+    pub fn append_debug_log(&mut self, lines: &[LogLine]) {
+        if lines.is_empty() {
+            return;
+        }
+        if let Some(hwnd) = debug_hwnd() {
+            debug_window::append_log(hwnd, lines);
+        }
+    }
+
+    /// Replaces the clipboard with `text`.
+    pub fn set_clipboard_text(&mut self, text: &str) {
+        let Some(owner) = with_runtime(|runtime| runtime.controller) else {
+            return;
+        };
+        if let Err(error) = clipboard::set_text(owner, text) {
+            tracing::warn!(%error, "could not put text on the clipboard");
+        }
     }
 
     /// Asks a yes/no question in a modal message box; "No" is the default.

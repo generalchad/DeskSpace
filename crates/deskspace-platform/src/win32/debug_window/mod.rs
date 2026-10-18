@@ -10,6 +10,7 @@
 //! behind `GWLP_USERDATA` (`window_state`), freed in `WM_NCDESTROY`.
 
 mod build;
+mod console;
 mod layout;
 mod pages;
 
@@ -29,9 +30,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, PCWSTR, w};
 
+use crate::debug_console::ConsoleModel;
 use crate::error::PlatformError;
 use crate::input::{DebugEvent, Event};
-use crate::ui::{DebugControlKind, DebugPanel};
+use crate::ui::{DebugControlKind, DebugPanel, LogLine};
 use crate::win32::dark_mode::{self, ControlTheme};
 use crate::win32::dialog::DialogChrome;
 use crate::win32::dpi::{monitor_dpi_at, scale_for, window_dpi};
@@ -40,8 +42,9 @@ use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{runtime, settings_window, tray, window_state};
 
 use build::{build_sections, color_table, create_frame_parts, set_value};
+use console::ConsoleControls;
 use layout::{min_client, s};
-use pages::{layout_page, on_section_changed, on_vscroll, on_wheel, relayout};
+use pages::{layout_page, on_section_changed, on_vscroll, on_wheel, place, relayout};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceDebug");
 /// The scrolled pane and the section pages inside it.
@@ -79,6 +82,11 @@ struct DebugState {
     current: usize,
     /// How far the current page is scrolled up, in pixels.
     scroll: i32,
+    /// The log lines the console shows.
+    console: ConsoleModel,
+    console_controls: ConsoleControls,
+    /// Whether new lines scroll the console to the bottom.
+    auto_scroll: bool,
 }
 
 /// Creates and shows the debug window for `panel`.
@@ -98,6 +106,9 @@ pub(crate) fn create(panel: &DebugPanel, dark: bool) -> Result<HWND, PlatformErr
             sections: Vec::new(),
             current: 0,
             scroll: 0,
+            console: ConsoleModel::default(),
+            console_controls: ConsoleControls::default(),
+            auto_scroll: true,
         }));
         let (x, y, width, height) = initial_frame(cursor, dpi);
         let title = wide("DeskSpace Debug");
@@ -115,14 +126,18 @@ pub(crate) fn create(panel: &DebugPanel, dark: bool) -> Result<HWND, PlatformErr
             Some(instance),
             Some(state as *const core::ffi::c_void),
         )?;
-        let Some(font) = with_state(hwnd, |state| state.chrome.font) else {
+        let Some((font, colors)) =
+            with_state(hwnd, |state| (state.chrome.font, state.chrome.colors))
+        else {
             let _ = DestroyWindow(hwnd);
             return Err(PlatformError::Win32(windows::core::Error::from_thread()));
         };
         let (rail, pane) = create_frame_parts(hwnd, font);
+        let console_controls = console::create(hwnd, font, colors, panel.console_level);
         with_state(hwnd, |state| {
             state.rail = rail;
             state.pane = pane;
+            state.console_controls = console_controls;
         });
         build_panel(hwnd, panel);
         let icon = tray::shared_icon();
@@ -196,6 +211,11 @@ pub(crate) fn update(hwnd: HWND, panel: &DebugPanel) {
         if old == *panel {
             return;
         }
+        if old.console_level != panel.console_level
+            && let Some(controls) = with_state(hwnd, |state| state.console_controls)
+        {
+            console::set_level(controls, panel.console_level);
+        }
         let writes = with_state(hwnd, |state| {
             let mut writes = Vec::new();
             for ((before, after), built) in old
@@ -224,6 +244,12 @@ pub(crate) fn update(hwnd: HWND, panel: &DebugPanel) {
         // A readout's height follows its line count.
         layout_page(hwnd);
     }
+}
+
+/// Adds `lines` to the open window's console.
+pub(crate) fn append_log(hwnd: HWND, lines: &[LogLine]) {
+    // SAFETY: `hwnd` is the live debug window.
+    unsafe { console::append(hwnd, lines) }
 }
 
 /// Switches the open window between dark and light.
@@ -293,6 +319,9 @@ unsafe fn on_command(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
     // SAFETY: `control` is the live control that sent the notification; the
     // borrow ends before the event is dispatched.
     unsafe {
+        if console::on_command(hwnd, id, code, control) {
+            return;
+        }
         if id == ID_RAIL {
             if code == LBN_SELCHANGE {
                 on_section_changed(hwnd, control);
@@ -376,6 +405,7 @@ unsafe fn restyle(hwnd: HWND, dpi: u32, dark: bool) {
                 .flat_map(|(section, built)| section.controls.iter().zip(&built.controls))
                 .filter(|(control, _)| matches!(control.kind, DebugControlKind::Table { .. }))
                 .filter_map(|(_, handles)| handles.main)
+                .chain(state.console_controls.list)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -497,6 +527,8 @@ unsafe extern "system" fn wndproc(
                 on_command(window, wparam, lparam);
                 LRESULT(0)
             }
+            WM_NOTIFY => console::on_notify(window, lparam)
+                .unwrap_or_else(|| DefWindowProcW(window, message, wparam, lparam)),
             WM_VSCROLL if lparam.0 == 0 => {
                 on_vscroll(window, wparam);
                 LRESULT(0)

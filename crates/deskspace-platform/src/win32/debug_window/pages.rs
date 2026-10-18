@@ -14,7 +14,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetWindowPos, ShowWindow,
 };
 
-use super::layout::{control_rects, debug_layout, s, section_rows};
+use super::console;
+use super::layout::{console_layout, control_rects, debug_layout, s, section_rows};
 use super::with_state;
 use crate::ui::DebugControlKind;
 use crate::win32::dpi::{scale_for, window_dpi};
@@ -38,11 +39,15 @@ pub(super) unsafe fn relayout(hwnd: HWND) {
         };
         let mut client = RECT::default();
         let _ = GetClientRect(hwnd, &mut client);
-        let layout = debug_layout(client.right, client.bottom, scale_for(window_dpi(hwnd)));
+        let scale = scale_for(window_dpi(hwnd));
+        let layout = debug_layout(client.right, client.bottom, scale);
         for (part, rect) in [(rail, layout.rail), (pane, layout.panel)] {
             if let Some(part) = part {
                 place(part, rect);
             }
+        }
+        if let Some(controls) = with_state(hwnd, |state| state.console_controls) {
+            console::place_all(controls, console_layout(layout.console, scale), scale);
         }
         layout_page(hwnd);
     }
@@ -148,7 +153,7 @@ unsafe fn caption_width(control: HWND, font: HFONT) -> i32 {
     }
 }
 
-fn place(window: HWND, rect: Rect) {
+pub(super) fn place(window: HWND, rect: Rect) {
     // SAFETY: `window` is a live child of the debug window.
     unsafe {
         let _ = SetWindowPos(

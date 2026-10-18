@@ -2490,3 +2490,40 @@ until I5-I6 all land, so no partial build hides the desktop.
     (`--debug`)" naming `win32/debug_window/`.
   - Done when: the gates pass and the layout tests pass. Its on-screen
     check is X5's.
+
+- [x] **X3. The console (platform).** Needs X2.
+  - Pure model, `deskspace-platform/src/debug_console.rs` (crate root, no
+    `unsafe`, beside `edit.rs`): `ConsoleModel` with `CONSOLE_CAPACITY` =
+    10,000 lines (the oldest is dropped), `push(&[LogLine])`,
+    `set_filter(&str)` (case-insensitive, matches the target or the
+    message; empty shows all), `set_paused(bool)` (while paused, pushed
+    lines are held and appear on resume), `clear()`, `shown_len()`,
+    `shown(index) -> &LogLine`, and `fn format_line(&LogLine) -> String`
+    as `mm:ss.mmm LEVEL target message`. Tests for each, including the
+    capacity drop and a filter applied to held lines on resume.
+  - `win32/debug_window/console.rs`: a toolbar row (a Level combo box
+    listing `LogLevel::ALL`, a Filter edit, Pause and Auto-scroll check
+    boxes with Auto-scroll on, and Clear, Copy, and "Save log…" buttons)
+    above a virtual report list view (`LVS_OWNERDATA`; columns Time,
+    Level, Target, Message) that reads rows from the `ConsoleModel`. Text
+    color by level through `NM_CUSTOMDRAW`: Error red, Warn amber, Debug
+    and Trace the dimmed text color of `UiColors`, Info the normal one,
+    with the colors as named constants. After new lines, set the item
+    count (`LVM_SETITEMCOUNT` with `LVSICF_NOSCROLL`) and, with
+    Auto-scroll on, show the last row (`LVM_ENSUREVISIBLE`).
+  - The Level combo box shows `DebugPanel::console_level` and raises
+    `DebugEvent::ConsoleLevel`. Filter, Pause, Auto-scroll, and Clear stay
+    inside the platform; they are view state, like scrolling.
+  - Copy puts every shown line (`format_line`, one per line) on the
+    clipboard as `CF_UNICODETEXT` through a new `pub(crate) fn
+    set_text(owner, &str)` in `win32/clipboard.rs`; also expose it as
+    `Ui::set_clipboard_text(&str)` for X12. "Save log…" asks for a path
+    with a new `dialog::pick_save_path(owner, title, default_name,
+    filter)` over `IFileSaveDialog` beside `pick_files` (C10b reuses it;
+    say so in its `///` doc) and writes the shown lines as UTF-8.
+  - `Ui::append_debug_log(&[LogLine])` pushes into the open window's
+    model and does nothing when it is closed.
+  - Never log from the console's own code paths (a log line there would
+    feed itself); the model has no `tracing` calls.
+  - Done when: the gates pass and the model tests pass. Its on-screen
+    check is X4's.

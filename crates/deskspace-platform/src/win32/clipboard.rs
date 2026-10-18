@@ -6,19 +6,22 @@
 //! to the clipboard, so the data outlives this process and no `IDataObject`
 //! has to be implemented.
 //! https://learn.microsoft.com/en-us/windows/win32/shell/clipboard#cf_hdrop
+//!
+//! Plain text (`CF_UNICODETEXT`) is written too, for the debug window's
+//! console and diagnostics.
 
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
     SetClipboardData,
 };
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
 use windows::Win32::System::Ole::{
-    CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, OleGetClipboard,
+    CF_HDROP, CF_UNICODETEXT, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, OleGetClipboard,
 };
 use windows::Win32::UI::Shell::{DROPFILES, DragQueryFileW, HDROP};
 use windows::core::{BOOL, PCWSTR};
@@ -84,6 +87,27 @@ pub(crate) fn shell_items() -> Vec<ShellItem> {
         return Vec::new();
     };
     super::drop_target::shell_items(&data).unwrap_or_default()
+}
+
+/// Replaces the clipboard with `text` as `CF_UNICODETEXT`, owned by `owner`.
+/// https://learn.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats
+pub(crate) fn set_text(owner: HWND, text: &str) -> Result<(), PlatformError> {
+    let bytes: Vec<u8> = wide(text)
+        .into_iter()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    // SAFETY: opening the clipboard for our own live window.
+    with_clipboard_retry(|| unsafe { OpenClipboard(Some(owner)) })?;
+    // SAFETY: the clipboard is open until the close below; the global block
+    // is ours until `SetClipboardData` takes it.
+    unsafe {
+        let result = (|| {
+            EmptyClipboard()?;
+            set_bytes(CF_UNICODETEXT.0 as u32, &bytes)
+        })();
+        let _ = CloseClipboard();
+        result
+    }
 }
 
 /// Empties the clipboard.

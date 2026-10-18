@@ -20,8 +20,9 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::Shell::{
-    FOLDERID_Desktop, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FileOpenDialog,
-    IFileOpenDialog, IShellItem, KF_FLAG_DEFAULT, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
+    Common::COMDLG_FILTERSPEC, FOLDERID_Desktop, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST,
+    FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FileOpenDialog, FileSaveDialog, IFileOpenDialog,
+    IFileSaveDialog, IShellItem, KF_FLAG_DEFAULT, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, DispatchMessageW, EnumChildWindows, GetClassNameW,
@@ -348,6 +349,60 @@ pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
             }
         }
         paths
+    }
+}
+
+/// Opens the standard Save dialog over `owner` and returns the path the user
+/// chose, or `None` when they cancelled. `filter` lists (name, pattern)
+/// pairs such as `("Log files", "*.log")`; the first is selected, and
+/// `default_name`'s extension is added to a name typed without one. Windows
+/// asks before an existing file is replaced. The debug console's "Save log…"
+/// uses it, and C10b's theme export reuses it.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifilesavedialog
+pub(crate) unsafe fn pick_save_path(
+    owner: HWND,
+    title: &str,
+    default_name: &str,
+    filter: &[(&str, &str)],
+) -> Option<PathBuf> {
+    let names: Vec<(Vec<u16>, Vec<u16>)> = filter
+        .iter()
+        .map(|(name, pattern)| (wide(name), wide(pattern)))
+        .collect();
+    let specs: Vec<COMDLG_FILTERSPEC> = names
+        .iter()
+        .map(|(name, pattern)| COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(pattern.as_ptr()),
+        })
+        .collect();
+    let title = wide(title);
+    let default_name_wide = wide(default_name);
+    let extension = std::path::Path::new(default_name)
+        .extension()
+        .map(|extension| wide(&extension.to_string_lossy()));
+    // SAFETY: OLE is initialized on this thread; the dialog is modal over
+    // `owner`, the strings outlive it, and it is released when it goes out
+    // of scope.
+    unsafe {
+        let picker: IFileSaveDialog =
+            CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let options = picker.GetOptions().ok()?;
+        picker
+            .SetOptions(options | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT)
+            .ok()?;
+        let _ = picker.SetTitle(PCWSTR(title.as_ptr()));
+        let _ = picker.SetFileName(PCWSTR(default_name_wide.as_ptr()));
+        if !specs.is_empty() {
+            let _ = picker.SetFileTypes(&specs);
+        }
+        if let Some(extension) = &extension {
+            let _ = picker.SetDefaultExtension(PCWSTR(extension.as_ptr()));
+        }
+        // Cancel comes back as an error (HRESULT_FROM_WIN32(ERROR_CANCELLED)).
+        picker.Show(Some(owner)).ok()?;
+        let item = picker.GetResult().ok()?;
+        display_name(&item, SIGDN_FILESYSPATH).map(PathBuf::from)
     }
 }
 

@@ -1,3 +1,4 @@
+mod debug_console;
 mod edit;
 mod error;
 mod input;

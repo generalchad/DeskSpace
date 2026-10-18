@@ -37,6 +37,13 @@ const BUTTON_TEXT_MARGIN: i32 = 32;
 /// The drop-down list of a `Choice`, at 96 DPI: a combo box's window height
 /// includes it.
 const DROP_DOWN_HEIGHT: i32 = 200;
+/// The console's toolbar row, at 96 DPI.
+const TOOLBAR_HEIGHT: i32 = 28;
+const TOOL_GAP: i32 = 8;
+const LEVEL_WIDTH: i32 = 96;
+const PAUSE_WIDTH: i32 = 72;
+const AUTO_SCROLL_WIDTH: i32 = 104;
+const TOOL_BUTTON_WIDTH: i32 = 88;
 
 /// The debug window's three parts, in client pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +54,20 @@ pub(super) struct DebugLayout {
     pub panel: Rect,
     /// The log console, across the bottom half.
     pub console: Rect,
+}
+
+/// The console's parts, in client pixels: a toolbar row above the log list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ConsoleLayout {
+    pub level: Rect,
+    /// The filter box takes the toolbar's spare width.
+    pub filter: Rect,
+    pub pause: Rect,
+    pub auto_scroll: Rect,
+    pub clear: Rect,
+    pub copy: Rect,
+    pub save: Rect,
+    pub list: Rect,
 }
 
 /// Converts 96-DPI layout units to pixels at `scale`.
@@ -76,6 +97,51 @@ pub(super) fn debug_layout(width: i32, height: i32, scale: f32) -> DebugLayout {
             (console_height - edge).max(0),
         ),
     }
+}
+
+/// Lays the console out in `console` (from `debug_layout`): the Level box
+/// and the filter on the left, the check boxes and buttons on the right.
+pub(super) fn console_layout(console: Rect, scale: f32) -> ConsoleLayout {
+    let gap = s(TOOL_GAP, scale);
+    let height = s(TOOLBAR_HEIGHT, scale);
+    let tool = |x: i32, width: i32| Rect::new(x, console.y, width, height);
+    let button = s(TOOL_BUTTON_WIDTH, scale);
+    let save = tool(console.right() - button, button);
+    let copy = tool(save.x - gap - button, button);
+    let clear = tool(copy.x - gap - button, button);
+    let auto_scroll_width = s(AUTO_SCROLL_WIDTH, scale);
+    let auto_scroll = tool(clear.x - gap - auto_scroll_width, auto_scroll_width);
+    let pause_width = s(PAUSE_WIDTH, scale);
+    let pause = tool(auto_scroll.x - gap - pause_width, pause_width);
+    let level = tool(console.x, s(LEVEL_WIDTH, scale));
+    let filter_x = level.right() + gap;
+    let filter = tool(filter_x, (pause.x - gap - filter_x).max(0));
+    let list_top = console.y + height + gap;
+    ConsoleLayout {
+        level,
+        filter,
+        pause,
+        auto_scroll,
+        clear,
+        copy,
+        save,
+        list: Rect::new(
+            console.x,
+            list_top,
+            console.width,
+            (console.bottom() - list_top).max(0),
+        ),
+    }
+}
+
+/// A combo box's window rect: `field` with its drop-down list below.
+pub(super) fn with_drop_down(field: Rect, scale: f32) -> Rect {
+    Rect::new(
+        field.x,
+        field.y,
+        field.width,
+        field.height + s(DROP_DOWN_HEIGHT, scale),
+    )
 }
 
 /// The smallest client size, in pixels at `scale`.
@@ -152,11 +218,9 @@ pub(super) fn control_rects(
     let x = padding + label_width + s(LABEL_GAP, scale);
     let main = match kind {
         DebugControlKind::Toggle { .. } => Rect::new(x, top, s(FIELD_HEIGHT, scale), height),
-        DebugControlKind::Choice { .. } => Rect::new(
-            x,
-            top,
-            (width - x - padding).max(0),
-            height + s(DROP_DOWN_HEIGHT, scale),
+        DebugControlKind::Choice { .. } => with_drop_down(
+            Rect::new(x, top, (width - x - padding).max(0), height),
+            scale,
         ),
         _ => Rect::new(x, top, (width - x - padding).max(0), height),
     };
@@ -204,6 +268,32 @@ mod tests {
     fn the_console_keeps_its_minimum() {
         let console = debug_layout(800, 300, 1.0).console;
         assert_eq!(console.height, CONSOLE_MIN - EDGE);
+    }
+
+    #[test]
+    fn the_console_parts_fit_and_do_not_overlap_at_the_minimum_size() {
+        for scale in [1.0, 1.5] {
+            let (width, height) = min_client(scale);
+            let console = debug_layout(width, height, scale).console;
+            let parts = console_layout(console, scale);
+            let all = [
+                parts.level,
+                parts.filter,
+                parts.pause,
+                parts.auto_scroll,
+                parts.clear,
+                parts.copy,
+                parts.save,
+                parts.list,
+            ];
+            for (index, part) in all.iter().enumerate() {
+                assert!(part.width > 0 && part.height > 0, "{part:?} is empty");
+                assert_eq!(part.union(console), console, "{part:?} leaves the console");
+                for other in &all[index + 1..] {
+                    assert!(!part.intersects(*other), "{part:?} overlaps {other:?}");
+                }
+            }
+        }
     }
 
     #[test]
