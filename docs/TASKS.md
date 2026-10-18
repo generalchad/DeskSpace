@@ -513,11 +513,15 @@ a new module.
 - [ ] **T1. Composition backdrop spike.** **[needs human]**
   - The example has landed (`feat: add the composition backdrop spike
     (T1)`); run it with `cargo run -p deskspace-platform --example
-    backdrop_spike`. It takes Ctrl+Alt+Shift+F, G, D, T, and Q, because a
-    never-activated window gets no keys. Found while building it (Windows
-    11 build 26300): `CompositionMaskBrush` refuses a host backdrop brush
-    as its source ("Unsupported source brush type"), so G sweeps with 80
-    strips of backdrop at graded opacities instead of a gradient mask.
+    backdrop_spike`. It takes Ctrl+Alt+Shift+F, G, M, D, T, and Q, because
+    a never-activated window gets no keys. Found while building it
+    (Windows 11 build 26300): `CompositionMaskBrush` refuses a host
+    backdrop brush as its source ("Unsupported source brush type"), so G
+    sweeps with 80 strips of backdrop at graded opacities instead of a
+    gradient mask. M sweeps the same edge the way T13 chose: an effect
+    brush whose graph is D2D's AlphaMask, the backdrop its source and a
+    linear gradient its mask. The compositor accepts that graph (no error
+    at startup); whether it renders is part of the check below.
   - What it is: `crates/deskspace-platform/examples/backdrop_spike.rs`, never shipped: a
     window styled as a space (`WS_POPUP`, `WS_EX_TOOLWINDOW |
     WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP`, `MA_NOACTIVATE`), with
@@ -561,11 +565,12 @@ a new module.
 - [ ] **T13. The blur follows the frame (platform).** **[needs human]**
   - On composition spaces, each frame also sets the backdrop: its opacity
     and rect, and the frame's mask. A `CompositionMaskBrush` cannot take
-    the backdrop (T1), so **[needs decision]** between an effect brush
-    whose graph takes the backdrop as a source and the painter's mask as
-    D2D's AlphaMask effect (it needs a Rust `IGraphicsEffect` and
-    `IGraphicsEffectD2D1Interop`), and the backdrop split into strips and
-    cells at graded opacities, as the spike does. The blur no longer steps
+    the backdrop (T1), so the backdrop sprite's brush is an effect brush
+    whose graph is D2D's AlphaMask, with the backdrop as its source and the
+    painter's mask as its mask (decided 2026-10-18, maintainer, over
+    splitting the backdrop into strips and cells). The spike's `AlphaMask`
+    (`IGraphicsEffect` and `IGraphicsEffectD2D1Interop`) is the pattern; if
+    T1's M key does not render, stop and ask. The blur no longer steps
     there.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the

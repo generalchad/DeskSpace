@@ -9,14 +9,16 @@
 //!
 //! - Ctrl+Alt+Shift+F: fade the whole window out and back (opacity).
 //! - Ctrl+Alt+Shift+G: sweep a soft edge down over the blur and back.
-//!
-//! Found while building it: `CompositionMaskBrush` refuses a host backdrop
-//! brush as its source ("Unsupported source brush type"), so the sweep here
-//! is thin strips of backdrop at graded opacities. Masking the blur itself
-//! needs an effect graph with the backdrop as a source (T13).
+//! - Ctrl+Alt+Shift+M: the same sweep through an effect brush (T13).
 //! - Ctrl+Alt+Shift+D: dissolve the blur cell by cell and back.
 //! - Ctrl+Alt+Shift+T: toggle topmost.
 //! - Ctrl+Alt+Shift+Q: quit.
+//!
+//! Found while building it: `CompositionMaskBrush` refuses a host backdrop
+//! brush as its source ("Unsupported source brush type"), so G sweeps thin
+//! strips of backdrop at graded opacities. M is the way T13 chose to mask
+//! the blur itself: a `CompositionEffectBrush` whose graph is Direct2D's
+//! AlphaMask, with the backdrop as its source and a gradient as its mask.
 
 #[cfg(not(windows))]
 fn main() {}
@@ -30,14 +32,24 @@ fn main() -> windows::core::Result<()> {
 mod spike {
     use std::cell::RefCell;
 
+    use windows::Foundation::IPropertyValue;
+    use windows::Graphics::Effects::{
+        IGraphicsEffect, IGraphicsEffect_Impl, IGraphicsEffectSource, IGraphicsEffectSource_Impl,
+    };
     use windows::UI::Color;
     use windows::UI::Composition::{
+        CompositionBackdropBrush, CompositionEffectSourceParameter, CompositionLinearGradientBrush,
         Compositor, ContainerVisual, Desktop::DesktopWindowTarget, SpriteVisual,
     };
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Foundation::{E_INVALIDARG, HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Graphics::Direct2D::CLSID_D2D1AlphaMask;
     use windows::Win32::Graphics::Dwm::{DWMWINDOWATTRIBUTE, DwmSetWindowAttribute};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
+    use windows::Win32::System::WinRT::Graphics::Direct2D::{
+        GRAPHICS_EFFECT_PROPERTY_MAPPING, IGraphicsEffectD2D1Interop,
+        IGraphicsEffectD2D1Interop_Impl,
+    };
     use windows::Win32::System::WinRT::{
         CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
         DispatcherQueueOptions, RO_INIT_SINGLETHREADED, RoInitialize,
@@ -52,7 +64,8 @@ mod spike {
         WM_MOUSEACTIVATE, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
         WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
     };
-    use windows::core::{BOOL, Interface, Result, w};
+    use windows::core::{BOOL, GUID, HSTRING, Interface, PCWSTR, Result, w};
+    use windows_core::implement;
     use windows_numerics::{Vector2, Vector3};
 
     const WIDTH: f32 = 480.0;
@@ -76,7 +89,15 @@ mod spike {
     enum Demo {
         Fade,
         Sweep,
+        MaskedSweep,
         Dissolve,
+    }
+
+    /// The backdrop masked by an effect graph, for MaskedSweep.
+    struct Masked {
+        sprite: SpriteVisual,
+        /// Transparent above the edge, opaque below; moved per frame.
+        mask: CompositionLinearGradientBrush,
     }
 
     struct Spike {
@@ -85,6 +106,8 @@ mod spike {
         /// The backdrop in horizontal strips, for Fade and Sweep.
         strips: ContainerVisual,
         strip_visuals: Vec<SpriteVisual>,
+        /// `None` when the compositor refused the effect graph.
+        masked: Option<Masked>,
         /// The same backdrop in cells, shown only for Dissolve.
         cells: ContainerVisual,
         cell_visuals: Vec<SpriteVisual>,
@@ -125,7 +148,8 @@ mod spike {
             SPIKE.with(|cell| *cell.borrow_mut() = Some(spike));
             register_hotkeys(window);
             println!(
-                "Ctrl+Alt+Shift+ F fade, G sweep, D dissolve, T topmost, Q quit. \
+                "Ctrl+Alt+Shift+ F fade, G sweep, M masked sweep, D dissolve, \
+                 T topmost, Q quit. \
                  Never click into the window to activate it: it must blur without."
             );
             let mut message = MSG::default();
@@ -215,6 +239,17 @@ mod spike {
         }
         root.Children()?.InsertAtTop(&cells)?;
 
+        let masked = match build_masked(&compositor, &blur) {
+            Ok(masked) => {
+                root.Children()?.InsertAtTop(&masked.sprite)?;
+                Some(masked)
+            }
+            Err(error) => {
+                println!("The effect brush failed, so M does nothing: {error:?}");
+                None
+            }
+        };
+
         // A translucent tint over the blur, as a space draws its own.
         let tint = compositor.CreateSpriteVisual()?;
         tint.SetSize(Vector2::new(WIDTH, HEIGHT))?;
@@ -227,6 +262,7 @@ mod spike {
             root,
             strips,
             strip_visuals,
+            masked,
             cells,
             cell_visuals,
             order,
@@ -235,6 +271,103 @@ mod spike {
             _target: target,
             _compositor: compositor,
         })
+    }
+
+    fn build_masked(compositor: &Compositor, blur: &CompositionBackdropBrush) -> Result<Masked> {
+        let effect: IGraphicsEffect = AlphaMask::new(["backdrop", "mask"])?.into();
+        let brush = compositor.CreateEffectFactory(&effect)?.CreateBrush()?;
+        brush.SetSourceParameter(&HSTRING::from("backdrop"), blur)?;
+
+        // Relative coordinates, so the start and end points are fractions
+        // of the height; past the ends the gradient holds its end colors.
+        let mask = compositor.CreateLinearGradientBrush()?;
+        mask.SetStartPoint(Vector2::new(0.0, 0.0))?;
+        mask.SetEndPoint(Vector2::new(0.0, 1.0))?;
+        let stops = mask.ColorStops()?;
+        stops.Append(
+            &compositor.CreateColorGradientStopWithOffsetAndColor(0.0, color(0, 0, 0, 0))?,
+        )?;
+        stops.Append(
+            &compositor.CreateColorGradientStopWithOffsetAndColor(1.0, color(0xFF, 0, 0, 0))?,
+        )?;
+        brush.SetSourceParameter(&HSTRING::from("mask"), &mask)?;
+
+        let sprite = compositor.CreateSpriteVisual()?;
+        sprite.SetSize(Vector2::new(WIDTH, HEIGHT))?;
+        sprite.SetBrush(&brush)?;
+        sprite.SetIsVisible(false)?;
+        Ok(Masked { sprite, mask })
+    }
+
+    /// Direct2D's AlphaMask effect described to the compositor: the first
+    /// source's pixels times the second's alpha. Composition takes effect
+    /// graphs only through these interfaces; Win2D usually supplies them.
+    /// https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.effects.interop/nn-windows-graphics-effects-interop-igraphicseffectd2d1interop
+    /// https://learn.microsoft.com/en-us/windows/win32/direct2d/alpha-mask-effect
+    #[implement(IGraphicsEffect, IGraphicsEffectSource, IGraphicsEffectD2D1Interop)]
+    struct AlphaMask {
+        name: RefCell<HSTRING>,
+        sources: [IGraphicsEffectSource; 2],
+    }
+
+    impl AlphaMask {
+        fn new([source, mask]: [&str; 2]) -> Result<Self> {
+            let parameter = |name: &str| -> Result<IGraphicsEffectSource> {
+                CompositionEffectSourceParameter::Create(&HSTRING::from(name))?.cast()
+            };
+            Ok(Self {
+                name: RefCell::new(HSTRING::from("AlphaMask")),
+                sources: [parameter(source)?, parameter(mask)?],
+            })
+        }
+    }
+
+    impl IGraphicsEffect_Impl for AlphaMask_Impl {
+        fn Name(&self) -> Result<HSTRING> {
+            Ok(self.name.borrow().clone())
+        }
+
+        fn SetName(&self, name: &HSTRING) -> Result<()> {
+            *self.name.borrow_mut() = name.clone();
+            Ok(())
+        }
+    }
+
+    impl IGraphicsEffectSource_Impl for AlphaMask_Impl {}
+
+    impl IGraphicsEffectD2D1Interop_Impl for AlphaMask_Impl {
+        fn GetEffectId(&self) -> Result<GUID> {
+            Ok(CLSID_D2D1AlphaMask)
+        }
+
+        // AlphaMask has no properties to animate or map.
+        fn GetNamedPropertyMapping(
+            &self,
+            _name: &PCWSTR,
+            _index: *mut u32,
+            _mapping: *mut GRAPHICS_EFFECT_PROPERTY_MAPPING,
+        ) -> Result<()> {
+            Err(E_INVALIDARG.into())
+        }
+
+        fn GetPropertyCount(&self) -> Result<u32> {
+            Ok(0)
+        }
+
+        fn GetProperty(&self, _index: u32) -> Result<IPropertyValue> {
+            Err(E_INVALIDARG.into())
+        }
+
+        fn GetSource(&self, index: u32) -> Result<IGraphicsEffectSource> {
+            self.sources
+                .get(index as usize)
+                .cloned()
+                .ok_or_else(|| E_INVALIDARG.into())
+        }
+
+        fn GetSourceCount(&self) -> Result<u32> {
+            Ok(self.sources.len() as u32)
+        }
     }
 
     fn color(a: u8, r: u8, g: u8, b: u8) -> Color {
@@ -262,7 +395,7 @@ mod spike {
 
     unsafe fn register_hotkeys(window: HWND) {
         let modifiers: HOT_KEY_MODIFIERS = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
-        for key in *b"FGDTQ" {
+        for key in *b"FGMDTQ" {
             // SAFETY: registering hotkeys for our own window.
             if unsafe { RegisterHotKey(Some(window), i32::from(key), modifiers, u32::from(key)) }
                 .is_err()
@@ -281,6 +414,7 @@ mod spike {
             let demo = match key {
                 b'F' => Demo::Fade,
                 b'G' => Demo::Sweep,
+                b'M' if spike.masked.is_some() => Demo::MaskedSweep,
                 b'D' => Demo::Dissolve,
                 b'T' => {
                     spike.topmost = !spike.topmost;
@@ -307,7 +441,12 @@ mod spike {
                 _ => return,
             };
             let _ = spike.cells.SetIsVisible(demo == Demo::Dissolve);
-            let _ = spike.strips.SetIsVisible(demo != Demo::Dissolve);
+            let _ = spike
+                .strips
+                .SetIsVisible(matches!(demo, Demo::Fade | Demo::Sweep));
+            if let Some(masked) = &spike.masked {
+                let _ = masked.sprite.SetIsVisible(demo == Demo::MaskedSweep);
+            }
             spike.running = Some((demo, 0));
             // SAFETY: a timer on our own window.
             unsafe {
@@ -357,6 +496,16 @@ mod spike {
                     strip.SetOpacity(opacity)?;
                 }
                 Ok(())
+            }
+            Demo::MaskedSweep => {
+                let Some(masked) = &spike.masked else {
+                    return Ok(());
+                };
+                let position = (1.0 - shown) * (1.0 + FEATHER);
+                masked
+                    .mask
+                    .SetStartPoint(Vector2::new(0.0, position - FEATHER))?;
+                masked.mask.SetEndPoint(Vector2::new(0.0, position))
             }
             Demo::Dissolve => {
                 let gone = ((1.0 - shown) * spike.order.len() as f32).round() as usize;
