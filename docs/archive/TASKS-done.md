@@ -2742,3 +2742,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     (the Tools ones show the test text); a second press makes four more
     without overlapping; then "Delete all spaces" removes them and leaves
     nothing on the desktop.
+
+- [x] **X9. The rest of Spaces (app).** Needs X5. **[needs human]** Each
+  is a `Button` in section Spaces, enabled when there is a space:
+  - `UnfoldAll`, "Unfold every space": `commit` `Command::ToggleFold` for
+    each folded space.
+  - `UnlockAll`, "Unlock every space": `commit` `Command::ToggleLock` for
+    each locked space.
+  - `RefreshAll`, "Refresh every space": `self.refresh_spaces(ui)` (what
+    F5 does).
+  - `PruneNow`, "Prune missing items": `self.prune_all_missing(ui)`.
+  - `StressSize`, "Stress space size", a `Choice` of 50, 200, and 1000
+    (a `STRESS_SIZES` table), kept in `DebugTools`, and `CreateStress`,
+    "Create a stress space": one space (as X8 does) titled "Test: Stress
+    {n}", with `n` shortcuts to `%WINDIR%\System32\notepad.exe` named
+    `Item 0001` upward, through one `add_shortcuts` call.
+  - Tests: through `fixtures.rs`, the commands the first two send leave
+    every space unfolded and unlocked; `STRESS_SIZES` is ascending.
+  - **[needs human]** check: each button does what it says; a 1000-item
+    stress space opens and scrolls smoothly, and "Delete all spaces"
+    removes it.

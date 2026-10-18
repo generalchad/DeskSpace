@@ -9,13 +9,25 @@ pub(crate) enum DebugId {
     SpacesVisible = 1,
     DeleteAllSpaces = 2,
     CreateTestSpaces = 3,
+    UnfoldAll = 4,
+    UnlockAll = 5,
+    RefreshAll = 6,
+    PruneNow = 7,
+    StressSize = 8,
+    CreateStress = 9,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 3] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
+        Self::UnfoldAll,
+        Self::UnlockAll,
+        Self::RefreshAll,
+        Self::PruneNow,
+        Self::StressSize,
+        Self::CreateStress,
     ];
 
     pub(crate) fn id(self) -> u32 {

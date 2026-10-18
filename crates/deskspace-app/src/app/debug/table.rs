@@ -63,6 +63,36 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Create test spaces",
     },
     DebugRow {
+        id: DebugId::StressSize,
+        section: DebugSectionId::Spaces,
+        label: "Stress space size",
+    },
+    DebugRow {
+        id: DebugId::CreateStress,
+        section: DebugSectionId::Spaces,
+        label: "Create a stress space",
+    },
+    DebugRow {
+        id: DebugId::UnfoldAll,
+        section: DebugSectionId::Spaces,
+        label: "Unfold every space",
+    },
+    DebugRow {
+        id: DebugId::UnlockAll,
+        section: DebugSectionId::Spaces,
+        label: "Unlock every space",
+    },
+    DebugRow {
+        id: DebugId::RefreshAll,
+        section: DebugSectionId::Spaces,
+        label: "Refresh every space",
+    },
+    DebugRow {
+        id: DebugId::PruneNow,
+        section: DebugSectionId::Spaces,
+        label: "Prune missing items",
+    },
+    DebugRow {
         id: DebugId::DeleteAllSpaces,
         section: DebugSectionId::Spaces,
         label: "Delete all spaces",

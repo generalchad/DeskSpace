@@ -3,33 +3,34 @@
 //!
 //! A control is a `DebugId` (`ids.rs`), a `DEBUG_CONTROLS` row
 //! (`table.rs`), and an arm in both `debug_control` (what it shows) and
-//! `on_debug_control` (what it does).
+//! `on_debug_control` (what it does). Each section's actions live in a file
+//! named for it.
 
 mod ids;
+mod spaces;
 mod table;
 mod test_spaces;
 
 use std::path::Path;
 use std::time::Instant;
 
-use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{
-    DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui, cursor_pos,
+    DebugControl, DebugControlKind, DebugEvent, DebugPanel, DebugSection, LogLevel, Ui,
 };
 
-use super::files::{ShortcutSource, StoredFiles, stored_paths};
 use super::{App, Timer};
 use crate::debug_log::DebugLog;
 use ids::DebugId;
 use table::{DEBUG_CONTROLS, DebugSectionId};
-use test_spaces::TEST_SPACES;
+use test_spaces::STRESS_SIZES;
 
 /// How often new log lines are moved into the console, in milliseconds.
 const DEBUG_LOG_MS: u32 = 100;
 /// How often the panel's values are read again, in milliseconds.
 const DEBUG_REFRESH_MS: u32 = 1000;
 
-/// The debug window's session state; present only with `--debug`.
+/// The debug window's session state; present only with `--debug`. Nothing
+/// here is saved (ROADMAP D14).
 pub(crate) struct DebugTools {
     log: DebugLog,
     /// The `seq` of the last log line handed to the window.
@@ -41,6 +42,8 @@ pub(crate) struct DebugTools {
     console_level: LogLevel,
     /// The panel last pushed to the window, so an unchanged one is not sent.
     shown: Option<DebugPanel>,
+    /// The chosen `STRESS_SIZES` index.
+    stress_size: usize,
 }
 
 impl DebugTools {
@@ -52,11 +55,14 @@ impl DebugTools {
             started: Instant::now(),
             console_level: LogLevel::Debug,
             shown: None,
+            stress_size: 0,
         }
     }
 }
 
-/// What the user did to a control.
+/// What the user did to a control. A control's kind decides which it
+/// sends: a `Button` only presses, a `Toggle` only toggles, and a `Choice`
+/// only chooses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DebugInput {
     Press,
@@ -65,6 +71,61 @@ enum DebugInput {
 }
 
 impl App {
+    /// What control `id` shows now.
+    fn debug_control(&self, id: DebugId) -> DebugControlKind {
+        let has_spaces = !self.config.desktop.spaces().is_empty();
+        match id {
+            DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
+            DebugId::CreateTestSpaces | DebugId::CreateStress => {
+                DebugControlKind::Button { enabled: true }
+            }
+            DebugId::DeleteAllSpaces
+            | DebugId::UnfoldAll
+            | DebugId::UnlockAll
+            | DebugId::RefreshAll
+            | DebugId::PruneNow => DebugControlKind::Button {
+                enabled: has_spaces,
+            },
+            DebugId::StressSize => DebugControlKind::Choice {
+                options: STRESS_SIZES.iter().map(|size| size.to_string()).collect(),
+                selected: self.debug.as_ref().map_or(0, |tools| tools.stress_size),
+            },
+        }
+    }
+
+    /// What control `id` does with `input`. A button's arm ignores `input`,
+    /// since a button only presses.
+    fn on_debug_control(&mut self, ui: &mut Ui, id: DebugId, input: DebugInput) {
+        match id {
+            DebugId::SpacesVisible => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_visible(ui, on);
+                    tracing::info!(visible = on, "debug: spaces shown or hidden");
+                }
+            }
+            DebugId::CreateTestSpaces => self.create_test_spaces(ui),
+            DebugId::StressSize => {
+                if let (DebugInput::Choose(index), Some(tools)) = (input, self.debug.as_mut())
+                    && index < STRESS_SIZES.len()
+                {
+                    tools.stress_size = index;
+                }
+            }
+            DebugId::CreateStress => self.create_stress_space(ui),
+            DebugId::UnfoldAll => self.unfold_all(ui),
+            DebugId::UnlockAll => self.unlock_all(ui),
+            DebugId::RefreshAll => {
+                self.refresh_spaces(ui);
+                tracing::info!("debug: refreshed every space");
+            }
+            DebugId::PruneNow => {
+                self.prune_all_missing(ui);
+                tracing::info!("debug: pruned missing items");
+            }
+            DebugId::DeleteAllSpaces => self.delete_all_spaces(ui),
+        }
+    }
+
     /// Opens the debug window, or brings it to the front, and starts the
     /// log feed and the panel refresh. A reopened window gets the whole ring
     /// again; one already open keeps what it has.
@@ -117,67 +178,6 @@ impl App {
         }
     }
 
-    /// What control `id` shows now.
-    fn debug_control(&self, id: DebugId) -> DebugControlKind {
-        match id {
-            DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
-            DebugId::DeleteAllSpaces => DebugControlKind::Button {
-                enabled: !self.config.desktop.spaces().is_empty(),
-            },
-            DebugId::CreateTestSpaces => DebugControlKind::Button { enabled: true },
-        }
-    }
-
-    /// What control `id` does with `input`.
-    fn on_debug_control(&mut self, ui: &mut Ui, id: DebugId, input: DebugInput) {
-        match (id, input) {
-            (DebugId::SpacesVisible, DebugInput::Toggle(on)) => {
-                self.set_visible(ui, on);
-                tracing::info!(visible = on, "debug: spaces shown or hidden");
-            }
-            (DebugId::DeleteAllSpaces, DebugInput::Press) => self.delete_all_spaces(ui),
-            (DebugId::CreateTestSpaces, DebugInput::Press) => self.create_test_spaces(ui),
-            (DebugId::SpacesVisible, DebugInput::Press | DebugInput::Choose(_))
-            | (
-                DebugId::DeleteAllSpaces | DebugId::CreateTestSpaces,
-                DebugInput::Toggle(_) | DebugInput::Choose(_),
-            ) => {}
-        }
-    }
-
-    /// Create test spaces: one ordinary space per `TEST_SPACES` row, made
-    /// through New space and filled through the one shortcut writer.
-    fn create_test_spaces(&mut self, ui: &mut Ui) {
-        let mut made = 0;
-        for space in TEST_SPACES {
-            let sources = space
-                .shortcuts
-                .iter()
-                .filter_map(|shortcut| shortcut.source())
-                .collect();
-            if self.create_test_space(ui, space.title, sources).is_some() {
-                made += 1;
-            }
-        }
-        tracing::info!(made, "debug: created test spaces");
-    }
-
-    /// A space where New space puts one, titled `title`, holding a shortcut
-    /// for each source. Returns its id.
-    fn create_test_space(
-        &mut self,
-        ui: &mut Ui,
-        title: &str,
-        sources: Vec<ShortcutSource>,
-    ) -> Option<SpaceId> {
-        let id = self.create_space(ui, cursor_pos())?;
-        let near = self.space_center(id);
-        let title = title.to_string();
-        self.commit(ui, Command::RenameSpace { id, title }, near);
-        self.add_shortcuts(ui, id, near, sources);
-        Some(id)
-    }
-
     /// Asks `question` before a destructive debug action, naming the
     /// configuration file and warning when it is the real one.
     fn debug_confirm(&self, ui: &mut Ui, question: &str) -> bool {
@@ -186,34 +186,6 @@ impl App {
             "DeskSpace Debug",
             &debug_question(question, self.store.path(), real),
         )
-    }
-
-    /// Delete all spaces (ROADMAP D14): every space goes as Delete space
-    /// would, but stored files go to the Recycle Bin instead of the desktop.
-    fn delete_all_spaces(&mut self, ui: &mut Ui) {
-        let spaces = self.config.desktop.spaces();
-        let items = spaces.iter().map(|space| space.items().len()).sum();
-        let stored = spaces
-            .iter()
-            .map(|space| stored_paths(space, &self.storage).len())
-            .sum();
-        let ids: Vec<_> = spaces.iter().map(|space| space.id).collect();
-        let question = delete_all_question(ids.len(), items, stored);
-        if !self.debug_confirm(ui, &question) {
-            return;
-        }
-        for id in &ids {
-            self.delete_space_now(ui, *id, StoredFiles::ToRecycleBin);
-        }
-        let kept = ids
-            .iter()
-            .filter(|id| self.config.desktop.space(**id).is_some())
-            .count();
-        tracing::info!(
-            deleted = ids.len() - kept,
-            kept,
-            "debug: deleted all spaces"
-        );
     }
 
     /// Sends the panel to the window when its values changed since the last
@@ -292,60 +264,20 @@ fn debug_question(question: &str, config: &Path, real: bool) -> String {
     text
 }
 
-/// `count` and `noun`, plural unless `count` is 1.
-fn counted(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
-/// Delete all spaces' question: how many spaces and items go, and where the
-/// files go.
-fn delete_all_question(spaces: usize, items: usize, stored: usize) -> String {
-    let (ask, hold) = if spaces == 1 {
-        ("Delete the only space?".to_string(), "It holds")
-    } else {
-        (format!("Delete all {spaces} spaces?"), "They hold")
-    };
-    let go = if stored == 1 { "goes" } else { "go" };
-    format!(
-        "{ask}\n\n{hold} {}. {} {go} to the Recycle Bin; items shown in place \
-         are only removed from their spaces.",
-        counted(items, "item"),
-        counted(stored, "stored file"),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn a_debug_question_names_the_config_and_warns_when_it_is_real() {
-        let scratch = debug_question("Delete?", Path::new(r"C:\Temp\deskspace.toml"), false);
+        let config = Path::new(r"C:\Temp\deskspace.toml");
+        let scratch = debug_question("Delete?", config, false);
         assert_eq!(
             scratch,
             "Delete?\n\nConfiguration: C:\\Temp\\deskspace.toml"
         );
-        let real = debug_question("Delete?", Path::new(r"C:\Temp\deskspace.toml"), true);
+        let real = debug_question("Delete?", config, true);
         assert!(real.starts_with(&scratch));
         assert!(real.ends_with("This is your real configuration, not a scratch --config."));
-    }
-
-    #[test]
-    fn delete_all_says_how_many_and_where_files_go() {
-        assert_eq!(
-            delete_all_question(3, 12, 5),
-            "Delete all 3 spaces?\n\nThey hold 12 items. 5 stored files go to the \
-             Recycle Bin; items shown in place are only removed from their spaces."
-        );
-        assert_eq!(
-            delete_all_question(1, 1, 0),
-            "Delete the only space?\n\nIt holds 1 item. 0 stored files go to the \
-             Recycle Bin; items shown in place are only removed from their spaces."
-        );
-        assert!(delete_all_question(2, 2, 1).contains("1 stored file goes"));
     }
 }

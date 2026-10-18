@@ -72,6 +72,27 @@ pub(super) const TEST_SPACES: &[TestSpace] = &[
     },
 ];
 
+/// The shortcut counts "Create a stress space" offers, smallest first.
+pub(super) const STRESS_SIZES: [usize; 3] = [50, 200, 1000];
+
+/// `count` shortcuts to Notepad, named `Item 0001` upward. Empty, logged,
+/// when Notepad is not found.
+pub(super) fn stress_shortcuts(count: usize) -> Vec<ShortcutSource> {
+    let Some(ShortcutSource::Custom(notepad)) =
+        shortcut("Notepad", r"%WINDIR%\System32\notepad.exe").source()
+    else {
+        return Vec::new();
+    };
+    (1..=count)
+        .map(|index| {
+            ShortcutSource::Custom(CustomShortcut {
+                name: format!("Item {index:04}"),
+                ..notepad.clone()
+            })
+        })
+        .collect()
+}
+
 impl TestShortcut {
     /// The shortcut to write, with a path target resolved as the Custom
     /// shortcut dialog resolves one. `None`, logged, when the target does
@@ -115,6 +136,11 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn stress_sizes_are_ascending() {
+        assert!(STRESS_SIZES.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]

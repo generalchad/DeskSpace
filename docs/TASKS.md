@@ -716,26 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X9. The rest of Spaces (app).** Needs X5. **[needs human]** Each
-  is a `Button` in section Spaces, enabled when there is a space:
-  - `UnfoldAll`, "Unfold every space": `commit` `Command::ToggleFold` for
-    each folded space.
-  - `UnlockAll`, "Unlock every space": `commit` `Command::ToggleLock` for
-    each locked space.
-  - `RefreshAll`, "Refresh every space": `self.refresh_spaces(ui)` (what
-    F5 does).
-  - `PruneNow`, "Prune missing items": `self.prune_all_missing(ui)`.
-  - `StressSize`, "Stress space size", a `Choice` of 50, 200, and 1000
-    (a `STRESS_SIZES` table), kept in `DebugTools`, and `CreateStress`,
-    "Create a stress space": one space (as X8 does) titled "Test: Stress
-    {n}", with `n` shortcuts to `%WINDIR%\System32\notepad.exe` named
-    `Item 0001` upward, through one `add_shortcuts` call.
-  - Tests: through `fixtures.rs`, the commands the first two send leave
-    every space unfolded and unlocked; `STRESS_SIZES` is ascending.
-  - **[needs human]** check: each button does what it says; a 1000-item
-    stress space opens and scrolls smoothly, and "Delete all spaces"
-    removes it.
-
 - [ ] **X10. Config (app).** Needs X5. **[needs human]** Section Config:
   - `ConfigPath`, "Configuration", a `Readout`: the config file path and
     "(scratch)" or "(real)"; `StoragePath`, "Storage", a `Readout`: the
@@ -1134,6 +1114,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X9 (F-61) | Debug → Spaces: Unfold, Unlock, Refresh, and Prune each do what they say on folded, locked, and stale spaces; a 1000-item stress space opens and scrolls smoothly, and "Delete all spaces" removes it. |
 | X8 (F-61) | Debug → Spaces → "Create test spaces" opens four spaces in a row beside the existing ones, titled Test: Apps, Tools, Places, and Web; every shortcut opens what it names (the Tools ones show the test text); a second press makes four more without overlapping; then "Delete all spaces" removes them and leaves nothing on the desktop. |
 | X7 (F-61) | With three spaces holding dropped files and one Shift-dropped file, Debug → Spaces → "Delete all spaces" asks once with the right counts and the scratch config's path; Cancel changes nothing; OK plays each space's Delete animation; the dropped files are in the Recycle Bin, the Shift-dropped file is where it was, and nothing new is on the desktop. Started without `--config`, the question shows the real-configuration warning (press Cancel). |
 | X5 (F-61) | With `--debug`, the rail lists "Windows" with a "Show spaces" check box that hides and shows the spaces and follows the tray's Hide/Show within a second; closing the window and choosing the tray's "Debug…" brings it back with the earlier log; without `--debug` the tray has no "Debug…"; the window themes dark and light, resizes (the console grows), and stops at its minimum size; Tab moves between controls. |
