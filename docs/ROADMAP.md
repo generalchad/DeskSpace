@@ -399,6 +399,63 @@ A native, lightweight, offline Windows desktop organizer that:
     unchanged.
   - Work items: `TASKS.md` T16.
 
+- **D14. The debug window (2026-10-18, maintainer).** Decides F-61.
+  `--debug` opens a DeskSpace Debug window: a live log console plus tools
+  for setting up, inspecting, and breaking the app on purpose while
+  developing and checking the section V rows.
+  - *Who and where:* a hidden flag, like `--on-top`, accepted by every
+    build. Release builds have no console, so this is their only way to
+    see the log, which also helps a user attach one to a bug report. It is
+    left out of `--help` and the README.
+  - *The window:* its own modeless, resizable top-level window, not a
+    settings page, because its actions commit at once and its console
+    must stay open while the spaces and the settings window are used. A
+    section list on the left, the chosen section's controls to its right,
+    and the console under both. It follows the dark or light setting as
+    the dialogs do. Closing it does not quit DeskSpace; the tray's
+    "Debug…" entry (only with `--debug`) opens it again.
+  - *Data-driven like settings:* the app describes the window as a
+    `DebugPanel` (sections of buttons, toggles, choices, readouts, and
+    tables), the platform builds it, and input comes back as
+    `Event::Debug`. The panel's shape is fixed for a session; only values
+    change, and the app pushes the panel only when they did. A control is
+    one id, one table row, and one match arm.
+  - *The console:* a `tracing` layer beside the stderr one, installed only
+    with `--debug`, records into a bounded ring (10,000 lines, oldest
+    dropped) from the moment `main` starts, so startup is in it. It has its
+    own level, changed live from the console, and leaves stderr and
+    `RUST_LOG` alone. The window shows it with a level and text filter,
+    pause, auto-scroll, clear, copy, and save. A panic is logged at error
+    in every build, with or without `--debug`.
+  - *One way to change things:* every action calls what the menus,
+    settings, and drops already call. The debug window never gets its own
+    path to the model or the files. Its toggles are session-only and never
+    saved; its actions record no undo entry (D11), because they are tools,
+    not user edits.
+  - *Destructive actions* (Delete all spaces, Crash now, read-only config)
+    always ask first. The question names the config file and, when no
+    `--config` was given, warns that this is the real configuration.
+  - *Delete all spaces* sends every stored file to the Recycle Bin, unlike
+    Delete space, which returns them to the desktop (D3): test files would
+    otherwise pile up on the real desktop on every cycle, even with a
+    scratch `--config`. Items listed in place are only unlisted, as for a
+    single delete. A space whose files cannot be recycled stays, as Delete
+    space keeps one whose files cannot be returned.
+  - *Create test spaces* makes four ordinary spaces (Apps, Tools, Places,
+    Web) through the New space path, each holding shortcuts made through
+    the one shortcut writer, covering a program, a program with
+    arguments, a folder, and a web address. Nothing marks them as test
+    spaces.
+  - *The other sections:* Spaces (fold, lock, refresh, prune, a stress
+    space), Config (dump, open folders), Diagnostics (versions, paths,
+    resources, copy a report), Windows (on-top, highlight, window and
+    monitor tables), System (what Windows reports), Animations (slow
+    motion, ignore Windows' switch, play an effect on a space), Takeover
+    (restore or re-hide Explorer's icons, re-sync, watchdog), and
+    Simulate (theme change, Explorer restart, a read-only config, a
+    crash).
+  - Work items: `TASKS.md` section X.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -870,6 +927,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
+| F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Open; decided in D14 (`TASKS.md` section X) |
 
 
 ## 8. Open questions

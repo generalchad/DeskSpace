@@ -11,7 +11,9 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section U, in order (U1 and U2 are pure and need no screen).
+- section U, in order (U1 and U2 are pure and need no screen);
+- section X, in order through X6 (X1-X3 and X6 need no screen), then any
+  task whose "Needs" have landed.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -678,6 +680,591 @@ same way:
     with no rectangle of blur or tint left behind; reversing mid-way
     turns it around; no overlay window is left after it ends, after a
     delete, or after quitting mid-way.
+
+## X. The debug window (ROADMAP D14, F-61)
+
+Read D14 first; it is the spec. Do X1-X6 in order, one commit each. After
+X6, the section tasks (X7-X20) can go in any order, except where a task
+says it needs another. Each task is small on purpose: do exactly what it
+lists, and if the code does not match what it names, stop and ask ("How to
+work a task", rule 4).
+
+Rules for every X task:
+
+1. **One way to change things.** An action calls the `App` method or sends
+   the `Command` that the menus, settings, or drops already use. If none
+   fits, stop and ask. Never write to `self.config.desktop` or move a file
+   any other way.
+2. **Session only.** Nothing here adds a config field or saves a debug
+   toggle. Every toggle starts off, or reads the live state, on each run.
+3. **No undo entries.** Debug actions record none (D14), even after
+   section U lands.
+4. **A control is three edits** (once X5 has landed): a `DebugId` variant
+   (`app/debug/ids.rs`, the next free value, plus its `ALL` entry), a
+   `DEBUG_CONTROLS` row (`app/debug/table.rs`: id, section, label), and an
+   arm in both `App::debug_control` (what it shows now) and
+   `App::on_debug_control` (what it does). The compiler and
+   `every_control_has_one_row` point at whatever is missing.
+5. **Ask before anything destructive** with `self.debug_confirm(ui,
+   question)` (X5). It adds the config path and the real-config warning,
+   so a handler never writes those lines itself.
+6. **Log what an action did** with one `tracing::info!` line starting
+   `debug:` (for example `debug: deleted 4 spaces`), so the console shows
+   it.
+7. **[needs human] checks** run with `./scripts/dev.ps1 -Fresh --
+   --debug` (a scratch config) unless the check says otherwise. Each task
+   that has one adds its row to section V, named for the task.
+
+- [ ] **X1. The debug data types (platform; data only, no window).**
+  - `deskspace-platform/src/ui.rs`, each with a `///` doc:
+    - `enum LogLevel { Error, Warn, Info, Debug, Trace }` (`Copy`,
+      `PartialEq`, `Eq`, `Debug`), with `pub const ALL: [Self; 5]` in that
+      order and `pub fn label(self) -> &'static str` ("Error", "Warn",
+      "Info", "Debug", "Trace").
+    - `struct LogLine { seq: u64, millis: u64, level: LogLevel, target:
+      String, message: String }`, all `pub` (`Clone`, `Debug`,
+      `PartialEq`). `seq` counts from 1 and never repeats; `millis` is the
+      time since the process started.
+    - `struct DebugPanel { sections: Vec<DebugSection>, console_level:
+      LogLevel }`, `struct DebugSection { title: String, controls:
+      Vec<DebugControl> }`, `struct DebugControl { id: u32, label: String,
+      kind: DebugControlKind }`, and `enum DebugControlKind { Button {
+      enabled: bool }, Toggle { on: bool }, Choice { options: Vec<String>,
+      selected: usize }, Readout { text: String }, Table { columns:
+      Vec<String>, rows: Vec<Vec<String>> } }`. All `Clone`, `Debug`,
+      `PartialEq`.
+    - `DebugPanel::same_shape(&self, other) -> bool`: the same section
+      titles, and in each the same control ids, labels, and kind variants
+      (values may differ).
+  - `deskspace-platform/src/input.rs`: `enum DebugEvent { Pressed { id:
+    u32 }, Toggled { id: u32, on: bool }, Chose { id: u32, index: usize },
+    ConsoleLevel { level: LogLevel }, Closed }`, and the variant
+    `Event::Debug(DebugEvent)`, both with `///` docs.
+  - `lib.rs`: re-export the new types beside the other `ui` and `input`
+    ones.
+  - `deskspace-app/src/app.rs` `on_event`: the arm `Event::Debug(_) => {}`
+    with `// TODO(X4): the debug window's events.` above it.
+  - Tests in `ui.rs`: `LogLevel::ALL` labels are unique, and `same_shape`
+    is true for a changed value and false for a changed id, label, kind,
+    or section title.
+  - Done when: the gates pass. No docs change yet.
+
+- [ ] **X2. The debug window and its panel (platform).** Needs X1.
+  - New module `win32/debug_window/` (add `mod debug_window;` in
+    `win32/mod.rs`), with a one-line `//!` header on each file:
+    - `layout.rs` (pure): `fn debug_layout(width: i32, height: i32, scale:
+      f32) -> DebugLayout`, where `DebugLayout { rail: Rect, panel: Rect,
+      console: Rect }`. Constants at 96 DPI, scaled: `RAIL_WIDTH` 168,
+      `EDGE` 12, `MIN_WIDTH` 760, `MIN_HEIGHT` 560, `CONSOLE_MIN` 200. The
+      rail is the left column; the panel fills the rest of the top half;
+      the console takes the bottom half of the client (at least
+      `CONSOLE_MIN`) across the full width. Tests: no rect overlaps
+      another, all fit the client, and the console grows with the height.
+    - `build.rs`: creates the controls. The rail is a list box of section
+      titles. Every section is built at once into a panel child window
+      (`WS_VSCROLL`, scrolled with the wheel and the bar when the section
+      is taller than the panel); only the chosen section's controls are
+      shown. One row per control: a label on the left (`LABEL_WIDTH` 220
+      at 96 DPI) and the control right of it, except a `Button`, which is
+      a push button captioned with its label. `Toggle` is a check box,
+      `Choice` a drop-down list combo box, `Readout` a read-only multi-line
+      edit (as tall as its lines, at most 8, then it scrolls), and `Table`
+      a report-view list view with the given columns, 8 rows tall.
+      Control ids are `CONTROL_BASE + DebugControl::id`, with
+      `CONTROL_BASE` = 1000.
+    - `mod.rs`: the window class (`window_class` and `window_state`, as
+      every window does), `WS_OVERLAPPEDWINDOW`, titled "DeskSpace
+      Debug", minimum size from `layout.rs` (`WM_GETMINMAXINFO`),
+      re-laid out on `WM_SIZE` and `WM_DPICHANGED`. Colors, fonts, and
+      brushes come from `dialog::DialogChrome`, and controls are themed
+      with `dark_mode` as `shortcut_dialog.rs` does. A button press,
+      toggle, or choice raises the matching `DebugEvent` through
+      `runtime::dispatch` (the last statement in its branch;
+      `ENGINEERING.md` "Re-entrancy"). Closing destroys the window and
+      raises `DebugEvent::Closed`.
+  - `win32/runtime/`: a `debug: Option<HWND>` field on `Runtime`, beside
+    `settings`. In `ui_chrome.rs`: `Ui::open_debug(&DebugPanel)` (create,
+    or bring the open one to front), `Ui::update_debug(&DebugPanel)`
+    (when `same_shape`, set only the changed values; otherwise log a
+    `warn` and rebuild, as `warn_on_shape_change` does for settings),
+    `Ui::close_debug()`, and `Ui::is_debug_open() -> bool`. The message
+    loop passes the debug window to `IsDialogMessageW`, as it does the
+    settings window, so Tab moves between controls. The teardown destroys
+    it with the settings window.
+  - Leave the console rect empty; X3 fills it.
+  - Docs: `CONTEXT.md` section 6 module map, the "Windows" row: add
+    `debug_window`. The file map in this file: a row "The debug window
+    (`--debug`)" naming `win32/debug_window/`.
+  - Done when: the gates pass and the layout tests pass. Its on-screen
+    check is X5's.
+
+- [ ] **X3. The console (platform).** Needs X2.
+  - Pure model, `deskspace-platform/src/debug_console.rs` (crate root, no
+    `unsafe`, beside `edit.rs`): `ConsoleModel` with `CONSOLE_CAPACITY` =
+    10,000 lines (the oldest is dropped), `push(&[LogLine])`,
+    `set_filter(&str)` (case-insensitive, matches the target or the
+    message; empty shows all), `set_paused(bool)` (while paused, pushed
+    lines are held and appear on resume), `clear()`, `shown_len()`,
+    `shown(index) -> &LogLine`, and `fn format_line(&LogLine) -> String`
+    as `mm:ss.mmm LEVEL target message`. Tests for each, including the
+    capacity drop and a filter applied to held lines on resume.
+  - `win32/debug_window/console.rs`: a toolbar row (a Level combo box
+    listing `LogLevel::ALL`, a Filter edit, Pause and Auto-scroll check
+    boxes with Auto-scroll on, and Clear, Copy, and "Save log…" buttons)
+    above a virtual report list view (`LVS_OWNERDATA`; columns Time,
+    Level, Target, Message) that reads rows from the `ConsoleModel`. Text
+    color by level through `NM_CUSTOMDRAW`: Error red, Warn amber, Debug
+    and Trace the dimmed text color of `UiColors`, Info the normal one,
+    with the colors as named constants. After new lines, set the item
+    count (`LVM_SETITEMCOUNT` with `LVSICF_NOSCROLL`) and, with
+    Auto-scroll on, show the last row (`LVM_ENSUREVISIBLE`).
+  - The Level combo box shows `DebugPanel::console_level` and raises
+    `DebugEvent::ConsoleLevel`. Filter, Pause, Auto-scroll, and Clear stay
+    inside the platform; they are view state, like scrolling.
+  - Copy puts every shown line (`format_line`, one per line) on the
+    clipboard as `CF_UNICODETEXT` through a new `pub(crate) fn
+    set_text(owner, &str)` in `win32/clipboard.rs`; also expose it as
+    `Ui::set_clipboard_text(&str)` for X12. "Save log…" asks for a path
+    with a new `dialog::pick_save_path(owner, title, default_name,
+    filter)` over `IFileSaveDialog` beside `pick_files` (C10b reuses it;
+    say so in its `///` doc) and writes the shown lines as UTF-8.
+  - `Ui::append_debug_log(&[LogLine])` pushes into the open window's
+    model and does nothing when it is closed.
+  - Never log from the console's own code paths (a log line there would
+    feed itself); the model has no `tracing` calls.
+  - Done when: the gates pass and the model tests pass. Its on-screen
+    check is X4's.
+
+- [ ] **X4. Capture the log, and `--debug` (app).** Needs X3.
+  **[needs human]**
+  - `cli.rs`: `pub debug: bool` with `#[arg(long, hide = true)]` and a
+    `///` doc in the style of `on_top`'s ("Development aid: open the
+    debug window, with a live log console and test tools (ROADMAP
+    D14).").
+  - New `deskspace-app/src/debug_log.rs` (declare it in `main.rs`):
+    - `LogBuffer`, a `Clone` handle over `Arc<Mutex<..>>` holding at most
+      `CAPACITY` (10,000) `LogLine`s and the next `seq`: `push(level,
+      target, message)` stamps `seq` and `millis` (from a
+      `static START: OnceLock<Instant>` set on first use) and drops the
+      oldest past the capacity; `since(seq) -> Vec<LogLine>` returns the
+      lines with a higher `seq`.
+    - `ConsoleLayer { buffer: LogBuffer }`, implementing
+      `tracing_subscriber::Layer<S>`. `on_event` reads the fields with a
+      `LineVisitor` (`tracing::field::Visit`): the `message` field first,
+      then a space and `key=value` for each other field, in order.
+    - `ConsoleLevel`, wrapping a `tracing_subscriber::reload::Handle` to
+      a `LevelFilter`, with `set(LogLevel)` that logs a `warn` if the
+      reload fails.
+    - `pub struct DebugLog { pub buffer: LogBuffer, pub level:
+      ConsoleLevel }`.
+    - Tests: the ring drops the oldest and `seq` keeps counting; `since`
+      returns only newer lines; under
+      `tracing::subscriber::with_default`, `info!(count = 2, "hello")`
+      records level Info, this module's target, and the message `hello
+      count=2`.
+  - `main.rs`:
+    - `init_tracing(verbosity, debug: bool) -> Option<DebugLog>`. Build
+      `tracing_subscriber::registry()` with the existing `fmt` layer
+      (`with_target(false)`, under the same `EnvFilter`, as a per-layer
+      filter), plus, only when `debug` is set, `ConsoleLayer` under a
+      `reload::Layer` of `LevelFilter::DEBUG`. `RUST_LOG` and `-v` still
+      decide stderr alone. If the locked `tracing-subscriber` will not
+      accept a reloadable per-layer filter, stop and ask; do not change
+      the dependency.
+    - Right after `init_tracing`, in every build, with or without
+      `--debug`: a panic hook (`std::panic::set_hook`) that logs
+      `tracing::error!(%info, "panic")` and then calls the previous hook
+      (taken with `std::panic::take_hook`).
+    - Pass the `Option<DebugLog>` to `bootstrap::run`.
+  - `bootstrap.rs`: after `App::new`, set `app.debug =
+    debug_log.map(|log| DebugTools::new(log, cli.config.is_none()))`, as
+    `app.layer` is set.
+  - New `app/debug.rs` (`mod debug;` in `app.rs`): `pub(super) struct
+    DebugTools { log: DebugLog, sent: u64, real_config: bool, started:
+    Instant }` and an `App` field `debug: Option<DebugTools>` (`None` in
+    `App::new`).
+    - `App::open_debug(ui)`: sets `sent` to 0 (so a reopened window gets
+      the whole ring again), `ui.open_debug(&self.debug_panel())`, and
+      starts the timer. `debug_panel` returns an empty `sections` list for
+      now, with `console_level` as last set (start at `Debug`).
+    - A `Timer::DebugLog` variant (the next free value; add it to
+      `Timer::ALL` and an arm in `App::on_timer`), re-armed every
+      `DEBUG_LOG_MS` (100) while `ui.is_debug_open()`: push
+      `log.buffer.since(sent)` with `ui.append_debug_log` and move `sent`.
+      A timer, not a waker, so a line logged while draining cannot feed
+      itself.
+    - `App::on_debug(ui, DebugEvent)`: `ConsoleLevel` calls
+      `log.level.set`, `Closed` clears the timer, the rest is ignored
+      until X5. Replace X1's TODO arm with `Event::Debug(event) =>
+      self.on_debug(ui, event)`.
+    - On `Started`, when `self.debug` is set, call `open_debug` last.
+  - Docs: `CONTEXT.md` section 3, the `app/` table: a `debug` row ("the
+    debug window's panel and actions, and the log console's feed (ROADMAP
+    D14)"). Section 7 step 1: one sentence that `--debug` adds a console
+    layer with its own level and every build logs panics. Section 8's CLI
+    flags: add `--debug` to the hidden development flags. The file map
+    row from X2 also names `debug_log.rs` and `app/debug.rs`.
+  - **[needs human]** check: the window opens with the console already
+    holding the startup lines; moving a space adds lines live; Level
+    Trace shows trace lines and Info stops new debug ones; Filter, Pause
+    and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save
+    log…" work; a `-Release` build shows the log with no console window;
+    without `--debug` nothing opens and stderr logs as before.
+
+- [ ] **X5. The panel framework and the tray entry (app).** Needs X4.
+  **[needs human]**
+  - Turn `app/debug.rs` into `app/debug/mod.rs` (pure move first, in the
+    same commit) and add:
+    - `ids.rs`: `#[repr(u32)] enum DebugId` with `ALL`, `fn id(self) ->
+      u32`, and `fn from_id(u32) -> Option<Self>`, copying `MenuId`'s
+      pattern; first variant `SpacesVisible = 1`. Tests
+      `debug_ids_round_trip` and `debug_ids_are_unique`.
+    - `table.rs`: `enum DebugSectionId { Spaces, Config, Diagnostics,
+      Windows, System, Animations, Takeover, Simulate }` with `ALL` and
+      `title()` (those words), and `DEBUG_CONTROLS: &[DebugRow]`, where
+      `DebugRow { id: DebugId, section: DebugSectionId, label: &'static
+      str }`. First row: `SpacesVisible`, `Windows`, "Show spaces". Test
+      `every_control_has_one_row` (each `DebugId::ALL` entry appears
+      exactly once).
+    - `mod.rs`: `debug_panel` builds one `DebugSection` per
+      `DebugSectionId` that has rows, in `ALL` order, each control from
+      its row and `self.debug_control(id) -> DebugControlKind`, an
+      exhaustive `match` on `DebugId` (`SpacesVisible` is `Toggle { on:
+      self.visible }`). `on_debug` maps `Pressed`, `Toggled`, and `Chose`
+      through `DebugId::from_id` to `self.on_debug_control(ui, id,
+      input)`, where `enum DebugInput { Press, Toggle(bool),
+      Choose(usize) }`, an exhaustive `match` (`SpacesVisible` calls
+      `self.set_visible(ui, on)`). After any control, push the panel
+      again.
+    - `debug_confirm(ui, question) -> bool`: `ui.confirm("DeskSpace
+      Debug", ..)` with the question, a blank line, `Configuration:
+      <path>`, and, when `real_config`, a blank line and "This is your
+      real configuration, not a scratch --config." Test the text through a
+      pure `fn debug_question(question, path, real) -> String`.
+    - A `Timer::DebugRefresh` (next free) every `DEBUG_REFRESH_MS` (1000)
+      while the window is open: build the panel and call
+      `ui.update_debug` only when it differs from the last one pushed
+      (keep it in `DebugTools`).
+  - Tray (the menu-entry recipe): `MenuId::Debug` (next free) with
+    "Debug…", after "Settings…" in `show_tray_menu`, only when
+    `self.debug.is_some()`; its arm calls `self.open_debug(ui)`.
+  - Docs: `CONTEXT.md` section 8's tray line: "and, with `--debug`,
+    Debug…".
+  - **[needs human]** check: the rail lists "Windows" with a "Show
+    spaces" check box that hides and shows the spaces, and follows the
+    tray's Hide/Show within a second; close the window, and the tray's
+    "Debug…" brings it back with the earlier log; without `--debug` the
+    tray has no "Debug…"; the window themes dark and light, resizes
+    (the console grows), and stops at its minimum size; Tab moves
+    between controls.
+
+- [ ] **X6. Split the confirmation out of `delete_space` (app; pure
+  refactor).** In `app/files.rs`:
+  - `pub(super) enum StoredFiles { ToDesktop, ToRecycleBin }` with a
+    `///` doc on each.
+  - `delete_space(ui, id)` keeps the confirmation and then calls the new
+    `pub(super) fn delete_space_now(&mut self, ui, id, stored:
+    StoredFiles)`, which holds the rest of today's body unchanged. With
+    `ToRecycleBin` it first sends the space's stored files that still
+    exist (a pure `fn stored_paths(space: &Space, storage: &ItemStore) ->
+    Vec<PathBuf>`) to the Recycle Bin with `ui.delete_files(&paths,
+    false)`; if that returns false, it logs an `error`, refreshes and
+    saves the space, and returns, keeping it. Then the existing release
+    loop runs: `release_item` skips files that no longer exist, so it only
+    removes the items.
+  - Every existing caller keeps `ToDesktop` (through `delete_space`), so
+    nothing a user sees changes.
+  - Tests: `stored_paths` lists a stored item and skips one listed in
+    place (copy the fixtures in `files.rs`'s tests).
+  - Done when: the gates pass, and the test count only grows.
+
+- [ ] **X7. Delete all spaces (app).** Needs X5 and X6.
+  **[needs human]**
+  - Control: `DeleteAllSpaces`, section Spaces, "Delete all spaces", a
+    `Button` enabled when there is at least one space.
+  - Handler: count the spaces, their items, and their stored files that
+    exist; ask with `debug_confirm` and the question from a pure `fn
+    delete_all_question(spaces, items, stored) -> String`: "Delete all
+    {spaces} spaces?" then a blank line and "They hold {items} items.
+    {stored} stored files go to the Recycle Bin; items shown in place
+    are only removed from their spaces." Then collect the ids first and
+    call `delete_space_now(ui, id, StoredFiles::ToRecycleBin)` for each.
+    Log how many were deleted and how many were kept.
+  - Tests: `delete_all_question`, including one space and no stored
+    files.
+  - **[needs human]** check: with three spaces holding dropped files and
+    one Shift-dropped file, "Delete all spaces" asks once with the right
+    counts and the scratch config's path; Cancel changes nothing; OK
+    plays each space's Delete animation; the dropped files are in the
+    Recycle Bin, the Shift-dropped file is where it was, and nothing new
+    is on the desktop. Then start without `--config` and check that the
+    warning line shows. Press Cancel there.
+
+- [ ] **X8. Create test spaces (app).** Needs X5. **[needs human]**
+  - `menus.rs`: `create_space` returns the `Option<SpaceId>` that
+    `open_new_space` already gives; the menu callers ignore it.
+  - `lib.rs` of the platform: re-export `win32::shortcuts::resolve_path`
+    (it is `pub(crate)` today; make it `pub`).
+  - New `app/debug/test_spaces.rs`: `struct TestSpace { title: &'static
+    str, shortcuts: &'static [TestShortcut] }`, `struct TestShortcut {
+    name: &'static str, target: &'static str, arguments: &'static str }`,
+    and `TEST_SPACES`:
+
+    | Title | Name | Target | Arguments |
+    |-------|------|--------|-----------|
+    | Test: Apps | Notepad | `%WINDIR%\System32\notepad.exe` | |
+    | | Calculator | `%WINDIR%\System32\calc.exe` | |
+    | | Character Map | `%WINDIR%\System32\charmap.exe` | |
+    | Test: Tools | Command Prompt | `%WINDIR%\System32\cmd.exe` | `/k echo DeskSpace test shortcut` |
+    | | PowerShell | `%WINDIR%\System32\WindowsPowerShell\v1.0\powershell.exe` | `-NoExit -Command "Write-Output 'DeskSpace test shortcut'"` |
+    | | Task Manager | `%WINDIR%\System32\Taskmgr.exe` | |
+    | Test: Places | Documents | `%USERPROFILE%\Documents` | |
+    | | Downloads | `%USERPROFILE%\Downloads` | |
+    | | Windows | `%WINDIR%` | |
+    | | Temp | `%TEMP%` | |
+    | Test: Web | DeskSpace on GitHub | `https://github.com/generalchad/DeskSpace` | |
+    | | Example | `https://example.com` | |
+
+  - Control: `CreateTestSpaces`, section Spaces, "Create test spaces", a
+    `Button`, always enabled.
+  - Handler: for each `TestSpace`, `create_space(ui, cursor_pos())`
+    (New space's own placement, ROADMAP D10), then `commit`
+    `Command::RenameSpace` with its title. Turn each shortcut into a
+    `ShortcutSource::Custom(CustomShortcut { .. })`: `ShortcutTarget::parse`
+    the target; a `Path` goes through `resolve_path`, and one that does
+    not resolve is logged at `warn` and skipped. Hand them all to
+    `add_shortcuts(ui, id, at, sources)`. Log the count made.
+  - Tests: every `TEST_SPACES` target parses (`ShortcutTarget::parse` is
+    `Some`), the web targets parse as `Url` and the rest as `Path`, and
+    titles are unique.
+  - **[needs human]** check: four spaces open in a row beside the
+    existing ones, titled as above; every shortcut opens what it names
+    (the Tools ones show the test text); a second press makes four more
+    without overlapping; then "Delete all spaces" removes them and leaves
+    nothing on the desktop.
+
+- [ ] **X9. The rest of Spaces (app).** Needs X5. **[needs human]** Each
+  is a `Button` in section Spaces, enabled when there is a space:
+  - `UnfoldAll`, "Unfold every space": `commit` `Command::ToggleFold` for
+    each folded space.
+  - `UnlockAll`, "Unlock every space": `commit` `Command::ToggleLock` for
+    each locked space.
+  - `RefreshAll`, "Refresh every space": `self.refresh_spaces(ui)` (what
+    F5 does).
+  - `PruneNow`, "Prune missing items": `self.prune_all_missing(ui)`.
+  - `StressSize`, "Stress space size", a `Choice` of 50, 200, and 1000
+    (a `STRESS_SIZES` table), kept in `DebugTools`, and `CreateStress`,
+    "Create a stress space": one space (as X8 does) titled "Test: Stress
+    {n}", with `n` shortcuts to `%WINDIR%\System32\notepad.exe` named
+    `Item 0001` upward, through one `add_shortcuts` call.
+  - Tests: through `fixtures.rs`, the commands the first two send leave
+    every space unfolded and unlocked; `STRESS_SIZES` is ascending.
+  - **[needs human]** check: each button does what it says; a 1000-item
+    stress space opens and scrolls smoothly, and "Delete all spaces"
+    removes it.
+
+- [ ] **X10. Config (app).** Needs X5. **[needs human]** Section Config:
+  - `ConfigPath`, "Configuration", a `Readout`: the config file path and
+    "(scratch)" or "(real)"; `StoragePath`, "Storage", a `Readout`: the
+    storage folder.
+  - `DumpConfig`, "Write the configuration to the log": serialize
+    `self.config` with the same TOML writer `ConfigStore::save` uses and
+    log it at `info`, one line per TOML line.
+  - `OpenConfigFolder` and `OpenStorageFolder`: `ui.open_path` on the
+    config file's folder and on the storage folder (create the storage
+    folder first if it is missing, as `add_shortcuts` does).
+  - **[needs human]** check: the readouts match `--config`; the dump shows
+    every space in the console; both folders open in Explorer.
+
+- [ ] **X11. Process and cache facts (platform).** New module
+  `win32/debug_info.rs` (one `//!` line; `mod` in `win32/mod.rs`):
+  - `pub fn process_stats() -> ProcessStats { working_set: u64,
+    gdi_objects: u32, user_objects: u32 }` over `GetProcessMemoryInfo`
+    and `GetGuiResources` (cite their Microsoft Learn pages). If a
+    `windows` crate feature is needed, add it to `deskspace-platform`
+    only, and `cargo deny check all` must still pass.
+  - `IconCache::len(&self) -> usize` in `win32/icons.rs`.
+  - Re-export `process_stats` and `ProcessStats` from `lib.rs`.
+  - Test: `process_stats()` reports a nonzero working set and at least
+    one USER object once a window exists (create a message-only window in
+    the test, or skip the USER part if that is not possible and say so).
+
+- [ ] **X12. Diagnostics (app).** Needs X5 and X11. **[needs human]**
+  Section Diagnostics:
+  - `Build`, a `Readout`: the version (`CARGO_PKG_VERSION`), "debug" or
+    "release" (`cfg!(debug_assertions)`), and the executable's path.
+  - `Model`, a `Readout`: the number of spaces, items, stored files, and
+    desktop-layer items.
+  - `Resources`, a `Readout`: uptime (from `DebugTools::started`), the
+    working set in MB, GDI and USER objects, and icon-cache entries.
+    `Timer::DebugRefresh` keeps it current.
+  - `Updates`, a `Readout`: `deskspace_update::is_configured()`,
+    `is_installed()`, and the ready version or "none".
+  - `CopyDiagnostics`, "Copy diagnostics": these readouts, X16's System
+    readout once it exists, and the last 200 log lines (`format_line`
+    style, from `LogBuffer::since`), joined into one text and put on the
+    clipboard with `ui.set_clipboard_text`.
+  - Tests: a pure `fn diagnostics_text(sections: &[(&str, &str)], lines:
+    &[LogLine]) -> String` puts a heading before each readout and the
+    lines last.
+  - **[needs human]** check: the values look right and Resources ticks
+    once a second; creating and deleting spaces moves the counts; Copy
+    diagnostics pastes into Notepad as a readable report.
+
+- [ ] **X13. Window and monitor tables, live on-top (platform).** Needs
+  X11.
+  - In `win32/debug_info.rs`: `pub struct WindowRow { class: String,
+    title: String, space: Option<u64>, rect: Rect, dpi: u32, visible:
+    bool }`, and `Ui::debug_windows() -> Vec<WindowRow>`: every top-level
+    window of this process in z-order, top first (`EnumWindows` filtered
+    by `GetWindowThreadProcessId`), then, with a desktop host, the host's
+    child windows that are spaces. `space` is the id when the window is
+    in the runtime's spaces map. `scripts/zorder.ps1` does the same from
+    outside; follow it.
+  - `pub struct MonitorRow { rect: Rect, work: Rect, dpi: u32, primary:
+    bool }` and `pub fn monitors() -> Vec<MonitorRow>` over
+    `EnumDisplayMonitors`.
+  - `Ui::set_on_top(bool)`: sets `Runtime::on_top` and moves every space
+    window to where a space created with that setting goes. Read every
+    place `on_top` is read today and use the same call; do not add a
+    second placement rule.
+  - Tests: none possible without windows beyond `monitors()` returning at
+    least one primary monitor.
+
+- [ ] **X14. Windows (app).** Needs X5 and X13. **[needs human]** Section
+  Windows, after X5's "Show spaces":
+  - `OnTop`, "Keep spaces above other windows", a `Toggle`: starts as
+    `--on-top` and calls `ui.set_on_top(on)`.
+  - `WindowTable`, "Windows", a `Table` with columns Class, Title,
+    Space, Rect, DPI, Visible, from `ui.debug_windows()`.
+  - `MonitorTable`, "Monitors", a `Table` with columns Rect, Work area,
+    DPI, Primary, from `monitors()`.
+  - Both tables refresh with `Timer::DebugRefresh`.
+  - Tests: a pure `fn rect_text(Rect) -> String` ("x, y  w × h").
+  - **[needs human]** check: on-top lifts the spaces above Notepad and
+    off drops them back to the desktop; the window table lists every
+    space, the tray's controller window, and the debug and settings
+    windows, in z-order, and follows a space moved to another monitor;
+    the monitor table matches Windows' display settings.
+
+- [ ] **X15. System facts (platform).** In `win32/debug_info.rs`:
+  - `pub fn transparency_enabled() -> Option<bool>`: the `EnableTransparency`
+    DWORD under
+    `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`.
+  - `Ui::hook_state() -> HookState { editing: bool, watch_selection: bool,
+    watch_paste: bool, outside_clicks: bool }`, read from the flags
+    `win32/keyboard.rs` and `win32/outside_click.rs` already keep. If one
+    is not kept anywhere, report `false` and add a **Found while
+    working** line rather than adding state.
+  - `pub fn watchdog_running() -> Option<bool>`: whether the watchdog
+    process `arm_watchdog` launched is still alive. If `watchdog.rs`
+    keeps no handle or id for it, return `None` and add a **Found while
+    working** line.
+  - Re-export them from `lib.rs`. Tests: none beyond compiling.
+
+- [ ] **X16. System (app).** Needs X5 and X15. **[needs human]** Section
+  System, all `Readout`s refreshed by `Timer::DebugRefresh`:
+  - `Theme`: Windows dark or light (`system_uses_dark_mode`), the accent
+    (`system_accent_color` as `#RRGGBB`, or "unknown"), Windows'
+    "Animation effects" (the value `Event::SystemAnimationsChanged`
+    keeps), and transparency effects (`transparency_enabled`).
+  - `Explorer`: the app's `SystemLook`, printed with `{:#?}` (derive
+    `Debug` on it if it lacks one).
+  - `Hotkeys`: one line per `HOTKEY_BINDINGS` row: its label, its binding
+    (or "unbound"), and whether it registered, if `app/hotkeys.rs` keeps
+    that; otherwise the binding alone.
+  - `Hooks`: `ui.hook_state()`, one line per flag.
+  - **[needs human]** check: switching Windows between dark and light,
+    changing the accent, and turning off transparency each show within a
+    second; selecting an item turns on `watch_selection`; a rename turns
+    on `editing`.
+
+- [ ] **X17. Slow motion and ignoring Windows' switch (app; pure).**
+  Needs X5.
+  - `app/animation.rs`: `#[derive(Default)] pub(super) struct
+    AnimationTweak { speed: u32, ignore_windows: bool }`, where 0 and 1
+    both mean normal speed, as an `App` field (not inside `DebugTools`, so
+    `play` needs no `Option`). `play_for` takes it: `ignore_windows`
+    plays as if Windows' switch were on, and `speed` multiplies the
+    duration and the delay. Exit still ends within `EXIT_LIMIT`.
+  - Controls in section Animations: `Speed`, "Speed", a `Choice` from a
+    `SPEEDS` table (`(1, "Normal")`, `(2, "½×")`, `(4, "¼×")`, `(10,
+    "⅒×")`), and `IgnoreWindows`, "Animate even when Windows' Animation
+    effects is off", a `Toggle`.
+  - Tests beside `the_settings_become_the_play`: speed 4 makes the
+    duration and delay four times longer; `ignore_windows` plays the
+    effect with Windows' switch off (copy
+    `nothing_plays_while_windows_animations_are_off`); the default tweak
+    changes nothing.
+  - Add the two controls to the T8 row in section V ("checked at ¼×
+    too") rather than a new row.
+
+- [ ] **X18. Play an effect on a space (platform, app).** Needs X17.
+  **[needs human]**
+  - Platform, `win32/space_animation.rs`: `Ui::preview_play(id: u64,
+    out: Play, back: Play)` plays `out` on that space's window and, when
+    it ends, `back`, leaving the window shown. Use the machinery
+    `show_space` and `destroy_space` use, so it can turn around mid-way
+    like any animation. It never touches the model.
+  - App, section Animations: `PreviewSpace`, "Space", a `Choice` of the
+    space titles in model order (keep the ids in `DebugTools`; a deleted
+    space falls back to the first); `PreviewKind`, "Kind", a `Choice` of
+    Startup and Delete (Fold is checked from its own menu); and
+    `PreviewPlay`, "Play on the space", a `Button` that calls
+    `ui.preview_play(id, self.play(kind, Way::Out), self.play(kind,
+    Way::In))`, so the current settings and X17's tweak apply.
+  - Tests: through a pure helper, the chosen index maps to the right id
+    and a stale index falls back to the first space.
+  - **[needs human]** check: every effect, played on a space at ¼×,
+    leaves and comes back in place; pressing Play again mid-way turns it
+    around; the other spaces and the model do not change.
+
+- [ ] **X19. Takeover (app).** Needs X5 and X15. **[needs human]** Section
+  Takeover:
+  - `Takeover`, "Take over the desktop (this session)", a `Toggle`
+    showing whether takeover is active now. Off restores Explorer's icons
+    and removes the layer; on takes over again. It must not change
+    `config.window.take_over_desktop` or save. If `apply_takeover`
+    (`app/view.rs`) reads only that config field, add a session override
+    to `LayerState` that it honours; if that needs more than a few lines,
+    stop and ask.
+  - `ResyncLayer`, "Re-sync the desktop layer", a `Button` enabled while
+    takeover is active: `self.resync_desktop_layer(ui)`.
+  - `TakeoverState`, a `Readout`: active or not, the layer's item count,
+    and the watchdog (`watchdog_running`: "running", "not running", or
+    "unknown").
+  - **[needs human]** check: with takeover on, the toggle off brings
+    Explorer's icons back at once and they stay back past the 5-second
+    health timer; on hides them and draws the layer; Re-sync picks up a
+    file added to the Desktop folder; the saved config's
+    `take_over_desktop` is unchanged afterwards.
+
+- [ ] **X20. Simulate (platform, app).** Needs X5. **[needs human]**
+  Section Simulate:
+  - Platform: `Ui::simulate_taskbar_created()` posts the registered
+    `TaskbarCreated` message to the controller, the same value the
+    controller already registers and handles.
+  - `ThemeChanged`, "Windows theme changed", a `Button`:
+    `self.on_event(ui, Event::SystemThemeChanged)`, the event Windows
+    sends.
+  - `ExplorerRestarted`, "Explorer restarted", a `Button`:
+    `ui.simulate_taskbar_created()`.
+  - `ReadOnlyConfig`, "Make the configuration file read-only", a `Toggle`
+    (it asks first when turning on): sets or clears the read-only
+    attribute of the config file with `std::fs::set_permissions`. On
+    `CloseRequested`, clear it again if this toggle set it, before
+    `flush_save`, so a session never leaves the file read-only.
+  - `CrashNow`, "Crash now", a `Button` that asks first, then
+    `panic!("crash requested from the debug window")`. The panic hook
+    (X4) logs it; the process then ends where the panic leaves the window
+    procedure, as a real bug would.
+  - **[needs human]** check: "Windows theme changed" repaints the spaces
+    and the settings window; "Explorer restarted" re-adds the tray icon
+    and, with takeover on, re-hides Explorer's icons; with the config
+    read-only, moving a space shows B29's one "could not save" box, and
+    after Exit the file is writable again; "Crash now" with takeover on
+    ends DeskSpace and the watchdog brings Explorer's icons back within a
+    few seconds, and a debug build's console shows the panic line.
 
 ## J. Tabs in spaces (ROADMAP F-49)
 
