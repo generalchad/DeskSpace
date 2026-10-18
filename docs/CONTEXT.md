@@ -506,7 +506,10 @@ one arm in `App::on_event`, whose match is exhaustive.
   `set_rect` to the same rect then leaves the roll be, and a folding window
   keeps drawing its unfolded scene (the folded one has no items) until the
   fold ends (`Animation::defer`). Hiding a space mid-fold ends the fold
-  first.
+  first. A new window is created hidden; `App::sync_windows` (the one place
+  space windows are made) pushes its scene, then `Ui::show_space` brings it
+  in with New space's play, staggered at startup (`sync_windows_at_startup`,
+  `startup_delays`). A window waiting its turn stays hidden, blur included.
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
   never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /

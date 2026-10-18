@@ -2321,3 +2321,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: `toggle_fold`'s effects. **[needs human]** check: fold and
     unfold from the menu and a title double-click at each backdrop; a
     second double-click mid-way turns it around.
+
+- [x] **T10. Play new spaces and startup (platform, app).** **[needs
+  human]**
+  - `Ui::create_space` takes an `Option<Play>`: the window is created
+    hidden and starts the In. The app passes New space's `Play` for every
+    space that comes into being (menu, hotkey, a drop on the desktop,
+    undo) and, at startup, one per space with `delay` from the startup
+    order (pure: `startup_plays(spaces, order, stagger)`, sorted by
+    position). "Start with spaces hidden" passes none.
+  - Tests: `startup_plays` order and delays. **[needs human]** check:
+    every New space effect from the menu and at startup, both startup
+    orders, Fly from each edge and on a second monitor.

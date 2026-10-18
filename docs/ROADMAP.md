@@ -285,9 +285,9 @@ A native, lightweight, offline Windows desktop organizer that:
       F-13) reuse it when they land.
     - **New space:** a space coming into being: created from a menu, the
       hotkey, or a drop, brought back by undo, and every space at startup.
-      Startup plays it all at once or one space after another (by
-      position, left to right, then top to bottom) with a set delay,
-      50 ms by default. "Start with spaces hidden" plays nothing.
+      Startup plays it all at once or one space after another (in
+      reading order: top to bottom, left to right where tops are level)
+      with a set delay, 50 ms by default. "Start with spaces hidden" plays nothing.
     - **Delete:** a space going away, by delete or undo. The model changes
       at once; only the window stays for the animation. Its default is
       "Same as new space", played in reverse.

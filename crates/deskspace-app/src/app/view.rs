@@ -18,6 +18,7 @@ use crate::scene::{
     SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
 };
 
+use super::animation::Arrival;
 use super::rename::EditTarget;
 use super::{App, Surface, Timer};
 
@@ -152,8 +153,22 @@ impl LayerState {
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
     pub(super) fn sync_windows(&mut self, ui: &mut Ui) {
+        self.sync_windows_as(ui, Arrival::New);
+    }
+
+    /// `sync_windows` at startup, when every space appears in the startup
+    /// order (ROADMAP D12).
+    pub(super) fn sync_windows_at_startup(&mut self, ui: &mut Ui) {
+        self.sync_windows_as(ui, Arrival::Startup);
+    }
+
+    /// Creates a window for every space that has none, brings each in with
+    /// the New space animation once its scene is pushed, and destroys the
+    /// windows of spaces that are gone.
+    fn sync_windows_as(&mut self, ui: &mut Ui, arrival: Arrival) {
         let existing: HashSet<u64> = ui.space_ids().into_iter().collect();
         let ids: Vec<SpaceId> = self.config.desktop.spaces().iter().map(|f| f.id).collect();
+        let mut arrived = Vec::new();
         for id in &ids {
             if existing.contains(&id.0) {
                 continue;
@@ -166,6 +181,10 @@ impl App {
                 continue;
             }
             self.refresh_space(ui, *id);
+            arrived.push((*id, rect));
+        }
+        for (id, play) in self.arrival_plays(&arrived, arrival) {
+            ui.show_space(id.0, play);
         }
         for stale in existing.difference(&ids.iter().map(|id| id.0).collect()) {
             ui.destroy_space(*stale);

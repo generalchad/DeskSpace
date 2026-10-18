@@ -198,6 +198,11 @@ impl Transition {
         }
     }
 
+    /// Whether the play is still in its delay, holding its first frame.
+    pub fn is_waiting(&self, now: Duration) -> bool {
+        now < self.start
+    }
+
     pub fn is_done(&self, now: Duration) -> bool {
         self.u(now) == self.end_u()
     }
@@ -565,6 +570,8 @@ mod tests {
         delayed.delay = ms(100);
         let transition = Transition::new(delayed, geometry(), Duration::ZERO);
         assert_eq!(transition.frame(ms(90)).opacity, 0.0);
+        assert!(transition.is_waiting(ms(90)));
+        assert!(!transition.is_waiting(ms(100)));
         assert!(!transition.is_done(ms(250)));
         assert!(transition.is_done(ms(300)));
         // Reversed during its delay, a show has not moved, so it is done.

@@ -532,17 +532,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T10. Play new spaces and startup (platform, app).** **[needs
-  human]**
-  - `Ui::create_space` takes an `Option<Play>`: the window is created
-    hidden and starts the In. The app passes New space's `Play` for every
-    space that comes into being (menu, hotkey, a drop on the desktop,
-    undo) and, at startup, one per space with `delay` from the startup
-    order (pure: `startup_plays(spaces, order, stagger)`, sorted by
-    position). "Start with spaces hidden" passes none.
-  - Tests: `startup_plays` order and delays. **[needs human]** check:
-    every New space effect from the menu and at startup, both startup
-    orders, Fly from each edge and on a second monitor.
 - [ ] **T11. Play delete (platform, app).** **[needs human]**
   - `Ui::destroy_space(id, Option<Play>)` takes the window out of the
     runtime's spaces map at once (so it is gone to every lookup and to
@@ -822,6 +811,7 @@ each id is in `archive/TASKS-done.md`.
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
 | T8 (D12) | Each Hide and show effect (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows. |
 | T9 (D12) | Fold and unfold from the space menu and a title double-click on each backdrop: the body rolls up into the title bar with its items in place, and rolls down showing them; a second double-click mid-way turns it around; Fold set to None folds at once; moving a space right after folding it is not fought by the roll; hiding a space mid-fold hides it folded (or unfolded) and shows it the same way. |
+| T10 (D12) | Each New space effect from the space menu, the tray, the hotkey, and a drop on the taken-over desktop: the space appears with it and no empty frame or early blur shows first; at startup with several spaces, "One after another" brings them in reading order at the set delay and "All at once" together; "Start with spaces hidden" shows nothing until shown; Fly from each edge and on a second monitor; hiding during the startup stagger hides every space, waiting ones included. |
 
 ## Found while working
 

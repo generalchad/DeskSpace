@@ -3,18 +3,19 @@
 use super::*;
 
 impl Ui {
+    /// Creates space `id`'s window, hidden: `show_space` brings it in once
+    /// its scene is pushed, so its first frame is never empty.
     pub fn create_space(
         &mut self,
         id: u64,
         rect: Rect,
         style: SpaceStyle,
     ) -> Result<(), PlatformError> {
-        let Some((host, click_through, on_top, visible, exists)) = with_runtime(|runtime| {
+        let Some((host, click_through, on_top, exists)) = with_runtime(|runtime| {
             (
                 runtime.host,
                 runtime.click_through,
                 runtime.on_top,
-                runtime.spaces_visible,
                 runtime.spaces.contains_key(&id),
             )
         }) else {
@@ -30,11 +31,21 @@ impl Ui {
             host,
             click_through,
             on_top,
-            visible,
+            visible: false,
         };
         let hwnd = space_window::create(options)?;
         with_runtime(|runtime| runtime.spaces.insert(id, hwnd));
         Ok(())
+    }
+
+    /// Brings a new space's window in with `play` (ROADMAP D12), unless the
+    /// spaces are hidden; then it shows with the rest.
+    pub fn show_space(&mut self, id: u64, play: Play) {
+        let visible = with_runtime(|runtime| runtime.spaces_visible).unwrap_or(false);
+        if let (true, Some(hwnd)) = (visible, space_hwnd(id)) {
+            // SAFETY: a live space window, and no runtime borrow is held.
+            unsafe { space_animation::set_visible(hwnd, true, play) };
+        }
     }
 
     pub fn destroy_space(&mut self, id: u64) {

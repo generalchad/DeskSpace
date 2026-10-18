@@ -197,8 +197,12 @@ unsafe fn turn_around(window: HWND, purpose: Purpose, way: Way) -> bool {
 }
 
 unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) {
-    let transition = Transition::new(play, geometry, now());
-    let frame = transition.frame(now());
+    let now = now();
+    let transition = Transition::new(play, geometry, now);
+    let frame = transition.frame(now);
+    // A window waiting its turn (startup's stagger) stays as it is, hidden,
+    // so not even its blur shows early.
+    let waiting = transition.is_waiting(now);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
         with_state(window, |state| {
@@ -211,7 +215,9 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
             });
         });
         let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
-        apply(window, frame);
+        if !waiting {
+            apply(window, frame);
+        }
     }
 }
 
@@ -226,10 +232,14 @@ pub(crate) unsafe fn on_timer(window: HWND) {
         with_state(window, |state| {
             let animation = state.animation.as_mut()?;
             animation.frame = animation.transition.frame(now);
-            Some((animation.frame, animation.transition.is_done(now)))
+            Some((
+                animation.frame,
+                animation.transition.is_done(now),
+                animation.transition.is_waiting(now),
+            ))
         })
     };
-    let Some(Some((frame, done))) = step else {
+    let Some(Some((frame, done, waiting))) = step else {
         // SAFETY: killing this window's own timer.
         unsafe {
             let _ = KillTimer(Some(window), TIMER_ID);
@@ -240,7 +250,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
     unsafe {
         if done {
             finish(window);
-        } else {
+        } else if !waiting {
             apply(window, frame);
         }
     }

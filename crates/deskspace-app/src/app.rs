@@ -558,7 +558,7 @@ impl EventHandler for App {
                 // `ui_mode` setting; the spaces follow their own Color mode.
                 ui.set_ui_dark(self.ui_dark());
                 self.hotkeys.register_all(ui, &self.config.window);
-                // Startup shows the spaces as they are created (T10); this
+                // The spaces appear as their windows are created, below; this
                 // only settles whether they start hidden.
                 ui.set_spaces_visible(self.visible, Play::instant(Way::In));
                 self.sync_desktop_show_entry();
@@ -571,7 +571,7 @@ impl EventHandler for App {
                 self.system.set_shell(display);
                 self.refresh_desktop_entries();
                 self.apply_takeover(ui);
-                self.sync_windows(ui);
+                self.sync_windows_at_startup(ui);
                 // Positions are derived from the grid; recompute them so a
                 // stored layout from another icon size or DPI is refreshed.
                 self.relayout_all(ui);
