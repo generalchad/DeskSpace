@@ -310,7 +310,8 @@ A native, lightweight, offline Windows desktop organizer that:
     Direction (which edge; Automatic is the effect's own: the top for Roll
     and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The
-    controls live on a new, Global-only Animations page. Defaults: Roll at
+    controls live in a Global-only Animations group of pages, one per kind,
+    so no page grows too tall for a 1080-pixel display. Defaults: Roll at
     250 ms for Hide and show, New space, and Fold; startup one after
     another at 50 ms; Delete the same as New space. An upgrade starts
     animating; this change is on purpose (section 3, "never break users").

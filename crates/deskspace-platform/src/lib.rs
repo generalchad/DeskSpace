@@ -41,8 +41,8 @@ pub use win32::icons::IconCache;
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::shortcuts::{create_custom_shortcut, create_shortcut};
 pub use win32::system::{
-    cursor_pos, drag_threshold, idle_time, system_accent_color, system_uses_dark_mode,
-    user_is_presenting, virtual_desktop_rect, work_area_at,
+    cursor_pos, drag_threshold, idle_time, system_accent_color, system_animations,
+    system_uses_dark_mode, user_is_presenting, virtual_desktop_rect, windows_build, work_area_at,
 };
 pub use win32::watchdog::{
     arm as arm_watchdog, is_watchdog, run_watchdog,

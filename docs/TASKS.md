@@ -533,26 +533,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T4. The Animations page (app, platform).** **[needs human]**
-  - Platform: `deskspace_platform::system_animations() -> bool`
-    (`SPI_GETCLIENTAREAANIMATION`) and `Event::SystemAnimationsChanged`,
-    raised by the controller for a `WM_SETTINGCHANGE` whose `wParam` is
-    `SPI_SETCLIENTAREAANIMATION`.
-  - App: `SystemLook` holds the switch, read at start and on the event,
-    which refreshes an open form. A new Global-only page (at the end of
-    `mod page`) built from `KINDS` and `EFFECTS`: per kind a heading,
-    Effect, Duration, Detail, and Direction, each greyed when the chosen
-    effect does not use it, and for New space the startup order and the
-    delay (greyed for "All at once"). With Windows' switch off, every
-    control is greyed and a note at the top says why, beside an "Open
-    Windows animation settings…" button (`ButtonAction`) that opens D12's
-    URI for the running Windows version with `Ui::open_url`. The field ids
-    come from the tables, so `field_ids_are_unique` and the handler tests
-    cover them.
-  - Tests: the page per effect (greying), the switch off greys all, the
-    button's URI per version, `apply_field` for each control.
-    **[needs human]** check: the page at 100 % and 150 %, and flipping
-    "Animation effects" in Windows while it is open.
 - [ ] **T5. Frame math (platform, pure).** `render/transition.rs`, beside
   `zoom_bar.rs`, with no Win32:
   - `Play { effect, way: In | Out, duration, delay, detail, edge }`, the
@@ -899,6 +879,7 @@ each id is in `archive/TASKS-done.md`.
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
+| T4 (D12) | Settings shows an Animations group (Hide and show, New space, Delete, Fold) at 100 % and 150 %, nothing clipped; choosing each effect greys the options it does not use, Delete's "Same as new space" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; "Open Windows animation settings…" opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 
 ## Found while working
 

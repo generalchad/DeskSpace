@@ -1,5 +1,5 @@
 //! The settings tables: option lists, the item-display presets, the
-//! navigation options, and the global hotkey bindings.
+//! navigation options, the global hotkey bindings, and the animation pages.
 
 use super::ids::field;
 use super::*;
@@ -110,6 +110,149 @@ pub(super) fn is_hotkey_field(id: u32) -> bool {
     HOTKEY_BINDINGS.iter().any(|binding| binding.field == id)
 }
 
+/// The labels of `deskspace_core::animation::EFFECTS`, in its order.
+pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 9] = [
+    (AnimationEffect::None, "None"),
+    (AnimationEffect::Roll, "Roll"),
+    (AnimationEffect::Fade, "Fade"),
+    (AnimationEffect::Pixelate, "Pixelate"),
+    (AnimationEffect::Gradient, "Gradient"),
+    (AnimationEffect::Dissolve, "Dissolve"),
+    (AnimationEffect::Fly, "Fly"),
+    (AnimationEffect::Crt, "CRT"),
+    (AnimationEffect::Burn, "Burn"),
+];
+pub(super) const EDGES: [(Edge, &str); 5] = [
+    (Edge::Auto, "Automatic"),
+    (Edge::Top, "Top"),
+    (Edge::Bottom, "Bottom"),
+    (Edge::Left, "Left"),
+    (Edge::Right, "Right"),
+];
+pub(super) const STARTUP_ORDERS: [(StartupOrder, &str); 2] = [
+    (StartupOrder::OneAfterAnother, "One after another"),
+    (StartupOrder::AllAtOnce, "All at once"),
+];
+
+/// One animation kind's settings page (ROADMAP D12): its title, the name a
+/// "Same as" choice uses for it, and its field ids. The page shows the
+/// options its kind offers (`KindSpec`), greying those the chosen effect does
+/// not use. A new kind is a row here, its `KINDS` row, and its ids.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AnimationPage {
+    pub kind: Kind,
+    pub title: &'static str,
+    pub heading: &'static str,
+    /// How a "Same as" choice names this kind ("Same as new space").
+    pub name: &'static str,
+    pub heading_id: u32,
+    pub note: u32,
+    pub open_settings: u32,
+    pub effect: u32,
+    pub duration: u32,
+    pub detail: u32,
+    pub direction: u32,
+}
+
+/// The animation pages, in `KINDS` order and in build order from
+/// `page::ANIMATIONS`.
+pub(super) const ANIMATION_PAGES: [AnimationPage; 4] = [
+    AnimationPage {
+        kind: Kind::HideShow,
+        title: "Hide and show",
+        heading: "When spaces hide and show",
+        name: "hide and show",
+        heading_id: field::ANIM_HIDE_SHOW_HEADING,
+        note: field::ANIM_HIDE_SHOW_NOTE,
+        open_settings: field::ANIM_HIDE_SHOW_OPEN_SETTINGS,
+        effect: field::ANIM_HIDE_SHOW_EFFECT,
+        duration: field::ANIM_HIDE_SHOW_DURATION,
+        detail: field::ANIM_HIDE_SHOW_DETAIL,
+        direction: field::ANIM_HIDE_SHOW_DIRECTION,
+    },
+    AnimationPage {
+        kind: Kind::NewSpace,
+        title: "New space",
+        heading: "When a space appears, and at startup",
+        name: "new space",
+        heading_id: field::ANIM_NEW_SPACE_HEADING,
+        note: field::ANIM_NEW_SPACE_NOTE,
+        open_settings: field::ANIM_NEW_SPACE_OPEN_SETTINGS,
+        effect: field::ANIM_NEW_SPACE_EFFECT,
+        duration: field::ANIM_NEW_SPACE_DURATION,
+        detail: field::ANIM_NEW_SPACE_DETAIL,
+        direction: field::ANIM_NEW_SPACE_DIRECTION,
+    },
+    AnimationPage {
+        kind: Kind::Delete,
+        title: "Delete",
+        heading: "When a space is deleted",
+        name: "delete",
+        heading_id: field::ANIM_DELETE_HEADING,
+        note: field::ANIM_DELETE_NOTE,
+        open_settings: field::ANIM_DELETE_OPEN_SETTINGS,
+        effect: field::ANIM_DELETE_EFFECT,
+        duration: field::ANIM_DELETE_DURATION,
+        detail: field::ANIM_DELETE_DETAIL,
+        direction: field::ANIM_DELETE_DIRECTION,
+    },
+    AnimationPage {
+        kind: Kind::Fold,
+        title: "Fold",
+        heading: "When a space folds and unfolds",
+        name: "fold",
+        heading_id: field::ANIM_FOLD_HEADING,
+        note: field::ANIM_FOLD_NOTE,
+        open_settings: field::ANIM_FOLD_OPEN_SETTINGS,
+        effect: field::ANIM_FOLD_EFFECT,
+        duration: field::ANIM_FOLD_DURATION,
+        detail: field::ANIM_FOLD_DETAIL,
+        direction: field::ANIM_FOLD_DIRECTION,
+    },
+];
+
+impl AnimationPage {
+    pub fn of(kind: Kind) -> &'static AnimationPage {
+        ANIMATION_PAGES
+            .iter()
+            .find(|page| page.kind == kind)
+            .expect("every kind has an animation page")
+    }
+
+    /// The choices the Effect dropdown lists, in order: "Same as" first when
+    /// the kind can follow another, then its effects.
+    pub fn choices(self) -> Vec<EffectChoice> {
+        let spec = self.kind.spec();
+        spec.follows
+            .map(EffectChoice::SameAs)
+            .into_iter()
+            .chain(spec.effects.iter().copied().map(EffectChoice::Effect))
+            .collect()
+    }
+
+    pub fn choice_label(choice: EffectChoice) -> String {
+        match choice {
+            EffectChoice::Effect(effect) => EFFECT_LABELS[index_of(&EFFECT_LABELS, effect)]
+                .1
+                .to_string(),
+            EffectChoice::SameAs(kind) => format!("Same as {}", AnimationPage::of(kind).name),
+            EffectChoice::Unknown => String::new(),
+        }
+    }
+}
+
+/// The page Windows' "Animation effects" switch is on: Accessibility >
+/// Visual effects on Windows 11 (build 22000 and later, and when the build is
+/// unknown), Ease of Access > Display on Windows 10.
+/// https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings-app
+pub fn windows_animation_settings_uri(build: Option<u32>) -> &'static str {
+    const WINDOWS_11: u32 = 22000;
+    match build {
+        Some(build) if build < WINDOWS_11 => "ms-settings:easeofaccess-display",
+        _ => "ms-settings:easeofaccess-visualeffects",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +269,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             deskspace_platform::SpacePreview::default(),
@@ -150,6 +294,48 @@ mod tests {
         for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
             assert_eq!(binding.text(&window), format!("Ctrl+F{}", slot + 1));
         }
+    }
+
+    #[test]
+    fn every_effect_and_kind_has_its_row() {
+        use deskspace_core::animation::{EFFECTS, KINDS};
+        let effects: Vec<AnimationEffect> = EFFECTS.iter().map(|spec| spec.effect).collect();
+        let labelled: Vec<AnimationEffect> =
+            EFFECT_LABELS.iter().map(|(effect, _)| *effect).collect();
+        assert_eq!(labelled, effects, "EFFECT_LABELS follows EFFECTS");
+        let kinds: Vec<Kind> = KINDS.iter().map(|spec| spec.kind).collect();
+        let pages: Vec<Kind> = ANIMATION_PAGES.iter().map(|page| page.kind).collect();
+        assert_eq!(pages, kinds, "ANIMATION_PAGES follows KINDS");
+    }
+
+    #[test]
+    fn delete_offers_same_as_new_space_first() {
+        let choices = AnimationPage::of(Kind::Delete).choices();
+        assert_eq!(choices[0], EffectChoice::SameAs(Kind::NewSpace));
+        assert_eq!(AnimationPage::choice_label(choices[0]), "Same as new space");
+        assert_eq!(
+            AnimationPage::of(Kind::Fold).choices(),
+            [
+                EffectChoice::Effect(AnimationEffect::None),
+                EffectChoice::Effect(AnimationEffect::Roll)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_animation_switch_is_on_its_own_page_per_version() {
+        assert_eq!(
+            windows_animation_settings_uri(Some(19045)),
+            "ms-settings:easeofaccess-display"
+        );
+        assert_eq!(
+            windows_animation_settings_uri(Some(26300)),
+            "ms-settings:easeofaccess-visualeffects"
+        );
+        assert_eq!(
+            windows_animation_settings_uri(None),
+            "ms-settings:easeofaccess-visualeffects"
+        );
     }
 
     #[test]

@@ -15,8 +15,9 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterWindowMessageW,
-    WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_HOTKEY,
-    WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW, WS_POPUP,
+    SPI_SETCLIENTAREAANIMATION, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
+    WM_ENDSESSION, WM_HOTKEY, WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW,
+    WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -75,6 +76,13 @@ unsafe fn is_color_set_change(lparam: LPARAM) -> bool {
     // wide string naming the changed area.
     let area = unsafe { PCWSTR(lparam.0 as *const u16).to_string() };
     area.is_ok_and(|area| area == "ImmersiveColorSet")
+}
+
+/// Whether a WM_SETTINGCHANGE reports Windows' "Animation effects" switch,
+/// which `SystemParametersInfo` broadcasts with the action in `wParam`.
+/// https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange
+fn is_animation_change(wparam: WPARAM) -> bool {
+    wparam.0 == SPI_SETCLIENTAREAANIMATION.0 as usize
 }
 
 /// The event a posted or plain notification message stands for, decoded from
@@ -170,6 +178,8 @@ unsafe extern "system" fn wndproc(
             WM_SETTINGCHANGE => {
                 if is_color_set_change(lparam) {
                     runtime::dispatch(Event::SystemThemeChanged);
+                } else if is_animation_change(wparam) {
+                    runtime::dispatch(Event::SystemAnimationsChanged);
                 }
                 DefWindowProcW(window, message, wparam, lparam)
             }
@@ -234,6 +244,12 @@ mod tests {
         assert_eq!(event(messages::SELECTION_KEY, usize::MAX, 0), None);
         assert_eq!(event(messages::OUTSIDE_PROBE, 0, 0), None);
         assert_eq!(event(WM_CLOSE, 0, 0), None);
+    }
+
+    #[test]
+    fn only_the_animation_switch_counts_as_an_animation_change() {
+        assert!(is_animation_change(WPARAM(0x1043)));
+        assert!(!is_animation_change(WPARAM(0)));
     }
 
     #[test]

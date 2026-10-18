@@ -9,7 +9,9 @@ use windows::Win32::Graphics::Gdi::{
     MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, ReleaseDC, SelectObject, SetBkMode,
     SetTextColor, TRANSPARENT,
 };
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+use windows::Win32::System::Registry::{
+    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
+};
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::UI::HiDpi::SystemParametersInfoForDpi;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
@@ -18,9 +20,10 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetSystemMetrics, NONCLIENTMETRICSW, SM_CXDRAG, SM_CXVIRTUALSCREEN, SM_CYDRAG,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETNONCLIENTMETRICS,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETCLIENTAREAANIMATION,
+    SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::{BOOL, PCWSTR, w};
 
 /// The work area (screen minus taskbar and docked bars) of the monitor
 /// nearest `point`.
@@ -109,6 +112,50 @@ pub fn system_accent_color() -> Option<Color> {
     } else {
         None
     }
+}
+
+/// Whether Windows' "Animation effects" switch is on (Settings >
+/// Accessibility > Visual effects; on Windows 10, Ease of Access > Display),
+/// which DeskSpace follows for every animation (ROADMAP D12). On when it
+/// cannot be read, Windows' own default.
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfow
+pub fn system_animations() -> bool {
+    let mut on = BOOL::from(true);
+    // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL through `pvParam`.
+    let result = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            Some(&mut on as *mut BOOL as *mut core::ffi::c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    result.is_err() || on.as_bool()
+}
+
+/// The Windows build number (22000 and up is Windows 11), or `None` when it
+/// cannot be read. It comes from the registry because `GetVersionExW`
+/// reports the version the executable's manifest declares, not the real one.
+pub fn windows_build() -> Option<u32> {
+    let mut buffer = [0u16; 16];
+    let mut size = std::mem::size_of_val(&buffer) as u32;
+    // SAFETY: `buffer` and `size` describe a writable buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"),
+            w!("CurrentBuildNumber"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr() as *mut core::ffi::c_void),
+            Some(&mut size),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let length = buffer.iter().position(|&unit| unit == 0)?;
+    String::from_utf16(&buffer[..length]).ok()?.parse().ok()
 }
 
 /// Splits a DWM accent DWORD (`0xAABBGGRR`) into a `Color`.

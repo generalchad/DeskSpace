@@ -630,6 +630,10 @@ impl EventHandler for App {
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
+            Event::SystemAnimationsChanged => {
+                self.system.refresh_animations();
+                self.refresh_settings(ui);
+            }
             Event::CloseRequested => {
                 self.hotkeys.unregister_all(ui);
                 // A rename in progress and unapplied settings edits are

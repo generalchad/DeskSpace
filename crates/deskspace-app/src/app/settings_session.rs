@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui};
+use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build};
 
 use crate::scene::item_label;
 use crate::settings::{self, ButtonAction, Effect, Session, SpaceSnapshot};
@@ -77,6 +77,7 @@ impl App {
                 &self.config,
                 session,
                 self.system.dark(),
+                self.system.animations(),
                 self.store.path(),
                 preview,
             )
@@ -277,6 +278,9 @@ impl App {
             // The button is grey for Global, which has no space to fit.
             (ButtonAction::FitToContents, None) => {}
             (ButtonAction::CheckForUpdates, _) => self.start_update_check(ui, true),
+            (ButtonAction::OpenWindowsAnimationSettings, _) => {
+                ui.open_url(settings::windows_animation_settings_uri(windows_build()));
+            }
         }
     }
 

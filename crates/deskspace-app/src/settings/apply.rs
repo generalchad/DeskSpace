@@ -4,8 +4,8 @@
 use super::ids::field;
 use super::session::Session;
 use super::tables::{
-    BACKDROPS, HOTKEY_BINDINGS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS,
-    is_hotkey_field,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, EDGES, HOTKEY_BINDINGS, LABEL_LINES_OPTIONS,
+    LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
 use super::*;
 use super::{Effect, scope_space};
@@ -200,6 +200,21 @@ pub fn apply_field(
                 config.window.new_space_locked = on;
                 Effect::Pending
             }
+            (field::ANIM_STARTUP_ORDER, FieldValue::Choice(index)) => {
+                let animations = &mut config.window.animations;
+                animations.startup = STARTUP_ORDERS
+                    .get(index)
+                    .map_or(animations.startup, |entry| entry.0);
+                Effect::Pending
+            }
+            (field::ANIM_STAGGER, FieldValue::Slider(value)) => {
+                config.window.animations.stagger_ms = clamp_u16(value, STAGGER_MS_RANGE);
+                Effect::Pending
+            }
+            (id, value) if animation_page_of(id).is_some() => {
+                let page = animation_page_of(id).expect("checked by the guard");
+                apply_animation_field(&mut config.window.animations, page, id, value)
+            }
             _ => Effect::None,
         },
     };
@@ -207,6 +222,46 @@ pub fn apply_field(
         session.dirty = true;
     }
     effect
+}
+
+/// The animation page that owns field `id`, if any.
+fn animation_page_of(id: u32) -> Option<&'static AnimationPage> {
+    ANIMATION_PAGES
+        .iter()
+        .find(|page| [page.effect, page.duration, page.detail, page.direction].contains(&id))
+}
+
+fn clamp_u16(value: i32, range: (u16, u16)) -> u16 {
+    value.clamp(range.0.into(), range.1.into()) as u16
+}
+
+/// An edit on an animation page. Animations play only on what comes next, so
+/// every edit waits for Apply.
+fn apply_animation_field(
+    animations: &mut Animations,
+    page: &AnimationPage,
+    id: u32,
+    value: FieldValue,
+) -> Effect {
+    let settings = animations.get_mut(page.kind);
+    match value {
+        FieldValue::Choice(index) if id == page.effect => {
+            if let Some(choice) = page.choices().get(index) {
+                settings.effect = *choice;
+            }
+        }
+        FieldValue::Choice(index) if id == page.direction => {
+            settings.direction = EDGES.get(index).map_or(settings.direction, |entry| entry.0);
+        }
+        FieldValue::Slider(value) if id == page.duration => {
+            settings.duration_ms = clamp_u16(value, DURATION_MS_RANGE);
+        }
+        FieldValue::Slider(value) if id == page.detail => {
+            settings.detail = value.clamp(DETAIL_RANGE.0.into(), DETAIL_RANGE.1.into()) as u8;
+        }
+        _ => return Effect::None,
+    }
+    Effect::Pending
 }
 
 /// The command for an edit on a customized space's page, with what it changes.
@@ -311,6 +366,54 @@ mod tests {
         );
         assert_eq!(effect, Effect::Pending);
         assert!(config.window.start_with_windows);
+    }
+
+    #[test]
+    fn animation_edits_are_pending_and_land_on_their_kind() {
+        use deskspace_core::animation::{
+            DURATION_MS_RANGE, Effect as AnimationEffect, EffectChoice, Kind, StartupOrder,
+        };
+        let (mut config, mut session) = setup();
+        let mut edit = |id, value| apply_field(&mut config, &mut session, id, value, true);
+        // Delete lists "Same as new space" first, then None, then Roll.
+        assert_eq!(
+            edit(field::ANIM_DELETE_EFFECT, FieldValue::Choice(2)),
+            Effect::Pending
+        );
+        assert_eq!(
+            edit(field::ANIM_HIDE_SHOW_DURATION, FieldValue::Slider(5)),
+            Effect::Pending
+        );
+        assert_eq!(
+            edit(field::ANIM_NEW_SPACE_DETAIL, FieldValue::Slider(99)),
+            Effect::Pending
+        );
+        assert_eq!(
+            edit(field::ANIM_NEW_SPACE_DIRECTION, FieldValue::Choice(3)),
+            Effect::Pending
+        );
+        assert_eq!(
+            edit(field::ANIM_STARTUP_ORDER, FieldValue::Choice(1)),
+            Effect::Pending
+        );
+        assert_eq!(
+            edit(field::ANIM_STAGGER, FieldValue::Slider(100)),
+            Effect::Pending
+        );
+        let animations = config.window.animations;
+        assert_eq!(
+            animations.delete.effect,
+            EffectChoice::Effect(AnimationEffect::Roll)
+        );
+        assert_eq!(animations.hide_show.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(animations.new_space.detail, 10);
+        assert_eq!(
+            animations.resolve(Kind::NewSpace).direction,
+            deskspace_core::animation::Edge::Left
+        );
+        assert_eq!(animations.startup, StartupOrder::AllAtOnce);
+        assert_eq!(animations.stagger_ms, 100);
+        assert!(session.dirty);
     }
 
     #[test]
@@ -473,6 +576,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             deskspace_platform::SpacePreview::default(),

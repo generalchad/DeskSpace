@@ -16,11 +16,15 @@ mod tables;
 pub use apply::{apply_field, customize_space, match_global, reset_appearance, space_edit};
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
-pub use tables::{HOTKEY_BINDINGS, HotkeyAction};
+pub use tables::{HOTKEY_BINDINGS, HotkeyAction, windows_animation_settings_uri};
 
 use std::path::Path;
 
 use deskspace_config::{Config, NEW_SPACE_SIZE_RANGE, WindowSettings};
+use deskspace_core::animation::{
+    Animations, DETAIL_RANGE, DURATION_MS_RANGE, Edge, Effect as AnimationEffect, EffectChoice,
+    EffectOption, Kind, STAGGER_MS_RANGE, StartupOrder,
+};
 use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
     ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE,
@@ -35,7 +39,10 @@ use deskspace_platform::{
     SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark, SpacePreview,
 };
 
-use pages::{about_page, general_page, hotkeys_page, look_pages, new_spaces_page, shortcuts_page};
+use pages::{
+    about_page, animation_pages, general_page, hotkeys_page, look_pages, new_spaces_page,
+    shortcuts_page,
+};
 
 /// How many pages hold look settings (Appearance through Advanced).
 pub const LOOK_PAGE_COUNT: usize = 5;
@@ -80,10 +87,13 @@ pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
 }
 
 /// The pages the categories pane lists for `scope`, in order: every Global
-/// page for Global (`None`), or a space's look pages and its Shortcuts page.
+/// page for Global (`None`), the animation pages last, or a space's look
+/// pages and its Shortcuts page.
 pub fn listed_pages(scope: Option<SpaceId>) -> Vec<usize> {
     match scope {
-        None => (0..=page::ABOUT).collect(),
+        None => (0..=page::ABOUT)
+            .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
+            .collect(),
         Some(_) => (0..LOOK_PAGE_COUNT)
             .chain(std::iter::once(page::SHORTCUTS))
             .collect(),
@@ -119,6 +129,7 @@ pub fn build_form(
     config: &Config,
     session: &Session,
     system_dark: bool,
+    system_animations: bool,
     config_path: &Path,
     preview: SpacePreview,
 ) -> SettingsForm {
@@ -152,21 +163,36 @@ pub fn build_form(
     pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
     pages.push(shortcuts_page(preview));
-    debug_assert_eq!(pages.len(), page::SHORTCUTS + 1);
+    debug_assert_eq!(pages.len(), page::ANIMATIONS);
+    pages.extend(animation_pages(
+        &config.window.animations,
+        system_animations,
+    ));
 
     let listed = listed_pages(space.map(|space| space.id));
     let selected = listed
         .iter()
         .position(|page| *page == session.page)
         .unwrap_or(0);
-    let entries = listed
-        .iter()
-        .map(|&index| SettingsNavEntry {
-            label: pages[index].title.clone(),
-            page: index,
-            marked: false,
-        })
-        .collect();
+    let entry = |&index: &usize| SettingsNavEntry {
+        label: pages[index].title.clone(),
+        page: index,
+        marked: false,
+    };
+    // The animation pages get a group of their own, after the rest, so the
+    // flattened entries keep `listed`'s order and `selected` stays valid.
+    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) =
+        listed.iter().partition(|&&index| index < page::ANIMATIONS);
+    let mut groups = vec![SettingsNavGroup {
+        title: String::new(),
+        entries: settings_pages.iter().map(entry).collect(),
+    }];
+    if !animation_pages.is_empty() {
+        groups.push(SettingsNavGroup {
+            title: "Animations".into(),
+            entries: animation_pages.iter().map(entry).collect(),
+        });
+    }
 
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
@@ -209,10 +235,7 @@ pub fn build_form(
         nav: SettingsNav {
             scopes,
             selected_scope: scope_index(config, session),
-            groups: vec![SettingsNavGroup {
-                title: String::new(),
-                entries,
-            }],
+            groups,
             selected,
             header: Some(header),
         },
@@ -231,6 +254,9 @@ pub enum ButtonAction {
     FitToContents,
     /// The General page's "Check for updates now".
     CheckForUpdates,
+    /// An animation page's "Open Windows animation settings", which opens
+    /// the page holding Windows' "Animation effects" switch.
+    OpenWindowsAnimationSettings,
 }
 
 /// The action of the button with field id `id`, or `None` for any other id.
@@ -239,6 +265,12 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
         field::RESET => Some(ButtonAction::ResetAppearance),
         field::FIT_CONTENTS => Some(ButtonAction::FitToContents),
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
+        id if tables::ANIMATION_PAGES
+            .iter()
+            .any(|page| page.open_settings == id) =>
+        {
+            Some(ButtonAction::OpenWindowsAnimationSettings)
+        }
         _ => None,
     }
 }
@@ -289,6 +321,7 @@ mod tests {
         build_form(
             config,
             session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -406,6 +439,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("C:/cfg.toml"),
             SpacePreview::default(),
         );
@@ -428,6 +462,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("C:/cfg.toml"),
             SpacePreview::default(),
         );
@@ -438,6 +473,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("C:/cfg.toml"),
             SpacePreview::default(),
@@ -455,6 +491,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -474,6 +511,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -501,6 +539,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -513,6 +552,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -539,6 +579,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -572,6 +613,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -600,6 +642,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -618,7 +661,10 @@ mod tests {
             ]
         );
         assert_eq!(nav.selected_scope, 0);
-        assert_eq!(nav.entries().count(), page::ABOUT + 1);
+        assert_eq!(
+            nav.entries().count(),
+            page::ABOUT + 1 + tables::ANIMATION_PAGES.len()
+        );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
         assert!(header.switch.is_none());
@@ -635,6 +681,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -659,7 +706,120 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(form.pages.len(), page::SHORTCUTS + 1);
+        assert_eq!(
+            form.pages.len(),
+            page::ANIMATIONS + tables::ANIMATION_PAGES.len()
+        );
+    }
+
+    fn animation_form(config: &Config, system_on: bool) -> SettingsForm {
+        build_form(
+            config,
+            &Session::new(config),
+            true,
+            system_on,
+            Path::new("x"),
+            SpacePreview::default(),
+        )
+    }
+
+    fn enabled(form: &SettingsForm, id: u32) -> bool {
+        form.field(id).unwrap().enabled
+    }
+
+    #[test]
+    fn the_animation_pages_are_a_group_of_their_own() {
+        let (config, session) = setup();
+        let form = form(&config, &session);
+        let groups = &nav(&form).groups;
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[1].title, "Animations");
+        let titles: Vec<&str> = groups[1]
+            .entries
+            .iter()
+            .map(|entry| entry.label.as_str())
+            .collect();
+        assert_eq!(titles, ["Hide and show", "New space", "Delete", "Fold"]);
+        assert_eq!(groups[1].entries[0].page, page::ANIMATIONS);
+    }
+
+    #[test]
+    fn an_animation_page_greys_the_options_its_effect_does_not_use() {
+        let mut config = Config::new();
+        let hide_show = &mut config.window.animations.hide_show;
+        hide_show.effect = EffectChoice::Effect(AnimationEffect::Pixelate);
+        let form = animation_form(&config, true);
+        assert!(enabled(&form, field::ANIM_HIDE_SHOW_EFFECT));
+        assert!(enabled(&form, field::ANIM_HIDE_SHOW_DURATION));
+        assert!(enabled(&form, field::ANIM_HIDE_SHOW_DETAIL));
+        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DIRECTION));
+
+        config.window.animations.hide_show.effect = EffectChoice::Effect(AnimationEffect::None);
+        let form = animation_form(&config, true);
+        assert!(enabled(&form, field::ANIM_HIDE_SHOW_EFFECT));
+        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DURATION));
+        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DETAIL));
+    }
+
+    #[test]
+    fn following_another_kind_greys_its_options_but_not_the_duration() {
+        let config = Config::new();
+        let form = animation_form(&config, true);
+        assert!(enabled(&form, field::ANIM_DELETE_DURATION));
+        assert!(
+            !enabled(&form, field::ANIM_DELETE_DIRECTION),
+            "edited on New space"
+        );
+        assert!(enabled(&form, field::ANIM_NEW_SPACE_DIRECTION));
+    }
+
+    #[test]
+    fn fold_offers_only_its_duration() {
+        let form = animation_form(&Config::new(), true);
+        assert!(form.field(field::ANIM_FOLD_DURATION).is_some());
+        assert!(form.field(field::ANIM_FOLD_DETAIL).is_none());
+        assert!(form.field(field::ANIM_FOLD_DIRECTION).is_none());
+    }
+
+    #[test]
+    fn windows_switch_off_greys_every_animation_control_and_says_why() {
+        let config = Config::new();
+        let on = animation_form(&config, true);
+        let off = animation_form(&config, false);
+        assert!(on.same_shape(&off), "the switch must not change the shape");
+        for page in tables::ANIMATION_PAGES {
+            for id in [page.effect, page.duration, page.detail, page.direction] {
+                if let Some(field) = off.field(id) {
+                    assert!(!field.enabled, "field {id} on {}", page.title);
+                }
+            }
+            assert!(off.field(page.note).unwrap().label.contains("is off"));
+            assert!(!on.field(page.note).unwrap().label.contains("is off"));
+            assert!(enabled(&off, page.open_settings), "the way out stays open");
+        }
+        assert!(!enabled(&off, field::ANIM_STARTUP_ORDER));
+        assert!(!enabled(&off, field::ANIM_STAGGER));
+    }
+
+    #[test]
+    fn the_startup_delay_is_grey_when_spaces_appear_all_at_once() {
+        let mut config = Config::new();
+        assert!(enabled(&animation_form(&config, true), field::ANIM_STAGGER));
+        config.window.animations.startup = StartupOrder::AllAtOnce;
+        assert!(!enabled(
+            &animation_form(&config, true),
+            field::ANIM_STAGGER
+        ));
+    }
+
+    #[test]
+    fn the_open_settings_buttons_open_windows_settings() {
+        for page in tables::ANIMATION_PAGES {
+            assert_eq!(
+                button_action(page.open_settings),
+                Some(ButtonAction::OpenWindowsAnimationSettings)
+            );
+        }
     }
 
     #[test]
@@ -678,6 +838,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -725,6 +886,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -740,6 +902,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -759,6 +922,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -775,6 +939,7 @@ mod tests {
             &config,
             &session,
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -785,6 +950,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -799,6 +965,7 @@ mod tests {
         let form = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),
@@ -819,6 +986,7 @@ mod tests {
             &config,
             &Session::new(&config),
             true,
+            true,
             Path::new("x"),
             SpacePreview::default(),
         );
@@ -827,6 +995,7 @@ mod tests {
         let space = build_form(
             &config,
             &session,
+            true,
             true,
             Path::new("x"),
             SpacePreview::default(),

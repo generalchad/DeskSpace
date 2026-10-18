@@ -292,6 +292,8 @@ pub enum Event {
     FolderChanged,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
+    /// Windows' "Animation effects" switch changed (`system_animations`).
+    SystemAnimationsChanged,
     /// A zoom pop-up button was clicked (see `Ui::show_zoom_bar`).
     Zoom(ZoomAction),
     /// Delivered once, before the runtime tears windows down: on quit, console

@@ -71,15 +71,51 @@ pub mod field {
     pub const SHORTCUTS_NOTE: u32 = 70;
     pub const SPACE_PREVIEW: u32 = 71;
     pub const INSTALL_UPDATES: u32 = 72;
+
+    // The animation pages (ROADMAP D12), one block per kind; `ANIMATION_PAGES`
+    // says which page each belongs to. Fold's detail and direction are kept
+    // for it although Fold offers neither.
+    pub const ANIM_HIDE_SHOW_HEADING: u32 = 73;
+    pub const ANIM_HIDE_SHOW_NOTE: u32 = 74;
+    pub const ANIM_HIDE_SHOW_OPEN_SETTINGS: u32 = 75;
+    pub const ANIM_HIDE_SHOW_EFFECT: u32 = 76;
+    pub const ANIM_HIDE_SHOW_DURATION: u32 = 77;
+    pub const ANIM_HIDE_SHOW_DETAIL: u32 = 78;
+    pub const ANIM_HIDE_SHOW_DIRECTION: u32 = 79;
+    pub const ANIM_NEW_SPACE_HEADING: u32 = 80;
+    pub const ANIM_NEW_SPACE_NOTE: u32 = 81;
+    pub const ANIM_NEW_SPACE_OPEN_SETTINGS: u32 = 82;
+    pub const ANIM_NEW_SPACE_EFFECT: u32 = 83;
+    pub const ANIM_NEW_SPACE_DURATION: u32 = 84;
+    pub const ANIM_NEW_SPACE_DETAIL: u32 = 85;
+    pub const ANIM_NEW_SPACE_DIRECTION: u32 = 86;
+    pub const ANIM_STARTUP_ORDER: u32 = 87;
+    pub const ANIM_STAGGER: u32 = 88;
+    pub const ANIM_DELETE_HEADING: u32 = 89;
+    pub const ANIM_DELETE_NOTE: u32 = 90;
+    pub const ANIM_DELETE_OPEN_SETTINGS: u32 = 91;
+    pub const ANIM_DELETE_EFFECT: u32 = 92;
+    pub const ANIM_DELETE_DURATION: u32 = 93;
+    pub const ANIM_DELETE_DETAIL: u32 = 94;
+    pub const ANIM_DELETE_DIRECTION: u32 = 95;
+    pub const ANIM_FOLD_HEADING: u32 = 96;
+    pub const ANIM_FOLD_NOTE: u32 = 97;
+    pub const ANIM_FOLD_OPEN_SETTINGS: u32 = 98;
+    pub const ANIM_FOLD_EFFECT: u32 = 99;
+    pub const ANIM_FOLD_DURATION: u32 = 100;
+    pub const ANIM_FOLD_DETAIL: u32 = 101;
+    pub const ANIM_FOLD_DIRECTION: u32 = 102;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
-/// which a space can override; General, New spaces, Hotkeys, and About are
-/// Global only; Shortcuts is a space's only (`listed_pages` says which a
-/// scope lists).
+/// which a space can override; General, New spaces, Hotkeys, About, and the
+/// animation pages are Global only; Shortcuts is a space's only
+/// (`listed_pages` says which a scope lists).
 pub mod page {
     pub const APPEARANCE: usize = 0;
     pub const LAYOUT: usize = 2;
     pub const ABOUT: usize = 8;
     pub const SHORTCUTS: usize = 9;
+    /// The first animation page; one per `ANIMATION_PAGES` row follows.
+    pub const ANIMATIONS: usize = 10;
 }

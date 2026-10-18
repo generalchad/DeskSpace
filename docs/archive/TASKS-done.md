@@ -2235,3 +2235,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: a config without `animations` loads D12's defaults; values
     clamp; every kind offers None and its default; every `EFFECTS` row's
     options match a test table.
+
+- [x] **T4. The Animations page (app, platform).** **[needs human]**
+  - Platform: `deskspace_platform::system_animations() -> bool`
+    (`SPI_GETCLIENTAREAANIMATION`) and `Event::SystemAnimationsChanged`,
+    raised by the controller for a `WM_SETTINGCHANGE` whose `wParam` is
+    `SPI_SETCLIENTAREAANIMATION`.
+  - App: `SystemLook` holds the switch, read at start and on the event,
+    which refreshes an open form. A new Global-only page (at the end of
+    `mod page`) built from `KINDS` and `EFFECTS`: per kind a heading,
+    Effect, Duration, Detail, and Direction, each greyed when the chosen
+    effect does not use it, and for New space the startup order and the
+    delay (greyed for "All at once"). With Windows' switch off, every
+    control is greyed and a note at the top says why, beside an "Open
+    Windows animation settings…" button (`ButtonAction`) that opens D12's
+    URI for the running Windows version with `Ui::open_url`. The field ids
+    come from the tables, so `field_ids_are_unique` and the handler tests
+    cover them.
+  - Tests: the page per effect (greying), the switch off greys all, the
+    button's URI per version, `apply_field` for each control.
+    **[needs human]** check: the page at 100 % and 150 %, and flipping
+    "Animation effects" in Windows while it is open.

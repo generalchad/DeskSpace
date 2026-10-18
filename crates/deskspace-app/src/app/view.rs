@@ -10,7 +10,8 @@ use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui,
     arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
     hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
-    system_accent_color, system_uses_dark_mode, virtual_desktop_rect, work_area_at,
+    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    work_area_at,
 };
 
 use crate::scene::{
@@ -34,6 +35,9 @@ pub(crate) struct SystemLook {
     /// Explorer's display options, refreshed by `App::refresh_shell_display`,
     /// which also reacts to their change.
     shell: ShellDisplay,
+    /// Windows' "Animation effects" switch; while it is off nothing animates
+    /// (ROADMAP D12).
+    animations: bool,
 }
 
 impl SystemLook {
@@ -44,6 +48,7 @@ impl SystemLook {
             dark: system_uses_dark_mode(),
             accent: system_accent_color(),
             shell: ShellDisplay::default(),
+            animations: system_animations(),
         }
     }
 
@@ -55,6 +60,15 @@ impl SystemLook {
 
     pub(super) fn dark(&self) -> bool {
         self.dark
+    }
+
+    pub(super) fn animations(&self) -> bool {
+        self.animations
+    }
+
+    /// Re-reads Windows' "Animation effects" switch after it changed.
+    pub(super) fn refresh_animations(&mut self) {
+        self.animations = system_animations();
     }
 
     pub(super) fn accent(&self) -> Option<Color> {

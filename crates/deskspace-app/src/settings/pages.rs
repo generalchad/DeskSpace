@@ -2,8 +2,8 @@
 
 use super::ids::field;
 use super::tables::{
-    BACKDROPS, HOTKEY_BINDINGS, HOTKEY_HINT, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES,
-    PRESETS, corner_marks,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -382,6 +382,125 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
                 config_path.display().to_string(),
             ),
         ],
+    }
+}
+
+/// The note atop every animation page: why the page is grey when Windows'
+/// "Animation effects" is off, or what the page follows when it is on.
+const ANIMATIONS_ON_NOTE: &str =
+    "DeskSpace plays these while Windows' \u{201c}Animation effects\u{201d} is on.";
+const ANIMATIONS_OFF_NOTE: &str = "Windows' \u{201c}Animation effects\u{201d} is off, so \
+     DeskSpace does not animate. Turn it on in Windows to choose here.";
+
+/// One page per animation kind (ROADMAP D12), in `ANIMATION_PAGES` order.
+/// Each shows the options its kind offers, greyed while the chosen effect
+/// does not use them, and every control is greyed while Windows' switch is
+/// off.
+pub(super) fn animation_pages(animations: &Animations, system_on: bool) -> Vec<SettingsPage> {
+    ANIMATION_PAGES
+        .iter()
+        .map(|page| animation_page(page, animations, system_on))
+        .collect()
+}
+
+fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool) -> SettingsPage {
+    let spec = page.kind.spec();
+    let settings = animations.get(page.kind);
+    let resolved = animations.resolve(page.kind);
+    let animates = system_on && resolved.effect != AnimationEffect::None;
+    // A kind that follows another shows that kind's options, greyed: they are
+    // edited on its page.
+    let own = matches!(settings.effect, EffectChoice::Effect(_));
+    let option_enabled = |option| animates && own && resolved.effect.uses(option);
+
+    let choices = page.choices();
+    let choice_labels: Vec<String> = choices
+        .iter()
+        .map(|choice| AnimationPage::choice_label(*choice))
+        .collect();
+    let choice_refs: Vec<&str> = choice_labels.iter().map(String::as_str).collect();
+    let selected = choices
+        .iter()
+        .position(|choice| *choice == settings.effect)
+        .unwrap_or(0);
+
+    let mut fields = vec![
+        Field::heading(page.heading_id, page.heading),
+        Field::note(
+            page.note,
+            if system_on {
+                ANIMATIONS_ON_NOTE
+            } else {
+                ANIMATIONS_OFF_NOTE
+            },
+        ),
+        Field::button(
+            page.open_settings,
+            "",
+            "Open Windows animation settings\u{2026}",
+        ),
+        Field::choice(page.effect, "Effect", &choice_refs, selected).enabled(system_on),
+        Field::slider(
+            page.duration,
+            "Duration",
+            (DURATION_MS_RANGE.0.into(), DURATION_MS_RANGE.1.into()),
+            settings.duration_ms.into(),
+        )
+        .editable()
+        .suffix(" ms")
+        .enabled(animates),
+    ];
+    if spec.options.contains(&EffectOption::Detail) {
+        fields.push(
+            Field::slider(
+                page.detail,
+                "Detail",
+                (DETAIL_RANGE.0.into(), DETAIL_RANGE.1.into()),
+                resolved.detail.into(),
+            )
+            .marks(vec![
+                SliderMark::new(DETAIL_RANGE.0.into(), "Fine"),
+                SliderMark::new(DETAIL_RANGE.1.into(), "Coarse"),
+            ])
+            .enabled(option_enabled(EffectOption::Detail)),
+        );
+    }
+    if spec.options.contains(&EffectOption::Direction) {
+        fields.push(
+            Field::choice(
+                page.direction,
+                "Direction",
+                &labels(&EDGES),
+                index_of(&EDGES, resolved.direction),
+            )
+            .enabled(option_enabled(EffectOption::Direction)),
+        );
+    }
+    if spec.startup {
+        fields.push(
+            Field::choice(
+                field::ANIM_STARTUP_ORDER,
+                "At startup",
+                &labels(&STARTUP_ORDERS),
+                index_of(&STARTUP_ORDERS, animations.startup),
+            )
+            .enabled(animates),
+        );
+        fields.push(
+            Field::slider(
+                field::ANIM_STAGGER,
+                "Delay between spaces",
+                (STAGGER_MS_RANGE.0.into(), STAGGER_MS_RANGE.1.into()),
+                animations.stagger_ms.into(),
+            )
+            .editable()
+            .suffix(" ms")
+            .enabled(animates && animations.startup == StartupOrder::OneAfterAnother),
+        );
+    }
+    SettingsPage {
+        title: page.title.into(),
+        fields,
     }
 }
 

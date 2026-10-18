@@ -1056,6 +1056,7 @@ in `ui.rs`. What spans them:
   | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
   | About | Global | Version, summary, license, configuration file path |
   | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
+  | Animations › one page per kind | Global | Built from `ANIMATION_PAGES` and the core tables (ROADMAP D12): the Windows note and "Open Windows animation settings…", Effect, Duration, and the options the kind offers, greyed when the effect does not use them; New space adds the startup order and delay. Everything is greyed while Windows' "Animation effects" is off, which `Event::SystemAnimationsChanged` follows live |
 
 **Items**
 
