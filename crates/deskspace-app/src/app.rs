@@ -596,6 +596,13 @@ impl EventHandler for App {
                 self.system.set_shell(display);
                 self.refresh_desktop_entries();
                 self.apply_takeover(ui);
+                // Building the debug window blocks this thread for a few
+                // hundred milliseconds, so it opens before the spaces start
+                // their startup plays; opened after, they had ended unseen.
+                // Its tables fill in on the next `Timer::DebugRefresh`.
+                if self.debug.is_some() {
+                    self.open_debug(ui);
+                }
                 self.sync_windows_at_startup(ui);
                 // Positions are derived from the grid; recompute them so a
                 // stored layout from another icon size or DPI is refreshed.
@@ -613,9 +620,6 @@ impl EventHandler for App {
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
-                if self.debug.is_some() {
-                    self.open_debug(ui);
-                }
             }
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
