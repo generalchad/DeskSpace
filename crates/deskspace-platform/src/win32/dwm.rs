@@ -118,19 +118,36 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
     );
     // Make sure no system backdrop competes with the accent material.
     set::<DWM_SYSTEMBACKDROP_TYPE>(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE);
-    // DWMWA_COLOR_DEFAULT lets Windows pick the border (including the accent
-    // color when "Show accent color on title bars" is on).
-    // https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
-    let border = if style.border && style.dwm_draws_frame() {
-        DWMWA_COLOR_DEFAULT
-    } else {
-        DWMWA_COLOR_NONE
-    };
-    set(hwnd, DWMWA_BORDER_COLOR, border);
+    set(hwnd, DWMWA_BORDER_COLOR, border_color(style));
     match material {
         Material::Accent => set_accent(hwnd, accent_state(style.backdrop)),
         Material::Composition => set(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, BOOL::from(true)),
     }
+}
+
+/// The border DWM draws for `style`. DWMWA_COLOR_DEFAULT lets Windows pick
+/// it (including the accent color when "Show accent color on title bars"
+/// is on).
+/// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
+fn border_color(style: SpaceStyle) -> u32 {
+    if style.border && style.dwm_draws_frame() {
+        DWMWA_COLOR_DEFAULT
+    } else {
+        DWMWA_COLOR_NONE
+    }
+}
+
+/// Takes away the border DWM draws while an animation leaves the window
+/// see-through, or puts back `style`'s. DWM draws it outside the window's
+/// pixels, so it cannot fade with them, and stayed as an outline around a
+/// fading space (seen 2026-10-18).
+pub(crate) fn show_border(hwnd: HWND, style: SpaceStyle, shown: bool) {
+    let color = if shown {
+        border_color(style)
+    } else {
+        DWMWA_COLOR_NONE
+    };
+    set(hwnd, DWMWA_BORDER_COLOR, color);
 }
 
 /// Steps an accent material aside while an animation leaves the window

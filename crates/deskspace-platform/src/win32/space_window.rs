@@ -96,9 +96,28 @@ pub(super) struct SpaceState {
     pub(super) animation: Option<Animation>,
     /// The window's visual tree, when composition gives it its blur.
     visuals: Option<SpaceVisuals>,
-    /// False while an animation has stepped the material aside
-    /// (`show_material`).
-    material_shown: bool,
+    /// What of the DWM backing an animation has left in place
+    /// (`show_backing`).
+    backing: Backing,
+}
+
+/// What DWM draws beside a space's own pixels: an animation steps either
+/// aside while it leaves the window see-through, since neither can fade
+/// with the pixels (`space_animation`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Backing {
+    /// The blur, or the flat fill Windows draws instead of it.
+    pub material: bool,
+    /// The border DWM draws around the window.
+    pub border: bool,
+}
+
+impl Backing {
+    /// Everything in place, as at rest.
+    pub(crate) const WHOLE: Self = Self {
+        material: true,
+        border: true,
+    };
 }
 
 pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -115,7 +134,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         cursor: CursorShape::Arrow,
         animation: None,
         visuals: None,
-        material_shown: true,
+        backing: Backing::WHOLE,
     }));
 
     // An OLE drop target (registered below) makes the space accept file drags
@@ -403,7 +422,7 @@ fn apply_cursor(shape: CursorShape) {
 pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
     // (composition property changes send no window messages).
-    let Some(Some((hosted, composition, material_shown))) = (unsafe {
+    let Some(Some((hosted, composition, backing))) = (unsafe {
         with_state(hwnd, |state| {
             if state.style == style {
                 return None;
@@ -415,15 +434,19 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
             {
                 tracing::warn!(%error, "space composition not restyled");
             }
-            Some((state.hosted, state.visuals.is_some(), state.material_shown))
+            Some((state.hosted, state.visuals.is_some(), state.backing))
         })
     }) else {
         return;
     };
     if !hosted {
         dwm::apply_style(hwnd, style, material(composition));
-        if !composition && !material_shown {
+        // A restyle mid-animation keeps what the animation stepped aside.
+        if !composition && !backing.material {
             dwm::show_accent(hwnd, style.backdrop, false);
+        }
+        if !backing.border {
+            dwm::show_border(hwnd, style, false);
         }
     }
     // SAFETY: `hwnd` is a live space window.
@@ -433,31 +456,40 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
     }
 }
 
-/// Steps the window's material (the blur, or what Windows draws instead of
-/// it) aside while an animation leaves the window see-through, or brings it
-/// back (`space_animation`). Does nothing when it is already so, and for a
+/// Leaves `backing` of the window's DWM backing in place, stepping the rest
+/// aside (`Backing`). Changes only what differs, and nothing for a
 /// desktop-hosted window, which has none.
-pub(crate) fn show_material(hwnd: HWND, shown: bool) {
+pub(crate) fn show_backing(hwnd: HWND, backing: Backing) {
     // SAFETY: `hwnd` is a live space window; the borrow does not re-enter
     // (composition property changes send no window messages).
-    let accent = unsafe {
+    let change = unsafe {
         with_state(hwnd, |state| {
-            if state.hosted || std::mem::replace(&mut state.material_shown, shown) == shown {
+            if state.hosted {
                 return None;
             }
-            match &mut state.visuals {
-                Some(visuals) => {
-                    if let Err(error) = visuals.show_material(shown) {
-                        tracing::warn!(%error, "space composition backdrop not changed");
+            let before = std::mem::replace(&mut state.backing, backing);
+            let mut accent = false;
+            if before.material != backing.material {
+                match &mut state.visuals {
+                    Some(visuals) => {
+                        if let Err(error) = visuals.show_material(backing.material) {
+                            tracing::warn!(%error, "space composition backdrop not changed");
+                        }
                     }
-                    None
+                    None => accent = true,
                 }
-                None => Some(state.style.backdrop),
             }
+            Some((state.style, accent, before.border != backing.border))
         })
     };
-    if let Some(Some(backdrop)) = accent {
-        dwm::show_accent(hwnd, backdrop, shown);
+    let Some(Some((style, accent, border))) = change else {
+        return;
+    };
+    if accent {
+        dwm::show_accent(hwnd, style.backdrop, backing.material);
+    }
+    if border {
+        dwm::show_border(hwnd, style, backing.border);
     }
 }
 

@@ -22,7 +22,9 @@ use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionF
 use crate::win32::debug_info::transparency_enabled;
 use crate::win32::flame_overlay::FlameOverlay;
 use crate::win32::runtime;
-use crate::win32::space_window::{SpaceState, current_rect, show, show_material, with_state};
+use crate::win32::space_window::{
+    Backing, SpaceState, current_rect, show, show_backing, with_state,
+};
 use crate::win32::system::work_area_at;
 
 /// The id of a space window's own animation timer. It is set on the space
@@ -476,8 +478,8 @@ unsafe fn finish(window: HWND) {
         } else if !IsWindowVisible(window).as_bool() {
             show(window);
         }
-        // After the hide, so a flat material never shows under a gone space.
-        show_material(window, true);
+        // After the hide, so nothing stepped aside shows around a gone space.
+        show_backing(window, Backing::WHOLE);
         let _ = InvalidateRect(Some(window), None, false);
         if let Some(back) = then {
             set_visible(window, true, back);
@@ -558,8 +560,8 @@ pub(crate) fn is_leaving(window: HWND) -> bool {
 }
 
 /// Puts `window` where `frame` says, hidden while the frame's rect is empty,
-/// and repaints it through the frame. A `flat_material` steps aside while the
-/// frame leaves the window see-through.
+/// and repaints it through the frame. While the frame leaves the window
+/// see-through, the DWM border steps aside, and so does a `flat_material`.
 unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
     // SAFETY: a live window owned by this thread; SetWindowPos sends only
     // WM_WINDOWPOSCHANGING and WM_SIZE, which do not reach the app.
@@ -569,7 +571,14 @@ unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
             return;
         }
         move_to(window, frame.rect);
-        show_material(window, !flat_material || frame.covers_window());
+        let covered = frame.covers_window();
+        show_backing(
+            window,
+            Backing {
+                material: covered || !flat_material,
+                border: covered,
+            },
+        );
         if !IsWindowVisible(window).as_bool() {
             show(window);
         }

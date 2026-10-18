@@ -513,8 +513,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   draws the material flat, which left a dark box under a fading space, so
   while a frame leaves the window see-through (`TransitionFrame::
   covers_window`: Fade, Pixelate, Gradient, Dissolve, Burn) the material
-  steps aside (`space_window::show_material`) and comes back when the
-  animation ends. A fold is a Roll between the space's rect and its title
+  steps aside, and comes back when the animation ends. The border DWM
+  draws steps aside then too, whatever the switch, since it cannot fade
+  either (`space_window::Backing`, `show_backing`). A fold is a Roll between the space's rect and its title
   bar: `App::toggle_fold` runs `Effect::FoldSpace` before the repaint, whose
   `set_rect` to the same rect then leaves the roll be, and a folding window
   keeps drawing its unfolded scene (the folded one has no items) until the
