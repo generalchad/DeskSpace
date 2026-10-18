@@ -18,7 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_NOZORDER, SetTimer, SetWindowPos, ShowWindow,
 };
 
-use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::win32::flame_overlay::FlameOverlay;
 use crate::win32::runtime;
 use crate::win32::space_window::{SpaceState, current_rect, with_state};
 use crate::win32::system::work_area_at;
@@ -51,6 +52,8 @@ pub(crate) struct Animation {
     /// A scene that arrived while folding. The folded scene has no items, so
     /// the window keeps drawing the unfolded one until the fold ends.
     deferred: Option<PreparedScene>,
+    /// Burn's flames, on their own window above the space.
+    flames: Option<FlameOverlay>,
 }
 
 impl Animation {
@@ -261,6 +264,9 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
     // A window waiting its turn (startup's stagger) stays as it is, hidden,
     // so not even its blur shows early.
     let waiting = transition.is_waiting(now);
+    let flames = (play.effect == Effect::Burn)
+        .then(|| FlameOverlay::create(window, geometry.rect, play.detail))
+        .flatten();
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
         with_state(window, |state| {
@@ -270,12 +276,44 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 purpose,
                 frame,
                 deferred: None,
+                flames,
             });
         });
         let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
         if !waiting {
             apply(window, frame);
+            draw_flames(window, frame, now);
         }
+    }
+}
+
+/// Draws Burn's flames for `frame`, if this animation has them. The overlay
+/// is taken out of the state while it draws, so no borrow is held across
+/// the Win32 calls.
+unsafe fn draw_flames(window: HWND, frame: TransitionFrame, now: Duration) {
+    let Mask::Burn { front, .. } = frame.mask else {
+        return;
+    };
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    let flames = unsafe {
+        with_state(window, |state| {
+            state
+                .animation
+                .as_mut()
+                .and_then(|animation| animation.flames.take())
+        })
+    };
+    let Some(Some(mut flames)) = flames else {
+        return;
+    };
+    flames.draw(front, now.as_secs_f32());
+    // SAFETY: as above.
+    unsafe {
+        with_state(window, |state| {
+            if let Some(animation) = state.animation.as_mut() {
+                animation.flames = Some(flames);
+            }
+        });
     }
 }
 
@@ -310,6 +348,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
             finish(window);
         } else if !waiting {
             apply(window, frame);
+            draw_flames(window, frame, now);
         }
     }
 }
@@ -326,15 +365,17 @@ unsafe fn finish(window: HWND) {
             if let Some(scene) = animation.deferred.take() {
                 state.scene = Some(scene);
             }
-            Some((rect, animation.purpose, gone))
+            Some((rect, animation.purpose, gone, animation.flames.take()))
         })
     };
     // SAFETY: the caller's contract.
     unsafe {
         let _ = KillTimer(Some(window), TIMER_ID);
-        let Some(Some((rect, purpose, gone))) = ended else {
+        let Some(Some((rect, purpose, gone, flames))) = ended else {
             return;
         };
+        // The flames' window goes outside any state borrow.
+        drop(flames);
         if purpose == Purpose::Dying {
             destroy(window);
             return;

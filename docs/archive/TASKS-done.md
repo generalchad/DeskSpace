@@ -2394,3 +2394,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     color laid over it.
   - Pure parts tested: the field's range and its bottom-up bias, and the
     bands at a given threshold. Dissolve keeps the cell mask.
+
+- [x] **T18. Flames around the frame (platform).** A click-through,
+  layered, never-activated overlay window (as `drag_ghost.rs`), sized to
+  the space plus a margin above and beside it, placed directly above the
+  space in z-order while Burn plays and destroyed after. Each frame draws
+  flame tongues rising from the burning front and up the frame's edges:
+  tapered gradients (yellow core, orange, red, transparent) whose heights
+  flicker over time, with a few embers drifting up, then
+  `UpdateLayeredWindow`. The flame layout (where tongues stand and how
+  high, per progress and time) is pure and tested. **[needs human]**
+  check (with T17): Burn on Startup and Delete looks like burning paper
+  on each backdrop, the flames rise past the frame without a box around
+  them, reversing mid-burn un-burns, and nothing is left behind.

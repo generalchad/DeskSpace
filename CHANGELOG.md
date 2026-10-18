@@ -12,7 +12,8 @@ Notable changes to DeskSpace, newest first. The format follows
 - Hiding and showing the spaces, folding one, a new space appearing (at
   startup too, one after another), deleting one, and exiting DeskSpace are
   animated, a roll by default. Settings > Animations has a page each for
-  Startup, Delete, and Fold. Settings >
+  Startup, Delete, and Fold. Among the effects, Burn burns the space up like
+  a sheet of paper, with flames licking up around its frame. Settings >
   Animations picks the effect (roll, fade, pixelate, gradient, dissolve, fly,
   CRT, or burn) and its speed, and DeskSpace follows Windows' "Animation
   effects" switch.

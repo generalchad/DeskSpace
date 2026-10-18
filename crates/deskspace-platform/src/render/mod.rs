@@ -1,5 +1,6 @@
 pub mod burn;
 pub mod d2d;
+pub mod flames;
 pub mod scene;
 pub mod transition;
 pub mod zoom_bar;

@@ -539,19 +539,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T18. Flames around the frame (platform).** A click-through,
-  layered, never-activated overlay window (as `drag_ghost.rs`), sized to
-  the space plus a margin above and beside it, placed directly above the
-  space in z-order while Burn plays and destroyed after. Each frame draws
-  flame tongues rising from the burning front and up the frame's edges:
-  tapered gradients (yellow core, orange, red, transparent) whose heights
-  flicker over time, with a few embers drifting up, then
-  `UpdateLayeredWindow`. The flame layout (where tongues stand and how
-  high, per progress and time) is pure and tested. **[needs human]**
-  check (with T17): Burn on Startup and Delete looks like burning paper
-  on each backdrop, the flames rise past the frame without a box around
-  them, reversing mid-burn un-burns, and nothing is left behind.
-
 - [ ] **T12. Composition device and space tree (platform).** **[needs
   decision]** until T1's findings are recorded, then **[needs human]**.
   - `win32/composition.rs`: one per UI thread, released in the runtime
@@ -831,6 +818,7 @@ each id is in `archive/TASKS-done.md`.
 | T11 (D12) | Each Delete effect, and "Same as startup", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |
 | T15 (D12) | Settings > Animations lists Startup, Delete, and Fold; a config last saved with the Hide and show page keeps that page's effect as Startup's; Startup's effect plays on hiding, showing, a new space, and startup (staggered only at startup). |
 | T16 (D13) | Exit from the tray and from a space menu with several spaces: they leave one after another in reverse reading order (all together with "All at once"), then DeskSpace closes, within about 2 s; with takeover on, Explorer's icons come back only after the spaces have left; a second Exit mid-way closes at once; with the spaces hidden, Exit closes at once; signing out of Windows is not held up. |
+| T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 
 ## Found while working
 

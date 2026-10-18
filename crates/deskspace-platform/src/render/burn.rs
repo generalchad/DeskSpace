@@ -72,6 +72,41 @@ impl BurnField {
     pub fn values(&self) -> &[f32] {
         &self.values
     }
+
+    pub fn value(&self, col: u32, row: u32) -> f32 {
+        self.values[(row * self.cols + col) as usize]
+    }
+
+    /// Where flames stand at `front`, into `bases`: in every `every`-th
+    /// column and the last, the top of the glowing band, with how hot it is
+    /// there (1 right at the front).
+    pub fn flame_bases(&self, front: f32, every: u32, bases: &mut Vec<FlameBase>) {
+        bases.clear();
+        let last = self.cols.saturating_sub(1);
+        let columns = (0..self.cols)
+            .step_by(every.max(1) as usize)
+            .chain((!last.is_multiple_of(every.max(1))).then_some(last));
+        for col in columns {
+            let base = (0..self.rows).find_map(|row| match stage(self.value(col, row) - front) {
+                Stage::Burning(along) => Some(FlameBase {
+                    col,
+                    row,
+                    heat: 1.0 - along,
+                }),
+                _ => None,
+            });
+            bases.extend(base);
+        }
+    }
+}
+
+/// A point on the burning edge that a flame rises from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlameBase {
+    pub col: u32,
+    pub row: u32,
+    /// 0 to 1.
+    pub heat: f32,
 }
 
 /// What a cell is at a distance `above` the front.
@@ -181,7 +216,22 @@ mod tests {
     use super::*;
 
     fn value(field: &BurnField, col: u32, row: u32) -> f32 {
-        field.values()[(row * field.cols() + col) as usize]
+        field.value(col, row)
+    }
+
+    #[test]
+    fn flames_stand_on_the_burning_edge() {
+        let field = BurnField::new(60, 40, 5);
+        let mut bases = Vec::new();
+        field.flame_bases(0.4, 4, &mut bases);
+        assert!(!bases.is_empty());
+        for base in &bases {
+            let above = field.value(base.col, base.row) - 0.4;
+            assert!((0.0..GLOW).contains(&above));
+            assert!((0.0..=1.0).contains(&base.heat));
+        }
+        field.flame_bases(-1.0, 4, &mut bases);
+        assert!(bases.is_empty(), "nothing burns yet");
     }
 
     #[test]
