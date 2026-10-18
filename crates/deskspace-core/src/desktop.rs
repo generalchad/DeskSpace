@@ -17,24 +17,50 @@ pub struct Desktop {
     pub layer: DesktopLayer,
     #[serde(default)]
     pub layout: GridSpec,
+    /// The highest space id handed out this session.
+    #[serde(skip)]
+    space_high_water: HighWater,
+    /// The highest item id handed out this session, in a space or the layer.
+    #[serde(skip)]
+    item_high_water: HighWater,
 }
+
+/// The highest id handed out this session, so an id freed by a delete is not
+/// given to a newer space or item, and an undo can put the old one back
+/// (ROADMAP D11). It is bookkeeping, not model state: it is never saved, it
+/// starts at 0 after a load (the ids present cover what came before), and it
+/// never makes two desktops unequal.
+#[derive(Debug, Clone, Copy, Default)]
+struct HighWater(u64);
+
+impl PartialEq for HighWater {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for HighWater {}
 
 impl Desktop {
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// The id the next new space gets: above every id present and every id
+    /// handed out this session. A peek; `take_space_id` hands it out.
     pub fn next_space_id(&self) -> SpaceId {
-        SpaceId(
-            self.spaces
-                .iter()
-                .map(|space| space.id.0)
-                .max()
-                .unwrap_or(0)
-                + 1,
-        )
+        let present = self
+            .spaces
+            .iter()
+            .map(|space| space.id.0)
+            .max()
+            .unwrap_or(0);
+        SpaceId(present.max(self.space_high_water.0) + 1)
     }
 
+    /// The id the next new item gets, in a space or the layer: above every id
+    /// present and every id handed out this session. A peek; `take_item_id`
+    /// hands it out.
     pub fn next_item_id(&self) -> ItemId {
         let space_max = self
             .spaces
@@ -50,7 +76,28 @@ impl Desktop {
             .map(|item| item.id.0)
             .max()
             .unwrap_or(0);
-        ItemId(space_max.max(layer_max) + 1)
+        ItemId(space_max.max(layer_max).max(self.item_high_water.0) + 1)
+    }
+
+    pub(crate) fn take_space_id(&mut self) -> SpaceId {
+        let id = self.next_space_id();
+        self.space_high_water.0 = id.0;
+        id
+    }
+
+    pub(crate) fn take_item_id(&mut self) -> ItemId {
+        let id = self.next_item_id();
+        self.item_high_water.0 = id.0;
+        id
+    }
+
+    /// Raises the high-water marks to cover `space` and its items, which came
+    /// from outside the allocator (a restore), so deleting them again does
+    /// not free their ids.
+    pub(crate) fn note_ids(&mut self, space: &Space) {
+        self.space_high_water.0 = self.space_high_water.0.max(space.id.0);
+        let items = space.items.iter().map(|item| item.id.0);
+        self.item_high_water.0 = items.fold(self.item_high_water.0, u64::max);
     }
 
     pub fn spaces(&self) -> &[Space] {
@@ -85,7 +132,7 @@ impl Desktop {
     }
 
     pub(crate) fn add_space(&mut self, title: impl Into<String>, rect: Rect) -> SpaceId {
-        let id = self.next_space_id();
+        let id = self.take_space_id();
         self.spaces.push(Space::new(id, title, rect));
         id
     }
@@ -217,6 +264,21 @@ mod tests {
         assert_eq!(desktop.next_item_id(), ItemId(10));
         assert!(desktop.item(ItemId(5)).is_some(), "space item is found");
         assert!(desktop.item(ItemId(9)).is_some(), "layer item is found");
+    }
+
+    #[test]
+    fn handed_out_ids_do_not_make_desktops_unequal() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::ZERO);
+        let saved = desktop.clone();
+        desktop.remove_space(id);
+        desktop.spaces.push(saved.spaces[0].clone());
+        let reloaded = Desktop {
+            spaces: saved.spaces.clone(),
+            ..Desktop::default()
+        };
+        assert_eq!(desktop, saved);
+        assert_eq!(reloaded, saved);
     }
 
     #[test]

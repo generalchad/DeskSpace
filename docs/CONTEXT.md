@@ -108,9 +108,11 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   (with `contains`, `intersects`, `union`, `offset`, `inset`,
   `with_position`, `with_size`, `center`) are `Copy`, `serde`, `Default`.
 - `SpaceId(u64)` and `ItemId(u64)` are transparent serde newtypes.
-  `Desktop::next_space_id` / `next_item_id` derive the next id from the
-  current maximum, so ids stay stable across persistence without a stored
-  counter.
+  `Desktop::next_space_id` / `next_item_id` give the next id above both the
+  ids present and every id handed out this session, so an id freed by a
+  delete is never reused while undo may restore it (ROADMAP D11). The
+  session's highest ids are not saved; after a load the ids present stand in
+  for them.
 
 ### Item
 
@@ -245,6 +247,9 @@ variant's doc cannot show.
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
   edits pass `custom: true`, and Cancel uses it to restore a snapshot.
+- `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
+  puts recorded spaces back exactly, each at its recorded index, without
+  applying the layout, and changes nothing if any item id would clash.
 
 ### Theme (`theme.rs`)
 

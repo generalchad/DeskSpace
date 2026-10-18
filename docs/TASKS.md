@@ -413,20 +413,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U1. Ids are never reused; a restore command (core).**
-  - `Desktop::next_space_id` and `next_item_id` take the highest id ever
-    handed out this session, not the highest present, so an id freed by a
-    delete is not given to a newer space or item. Keep the high-water marks
-    in `#[serde(skip)]` fields, seeded from the loaded ids, so the config
-    file does not change.
-  - `Command::RestoreSpaces { spaces: Vec<(SpaceId, Option<(usize, Space)>)> }`:
-    for each id, `Some` puts that exact `Space` back at that index in the
-    space order (replacing a space with the same id), and `None` removes the
-    space. `Rejected` if a restored item id is held by another space or by
-    the desktop layer. Its `touched_by` arm names every listed id.
-  - Tests: a delete then a create gets a new id; a restore round-trips a
-    deleted space with its items, look, and place in the order; a clashing
-    item id is rejected; `None` removes.
 - [ ] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
   - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
     `spaces` holds each changed space's before and after

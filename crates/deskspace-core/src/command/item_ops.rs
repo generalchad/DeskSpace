@@ -19,7 +19,7 @@ impl Desktop {
         if self.space(space).is_none() {
             return CommandOutcome::NotFound;
         }
-        let item = Item::new(self.next_item_id(), path, facts);
+        let item = Item::new(self.take_item_id(), path, facts);
         self.add_item(space, item);
         self.rearrange(space, layout);
         CommandOutcome::Applied

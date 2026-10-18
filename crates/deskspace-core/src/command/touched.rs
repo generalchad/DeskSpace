@@ -58,6 +58,7 @@ impl Desktop {
             | Command::ToggleLock { id }
             | Command::ToggleRollup { id }
             | Command::AutoArrange { id } => Touched::spaces([*id]),
+            Command::RestoreSpaces { spaces } => Touched::spaces(spaces.iter().map(|(id, _)| *id)),
             Command::AddItem { space, .. } => Touched::spaces([*space]),
             Command::RemoveItem { id }
             | Command::ReorderItem { id, .. }
@@ -161,6 +162,15 @@ mod tests {
             target: b,
         });
         assert_eq!(touched.spaces, [b, a]);
+    }
+
+    #[test]
+    fn a_restore_touches_every_listed_space() {
+        let (desktop, a, b, _) = desktop_with_item();
+        let restore = Command::RestoreSpaces {
+            spaces: vec![(b, None), (a, None)],
+        };
+        assert_eq!(desktop.touched_by(&restore), Touched::spaces([b, a]));
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
-use crate::space::{ResizeEdges, SpaceLook};
+use crate::space::{ResizeEdges, Space, SpaceLook};
 
 pub use touched::Touched;
 
@@ -96,6 +96,16 @@ pub enum Command {
         id: SpaceId,
         custom: bool,
         look: Option<SpaceLook>,
+    },
+    /// Puts spaces back exactly as they were, for undo and redo (ROADMAP
+    /// D11). For each id, `Some((index, space))` puts that space at `index`
+    /// in the space order, replacing a space with the same id, and `None`
+    /// removes it. The layout is not applied: a restore is an exact copy.
+    /// `Rejected`, changing nothing, if an id is listed twice, a space does
+    /// not carry its listed id, or a restored item's id is held by a space
+    /// not listed, by another restored space, or by the desktop layer.
+    RestoreSpaces {
+        spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
     },
     ToggleLock {
         id: SpaceId,
@@ -231,6 +241,7 @@ impl Desktop {
             Command::SetSpaceLook { id, custom, look } => {
                 self.apply_set_space_look(id, custom, look)
             }
+            Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces),
             Command::ToggleLock { id } => self.apply_toggle_lock(id),
             Command::ToggleRollup { id } => self.apply_toggle_rollup(id),
             Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
@@ -1164,5 +1175,211 @@ mod tests {
             ),
             CommandOutcome::NotFound
         );
+    }
+
+    /// Three spaces, A, B, and C in that order, with one item in B.
+    fn three_spaces() -> (Desktop, [SpaceId; 3], ItemId) {
+        let mut desktop = Desktop::new();
+        let ids = ["A", "B", "C"].map(|title| {
+            let id = desktop.next_space_id();
+            let create = Command::CreateSpace {
+                title: title.into(),
+                at: Point::new(40, 40),
+                size: Size::new(240, 120),
+                locked: false,
+            };
+            assert!(desktop.apply(create, bounds()).is_applied());
+            id
+        });
+        let item = desktop.next_item_id();
+        let add = Command::AddItem {
+            space: ids[1],
+            path: "C:/missing/b.txt".into(),
+            facts: ItemFacts::default(),
+        };
+        assert!(desktop.apply(add, bounds()).is_applied());
+        (desktop, ids, item)
+    }
+
+    /// `id`'s state as an undo entry records it: its index and a copy.
+    fn recorded(desktop: &Desktop, id: SpaceId) -> (SpaceId, Option<(usize, Space)>) {
+        let index = desktop.spaces.iter().position(|space| space.id == id);
+        (
+            id,
+            index.map(|index| (index, desktop.spaces[index].clone())),
+        )
+    }
+
+    fn order(desktop: &Desktop) -> Vec<SpaceId> {
+        desktop.spaces.iter().map(|space| space.id).collect()
+    }
+
+    #[test]
+    fn a_deleted_space_id_is_not_given_to_a_new_space() {
+        let (mut desktop, [_, _, c], _) = three_spaces();
+        desktop.apply(Command::DeleteSpace { id: c }, bounds());
+        assert_ne!(desktop.next_space_id(), c);
+        assert!(desktop.next_space_id() > c);
+    }
+
+    #[test]
+    fn a_removed_item_id_is_not_given_to_a_new_item() {
+        let (mut desktop, [a, ..], item) = three_spaces();
+        desktop.apply(Command::RemoveItem { id: item }, bounds());
+        let next = desktop.next_item_id();
+        assert!(next > item);
+        let add = Command::AddItem {
+            space: a,
+            path: "C:/missing/new.txt".into(),
+            facts: ItemFacts::default(),
+        };
+        desktop.apply(add, bounds());
+        assert_eq!(desktop.spaces[0].items()[0].id, next);
+    }
+
+    #[test]
+    fn a_new_loose_file_does_not_take_a_removed_item_id() {
+        let (mut desktop, _, item) = three_spaces();
+        desktop.apply(Command::RemoveItem { id: item }, bounds());
+        let sync = Command::SyncDesktop {
+            items: vec![Item::new(
+                ItemId(0),
+                "C:/missing/loose.txt",
+                ItemFacts::default(),
+            )],
+        };
+        desktop.apply(sync, bounds());
+        assert!(desktop.layer().items()[0].id > item);
+    }
+
+    #[test]
+    fn restoring_a_deleted_space_brings_it_back_in_its_place() {
+        let (mut desktop, [a, b, c], item) = three_spaces();
+        desktop.apply(Command::ToggleLock { id: b }, bounds());
+        let before = recorded(&desktop, b);
+        let original = before.1.clone().unwrap().1;
+        desktop.apply(Command::DeleteSpace { id: b }, bounds());
+
+        let outcome = desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![before],
+            },
+            bounds(),
+        );
+        assert_eq!(outcome, CommandOutcome::Applied);
+        assert_eq!(order(&desktop), [a, b, c]);
+        assert_eq!(desktop.space(b), Some(&original));
+        assert!(desktop.space(b).unwrap().locked());
+        assert_eq!(desktop.space_containing(item), Some(b));
+    }
+
+    #[test]
+    fn restoring_over_an_existing_space_replaces_it_in_place() {
+        let (mut desktop, [a, b, c], _) = three_spaces();
+        let before = recorded(&desktop, b);
+        desktop.apply(
+            Command::RenameSpace {
+                id: b,
+                title: "Renamed".into(),
+            },
+            bounds(),
+        );
+        desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![before],
+            },
+            bounds(),
+        );
+        assert_eq!(order(&desktop), [a, b, c]);
+        assert_eq!(desktop.space(b).unwrap().title(), "B");
+    }
+
+    #[test]
+    fn restoring_several_spaces_keeps_each_index() {
+        let (mut desktop, [a, b, c], _) = three_spaces();
+        let before = vec![recorded(&desktop, c), recorded(&desktop, a)];
+        desktop.apply(Command::DeleteSpace { id: a }, bounds());
+        desktop.apply(Command::DeleteSpace { id: c }, bounds());
+        desktop.apply(Command::RestoreSpaces { spaces: before }, bounds());
+        assert_eq!(order(&desktop), [a, b, c]);
+    }
+
+    #[test]
+    fn restoring_absence_removes_a_space_and_is_harmless_when_gone() {
+        let (mut desktop, [a, b, c], _) = three_spaces();
+        let remove = Command::RestoreSpaces {
+            spaces: vec![(b, None)],
+        };
+        assert!(desktop.apply(remove.clone(), bounds()).is_applied());
+        assert_eq!(order(&desktop), [a, c]);
+        assert!(desktop.apply(remove, bounds()).is_applied());
+        assert_eq!(order(&desktop), [a, c]);
+    }
+
+    #[test]
+    fn a_restored_space_keeps_its_ids_from_being_reused() {
+        let (mut desktop, [_, b, _], item) = three_spaces();
+        let before = recorded(&desktop, b);
+        desktop.apply(Command::DeleteSpace { id: b }, bounds());
+        desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![before],
+            },
+            bounds(),
+        );
+        desktop.apply(Command::DeleteSpace { id: b }, bounds());
+        assert!(desktop.next_item_id() > item);
+    }
+
+    #[test]
+    fn a_restore_whose_item_is_held_elsewhere_changes_nothing() {
+        let (mut desktop, [a, b, _], item) = three_spaces();
+        let before = recorded(&desktop, b);
+        desktop.apply(
+            Command::MoveItem {
+                id: item,
+                target: a,
+            },
+            bounds(),
+        );
+        desktop.apply(Command::DeleteSpace { id: b }, bounds());
+        let unchanged = desktop.clone();
+        let outcome = desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![before],
+            },
+            bounds(),
+        );
+        assert_eq!(outcome, CommandOutcome::Rejected);
+        assert_eq!(desktop, unchanged);
+    }
+
+    #[test]
+    fn a_restore_whose_item_is_on_the_layer_changes_nothing() {
+        let (mut desktop, [_, b, _], item) = three_spaces();
+        let before = recorded(&desktop, b);
+        desktop.apply(Command::MoveToDesktop { item }, bounds());
+        desktop.apply(Command::DeleteSpace { id: b }, bounds());
+        let outcome = desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![before],
+            },
+            bounds(),
+        );
+        assert_eq!(outcome, CommandOutcome::Rejected);
+        assert!(desktop.space(b).is_none());
+    }
+
+    #[test]
+    fn a_restore_listing_an_id_twice_or_the_wrong_space_changes_nothing() {
+        let (mut desktop, [a, b, _], _) = three_spaces();
+        let unchanged = desktop.clone();
+        let twice = vec![recorded(&desktop, b), (b, None)];
+        let (_, wrong) = recorded(&desktop, b);
+        for spaces in [twice, vec![(a, wrong)]] {
+            let outcome = desktop.apply(Command::RestoreSpaces { spaces }, bounds());
+            assert_eq!(outcome, CommandOutcome::Rejected);
+            assert_eq!(desktop, unchanged);
+        }
     }
 }

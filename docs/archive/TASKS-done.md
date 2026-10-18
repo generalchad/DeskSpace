@@ -2185,3 +2185,18 @@ until I5-I6 all land, so no partial build hides the desktop.
 - [ ] **G6. Ctrl+Z undo.** Superseded 2026-10-17 by section U (U4 is the
   key). Was: After R6 settles the design (ROADMAP section 8, open question
   3).
+
+- [x] **U1. Ids are never reused; a restore command (core).**
+  - `Desktop::next_space_id` and `next_item_id` take the highest id ever
+    handed out this session, not the highest present, so an id freed by a
+    delete is not given to a newer space or item. Keep the high-water marks
+    in `#[serde(skip)]` fields, seeded from the loaded ids, so the config
+    file does not change.
+  - `Command::RestoreSpaces { spaces: Vec<(SpaceId, Option<(usize, Space)>)> }`:
+    for each id, `Some` puts that exact `Space` back at that index in the
+    space order (replacing a space with the same id), and `None` removes the
+    space. `Rejected` if a restored item id is held by another space or by
+    the desktop layer. Its `touched_by` arm names every listed id.
+  - Tests: a delete then a create gets a new id; a restore round-trips a
+    deleted space with its items, look, and place in the order; a clashing
+    item id is rejected; `None` removes.

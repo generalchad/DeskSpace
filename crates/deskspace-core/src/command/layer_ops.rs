@@ -9,20 +9,17 @@ use crate::layout::GridSpec;
 
 impl Desktop {
     pub(super) fn apply_sync_desktop(&mut self, items: Vec<Item>) -> CommandOutcome {
-        let mut next = self.next_item_id().0;
-        let reconciled = items
-            .into_iter()
-            .map(|mut entry| {
-                match self.layer.items().iter().find(|old| old.path == entry.path) {
-                    Some(old) => entry.id = old.id,
-                    None => {
-                        entry.id = ItemId(next);
-                        next += 1;
-                    }
-                }
-                entry
-            })
-            .collect();
+        let mut reconciled = Vec::with_capacity(items.len());
+        for mut entry in items {
+            let known = self
+                .layer
+                .items()
+                .iter()
+                .find(|old| old.path == entry.path)
+                .map(|old| old.id);
+            entry.id = known.unwrap_or_else(|| self.take_item_id());
+            reconciled.push(entry);
+        }
         self.layer.replace_items(reconciled);
         CommandOutcome::Applied
     }
