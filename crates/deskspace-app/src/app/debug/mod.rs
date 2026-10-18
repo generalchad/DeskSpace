@@ -6,6 +6,7 @@
 //! `on_debug_control` (what it does). Each section's actions live in a file
 //! named for it.
 
+mod animations;
 mod config;
 mod diagnostics;
 mod ids;
@@ -113,6 +114,10 @@ impl App {
             DebugId::Hooks => DebugControlKind::Readout {
                 text: self.hooks_text(ui),
             },
+            DebugId::Speed => self.speed_choice(),
+            DebugId::IgnoreWindows => DebugControlKind::Toggle {
+                on: self.animation_tweak.ignore_windows,
+            },
             DebugId::ConfigPath => DebugControlKind::Readout {
                 text: self.config_path_text(),
             },
@@ -180,6 +185,17 @@ impl App {
             | DebugId::Hotkeys
             | DebugId::Hooks => {}
             DebugId::CopyDiagnostics => self.copy_diagnostics(ui),
+            DebugId::Speed => {
+                if let DebugInput::Choose(index) = input {
+                    self.set_speed(index);
+                }
+            }
+            DebugId::IgnoreWindows => {
+                if let DebugInput::Toggle(on) = input {
+                    self.animation_tweak.ignore_windows = on;
+                    tracing::info!(on, "debug: ignore Windows' animation switch");
+                }
+            }
             DebugId::DumpConfig => self.dump_config(),
             DebugId::OpenConfigFolder => self.open_config_folder(ui),
             DebugId::OpenStorageFolder => self.open_storage_folder(ui),

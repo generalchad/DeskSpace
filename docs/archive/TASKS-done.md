@@ -2878,3 +2878,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     changing the accent, and turning off transparency each show within a
     second; selecting an item turns on `watch_selection`; a rename turns
     on `editing`.
+
+- [x] **X17. Slow motion and ignoring Windows' switch (app; pure).**
+  Needs X5.
+  - `app/animation.rs`: `#[derive(Default)] pub(super) struct
+    AnimationTweak { speed: u32, ignore_windows: bool }`, where 0 and 1
+    both mean normal speed, as an `App` field (not inside `DebugTools`, so
+    `play` needs no `Option`). `play_for` takes it: `ignore_windows`
+    plays as if Windows' switch were on, and `speed` multiplies the
+    duration and the delay. Exit still ends within `EXIT_LIMIT`.
+  - Controls in section Animations: `Speed`, "Speed", a `Choice` from a
+    `SPEEDS` table (`(1, "Normal")`, `(2, "½×")`, `(4, "¼×")`, `(10,
+    "⅒×")`), and `IgnoreWindows`, "Animate even when Windows' Animation
+    effects is off", a `Toggle`.
+  - Tests beside `the_settings_become_the_play`: speed 4 makes the
+    duration and delay four times longer; `ignore_windows` plays the
+    effect with Windows' switch off (copy
+    `nothing_plays_while_windows_animations_are_off`); the default tweak
+    changes nothing.
+  - Add the two controls to the T8 row in section V ("checked at ¼×
+    too") rather than a new row.

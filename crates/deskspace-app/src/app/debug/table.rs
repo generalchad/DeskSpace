@@ -182,6 +182,16 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::System,
         label: "Hooks",
     },
+    DebugRow {
+        id: DebugId::Speed,
+        section: DebugSectionId::Animations,
+        label: "Speed",
+    },
+    DebugRow {
+        id: DebugId::IgnoreWindows,
+        section: DebugSectionId::Animations,
+        label: "Animate even when Windows' Animation effects is off",
+    },
 ];
 
 #[cfg(test)]

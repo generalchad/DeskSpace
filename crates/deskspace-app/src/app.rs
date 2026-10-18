@@ -30,6 +30,7 @@ mod view;
 mod visibility;
 mod zoom;
 
+use animation::AnimationTweak;
 pub(crate) use debug::DebugTools;
 use hotkeys::Hotkeys;
 use pointer::PointerState;
@@ -436,6 +437,9 @@ pub struct App {
     update: UpdateState,
     /// The debug window's state, only with `--debug` (`app/debug/`).
     pub(crate) debug: Option<DebugTools>,
+    /// Slow motion and ignoring Windows' animation switch, set only from the
+    /// debug window; the default changes nothing.
+    animation_tweak: AnimationTweak,
 }
 
 impl App {
@@ -459,6 +463,7 @@ impl App {
             layer: LayerState::default(),
             update: UpdateState::default(),
             debug: None,
+            animation_tweak: AnimationTweak::default(),
         }
     }
 

@@ -13,6 +13,23 @@ use super::App;
 /// anyway (ROADMAP D13).
 pub(super) const EXIT_LIMIT: Duration = Duration::from_secs(2);
 
+/// The debug window's animation tweaks (ROADMAP D14), for this session
+/// only: slow motion, and playing even while Windows' switch is off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct AnimationTweak {
+    /// How many times slower everything plays; 0 and 1 both mean normal.
+    pub speed: u32,
+    /// Play as if Windows' "Animation effects" were on.
+    pub ignore_windows: bool,
+}
+
+impl AnimationTweak {
+    /// `time` stretched by the speed.
+    fn slow(self, time: Duration) -> Duration {
+        time * self.speed.max(1)
+    }
+}
+
 /// Why space windows are appearing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Arrival {
@@ -28,9 +45,17 @@ impl App {
         play_for(
             &self.config.window.animations,
             self.system.animations(),
+            self.animation_tweak,
             kind,
             way,
         )
+    }
+
+    /// The configured stagger between spaces, stretched by the tweak's speed.
+    fn stagger(&self) -> Duration {
+        let stagger_ms = self.config.window.animations.stagger_ms;
+        self.animation_tweak
+            .slow(Duration::from_millis(stagger_ms.into()))
     }
 
     /// What each of `spaces` (with their rects) plays as it appears.
@@ -43,11 +68,9 @@ impl App {
         let animations = &self.config.window.animations;
         let delays = match arrival {
             Arrival::New => spaces.iter().map(|(id, _)| (*id, Duration::ZERO)).collect(),
-            Arrival::Startup => staggered(
-                reading_order(spaces),
-                animations.startup,
-                Duration::from_millis(animations.stagger_ms.into()),
-            ),
+            Arrival::Startup => {
+                staggered(reading_order(spaces), animations.startup, self.stagger())
+            }
         };
         delays
             .into_iter()
@@ -70,15 +93,10 @@ impl App {
                 .collect();
             let play = self.play(Kind::Startup, Way::Out);
             let animations = &self.config.window.animations;
-            exit_delays(
-                &spaces,
-                animations.startup,
-                Duration::from_millis(animations.stagger_ms.into()),
-                play.duration,
-            )
-            .into_iter()
-            .map(|(id, delay)| (id.0, Play { delay, ..play }))
-            .collect()
+            exit_delays(&spaces, animations.startup, self.stagger(), play.duration)
+                .into_iter()
+                .map(|(id, delay)| (id.0, Play { delay, ..play }))
+                .collect()
         } else {
             Vec::new()
         };
@@ -134,16 +152,23 @@ fn exit_delays(
 }
 
 /// The `Play` for `kind` going `way`: what the settings say, or nothing at
-/// all while Windows' "Animation effects" is off (`system_on`).
-fn play_for(animations: &Animations, system_on: bool, kind: Kind, way: Way) -> Play {
-    if !system_on {
+/// all while Windows' "Animation effects" is off (`system_on`), unless the
+/// debug `tweak` ignores that switch; its speed stretches the duration.
+fn play_for(
+    animations: &Animations,
+    system_on: bool,
+    tweak: AnimationTweak,
+    kind: Kind,
+    way: Way,
+) -> Play {
+    if !system_on && !tweak.ignore_windows {
         return Play::instant(way);
     }
     let resolved = animations.resolve(kind);
     Play {
         effect: resolved.effect,
         way,
-        duration: Duration::from_millis(resolved.duration_ms.into()),
+        duration: tweak.slow(Duration::from_millis(resolved.duration_ms.into())),
         delay: Duration::ZERO,
         detail: resolved.detail,
         edge: resolved.direction,
@@ -161,7 +186,8 @@ mod tests {
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
         animations.startup_exit.duration_ms = 400;
         animations.startup_exit.direction = Edge::Left;
-        let play = play_for(&animations, true, Kind::Startup, Way::Out);
+        let normal = AnimationTweak::default();
+        let play = play_for(&animations, true, normal, Kind::Startup, Way::Out);
         assert_eq!(play.effect, Effect::Fly);
         assert_eq!(play.way, Way::Out);
         assert_eq!(play.duration, Duration::from_millis(400));
@@ -174,7 +200,13 @@ mod tests {
         let mut animations = Animations::default();
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Crt);
         animations.delete.duration_ms = 600;
-        let play = play_for(&animations, true, Kind::Delete, Way::Out);
+        let play = play_for(
+            &animations,
+            true,
+            AnimationTweak::default(),
+            Kind::Delete,
+            Way::Out,
+        );
         assert_eq!(play.effect, Effect::Crt);
         assert_eq!(play.duration, Duration::from_millis(600));
     }
@@ -238,7 +270,68 @@ mod tests {
 
     #[test]
     fn nothing_plays_while_windows_animations_are_off() {
-        let play = play_for(&Animations::default(), false, Kind::Startup, Way::In);
+        let normal = AnimationTweak::default();
+        let play = play_for(
+            &Animations::default(),
+            false,
+            normal,
+            Kind::Startup,
+            Way::In,
+        );
         assert_eq!(play, Play::instant(Way::In));
+    }
+
+    #[test]
+    fn slow_motion_stretches_the_duration_and_the_stagger() {
+        let mut animations = Animations::default();
+        animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
+        animations.startup_exit.duration_ms = 300;
+        let quarter = AnimationTweak {
+            speed: 4,
+            ignore_windows: false,
+        };
+        let play = play_for(&animations, true, quarter, Kind::Startup, Way::In);
+        assert_eq!(play.duration, Duration::from_millis(1200));
+        assert_eq!(
+            quarter.slow(Duration::from_millis(50)),
+            Duration::from_millis(200)
+        );
+    }
+
+    #[test]
+    fn ignoring_windows_plays_with_its_switch_off() {
+        let mut animations = Animations::default();
+        animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
+        let ignore = AnimationTweak {
+            speed: 0,
+            ignore_windows: true,
+        };
+        let play = play_for(&animations, false, ignore, Kind::Startup, Way::In);
+        assert_eq!(play.effect, Effect::Fly);
+        assert!(!play.duration.is_zero());
+    }
+
+    #[test]
+    fn the_default_tweak_changes_nothing() {
+        let animations = Animations::default();
+        let tweaked = play_for(
+            &animations,
+            true,
+            AnimationTweak::default(),
+            Kind::Startup,
+            Way::In,
+        );
+        let speed_one = AnimationTweak {
+            speed: 1,
+            ignore_windows: false,
+        };
+        assert_eq!(
+            tweaked,
+            play_for(&animations, true, speed_one, Kind::Startup, Way::In)
+        );
+        assert_eq!(
+            AnimationTweak::default().slow(Duration::from_millis(70)),
+            Duration::from_millis(70)
+        );
     }
 }
