@@ -664,6 +664,34 @@ same way:
     turns it around; no overlay window is left after it ends, after a
     delete, or after quitting mid-way.
 
+- [ ] **T22. Own-blur spike (platform).** **[needs human]**: does a blur
+  DeskSpace draws itself look and run well enough to replace Windows'? A
+  throwaway example, never shipped, as T1's is; the answer may amend D12's
+  "The blur" (asked 2026-10-18, maintainer, after T13).
+  - Why: Windows' blur is a host backdrop DWM samples, so its pixels are
+    never ours; T13 controls only where it shows. Spaces sit at the bottom
+    of the z-order, so what is behind one is mostly the wallpaper. Drawn
+    by the painter, the blur would be ordinary pixels: every effect, any
+    corner radius, and Windows 10 the same, at almost no idle cost.
+  - What it is: `crates/deskspace-platform/examples/own_blur_spike.rs`, a
+    window styled as a space beside a real Acrylic space. It reads the
+    wallpaper and its placement for its monitor (`IDesktopWallpaper`:
+    `GetWallpaper`, `GetPosition`, `GetBackgroundColor`), blurs it with
+    Direct2D's Gaussian blur, adds a tint, luminosity, and noise as acrylic
+    does, and draws the part under the window; it redraws when moved and
+    on `WM_SETTINGCHANGE` with `SPI_SETDESKWALLPAPER`. Hotkeys as in T1.
+  - Not covered on purpose: anything else behind a space (desktop icons,
+    another space, windows under `--on-top`) is not in its blur; capturing
+    the screen instead (Windows.Graphics.Capture) costs too much and lags.
+  - Check (maintainer): beside the Acrylic space, at 100 % and 150 %, how
+    close the two look in light and dark; a fit, fill, stretch, tile,
+    span, and solid-color wallpaper, a slideshow, and Spotlight; two
+    monitors with different wallpapers; dragging it shows no lag or seam;
+    idle CPU and GPU.
+  - Done when: the findings are recorded here, and a decision in D12
+    either keeps Windows' blur (delete the example) or plans the move
+    (new tasks, then delete this one).
+
 ## X. The debug window (ROADMAP D14, F-61)
 
 Every planned task here is done (`archive/TASKS-done.md`); what remains
