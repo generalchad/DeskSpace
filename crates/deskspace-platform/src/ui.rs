@@ -608,6 +608,9 @@ pub enum DebugControlKind {
     Choice {
         options: Vec<String>,
         selected: usize,
+        /// Greyed when false: the choice does not apply now, but keeps its
+        /// row so the section keeps its shape.
+        enabled: bool,
     },
     /// Read-only text, one or more lines.
     Readout {

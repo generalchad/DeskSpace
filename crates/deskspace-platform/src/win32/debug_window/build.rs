@@ -279,7 +279,12 @@ pub(super) unsafe fn set_value(main: HWND, old: Option<&DebugControlKind>, new: 
             DebugControlKind::Toggle { on } => {
                 SendMessageW(main, BM_SETCHECK, Some(WPARAM(*on as usize)), None);
             }
-            DebugControlKind::Choice { options, selected } => {
+            DebugControlKind::Choice {
+                options,
+                selected,
+                enabled,
+            } => {
+                let _ = EnableWindow(main, *enabled);
                 let same_options = matches!(
                     old,
                     Some(DebugControlKind::Choice { options: before, .. }) if before == options

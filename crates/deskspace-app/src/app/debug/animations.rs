@@ -7,8 +7,14 @@ use deskspace_platform::{DebugControlKind, Ui, Way};
 
 use crate::app::App;
 
-/// The kinds a preview can play. Fold is checked from its own menu entry.
-const PREVIEW_KINDS: [(Kind, &str); 2] = [(Kind::Startup, "Startup"), (Kind::Delete, "Delete")];
+/// The kinds the Kind box offers: the one a preview plays, and the one the
+/// Animation settings box shows. A preview plays Fold's effect out and back
+/// like the others, since it never touches the model.
+const PREVIEW_KINDS: [(Kind, &str); 3] = [
+    (Kind::Startup, "Startup"),
+    (Kind::Delete, "Delete"),
+    (Kind::Fold, "Fold"),
+];
 
 /// The slow-motion speeds offered: how many times slower, and the label.
 const SPEEDS: [(u32, &str); 4] = [
@@ -27,6 +33,7 @@ impl App {
                 .iter()
                 .position(|(each, _)| *each == speed)
                 .unwrap_or(0),
+            enabled: true,
         }
     }
 
@@ -41,6 +48,7 @@ impl App {
                 .map(|space| space.title().to_string())
                 .collect(),
             selected: chosen_index(&ids, chosen),
+            enabled: true,
         }
     }
 
@@ -51,6 +59,7 @@ impl App {
                 .map(|(_, label)| label.to_string())
                 .collect(),
             selected: self.debug.as_ref().map_or(0, |tools| tools.preview_kind),
+            enabled: true,
         }
     }
 
@@ -107,6 +116,11 @@ impl App {
             kind = label,
             "debug: played an effect preview on every space"
         );
+    }
+
+    /// The kind chosen in the Kind box.
+    pub(super) fn chosen_kind(&self) -> Kind {
+        preview_kind(self.debug.as_ref().map_or(0, |tools| tools.preview_kind)).0
     }
 
     pub(super) fn set_speed(&mut self, index: usize) {

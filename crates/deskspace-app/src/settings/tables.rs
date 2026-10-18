@@ -156,7 +156,7 @@ pub struct AnimationPage {
 
 /// The animation pages, in `KINDS` order and in build order from
 /// `page::ANIMATIONS`.
-pub const ANIMATION_PAGES: [AnimationPage; 3] = [
+pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
     AnimationPage {
         kind: Kind::Startup,
         title: "Startup",

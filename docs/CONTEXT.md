@@ -916,7 +916,9 @@ in `ui.rs`. What spans them:
   use, save nothing but the animation settings (D14; `app/debug/
   animation_settings.rs`, through `settings::apply_animation_edit`), and
   ask first (`debug_confirm`) when destructive. A control can sit in a
-  titled box (`DebugControl::group`), which the page draws as it erases. The
+  titled box (`DebugControl::group`), which the page draws as it erases,
+  and a choice can be greyed rather than removed, so the panel keeps its
+  shape (a shape change rebuilds the window). The
   only state it adds outside `DebugTools` is the session-only
   `AnimationTweak` and the takeover override in `LayerState`.
 
