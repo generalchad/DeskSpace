@@ -55,5 +55,18 @@ windows = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# Only the composition spike (`examples/backdrop_spike.rs`, TASKS.md T1)
+# uses these, so the shipped library does not compile them.
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+    "System",
+    "UI",
+    "UI_Composition",
+    "UI_Composition_Desktop",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Composition",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
 [lints]
 workspace = true

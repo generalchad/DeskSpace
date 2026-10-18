@@ -510,7 +510,14 @@ animation needs (an offscreen bitmap, a mask) is made when it starts.
 a new module.
 
 - [ ] **T1. Composition backdrop spike.** **[needs human]**
-  - `crates/deskspace-platform/examples/backdrop_spike.rs`, never shipped: a
+  - The example has landed (`feat: add the composition backdrop spike
+    (T1)`); run it with `cargo run -p deskspace-platform --example
+    backdrop_spike`. It takes Ctrl+Alt+Shift+F, G, D, T, and Q, because a
+    never-activated window gets no keys. Found while building it (Windows
+    11 build 26300): `CompositionMaskBrush` refuses a host backdrop brush
+    as its source ("Unsupported source brush type"), so G sweeps with 80
+    strips of backdrop at graded opacities instead of a gradient mask.
+  - What it is: `crates/deskspace-platform/examples/backdrop_spike.rs`, never shipped: a
     window styled as a space (`WS_POPUP`, `WS_EX_TOOLWINDOW |
     WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP`, `MA_NOACTIVATE`), with
     `DWMWA_USE_HOSTBACKDROPBRUSH` and a `Windows.UI.Composition` tree
@@ -551,9 +558,14 @@ a new module.
   - **[needs human]** check: the R3 list passes unchanged on Windows 11
     with each backdrop, and on Windows 10 nothing changes at all.
 - [ ] **T13. The blur follows the frame (platform).** **[needs human]**
-  - On composition spaces, each frame also sets the backdrop sprite: its
-    opacity, a mask brush over the same mask the painter uses, and its
-    rect. The blur no longer steps there.
+  - On composition spaces, each frame also sets the backdrop: its opacity
+    and rect, and the frame's mask. A `CompositionMaskBrush` cannot take
+    the backdrop (T1), so **[needs decision]** between an effect brush
+    whose graph takes the backdrop as a source and the painter's mask as
+    D2D's AlphaMask effect (it needs a Rust `IGraphicsEffect` and
+    `IGraphicsEffectD2D1Interop`), and the backdrop split into strips and
+    cells at graded opacities, as the spike does. The blur no longer steps
+    there.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
