@@ -13,6 +13,7 @@ mod ids;
 mod spaces;
 mod system;
 mod table;
+mod takeover;
 mod test_spaces;
 mod windows;
 
@@ -124,6 +125,15 @@ impl App {
                 text: self.hooks_text(ui),
             },
             DebugId::Speed => self.speed_choice(),
+            DebugId::Takeover => DebugControlKind::Toggle {
+                on: self.desktop_takeover(),
+            },
+            DebugId::ResyncLayer => DebugControlKind::Button {
+                enabled: self.desktop_takeover(),
+            },
+            DebugId::TakeoverState => DebugControlKind::Readout {
+                text: self.takeover_text(),
+            },
             DebugId::PreviewSpace => self.preview_space_choice(),
             DebugId::PreviewKind => self.preview_kind_choice(),
             DebugId::PreviewPlay => DebugControlKind::Button {
@@ -215,6 +225,17 @@ impl App {
                 }
             }
             DebugId::PreviewPlay => self.play_preview(ui),
+            DebugId::Takeover => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_session_takeover(ui, on);
+                    tracing::info!(on, "debug: desktop takeover for this session");
+                }
+            }
+            DebugId::ResyncLayer => {
+                self.resync_desktop_layer(ui);
+                tracing::info!("debug: re-synced the desktop layer");
+            }
+            DebugId::TakeoverState => {}
             DebugId::IgnoreWindows => {
                 if let DebugInput::Toggle(on) = input {
                     self.animation_tweak.ignore_windows = on;

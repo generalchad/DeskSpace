@@ -716,26 +716,6 @@ Rules for every X task:
    --debug` (a scratch config) unless the check says otherwise. Each task
    that has one adds its row to section V, named for the task.
 
-- [ ] **X19. Takeover (app).** Needs X5 and X15. **[needs human]** Section
-  Takeover:
-  - `Takeover`, "Take over the desktop (this session)", a `Toggle`
-    showing whether takeover is active now. Off restores Explorer's icons
-    and removes the layer; on takes over again. It must not change
-    `config.window.take_over_desktop` or save. If `apply_takeover`
-    (`app/view.rs`) reads only that config field, add a session override
-    to `LayerState` that it honours; if that needs more than a few lines,
-    stop and ask.
-  - `ResyncLayer`, "Re-sync the desktop layer", a `Button` enabled while
-    takeover is active: `self.resync_desktop_layer(ui)`.
-  - `TakeoverState`, a `Readout`: active or not, the layer's item count,
-    and the watchdog (`watchdog_running`: "running", "not running", or
-    "unknown").
-  - **[needs human]** check: with takeover on, the toggle off brings
-    Explorer's icons back at once and they stay back past the 5-second
-    health timer; on hides them and draws the layer; Re-sync picks up a
-    file added to the Desktop folder; the saved config's
-    `take_over_desktop` is unchanged afterwards.
-
 - [ ] **X20. Simulate (platform, app).** Needs X5. **[needs human]**
   Section Simulate:
   - Platform: `Ui::simulate_taskbar_created()` posts the registered
@@ -958,6 +938,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
+| X19 (F-61) | Debug → Takeover, with takeover on: the toggle off brings Explorer's icons back at once and they stay back past the 5-second health timer; on hides them and draws the layer; Re-sync picks up a file added to the Desktop folder; State shows the watchdog running while takeover is on; the saved config's `take_over_desktop` is unchanged afterwards. |
 | X18 (F-61) | Debug → Animations: every effect, played on a space at ¼×, leaves and comes back in place; pressing Play again mid-way turns it around; hiding the spaces from the tray mid-preview keeps them hidden; the other spaces and the model do not change. |
 | X16 (F-61) | Debug → System: switching Windows between dark and light, changing the accent, and turning off transparency each show within a second; selecting an item turns on Watch selection; a rename turns on Editing; Hotkeys says which bindings registered. |
 | X14 (F-61) | Debug → Windows: "Keep spaces above other windows" lifts the spaces above Notepad and off drops them back to the desktop; the Windows table lists every space, the tray's controller window, and the debug and settings windows in z-order, and follows a space moved to another monitor; the Monitors table matches Windows' display settings. |

@@ -139,6 +139,9 @@ pub(crate) struct LayerState {
     takeover_flag: bool,
     /// The desktop's loose items read from the shell, which the layer draws.
     entries: Vec<DesktopEntry>,
+    /// The debug window's takeover switch for this session (ROADMAP D14),
+    /// which wins over the flag and the setting and is never saved.
+    session_takeover: Option<bool>,
 }
 
 impl LayerState {
@@ -147,6 +150,7 @@ impl LayerState {
             layer_flag,
             takeover_flag,
             entries: Vec::new(),
+            session_takeover: None,
         }
     }
 }
@@ -429,9 +433,19 @@ impl App {
     }
 
     /// Whether DeskSpace takes over the desktop by hiding Explorer's icons:
-    /// the hidden `--takeover` flag or the saved setting.
+    /// the debug window's session switch when set, else the hidden
+    /// `--takeover` flag or the saved setting.
     pub(super) fn desktop_takeover(&self) -> bool {
-        self.layer.takeover_flag || self.config.window.take_over_desktop
+        self.layer
+            .session_takeover
+            .unwrap_or(self.layer.takeover_flag || self.config.window.take_over_desktop)
+    }
+
+    /// Takes over the desktop, or gives it back, for this session only, as
+    /// the setting would; the saved setting does not change.
+    pub(super) fn set_session_takeover(&mut self, ui: &mut Ui, on: bool) {
+        self.layer.session_takeover = Some(on);
+        self.apply_takeover(ui);
     }
 
     /// The loose desktop items for the layer: the desktop entries that carry a
@@ -689,6 +703,20 @@ mod tests {
     use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn the_session_takeover_wins_without_touching_the_setting() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        app.config.window.take_over_desktop = true;
+        app.layer.session_takeover = Some(false);
+        assert!(!app.desktop_takeover());
+        assert!(!app.layer_active());
+        assert!(app.config.window.take_over_desktop, "the setting is kept");
+        app.config.window.take_over_desktop = false;
+        app.layer.session_takeover = Some(true);
+        assert!(app.desktop_takeover());
+    }
 
     #[test]
     fn view_cache_forgets_a_deleted_space() {

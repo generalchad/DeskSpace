@@ -207,6 +207,21 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         section: DebugSectionId::Animations,
         label: "Play on the space",
     },
+    DebugRow {
+        id: DebugId::Takeover,
+        section: DebugSectionId::Takeover,
+        label: "Take over the desktop (this session)",
+    },
+    DebugRow {
+        id: DebugId::ResyncLayer,
+        section: DebugSectionId::Takeover,
+        label: "Re-sync the desktop layer",
+    },
+    DebugRow {
+        id: DebugId::TakeoverState,
+        section: DebugSectionId::Takeover,
+        label: "State",
+    },
 ];
 
 #[cfg(test)]

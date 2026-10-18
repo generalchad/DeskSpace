@@ -37,10 +37,13 @@ pub(crate) enum DebugId {
     PreviewSpace = 29,
     PreviewKind = 30,
     PreviewPlay = 31,
+    Takeover = 32,
+    ResyncLayer = 33,
+    TakeoverState = 34,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 31] = [
+    pub(crate) const ALL: [Self; 34] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -72,6 +75,9 @@ impl DebugId {
         Self::PreviewSpace,
         Self::PreviewKind,
         Self::PreviewPlay,
+        Self::Takeover,
+        Self::ResyncLayer,
+        Self::TakeoverState,
     ];
 
     pub(crate) fn id(self) -> u32 {

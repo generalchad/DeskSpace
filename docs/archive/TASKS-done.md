@@ -2918,3 +2918,23 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: every effect, played on a space at ¼×,
     leaves and comes back in place; pressing Play again mid-way turns it
     around; the other spaces and the model do not change.
+
+- [x] **X19. Takeover (app).** Needs X5 and X15. **[needs human]** Section
+  Takeover:
+  - `Takeover`, "Take over the desktop (this session)", a `Toggle`
+    showing whether takeover is active now. Off restores Explorer's icons
+    and removes the layer; on takes over again. It must not change
+    `config.window.take_over_desktop` or save. If `apply_takeover`
+    (`app/view.rs`) reads only that config field, add a session override
+    to `LayerState` that it honours; if that needs more than a few lines,
+    stop and ask.
+  - `ResyncLayer`, "Re-sync the desktop layer", a `Button` enabled while
+    takeover is active: `self.resync_desktop_layer(ui)`.
+  - `TakeoverState`, a `Readout`: active or not, the layer's item count,
+    and the watchdog (`watchdog_running`: "running", "not running", or
+    "unknown").
+  - **[needs human]** check: with takeover on, the toggle off brings
+    Explorer's icons back at once and they stay back past the 5-second
+    health timer; on hides them and draws the layer; Re-sync picks up a
+    file added to the Desktop folder; the saved config's
+    `take_over_desktop` is unchanged afterwards.
