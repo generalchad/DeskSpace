@@ -37,6 +37,15 @@ const BUTTON_TEXT_MARGIN: i32 = 32;
 /// The drop-down list of a `Choice`, at 96 DPI: a combo box's window height
 /// includes it.
 const DROP_DOWN_HEIGHT: i32 = 200;
+/// A group's box, at 96 DPI: the room for its title above its first row,
+/// below its last row, and on each side of its rows.
+const GROUP_HEADER: i32 = 26;
+const GROUP_FOOTER: i32 = 10;
+const GROUP_INSET: i32 = 12;
+/// Where a group's title starts along its box's top edge, at 96 DPI, and the
+/// room around the title's text, which covers that edge.
+const GROUP_TITLE_INDENT: i32 = 8;
+const GROUP_TITLE_MARGIN: i32 = 8;
 /// The console's toolbar row, at 96 DPI.
 const TOOLBAR_HEIGHT: i32 = 28;
 const TOOL_GAP: i32 = 8;
@@ -168,39 +177,119 @@ pub(super) fn row_height(kind: &DebugControlKind, scale: f32) -> i32 {
     s(units, scale)
 }
 
-/// The top of each control's row in a section, and the section's whole
-/// height, padding included.
+/// Where a section's rows and group boxes go, in page pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SectionRows {
+    /// The top of each control's row.
+    pub tops: Vec<i32>,
+    /// How far each row is inset on both sides: more inside a group's box.
+    pub insets: Vec<i32>,
+    /// Each group's box, in the order they come.
+    pub groups: Vec<GroupSpan>,
+    /// The section's whole height, padding included.
+    pub height: i32,
+}
+
+/// The vertical span of one group's box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct GroupSpan {
+    pub top: i32,
+    pub bottom: i32,
+}
+
+/// Lays out a section's `rows`, each a control's kind and the group it is
+/// in. Neighbouring rows of one group share a box, with its title above
+/// them.
 pub(super) fn section_rows<'a>(
-    kinds: impl IntoIterator<Item = &'a DebugControlKind>,
+    rows: impl IntoIterator<Item = (&'a DebugControlKind, Option<&'a str>)>,
     scale: f32,
-) -> (Vec<i32>, i32) {
+) -> SectionRows {
     let padding = s(ROW_PADDING, scale);
     let gap = s(ROW_GAP, scale);
-    let mut tops = Vec::new();
+    let mut layout = SectionRows {
+        tops: Vec::new(),
+        insets: Vec::new(),
+        groups: Vec::new(),
+        height: 0,
+    };
     let mut y = padding;
-    for kind in kinds {
-        tops.push(y);
+    let mut current: Option<&str> = None;
+    // Ends the open group's box below its last row, and leaves a gap.
+    let close = |y: &mut i32, groups: &mut Vec<GroupSpan>| {
+        *y += s(GROUP_FOOTER, scale) - gap;
+        if let Some(group) = groups.last_mut() {
+            group.bottom = *y;
+        }
+        *y += gap;
+    };
+    for (kind, group) in rows {
+        if group != current {
+            if current.is_some() {
+                close(&mut y, &mut layout.groups);
+            }
+            if group.is_some() {
+                layout.groups.push(GroupSpan { top: y, bottom: y });
+                y += s(GROUP_HEADER, scale);
+            }
+            current = group;
+        }
+        layout.tops.push(y);
+        layout.insets.push(if group.is_some() {
+            s(GROUP_INSET, scale)
+        } else {
+            0
+        });
         y += row_height(kind, scale) + gap;
     }
-    let height = if tops.is_empty() {
+    if current.is_some() {
+        close(&mut y, &mut layout.groups);
+    }
+    layout.height = if layout.tops.is_empty() {
         2 * padding
     } else {
         y - gap + padding
     };
-    (tops, height)
+    layout
+}
+
+/// A group's box and its title, in page pixels, for a page `width` wide.
+/// `title_width` is the measured width of the title's text.
+pub(super) fn group_rects(
+    span: GroupSpan,
+    width: i32,
+    title_width: i32,
+    scale: f32,
+) -> (Rect, Rect) {
+    let padding = s(ROW_PADDING, scale);
+    let frame = Rect::new(
+        padding,
+        span.top,
+        (width - 2 * padding).max(0),
+        span.bottom - span.top,
+    );
+    let title = Rect::new(
+        padding + s(GROUP_TITLE_INDENT, scale),
+        span.top,
+        (title_width + s(GROUP_TITLE_MARGIN, scale))
+            .min((frame.width - 2 * s(GROUP_TITLE_INDENT, scale)).max(0)),
+        s(LINE_HEIGHT, scale),
+    );
+    (frame, title)
 }
 
 /// Where one control's label and main control go, in page pixels, for a
-/// row at `top` in a page `width` wide. `caption_width` is the measured
-/// width of a button's caption; other kinds ignore it.
+/// row at `top`, inset by `inset` on both sides, in a page `width` wide.
+/// `caption_width` is the measured width of a button's caption; other kinds
+/// ignore it.
 pub(super) fn control_rects(
     kind: &DebugControlKind,
     top: i32,
+    inset: i32,
     width: i32,
     caption_width: i32,
     scale: f32,
 ) -> (Option<Rect>, Rect) {
-    let padding = s(ROW_PADDING, scale);
+    let padding = s(ROW_PADDING, scale) + inset;
     let height = row_height(kind, scale);
     if let DebugControlKind::Button { .. } = kind {
         let button = (caption_width + s(BUTTON_TEXT_MARGIN, scale))
@@ -302,27 +391,71 @@ mod tests {
             DebugControlKind::Button { enabled: true },
             DebugControlKind::Toggle { on: false },
         ];
-        let (tops, height) = section_rows(&kinds, 1.0);
+        let rows = section_rows(kinds.iter().map(|kind| (kind, None)), 1.0);
         assert_eq!(
-            tops,
+            rows.tops,
             vec![ROW_PADDING, ROW_PADDING + BUTTON_HEIGHT + ROW_GAP]
         );
-        assert_eq!(height, tops[1] + FIELD_HEIGHT + ROW_PADDING);
+        assert_eq!(rows.height, rows.tops[1] + FIELD_HEIGHT + ROW_PADDING);
+        assert!(rows.groups.is_empty());
+        assert_eq!(rows.insets, vec![0, 0]);
+    }
+
+    #[test]
+    fn a_group_boxes_its_rows_under_its_title() {
+        let field = DebugControlKind::Toggle { on: false };
+        let rows = [
+            (&field, None),
+            (&field, Some("Startup")),
+            (&field, Some("Startup")),
+            (&field, Some("Delete")),
+        ];
+        let layout = section_rows(rows, 1.0);
+        assert_eq!(layout.groups.len(), 2, "one box per run of a group");
+        let (startup, delete) = (layout.groups[0], layout.groups[1]);
+        assert_eq!(
+            layout.insets,
+            vec![0, GROUP_INSET, GROUP_INSET, GROUP_INSET]
+        );
+        assert_eq!(layout.tops[1], startup.top + GROUP_HEADER);
+        assert!(layout.tops[0] + FIELD_HEIGHT < startup.top, "above the box");
+        assert_eq!(startup.bottom, layout.tops[2] + FIELD_HEIGHT + GROUP_FOOTER);
+        assert!(startup.bottom < delete.top, "boxes do not touch");
+        assert_eq!(layout.height, delete.bottom + ROW_PADDING);
+    }
+
+    #[test]
+    fn a_group_title_sits_on_its_box_edge_and_fits_it() {
+        let span = GroupSpan {
+            top: 40,
+            bottom: 140,
+        };
+        let (frame, title) = group_rects(span, 600, 50, 1.0);
+        assert_eq!((frame.y, frame.bottom()), (40, 140));
+        assert_eq!(title.y, frame.y);
+        assert!(title.x > frame.x && title.right() < frame.right());
+        let (narrow, long) = group_rects(span, 100, 500, 1.0);
+        assert!(long.right() < narrow.right());
     }
 
     #[test]
     fn labels_sit_left_of_their_controls_and_buttons_stand_alone() {
         let toggle = DebugControlKind::Toggle { on: true };
-        let (label, main) = control_rects(&toggle, 10, 600, 0, 1.0);
+        let (label, main) = control_rects(&toggle, 10, 0, 600, 0, 1.0);
         let label = label.expect("a toggle has a label");
         assert!(label.right() <= main.left());
         assert_eq!((label.y, main.y), (10, 10));
         let button = DebugControlKind::Button { enabled: true };
-        let (label, main) = control_rects(&button, 10, 600, 300, 1.0);
+        let (label, main) = control_rects(&button, 10, 0, 600, 300, 1.0);
         assert!(label.is_none());
         assert_eq!(main.width, 300 + BUTTON_TEXT_MARGIN);
-        let (_, narrow) = control_rects(&button, 10, 200, 300, 1.0);
+        let (_, narrow) = control_rects(&button, 10, 0, 200, 300, 1.0);
         assert_eq!(narrow.right(), 200 - ROW_PADDING);
+        let (indented, _) = control_rects(&toggle, 10, GROUP_INSET, 600, 0, 1.0);
+        assert_eq!(
+            indented.map(|label| label.x),
+            Some(ROW_PADDING + GROUP_INSET)
+        );
     }
 
     #[test]

@@ -134,15 +134,42 @@ pub(super) unsafe fn build_sections(
                 tracing::warn!(section = %section.title, "could not create a debug page");
                 continue;
             };
-            let controls = section
-                .controls
-                .iter()
-                .map(|debug| build_control(page, debug, font, colors))
-                .collect();
-            sections.push(SectionControls { page, controls });
+            let mut controls = Vec::with_capacity(section.controls.len());
+            let mut group_titles = Vec::new();
+            let mut current: Option<&str> = None;
+            for debug in &section.controls {
+                let group = debug.group.as_deref();
+                if group != current {
+                    group_titles.extend(group.map(|title| group_title(page, title, font)));
+                    current = group;
+                }
+                controls.push(build_control(page, debug, font, colors));
+            }
+            sections.push(SectionControls {
+                page,
+                controls,
+                group_titles,
+                group_frames: Vec::new(),
+            });
         }
         SendMessageW(rail, LB_SETCURSEL, Some(WPARAM(0)), None);
         sections
+    }
+}
+
+/// Creates the label that titles a group's box; the page draws the box.
+unsafe fn group_title(page: HWND, title: &str, font: HFONT) -> Option<HWND> {
+    // SAFETY: a child of the live page.
+    unsafe {
+        control(
+            page,
+            WC_STATICW,
+            title,
+            LABEL_STYLE,
+            WINDOW_EX_STYLE(0),
+            0,
+            font,
+        )
     }
 }
 

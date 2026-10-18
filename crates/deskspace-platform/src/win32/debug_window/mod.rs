@@ -14,9 +14,11 @@ mod console;
 mod layout;
 mod pages;
 
+use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    FillRect, HDC, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow,
+    CreateSolidBrush, DeleteObject, FillRect, FrameRect, HDC, RDW_ALLCHILDREN, RDW_ERASE,
+    RDW_FRAME, RDW_INVALIDATE, RedrawWindow,
 };
 use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -37,6 +39,7 @@ use crate::ui::{DebugControlKind, DebugPanel, LogLine};
 use crate::win32::dark_mode::{self, ControlTheme};
 use crate::win32::dialog::DialogChrome;
 use crate::win32::dpi::{monitor_dpi_at, scale_for, window_dpi};
+use crate::win32::settings_window::colorref;
 use crate::win32::system::{cursor_pos, loword, wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{runtime, settings_window, tray, window_state};
@@ -64,10 +67,19 @@ struct ControlHandles {
     main: Option<HWND>,
 }
 
-/// One section's page and its controls, in `DebugSection::controls` order.
+/// One section's page, its controls in `DebugSection::controls` order, and
+/// its groups (`DebugControl::group`) in the order they come.
+///
+/// A group's box is drawn by the page as it erases (`erase`), not by a
+/// group-box control: the page clips its children, and a group box never
+/// paints its hollow middle, so scrolling left stale pixels inside it (seen
+/// 2026-10-18). Its title is a label over the box's top edge.
 struct SectionControls {
     page: HWND,
     controls: Vec<ControlHandles>,
+    group_titles: Vec<Option<HWND>>,
+    /// Each group's box, in page pixels, as last laid out.
+    group_frames: Vec<Rect>,
 }
 
 struct DebugState {
@@ -448,14 +460,36 @@ unsafe fn theme_controls(hwnd: HWND, dark: bool) {
 /// Fills `dc` with the body color. `hwnd` is the debug window; `target` is
 /// the window being erased.
 unsafe fn erase(hwnd: HWND, target: HWND, dc: HDC) -> bool {
-    // SAFETY: `dc` is `target`'s DC for this message; the borrow is short.
+    // SAFETY: `dc` is `target`'s DC for this message; the borrow is short,
+    // and the brush made here is deleted before returning.
     unsafe {
-        let Some(brush) = with_state(hwnd, |state| state.chrome.body_brush) else {
+        let Some((brush, divider, frames)) = with_state(hwnd, |state| {
+            let frames = state
+                .sections
+                .iter()
+                .find(|section| section.page == target)
+                .map(|section| section.group_frames.clone())
+                .unwrap_or_default();
+            (state.chrome.body_brush, state.chrome.colors.divider, frames)
+        }) else {
             return false;
         };
         let mut client = RECT::default();
         let _ = GetClientRect(target, &mut client);
         FillRect(dc, &client, brush);
+        if !frames.is_empty() {
+            let line = CreateSolidBrush(colorref(divider));
+            for frame in frames {
+                let rect = RECT {
+                    left: frame.x,
+                    top: frame.y,
+                    right: frame.right(),
+                    bottom: frame.bottom(),
+                };
+                FrameRect(dc, &rect, line);
+            }
+            let _ = DeleteObject(line.into());
+        }
         true
     }
 }

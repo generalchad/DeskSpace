@@ -437,7 +437,12 @@ A native, lightweight, offline Windows desktop organizer that:
     settings, and drops already call. The debug window never gets its own
     path to the model or the files. Its toggles are session-only and never
     saved; its actions record no undo entry (D11), because they are tools,
-    not user edits.
+    not user edits. The animation settings are the one exception (amended
+    2026-10-18, maintainer): each kind's settings sit in a titled box of
+    their own in Animations, and an edit there is the settings window's own
+    edit, saved at once, so an effect tried there stays. An open settings
+    window shows it, and its Cancel keeps it. The rows come from the
+    animation tables, so a kind's new option shows up with no debug edit.
   - *Destructive actions* (Delete all spaces, Crash now, read-only config)
     always ask first. The question names the config file and, when no
     `--config` was given, warns that this is the real configuration.
@@ -456,7 +461,8 @@ A native, lightweight, offline Windows desktop organizer that:
     space), Config (dump, open folders), Diagnostics (versions, paths,
     resources, copy a report), Windows (on-top, highlight, window and
     monitor tables), System (what Windows reports), Animations (slow
-    motion, ignore Windows' switch, play an effect on a space), Takeover
+    motion, ignore Windows' switch, play an effect on a space, and each
+    kind's settings), Takeover
     (restore or re-hide Explorer's icons, re-sync, watchdog), and
     Simulate (theme change, Explorer restart, a read-only config, a
     crash).

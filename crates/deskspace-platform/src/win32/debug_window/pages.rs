@@ -4,7 +4,7 @@
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{HWND, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetDC, GetTextExtentPoint32W, HFONT, HGDIOBJ, ReleaseDC, SelectObject,
+    GetDC, GetTextExtentPoint32W, HFONT, HGDIOBJ, InvalidateRect, ReleaseDC, SelectObject,
 };
 use windows::Win32::UI::Controls::SetScrollInfo;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::console;
-use super::layout::{console_layout, control_rects, debug_layout, s, section_rows};
+use super::layout::{console_layout, control_rects, debug_layout, group_rects, s, section_rows};
 use super::with_state;
 use crate::ui::DebugControlKind;
 use crate::win32::dpi::{scale_for, window_dpi};
@@ -75,23 +75,35 @@ pub(super) unsafe fn layout_page(hwnd: HWND) {
         }) else {
             return;
         };
-        let Some((kinds, controls)) = with_state(hwnd, |state| {
-            let kinds: Vec<DebugControlKind> = state
+        let Some((rows, controls, groups)) = with_state(hwnd, |state| {
+            let rows: Vec<(DebugControlKind, Option<String>)> = state
                 .panel
                 .sections
                 .get(current)
-                .map(|section| section.controls.iter().map(|c| c.kind.clone()).collect())
+                .map(|section| {
+                    section
+                        .controls
+                        .iter()
+                        .map(|c| (c.kind.clone(), c.group.clone()))
+                        .collect()
+                })
                 .unwrap_or_default();
-            let controls: Vec<(Option<HWND>, Option<HWND>)> = state
-                .sections
-                .get(current)
+            let built = state.sections.get(current);
+            let controls: Vec<(Option<HWND>, Option<HWND>)> = built
                 .map(|section| section.controls.iter().map(|c| (c.label, c.main)).collect())
                 .unwrap_or_default();
-            (kinds, controls)
+            let groups: Vec<Option<HWND>> = built
+                .map(|section| section.group_titles.clone())
+                .unwrap_or_default();
+            (rows, controls, groups)
         }) else {
             return;
         };
-        let (tops, content) = section_rows(&kinds, scale);
+        let layout = section_rows(
+            rows.iter().map(|(kind, group)| (kind, group.as_deref())),
+            scale,
+        );
+        let content = layout.height;
         let mut client = RECT::default();
         let _ = GetClientRect(pane, &mut client);
         let viewport = client.bottom;
@@ -119,9 +131,32 @@ pub(super) unsafe fn layout_page(hwnd: HWND) {
             return;
         };
         place(page, Rect::new(0, -scroll, width, content.max(viewport)));
-        for ((kind, (label, main)), top) in kinds.iter().zip(controls).zip(tops) {
+        let mut frames = Vec::with_capacity(groups.len());
+        for (span, title) in layout.groups.iter().zip(groups) {
+            let title_width = title.map(|title| caption_width(title, font)).unwrap_or(0);
+            let (frame, title_rect) = group_rects(*span, width, title_width, scale);
+            frames.push(frame);
+            if let Some(title) = title {
+                place(title, title_rect);
+            }
+        }
+        // The page draws the boxes as it erases, so new ones need an erase.
+        let moved = with_state(hwnd, |state| {
+            state.sections.get_mut(current).is_some_and(|section| {
+                std::mem::replace(&mut section.group_frames, frames) != section.group_frames
+            })
+        });
+        if moved == Some(true) {
+            let _ = InvalidateRect(Some(page), None, true);
+        }
+        let placed = rows
+            .iter()
+            .zip(controls)
+            .zip(layout.tops)
+            .zip(layout.insets);
+        for ((((kind, _), (label, main)), top), inset) in placed {
             let caption = main.map(|main| caption_width(main, font)).unwrap_or(0);
-            let (label_rect, main_rect) = control_rects(kind, top, width, caption, scale);
+            let (label_rect, main_rect) = control_rects(kind, top, inset, width, caption, scale);
             if let (Some(label), Some(rect)) = (label, label_rect) {
                 place(label, rect);
             }

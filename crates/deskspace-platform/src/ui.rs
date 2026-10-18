@@ -590,6 +590,9 @@ pub struct DebugControl {
     pub id: u32,
     pub label: String,
     pub kind: DebugControlKind,
+    /// The titled box the control sits in, if any. Neighbouring controls
+    /// with the same title share one box.
+    pub group: Option<String>,
 }
 
 /// What a debug control is, with its current value.
@@ -628,6 +631,7 @@ impl DebugPanel {
                     && a.controls.iter().zip(&b.controls).all(|(x, y)| {
                         x.id == y.id
                             && x.label == y.label
+                            && x.group == y.group
                             && std::mem::discriminant(&x.kind) == std::mem::discriminant(&y.kind)
                     })
             })
@@ -819,6 +823,7 @@ mod tests {
                     id,
                     label: label.into(),
                     kind,
+                    group: None,
                 }],
             }],
             console_level: LogLevel::Debug,
@@ -835,5 +840,8 @@ mod tests {
         assert!(!a.same_shape(&panel("Spaces", 1, "Show spaces", toggle(true))));
         let button = DebugControlKind::Button { enabled: true };
         assert!(!a.same_shape(&panel("Windows", 1, "Show spaces", button)));
+        let mut grouped = a.clone();
+        grouped.sections[0].controls[0].group = Some("Startup".into());
+        assert!(!a.same_shape(&grouped), "a group is part of the shape");
     }
 }

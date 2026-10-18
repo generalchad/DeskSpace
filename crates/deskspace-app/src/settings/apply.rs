@@ -200,28 +200,42 @@ pub fn apply_field(
                 config.window.new_space_locked = on;
                 Effect::Pending
             }
-            (field::ANIM_STARTUP_ORDER, FieldValue::Choice(index)) => {
-                let animations = &mut config.window.animations;
-                animations.startup = STARTUP_ORDERS
-                    .get(index)
-                    .map_or(animations.startup, |entry| entry.0);
-                Effect::Pending
+            // Animations play only on what comes next, so every edit waits
+            // for Apply.
+            (id, value) => {
+                if apply_animation_edit(&mut config.window.animations, id, value) {
+                    Effect::Pending
+                } else {
+                    Effect::None
+                }
             }
-            (field::ANIM_STAGGER, FieldValue::Slider(value)) => {
-                config.window.animations.stagger_ms = clamp_u16(value, STAGGER_MS_RANGE);
-                Effect::Pending
-            }
-            (id, value) if animation_page_of(id).is_some() => {
-                let page = animation_page_of(id).expect("checked by the guard");
-                apply_animation_field(&mut config.window.animations, page, id, value)
-            }
-            _ => Effect::None,
         },
     };
     if effect != Effect::None {
         session.dirty = true;
     }
     effect
+}
+
+/// Applies an edit to an animation field: a kind's page, or the startup
+/// order and delay. Returns whether `id` and `value` were one. The settings
+/// window and the debug window (ROADMAP D14) both edit through it.
+pub fn apply_animation_edit(animations: &mut Animations, id: u32, value: FieldValue) -> bool {
+    match (id, value) {
+        (field::ANIM_STARTUP_ORDER, FieldValue::Choice(index)) => {
+            let Some((order, _)) = STARTUP_ORDERS.get(index) else {
+                return false;
+            };
+            animations.startup = *order;
+            true
+        }
+        (field::ANIM_STAGGER, FieldValue::Slider(value)) => {
+            animations.stagger_ms = clamp_u16(value, STAGGER_MS_RANGE);
+            true
+        }
+        (id, value) => animation_page_of(id)
+            .is_some_and(|page| apply_animation_field(animations, page, id, value)),
+    }
 }
 
 /// The animation page that owns field `id`, if any.
@@ -235,14 +249,13 @@ fn clamp_u16(value: i32, range: (u16, u16)) -> u16 {
     value.clamp(range.0.into(), range.1.into()) as u16
 }
 
-/// An edit on an animation page. Animations play only on what comes next, so
-/// every edit waits for Apply.
+/// An edit on an animation page. Returns whether it was one.
 fn apply_animation_field(
     animations: &mut Animations,
     page: &AnimationPage,
     id: u32,
     value: FieldValue,
-) -> Effect {
+) -> bool {
     let settings = animations.get_mut(page.kind);
     match value {
         FieldValue::Choice(index) if id == page.effect => {
@@ -259,9 +272,9 @@ fn apply_animation_field(
         FieldValue::Slider(value) if id == page.detail => {
             settings.detail = value.clamp(DETAIL_RANGE.0.into(), DETAIL_RANGE.1.into()) as u8;
         }
-        _ => return Effect::None,
+        _ => return false,
     }
-    Effect::Pending
+    true
 }
 
 /// The command for an edit on a customized space's page, with what it changes.

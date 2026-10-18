@@ -13,10 +13,15 @@ mod pages;
 mod session;
 mod tables;
 
-pub use apply::{apply_field, customize_space, match_global, reset_appearance, space_edit};
+pub use apply::{
+    apply_animation_edit, apply_field, customize_space, match_global, reset_appearance, space_edit,
+};
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
-pub use tables::{HOTKEY_BINDINGS, HotkeyAction, windows_animation_settings_uri};
+pub use tables::{
+    ANIMATION_PAGES, AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, STARTUP_ORDERS,
+    windows_animation_settings_uri,
+};
 
 use std::path::Path;
 

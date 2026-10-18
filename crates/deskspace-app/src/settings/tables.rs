@@ -122,14 +122,14 @@ pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 9] = [
     (AnimationEffect::Crt, "CRT"),
     (AnimationEffect::Burn, "Burn"),
 ];
-pub(super) const EDGES: [(Edge, &str); 5] = [
+pub const EDGES: [(Edge, &str); 5] = [
     (Edge::Auto, "Automatic"),
     (Edge::Top, "Top"),
     (Edge::Bottom, "Bottom"),
     (Edge::Left, "Left"),
     (Edge::Right, "Right"),
 ];
-pub(super) const STARTUP_ORDERS: [(StartupOrder, &str); 2] = [
+pub const STARTUP_ORDERS: [(StartupOrder, &str); 2] = [
     (StartupOrder::OneAfterAnother, "One after another"),
     (StartupOrder::AllAtOnce, "All at once"),
 ];
@@ -139,7 +139,7 @@ pub(super) const STARTUP_ORDERS: [(StartupOrder, &str); 2] = [
 /// options its kind offers (`KindSpec`), greying those the chosen effect does
 /// not use. A new kind is a row here, its `KINDS` row, and its ids.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct AnimationPage {
+pub struct AnimationPage {
     pub kind: Kind,
     pub title: &'static str,
     pub heading: &'static str,
@@ -156,7 +156,7 @@ pub(super) struct AnimationPage {
 
 /// The animation pages, in `KINDS` order and in build order from
 /// `page::ANIMATIONS`.
-pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
+pub const ANIMATION_PAGES: [AnimationPage; 3] = [
     AnimationPage {
         kind: Kind::Startup,
         title: "Startup",

@@ -4,8 +4,10 @@
 //! A control is a `DebugId` (`ids.rs`), a `DEBUG_CONTROLS` row
 //! (`table.rs`), and an arm in both `debug_control` (what it shows) and
 //! `on_debug_control` (what it does). Each section's actions live in a file
-//! named for it.
+//! named for it. The animation settings are the exception: their rows come
+//! from the animation tables (`animation_settings.rs`).
 
+mod animation_settings;
 mod animations;
 mod config;
 mod diagnostics;
@@ -338,15 +340,19 @@ impl App {
         let sections = DebugSectionId::ALL
             .into_iter()
             .filter_map(|section| {
-                let controls: Vec<DebugControl> = DEBUG_CONTROLS
+                let mut controls: Vec<DebugControl> = DEBUG_CONTROLS
                     .iter()
                     .filter(|row| row.section == section)
                     .map(|row| DebugControl {
                         id: row.id.id(),
                         label: row.label.to_string(),
                         kind: self.debug_control(ui, row.id),
+                        group: None,
                     })
                     .collect();
+                if section == DebugSectionId::Animations {
+                    controls.extend(self.animation_setting_controls());
+                }
                 (!controls.is_empty()).then(|| DebugSection {
                     title: section.title().to_string(),
                     controls,
@@ -434,6 +440,8 @@ impl App {
         };
         if let Some(id) = DebugId::from_id(id) {
             self.on_debug_control(ui, id, input);
+        } else if let DebugInput::Choose(index) = input {
+            self.on_animation_setting(ui, id, index);
         }
         self.push_debug_panel(ui);
     }

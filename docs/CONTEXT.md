@@ -912,7 +912,10 @@ in `ui.rs`. What spans them:
   the platform's `ConsoleModel`; the app feeds it from `debug_log.rs`'s
   ring on `Timer::DebugLog`, a timer so a line logged while draining cannot
   feed itself. Its actions call the paths the menus, settings, and drops
-  use, save nothing, and ask first (`debug_confirm`) when destructive. The
+  use, save nothing but the animation settings (D14; `app/debug/
+  animation_settings.rs`, through `settings::apply_animation_edit`), and
+  ask first (`debug_confirm`) when destructive. A control can sit in a
+  titled box (`DebugControl::group`), which the page draws as it erases. The
   only state it adds outside `DebugTools` is the session-only
   `AnimationTweak` and the takeover override in `LayerState`.
 
