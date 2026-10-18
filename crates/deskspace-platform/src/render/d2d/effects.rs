@@ -36,7 +36,16 @@ struct NoiseMask {
     cell: u32,
     /// Each cell's fixed noise value.
     values: Vec<u8>,
-    /// Each cell's mask pixel for the current frame, written in place.
+    /// The cells still shown.
+    shown: CellMask,
+    /// The cells burning right now: Burn's glowing edge.
+    embers: CellMask,
+}
+
+/// One pixel per cell, rewritten each frame and stretched over the space by
+/// its brush.
+struct CellMask {
+    /// The mask's pixels for the current frame, written in place.
     pixels: Vec<u32>,
     bitmap: ID2D1Bitmap,
     brush: ID2D1BitmapBrush,
@@ -94,24 +103,37 @@ impl Effects {
                 threshold, grain, ..
             } => {
                 let noise = self.noise(target, grain, size)?;
-                fill_noise_mask(&noise.values, threshold, &mut noise.pixels);
-                // SAFETY: `pixels` holds `cols * rows` BGRA pixels, so
-                // `cols * 4` is its row pitch; D2D copies the data.
-                unsafe {
-                    noise.bitmap.CopyFromMemory(
-                        Some(&D2D_RECT_U {
-                            left: 0,
-                            top: 0,
-                            right: noise.cols,
-                            bottom: noise.rows,
-                        }),
-                        noise.pixels.as_ptr() as *const core::ffi::c_void,
-                        noise.cols * 4,
-                    )?;
-                }
-                Ok(Some(noise.brush.clone().into()))
+                fill_noise_mask(&noise.values, threshold, &mut noise.shown.pixels);
+                noise.shown.upload(noise.cols, noise.rows)?;
+                Ok(Some(noise.shown.brush.clone().into()))
             }
         }
+    }
+
+    /// The opacity brush for Burn's glowing edge this frame: the cells whose
+    /// noise is within the mask's glow above its threshold. `None` for any
+    /// other mask. Call after `mask_brush` for the same frame.
+    pub(super) fn ember_brush(
+        &mut self,
+        target: &ID2D1RenderTarget,
+        mask: Mask,
+        size: (f32, f32),
+    ) -> Result<Option<ID2D1Brush>, PlatformError> {
+        let Mask::Noise {
+            threshold,
+            grain,
+            glow,
+        } = mask
+        else {
+            return Ok(None);
+        };
+        if glow <= 0.0 {
+            return Ok(None);
+        }
+        let noise = self.noise(target, grain, size)?;
+        fill_ember_mask(&noise.values, threshold, glow, &mut noise.embers.pixels);
+        noise.embers.upload(noise.cols, noise.rows)?;
+        Ok(Some(noise.embers.brush.clone().into()))
     }
 
     fn gradient(
@@ -227,7 +249,24 @@ impl NoiseMask {
         let values = (0..rows)
             .flat_map(|row| (0..cols).map(move |col| noise_value(col, row)))
             .collect();
-        let pixels = vec![0; (cols * rows) as usize];
+        Ok(Self {
+            cols,
+            rows,
+            cell,
+            values,
+            shown: CellMask::new(target, cols, rows, cell)?,
+            embers: CellMask::new(target, cols, rows, cell)?,
+        })
+    }
+}
+
+impl CellMask {
+    fn new(
+        target: &ID2D1RenderTarget,
+        cols: u32,
+        rows: u32,
+        cell: u32,
+    ) -> Result<Self, PlatformError> {
         let properties = D2D1_BITMAP_PROPERTIES {
             pixelFormat: D2D1_PIXEL_FORMAT {
                 format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -269,14 +308,29 @@ impl NoiseMask {
             (bitmap, brush)
         };
         Ok(Self {
-            cols,
-            rows,
-            cell,
-            values,
-            pixels,
+            pixels: vec![0; (cols * rows) as usize],
             bitmap,
             brush,
         })
+    }
+
+    /// Copies this frame's pixels to the bitmap.
+    fn upload(&self, cols: u32, rows: u32) -> Result<(), PlatformError> {
+        // SAFETY: `pixels` holds `cols * rows` BGRA pixels, so `cols * 4` is
+        // its row pitch; D2D copies the data.
+        unsafe {
+            self.bitmap.CopyFromMemory(
+                Some(&D2D_RECT_U {
+                    left: 0,
+                    top: 0,
+                    right: cols,
+                    bottom: rows,
+                }),
+                self.pixels.as_ptr() as *const core::ffi::c_void,
+                cols * 4,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -355,6 +409,20 @@ fn fill_noise_mask(values: &[u8], threshold: f32, pixels: &mut [u32]) {
     }
 }
 
+/// Writes each cell's ember pixel: opaque while its noise is at or above
+/// `threshold` but within `glow` of it (both 0 to 1), the band about to burn.
+fn fill_ember_mask(values: &[u8], threshold: f32, glow: f32, pixels: &mut [u32]) {
+    let (low, high) = (threshold * 256.0, (threshold + glow) * 256.0);
+    for (pixel, value) in pixels.iter_mut().zip(values) {
+        let value = f32::from(*value);
+        *pixel = if value >= low && value < high {
+            u32::MAX
+        } else {
+            0
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +450,16 @@ mod tests {
         assert_eq!(scale, 0.25);
         assert_eq!((source.right, source.bottom), (50.0, 26.0));
         assert_eq!(pixelated((200.0, 100.0), 1).0, 1.0);
+    }
+
+    #[test]
+    fn embers_are_the_band_just_above_the_threshold() {
+        let values = [0, 100, 128, 140, 255];
+        let mut pixels = [7; 5];
+        fill_ember_mask(&values, 0.5, 0.1, &mut pixels);
+        assert_eq!(pixels, [0, 0, u32::MAX, u32::MAX, 0]);
+        fill_ember_mask(&values, 1.0, 0.1, &mut pixels);
+        assert_eq!(pixels, [0; 5], "nothing left to burn");
     }
 
     #[test]

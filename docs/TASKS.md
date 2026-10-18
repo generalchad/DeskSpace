@@ -11,8 +11,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section U, in order (U1 and U2 are pure and need no screen);
-- T7 (animations; pure or without callers, so no screen needed).
+- section U, in order (U1 and U2 are pure and need no screen).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -533,10 +532,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T7. The painter draws CRT and Burn (platform; no callers yet).**
-  CRT's bright line and fading glow over the opening rect; Burn as
-  Dissolve plus a glowing band at the threshold, its width from Detail.
-  The same done-when as T6.
 - [ ] **T8. Play hide and show (platform, app).** **[needs human]**
   - Platform: `win32/space_animation.rs` keeps a window's `Transition` in
     its `SpaceState` and a per-window timer, about 16 ms, that advances it,

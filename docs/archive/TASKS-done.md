@@ -2283,3 +2283,8 @@ until I5-I6 all land, so no partial build hides the desktop.
   back with nearest-neighbor scaling. Done when `None` paints exactly as
   today and the masks' pure parts (the noise, the gradient stops) have
   tests.
+
+- [x] **T7. The painter draws CRT and Burn (platform; no callers yet).**
+  CRT's bright line and fading glow over the opening rect; Burn as
+  Dissolve plus a glowing band at the threshold, its width from Detail.
+  The same done-when as T6.
