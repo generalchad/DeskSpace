@@ -47,4 +47,4 @@ mod zoom_bar;
 
 pub use clipboard::ClipboardFiles;
 pub use desktop_shell::Placement;
-pub use runtime::{EventHandler, RunOptions, Ui, Waker, run, space_dpi};
+pub use runtime::{EventHandler, RunOptions, Ui, Waker, alert, run, space_dpi};

@@ -1325,7 +1325,10 @@ section numbers stable.
   - Every install first quits through the normal teardown (save, restore
     Explorer's icons, signal the watchdog); `bootstrap::run` runs the
     installer (`InstallOnExit`) after `deskspace_platform::run` returns, and
-    the NSIS installer (`/P` or `/S`, plus `/R`) relaunches DeskSpace.
+    the NSIS installer (`/P` or `/S`, plus `/R`) relaunches DeskSpace. If the
+    installer cannot start, DeskSpace starts itself again with the same
+    arguments (less `--reset` and `--settings`) and then explains in a box
+    that has no owner window (`deskspace_platform::alert`).
   - Until the maintainer sets the `DESKSPACE_MINISIGN_KEY` secret and
     `UPDATE_PUBKEY`, releases ship without a feed, and the app greys out the
     tray's "Check for updates…" and the Settings update controls

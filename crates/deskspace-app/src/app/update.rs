@@ -16,6 +16,8 @@
 //! the tray offers to restart sooner.
 
 use std::cell::RefCell;
+use std::ffi::OsString;
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
@@ -66,14 +68,30 @@ pub struct InstallOnExit(Rc<RefCell<Option<(Package, InstallMode)>>>);
 
 impl InstallOnExit {
     /// Runs the queued installer, if any. On success the updater ends the
-    /// process, so this returns only when nothing was queued or it failed.
-    pub fn install(&self) -> anyhow::Result<()> {
+    /// process. If the installer cannot start, DeskSpace has already shut
+    /// down, so it starts itself again on the current version, as the
+    /// installer would have, and then tells the user why. The relaunch comes
+    /// first so an automatic update does not leave the desktop empty until
+    /// the user comes back to dismiss the message.
+    pub fn install(&self) {
         let Some((package, mode)) = self.0.borrow_mut().take() else {
-            return Ok(());
+            return;
         };
-        tracing::info!(version = package.version, ?mode, "installing update");
-        deskspace_update::install(package, mode)?;
-        Ok(())
+        let version = package.version.clone();
+        tracing::info!(version, ?mode, "installing update");
+        let Err(error) = deskspace_update::install(package, mode) else {
+            return;
+        };
+        tracing::error!(%error, "update not installed");
+        let mut text = format!("DeskSpace {version} was not installed: {error}");
+        match relaunch() {
+            Ok(()) => text.push_str("\n\nDeskSpace has started again on the current version."),
+            Err(relaunch_error) => {
+                tracing::error!(%relaunch_error, "could not start DeskSpace again");
+                text.push_str("\n\nStart DeskSpace again from the Start menu.");
+            }
+        }
+        deskspace_platform::alert("DeskSpace was not updated", &text);
     }
 
     fn queue(&self, package: Package, mode: InstallMode) {
@@ -348,6 +366,28 @@ impl App {
     }
 }
 
+/// Flags that act once at start and must not repeat when DeskSpace starts
+/// itself again: `--reset` would reset the configuration a second time, and
+/// `--settings` would reopen the settings window.
+const ONE_SHOT_FLAGS: [&str; 2] = ["--reset", "--settings"];
+
+/// Starts a new DeskSpace the way this one was started, less the one-shot
+/// flags. This process has already quit its message loop, so the new one
+/// finds no running copy to hand `--show` to.
+fn relaunch() -> std::io::Result<()> {
+    let exe = std::env::current_exe()?;
+    Command::new(exe)
+        .args(relaunch_args(std::env::args_os().skip(1)))
+        .spawn()?;
+    Ok(())
+}
+
+fn relaunch_args(args: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+    args.into_iter()
+        .filter(|arg| !ONE_SHOT_FLAGS.iter().any(|flag| arg == *flag))
+        .collect()
+}
+
 /// Whether an automatic check is due, given the last one's Unix time and now.
 fn check_due(last: Option<u64>, now: u64) -> bool {
     last.is_none_or(|last| now.saturating_sub(last) >= UPDATE_INTERVAL_SECS)
@@ -405,7 +445,33 @@ mod tests {
 
     #[test]
     fn nothing_queued_installs_nothing() {
-        assert!(InstallOnExit::default().install().is_ok());
+        InstallOnExit::default().install();
+    }
+
+    #[test]
+    fn a_relaunch_keeps_the_arguments_but_not_the_one_shot_flags() {
+        let args = [
+            "--config",
+            "x.toml",
+            "--reset",
+            "--hidden",
+            "--settings",
+            "-v",
+        ];
+        let kept = relaunch_args(args.map(OsString::from));
+        assert_eq!(
+            kept,
+            ["--config", "x.toml", "--hidden", "-v"].map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn the_one_shot_flags_are_real_flags() {
+        use clap::Parser;
+        for flag in ONE_SHOT_FLAGS {
+            let cli = crate::cli::Cli::try_parse_from(["deskspace", flag]);
+            assert!(cli.is_ok(), "{flag} is not a DeskSpace flag");
+        }
     }
 
     #[test]

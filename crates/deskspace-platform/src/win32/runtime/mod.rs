@@ -15,6 +15,8 @@ mod ui_input;
 mod ui_shell;
 mod ui_spaces;
 
+pub use ui_chrome::alert;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;

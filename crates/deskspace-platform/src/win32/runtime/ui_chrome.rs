@@ -4,13 +4,34 @@
 
 use std::time::Duration;
 
-use windows::Win32::UI::WindowsAndMessaging::KillTimer;
+use windows::Win32::UI::WindowsAndMessaging::{KillTimer, MB_SETFOREGROUND, MESSAGEBOX_STYLE};
 
 use super::*;
 use crate::input::ShellItem;
 use crate::render::ZoomBar;
 use crate::ui::{CustomShortcut, LogLine};
 use crate::win32::debug_info::WindowRow;
+
+/// Tells the user something went wrong when there is no `Ui` to ask, such as
+/// after the message loop has ended. Blocks until the box is dismissed.
+pub fn alert(title: &str, text: &str) {
+    // With no window of its own, the box would open behind the active app.
+    warning_box(None, title, text, MB_SETFOREGROUND);
+}
+
+fn warning_box(owner: Option<HWND>, title: &str, text: &str, extra: MESSAGEBOX_STYLE) {
+    let title = wide(title);
+    let text = wide(text);
+    // SAFETY: both strings are NUL-terminated and outlive the modal call.
+    unsafe {
+        MessageBoxW(
+            owner,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONWARNING | extra,
+        );
+    }
+}
 
 impl Ui {
     /// Opens DeskSpace's color picker and returns the chosen color. Blocks in a
@@ -280,22 +301,14 @@ impl Ui {
     /// OK button. Blocks until it is dismissed.
     pub fn alert(&mut self, title: &str, text: &str) {
         let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller));
-        let title = wide(title);
-        let text = wide(text);
-        // SAFETY: both strings are NUL-terminated and outlive the modal call.
-        unsafe {
-            if let Some(owner) = owner {
-                // A message box owned by a background window opens behind the
-                // active app unless its owner is made foreground first.
-                let _ = SetForegroundWindow(owner);
-            }
-            MessageBoxW(
-                owner,
-                PCWSTR(text.as_ptr()),
-                PCWSTR(title.as_ptr()),
-                MB_OK | MB_ICONWARNING,
-            );
+        if let Some(owner) = owner {
+            // A message box owned by a background window opens behind the
+            // active app unless its owner is made foreground first.
+            // SAFETY: `owner` is a window of this thread, or a stale handle,
+            // which the call rejects.
+            let _ = unsafe { SetForegroundWindow(owner) };
         }
+        warning_box(owner, title, text, MESSAGEBOX_STYLE(0));
     }
 
     /// Asks a question with `buttons` labels, returning the index of the button

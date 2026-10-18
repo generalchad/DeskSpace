@@ -42,6 +42,10 @@ pub enum UpdateError {
     NotConfigured,
     #[error("could not check for updates: {0}")]
     Check(#[from] cargo_packager_updater::Error),
+    #[error("could not download the update: {0}")]
+    Download(cargo_packager_updater::Error),
+    #[error("could not start the update installer: {0}")]
+    Install(cargo_packager_updater::Error),
     #[error("unexpected version {0:?}")]
     Version(String),
 }
@@ -130,7 +134,7 @@ pub fn is_installed() -> bool {
 /// Downloads the update package and verifies its signature. Blocking; call it
 /// on a worker thread.
 pub fn download(available: &Available) -> Result<Package, UpdateError> {
-    let bytes = available.update.download()?;
+    let bytes = available.update.download().map_err(UpdateError::Download)?;
     Ok(Package {
         version: available.version.clone(),
         update: available.update.clone(),
@@ -149,8 +153,7 @@ pub fn install(package: Package, mode: InstallMode) -> Result<(), UpdateError> {
         install_mode: Some(mode.sdk_mode()),
         ..WindowsConfig::default()
     });
-    update.install(package.bytes)?;
-    Ok(())
+    update.install(package.bytes).map_err(UpdateError::Install)
 }
 
 fn parse(version: &str) -> Result<Version, UpdateError> {

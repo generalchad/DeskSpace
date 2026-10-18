@@ -124,6 +124,8 @@ A native, lightweight, offline Windows desktop organizer that:
     and offers Update / Later / Skip this version. Update downloads,
     installs, and restarts DeskSpace with the same config. Later asks again
     at the next check. A skipped version is stored and not offered again.
+    An install that cannot start never leaves DeskSpace closed: it starts
+    again on the current version and says why (2026-10-18).
   - *Automatic install (2026-10-16):* an opt-in "Install updates
     automatically" toggle under the check toggle, off by default and only for
     the installed build. With it on, an automatic check downloads a new,
