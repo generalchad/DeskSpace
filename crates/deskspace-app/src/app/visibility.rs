@@ -1,7 +1,8 @@
 //! `App` visibility: showing and hiding spaces, the desktop entry, and
 //! start-with-Windows (R1).
 
-use deskspace_platform::{MenuEntry, Ui, set_start_with_windows};
+use deskspace_core::animation::Kind;
+use deskspace_platform::{MenuEntry, Ui, Way, set_start_with_windows};
 
 use super::menus::menu_item;
 use super::{App, MenuId};
@@ -13,7 +14,8 @@ impl App {
             self.clear_selection(ui);
         }
         self.visible = visible;
-        ui.set_spaces_visible(visible);
+        let way = if visible { Way::In } else { Way::Out };
+        ui.set_spaces_visible(visible, self.play(Kind::HideShow, way));
         self.sync_desktop_show_entry();
         tracing::info!(visible, "toggled space visibility");
     }

@@ -491,6 +491,16 @@ one arm in `App::on_event`, whose match is exhaustive.
     nothing on the layer. A drop on the layer opens a new space at the drop
     point and drops into it (`App::drop_onto`; ROADMAP D7, amended
     2026-10-17); a drop that adds nothing closes that space again.
+- **Animations** (ROADMAP D12; `win32/space_animation.rs`): a window keeps
+  its running `Animation` in its `SpaceState` and a timer of its own
+  (`space_animation::TIMER_ID`, on the window, not the controller). Each
+  tick moves the window to the frame's rect (hidden while it is empty) and
+  repaints through the frame; the app is not called per frame. A request
+  that finds an animation heading the other way reverses it, `set_rect`
+  while animating moves its target instead of the window, and a window on
+  its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
+  takes the `Play` the app built (`app/animation.rs`); the accent blur is
+  there for the whole show and gone at the end of a hide (D12, "The blur").
 - **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
   WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
   never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /

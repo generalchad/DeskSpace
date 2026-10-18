@@ -2288,3 +2288,23 @@ until I5-I6 all land, so no partial build hides the desktop.
   CRT's bright line and fading glow over the opening rect; Burn as
   Dissolve plus a glowing band at the threshold, its width from Detail.
   The same done-when as T6.
+
+- [x] **T8. Play hide and show (platform, app).** **[needs human]**
+  - Platform: `win32/space_animation.rs` keeps a window's `Transition` in
+    its `SpaceState` and a per-window timer, about 16 ms, that advances it,
+    sets the window rect, and repaints with the frame.
+    `set_spaces_visible(visible, play)`: an In paints frame 0 before
+    `SW_SHOWNOACTIVATE`; an Out plays to the end, then `SW_HIDE` and puts
+    the rect back. A request that finds a transition running reverses it.
+    A hiding space refuses drops (`DROPEFFECT_NONE`). `set_rect` during a
+    transition moves its target; `destroy_space` ends it.
+  - App: `app/animation.rs` (pure) builds each `Play` from the settings
+    and `SystemLook` (None while Windows' switch is off).
+  - Docs: `CONTEXT.md` section 6 (Space windows and Rendering), section 8,
+    `README.md`.
+  - Tests: the `Play`s for each setting. **[needs human]** check: each
+    effect hides and shows on Acrylic, Blur, Solid, and Clear spaces at
+    100 % and 150 % (the blur steps at the start of a show and the end of
+    a hide); the hotkey pressed twice quickly turns it around without a
+    jump; a drop on a hiding space is refused; with Windows' "Animation
+    effects" off, hiding is instant.

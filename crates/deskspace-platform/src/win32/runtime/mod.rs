@@ -30,7 +30,7 @@ use windows::Win32::UI::Controls::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     DestroyWindow, DispatchMessageW, GetMessageW, IsDialogMessageW, IsWindow, KillTimer, MSG,
-    PostMessageW, SW_HIDE, SW_SHOWNOACTIVATE, SetTimer, ShowWindow, TranslateMessage, WM_CLOSE,
+    PostMessageW, SetTimer, TranslateMessage, WM_CLOSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_OK, MB_YESNO, MessageBoxW, SetForegroundWindow,
@@ -39,7 +39,7 @@ use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
 use crate::input::{Event, ShellItem};
-use crate::render::{SpaceScene, SpaceStyle, d2d};
+use crate::render::{Play, SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, MenuEntry, SettingsForm};
 use crate::win32::clipboard::ClipboardFiles;
 use crate::win32::drag_ghost::DragGhost;
@@ -51,7 +51,7 @@ use crate::win32::system::wide;
 use crate::win32::{
     clipboard, console, controller, dark_mode, desktop_icons, desktop_shell, drop_target, file_op,
     folder_watch, menu, messages, outside_click, settings_window, shell_selection, shell_view,
-    space_window, tray, watchdog, zoom_bar,
+    space_animation, space_window, tray, watchdog, zoom_bar,
 };
 
 pub trait EventHandler {

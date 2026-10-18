@@ -46,6 +46,7 @@ use crate::ui::MenuEntry;
 use crate::win32::menu;
 use crate::win32::runtime;
 use crate::win32::shortcuts::shell_item;
+use crate::win32::space_animation;
 use crate::win32::system::wide;
 
 /// Clipboard format naming the effect a drag source would like the target to
@@ -104,6 +105,17 @@ struct SpaceDropTarget {
     right_drag: Cell<bool>,
 }
 
+impl SpaceDropTarget {
+    /// What a drag carries, or nothing while the space is on its way out
+    /// (hiding, or deleted and fading), which takes no drops (ROADMAP D12).
+    fn kind_of(&self, data: Option<&IDataObject>) -> DragKind {
+        if space_animation::is_leaving(self.window) {
+            return DragKind::None;
+        }
+        drag_kind(data)
+    }
+}
+
 impl IDropTarget_Impl for SpaceDropTarget_Impl {
     fn DragEnter(
         &self,
@@ -115,7 +127,7 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // SAFETY: OLE passes a valid, writable effect; the data object, if any,
         // is borrowed only for the duration of the call.
         let allowed = unsafe { *effect };
-        let kind = drag_kind(data.as_ref());
+        let kind = self.kind_of(data.as_ref());
         let right = keys.contains(MK_RBUTTON);
         self.right_drag.set(right);
         tracing::debug!(
@@ -154,7 +166,13 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
     ) -> WinResult<()> {
         // SAFETY: OLE passes a valid, writable effect.
         let allowed = unsafe { *effect };
-        let chosen = drag_effect(self.accepts.get(), self.right_drag.get(), keys, allowed);
+        // A space that starts to hide under a drag stops taking it.
+        let kind = if space_animation::is_leaving(self.window) {
+            DragKind::None
+        } else {
+            self.accepts.get()
+        };
+        let chosen = drag_effect(kind, self.right_drag.get(), keys, allowed);
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // SAFETY: forwarding this call's own arguments.
@@ -180,7 +198,7 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         // SAFETY: OLE passes a valid, writable effect and a live data object.
         let allowed = unsafe { *effect };
         let data = data.as_ref();
-        let kind = drag_kind(data);
+        let kind = self.kind_of(data);
         let right = self.right_drag.replace(false);
         self.accepts.set(DragKind::None);
         // The image is removed before the app runs: handling the drop can take

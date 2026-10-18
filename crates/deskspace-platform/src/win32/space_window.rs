@@ -31,9 +31,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINDOW_EX_STYLE, WINDOWPOS, WM_CAPTURECHANGED, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGING,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_POPUP,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_TIMER,
+    WM_WINDOWPOSCHANGING, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -41,6 +41,7 @@ use crate::error::PlatformError;
 use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
+use crate::win32::space_animation::{self, Animation};
 use crate::win32::system::{hiword, loword};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{drop_target, dwm, runtime, window_state};
@@ -65,7 +66,7 @@ pub(crate) struct SpaceWindowOptions {
     pub visible: bool,
 }
 
-struct SpaceState {
+pub(super) struct SpaceState {
     id: u64,
     hosted: bool,
     /// Development placement above other windows instead of at the bottom.
@@ -79,6 +80,8 @@ struct SpaceState {
     scene: Option<PreparedScene>,
     tracking_leave: bool,
     cursor: CursorShape,
+    /// The animation playing on the window, if any (`space_animation`).
+    pub(super) animation: Option<Animation>,
 }
 
 pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -93,6 +96,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         scene: None,
         tracking_leave: false,
         cursor: CursorShape::Arrow,
+        animation: None,
     }));
 
     // An OLE drop target (registered below) makes the space accept file drags
@@ -167,7 +171,8 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
 }
 
 pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
-    if current_rect(hwnd) == Some(rect) {
+    // SAFETY: `hwnd` is a live space window, outside any state borrow.
+    if unsafe { space_animation::retarget(hwnd, rect) } || current_rect(hwnd) == Some(rect) {
         return;
     }
     // SAFETY: `hwnd` is a live space window. Messages sent synchronously by
@@ -188,7 +193,7 @@ pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
 /// The window's rect in the coordinates `set_rect` takes: the parent's client
 /// coordinates for a hosted child (Progman/WorkerW spans the desktop), screen
 /// coordinates otherwise.
-fn current_rect(hwnd: HWND) -> Option<Rect> {
+pub(super) fn current_rect(hwnd: HWND) -> Option<Rect> {
     let mut rect = RECT::default();
     // SAFETY: `hwnd` is a live space window; neither call sends messages.
     unsafe {
@@ -388,7 +393,10 @@ unsafe fn update_region(hwnd: HWND) {
 
 /// Runs `f` with a short-lived borrow of the window's state. `f` must not call
 /// anything that can re-enter `wndproc`.
-unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut SpaceState) -> R) -> Option<R> {
+pub(super) unsafe fn with_state<R>(
+    window: HWND,
+    f: impl FnOnce(&mut SpaceState) -> R,
+) -> Option<R> {
     // SAFETY: space windows always hold a `SpaceState`; the caller rules out
     // re-entry.
     unsafe { window_state::with_state(window, f) }
@@ -446,13 +454,18 @@ unsafe fn paint(window: HWND) {
     // short.
     unsafe {
         let checked_out = with_state(window, |state| {
-            (state.painter.take(), state.scene.take(), state.frame.paint)
+            (
+                state.painter.take(),
+                state.scene.take(),
+                state.frame.paint,
+                state.animation.as_ref().map(Animation::frame),
+            )
         });
-        let Some((Some(mut painter), scene, frame)) = checked_out else {
+        let Some((Some(mut painter), scene, frame, transition)) = checked_out else {
             let _ = ValidateRect(Some(window), None);
             return;
         };
-        if let Err(error) = painter.paint(window, scene.as_ref(), frame, None) {
+        if let Err(error) = painter.paint(window, scene.as_ref(), frame, transition.as_ref()) {
             tracing::error!(%error, "space paint failed");
         }
         with_state(window, |state| {
@@ -658,6 +671,10 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_ERASEBKGND => LRESULT(1),
+            WM_TIMER if wparam.0 == space_animation::TIMER_ID => {
+                space_animation::on_timer(window);
+                LRESULT(0)
+            }
             WM_SIZE => {
                 update_region(window);
                 let _ = InvalidateRect(Some(window), None, false);

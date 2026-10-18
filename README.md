@@ -145,7 +145,11 @@ help inspect the look and the desktop layer.
 - With the desktop takeover on, dropping anything on the desktop itself opens
   a new space there with it, an item dragged out of another space included.
 - Hiding the spaces (tray, space menu, or hotkey) hides only the spaces; with
-  the desktop takeover on, your loose desktop icons stay visible.
+  the desktop takeover on, your loose desktop icons stay visible. Hiding and
+  showing are animated (a roll by default); pick the effect and its speed
+  under Settings > Animations. Press the hotkey again mid-way and the
+  animation turns around. DeskSpace follows Windows' "Animation effects"
+  switch: with it off, nothing animates.
 - The tray icon opens Settings on left-click and offers Settings, hide/show
   spaces, new space, and exit on right-click.
 - Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page

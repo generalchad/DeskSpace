@@ -9,6 +9,10 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Added
 
+- Hiding and showing the spaces is animated, a roll by default. Settings >
+  Animations picks the effect (roll, fade, pixelate, gradient, dissolve, fly,
+  CRT, or burn) and its speed, and DeskSpace follows Windows' "Animation
+  effects" switch.
 - "Install updates automatically" in Settings > General: the installed version
   downloads a new release in the background and installs it after you have
   been away for 10 minutes, or when you choose "Restart to update" in the tray

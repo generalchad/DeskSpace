@@ -532,25 +532,6 @@ a new module.
   - Done when: the findings are recorded here (replace this bullet). If
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
-- [ ] **T8. Play hide and show (platform, app).** **[needs human]**
-  - Platform: `win32/space_animation.rs` keeps a window's `Transition` in
-    its `SpaceState` and a per-window timer, about 16 ms, that advances it,
-    sets the window rect, and repaints with the frame.
-    `set_spaces_visible(visible, play)`: an In paints frame 0 before
-    `SW_SHOWNOACTIVATE`; an Out plays to the end, then `SW_HIDE` and puts
-    the rect back. A request that finds a transition running reverses it.
-    A hiding space refuses drops (`DROPEFFECT_NONE`). `set_rect` during a
-    transition moves its target; `destroy_space` ends it.
-  - App: `app/animation.rs` (pure) builds each `Play` from the settings
-    and `SystemLook` (None while Windows' switch is off).
-  - Docs: `CONTEXT.md` section 6 (Space windows and Rendering), section 8,
-    `README.md`.
-  - Tests: the `Play`s for each setting. **[needs human]** check: each
-    effect hides and shows on Acrylic, Blur, Solid, and Clear spaces at
-    100 % and 150 % (the blur steps at the start of a show and the end of
-    a hide); the hotkey pressed twice quickly turns it around without a
-    jump; a drop on a hiding space is refused; with Windows' "Animation
-    effects" off, hiding is instant.
 - [ ] **T9. Play fold and unfold (platform, app).** **[needs human]**
   - `Ui::fold_space(id, rect, play)` plays a Roll from the window's rect
     to `rect`. While it runs, `space_window::set_rect` compares a new rect
@@ -851,6 +832,7 @@ each id is in `archive/TASKS-done.md`.
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Settings shows an Animations group (Hide and show, New space, Delete, Fold) at 100 % and 150 %, nothing clipped; choosing each effect greys the options it does not use, Delete's "Same as new space" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; "Open Windows animation settings…" opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
+| T8 (D12) | Each Hide and show effect (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows. |
 
 ## Found while working
 

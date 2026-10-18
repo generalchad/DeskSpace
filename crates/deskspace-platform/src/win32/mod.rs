@@ -33,6 +33,7 @@ mod shell_selection;
 mod shell_view;
 mod shortcut_dialog;
 pub(crate) mod shortcuts;
+mod space_animation;
 mod space_window;
 pub(crate) mod system;
 mod tray;

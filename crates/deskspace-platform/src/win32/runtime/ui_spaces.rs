@@ -76,18 +76,18 @@ impl Ui {
         }
     }
 
-    pub fn set_spaces_visible(&mut self, visible: bool) {
+    /// Shows or hides every space with `play` (ROADMAP D12); an animation
+    /// already running the other way turns around from where it is.
+    pub fn set_spaces_visible(&mut self, visible: bool, play: Play) {
         let windows = with_runtime(|runtime| {
             runtime.spaces_visible = visible;
             runtime.spaces.values().copied().collect::<Vec<_>>()
         })
         .unwrap_or_default();
-        let command = if visible { SW_SHOWNOACTIVATE } else { SW_HIDE };
         for hwnd in windows {
-            // SAFETY: space windows are owned by this runtime.
-            unsafe {
-                let _ = ShowWindow(hwnd, command);
-            }
+            // SAFETY: space windows are owned by this runtime, and no
+            // runtime borrow is held.
+            unsafe { space_animation::set_visible(hwnd, visible, play) };
         }
     }
 

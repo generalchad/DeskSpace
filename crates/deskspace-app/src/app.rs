@@ -2,13 +2,14 @@ use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, SelectionKey, TrayEvent, Ui, ZoomAction,
-    cursor_pos, desktop_display_since,
+    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, Way,
+    ZoomAction, cursor_pos, desktop_display_since,
 };
 
 use crate::settings::{self, HotkeyAction};
 use crate::storage::ItemStore;
 
+mod animation;
 mod clipboard;
 mod drag;
 mod effect;
@@ -551,7 +552,9 @@ impl EventHandler for App {
                 // `ui_mode` setting; the spaces follow their own Color mode.
                 ui.set_ui_dark(self.ui_dark());
                 self.hotkeys.register_all(ui, &self.config.window);
-                ui.set_spaces_visible(self.visible);
+                // Startup shows the spaces as they are created (T10); this
+                // only settles whether they start hidden.
+                ui.set_spaces_visible(self.visible, Play::instant(Way::In));
                 self.sync_desktop_show_entry();
                 // Keep the stored Run path current after an install moves.
                 if self.config.window.start_with_windows {
