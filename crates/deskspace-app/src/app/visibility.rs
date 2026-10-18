@@ -15,7 +15,7 @@ impl App {
         }
         self.visible = visible;
         let way = if visible { Way::In } else { Way::Out };
-        ui.set_spaces_visible(visible, self.play(Kind::HideShow, way));
+        ui.set_spaces_visible(visible, self.play(Kind::Startup, way));
         self.sync_desktop_show_entry();
         tracing::info!(visible, "toggled space visibility");
     }

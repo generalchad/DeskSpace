@@ -35,7 +35,7 @@ impl App {
         spaces: &[(SpaceId, Rect)],
         arrival: Arrival,
     ) -> Vec<(SpaceId, Play)> {
-        let play = self.play(Kind::NewSpace, Way::In);
+        let play = self.play(Kind::Startup, Way::In);
         let animations = &self.config.window.animations;
         let delays = match arrival {
             Arrival::New => spaces.iter().map(|(id, _)| (*id, Duration::ZERO)).collect(),
@@ -100,10 +100,10 @@ mod tests {
     #[test]
     fn the_settings_become_the_play() {
         let mut animations = Animations::default();
-        animations.hide_show.effect = EffectChoice::Effect(Effect::Fly);
-        animations.hide_show.duration_ms = 400;
-        animations.hide_show.direction = Edge::Left;
-        let play = play_for(&animations, true, Kind::HideShow, Way::Out);
+        animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
+        animations.startup_exit.duration_ms = 400;
+        animations.startup_exit.direction = Edge::Left;
+        let play = play_for(&animations, true, Kind::Startup, Way::Out);
         assert_eq!(play.effect, Effect::Fly);
         assert_eq!(play.way, Way::Out);
         assert_eq!(play.duration, Duration::from_millis(400));
@@ -112,9 +112,9 @@ mod tests {
     }
 
     #[test]
-    fn delete_plays_the_new_space_effect_at_its_own_speed() {
+    fn delete_plays_the_startup_effect_at_its_own_speed() {
         let mut animations = Animations::default();
-        animations.new_space.effect = EffectChoice::Effect(Effect::Crt);
+        animations.startup_exit.effect = EffectChoice::Effect(Effect::Crt);
         animations.delete.duration_ms = 600;
         let play = play_for(&animations, true, Kind::Delete, Way::Out);
         assert_eq!(play.effect, Effect::Crt);
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn nothing_plays_while_windows_animations_are_off() {
-        let play = play_for(&Animations::default(), false, Kind::HideShow, Way::In);
+        let play = play_for(&Animations::default(), false, Kind::Startup, Way::In);
         assert_eq!(play, Play::instant(Way::In));
     }
 }

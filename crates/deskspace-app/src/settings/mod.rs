@@ -739,26 +739,26 @@ mod tests {
             .iter()
             .map(|entry| entry.label.as_str())
             .collect();
-        assert_eq!(titles, ["Hide and show", "New space", "Delete", "Fold"]);
+        assert_eq!(titles, ["Startup", "Delete", "Fold"]);
         assert_eq!(groups[1].entries[0].page, page::ANIMATIONS);
     }
 
     #[test]
     fn an_animation_page_greys_the_options_its_effect_does_not_use() {
         let mut config = Config::new();
-        let hide_show = &mut config.window.animations.hide_show;
+        let hide_show = &mut config.window.animations.startup_exit;
         hide_show.effect = EffectChoice::Effect(AnimationEffect::Pixelate);
         let form = animation_form(&config, true);
-        assert!(enabled(&form, field::ANIM_HIDE_SHOW_EFFECT));
-        assert!(enabled(&form, field::ANIM_HIDE_SHOW_DURATION));
-        assert!(enabled(&form, field::ANIM_HIDE_SHOW_DETAIL));
-        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DIRECTION));
+        assert!(enabled(&form, field::ANIM_STARTUP_EFFECT));
+        assert!(enabled(&form, field::ANIM_STARTUP_DURATION));
+        assert!(enabled(&form, field::ANIM_STARTUP_DETAIL));
+        assert!(!enabled(&form, field::ANIM_STARTUP_DIRECTION));
 
-        config.window.animations.hide_show.effect = EffectChoice::Effect(AnimationEffect::None);
+        config.window.animations.startup_exit.effect = EffectChoice::Effect(AnimationEffect::None);
         let form = animation_form(&config, true);
-        assert!(enabled(&form, field::ANIM_HIDE_SHOW_EFFECT));
-        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DURATION));
-        assert!(!enabled(&form, field::ANIM_HIDE_SHOW_DETAIL));
+        assert!(enabled(&form, field::ANIM_STARTUP_EFFECT));
+        assert!(!enabled(&form, field::ANIM_STARTUP_DURATION));
+        assert!(!enabled(&form, field::ANIM_STARTUP_DETAIL));
     }
 
     #[test]
@@ -768,9 +768,9 @@ mod tests {
         assert!(enabled(&form, field::ANIM_DELETE_DURATION));
         assert!(
             !enabled(&form, field::ANIM_DELETE_DIRECTION),
-            "edited on New space"
+            "edited on Startup"
         );
-        assert!(enabled(&form, field::ANIM_NEW_SPACE_DIRECTION));
+        assert!(enabled(&form, field::ANIM_STARTUP_DIRECTION));
     }
 
     #[test]

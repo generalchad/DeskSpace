@@ -508,7 +508,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   fold ends (`Animation::defer`). Hiding a space mid-fold ends the fold
   first. A new window is created hidden; `App::sync_windows` (the one place
   space windows are made) pushes its scene, then `Ui::show_space` brings it
-  in with New space's play, staggered at startup (`sync_windows_at_startup`,
+  in with Startup's play, staggered at startup only (`sync_windows_at_startup`,
   `startup_delays`). A window waiting its turn stays hidden, blur included.
   A deleted space's window leaves the runtime's spaces map at once, so it
   is gone to every lookup, and waits in `Runtime::dying` while it plays

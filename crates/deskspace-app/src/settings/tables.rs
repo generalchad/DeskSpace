@@ -143,7 +143,7 @@ pub(super) struct AnimationPage {
     pub kind: Kind,
     pub title: &'static str,
     pub heading: &'static str,
-    /// How a "Same as" choice names this kind ("Same as new space").
+    /// How a "Same as" choice names this kind ("Same as startup").
     pub name: &'static str,
     pub heading_id: u32,
     pub note: u32,
@@ -156,32 +156,19 @@ pub(super) struct AnimationPage {
 
 /// The animation pages, in `KINDS` order and in build order from
 /// `page::ANIMATIONS`.
-pub(super) const ANIMATION_PAGES: [AnimationPage; 4] = [
+pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
     AnimationPage {
-        kind: Kind::HideShow,
-        title: "Hide and show",
-        heading: "When spaces hide and show",
-        name: "hide and show",
-        heading_id: field::ANIM_HIDE_SHOW_HEADING,
-        note: field::ANIM_HIDE_SHOW_NOTE,
-        open_settings: field::ANIM_HIDE_SHOW_OPEN_SETTINGS,
-        effect: field::ANIM_HIDE_SHOW_EFFECT,
-        duration: field::ANIM_HIDE_SHOW_DURATION,
-        detail: field::ANIM_HIDE_SHOW_DETAIL,
-        direction: field::ANIM_HIDE_SHOW_DIRECTION,
-    },
-    AnimationPage {
-        kind: Kind::NewSpace,
-        title: "New space",
-        heading: "When a space appears, and at startup",
-        name: "new space",
-        heading_id: field::ANIM_NEW_SPACE_HEADING,
-        note: field::ANIM_NEW_SPACE_NOTE,
-        open_settings: field::ANIM_NEW_SPACE_OPEN_SETTINGS,
-        effect: field::ANIM_NEW_SPACE_EFFECT,
-        duration: field::ANIM_NEW_SPACE_DURATION,
-        detail: field::ANIM_NEW_SPACE_DETAIL,
-        direction: field::ANIM_NEW_SPACE_DIRECTION,
+        kind: Kind::Startup,
+        title: "Startup",
+        heading: "When spaces come and go",
+        name: "startup",
+        heading_id: field::ANIM_STARTUP_HEADING,
+        note: field::ANIM_STARTUP_NOTE,
+        open_settings: field::ANIM_STARTUP_OPEN_SETTINGS,
+        effect: field::ANIM_STARTUP_EFFECT,
+        duration: field::ANIM_STARTUP_DURATION,
+        detail: field::ANIM_STARTUP_DETAIL,
+        direction: field::ANIM_STARTUP_DIRECTION,
     },
     AnimationPage {
         kind: Kind::Delete,
@@ -309,10 +296,10 @@ mod tests {
     }
 
     #[test]
-    fn delete_offers_same_as_new_space_first() {
+    fn delete_offers_same_as_startup_first() {
         let choices = AnimationPage::of(Kind::Delete).choices();
-        assert_eq!(choices[0], EffectChoice::SameAs(Kind::NewSpace));
-        assert_eq!(AnimationPage::choice_label(choices[0]), "Same as new space");
+        assert_eq!(choices[0], EffectChoice::SameAs(Kind::Startup));
+        assert_eq!(AnimationPage::choice_label(choices[0]), "Same as startup");
         assert_eq!(
             AnimationPage::of(Kind::Fold).choices(),
             [

@@ -97,10 +97,9 @@ impl Effect {
 /// A moment that animates. Each has its own settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
-    /// Hiding and showing the spaces.
-    HideShow,
-    /// A space coming into being, every space at startup included.
-    NewSpace,
+    /// Spaces coming onto the screen and leaving it: DeskSpace starting and
+    /// exiting, the spaces shown and hidden, and a new space appearing.
+    Startup,
     /// A space going away.
     Delete,
     /// A space folding to its title bar and unfolding.
@@ -119,7 +118,7 @@ pub struct KindSpec {
     pub effects: &'static [Effect],
     /// The options the kind lets the user change, when its effect uses them.
     pub options: &'static [EffectOption],
-    /// A kind whose effect this one can follow ("Same as new space").
+    /// A kind whose effect this one can follow ("Same as startup").
     pub follows: Option<Kind>,
     /// Whether the kind has the startup controls (order and delay).
     pub startup: bool,
@@ -141,17 +140,8 @@ const EVERY_EFFECT: &[Effect] = &[
 /// Every kind, in the order the settings page lists them.
 pub const KINDS: &[KindSpec] = &[
     KindSpec {
-        kind: Kind::HideShow,
-        key: "hide_show",
-        effects: EVERY_EFFECT,
-        options: &[Detail, Direction],
-        follows: None,
-        startup: false,
-        default: EffectChoice::Effect(Effect::Roll),
-    },
-    KindSpec {
-        kind: Kind::NewSpace,
-        key: "new_space",
+        kind: Kind::Startup,
+        key: "startup",
         effects: EVERY_EFFECT,
         options: &[Detail, Direction],
         follows: None,
@@ -163,9 +153,9 @@ pub const KINDS: &[KindSpec] = &[
         key: "delete",
         effects: EVERY_EFFECT,
         options: &[Detail, Direction],
-        follows: Some(Kind::NewSpace),
+        follows: Some(Kind::Startup),
         startup: false,
-        default: EffectChoice::SameAs(Kind::NewSpace),
+        default: EffectChoice::SameAs(Kind::Startup),
     },
     // A fold always collapses toward the title bar, so it has no direction.
     KindSpec {
@@ -200,7 +190,7 @@ impl Kind {
 const SAME_AS_PREFIX: &str = "same_as_";
 
 /// What a kind plays: an effect of its own, or whatever another kind plays.
-/// Stored as a string (`"fade"`, `"same_as_new_space"`); a name this version
+/// Stored as a string (`"fade"`, `"same_as_startup"`); a name this version
 /// does not know, from a newer one, loads as the kind's default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
@@ -312,7 +302,7 @@ impl AnimationSettings {
 
 impl Default for AnimationSettings {
     fn default() -> Self {
-        Self::default_for(Kind::HideShow)
+        Self::default_for(Kind::Startup)
     }
 }
 
@@ -330,8 +320,11 @@ pub struct Resolved {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Animations {
-    pub hide_show: AnimationSettings,
-    pub new_space: AnimationSettings,
+    /// Startup's settings. Read from `hide_show` too, the key before Hide
+    /// and show and New space merged into Startup (D12, amended
+    /// 2026-10-18); a stored `new_space` table is ignored.
+    #[serde(alias = "hide_show")]
+    pub startup_exit: AnimationSettings,
     pub delete: AnimationSettings,
     pub fold: AnimationSettings,
     pub startup: StartupOrder,
@@ -341,8 +334,7 @@ pub struct Animations {
 impl Default for Animations {
     fn default() -> Self {
         Self {
-            hide_show: AnimationSettings::default_for(Kind::HideShow),
-            new_space: AnimationSettings::default_for(Kind::NewSpace),
+            startup_exit: AnimationSettings::default_for(Kind::Startup),
             delete: AnimationSettings::default_for(Kind::Delete),
             fold: AnimationSettings::default_for(Kind::Fold),
             startup: StartupOrder::default(),
@@ -354,8 +346,7 @@ impl Default for Animations {
 impl Animations {
     pub fn get(&self, kind: Kind) -> &AnimationSettings {
         match kind {
-            Kind::HideShow => &self.hide_show,
-            Kind::NewSpace => &self.new_space,
+            Kind::Startup => &self.startup_exit,
             Kind::Delete => &self.delete,
             Kind::Fold => &self.fold,
         }
@@ -363,8 +354,7 @@ impl Animations {
 
     pub fn get_mut(&mut self, kind: Kind) -> &mut AnimationSettings {
         match kind {
-            Kind::HideShow => &mut self.hide_show,
-            Kind::NewSpace => &mut self.new_space,
+            Kind::Startup => &mut self.startup_exit,
             Kind::Delete => &mut self.delete,
             Kind::Fold => &mut self.fold,
         }
@@ -433,7 +423,7 @@ mod tests {
 
     #[test]
     fn every_kind_has_one_row_and_offers_none_and_its_default() {
-        for kind in [Kind::HideShow, Kind::NewSpace, Kind::Delete, Kind::Fold] {
+        for kind in [Kind::Startup, Kind::Delete, Kind::Fold] {
             let spec = kind.spec();
             assert_eq!(KINDS.iter().filter(|row| row.kind == kind).count(), 1);
             assert!(spec.effects.contains(&Effect::None), "{kind:?}");
@@ -444,11 +434,10 @@ mod tests {
     #[test]
     fn defaults_are_d12s() {
         let animations = Animations::default();
-        assert_eq!(animations.resolve(Kind::HideShow).effect, Effect::Roll);
-        assert_eq!(animations.resolve(Kind::NewSpace).effect, Effect::Roll);
+        assert_eq!(animations.resolve(Kind::Startup).effect, Effect::Roll);
         assert_eq!(
             animations.delete.effect,
-            EffectChoice::SameAs(Kind::NewSpace)
+            EffectChoice::SameAs(Kind::Startup)
         );
         assert_eq!(animations.resolve(Kind::Fold).effect, Effect::Roll);
         assert_eq!(animations.startup, StartupOrder::OneAfterAnother);
@@ -461,7 +450,7 @@ mod tests {
     #[test]
     fn following_takes_the_effect_and_options_but_not_the_duration() {
         let mut animations = Animations {
-            new_space: AnimationSettings {
+            startup_exit: AnimationSettings {
                 effect: EffectChoice::Effect(Effect::Pixelate),
                 duration_ms: 400,
                 detail: 9,
@@ -480,13 +469,13 @@ mod tests {
     fn choices_round_trip_through_their_stored_names() {
         for choice in [
             EffectChoice::Effect(Effect::Crt),
-            EffectChoice::SameAs(Kind::NewSpace),
+            EffectChoice::SameAs(Kind::Startup),
         ] {
             assert_eq!(EffectChoice::from(String::from(choice)), choice);
         }
         assert_eq!(
-            String::from(EffectChoice::SameAs(Kind::NewSpace)),
-            "same_as_new_space"
+            String::from(EffectChoice::SameAs(Kind::Startup)),
+            "same_as_startup"
         );
         assert_eq!(
             EffectChoice::from("black_hole".to_string()),
@@ -501,18 +490,25 @@ mod tests {
     #[test]
     fn clamping_brings_every_value_into_range() {
         let mut animations = Animations::default();
-        animations.hide_show.effect = EffectChoice::Unknown;
-        animations.hide_show.duration_ms = 5;
-        animations.new_space.detail = 99;
-        animations.new_space.effect = EffectChoice::SameAs(Kind::Delete);
+        animations.startup_exit.effect = EffectChoice::Unknown;
+        animations.startup_exit.duration_ms = 5;
+        animations.startup_exit.detail = 99;
+        animations.delete.effect = EffectChoice::SameAs(Kind::Delete);
         animations.fold.effect = EffectChoice::Effect(Effect::Burn);
         animations.fold.duration_ms = 60_000;
         animations.stagger_ms = 0;
         let clamped = animations.clamped();
-        assert_eq!(clamped.hide_show.effect, EffectChoice::Effect(Effect::Roll));
-        assert_eq!(clamped.hide_show.duration_ms, DURATION_MS_RANGE.0);
-        assert_eq!(clamped.new_space.detail, DETAIL_RANGE.1);
-        assert_eq!(clamped.new_space.effect, EffectChoice::Effect(Effect::Roll));
+        assert_eq!(
+            clamped.startup_exit.effect,
+            EffectChoice::Effect(Effect::Roll)
+        );
+        assert_eq!(clamped.startup_exit.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(clamped.startup_exit.detail, DETAIL_RANGE.1);
+        assert_eq!(
+            clamped.delete.effect,
+            EffectChoice::SameAs(Kind::Startup),
+            "Delete cannot follow itself"
+        );
         assert_eq!(clamped.fold.effect, EffectChoice::Effect(Effect::Roll));
         assert_eq!(clamped.fold.duration_ms, DURATION_MS_RANGE.1);
         assert_eq!(clamped.stagger_ms, STAGGER_MS_RANGE.0);

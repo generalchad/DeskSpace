@@ -2343,3 +2343,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: each effect on delete, from the menu and the
     settings header; deleting a space still flying in turns it around;
     quitting mid-animation leaves nothing behind.
+
+- [x] **T15. Three kinds: Startup, Delete, Fold (core, config, settings;
+  D12 amended 2026-10-18).** Merge Hide and show and New space into
+  Startup.
+  - Core: `Kind::{Startup, Delete, Fold}`; Startup has the startup
+    controls, and Delete follows Startup (`"same_as_startup"`). The kind
+    rows' keys stay stored names.
+  - Config: `Animations.startup_exit` holds Startup's settings, reading
+    the old `hide_show` table through a serde alias; the old `new_space`
+    table is ignored. `startup` (the order) and `stagger_ms` keep their
+    keys, so a config written since T3 still loads. A stored
+    `"same_as_new_space"` becomes Delete's default, Same as startup.
+  - App: hiding, showing, and a new space play Startup with no stagger;
+    startup staggers as before. The pages: Startup, Delete, Fold.
+  - Tests: an old config with `hide_show` and `new_space` tables loads
+    into Startup; Delete follows Startup; the pages and their greying.
+    **[needs human]** check: the three pages; each Startup effect on hide,
+    show, a new space, and startup.

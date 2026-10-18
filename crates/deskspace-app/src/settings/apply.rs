@@ -375,21 +375,21 @@ mod tests {
         };
         let (mut config, mut session) = setup();
         let mut edit = |id, value| apply_field(&mut config, &mut session, id, value, true);
-        // Delete lists "Same as new space" first, then None, then Roll.
+        // Delete lists "Same as startup" first, then None, then Roll.
         assert_eq!(
             edit(field::ANIM_DELETE_EFFECT, FieldValue::Choice(2)),
             Effect::Pending
         );
         assert_eq!(
-            edit(field::ANIM_HIDE_SHOW_DURATION, FieldValue::Slider(5)),
+            edit(field::ANIM_STARTUP_DURATION, FieldValue::Slider(5)),
             Effect::Pending
         );
         assert_eq!(
-            edit(field::ANIM_NEW_SPACE_DETAIL, FieldValue::Slider(99)),
+            edit(field::ANIM_STARTUP_DETAIL, FieldValue::Slider(99)),
             Effect::Pending
         );
         assert_eq!(
-            edit(field::ANIM_NEW_SPACE_DIRECTION, FieldValue::Choice(3)),
+            edit(field::ANIM_STARTUP_DIRECTION, FieldValue::Choice(3)),
             Effect::Pending
         );
         assert_eq!(
@@ -405,10 +405,10 @@ mod tests {
             animations.delete.effect,
             EffectChoice::Effect(AnimationEffect::Roll)
         );
-        assert_eq!(animations.hide_show.duration_ms, DURATION_MS_RANGE.0);
-        assert_eq!(animations.new_space.detail, 10);
+        assert_eq!(animations.startup_exit.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(animations.startup_exit.detail, 10);
         assert_eq!(
-            animations.resolve(Kind::NewSpace).direction,
+            animations.resolve(Kind::Startup).direction,
             deskspace_core::animation::Edge::Left
         );
         assert_eq!(animations.startup, StartupOrder::AllAtOnce);

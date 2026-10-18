@@ -74,21 +74,15 @@ pub mod field {
 
     // The animation pages (ROADMAP D12), one block per kind; `ANIMATION_PAGES`
     // says which page each belongs to. Fold's detail and direction are kept
-    // for it although Fold offers neither.
-    pub const ANIM_HIDE_SHOW_HEADING: u32 = 73;
-    pub const ANIM_HIDE_SHOW_NOTE: u32 = 74;
-    pub const ANIM_HIDE_SHOW_OPEN_SETTINGS: u32 = 75;
-    pub const ANIM_HIDE_SHOW_EFFECT: u32 = 76;
-    pub const ANIM_HIDE_SHOW_DURATION: u32 = 77;
-    pub const ANIM_HIDE_SHOW_DETAIL: u32 = 78;
-    pub const ANIM_HIDE_SHOW_DIRECTION: u32 = 79;
-    pub const ANIM_NEW_SPACE_HEADING: u32 = 80;
-    pub const ANIM_NEW_SPACE_NOTE: u32 = 81;
-    pub const ANIM_NEW_SPACE_OPEN_SETTINGS: u32 = 82;
-    pub const ANIM_NEW_SPACE_EFFECT: u32 = 83;
-    pub const ANIM_NEW_SPACE_DURATION: u32 = 84;
-    pub const ANIM_NEW_SPACE_DETAIL: u32 = 85;
-    pub const ANIM_NEW_SPACE_DIRECTION: u32 = 86;
+    // for it although Fold offers neither. 80-86 were New space's page,
+    // merged into Startup (73-79) on 2026-10-18; they stay unused.
+    pub const ANIM_STARTUP_HEADING: u32 = 73;
+    pub const ANIM_STARTUP_NOTE: u32 = 74;
+    pub const ANIM_STARTUP_OPEN_SETTINGS: u32 = 75;
+    pub const ANIM_STARTUP_EFFECT: u32 = 76;
+    pub const ANIM_STARTUP_DURATION: u32 = 77;
+    pub const ANIM_STARTUP_DETAIL: u32 = 78;
+    pub const ANIM_STARTUP_DIRECTION: u32 = 79;
     pub const ANIM_STARTUP_ORDER: u32 = 87;
     pub const ANIM_STAGGER: u32 = 88;
     pub const ANIM_DELETE_HEADING: u32 = 89;

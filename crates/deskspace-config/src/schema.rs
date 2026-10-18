@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn animations_load_their_defaults_and_clamp() {
         use deskspace_core::animation::{
-            DURATION_MS_RANGE, Effect, EffectChoice, Kind, STAGGER_MS_RANGE,
+            DURATION_MS_RANGE, Effect, EffectChoice, Kind, STAGGER_MS_RANGE, StartupOrder,
         };
 
         let parsed: Config = toml::from_str(
@@ -389,15 +389,22 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.window.animations, Animations::default());
 
+        // As written since T3, before Hide and show and New space merged
+        // into Startup: `hide_show` is read as Startup, `new_space` is
+        // ignored, and Delete's old "same as" falls back to its default.
         let text = r#"
             version = 2
 
             [window.animations]
+            startup = "all_at_once"
             stagger_ms = 0
 
             [window.animations.hide_show]
             effect = "black_hole"
             duration_ms = 5
+
+            [window.animations.new_space]
+            effect = "fade"
 
             [window.animations.delete]
             effect = "same_as_new_space"
@@ -410,13 +417,14 @@ mod tests {
         parsed.migrate();
         let animations = parsed.window.animations;
         assert_eq!(
-            animations.hide_show.effect,
+            animations.startup_exit.effect,
             EffectChoice::Effect(Effect::Roll)
         );
-        assert_eq!(animations.hide_show.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(animations.startup_exit.duration_ms, DURATION_MS_RANGE.0);
+        assert_eq!(animations.startup, StartupOrder::AllAtOnce);
         assert_eq!(
             animations.delete.effect,
-            EffectChoice::SameAs(Kind::NewSpace)
+            EffectChoice::SameAs(Kind::Startup)
         );
         assert_eq!(animations.delete.duration_ms, 400);
         assert_eq!(animations.fold.effect, EffectChoice::Effect(Effect::Roll));
@@ -424,9 +432,14 @@ mod tests {
 
         let written = toml::to_string(&parsed).unwrap();
         assert!(
-            written.contains("effect = \"same_as_new_space\""),
+            written.contains("effect = \"same_as_startup\""),
             "{written}"
         );
+        assert!(
+            written.contains("[window.animations.startup_exit]"),
+            "{written}"
+        );
+        assert!(!written.contains("hide_show"), "{written}");
         let reread: Config = toml::from_str(&written).unwrap();
         assert_eq!(reread, parsed);
     }

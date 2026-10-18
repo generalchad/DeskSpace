@@ -164,7 +164,7 @@ impl App {
     }
 
     /// Creates a window for every space that has none, brings each in with
-    /// the New space animation once its scene is pushed, and destroys the
+    /// the Startup animation once its scene is pushed, and destroys the
     /// windows of spaces that are gone.
     fn sync_windows_as(&mut self, ui: &mut Ui, arrival: Arrival) {
         let existing: HashSet<u64> = ui.space_ids().into_iter().collect();
