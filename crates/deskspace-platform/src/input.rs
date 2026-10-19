@@ -314,6 +314,9 @@ pub enum Event {
     SystemAnimationsChanged,
     /// A zoom pop-up button was clicked (see `Ui::show_zoom_bar`).
     Zoom(ZoomAction),
+    /// The color picker's recent colors changed after a pick, most recent
+    /// first (see `Ui::set_recent_colors`). Save them.
+    RecentColors(Vec<deskspace_core::theme::Color>),
     /// Delivered once, before the runtime tears windows down: on quit, console
     /// Ctrl+C or close, and at logoff/shutdown. Save here.
     CloseRequested,

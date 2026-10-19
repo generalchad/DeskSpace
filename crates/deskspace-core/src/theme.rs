@@ -398,6 +398,18 @@ const LIGHT_TEXT: Color = Color::rgb(26, 26, 26);
 /// is the fallback.
 pub const CHECK_ACCENT: Color = Color::rgb(0x00, 0x78, 0xD4);
 
+/// How many recently picked colors the color picker shows and the config
+/// keeps.
+pub const RECENT_COLORS_LIMIT: usize = 14;
+
+/// Puts `color` at the front of `recent`, dropping an earlier copy of it and
+/// anything past `RECENT_COLORS_LIMIT`.
+pub fn remember_color(recent: &mut Vec<Color>, color: Color) {
+    recent.retain(|existing| *existing != color);
+    recent.insert(0, color);
+    recent.truncate(RECENT_COLORS_LIMIT);
+}
+
 /// The default rubber-band selection box color. Explorer draws the box in the
 /// system highlight color; Windows blue is what it resolves to by default.
 pub const MARQUEE_COLOR_DEFAULT: Color = Color::rgb(0x00, 0x78, 0xD4);
@@ -607,6 +619,18 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remember_color_moves_to_front_and_caps_the_list() {
+        let mut recent = vec![Color::rgb(1, 1, 1), Color::rgb(2, 2, 2)];
+        remember_color(&mut recent, Color::rgb(2, 2, 2));
+        assert_eq!(recent, vec![Color::rgb(2, 2, 2), Color::rgb(1, 1, 1)]);
+        for shade in 0..RECENT_COLORS_LIMIT as u8 + 3 {
+            remember_color(&mut recent, Color::rgb(shade, 0, 0));
+        }
+        assert_eq!(recent.len(), RECENT_COLORS_LIMIT);
+        assert_eq!(recent[0], Color::rgb(RECENT_COLORS_LIMIT as u8 + 2, 0, 0));
+    }
 
     #[test]
     fn hex_round_trips_rgb() {

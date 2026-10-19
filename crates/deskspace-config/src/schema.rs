@@ -1,5 +1,6 @@
 use deskspace_core::animation::Animations;
-use deskspace_core::{Desktop, Theme};
+use deskspace_core::theme::RECENT_COLORS_LIMIT;
+use deskspace_core::{Color, Desktop, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -20,6 +21,10 @@ pub struct Config {
     pub theme: Theme,
     #[serde(default)]
     pub window: WindowSettings,
+    /// The color picker's recent colors, most recent first. Kept outside
+    /// `window` so a settings Cancel, which restores `window`, keeps them.
+    #[serde(default)]
+    pub recent_colors: Vec<Color>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +116,7 @@ impl Default for Config {
             desktop: Desktop::default(),
             theme: Theme::default(),
             window: WindowSettings::default(),
+            recent_colors: Vec::new(),
         }
     }
 }
@@ -142,6 +148,7 @@ impl Config {
         self.window = self.window.clone().clamped();
         self.desktop.layout = self.desktop.layout.clamped();
         self.desktop.clamp_looks();
+        self.recent_colors.truncate(RECENT_COLORS_LIMIT);
     }
 }
 
@@ -305,6 +312,23 @@ mod tests {
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
         assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
+    }
+
+    #[test]
+    fn recent_colors_load_and_are_capped() {
+        let mut text = String::from("version = 2\n");
+        for shade in 0..RECENT_COLORS_LIMIT + 2 {
+            text.push_str(&format!(
+                "[[recent_colors]]\nr = {shade}\ng = 0\nb = 0\na = 255\n"
+            ));
+        }
+        let mut parsed: Config = toml::from_str(&text).unwrap();
+        parsed.migrate();
+        assert_eq!(parsed.recent_colors.len(), RECENT_COLORS_LIMIT);
+        assert_eq!(parsed.recent_colors[0], Color::rgb(0, 0, 0));
+        let saved = toml::to_string(&parsed).unwrap();
+        let reloaded: Config = toml::from_str(&saved).unwrap();
+        assert_eq!(reloaded.recent_colors, parsed.recent_colors);
     }
 
     #[test]

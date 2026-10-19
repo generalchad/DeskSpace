@@ -46,9 +46,14 @@ impl Ui {
                 runtime.ui_dark,
             )
         })?;
-        // SAFETY: `owner` is a live window owned by this thread, and the picker
-        // is modal for the duration of the call.
-        unsafe { crate::win32::color_picker::pick(owner, initial, dark) }
+        pick_color(owner, initial, dark)
+    }
+
+    /// Sets the color picker's recent colors, most recent first, such as the
+    /// ones saved last session. Picks update them and raise
+    /// `Event::RecentColors`.
+    pub fn set_recent_colors(&mut self, colors: Vec<deskspace_core::theme::Color>) {
+        with_runtime(|runtime| runtime.recent_colors = colors);
     }
 
     /// Opens the installed-apps picker titled `title` and returns the apps the

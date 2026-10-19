@@ -98,7 +98,9 @@ pub(super) unsafe fn on_field_command(window: HWND, id: usize, code: u32, contro
             ) => Some(FieldValue::Text(window_text(control))),
             (FieldKind::Color { .. }, BN_CLICKED) => {
                 let dark = with_state(window, |state| state.colors.dark).unwrap_or(false);
-                crate::win32::color_picker::pick(window, color, dark).map(FieldValue::Color)
+                // The pick's `Event::RecentColors` is queued, and delivered
+                // with the `Changed` this branch dispatches last.
+                crate::win32::runtime::pick_color(window, color, dark).map(FieldValue::Color)
             }
             (FieldKind::Button { .. }, BN_CLICKED) => {
                 settings_event(SettingsEvent::Button { field: field.id });

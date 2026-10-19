@@ -582,6 +582,7 @@ impl EventHandler for App {
                 // DeskSpace's own menus and settings window follow the
                 // `ui_mode` setting; the spaces follow their own Color mode.
                 ui.set_ui_dark(self.ui_dark());
+                ui.set_recent_colors(self.config.recent_colors.clone());
                 self.hotkeys.register_all(ui, &self.config.window);
                 // The spaces appear as their windows are created, below; this
                 // only settles whether they start hidden.
@@ -663,6 +664,10 @@ impl EventHandler for App {
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
             Event::Wake { .. } => {}
             Event::Zoom(action) => self.zoom(ui, action),
+            Event::RecentColors(colors) => {
+                self.config.recent_colors = colors;
+                self.schedule_save(ui);
+            }
             Event::SystemThemeChanged => {
                 self.system.refresh();
                 ui.set_ui_dark(self.ui_dark());
