@@ -212,8 +212,8 @@ pub(crate) unsafe fn preview(window: HWND, out: Play, back: Play) {
 }
 
 /// Folds `window` to `rect` (its title bar) or unfolds it to `rect` with
-/// `play`, a Roll whose way says which. A fold already running the other way
-/// turns around.
+/// `play`, whose way says which. A fold already running the other way turns
+/// around.
 ///
 /// # Safety
 /// `window` is a live space window; call it outside any state borrow.
@@ -247,17 +247,7 @@ pub(crate) unsafe fn fold(window: HWND, rect: Rect, play: Play) {
         Way::In => Geometry::for_fold(rect, current, work_area),
     };
     // SAFETY: the caller's contract.
-    unsafe {
-        start(
-            window,
-            Play {
-                effect: Effect::Roll,
-                ..play
-            },
-            geometry,
-            Purpose::Fold,
-        )
-    };
+    unsafe { start(window, play, geometry, Purpose::Fold) };
 }
 
 /// Plays `play` on a deleted space's `window`, then destroys it. A space
