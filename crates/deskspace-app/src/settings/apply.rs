@@ -4,8 +4,8 @@
 use super::ids::field;
 use super::session::Session;
 use super::tables::{
-    ANIMATION_PAGES, AnimationPage, BACKDROPS, EDGES, HOTKEY_BINDINGS, LABEL_LINES_OPTIONS,
-    LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, is_hotkey_field,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
 use super::*;
 use super::{Effect, scope_space};
@@ -52,12 +52,15 @@ fn apply_look_field(
                 (*value).clamp(BORDER_WIDTH_RANGE.0.into(), BORDER_WIDTH_RANGE.1.into()) as u8;
             Effect::Appearance
         }
-        (field::CUSTOM_BORDER, FieldValue::Toggle(on)) => {
-            if *on && !theme.custom_border {
+        (field::BORDER_SOURCE, FieldValue::Choice(index)) => {
+            let source = BORDER_SOURCES
+                .get(*index)
+                .map_or(theme.border_source, |entry| entry.0);
+            if source == BorderSource::Custom && theme.border_source != BorderSource::Custom {
                 // Start from the border on screen rather than a stale color.
                 theme.border_color = theme.palette(system_dark).border.with_alpha(255);
             }
-            theme.custom_border = *on;
+            theme.border_source = source;
             Effect::Appearance
         }
         (field::BORDER_COLOR, FieldValue::Color(color)) => {
@@ -709,17 +712,21 @@ mod tests {
     }
 
     #[test]
-    fn turning_on_a_custom_border_starts_from_the_one_on_screen() {
+    fn choosing_a_custom_border_starts_from_the_one_on_screen() {
         let (mut config, mut session) = setup();
         let before = config.theme.palette(false).border;
+        let custom = BORDER_SOURCES
+            .iter()
+            .position(|(source, _)| *source == BorderSource::Custom)
+            .unwrap();
         apply_field(
             &mut config,
             &mut session,
-            field::CUSTOM_BORDER,
-            FieldValue::Toggle(true),
+            field::BORDER_SOURCE,
+            FieldValue::Choice(custom),
             false,
         );
-        assert!(config.theme.custom_border);
+        assert_eq!(config.theme.border_source, BorderSource::Custom);
         assert_eq!(config.theme.border_color, before.with_alpha(255));
         assert_eq!(
             config.theme.palette(false).border,

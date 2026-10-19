@@ -2,7 +2,7 @@
 
 use super::ids::field;
 use super::tables::{
-    ANIMATION_PAGES, AnimationPage, BACKDROPS, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
     LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
 };
 use super::*;
@@ -164,21 +164,22 @@ pub(super) fn look_pages(
             Field::color(field::TEXT, "Text", palette.title_text).enabled(theme.custom_colors),
             Field::toggle(
                 field::USE_ACCENT,
-                "Use Windows accent color for the selection and border",
+                "Use Windows accent color for the selection",
                 theme.use_accent,
             ),
-            Field::toggle(
-                field::CUSTOM_BORDER,
-                "Custom border color",
-                theme.custom_border,
+            Field::choice(
+                field::BORDER_SOURCE,
+                "Border color",
+                &labels(&BORDER_SOURCES),
+                index_of(&BORDER_SOURCES, theme.border_source),
             )
             .enabled(theme.show_border),
             Field::color(
                 field::BORDER_COLOR,
-                "Border color",
+                "Custom border color",
                 palette.border.with_alpha(255),
             )
-            .enabled(theme.show_border && theme.custom_border),
+            .enabled(theme.show_border && theme.border_source == BorderSource::Custom),
             Field::slider(
                 field::BORDER_OPACITY,
                 "Border opacity",
@@ -188,7 +189,7 @@ pub(super) fn look_pages(
                     .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1) as i32,
             )
             .suffix(" %")
-            .enabled(theme.show_border && theme.custom_border),
+            .enabled(theme.show_border),
             Field::color(
                 field::MARQUEE_COLOR,
                 "Selection box color",

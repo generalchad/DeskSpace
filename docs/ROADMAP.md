@@ -47,7 +47,11 @@ A native, lightweight, offline Windows desktop organizer that:
     by the space itself (amended 2026-10-19, maintainer): DWM draws its
     border outside the window's pixels, so it could not fade, dissolve, or
     burn with the space in an animation (D12), and it had one thickness
-    and color.
+    and color. Its color is white in dark mode and black in light mode,
+    as Explorer's window borders are; the Windows accent is a choice of its
+    own, so "Use Windows accent color" now colors only the selection
+    (amended 2026-10-19, maintainer: the accent border looked off and is
+    not how Explorer draws borders).
   - GDI is retired. DirectComposition waits for the animation work in M5.
   - The documented `DWMWA_SYSTEMBACKDROP_TYPE` was rejected: system backdrops
     only render on active windows, and spaces are never active.

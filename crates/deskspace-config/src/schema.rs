@@ -605,7 +605,10 @@ show_border = true
         );
         let parsed: Config = toml::from_str(&text).unwrap();
         assert_eq!(parsed.theme.border_width, 1);
-        assert!(!parsed.theme.custom_border);
+        assert_eq!(
+            parsed.theme.border_source,
+            deskspace_core::BorderSource::Mode
+        );
         assert_eq!(
             parsed.theme.border_opacity,
             deskspace_core::theme::BORDER_OPACITY_DEFAULT
@@ -616,7 +619,7 @@ show_border = true
     fn border_settings_round_trip_through_toml() {
         let mut config = Config::new();
         config.theme.border_width = 4;
-        config.theme.custom_border = true;
+        config.theme.border_source = deskspace_core::BorderSource::Custom;
         config.theme.border_color = deskspace_core::Color::rgb(10, 20, 30);
         config.theme.border_opacity = 75;
         let text = toml::to_string_pretty(&config).unwrap();

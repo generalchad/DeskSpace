@@ -198,6 +198,21 @@ pub enum LabelShadow {
     Off,
 }
 
+/// Where a space's border color comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BorderSource {
+    /// White in dark mode, black in light mode, as Explorer's window
+    /// borders are, whatever the custom text color.
+    #[default]
+    Mode,
+    /// Windows' accent color. Opt-in: it is not how Explorer draws its
+    /// borders, so `use_accent` alone never colors the border.
+    Accent,
+    /// `Theme::border_color`.
+    Custom,
+}
+
 /// A bundle of item-display choices. `MatchExplorer` mirrors Explorer's own
 /// item rendering (icon size, spacing, check boxes, extensions); `Custom` uses
 /// DeskSpace's own item settings. More presets and import/export are planned;
@@ -242,10 +257,9 @@ pub const TINT_OPACITY_RANGE: (u8, u8) = (0, 100);
 pub const TITLE_SHADING_RANGE: (u8, u8) = (0, 100);
 /// The bounds a border thickness is clamped to, in pixels at 96 DPI.
 pub const BORDER_WIDTH_RANGE: (u8, u8) = (1, 8);
-/// The bounds a custom border's opacity is clamped to, in percent.
+/// The bounds a border's opacity is clamped to, in percent.
 pub const BORDER_OPACITY_RANGE: (u8, u8) = (0, 100);
-/// The border's opacity when it follows the color mode or the accent (0x30),
-/// and a custom border's default.
+/// The border's default opacity: 19 % (0x30), as it was before the setting.
 pub const BORDER_OPACITY_DEFAULT: u8 = 19;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -271,12 +285,11 @@ pub struct Theme {
     pub show_border: bool,
     /// The border's thickness in pixels at 96 DPI, scaled with the monitor.
     pub border_width: u8,
-    /// Draw the border in `border_color` at `border_opacity` instead of the
-    /// color mode's, and instead of the accent while `use_accent` is on.
-    pub custom_border: bool,
-    /// The custom border color; used only with `custom_border`.
+    /// Where the border's color comes from.
+    pub border_source: BorderSource,
+    /// The custom border color; used only with `BorderSource::Custom`.
     pub border_color: Color,
-    /// The custom border's opacity, in percent.
+    /// The border's opacity, in percent, whatever its color.
     pub border_opacity: u8,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
@@ -323,7 +336,7 @@ impl Default for Theme {
             title_shading: 30,
             show_border: true,
             border_width: BORDER_WIDTH_RANGE.0,
-            custom_border: false,
+            border_source: BorderSource::Mode,
             border_color: Color::rgb(255, 255, 255),
             border_opacity: BORDER_OPACITY_DEFAULT,
             label_lines: 2,
@@ -447,13 +460,14 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// Replaces the selection highlight and border with `accent` at the alpha
-    /// each one already has, leaving every other color alone. The selection box
-    /// follows too, since Explorer draws it in the same highlight color.
+    /// Replaces the selection highlight with `accent` at the alpha it
+    /// already has, leaving every other color alone. The selection box
+    /// follows too, since Explorer draws it in the same highlight color. The
+    /// border does not: it takes the accent only by choice
+    /// (`BorderSource::Accent`).
     pub fn with_accent(mut self, accent: Color) -> Self {
         self.selected_fill = accent.with_alpha(self.selected_fill.a);
         self.marquee = accent.with_alpha(255);
-        self.border = accent.with_alpha(self.border.a);
         self
     }
 }
@@ -485,8 +499,9 @@ impl Theme {
 
     /// `palette` with Windows' `accent`, when it is known. Explorer always
     /// fills a checked item check box with the accent, whatever the space's
-    /// own selection colors are; the selection and border follow it only
-    /// with `use_accent`, and a custom border keeps its own color.
+    /// own selection colors are; the selection follows it with `use_accent`,
+    /// and the border with `BorderSource::Accent`. Without a known accent,
+    /// an accent border keeps the color mode's.
     pub fn palette_with_accent(&self, system_dark: bool, accent: Option<Color>) -> Palette {
         let mut palette = self.palette(system_dark);
         let Some(accent) = accent else {
@@ -495,11 +510,10 @@ impl Theme {
         // The registry accent's alpha is unreliable, so force it opaque.
         palette.check_fill = accent.with_alpha(255);
         if self.use_accent {
-            let border = palette.border;
             palette = palette.with_accent(accent);
-            if self.custom_border {
-                palette.border = border;
-            }
+        }
+        if self.border_source == BorderSource::Accent {
+            palette.border = accent.with_alpha(palette.border.a);
         }
         palette
     }
@@ -566,6 +580,12 @@ impl Theme {
         } else {
             Color::rgb(0, 0, 0)
         };
+        let border = match self.border_source {
+            BorderSource::Custom => self.border_color,
+            // An accent border is filled in by `palette_with_accent`.
+            BorderSource::Mode | BorderSource::Accent if dark => Color::rgb(255, 255, 255),
+            BorderSource::Mode | BorderSource::Accent => Color::rgb(0, 0, 0),
+        };
         Palette {
             dark,
             tint: tint.with_alpha(tint_alpha),
@@ -575,12 +595,7 @@ impl Theme {
             hover_fill: highlight.with_alpha(0x18),
             selected_fill: highlight.with_alpha(0x2C),
             marquee: self.marquee_color.with_alpha(255),
-            border: if self.custom_border {
-                self.border_color
-                    .with_alpha(percent_to_alpha(self.border_opacity))
-            } else {
-                highlight.with_alpha(percent_to_alpha(BORDER_OPACITY_DEFAULT))
-            },
+            border: border.with_alpha(percent_to_alpha(self.border_opacity)),
             check_fill: CHECK_ACCENT,
             // The rename field follows Windows' app theme, as Explorer's does,
             // rather than the space's own Color mode override.
@@ -722,9 +737,24 @@ mod tests {
     }
 
     #[test]
+    fn the_border_is_white_in_dark_mode_and_black_in_light_whatever_the_text() {
+        let theme = Theme {
+            custom_colors: true,
+            text: Color::rgb(20, 20, 20),
+            ..Theme::default()
+        };
+        assert_eq!(theme.palette(true).border, Color::rgba(255, 255, 255, 0x30));
+        let light = Theme {
+            text: Color::rgb(240, 240, 240),
+            ..theme
+        };
+        assert_eq!(light.palette(false).border, Color::rgba(0, 0, 0, 0x30));
+    }
+
+    #[test]
     fn a_custom_border_uses_its_color_and_opacity() {
         let theme = Theme {
-            custom_border: true,
+            border_source: BorderSource::Custom,
             border_color: Color::rgb(200, 10, 10),
             border_opacity: 100,
             ..Theme::default()
@@ -744,37 +774,43 @@ mod tests {
     }
 
     #[test]
-    fn the_accent_fills_check_boxes_and_follows_use_accent() {
+    fn the_accent_fills_check_boxes_and_the_selection_but_not_the_border() {
         let accent = Color::rgb(0x00, 0x78, 0xD4);
         let theme = Theme::default();
         assert_eq!(theme.palette_with_accent(true, None), theme.palette(true));
         let plain = theme.palette_with_accent(true, Some(accent));
         assert_eq!(plain.check_fill, accent);
         assert_eq!(plain.border, theme.palette(true).border);
-        let accented = Theme {
+        let selection = Theme {
             use_accent: true,
             ..Theme::default()
-        }
-        .palette_with_accent(true, Some(accent));
-        assert_eq!(accented.border, accent.with_alpha(0x30));
+        };
+        let palette = selection.palette_with_accent(true, Some(accent));
+        assert_eq!(palette.marquee, accent.with_alpha(255));
+        assert_eq!(palette.border, theme.palette(true).border);
     }
 
     #[test]
-    fn a_custom_border_wins_over_the_accent() {
+    fn an_accent_border_is_opt_in() {
         let accent = Color::rgb(0x00, 0x78, 0xD4);
         let theme = Theme {
-            use_accent: true,
-            custom_border: true,
-            border_color: Color::rgb(1, 2, 3),
+            border_source: BorderSource::Accent,
+            border_opacity: 50,
             ..Theme::default()
         };
         let palette = theme.palette_with_accent(true, Some(accent));
-        assert_eq!(palette.border, theme.palette(true).border);
-        assert_eq!(palette.marquee, accent.with_alpha(255));
+        assert_eq!(palette.border, accent.with_alpha(percent_to_alpha(50)));
+        // The selection stays as it was without `use_accent`.
+        assert_eq!(palette.marquee, theme.palette(true).marquee);
+        // Without a known accent, the color mode's border.
+        assert_eq!(
+            theme.palette_with_accent(true, None).border,
+            Color::rgba(255, 255, 255, percent_to_alpha(50))
+        );
     }
 
     #[test]
-    fn accent_replaces_selection_and_border_keeping_alpha() {
+    fn accent_replaces_the_selection_keeping_alpha() {
         let palette = Theme::default().palette(true);
         let accent = Color::rgb(0x00, 0x78, 0xD4);
         let accented = palette.with_accent(accent);
@@ -782,7 +818,7 @@ mod tests {
             accented.selected_fill,
             accent.with_alpha(palette.selected_fill.a)
         );
-        assert_eq!(accented.border, accent.with_alpha(palette.border.a));
+        assert_eq!(accented.border, palette.border);
         assert_eq!(accented.tint, palette.tint);
         assert_eq!(accented.hover_fill, palette.hover_fill);
         // The selection box follows the accent too, opaque.

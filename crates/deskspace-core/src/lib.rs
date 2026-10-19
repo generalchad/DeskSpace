@@ -20,4 +20,4 @@ pub use id::{ItemId, SpaceId};
 pub use item::{Item, ItemFacts, ItemKind};
 pub use layout::GridSpec;
 pub use space::{ResizeEdges, Space, SpaceLook};
-pub use theme::{Backdrop, Color, LabelShadow, Palette, Preset, Theme, ThemeMode};
+pub use theme::{Backdrop, BorderSource, Color, LabelShadow, Palette, Preset, Theme, ThemeMode};

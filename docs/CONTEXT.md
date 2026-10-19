@@ -276,15 +276,16 @@ beside it.
   decides dark or light; `mode` (through `Theme::is_dark`) colors the spaces,
   and `ui_mode` drives `App::ui_dark` and `Ui::set_ui_dark` for DeskSpace's
   own chrome.
-- `Palette::with_accent(accent)` replaces only `selected_fill`, `marquee`
-  (made the opaque accent), and `border` with the accent at their current
-  alphas. `Theme::palette_with_accent`, which `App::surface_palette`
-  (`app/hit.rs`, via `palette_for`) calls with
-  `deskspace_platform::system_accent_color()` (the DWM `AccentColor`
-  registry value, `0xAABBGGRR`), applies it when `use_accent` is on, except
-  to a `custom_border`, which keeps its own color. Whenever an accent is
-  known it also sets `check_fill` to it, opaque, whatever `use_accent` says,
-  because Explorer's check boxes always use the accent.
+- `Palette::with_accent(accent)` replaces only `selected_fill` and `marquee`
+  (made the opaque accent) with the accent at their current alphas.
+  `Theme::palette_with_accent`, which `App::surface_palette` (`app/hit.rs`,
+  via `palette_for`) calls with `deskspace_platform::system_accent_color()`
+  (the DWM `AccentColor` registry value, `0xAABBGGRR`), applies it when
+  `use_accent` is on. The border takes the accent only with
+  `BorderSource::Accent`; by default it is white in dark mode and black in
+  light mode, as Explorer's are, whatever the text color. Whenever an
+  accent is known it also sets `check_fill` to it, opaque, whatever
+  `use_accent` says, because Explorer's check boxes always use the accent.
 - `Backdrop::Solid` forces an opaque tint; `Backdrop::Clear` has no blur and
   lets the tint reach 0 %.
 - Enums serialize snake_case. Old spellings still load: `Backdrop::Blur`
@@ -1160,7 +1161,7 @@ in `ui.rs`. What spans them:
   | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Border thickness, Item preset |
   | Labels | look | Label lines, Label size, Label shadow |
   | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
-  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent, Custom border color, Border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
+  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
   | Advanced | look | Shortcut overlay size |
   | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now |
   | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |

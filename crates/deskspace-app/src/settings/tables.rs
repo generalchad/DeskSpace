@@ -22,6 +22,16 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// Where the border's color comes from, in dropdown order.
+pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
+    (
+        BorderSource::Mode,
+        "Automatic (white in dark mode, black in light)",
+    ),
+    (BorderSource::Accent, "Windows accent color"),
+    (BorderSource::Custom, "Custom"),
+];
+
 /// The item-display presets the Appearance page offers, in dropdown order.
 /// "Match Explorer's display" mirrors Explorer's icon size, spacing, check
 /// boxes, and extensions; "Custom" uses the fields below.

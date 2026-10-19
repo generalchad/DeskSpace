@@ -36,8 +36,8 @@ use deskspace_core::theme::{
     OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId, SpaceLook,
-    Theme, ThemeMode,
+    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId,
+    SpaceLook, Theme, ThemeMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
