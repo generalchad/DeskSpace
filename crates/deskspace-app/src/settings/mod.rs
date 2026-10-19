@@ -284,7 +284,7 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
 
 /// What an edit changed, so the caller knows what to refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Effect {
+pub enum FieldEffect {
     None,
     /// The look changed; restyle and repaint.
     Appearance,
@@ -383,7 +383,7 @@ mod tests {
                 let effect = apply_field(&mut config, &mut session, field.id, value, true);
                 assert_ne!(
                     effect,
-                    Effect::None,
+                    FieldEffect::None,
                     "field {} ({:?}) on the {} page has no arm in `apply_field`",
                     field.id,
                     field.label,

@@ -1053,9 +1053,3 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `bootstrap.rs` build its `Item` (the desktop layer re-reads them on every
   sync). Suggested task: give `DesktopEntry` an `ItemFacts` and drop its
   `kind` field.
-
-- `app/effect.rs` and `settings/mod.rs`: the app crate has two `Effect` enums,
-  R17's (what an event asks the shell to do) and the settings one (what a
-  field edit owes: `None`, `Appearance`, `Layout`, `Pending`). Once R17 reaches
-  the settings family, both meet in `settings_session.rs`. Suggested task:
-  rename the settings one (for example `FieldEffect`) before that step.

@@ -7,7 +7,7 @@ use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build};
 
 use crate::scene::item_label;
-use crate::settings::{self, ButtonAction, Effect, Session, SpaceSnapshot};
+use crate::settings::{self, ButtonAction, FieldEffect, Session, SpaceSnapshot};
 
 use super::{App, Preview, Surface, Timer};
 
@@ -185,10 +185,10 @@ impl App {
                     value,
                     self.system.dark(),
                 );
-                if effect == Effect::Appearance {
+                if effect == FieldEffect::Appearance {
                     ui.set_ui_dark(self.ui_dark());
                     self.schedule_preview(ui, Preview::restyle_all());
-                } else if effect == Effect::Layout {
+                } else if effect == FieldEffect::Layout {
                     self.schedule_preview(ui, Preview::relayout_all());
                 }
                 self.refresh_settings(ui);
@@ -326,7 +326,7 @@ impl App {
             && self.dispatch(command, self.space_center(id)).is_applied()
         {
             let preview = match effect {
-                Effect::Layout => Preview::relayout(id),
+                FieldEffect::Layout => Preview::relayout(id),
                 _ => Preview::restyle(id),
             };
             self.schedule_preview(ui, preview);
