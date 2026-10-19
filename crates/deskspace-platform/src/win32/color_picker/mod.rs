@@ -15,8 +15,6 @@
 //! while it is open, so only the picker can be driven, but the loop pumps
 //! every message so Windows does not mark the owner "not responding".
 
-use std::cell::RefCell;
-
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::theme::{Color, Hsv};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -145,23 +143,6 @@ const WINDOWS_COLORS: [Color; COLS * ROWS] = [
     Color::rgb(0x8F, 0xA0, 0xB0),
 ];
 
-/// How many recent colors are kept and shown (one row).
-const RECENT_LIMIT: usize = COLS;
-
-thread_local! {
-    /// The colors picked recently, most recent first, kept for the session.
-    static RECENT: RefCell<Vec<Color>> = const { RefCell::new(Vec::new()) };
-}
-
-fn remember(color: Color) {
-    RECENT.with(|recent| {
-        let mut recent = recent.borrow_mut();
-        recent.retain(|existing| *existing != color);
-        recent.insert(0, color);
-        recent.truncate(RECENT_LIMIT);
-    });
-}
-
 struct PickerState {
     panel: Panel,
     initial: Color,
@@ -175,7 +156,7 @@ struct PickerState {
     buffer: Option<Buffer>,
     /// The palette's selected color, when one is picked or the initial matches.
     selected: Option<Color>,
-    /// The recently used colors, read once at open.
+    /// The recently used colors, most recent first.
     recent: Vec<Color>,
     // The custom panel's HSV state, kept so hue survives saturation and value
     // edits.
@@ -206,12 +187,12 @@ impl PickerState {
     fn new(
         initial: Color,
         dark: bool,
+        recent: &[Color],
         layout: PickerLayout,
         font: HFONT,
         glyph_font: HFONT,
     ) -> Self {
         let hsv = initial.to_hsv();
-        let recent = RECENT.with(|recent| recent.borrow().clone());
         let selected = WINDOWS_COLORS
             .iter()
             .copied()
@@ -225,7 +206,7 @@ impl PickerState {
             glyph_font,
             buffer: None,
             selected,
-            recent,
+            recent: recent.to_vec(),
             hue: hsv.h,
             saturation: hsv.s,
             value: hsv.v,
@@ -364,10 +345,16 @@ impl PickerState {
     }
 }
 
-/// Opens the picker `dark`-themed over `owner` and returns the chosen color, or
-/// `None` if it was cancelled or the window could not be created. Blocks in a
-/// modal loop with the owner disabled, so the owner waits.
-pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Color> {
+/// Opens the picker `dark`-themed over `owner`, showing `recent` (most recent
+/// first), and returns the chosen color, or `None` if it was cancelled or the
+/// window could not be created. Blocks in a modal loop with the owner
+/// disabled, so the owner waits.
+pub(crate) unsafe fn pick(
+    owner: HWND,
+    initial: Color,
+    dark: bool,
+    recent: &[Color],
+) -> Option<Color> {
     // SAFETY: Win32 window creation on the UI thread. `state` is owned here and
     // dropped after the loop; the window points at it only while it is alive.
     unsafe {
@@ -380,7 +367,7 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
         let layout = PickerLayout::compute(dpi as f32 / 96.0);
         let font = CreateFontIndirectW(&message_logfont(dpi));
         let glyph = glyph_font(dpi);
-        let mut state = Box::new(PickerState::new(initial, dark, layout, font, glyph));
+        let mut state = Box::new(PickerState::new(initial, dark, recent, layout, font, glyph));
         let state_pointer = &mut *state as *mut PickerState;
 
         let (x, y) = picker_position(layout.size);
@@ -499,11 +486,9 @@ fn mouse_point(lparam: LPARAM) -> Point {
     )
 }
 
-/// Records the current color as the result and remembers it as recent.
+/// Records the current color as the result.
 fn confirm(state: &mut PickerState) {
-    let color = state.color();
-    state.result = Some(color);
-    remember(color);
+    state.result = Some(state.color());
 }
 
 unsafe extern "system" fn wndproc(
@@ -604,6 +589,7 @@ mod tests {
             let mut state = PickerState::new(
                 color,
                 true,
+                &[],
                 PickerLayout::compute(1.0),
                 HFONT::default(),
                 HFONT::default(),
@@ -618,6 +604,7 @@ mod tests {
         let mut state = PickerState::new(
             Color::rgb(0, 0, 0),
             true,
+            &[],
             PickerLayout::compute(1.0),
             HFONT::default(),
             HFONT::default(),
@@ -632,6 +619,7 @@ mod tests {
         let mut state = PickerState::new(
             Color::rgb(0x10, 0x7C, 0x10),
             true,
+            &[],
             PickerLayout::compute(1.0),
             HFONT::default(),
             HFONT::default(),
@@ -649,6 +637,7 @@ mod tests {
         PickerState::new(
             color,
             true,
+            &[],
             PickerLayout::compute(1.0),
             HFONT::default(),
             HFONT::default(),
