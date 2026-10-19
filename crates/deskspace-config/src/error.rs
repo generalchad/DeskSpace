@@ -14,6 +14,11 @@ pub enum ConfigError {
     Serialize(#[from] toml::ser::Error),
     #[error("failed to parse configuration: {0}")]
     Parse(#[from] toml::de::Error),
+    #[error("icon set at {path} is not usable: {reason}")]
+    IconSet {
+        path: std::path::PathBuf,
+        reason: String,
+    },
 }
 
 impl ConfigError {

@@ -329,6 +329,12 @@ default in `Default`.
   beside an explicit config file, so scratch configs never touch real
   storage. `save` writes a sibling `*.toml.tmp` and renames it, so a crash
   never truncates the config.
+- `icons_dir()`, the cache of downloaded icon sets (`icons.rs`,
+  `IconStore`, D16), is `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or
+  an `icons` folder beside an explicit config. One file per set and
+  revision. The cache is trusted once written: only the download is
+  verified, and a cached file that does not parse is deleted so the next
+  need fetches it again.
 - `load_or_default` returns defaults when no file exists. An unparsable file
   is copied to `deskspace.toml.unreadable-<millis>.bak` before falling back to
   defaults; a file from a newer version is loaded but first copied to

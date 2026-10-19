@@ -3070,3 +3070,71 @@ until I5-I6 all land, so no partial build hides the desktop.
     short words never match; "Libraries", "Boxes", and "Games" reach
     "library", "box", and "game"; "New space" gives `None`; every `search`
     ordering rule.
+
+- [x] **S3. Icon sets, the cache, and the trimmer (config).** Needs network
+  once, to fetch the upstream set; stop and ask if you have none.
+  - `cargo-add` `serde_json` to `deskspace-config` (it is already in
+    `Cargo.lock` through the updater, so `cargo deny` sees nothing new).
+  - `deskspace-config/src/icons.rs`:
+    - `IconSetSpec { prefix, label, author, license, upstream,
+      upstream_version, keep_suffix, revision, words }`, all `&'static`
+      except `revision: u32`, and `pub const ICON_SETS: &[IconSetSpec]`
+      with one row: prefix `fluent`, label "Fluent UI System Icons", author
+      "Microsoft Corporation", license "MIT", upstream
+      `@iconify-json/fluent` at the newest version on npm today
+      (`https://registry.npmjs.org/@iconify-json/fluent/latest` says which),
+      `keep_suffix` `-20-regular` (one-color outlines, as Windows 11's own
+      title-bar glyphs are), revision 1, and `FLUENT_WORDS`. Add
+      `icon_set(prefix)`, `default_set()` (the first row), `file_name()`
+      (`fluent-r1.json`), and `release_tag()` (`icons-fluent-r1`).
+    - `FLUENT_WORDS: &[(&str, &str)]`, English words to icon names, for
+      common space titles. Start from: apps, games, work, office, school,
+      study, homework, photos, pictures, videos, movies, music, podcasts,
+      documents, downloads, projects, code, tools, utilities, design, art,
+      notes, books, finance, money, bills, taxes, shopping, travel, health,
+      fitness, recipes, home, family, kids, social, chat, mail, calendar,
+      web, links, favorites, cloud, backup, archive, temp, important,
+      todo, ideas, research, science, sports, weather, maps, news,
+      security, network, server, database, terminal, scripts, writing,
+      presentations, spreadsheets, clients, meetings. Pick each target by
+      searching the names file. Leave out a word the set already names
+      exactly, which matching finds on its own.
+    - `IconStore`, made by `ConfigStore::icons_dir()`, which is
+      `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or an `icons` folder
+      beside an explicit config, as `storage_dir()` does, so a scratch
+      config has its own cache. `load(spec) -> Result<Option<IconSet>,
+      ConfigError>`: `None` when the file is missing; a file that does not
+      parse, or whose `prefix` is not the row's, is deleted and returned as
+      an error, so the next need fetches it again. `save(spec, bytes)`
+      parses first, writes a sibling `.tmp` and renames it (as
+      `ConfigStore::save` does), then deletes this prefix's other revisions.
+      The cache is trusted once written: only the download is verified
+      (S4).
+    - `trim(upstream: IconSet, spec) -> IconSet`: keeps the icons whose name
+      ends with `keep_suffix`, with the suffix removed, and the aliases that
+      end with it, have no transform, and point at a kept icon. It keeps
+      `info` and sets `prefix`. A width and height every kept icon shares
+      move to the set level. `missing_names(set, shipped: &str) ->
+      Vec<String>` lists the shipped names the set lacks.
+  - `crates/deskspace-config/examples/icon_set.rs`, the glue:
+    - `trim <prefix> <upstream icons.json> <out dir>` writes
+      `<out dir>/<file_name>` as compact JSON. `BTreeMap` keeps the order,
+      so the same input gives the same bytes. It exits non-zero, listing
+      them, if any name in `assets/icons/<prefix>-names.txt` is missing,
+      then rewrites that file: every name, sorted, one per line.
+    - `spec <prefix>` prints `tag=`, `file=`, and `upstream=<package>@
+      <version>` lines, for the workflow (S5).
+  - Fetch the upstream package from `https://registry.npmjs.org/
+    @iconify-json/fluent/-/fluent-<version>.tgz`, extract `package/
+    icons.json` into your scratchpad, run `trim`, and commit the new
+    `assets/icons/fluent-names.txt` (not the set itself). Put the icon and
+    alias counts in the commit body.
+  - Tests: a small Iconify file parses, unknown keys and all; `trim` keeps,
+    renames, and drops exactly as stated; `missing_names`; `IconStore` round
+    trip in a temp dir, a corrupt file deleted, older revisions pruned, and
+    a scratch config's `icons_dir()` beside it. For every row: its names
+    file is sorted with no duplicates, every `words` target is in it, its
+    words are single lowercase words with no duplicates, and prefixes are
+    unique.
+  - `CONTEXT.md` section 5: one bullet on `icons_dir()` and that the cache
+    is trusted once written.
