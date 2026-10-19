@@ -261,6 +261,14 @@ pub const BORDER_WIDTH_RANGE: (u8, u8) = (1, 8);
 pub const BORDER_OPACITY_RANGE: (u8, u8) = (0, 100);
 /// The border's default opacity: 19 % (0x30), as it was before the setting.
 pub const BORDER_OPACITY_DEFAULT: u8 = 19;
+/// The bounds a shadow's reach is clamped to, in pixels at 96 DPI.
+pub const SHADOW_SIZE_RANGE: (u8, u8) = (2, 48);
+/// A shadow's default reach, close to the Windows 11 window shadow's.
+pub const SHADOW_SIZE_DEFAULT: u8 = 16;
+/// The bounds a shadow's opacity is clamped to, in percent.
+pub const SHADOW_OPACITY_RANGE: (u8, u8) = (0, 100);
+/// A shadow's default opacity, at its darkest.
+pub const SHADOW_OPACITY_DEFAULT: u8 = 35;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -291,6 +299,14 @@ pub struct Theme {
     pub border_color: Color,
     /// The border's opacity, in percent, whatever its color.
     pub border_opacity: u8,
+    /// Draw a shadow under each space where Windows draws none (ROADMAP
+    /// D15).
+    pub show_shadow: bool,
+    /// How far the shadow's blur reaches past the space, in pixels at 96
+    /// DPI, scaled with the monitor.
+    pub shadow_size: u8,
+    /// The shadow's opacity at its darkest, in percent.
+    pub shadow_opacity: u8,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
     /// Item label font size as a percent of the default (100).
@@ -339,6 +355,9 @@ impl Default for Theme {
             border_source: BorderSource::Mode,
             border_color: Color::rgb(255, 255, 255),
             border_opacity: BORDER_OPACITY_DEFAULT,
+            show_shadow: true,
+            shadow_size: SHADOW_SIZE_DEFAULT,
+            shadow_opacity: SHADOW_OPACITY_DEFAULT,
             label_lines: 2,
             label_size: 100,
             icon_size: ICON_SIZE_DEFAULT,
@@ -544,6 +563,12 @@ impl Theme {
         self.border_opacity = self
             .border_opacity
             .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1);
+        self.shadow_size = self
+            .shadow_size
+            .clamp(SHADOW_SIZE_RANGE.0, SHADOW_SIZE_RANGE.1);
+        self.shadow_opacity = self
+            .shadow_opacity
+            .clamp(SHADOW_OPACITY_RANGE.0, SHADOW_OPACITY_RANGE.1);
         self.label_lines = self.label_lines.clamp(1, 2);
         self.label_size = self
             .label_size
@@ -932,9 +957,13 @@ mod tests {
             overlay_size: 250,
             border_width: 0,
             border_opacity: 250,
+            shadow_size: 0,
+            shadow_opacity: 250,
             ..Theme::default()
         }
         .clamped();
+        assert_eq!(theme.shadow_size, SHADOW_SIZE_RANGE.0);
+        assert_eq!(theme.shadow_opacity, SHADOW_OPACITY_RANGE.1);
         assert_eq!(theme.border_width, BORDER_WIDTH_RANGE.0);
         assert_eq!(theme.border_opacity, BORDER_OPACITY_RANGE.1);
         assert_eq!(theme.corner_radius, corner::MAX);

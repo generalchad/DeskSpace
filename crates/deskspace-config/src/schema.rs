@@ -628,6 +628,37 @@ show_border = true
     }
 
     #[test]
+    fn a_theme_from_before_shadows_gets_the_default_shadow() {
+        let text = format!(
+            "version = {CURRENT_VERSION}
+[theme]
+show_border = true
+"
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.theme.show_shadow, "D15: an upgrade gets its shadow");
+        assert_eq!(
+            parsed.theme.shadow_size,
+            deskspace_core::theme::SHADOW_SIZE_DEFAULT
+        );
+        assert_eq!(
+            parsed.theme.shadow_opacity,
+            deskspace_core::theme::SHADOW_OPACITY_DEFAULT
+        );
+    }
+
+    #[test]
+    fn shadow_settings_round_trip_through_toml() {
+        let mut config = Config::new();
+        config.theme.show_shadow = false;
+        config.theme.shadow_size = 30;
+        config.theme.shadow_opacity = 60;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.theme, config.theme);
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         let create = deskspace_core::Command::CreateSpace {
