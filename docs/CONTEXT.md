@@ -866,10 +866,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   A `TransitionFrame` gives the window rect (Roll, Fly, and CRT move or crop
   it; Fly is clipped to the work area), where the space's content sits in
   it, and the opacity, mask, block size, and glow the painter applies.
-  Burn's paper is `render/burn.rs`, pure: a field of smooth noise biased to
+  The cell effects keep their math pure, on a `render::math::Grid` of
+  cells covering the space, and the painter only uploads what it writes.
+  Dissolve is `render/dissolve.rs`: a fixed noise value per grain-sized
+  cell. Burn's paper is `render/burn.rs`: a field of smooth noise biased to
   burn the bottom first, and per cell the stage at the current front (gone,
-  glowing, charred, scorched, whole), which the painter writes into two
-  smooth cell bitmaps: the contents' opacity mask and the marks over it.
+  glowing, charred, scorched, whole), written into two smooth cell
+  bitmaps: the contents' opacity mask and the marks over it.
   Its flames rise past the frame, where the space's own window would put
   blur behind them, so they are drawn on `win32/flame_overlay.rs`: a
   layered, click-through window owned by the space window (so it stays

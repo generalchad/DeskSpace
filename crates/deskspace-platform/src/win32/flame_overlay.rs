@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, w};
 
-use crate::render::burn::{self, BurnField, FlameBase};
+use crate::render::burn::{BurnField, FlameBase};
 use crate::render::flames::{self, MARGIN_SIDE, MARGIN_TOP, SPACING, Tongue};
 use crate::win32::space_window;
 use crate::win32::window_class::{self, WindowClass};
@@ -68,8 +68,6 @@ impl FlameOverlay {
             x: rect.x - MARGIN_SIDE as i32,
             y: rect.y - MARGIN_TOP as i32,
         };
-        let cols = (rect.width as f32 / burn::CELL as f32).ceil() as u32;
-        let rows = (rect.height as f32 / burn::CELL as f32).ceil() as u32;
         // SAFETY: plain window and GDI object creation; every object made
         // here is released in `Drop`, or right here if a later step fails.
         unsafe {
@@ -120,7 +118,7 @@ impl FlameOverlay {
                 bitmap,
                 previous,
                 bits: bits.cast(),
-                field: BurnField::new(cols, rows, detail),
+                field: BurnField::for_size((rect.width as f32, rect.height as f32), detail),
                 bases: Vec::new(),
                 tongues: Vec::new(),
                 space_height: rect.height as f32,

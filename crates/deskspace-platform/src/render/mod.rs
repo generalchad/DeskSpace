@@ -1,5 +1,6 @@
 pub mod burn;
 pub mod d2d;
+pub mod dissolve;
 pub mod flames;
 pub(crate) mod math;
 pub mod scene;
