@@ -119,7 +119,8 @@ A native, lightweight, offline Windows desktop organizer that:
     page is off by default, with no first-run prompt. When it is on, the app
     checks about a minute after start and then every 24 h while running. A
     manual "Check for updates" tray entry is always available. No network
-    traffic happens unless the user starts it or opts in.
+    traffic happens unless the user starts it or opts in; the icon
+    download (D16) asks first.
   - *Apply:* prompt, then restart. The prompt shows the version and notes
     and offers Update / Later / Skip this version. Update downloads,
     installs, and restarts DeskSpace with the same config. Later asks again
@@ -490,6 +491,13 @@ A native, lightweight, offline Windows desktop organizer that:
     first, then Lucide, Phosphor, Tabler, or Material Symbols) with no new
     loader. Each set's license and author show on Settings > About, and
     `NOTICE` names the sets DeskSpace offers.
+  - *Packs (amended 2026-10-18, maintainer: scaffold for more packs soon):*
+    every set is one row of a table (prefix, upstream package and version,
+    the size and style kept, a revision, its curated words, its credits),
+    and everything else (the cache, the download, the picker, the saved
+    names) is keyed by the set's prefix. Adding a pack is a row plus its
+    published file; no code names Fluent outside its row. The picker shows
+    a choice of set once there are two.
   - *Delivery:* downloaded on first use, not bundled. A script trims the
     pinned upstream set to one size and style and publishes it as an asset
     of DeskSpace's own GitHub release, signed with the updater's minisign
@@ -498,6 +506,13 @@ A native, lightweight, offline Windows desktop organizer that:
     keeps it under `%LocalAppData%`; a release that needs a newer set
     fetches it once. Offline or on a failed check, spaces show no icon and
     the picker says why; nothing else waits on it.
+  - *Consent (amended 2026-10-18, maintainer):* D6's promise holds: no
+    network traffic unless the user starts it or opts in. The first time
+    an icon is needed, DeskSpace asks once whether to download the icons
+    from GitHub, and saves the answer (allowed or declined); the General
+    page can change it. The first-run seed space starts with no icon, so
+    the very first launch never asks. Declined, spaces show no icon and
+    the picker says so.
   - *Matching:* pure and unit-tested, outside the platform. The space's
     title is split into words and scored against a curated table of
     English words to icon names ("games", "work", "photos", "school"), then
@@ -517,7 +532,19 @@ A native, lightweight, offline Windows desktop organizer that:
     and None. The picker is its own activated window, as the color picker
     is, since spaces never take keys. A space's Settings page has the same
     picker beside its title.
-  - Work items: to be written in `TASKS.md` once M5 starts.
+  - *Interaction (amended 2026-10-18, maintainer):* changing the icon is
+    part of renaming. Outside a rename the icon is display only: no hover,
+    no cursor change, no click, and no menu entry. Once a rename starts,
+    the icon (or a placeholder, for a space with none) becomes a button,
+    and one click opens the picker; the rename stays open behind it. The
+    picker's choice applies at once.
+  - *Settings (amended 2026-10-18, maintainer):* a space's header pairs its
+    icon with its name, as the space does on the desktop, and the scopes
+    pane shows each space's icon beside its name. Double-clicking the
+    header's name renames the space inline; during that rename the icon
+    becomes the same button. Both apply at once, as a desktop rename does,
+    so the window's Cancel does not undo them.
+  - Work items: `TASKS.md` section S.
 
 ## 3. Guiding principles
 
@@ -995,7 +1022,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Open; decided in D16 |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Open; decided in D16, planned in `TASKS.md` section S |
 
 
 ## 8. Open questions
