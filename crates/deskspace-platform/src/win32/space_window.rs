@@ -784,7 +784,7 @@ fn insert_after(window: HWND, layer: Option<HWND>, above_layer: Option<HWND>) ->
 /// Then `HWND_TOP` names the same slot for a non-topmost window, without
 /// positioning it relative to a topmost one.
 /// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos#remarks
-fn window_above(window: HWND) -> Option<HWND> {
+pub(crate) fn window_above(window: HWND) -> Option<HWND> {
     // SAFETY: plain z-order and style queries; neither sends a message.
     unsafe {
         let above = GetWindow(window, GW_HWNDPREV).ok()?;

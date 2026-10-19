@@ -2,8 +2,9 @@
 //! the space's frame, and the space's own window carries the blur over its
 //! whole rect, so they are drawn on a window of their own: layered with
 //! per-pixel alpha, click-through, never activated, and owned by the space
-//! window, which keeps it directly above the space and destroys it with it.
-//! It lives as long as one Burn plays (`space_animation`).
+//! window, which keeps it above the space and destroys it with it. It is
+//! shown directly above the space (`insert_after`), and lives as long as one
+//! Burn plays (`space_animation`).
 
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
@@ -14,20 +15,24 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GetWindowLongW, IsWindowVisible,
-    SW_SHOWNOACTIVATE, ShowWindow, ULW_ALPHA, UpdateLayeredWindow, WS_CHILD, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GetWindowLongW, HWND_TOP,
+    IsWindowVisible, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+    SetWindowPos, ULW_ALPHA, UpdateLayeredWindow, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{self, BurnField, FlameBase};
 use crate::render::flames::{self, MARGIN_SIDE, MARGIN_TOP, SPACING, Tongue};
+use crate::win32::space_window;
 use crate::win32::window_class::{self, WindowClass};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceFlames");
 
 pub(crate) struct FlameOverlay {
     hwnd: HWND,
+    /// The space window the flames burn on.
+    owner: HWND,
     origin: POINT,
     size: SIZE,
     memory: HDC,
@@ -108,6 +113,7 @@ impl FlameOverlay {
             let previous = SelectObject(memory, bitmap.into());
             Some(Self {
                 hwnd,
+                owner,
                 origin,
                 size,
                 memory,
@@ -159,9 +165,41 @@ impl FlameOverlay {
                 return;
             }
             if !IsWindowVisible(self.hwnd).as_bool() {
-                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                self.show();
             }
         }
+    }
+
+    /// Shows the flames directly above their space, under every app above it.
+    ///
+    /// Owning keeps the overlay above the space, but no lower: shown as
+    /// made, it sat at the top of the z-order, so the flames burned over
+    /// every app in front of the space (seen 2026-10-19).
+    fn show(&self) {
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+        let (after, flags) = match insert_after(self.hwnd, space_window::window_above(self.owner)) {
+            Some(after) => (Some(after), flags),
+            None => (None, flags | SWP_NOZORDER),
+        };
+        // SAFETY: our own window, on the thread that made it; its procedure
+        // is `DefWindowProcW`, so the messages SetWindowPos sends do not
+        // reach the app.
+        unsafe {
+            let _ = SetWindowPos(self.hwnd, after, 0, 0, 0, 0, flags);
+        }
+    }
+}
+
+/// The `hwndInsertAfter` that puts `overlay` directly above its space, or
+/// `None` when it is there already. `above_space` is the non-topmost window
+/// directly above the space, if any (`space_window::window_above`).
+fn insert_after(overlay: HWND, above_space: Option<HWND>) -> Option<HWND> {
+    match above_space {
+        Some(above) if above == overlay => None,
+        Some(above) => Some(above),
+        // Only topmost windows are above the space, so the top of the
+        // non-topmost band is the slot directly above it.
+        None => Some(HWND_TOP),
     }
 }
 
@@ -187,4 +225,24 @@ unsafe extern "system" fn wndproc(
 ) -> LRESULT {
     // SAFETY: forwarding Windows' own arguments unchanged.
     unsafe { DefWindowProcW(window, message, wparam, lparam) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(id: usize) -> HWND {
+        HWND(id as *mut core::ffi::c_void)
+    }
+
+    #[test]
+    fn the_flames_go_directly_above_their_space() {
+        let (overlay, app) = (window(1), window(2));
+        // An app directly above the space keeps the flames under it.
+        assert_eq!(insert_after(overlay, Some(app)), Some(app));
+        // Already directly above the space: they stay put.
+        assert_eq!(insert_after(overlay, Some(overlay)), None);
+        // Nothing but topmost windows above the space.
+        assert_eq!(insert_after(overlay, None), Some(HWND_TOP));
+    }
 }
