@@ -34,8 +34,6 @@ pub(super) struct Effects {
 /// A mask of grain-sized cells, one pixel per cell, stretched over the space
 /// by its brush's transform.
 struct NoiseMask {
-    cols: u32,
-    rows: u32,
     cell: u32,
     /// Each cell's fixed noise value.
     values: Vec<u8>,
@@ -56,7 +54,10 @@ struct BurnMask {
 /// One pixel per cell, rewritten each frame and stretched over the space by
 /// its brush.
 struct CellMask {
-    /// The mask's pixels for the current frame, written in place.
+    cols: u32,
+    rows: u32,
+    /// The mask's `cols * rows` pixels for the current frame, written in
+    /// place; never resized.
     pixels: Vec<u32>,
     bitmap: ID2D1Bitmap,
     brush: ID2D1BitmapBrush,
@@ -110,12 +111,10 @@ impl Effects {
                 }
                 Ok(Some(brush.into()))
             }
-            Mask::Noise {
-                threshold, grain, ..
-            } => {
+            Mask::Noise { threshold, grain } => {
                 let noise = self.noise(target, grain, size)?;
                 fill_noise_mask(&noise.values, threshold, &mut noise.shown.pixels);
-                noise.shown.upload(noise.cols, noise.rows)?;
+                noise.shown.upload()?;
                 Ok(Some(noise.shown.brush.clone().into()))
             }
             Mask::Burn { front, detail } => {
@@ -126,9 +125,8 @@ impl Effects {
                     &mut burn.paper.pixels,
                     &mut burn.marks.pixels,
                 );
-                let (cols, rows) = (burn.field.cols(), burn.field.rows());
-                burn.paper.upload(cols, rows)?;
-                burn.marks.upload(cols, rows)?;
+                burn.paper.upload()?;
+                burn.marks.upload()?;
                 Ok(Some(burn.paper.brush.clone().into()))
             }
         }
@@ -214,10 +212,9 @@ impl Effects {
         let cell = u32::from(grain.max(1)) * NOISE_CELL_PER_DETAIL;
         let cols = (size.0 / cell as f32).ceil().max(1.0) as u32;
         let rows = (size.1 / cell as f32).ceil().max(1.0) as u32;
-        let fits = self
-            .noise
-            .as_ref()
-            .is_some_and(|noise| (noise.cols, noise.rows, noise.cell) == (cols, rows, cell));
+        let fits = self.noise.as_ref().is_some_and(|noise| {
+            (noise.shown.cols, noise.shown.rows, noise.cell) == (cols, rows, cell)
+        });
         if !fits {
             self.noise = Some(NoiseMask::new(target, cols, rows, cell)?);
         }
@@ -296,8 +293,6 @@ impl NoiseMask {
             .flat_map(|row| (0..cols).map(move |col| noise_value(col, row)))
             .collect();
         Ok(Self {
-            cols,
-            rows,
             cell,
             values,
             shown: CellMask::new(target, cols, rows, cell, BLOCKY)?,
@@ -359,6 +354,8 @@ impl CellMask {
             (bitmap, brush)
         };
         Ok(Self {
+            cols,
+            rows,
             pixels: vec![0; (cols * rows) as usize],
             bitmap,
             brush,
@@ -366,19 +363,20 @@ impl CellMask {
     }
 
     /// Copies this frame's pixels to the bitmap.
-    fn upload(&self, cols: u32, rows: u32) -> Result<(), PlatformError> {
-        // SAFETY: `pixels` holds `cols * rows` BGRA pixels, so `cols * 4` is
-        // its row pitch; D2D copies the data.
+    fn upload(&self) -> Result<(), PlatformError> {
+        // SAFETY: `pixels` holds `cols * rows` BGRA pixels (made so in `new`
+        // and never resized), so `cols * 4` is its row pitch; D2D copies the
+        // data.
         unsafe {
             self.bitmap.CopyFromMemory(
                 Some(&D2D_RECT_U {
                     left: 0,
                     top: 0,
-                    right: cols,
-                    bottom: rows,
+                    right: self.cols,
+                    bottom: self.rows,
                 }),
                 self.pixels.as_ptr() as *const core::ffi::c_void,
-                cols * 4,
+                self.cols * 4,
             )?;
         }
         Ok(())
