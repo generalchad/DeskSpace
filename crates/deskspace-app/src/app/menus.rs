@@ -463,6 +463,7 @@ impl App {
             at: origin,
             size,
             locked,
+            icon: deskspace_core::SpaceIcon::None,
         };
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.

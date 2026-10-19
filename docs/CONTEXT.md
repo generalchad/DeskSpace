@@ -134,6 +134,8 @@ area**, so moving a space never touches its items.
 ### Space
 
 `Space` and `SpaceLook` are in `space.rs`, where every field is documented.
+A space stores a reference to its icon (`SpaceIcon`, `icon.rs`), not the
+picture; it is resolved when the space is drawn (S7).
 
 A space follows the global `Theme` and grid spacing until it is customized.
 `SpaceLook` is its own copy of every look setting: the whole theme (its

@@ -46,6 +46,7 @@ impl Desktop {
             Command::CreateSpace { .. } => Touched::spaces([self.next_space_id()]),
             Command::DeleteSpace { id }
             | Command::RenameSpace { id, .. }
+            | Command::SetSpaceIcon { id, .. }
             | Command::MoveSpace { id, .. }
             | Command::SetSpaceRect { id, .. }
             | Command::ResizeSpace { id, .. }
@@ -129,6 +130,7 @@ mod tests {
             at: Point::ZERO,
             size: Size::new(200, 200),
             locked: false,
+            icon: crate::icon::SpaceIcon::None,
         };
         let touched = desktop.touched_by(&create);
         assert!(desktop.apply(create, bounds()).is_applied());

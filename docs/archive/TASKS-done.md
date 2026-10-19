@@ -2997,3 +2997,30 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
+
+- [x] **S1. The model (core).**
+  - `deskspace-core/src/icon.rs`: `IconRef { set: String, name: String }`
+    and `SpaceIcon { None (default), Automatic, Chosen(IconRef) }`, both
+    `Debug, Clone, PartialEq, Eq`. `IconRef::parse("fluent:games")` accepts
+    a prefix and a name of lowercase ASCII letters, digits, and hyphens (the
+    Iconify name rule), split at the one `:`; `Display` writes it back.
+  - `SpaceIcon` saves as a string, via `#[serde(from = "String", into =
+    "String")]`: `"automatic"`, or `"<set>:<name>"`. Any other string loads
+    as `None` instead of failing the file (ENGINEERING rule 3). Document
+    that on the type.
+  - `Space.icon: SpaceIcon`, `#[serde(default, skip_serializing_if =
+    "SpaceIcon::is_none")]`, `pub(crate)` with an `icon()` accessor, like
+    `locked`. Missing means `None`, so every existing space keeps no icon.
+  - `Command::SetSpaceIcon { id, icon }`: `Applied`, or `NotFound`. A locked
+    space still takes it, as `RenameSpace` does. Its `touched_by` arm joins
+    `RenameSpace`'s.
+  - `Command::CreateSpace` gains `icon: SpaceIcon`, set on the new space.
+    Every caller passes `SpaceIcon::None` for now (S8 passes the New spaces
+    default); the compiler lists them.
+  - Tests: core, `parse` and `Display` round trip, bad strings rejected,
+    and `SetSpaceIcon`'s two outcomes (copy the `RenameSpace` tests).
+    Config, in `schema.rs`'s tests (core has no format crate): a space with
+    each `SpaceIcon` survives a TOML save and load, a space without the key
+    loads as `None` and writes none, and `icon = "?"` loads as `None`.
+  - `CONTEXT.md` section 4, "Space": one sentence saying a space stores a
+    reference to its icon, not the picture, resolved when it is drawn (S7).

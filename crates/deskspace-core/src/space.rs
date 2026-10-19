@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Size};
+use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
@@ -67,6 +68,9 @@ pub struct Space {
     pub(crate) items: Vec<Item>,
     #[serde(default)]
     pub(crate) locked: bool,
+    /// Shown left of the title. A reference, resolved when drawn.
+    #[serde(default, skip_serializing_if = "SpaceIcon::is_none")]
+    pub(crate) icon: SpaceIcon,
     /// Folded to its title bar. The key keeps its old name, `rolled_up`, so
     /// configs from before the rename load and older versions read new ones.
     #[serde(default, rename = "rolled_up")]
@@ -135,6 +139,7 @@ impl Space {
             rect,
             items: Vec::new(),
             locked: false,
+            icon: SpaceIcon::None,
             folded: false,
             custom: false,
             look: None,
@@ -157,6 +162,10 @@ impl Space {
 
     pub fn items(&self) -> &[Item] {
         &self.items
+    }
+
+    pub fn icon(&self) -> &SpaceIcon {
+        &self.icon
     }
 
     pub fn locked(&self) -> bool {

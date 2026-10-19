@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
+use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
@@ -31,6 +32,7 @@ pub enum Command {
         at: Point,
         size: Size,
         locked: bool,
+        icon: SpaceIcon,
     },
     DeleteSpace {
         id: SpaceId,
@@ -38,6 +40,12 @@ pub enum Command {
     RenameSpace {
         id: SpaceId,
         title: String,
+    },
+    /// Sets a space's icon. A locked space still takes it, as it takes a
+    /// rename.
+    SetSpaceIcon {
+        id: SpaceId,
+        icon: SpaceIcon,
     },
     /// Moves an unlocked space by `delta`, snapped to the grid and kept
     /// inside the bounds.
@@ -219,9 +227,11 @@ impl Desktop {
                 at,
                 size,
                 locked,
-            } => self.apply_create_space(title, at, size, locked, bounds),
+                icon,
+            } => self.apply_create_space(title, at, size, locked, icon, bounds),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
+            Command::SetSpaceIcon { id, icon } => self.apply_set_space_icon(id, icon),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
@@ -305,6 +315,7 @@ mod tests {
                 at: Point::new(40, 40),
                 size: Size::new(240, 120),
                 locked: false,
+                icon: SpaceIcon::None,
             },
             bounds(),
         );
@@ -327,6 +338,7 @@ mod tests {
                 at: Point::new(10, 10),
                 size: Size::new(320, 200),
                 locked: true,
+                icon: SpaceIcon::None,
             },
             bounds(),
         );
@@ -665,6 +677,56 @@ mod tests {
             ),
             CommandOutcome::NotFound
         );
+    }
+
+    #[test]
+    fn set_space_icon_sets_it_even_on_a_locked_space() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.apply(Command::ToggleLock { id }, bounds());
+        let icon = SpaceIcon::Chosen(crate::icon::IconRef::parse("fluent:games").unwrap());
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIcon {
+                    id,
+                    icon: icon.clone()
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(desktop.space(id).unwrap().icon(), &icon);
+    }
+
+    #[test]
+    fn set_space_icon_on_a_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIcon {
+                    id: SpaceId(999),
+                    icon: SpaceIcon::Automatic
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn create_space_sets_the_icon() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Games".into(),
+                at: Point::new(0, 0),
+                size: Size::new(240, 120),
+                locked: false,
+                icon: SpaceIcon::Automatic,
+            },
+            bounds(),
+        );
+        assert_eq!(desktop.spaces[0].icon(), &SpaceIcon::Automatic);
     }
 
     #[test]
@@ -1187,6 +1249,7 @@ mod tests {
                 at: Point::new(40, 40),
                 size: Size::new(240, 120),
                 locked: false,
+                icon: SpaceIcon::None,
             };
             assert!(desktop.apply(create, bounds()).is_applied());
             id
