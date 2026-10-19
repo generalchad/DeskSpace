@@ -562,7 +562,7 @@ pub(crate) fn is_leaving(window: HWND) -> bool {
 
 /// Puts `window` where `frame` says, hidden while the frame's rect is empty,
 /// and repaints it through the frame. While the frame leaves the window
-/// see-through, the DWM border steps aside, and so does a `flat_material`.
+/// see-through, a `flat_material` steps aside.
 unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
     // SAFETY: a live window owned by this thread; SetWindowPos sends only
     // WM_WINDOWPOSCHANGING and WM_SIZE, which do not reach the app.
@@ -572,12 +572,10 @@ unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
             return;
         }
         move_to(window, frame.rect);
-        let covered = frame.covers_window();
         show_backing(
             window,
             Backing {
-                material: covered || !flat_material,
-                border: covered,
+                material: frame.covers_window() || !flat_material,
             },
         );
         if !IsWindowVisible(window).as_bool() {

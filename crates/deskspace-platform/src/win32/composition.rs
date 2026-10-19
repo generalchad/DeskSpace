@@ -43,10 +43,8 @@ use crate::render::{Painter, SpaceStyle, d2d};
 use crate::win32::alpha_mask;
 use crate::win32::debug_info::transparency_enabled;
 use crate::win32::runtime;
-use crate::win32::system::windows_build;
-
-/// The first Windows 11 build: the host backdrop brush needs it.
-const WINDOWS_11: u32 = 22000;
+// The host backdrop brush needs Windows 11.
+use crate::win32::system::{WINDOWS_11, windows_build};
 
 /// What the UI thread's spaces are composed with, while composition runs.
 struct Composition {

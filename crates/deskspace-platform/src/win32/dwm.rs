@@ -51,6 +51,17 @@ const ACCENT_FLAG_GRADIENT_COLOR: u32 = 2;
 /// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
 const DWMWA_USE_HOSTBACKDROPBRUSH: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(17);
 
+/// Who draws a window's border.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BorderOwner {
+    /// DWM, as `style` asks (the zoom pop-up).
+    Dwm,
+    /// The window's own painter. DWM draws its border outside the window's
+    /// pixels, so it cannot fade or dissolve with them; a space paints its
+    /// own, which takes part in every animation.
+    Painter,
+}
+
 /// What draws the blur behind a top-level window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Material {
@@ -94,7 +105,7 @@ fn set_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
     })
 }
 
-pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
+pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material, border: BorderOwner) {
     // Negative margins extend the frame over the whole client area ("sheet of
     // glass"), so DWM composites the client's per-pixel alpha over the
     // material instead of treating the client as opaque.
@@ -118,7 +129,7 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
     );
     // Make sure no system backdrop competes with the accent material.
     set::<DWM_SYSTEMBACKDROP_TYPE>(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE);
-    set(hwnd, DWMWA_BORDER_COLOR, border_color(style));
+    set(hwnd, DWMWA_BORDER_COLOR, border_color(style, border));
     match material {
         Material::Accent => set_accent(hwnd, accent_state(style.backdrop)),
         Material::Composition => set(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, BOOL::from(true)),
@@ -129,25 +140,12 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material) {
 /// it (including the accent color when "Show accent color on title bars"
 /// is on).
 /// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
-fn border_color(style: SpaceStyle) -> u32 {
-    if style.border && style.dwm_draws_frame() {
+fn border_color(style: SpaceStyle, owner: BorderOwner) -> u32 {
+    if owner == BorderOwner::Dwm && style.border && style.dwm_draws_frame() {
         DWMWA_COLOR_DEFAULT
     } else {
         DWMWA_COLOR_NONE
     }
-}
-
-/// Takes away the border DWM draws while an animation leaves the window
-/// see-through, or puts back `style`'s. DWM draws it outside the window's
-/// pixels, so it cannot fade with them, and stayed as an outline around a
-/// fading space (seen 2026-10-18).
-pub(crate) fn show_border(hwnd: HWND, style: SpaceStyle, shown: bool) {
-    let color = if shown {
-        border_color(style)
-    } else {
-        DWMWA_COLOR_NONE
-    };
-    set(hwnd, DWMWA_BORDER_COLOR, color);
 }
 
 /// Steps an accent material aside while an animation leaves the window
@@ -277,6 +275,24 @@ mod tests {
             corner_preference(style(Backdrop::Clear, 8)),
             DWMWCP_DONOTROUND
         );
+    }
+
+    #[test]
+    fn dwm_draws_a_border_only_for_a_window_that_does_not_paint_one() {
+        let style = SpaceStyle {
+            backdrop: Backdrop::Acrylic,
+            corner_radius: 8,
+            dark: true,
+            border: true,
+            chrome: true,
+        };
+        assert_eq!(border_color(style, BorderOwner::Dwm), DWMWA_COLOR_DEFAULT);
+        assert_eq!(border_color(style, BorderOwner::Painter), DWMWA_COLOR_NONE);
+        let borderless = SpaceStyle {
+            border: false,
+            ..style
+        };
+        assert_eq!(border_color(borderless, BorderOwner::Dwm), DWMWA_COLOR_NONE);
     }
 
     #[test]

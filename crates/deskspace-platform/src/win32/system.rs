@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use deskspace_core::Color;
@@ -131,6 +132,15 @@ pub fn system_animations() -> bool {
         )
     };
     result.is_err() || on.as_bool()
+}
+
+/// The first Windows 11 build.
+pub(crate) const WINDOWS_11: u32 = 22000;
+
+/// Whether this is Windows 11 or later, read once.
+pub(crate) fn is_windows_11() -> bool {
+    static WINDOWS_11_OR_LATER: OnceLock<bool> = OnceLock::new();
+    *WINDOWS_11_OR_LATER.get_or_init(|| windows_build().is_some_and(|build| build >= WINDOWS_11))
 }
 
 /// The Windows build number (22000 and up is Windows 11), or `None` when it

@@ -491,13 +491,15 @@ impl Painter {
                 }
             }
 
-            if frame.border && scene.border.a > 0 {
+            if let Some(border_radius) = frame.border
+                && scene.border.a > 0
+            {
                 brush.SetColor(&color_f(scene.border));
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
                         rect: inset(whole, 0.5),
-                        radiusX: radius,
-                        radiusY: radius,
+                        radiusX: border_radius,
+                        radiusY: border_radius,
                     },
                     brush,
                     1.0,
@@ -774,13 +776,15 @@ pub(crate) fn render_items(
 
 /// How a space window's edge is drawn; decided by the window from its style
 /// and placement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PaintFrame {
     /// Desktop-hosted windows get no per-pixel alpha; paint them opaque.
     pub opaque: bool,
     /// Corner radius the painter rounds the body to; 0 when DWM rounds the
     /// window or the corners are square.
     pub radius: i32,
-    /// Draw the border here because DWM does not.
-    pub border: bool,
+    /// Draw the border, with corners of this radius in window pixels. It
+    /// can differ from `radius`: where DWM rounds the window, the body is
+    /// not rounded but the border follows DWM's corners.
+    pub border: Option<f32>,
 }

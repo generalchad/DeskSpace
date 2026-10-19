@@ -552,7 +552,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   space's corners, a sprite with the host backdrop brush (shown for Acrylic
   and Blur; `DWMWA_USE_HOSTBACKDROPBRUSH`), and a sprite showing the drawing
   surface the painter draws into. The rest of `dwm::apply_style` (corners,
-  border, dark mode) applies as before. `composition::start` decides once,
+  dark mode) applies as before. `composition::start` decides once,
   at startup, and logs it: Windows 10, "Transparency effects" off (the host
   backdrop ignores the switch, T1), desktop-hosted or click-through spaces,
   and a failure to start keep the accent blur, and the desktop layer always
@@ -569,12 +569,17 @@ one arm in `App::on_event`, whose match is exhaustive.
   removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
   a (non-anti-aliased) window region. With no host found, `run` warns and
   falls back to top-level.
-- **Corners and border:** DWM draws them for blurred and Solid spaces with
-  square, 4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`). The painter
-  rounds every Clear space, Solid spaces with other radii, chrome-less
-  windows, and hosted spaces (anti-aliased fills and border); hosted spaces
-  also get a window region so the opaque fill does not show past the corners
-  (`Frame` in `space_window.rs`). The blur fills the whole window rectangle
+- **Corners and border:** DWM rounds blurred and Solid spaces with square,
+  4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`). The painter rounds
+  every Clear space, Solid spaces with other radii, chrome-less windows, and
+  hosted spaces (anti-aliased fills); hosted spaces also get a window region
+  so the opaque fill does not show past the corners (`Frame` in
+  `space_window.rs`). The painter draws every space's border, never DWM
+  (`dwm::BorderOwner`), so the border goes through an animation's opacity
+  and mask with the rest of the space. Where DWM rounds, the border follows
+  DWM's corners, which DWM scales with the window's DPI; Windows 10 has no
+  DWM corners, so there the border is square. The zoom pop-up still takes
+  DWM's border. The blur fills the whole window rectangle
   and ignores both the window region and the `DwmEnableBlurBehindWindow` blur
   region (tried on build 26300), so Acrylic and Blur spaces use the nearest
   DWM radius at or below the chosen one (`Theme::effective_corner_radius`).

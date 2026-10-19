@@ -43,8 +43,9 @@ use crate::input::{Event, MouseButton, SpaceEvent};
 use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::composition::SpaceVisuals;
+use crate::win32::dpi::{scale_for, window_dpi};
 use crate::win32::space_animation::{self, Animation};
-use crate::win32::system::{hiword, loword};
+use crate::win32::system::{hiword, is_windows_11, loword};
 use crate::win32::window_class::{self, WindowClass};
 use crate::win32::{drop_target, dwm, runtime, window_state};
 
@@ -101,23 +102,19 @@ pub(super) struct SpaceState {
     backing: Backing,
 }
 
-/// What DWM draws beside a space's own pixels: an animation steps either
-/// aside while it leaves the window see-through, since neither can fade
-/// with the pixels (`space_animation`).
+/// What DWM draws beside a space's own pixels: an animation steps it aside
+/// while it leaves the window see-through, since it cannot fade with the
+/// pixels (`space_animation`). The border is not here: the painter draws
+/// it, so it animates with the rest (`dwm::BorderOwner`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Backing {
     /// The blur, or the flat fill Windows draws instead of it.
     pub material: bool,
-    /// The border DWM draws around the window.
-    pub border: bool,
 }
 
 impl Backing {
     /// Everything in place, as at rest.
-    pub(crate) const WHOLE: Self = Self {
-        material: true,
-        border: true,
-    };
+    pub(crate) const WHOLE: Self = Self { material: true };
 }
 
 pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError> {
@@ -127,7 +124,7 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         hosted,
         on_top: options.on_top,
         style: options.style,
-        frame: Frame::for_style(options.style, hosted),
+        frame: Frame::for_style(options.style, hosted, is_windows_11()),
         painter: Some(Painter::new()),
         scene: None,
         tracking_leave: false,
@@ -199,7 +196,12 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
             });
         }
         if !hosted {
-            dwm::apply_style(hwnd, options.style, material(options.composition));
+            dwm::apply_style(
+                hwnd,
+                options.style,
+                material(options.composition),
+                dwm::BorderOwner::Painter,
+            );
             let _ = SetWindowPos(
                 hwnd,
                 Some(if options.on_top {
@@ -428,7 +430,7 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
                 return None;
             }
             state.style = style;
-            state.frame = Frame::for_style(style, state.hosted);
+            state.frame = Frame::for_style(style, state.hosted, is_windows_11());
             if let Some(visuals) = &mut state.visuals
                 && let Err(error) = visuals.set_style(style)
             {
@@ -440,13 +442,15 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
         return;
     };
     if !hosted {
-        dwm::apply_style(hwnd, style, material(composition));
+        dwm::apply_style(
+            hwnd,
+            style,
+            material(composition),
+            dwm::BorderOwner::Painter,
+        );
         // A restyle mid-animation keeps what the animation stepped aside.
         if !composition && !backing.material {
             dwm::show_accent(hwnd, style.backdrop, false);
-        }
-        if !backing.border {
-            dwm::show_border(hwnd, style, false);
         }
     }
     // SAFETY: `hwnd` is a live space window.
@@ -468,35 +472,39 @@ pub(crate) fn show_backing(hwnd: HWND, backing: Backing) {
                 return None;
             }
             let before = std::mem::replace(&mut state.backing, backing);
-            let mut accent = false;
-            if before.material != backing.material {
-                match &mut state.visuals {
-                    Some(visuals) => {
-                        if let Err(error) = visuals.show_material(backing.material) {
-                            tracing::warn!(%error, "space composition backdrop not changed");
-                        }
-                    }
-                    None => accent = true,
-                }
+            if before.material == backing.material {
+                return None;
             }
-            Some((state.style, accent, before.border != backing.border))
+            match &mut state.visuals {
+                Some(visuals) => {
+                    if let Err(error) = visuals.show_material(backing.material) {
+                        tracing::warn!(%error, "space composition backdrop not changed");
+                    }
+                    None
+                }
+                None => Some(state.style),
+            }
         })
     };
-    let Some(Some((style, accent, border))) = change else {
-        return;
-    };
-    if accent {
+    if let Some(Some(style)) = change {
         dwm::show_accent(hwnd, style.backdrop, backing.material);
-    }
-    if border {
-        dwm::show_border(hwnd, style, backing.border);
     }
 }
 
-/// Who draws a space's corners and border, and how its window is clipped.
+/// Who draws a space's corners, and how its window is clipped. The painter
+/// always draws the border (`dwm::BorderOwner::Painter`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Frame {
-    paint: PaintFrame,
+    /// Desktop-hosted windows get no per-pixel alpha; paint them opaque.
+    opaque: bool,
+    /// The radius the painter rounds the body to; 0 where DWM rounds the
+    /// window or the corners are square.
+    radius: i32,
+    border: bool,
+    /// The radius DWM rounds the window to, at 96 DPI: 0 where it does not
+    /// round (its own square corners, or Windows 10, which has none). DWM
+    /// scales it with the window's DPI, so the border follows it there.
+    dwm_radius: i32,
     /// Clip the window to a rounded region of this radius. Needed for opaque
     /// desktop-hosted windows, whose pixels outside the rounded corners
     /// would otherwise show. Regions are not anti-aliased, so the painter
@@ -507,7 +515,7 @@ struct Frame {
 }
 
 impl Frame {
-    fn for_style(style: SpaceStyle, hosted: bool) -> Self {
+    fn for_style(style: SpaceStyle, hosted: bool, windows_11: bool) -> Self {
         // A chrome-less window (the desktop layer) has no rounded corners or
         // border; it fills its whole rectangle.
         let radius = if style.chrome {
@@ -515,23 +523,37 @@ impl Frame {
         } else {
             0
         };
+        let border = style.chrome && style.border;
         if !hosted && style.dwm_draws_frame() {
             return Self {
-                paint: PaintFrame {
-                    opaque: false,
-                    radius: 0,
-                    border: false,
-                },
+                opaque: false,
+                radius: 0,
+                border,
+                // `dwm_draws_frame` allows only radii DWM has (0, 4, 8).
+                dwm_radius: if windows_11 { radius } else { 0 },
                 region_radius: None,
             };
         }
         Self {
-            paint: PaintFrame {
-                opaque: hosted,
-                radius,
-                border: style.chrome && style.border,
-            },
+            opaque: hosted,
+            radius,
+            border,
+            dwm_radius: 0,
             region_radius: (radius > 0 && hosted).then_some(radius),
+        }
+    }
+
+    /// What the painter draws, for a window at `dpi`.
+    fn paint(&self, dpi: u32) -> PaintFrame {
+        let border_radius = if self.dwm_radius > 0 {
+            self.dwm_radius as f32 * scale_for(dpi)
+        } else {
+            self.radius as f32
+        };
+        PaintFrame {
+            opaque: self.opaque,
+            radius: self.radius,
+            border: self.border.then_some(border_radius),
         }
     }
 }
@@ -655,7 +677,7 @@ unsafe fn paint(window: HWND) {
             (
                 state.painter.take(),
                 state.scene.take(),
-                state.frame.paint,
+                state.frame.paint(window_dpi(window)),
                 state.animation.as_ref().map(Animation::frame),
             )
         });
@@ -986,6 +1008,58 @@ unsafe extern "system" fn wndproc(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn style(backdrop: deskspace_core::Backdrop, corner_radius: i32) -> SpaceStyle {
+        SpaceStyle {
+            backdrop,
+            corner_radius,
+            dark: false,
+            border: true,
+            chrome: true,
+        }
+    }
+
+    #[test]
+    fn where_dwm_rounds_the_border_follows_its_corners_at_the_windows_dpi() {
+        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, true);
+        assert_eq!(frame.paint(96).radius, 0);
+        assert_eq!(frame.paint(96).border, Some(8.0));
+        assert_eq!(frame.paint(144).border, Some(12.0));
+        let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), false, true);
+        assert_eq!(small.paint(120).border, Some(5.0));
+    }
+
+    #[test]
+    fn windows_10_squares_the_painted_border_as_it_squares_the_window() {
+        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, false);
+        assert_eq!(frame.paint(144).border, Some(0.0));
+    }
+
+    #[test]
+    fn a_painter_rounded_space_borders_at_its_own_radius() {
+        let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), false, true);
+        let paint = clear.paint(144);
+        assert_eq!((paint.radius, paint.border), (12, Some(12.0)));
+        let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), true, true);
+        let paint = hosted.paint(96);
+        assert!(paint.opaque);
+        assert_eq!((paint.radius, paint.border), (8, Some(8.0)));
+        assert_eq!(hosted.region_radius, Some(8));
+    }
+
+    #[test]
+    fn no_border_without_the_setting_or_chrome() {
+        let off = SpaceStyle {
+            border: false,
+            ..style(deskspace_core::Backdrop::Acrylic, 8)
+        };
+        assert_eq!(Frame::for_style(off, false, true).paint(96).border, None);
+        let layer = SpaceStyle {
+            chrome: false,
+            ..style(deskspace_core::Backdrop::Clear, 0)
+        };
+        assert_eq!(Frame::for_style(layer, false, true).paint(96).border, None);
+    }
 
     #[test]
     fn modifiers_come_from_the_mouse_message() {

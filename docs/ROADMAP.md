@@ -43,7 +43,11 @@ A native, lightweight, offline Windows desktop organizer that:
   - Content is drawn with Direct2D/DirectWrite into a premultiplied-alpha HWND
     target over a DWM-extended frame.
   - The blur comes from the accent policy (`SetWindowCompositionAttribute`).
-    Corners, border, and dark mode come from DWM attributes.
+    Corners and dark mode come from DWM attributes. The border is painted
+    by the space itself (amended 2026-10-19, maintainer): DWM draws its
+    border outside the window's pixels, so it could not fade, dissolve, or
+    burn with the space in an animation (D12), and it had one thickness
+    and color.
   - GDI is retired. DirectComposition waits for the animation work in M5.
   - The documented `DWMWA_SYSTEMBACKDROP_TYPE` was rejected: system backdrops
     only render on active windows, and spaces are never active.
