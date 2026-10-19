@@ -567,9 +567,11 @@ same way:
 
 1. `deskspace-core/src/animation.rs`: an `Effect` variant with a `///`
    doc, and an `EFFECTS` row naming its key and options. The key is saved
-   in the config, so it is never renamed. A kind lists it only where the
-   task says (`KINDS`; Startup and Delete take `EVERY_EFFECT`, so they get
-   it with no edit).
+   in the config, so it is never renamed. With `Direction`, Automatic is
+   the top unless the row adds `.auto_edge(...)`. A kind lists it only
+   where the task says (`KINDS`; Startup and Delete offer `Offers::Every`,
+   so they get it with no edit). The compiler then points at the core
+   test's `every_effect`.
 2. `deskspace-app/src/settings/tables.rs`: a row in `EFFECT_LABELS` (grow
    the array's length by one).
 3. `deskspace-platform/src/render/transition.rs`: the effect's arm in the
@@ -583,8 +585,8 @@ same way:
 - [ ] **T19. Bounce (core, platform).** **[needs human]**
   - Row: `effect(Effect::Bounce, "bounce", &[Direction])`. Not in Fold.
   - Frame math: the rect moves as Fly's does (from beyond `edge` of
-    `work_area`, clipped to it; Automatic is the top, not the nearest
-    edge), but its progress goes through a pure `bounce_ease(t: f32) ->
+    `work_area`, clipped to it; Automatic is the top, the row's default
+    `auto_edge`), but its progress goes through a pure `bounce_ease(t: f32) ->
     f32` instead of Fly's easing: Robert Penner's "easeOutBounce" (four
     parabolic arcs; cite https://easings.net/#easeOutBounce beside it).
     The out is the in played backwards, as for every effect.
@@ -600,7 +602,7 @@ same way:
     taskbar.
 - [ ] **T20. Scroll (core, platform).** **[needs human]**
   - Row: `effect(Effect::Scroll, "scroll", &[Direction])`, and add
-    `Effect::Scroll` to Fold's `effects` list in `KINDS`.
+    `Effect::Scroll` to Fold's `Offers::Only` list in `KINDS`.
   - Rect: Roll's (it collapses into `edge`; Automatic is the top), made
     taller by the cylinder's radius toward the moving edge and clamped to
     the space's full rect, so the cylinder fits inside the window.

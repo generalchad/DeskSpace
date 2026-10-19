@@ -145,7 +145,7 @@ pub(crate) unsafe fn set_visible(window: HWND, visible: bool, play: Play) {
         }
         return;
     }
-    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), play.edge);
+    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play);
     // SAFETY: the caller's contract.
     unsafe { start(window, Play { way, ..play }, geometry, Purpose::Visibility) };
 }
@@ -286,7 +286,7 @@ pub(crate) unsafe fn dismiss(window: HWND, play: Play) {
         unsafe { destroy(window) };
         return;
     };
-    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), play.edge);
+    let geometry = Geometry::for_visibility(rect, work_area_at(rect.center()), &play);
     let play = Play {
         way: Way::Out,
         ..play
@@ -494,7 +494,7 @@ pub(crate) unsafe fn retarget(window: HWND, rect: Rect) -> bool {
                     let geometry = Geometry::for_visibility(
                         rect,
                         work_area_at(rect.center()),
-                        animation.play.edge,
+                        &animation.play,
                     );
                     animation.transition.set_geometry(geometry);
                     (true, false)

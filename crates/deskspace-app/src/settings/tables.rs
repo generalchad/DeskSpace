@@ -223,7 +223,7 @@ impl AnimationPage {
         spec.follows
             .map(EffectChoice::SameAs)
             .into_iter()
-            .chain(spec.effects.iter().copied().map(EffectChoice::Effect))
+            .chain(spec.offers.effects().map(EffectChoice::Effect))
             .collect()
     }
 

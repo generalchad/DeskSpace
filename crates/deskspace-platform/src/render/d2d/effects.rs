@@ -5,7 +5,6 @@
 
 use std::mem::ManuallyDrop;
 
-use deskspace_core::animation::Edge;
 use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_U, D2D_SIZE_F, D2D1_GRADIENT_STOP};
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_BRUSH_PROPERTIES, D2D1_BITMAP_INTERPOLATION_MODE,
@@ -19,7 +18,7 @@ use super::*;
 use crate::render::burn::{self, BurnField};
 use crate::render::dissolve::DissolveField;
 use crate::render::math::Grid;
-use crate::render::transition::Mask;
+use crate::render::transition::{Mask, Side};
 
 #[derive(Default)]
 pub(super) struct Effects {
@@ -98,12 +97,12 @@ impl Effects {
         match mask {
             Mask::None => Ok(None),
             Mask::Gradient {
-                edge,
+                side,
                 position,
                 feather,
             } => {
                 let brush = self.gradient(target)?;
-                let (start, end) = gradient_points(edge, position, feather, size);
+                let (start, end) = gradient_points(side, position, feather, size);
                 // SAFETY: a live brush owned by this painter.
                 unsafe {
                     brush.SetStartPoint(Vector2::new(start.0, start.1));
@@ -384,22 +383,22 @@ pub(super) unsafe fn with_layer(
 }
 
 /// Where a gradient mask's brush starts (hidden) and ends (shown) over a
-/// space of `size`, sweeping in from `edge`; see `Mask::Gradient`.
+/// space of `size`, sweeping in from `side`; see `Mask::Gradient`.
 fn gradient_points(
-    edge: Edge,
+    side: Side,
     position: f32,
     feather: f32,
     (width, height): (f32, f32),
 ) -> ((f32, f32), (f32, f32)) {
     let (hidden, shown) = (position - feather, position);
-    match edge {
-        Edge::Auto | Edge::Top => ((0.0, hidden * height), (0.0, shown * height)),
-        Edge::Bottom => (
+    match side {
+        Side::Top => ((0.0, hidden * height), (0.0, shown * height)),
+        Side::Bottom => (
             (0.0, (1.0 - hidden) * height),
             (0.0, (1.0 - shown) * height),
         ),
-        Edge::Left => ((hidden * width, 0.0), (shown * width, 0.0)),
-        Edge::Right => (((1.0 - hidden) * width, 0.0), ((1.0 - shown) * width, 0.0)),
+        Side::Left => ((hidden * width, 0.0), (shown * width, 0.0)),
+        Side::Right => (((1.0 - hidden) * width, 0.0), ((1.0 - shown) * width, 0.0)),
     }
 }
 
@@ -411,15 +410,15 @@ mod tests {
     fn the_gradient_sweeps_from_its_edge() {
         let size = (200.0, 100.0);
         assert_eq!(
-            gradient_points(Edge::Top, 0.5, 0.25, size),
+            gradient_points(Side::Top, 0.5, 0.25, size),
             ((0.0, 25.0), (0.0, 50.0))
         );
         assert_eq!(
-            gradient_points(Edge::Bottom, 0.5, 0.25, size),
+            gradient_points(Side::Bottom, 0.5, 0.25, size),
             ((0.0, 75.0), (0.0, 50.0))
         );
         assert_eq!(
-            gradient_points(Edge::Right, 0.5, 0.25, size),
+            gradient_points(Side::Right, 0.5, 0.25, size),
             ((150.0, 0.0), (100.0, 0.0))
         );
     }

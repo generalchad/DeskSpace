@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
+use deskspace_core::animation::{AutoEdge, DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
 use super::burn;
@@ -50,6 +50,44 @@ impl Play {
             edge: Edge::Auto,
         }
     }
+
+    /// The side this play moves toward or sweeps from, for a window at
+    /// `rect` on `work_area`: its own edge, or for Automatic the one its
+    /// effect's row names (`EffectSpec::auto_edge`).
+    pub fn side(&self, rect: Rect, work_area: Rect) -> Side {
+        match self.edge {
+            Edge::Top => Side::Top,
+            Edge::Bottom => Side::Bottom,
+            Edge::Left => Side::Left,
+            Edge::Right => Side::Right,
+            Edge::Auto => match self.effect.spec().auto_edge {
+                AutoEdge::Top => Side::Top,
+                AutoEdge::Nearest => nearest_side(rect, work_area),
+            },
+        }
+    }
+}
+
+/// An edge of a space, with "Automatic" already decided (`Play::side`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The side of `work_area` nearest `rect`.
+fn nearest_side(rect: Rect, work_area: Rect) -> Side {
+    [
+        (rect.top() - work_area.top(), Side::Top),
+        (work_area.bottom() - rect.bottom(), Side::Bottom),
+        (rect.left() - work_area.left(), Side::Left),
+        (work_area.right() - rect.right(), Side::Right),
+    ]
+    .into_iter()
+    .min_by_key(|(distance, _)| *distance)
+    .map_or(Side::Top, |(_, side)| side)
 }
 
 /// Where a window is and what it may cover, in desktop coordinates.
@@ -65,14 +103,14 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    /// A window that hides and shows (or comes and goes): Roll collapses it
-    /// into `edge` (`Auto` is the top), and Fly uses `work_area`.
-    pub fn for_visibility(rect: Rect, work_area: Rect, edge: Edge) -> Self {
-        let rolled = match edge {
-            Edge::Auto | Edge::Top => Rect::new(rect.x, rect.y, rect.width, 0),
-            Edge::Bottom => Rect::new(rect.x, rect.bottom(), rect.width, 0),
-            Edge::Left => Rect::new(rect.x, rect.y, 0, rect.height),
-            Edge::Right => Rect::new(rect.right(), rect.y, 0, rect.height),
+    /// A window that hides and shows (or comes and goes) with `play`: Roll
+    /// collapses it into the play's side, and Fly uses `work_area`.
+    pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play) -> Self {
+        let rolled = match play.side(rect, work_area) {
+            Side::Top => Rect::new(rect.x, rect.y, rect.width, 0),
+            Side::Bottom => Rect::new(rect.x, rect.bottom(), rect.width, 0),
+            Side::Left => Rect::new(rect.x, rect.y, 0, rect.height),
+            Side::Right => Rect::new(rect.right(), rect.y, 0, rect.height),
         };
         Self {
             rect,
@@ -95,12 +133,12 @@ impl Geometry {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mask {
     None,
-    /// A soft edge sweeping in from `edge`. Along the axis from that edge
-    /// (0 at the edge, 1 at the far side), a pixel is hidden before
+    /// A soft edge sweeping in from `side`. Along the axis from that side
+    /// (0 at the side, 1 at the far side), a pixel is hidden before
     /// `position - feather`, fades in over `feather`, and shows from
     /// `position` on.
     Gradient {
-        edge: Edge,
+        side: Side,
         position: f32,
         feather: f32,
     },
@@ -304,7 +342,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         }
         Effect::Gradient => TransitionFrame {
             mask: Mask::Gradient {
-                edge: resolve_sweep(play.edge),
+                side: play.side(geometry.rect, geometry.work_area),
                 position: gone * (1.0 + GRADIENT_FEATHER),
                 feather: GRADIENT_FEATHER,
             },
@@ -325,8 +363,8 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             ..whole
         },
         Effect::Fly => {
-            let edge = resolve_fly(play.edge, geometry.rect, geometry.work_area);
-            let moved = fly_rect(geometry.rect, geometry.work_area, edge, gone);
+            let side = play.side(geometry.rect, geometry.work_area);
+            let moved = fly_rect(geometry.rect, geometry.work_area, side, gone);
             let rect = moved.intersection(geometry.work_area);
             TransitionFrame {
                 rect,
@@ -363,38 +401,15 @@ fn crt(rect: Rect, shown: f32, whole: TransitionFrame) -> TransitionFrame {
     }
 }
 
-fn resolve_sweep(edge: Edge) -> Edge {
-    match edge {
-        Edge::Auto => Edge::Top,
-        edge => edge,
-    }
-}
-
-/// `Auto` flies to the work area's edge nearest the space.
-fn resolve_fly(edge: Edge, rect: Rect, work_area: Rect) -> Edge {
-    if edge != Edge::Auto {
-        return edge;
-    }
-    [
-        (rect.top() - work_area.top(), Edge::Top),
-        (work_area.bottom() - rect.bottom(), Edge::Bottom),
-        (rect.left() - work_area.left(), Edge::Left),
-        (work_area.right() - rect.right(), Edge::Right),
-    ]
-    .into_iter()
-    .min_by_key(|(distance, _)| *distance)
-    .map_or(Edge::Top, |(_, edge)| edge)
-}
-
-/// `rect` moved `gone` of the way past `edge` of `work_area`: at 1 it is
+/// `rect` moved `gone` of the way past `side` of `work_area`: at 1 it is
 /// just outside.
-fn fly_rect(rect: Rect, work_area: Rect, edge: Edge, gone: f32) -> Rect {
+fn fly_rect(rect: Rect, work_area: Rect, side: Side, gone: f32) -> Rect {
     let travel = |distance: i32| (distance as f32 * gone).round() as i32;
-    match edge {
-        Edge::Auto | Edge::Top => rect.offset(0, -travel(rect.bottom() - work_area.top())),
-        Edge::Bottom => rect.offset(0, travel(work_area.bottom() - rect.top())),
-        Edge::Left => rect.offset(-travel(rect.right() - work_area.left()), 0),
-        Edge::Right => rect.offset(travel(work_area.right() - rect.left()), 0),
+    match side {
+        Side::Top => rect.offset(0, -travel(rect.bottom() - work_area.top())),
+        Side::Bottom => rect.offset(0, travel(work_area.bottom() - rect.top())),
+        Side::Left => rect.offset(-travel(rect.right() - work_area.left()), 0),
+        Side::Right => rect.offset(travel(work_area.right() - rect.left()), 0),
     }
 }
 
@@ -450,12 +465,13 @@ mod tests {
         Rect::new(0, 0, 1920, 1040)
     }
 
+    /// A Roll's geometry from the top, for the tests that only need a rect.
     fn geometry() -> Geometry {
-        geometry_from(Edge::Auto)
+        geometry_for(&play(Effect::Roll, Way::In))
     }
 
-    fn geometry_from(edge: Edge) -> Geometry {
-        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), edge)
+    fn geometry_for(play: &Play) -> Geometry {
+        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), play)
     }
 
     fn start(effect: Effect, way: Way) -> Transition {
@@ -467,7 +483,7 @@ mod tests {
             edge,
             ..play(effect, way)
         };
-        Transition::new(play, geometry_from(edge), Duration::ZERO)
+        Transition::new(play, geometry_for(&play), Duration::ZERO)
     }
 
     /// Whether `frame` draws the whole space as it is when fully there.
@@ -651,8 +667,9 @@ mod tests {
     #[test]
     fn fly_leaves_by_the_nearest_edge_and_never_leaves_the_work_area() {
         let near_right = Rect::new(1600, 400, 240, 160);
-        let geometry = Geometry::for_visibility(near_right, work_area(), Edge::Auto);
-        let transition = Transition::new(play(Effect::Fly, Way::Out), geometry, Duration::ZERO);
+        let fly = play(Effect::Fly, Way::Out);
+        let geometry = Geometry::for_visibility(near_right, work_area(), &fly);
+        let transition = Transition::new(fly, geometry, Duration::ZERO);
         for step in 0..=40 {
             let frame = transition.frame(ms(step * 5));
             let area = work_area();
@@ -665,6 +682,24 @@ mod tests {
             }
         }
         assert!(transition.frame(ms(100)).rect.left() > near_right.left());
+    }
+
+    #[test]
+    fn automatic_takes_the_side_the_effect_row_names() {
+        let near_right = Rect::new(1600, 400, 240, 160);
+        let side = |effect| play(effect, Way::Out).side(near_right, work_area());
+        assert_eq!(side(Effect::Fly), Side::Right, "the nearest side");
+        assert_eq!(side(Effect::Roll), Side::Top);
+        assert_eq!(side(Effect::Gradient), Side::Top);
+        let left = Play {
+            edge: Edge::Left,
+            ..play(Effect::Fly, Way::Out)
+        };
+        assert_eq!(
+            left.side(near_right, work_area()),
+            Side::Left,
+            "a set edge wins"
+        );
     }
 
     #[test]
