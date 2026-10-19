@@ -33,6 +33,10 @@ pub(super) struct Graphics {
     pub(super) zoom_label_format: IDWriteTextFormat,
     /// A dotted stroke for the keyboard focus rectangle.
     pub(super) focus_stroke: ID2D1StrokeStyle,
+    /// The UI text family, and the icon font when one is installed, for
+    /// painters that make their own formats.
+    pub(super) text_family: PCWSTR,
+    pub(super) glyph_family: Option<PCWSTR>,
 }
 
 thread_local! {
@@ -144,6 +148,8 @@ impl Graphics {
                 zoom_percent_format,
                 zoom_label_format,
                 focus_stroke,
+                text_family,
+                glyph_family,
             })
         }
     }
@@ -201,7 +207,7 @@ fn character_trimming() -> DWRITE_TRIMMING {
     }
 }
 
-unsafe fn make_format(
+pub(super) unsafe fn make_format(
     dwrite: &IDWriteFactory,
     family: PCWSTR,
     weight: DWRITE_FONT_WEIGHT,

@@ -9,6 +9,7 @@
 
 mod bitmap;
 mod canvas;
+mod color_picker;
 mod edit;
 mod effects;
 mod geometry;
@@ -17,6 +18,7 @@ mod item;
 mod zoom_bar;
 
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
+pub(crate) use color_picker::ColorPickerPainter;
 pub(crate) use zoom_bar::ZoomBarPainter;
 
 use std::cell::RefCell;

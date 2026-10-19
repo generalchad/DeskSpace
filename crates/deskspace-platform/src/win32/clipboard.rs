@@ -19,7 +19,9 @@ use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
     SetClipboardData,
 };
-use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+use windows::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows::Win32::System::Ole::{
     CF_HDROP, CF_UNICODETEXT, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, OleGetClipboard,
 };
@@ -108,6 +110,48 @@ pub(crate) fn set_text(owner: HWND, text: &str) -> Result<(), PlatformError> {
         let _ = CloseClipboard();
         result
     }
+}
+
+/// The clipboard's plain text (`CF_UNICODETEXT`), or `None` when it holds
+/// none.
+pub(crate) fn text() -> Option<String> {
+    // SAFETY: the clipboard is opened and closed around the read; the handle
+    // `GetClipboardData` returns is owned by the clipboard, not freed here.
+    unsafe {
+        if open_clipboard().is_err() {
+            return None;
+        }
+        let result = read_text();
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+unsafe fn read_text() -> Option<String> {
+    // SAFETY: reading a standard format from the open clipboard.
+    let handle = unsafe { GetClipboardData(CF_UNICODETEXT.0 as u32) }.ok()?;
+    if handle.0.is_null() {
+        return None;
+    }
+    let block = HGLOBAL(handle.0);
+    // SAFETY: the handle wraps a live global block while the clipboard is open.
+    let pointer = unsafe { GlobalLock(block) }.cast::<u16>();
+    if pointer.is_null() {
+        return None;
+    }
+    // SAFETY: the locked block holds `GlobalSize` bytes of UTF-16, normally
+    // NUL-terminated; the read stops at the block's end either way.
+    let text = unsafe {
+        let units = std::slice::from_raw_parts(pointer, GlobalSize(block) / 2);
+        let end = units
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(units.len());
+        String::from_utf16_lossy(&units[..end])
+    };
+    // SAFETY: `block` is locked and the read above is complete.
+    let _ = unsafe { GlobalUnlock(block) };
+    Some(text)
 }
 
 /// Empties the clipboard.

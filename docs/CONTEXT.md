@@ -890,6 +890,12 @@ in `ui.rs`. What spans them:
   open. Picked apps become `ShellItem`s through `shortcuts::shell_item`, the
   function drops use; the custom dialog's `CustomShortcut` is written by
   `shortcuts::create_custom_shortcut`.
+- **Recent colors.** Every pick, from the settings window or a menu, goes
+  through `runtime::pick_color`, which updates the runtime's recent colors
+  and queues `Event::RecentColors` (queued, so the settings window's color
+  branch still dispatches last). The app keeps them in
+  `Config::recent_colors`, outside `window`, because a settings Cancel
+  restores `window` wholesale.
 - **Highlight.** Selecting a space in the scopes pane, or opening the window
   on one, highlights it on the desktop for about 1.2 s
   (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another

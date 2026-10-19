@@ -20,8 +20,8 @@ use std::sync::OnceLock;
 use deskspace_core::theme::Backdrop;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{
-    DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE, DWMSBT_NONE, DWMWA_BORDER_COLOR,
-    DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
+    DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DWMWCP_ROUNDSMALL, DWMWINDOWATTRIBUTE, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
@@ -134,6 +134,46 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material, bor
         Material::Accent => set_accent(hwnd, accent_state(style.backdrop)),
         Material::Composition => set(hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, BOOL::from(true)),
     }
+}
+
+/// Gives an activated pop-up (the color picker) rounded corners, a `dark` or
+/// light frame, and the Windows 11 acrylic system backdrop behind its
+/// client. Unlike a space, the pop-up is active while it shows, which is
+/// when the system backdrops draw. Returns whether the backdrop took: it
+/// needs Windows 11 22H2, and without it the pop-up paints itself opaque.
+/// https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type
+pub(crate) fn apply_popup_backdrop(hwnd: HWND, dark: bool) -> bool {
+    set(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, BOOL::from(dark));
+    set(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+    set(hwnd, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT);
+    let backdrop = DWMSBT_TRANSIENTWINDOW;
+    // SAFETY: `backdrop` is the DWM_SYSTEMBACKDROP_TYPE the attribute takes
+    // and outlives the call.
+    let applied = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &backdrop as *const _ as *const core::ffi::c_void,
+            std::mem::size_of_val(&backdrop) as u32,
+        )
+    }
+    .is_ok();
+    if applied {
+        // As in `apply_style`: DWM then composites the client's per-pixel
+        // alpha over the backdrop.
+        let glass = MARGINS {
+            cxLeftWidth: -1,
+            cxRightWidth: -1,
+            cyTopHeight: -1,
+            cyBottomHeight: -1,
+        };
+        // SAFETY: `hwnd` is a live top-level window owned by this thread.
+        if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(hwnd, &glass) } {
+            tracing::debug!(%error, "DwmExtendFrameIntoClientArea failed");
+            return false;
+        }
+    }
+    applied
 }
 
 /// The border DWM draws for `style`. DWMWA_COLOR_DEFAULT lets Windows pick
