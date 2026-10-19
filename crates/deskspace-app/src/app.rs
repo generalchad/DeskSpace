@@ -672,6 +672,13 @@ impl EventHandler for App {
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
             }
+            Event::SystemColorChanged => {
+                if self.system.refresh() {
+                    ui.set_ui_dark(self.ui_dark());
+                    self.restyle_all(ui);
+                    self.refresh_settings(ui);
+                }
+            }
             Event::SystemAnimationsChanged => {
                 self.system.refresh_animations();
                 self.refresh_settings(ui);

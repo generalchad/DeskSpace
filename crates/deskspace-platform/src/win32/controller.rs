@@ -16,8 +16,8 @@ use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, PostQuitMessage, RegisterWindowMessageW,
     SPI_SETCLIENTAREAANIMATION, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY,
-    WM_ENDSESSION, WM_HOTKEY, WM_QUERYENDSESSION, WM_SETTINGCHANGE, WM_TIMER, WS_EX_TOOLWINDOW,
-    WS_POPUP,
+    WM_DWMCOLORIZATIONCOLORCHANGED, WM_ENDSESSION, WM_HOTKEY, WM_QUERYENDSESSION, WM_SETTINGCHANGE,
+    WM_TIMER, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -188,6 +188,14 @@ unsafe extern "system" fn wndproc(
                     runtime::dispatch(Event::SystemAnimationsChanged);
                 }
                 DefWindowProcW(window, message, wparam, lparam)
+            }
+            // Not every accent change broadcasts "ImmersiveColorSet" (an
+            // accent picked automatically from the wallpaper may not), but
+            // DWM tells every top-level window when its color changes.
+            // https://learn.microsoft.com/windows/win32/dwm/wm-dwmcolorizationcolorchanged
+            WM_DWMCOLORIZATIONCOLORCHANGED => {
+                runtime::dispatch(Event::SystemColorChanged);
+                LRESULT(0)
             }
             WM_CLOSE => {
                 let _ = DestroyWindow(window);

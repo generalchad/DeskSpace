@@ -56,9 +56,11 @@ impl SystemLook {
     }
 
     /// Re-reads dark mode and the accent after a Windows theme change.
-    pub(super) fn refresh(&mut self) {
-        self.dark = system_uses_dark_mode();
-        self.accent = system_accent_color();
+    /// Returns whether either changed.
+    pub(super) fn refresh(&mut self) -> bool {
+        let dark = std::mem::replace(&mut self.dark, system_uses_dark_mode());
+        let accent = std::mem::replace(&mut self.accent, system_accent_color());
+        (dark, accent) != (self.dark, self.accent)
     }
 
     pub(super) fn dark(&self) -> bool {

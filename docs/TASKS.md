@@ -951,7 +951,7 @@ each id is in `archive/TASKS-done.md`.
 | X7 (F-61) | With three spaces holding dropped files and one Shift-dropped file, Debug → Spaces → "Delete all spaces" asks once with the right counts and the scratch config's path; Cancel changes nothing; OK plays each space's Delete animation; the dropped files are in the Recycle Bin, the Shift-dropped file is where it was, and nothing new is on the desktop. Started without `--config`, the question shows the real-configuration warning (press Cancel). |
 | X5 (F-61) | With `--debug`, the rail lists "Windows" with a "Show spaces" check box that hides and shows the spaces and follows the tray's Hide/Show within a second; closing the window and choosing the tray's "Debug…" brings it back with the earlier log; without `--debug` the tray has no "Debug…"; the window themes dark and light, resizes (the console grows), and stops at its minimum size; Tab moves between controls. |
 | X4 (F-61) | With `--debug`, the window opens with the console already holding the startup lines; moving a space adds lines live; Level Trace shows trace lines and Info stops new debug ones; Filter, Pause and resume, Auto-scroll, Clear, Copy (paste into Notepad), and "Save log…" work; a `-Release` build shows the log with no console window; without `--debug` nothing opens and stderr logs as before. |
-| C2 (F-29) | With "Use Windows accent" on, the selection takes the accent (and the border, with "Border color" set to Windows accent), and they follow it live when it changes in Windows Settings (watch for the `WM_DWMCOLORIZATIONCOLORCHANGED` note under **Found while working**). |
+| C2 (F-29) | With "Use Windows accent" on, the selection takes the accent (and the border, with "Border color" set to Windows accent), and they follow it live when it changes in Windows Settings, also with "Automatically pick an accent color from my background" and a wallpaper slideshow; switching wallpapers with an unchanged accent causes no flicker. |
 | C3 (F-30) | Switching "Settings and menus" between Dark and Light repaints the open settings window and the next popup menu. |
 | C4 (F-34) | "Start DeskSpace when you sign in" adds and removes the `Run` value, and DeskSpace starts at sign-in. |
 | C5 (F-48) | The "Item preset" dropdown shows both entries; "Custom" enables the Layout fields and the icon size takes effect; "Match Explorer's display" greys them. |
@@ -1029,11 +1029,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   the rename box is invisible. Suggested task: start DeskSpace's inline
   rename on the new layer item instead.
 
-- `win32/controller.rs` treats `WM_SETTINGCHANGE` "ImmersiveColorSet" as
-  `Event::SystemThemeChanged`, which refreshes the accent. Windows also
-  broadcasts `WM_DWMCOLORIZATIONCOLORCHANGED`; if "ImmersiveColorSet" is not
-  sent for every accent change, the palette is stale until the next theme
-  change. Watch for it during the F-29 check.
 - `win32/dark_mode.rs`: the settings window's selection bar uses a fixed
   `UiColors.accent`, not the Windows accent the spaces' check boxes use.
   Consider `system_accent_color()` for consistency.

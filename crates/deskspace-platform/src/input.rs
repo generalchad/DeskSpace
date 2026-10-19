@@ -310,6 +310,9 @@ pub enum Event {
     FolderChanged,
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
+    /// DWM's color changed, which can mean a new accent color. It can come
+    /// in bursts and without any visible change.
+    SystemColorChanged,
     /// Windows' "Animation effects" switch changed (`system_animations`).
     SystemAnimationsChanged,
     /// A zoom pop-up button was clicked (see `Ui::show_zoom_bar`).

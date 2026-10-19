@@ -430,7 +430,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   left click `TrayEvent::Activated`, right click `TrayEvent::MenuRequested`,
   keyboard select (`NIN_KEYSELECT`) opens Settings), `TaskbarCreated` (re-adds
   the icon after Explorer restarts), `WM_SETTINGCHANGE` "ImmersiveColorSet"
-  (`Event::SystemThemeChanged`), and session end.
+  (`Event::SystemThemeChanged`), `WM_DWMCOLORIZATIONCOLORCHANGED`
+  (`Event::SystemColorChanged`, which restyles only when dark mode or the
+  accent really changed), and session end.
 - Outside clicks (`win32/outside_click.rs`): spaces are never activated, so a
   `WH_MOUSE_LL` hook is the only way to see clicks on the desktop or other
   apps. While the app asks for it (`Ui::watch_outside_clicks`: an item is
