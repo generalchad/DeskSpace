@@ -147,6 +147,41 @@ pub(super) struct DrawContext<'a> {
     brush: &'a ID2D1SolidColorBrush,
 }
 
+/// What one frame of a transition is drawn with, made before the window's
+/// draw begins.
+struct FrameResources {
+    /// The whole space's size, which the window may crop.
+    size: (f32, f32),
+    /// The layer the contents go through, with the frame's opacity.
+    layer: ID2D1Layer,
+    /// The frame's mask, if it has one.
+    mask: Option<ID2D1Brush>,
+    /// Pixelate's small scene, and the part of it the scene covers.
+    pixelated: Option<(ID2D1Bitmap, D2D_RECT_F)>,
+    /// Burn's glow, char, and scorch, laid over the contents.
+    burn_marks: Option<ID2D1Bitmap>,
+}
+
+/// Clears `target` for a new frame: to the opaque tint on a window with no
+/// per-pixel alpha, else to transparent.
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `target`.
+unsafe fn clear(target: &ID2D1RenderTarget, opaque: bool, tint: Color) {
+    // SAFETY: the caller is inside BeginDraw/EndDraw on `target`.
+    unsafe {
+        if opaque {
+            target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
+            target.Clear(Some(&color_f(tint.with_alpha(255))));
+        } else {
+            // ClearType needs an opaque background to blend against; on a
+            // translucent surface it leaves colored fringes.
+            target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+            target.Clear(Some(&color_f(Color::TRANSPARENT)));
+        }
+    }
+}
+
 /// A scene with its strings pre-encoded, so painting does not allocate.
 pub struct PreparedScene {
     scene: SpaceScene,
@@ -273,7 +308,6 @@ impl Painter {
             target: &resources,
             brush: &brush,
         };
-        let scene = &prepared.scene;
         // The space is drawn whole even while the window around it is smaller
         // (a roll crops it, a fly clips it at the screen's edge).
         let size = match transition {
@@ -286,84 +320,118 @@ impl Painter {
                 (width as f32, height as f32)
             }
         };
-        // Pixelate first draws the scene small on its own target, so it must
-        // finish before the window's target begins.
-        let pixelated = match transition {
-            Some(transition) if transition.block > 1 => {
-                Some(self.draw_small(ctx, prepared, frame, size, transition.block)?)
+        let animated = match transition {
+            Some(transition) => {
+                let resources = self.frame_resources(ctx, prepared, frame, transition, size)?;
+                Some((transition, resources))
             }
-            _ => None,
-        };
-        let layer = match transition {
-            Some(_) => Some(self.effects.layer(&resources)?),
             None => None,
         };
-        let mask = match transition {
-            Some(transition) => self.effects.mask_brush(&resources, transition.mask, size)?,
-            None => None,
-        };
-        let burn_marks = transition.and_then(|transition| self.effects.burn_marks(transition.mask));
 
         let (target, origin) = self.canvas.begin()?;
         let ctx = DrawContext {
             target: &target,
             ..ctx
         };
-        let at = |offset: Vector2| Matrix3x2::translation(origin.X + offset.X, origin.Y + offset.Y);
         // SAFETY: all calls are on live COM objects owned by this painter,
         // between the canvas's begin and end on the UI thread.
         unsafe {
-            target.SetTransform(&at(Vector2::zero()));
-            if frame.opaque {
-                target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
-                target.Clear(Some(&color_f(scene.tint.with_alpha(255))));
-            } else {
-                // ClearType needs an opaque background to blend against; on a
-                // translucent surface it leaves colored fringes.
-                target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
-                target.Clear(Some(&color_f(Color::TRANSPARENT)));
-            }
-            match (transition, &layer) {
-                (Some(transition), Some(layer)) => {
-                    let offset = transition.content_offset;
-                    target.SetTransform(&at(Vector2::new(offset.x as f32, offset.y as f32)));
-                    effects::with_layer(&target, layer, transition.opacity, mask.clone(), || {
-                        match &pixelated {
-                            Some((bitmap, source)) => target.DrawBitmap(
-                                bitmap,
-                                Some(&rect_f(0.0, 0.0, size.0, size.1)),
-                                1.0,
-                                D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
-                                Some(source),
-                            ),
-                            None => self.draw_scene(ctx, prepared, frame, size),
-                        }
-                    });
-                    let whole = rect_f(0.0, 0.0, size.0, size.1);
-                    if let Some(marks) = &burn_marks {
-                        target.DrawBitmap(
-                            marks,
-                            Some(&whole),
-                            transition.opacity,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                            None,
-                        );
-                    }
-                    if transition.glow > 0.0 {
-                        let alpha = (transition.glow * f32::from(CRT_GLOW.a)).round() as u8;
-                        brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
-                        target.FillRectangle(&whole, &brush);
-                    }
+            target.SetTransform(&Matrix3x2::translation(origin.X, origin.Y));
+            clear(&target, frame.opaque, prepared.scene.tint);
+            match &animated {
+                Some((transition, resources)) => {
+                    self.draw_transition(ctx, prepared, frame, transition, resources, origin)
                 }
-                _ => self.draw_scene(ctx, prepared, frame, size),
+                None => self.draw_scene(ctx, prepared, frame, size),
             }
         }
         self.canvas.end()?;
-        match (transition, layer) {
-            (Some(transition), Some(layer)) if !transition.covers_window() => {
-                Ok(self.draw_blur_mask(transition, &layer, mask, &brush, size)?)
+        if let Some((transition, resources)) = animated
+            && !transition.covers_window()
+        {
+            self.draw_blur_mask(transition, resources, &brush)?;
+        }
+        Ok(())
+    }
+
+    /// What `transition`'s frame is drawn with, updated for this frame.
+    /// Pixelate draws the scene small on its own target here, since that
+    /// must finish before the window's target begins.
+    fn frame_resources(
+        &mut self,
+        window: DrawContext,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        transition: &TransitionFrame,
+        size: (f32, f32),
+    ) -> Result<FrameResources, PlatformError> {
+        let pixelated = match transition.block {
+            0 | 1 => None,
+            block => Some(self.draw_small(window, prepared, frame, size, block)?),
+        };
+        Ok(FrameResources {
+            size,
+            layer: self.effects.layer(window.target)?,
+            mask: self
+                .effects
+                .mask_brush(window.target, transition.mask, size)?,
+            pixelated,
+            burn_marks: self.effects.burn_marks(transition.mask),
+        })
+    }
+
+    /// Draws the space through `transition`'s frame: the contents (or
+    /// Pixelate's blocks) at the frame's offset through its opacity and
+    /// mask, then Burn's marks and CRT's glow over them.
+    ///
+    /// # Safety
+    /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
+    unsafe fn draw_transition(
+        &mut self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        frame: PaintFrame,
+        transition: &TransitionFrame,
+        resources: &FrameResources,
+        origin: Vector2,
+    ) {
+        let DrawContext { target, brush, .. } = ctx;
+        let size = resources.size;
+        let whole = rect_f(0.0, 0.0, size.0, size.1);
+        let offset = transition.content_offset;
+        // SAFETY: the caller is inside BeginDraw/EndDraw on `target`.
+        unsafe {
+            target.SetTransform(&Matrix3x2::translation(
+                origin.X + offset.x as f32,
+                origin.Y + offset.y as f32,
+            ));
+            let mask = resources.mask.clone();
+            effects::with_layer(target, &resources.layer, transition.opacity, mask, || {
+                match &resources.pixelated {
+                    Some((bitmap, source)) => target.DrawBitmap(
+                        bitmap,
+                        Some(&whole),
+                        1.0,
+                        D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                        Some(source),
+                    ),
+                    None => self.draw_scene(ctx, prepared, frame, size),
+                }
+            });
+            if let Some(marks) = &resources.burn_marks {
+                target.DrawBitmap(
+                    marks,
+                    Some(&whole),
+                    transition.opacity,
+                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
             }
-            _ => Ok(()),
+            if transition.glow > 0.0 {
+                let alpha = (transition.glow * f32::from(CRT_GLOW.a)).round() as u8;
+                brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
+                target.FillRectangle(&whole, brush);
+            }
         }
     }
 
@@ -373,12 +441,13 @@ impl Painter {
     fn draw_blur_mask(
         &mut self,
         transition: &TransitionFrame,
-        layer: &ID2D1Layer,
-        mask: Option<ID2D1Brush>,
+        resources: FrameResources,
         brush: &ID2D1SolidColorBrush,
-        size: (f32, f32),
     ) -> windows::core::Result<()> {
         let offset = transition.content_offset;
+        let FrameResources {
+            size, layer, mask, ..
+        } = resources;
         self.canvas.draw_blur_mask(|target, origin| {
             // SAFETY: inside the mask surface's draw, on live objects made on
             // its device.
@@ -387,7 +456,7 @@ impl Painter {
                     origin.X + offset.x as f32,
                     origin.Y + offset.y as f32,
                 ));
-                effects::with_layer(target, layer, transition.opacity, mask, || {
+                effects::with_layer(target, &layer, transition.opacity, mask, || {
                     brush.SetColor(&color_f(Color::rgba(255, 255, 255, 255)));
                     target.FillRectangle(&rect_f(0.0, 0.0, size.0, size.1), brush);
                 });
