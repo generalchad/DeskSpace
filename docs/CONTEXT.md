@@ -455,10 +455,15 @@ one arm in `App::on_event`, whose match is exhaustive.
   `SHOW_SPACES` to the running instance's controller window (found by class)
   and exits, or starts with the spaces shown when none is running. The verb is
   removed when spaces are shown and on a clean exit.
-- The tray and settings-window icon is the `.ico` that `deskspace-app`'s build
-  script embeds (`winresource`, from `assets/deskspace.ico`). The tray loads
-  resource 1 at the small-icon size (`tray::load_app_icon`), and the settings
-  window reuses that handle (`tray::shared_icon`).
+- The tray, settings-window, and debug-window icon is the `.ico` that
+  `deskspace-app`'s build script embeds (`winresource`, from
+  `assets/deskspace.ico`), loaded as resource 1 by `app_icon::load`. The tray
+  loads it at the small-icon size. Each window owns its own big and small
+  icons (`app_icon::WindowIcons`, at its DPI), because the taskbar and
+  Alt+Tab draw `ICON_BIG` and a small icon there left the windows without a
+  usable taskbar icon. The debug window's copy carries a bug on an amber disc
+  (`Badge::Debug`, drawn by `render::d2d::debug_badge`), so it stands apart
+  from the settings window.
 
 ### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 

@@ -23,12 +23,12 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::AdjustWindowRectExForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BN_CLICKED, CB_GETCURSEL, CBN_SELCHANGE, CreateWindowExW, DefWindowProcW,
-    DestroyWindow, EnumChildWindows, GA_ROOT, GetAncestor, GetClassNameW, GetClientRect, ICON_BIG,
-    ICON_SMALL, LBN_SELCHANGE, MINMAXINFO, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
+    DestroyWindow, EnumChildWindows, GA_ROOT, GetAncestor, GetClassNameW, GetClientRect,
+    LBN_SELCHANGE, MINMAXINFO, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
     SetForegroundWindow, SetWindowPos, ShowWindow, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
     WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SETICON,
-    WM_SIZE, WM_VSCROLL, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
+    WM_GETMINMAXINFO, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_NOTIFY, WM_SETFONT, WM_SIZE,
+    WM_VSCROLL, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -36,13 +36,14 @@ use crate::debug_console::ConsoleModel;
 use crate::error::PlatformError;
 use crate::input::{DebugEvent, Event};
 use crate::ui::{DebugControlKind, DebugPanel, LogLine};
+use crate::win32::app_icon::{Badge, WindowIcons};
 use crate::win32::dark_mode::{self, ControlTheme};
 use crate::win32::dialog::DialogChrome;
 use crate::win32::dpi::{monitor_dpi_at, scale_for, window_dpi};
 use crate::win32::settings_window::colorref;
 use crate::win32::system::{cursor_pos, loword, wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{runtime, settings_window, tray, window_state};
+use crate::win32::{runtime, settings_window, window_state};
 
 use build::{build_sections, color_table, create_frame_parts, set_value};
 use console::ConsoleControls;
@@ -99,6 +100,7 @@ struct DebugState {
     console_controls: ConsoleControls,
     /// Whether new lines scroll the console to the bottom.
     auto_scroll: bool,
+    icons: WindowIcons,
 }
 
 /// Creates and shows the debug window for `panel`.
@@ -121,6 +123,7 @@ pub(crate) fn create(panel: &DebugPanel, dark: bool) -> Result<HWND, PlatformErr
             console: ConsoleModel::default(),
             console_controls: ConsoleControls::default(),
             auto_scroll: true,
+            icons: WindowIcons::default(),
         }));
         let (x, y, width, height) = initial_frame(cursor, dpi);
         let title = wide("DeskSpace Debug");
@@ -152,15 +155,8 @@ pub(crate) fn create(panel: &DebugPanel, dark: bool) -> Result<HWND, PlatformErr
             state.console_controls = console_controls;
         });
         build_panel(hwnd, panel);
-        let icon = tray::shared_icon();
-        for size in [ICON_BIG, ICON_SMALL] {
-            SendMessageW(
-                hwnd,
-                WM_SETICON,
-                Some(WPARAM(size as usize)),
-                Some(LPARAM(icon.0 as isize)),
-            );
-        }
+        let icons = WindowIcons::set(hwnd, Badge::Debug);
+        with_state(hwnd, |state| state.icons = icons);
         dark_mode::set_caption_dark(hwnd, dark);
         theme_controls(hwnd, dark);
         relayout(hwnd);

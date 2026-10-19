@@ -1,5 +1,6 @@
 mod alpha_mask;
 mod app_catalog;
+mod app_icon;
 mod app_picker;
 pub(crate) mod autostart;
 mod clipboard;

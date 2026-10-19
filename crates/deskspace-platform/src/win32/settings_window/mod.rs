@@ -44,14 +44,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE, EN_KILLFOCUS,
     ES_AUTOHSCROLL, ES_NUMBER, ES_READONLY, ES_RIGHT, EnumChildWindows, GetClassNameW,
     GetClientRect, GetCursorPos, GetParent, GetWindowTextLengthW, GetWindowTextW, HMENU, HWND_TOP,
-    ICON_BIG, ICON_SMALL, IsIconic, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL,
-    LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, SW_HIDE,
-    SW_RESTORE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
-    SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
-    WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM,
-    WM_ERASEBKGND, WM_HSCROLL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WM_SETICON,
-    WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX,
-    WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    IsIconic, LB_ADDSTRING, LB_GETCURSEL, LB_RESETCONTENT, LB_SETCURSEL, LB_SETITEMHEIGHT,
+    LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, SW_HIDE, SW_RESTORE, SW_SHOW,
+    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
+    ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_HSCROLL,
+    WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SETFONT, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
+    WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -61,10 +61,11 @@ use crate::ui::{
     Field, FieldKind, FieldValue, SettingsForm, SettingsHeader, SettingsNav, SettingsScope,
     SliderMark,
 };
+use crate::win32::app_icon::{Badge, WindowIcons};
 use crate::win32::dark_mode::{self, ControlTheme, UiColors};
 use crate::win32::system::{wide, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{runtime, tray, window_state};
+use crate::win32::{runtime, window_state};
 
 use build::build;
 use commands::{on_field_command, on_scroll};
@@ -180,6 +181,7 @@ pub(super) struct SettingsState {
     command_bar_brush: HBRUSH,
     /// The accent fill for the rail's selected bar and the marked dot.
     accent_brush: HBRUSH,
+    icons: WindowIcons,
 }
 
 impl SettingsState {
@@ -280,6 +282,7 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             body_brush: HBRUSH::default(),
             command_bar_brush: HBRUSH::default(),
             accent_brush: HBRUSH::default(),
+            icons: WindowIcons::default(),
         };
         state.set_colors(UiColors::new(dark));
         let state = Box::into_raw(Box::new(state));
@@ -305,19 +308,8 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             return Err(error);
         }
 
-        let icon = tray::shared_icon();
-        SendMessageW(
-            hwnd,
-            WM_SETICON,
-            Some(WPARAM(ICON_BIG as usize)),
-            Some(LPARAM(icon.0 as isize)),
-        );
-        SendMessageW(
-            hwnd,
-            WM_SETICON,
-            Some(WPARAM(ICON_SMALL as usize)),
-            Some(LPARAM(icon.0 as isize)),
-        );
+        let icons = WindowIcons::set(hwnd, Badge::None);
+        with_state(hwnd, |state| state.icons = icons);
         // Mica in the caption, like other Windows 11 settings windows. The
         // client area stays opaque because classic controls do not support
         // a translucent background. Best effort: ignored before 22H2.
