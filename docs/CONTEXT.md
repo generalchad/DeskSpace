@@ -159,8 +159,10 @@ folded; corners twice as wide as edges), item lookup/insert/remove, and
 ### Desktop and desktop layer
 
 `Desktop { spaces: Vec<Space>, layer: DesktopLayer, layout: GridSpec }` has
-add/remove space, add/remove/move item, `space_item_count`, `space_at(point)`
-(topmost hit on `visible_rect`), and `sort_by_id`. `move_item` validates the
+crate-private add/remove space and add/remove/move item, behind `Command`,
+and public `space_item_count` and `space_at(point)` (topmost hit on
+`visible_rect`). The `layout` field is the global grid, a setting edited in
+place like the global theme (its doc says why). `move_item` validates the
 target before removing the item, so a failed move never loses it, and resets
 the item's position to the origin for the next re-flow to place. It only
 takes items from spaces, so `Command::MoveItem` on a layer item is `Rejected`;

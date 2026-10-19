@@ -1033,10 +1033,3 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   no keyboard support (not a Tab stop; its X and + are mouse-only).
   Suggested task: arrow-key focus, Delete for the X, and Enter on the +
   tile (ROADMAP M7 accessibility).
-- `deskspace-core` `Desktop` (B27f): a few ways around `Command` are still
-  public. `Desktop::layer` is a `pub` field, so another crate can call
-  `desktop.layer.push_item`, `item_mut`, or `replace_items`; `remove_space`,
-  `move_item`, and `sort_by_id` are `pub` but used only inside core; and the
-  `layout` field is written directly by `settings/session.rs` (Cancel) and
-  `Config::migrate`. Suggested task: make the first two crate-private, and
-  decide whether the global grid is model (a `Command`) or settings.
