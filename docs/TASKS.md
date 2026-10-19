@@ -504,11 +504,11 @@ blur steps on and off. T12 (done) moved spaces to composition, and T13
 Two tables carry the design, so a new effect or kind is one row: the
 effects (what each one uses) and the kinds (which effects and controls each
 offers). The app turns them into a `Play` per window; the platform plays it
-with a window timer and pure frame math, and never calls back into the app
-per frame. Paint code applies a frame without allocating; whatever an
-animation needs (an offscreen bitmap, a mask) is made when it starts.
-`space_window.rs` is at the 800-line guideline, so the window side goes in
-a new module.
+with pure frame math, one frame per display refresh
+(`win32/frame_clock.rs`), and never calls back into the app per frame.
+Paint code applies a frame without allocating; whatever an animation needs
+(an offscreen bitmap, a mask) is made when it starts. The window side is
+`win32/space_animation.rs`.
 
 - [ ] **T1. Composition backdrop spike.** **[needs human]**
   - The example has landed (`feat: add the composition backdrop spike
@@ -745,6 +745,25 @@ Rules for every K task:
 - Done when: fmt, clippy, and tests pass with the same test count;
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
+
+- [ ] **K8. Split `win32/space_window.rs`.** About 1,025 lines of non-test
+  code (measured 2026-10-19), past the guideline since T12. Turn it into
+  `win32/space_window/mod.rs` plus:
+  - `zorder.rs`: the z-order pinning (`on_window_pos_changing`,
+    `insert_after`, `window_above`, `set_on_top`) with their tests.
+  - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
+    `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
+    (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
+    constants).
+  - `frame.rs`: `Frame` and `update_region`, with their tests.
+  - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
+    `show*` functions, `paint`, `with_state`, and the window procedure.
+- [ ] **K9. Split `render/d2d/mod.rs`.** 804 lines, at the guideline.
+  Turn it into `render/d2d/mod.rs` plus:
+  - `prepared.rs`: `PreparedScene`.
+  - `drag_image.rs`: `render_items`.
+  - `mod.rs` keeps `Painter`, `DrawContext`, `PaintFrame`,
+    `BorderStroke`, and the device-loss helpers.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
@@ -1001,11 +1020,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   layer but never calls `IconCache::invalidate`, so a desktop file whose icon
   changes in place keeps its old icon until restart. Suggested task:
   invalidate the paths whose `modified` changed during `resync_desktop_layer`.
-- `win32/space_window.rs` is about 900 lines of non-test code after T12
-  (2026-10-18), past the 800-line guideline. Suggested section K task:
-  move the z-order pinning (`on_window_pos_changing`, `insert_after`,
-  `window_above`, `set_on_top`) and the mouse handlers into their own
-  modules.
 - `win32/runtime/mod.rs`: `is_space_window` checks only the spaces map, so a
   press on the desktop layer is reported as `PointerDownOutside` as well as
   the layer's own `MouseDown`. Check whether that clears a layer selection

@@ -526,7 +526,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   while a composition space's follows each frame (D12, "The blur"). With Windows' "Transparency effects" off, Windows
   draws the material flat, which left a dark box under a fading space, so
   while a frame leaves the window see-through (`TransitionFrame::
-  covers_window`: Fade, Pixelate, Gradient, Dissolve, Burn) the material
+  covers_window` is false: the effects that fade or mask pixels) the material
   steps aside, and comes back when the animation ends. The border DWM
   draws steps aside then too, whatever the switch, since it cannot fade
   either (`space_window::Backing`, `show_backing`). A fold is a Roll between the space's rect and its title
