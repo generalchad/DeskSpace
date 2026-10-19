@@ -4,8 +4,8 @@
 //! A control is a `DebugId` (`ids.rs`), a `DEBUG_CONTROLS` row
 //! (`table.rs`), and an arm in both `debug_control` (what it shows) and
 //! `on_debug_control` (what it does). Each section's actions live in a file
-//! named for it. The animation settings are the exception: their rows come
-//! from the animation tables (`animation_settings.rs`).
+//! named for it. The animation and shadow settings boxes (`animation_settings.rs`,
+//! `shadow_settings.rs`) are added to their sections.
 
 mod animation_settings;
 mod animations;
@@ -13,6 +13,7 @@ mod config;
 mod diagnostics;
 mod ids;
 mod input;
+mod shadow_settings;
 mod simulate;
 mod spaces;
 mod system;
@@ -69,6 +70,8 @@ pub(crate) struct DebugTools {
     log_events: bool,
     /// How many marker lines "Mark the log" has written.
     marks: u32,
+    /// Whether every shadow is hidden for this session (ROADMAP D15).
+    pub(crate) hide_shadows: bool,
 }
 
 impl DebugTools {
@@ -86,6 +89,7 @@ impl DebugTools {
             writable: None,
             log_events: false,
             marks: 0,
+            hide_shadows: false,
         }
     }
 }
@@ -107,6 +111,12 @@ impl App {
         match id {
             DebugId::SpacesVisible => DebugControlKind::Toggle { on: self.visible },
             DebugId::OnTop => DebugControlKind::Toggle { on: ui.is_on_top() },
+            DebugId::OutlineShadows => DebugControlKind::Toggle {
+                on: ui.shadows_outlined(),
+            },
+            DebugId::HideShadows => DebugControlKind::Toggle {
+                on: self.debug.as_ref().is_some_and(|tools| tools.hide_shadows),
+            },
             DebugId::WindowTable => self.window_table(ui),
             DebugId::Taskbars => DebugControlKind::Readout {
                 text: taskbars_text(&ui.taskbars()),
@@ -217,6 +227,16 @@ impl App {
             DebugId::OnTop => {
                 if let DebugInput::Toggle(on) = input {
                     self.set_on_top(ui, on);
+                }
+            }
+            DebugId::OutlineShadows => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_shadows_outlined(ui, on);
+                }
+            }
+            DebugId::HideShadows => {
+                if let DebugInput::Toggle(on) = input {
+                    self.set_shadows_hidden(ui, on);
                 }
             }
             DebugId::WindowTable | DebugId::MonitorTable | DebugId::Taskbars => {}
@@ -355,6 +375,13 @@ impl App {
                         group: None,
                     })
                     .collect();
+                if section == DebugSectionId::Windows {
+                    let after_toggles = controls
+                        .iter()
+                        .position(|control| control.id == DebugId::HideShadows.id())
+                        .map_or(controls.len(), |index| index + 1);
+                    controls.splice(after_toggles..after_toggles, self.shadow_setting_controls());
+                }
                 if section == DebugSectionId::Animations {
                     controls.extend(self.animation_setting_controls());
                 }
@@ -445,8 +472,11 @@ impl App {
         };
         if let Some(id) = DebugId::from_id(id) {
             self.on_debug_control(ui, id, input);
-        } else if let DebugInput::Choose(index) = input {
-            self.on_animation_setting(ui, id, index);
+        } else {
+            if let DebugInput::Choose(index) = input {
+                self.on_animation_setting(ui, id, index);
+            }
+            self.on_shadow_setting(ui, id, input);
         }
         self.push_debug_panel(ui);
     }

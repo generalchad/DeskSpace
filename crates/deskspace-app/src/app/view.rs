@@ -273,7 +273,11 @@ impl App {
 
     /// The window style for a space.
     pub(super) fn style_for(&self, id: SpaceId) -> SpaceStyle {
-        space_style(self.theme_for(id), self.system.dark())
+        let mut style = space_style(self.theme_for(id), self.system.dark());
+        if self.debug.as_ref().is_some_and(|tools| tools.hide_shadows) {
+            style.shadow = None;
+        }
+        style
     }
 
     /// Whether DeskSpace's own chrome (the settings window and menus) is dark.

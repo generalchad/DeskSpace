@@ -14,7 +14,8 @@ mod session;
 mod tables;
 
 pub use apply::{
-    apply_animation_edit, apply_field, customize_space, match_global, reset_appearance, space_edit,
+    apply_animation_edit, apply_field, apply_shadow_edit, customize_space, match_global,
+    reset_appearance, space_edit,
 };
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};

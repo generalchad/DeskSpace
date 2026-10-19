@@ -72,20 +72,7 @@ fn apply_look_field(
                 (*value).clamp(BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()) as u8;
             Effect::Appearance
         }
-        (field::SHADOW, FieldValue::Toggle(on)) => {
-            theme.show_shadow = *on;
-            Effect::Appearance
-        }
-        (field::SHADOW_SIZE, FieldValue::Slider(value)) => {
-            theme.shadow_size =
-                (*value).clamp(SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()) as u8;
-            Effect::Appearance
-        }
-        (field::SHADOW_OPACITY, FieldValue::Slider(value)) => {
-            theme.shadow_opacity =
-                (*value).clamp(SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()) as u8;
-            Effect::Appearance
-        }
+        (id, value) if apply_shadow_edit(theme, id, value.clone()) => Effect::Appearance,
         (field::PRESET, FieldValue::Choice(index)) => {
             theme.preset = PRESETS.get(*index).map_or(theme.preset, |entry| entry.0);
             // Mirroring also imports Explorer's icon size and item spacing, so
@@ -254,6 +241,25 @@ pub fn apply_field(
         session.dirty = true;
     }
     effect
+}
+
+/// Applies an edit to a shadow field (`SHADOW`, `SHADOW_SIZE`, or
+/// `SHADOW_OPACITY`). Returns whether `id` and `value` were one. The
+/// settings window and the debug window (ROADMAP D15) both edit through it.
+pub fn apply_shadow_edit(theme: &mut Theme, id: u32, value: FieldValue) -> bool {
+    match (id, value) {
+        (field::SHADOW, FieldValue::Toggle(on)) => theme.show_shadow = on,
+        (field::SHADOW_SIZE, FieldValue::Slider(value)) => {
+            theme.shadow_size =
+                value.clamp(SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()) as u8;
+        }
+        (field::SHADOW_OPACITY, FieldValue::Slider(value)) => {
+            theme.shadow_opacity =
+                value.clamp(SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()) as u8;
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// Applies an edit to an animation field: a kind's page, or the startup

@@ -585,13 +585,20 @@ one arm in `App::on_event`, whose match is exhaustive.
   removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
   a (non-anti-aliased) window region. With no host found, `run` warns and
   falls back to top-level.
-- **Corners and border:** DWM rounds accent-blurred and Solid spaces with
+- **Corners, border, and shadow:** DWM rounds accent-blurred and Solid spaces with
   square, 4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`), but never
   a composition space (`dwm::Material::dwm_rounds`): DWM's corners bring
   the Windows 11 shadow, which cannot fade, so it stayed behind every
   animation as a ghost box and kept Roll from rolling thinner than twice
   the radius. A composition space is clipped to its corners in its visual
-  tree, so it casts no shadow at all. The painter rounds every composition
+  tree, so DWM casts no shadow for it. Instead, each space that DWM casts
+  no shadow for (composition spaces, and accent spaces whose corners DWM
+  does not round; never Clear, desktop-hosted, or the desktop layer) gets a
+  layered, click-through shadow window (`win32/shadow_window.rs`,
+  `render/shadow.rs`; ROADMAP D15) kept directly below its space and above
+  the desktop layer. Its corner tile is cached and its frame is filled from
+  the tile and per-axis Gaussian profiles; it follows the space's rect
+  (Roll, Fly, CRT) and fades with `TransitionFrame::shadow_strength`. The painter rounds every composition
   space, every Clear space, Solid spaces with other radii, chrome-less
   windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
   so the opaque fill does not show past the corners (`Frame` in
@@ -952,8 +959,9 @@ in `ui.rs`. What spans them:
   the platform's `ConsoleModel`; the app feeds it from `debug_log.rs`'s
   ring on `Timer::DebugLog`, a timer so a line logged while draining cannot
   feed itself. Its actions call the paths the menus, settings, and drops
-  use, save nothing but the animation settings (D14; `app/debug/
-  animation_settings.rs`, through `settings::apply_animation_edit`), and
+  use, save nothing but the animation and shadow settings (D14, D15;
+  `app/debug/animation_settings.rs` and `shadow_settings.rs`, through
+  `settings::apply_animation_edit` and `apply_shadow_edit`), and
   ask first (`debug_confirm`) when destructive. A control can sit in a
   titled box (`DebugControl::group`), which the page draws as it erases,
   and a choice can be greyed rather than removed, so the panel keeps its
@@ -1185,7 +1193,7 @@ in `ui.rs`. What spans them:
 
   | Page | Scope | Fields |
   |------|-------|--------|
-  | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Border thickness, Item preset |
+  | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Border thickness, Show shadow, Shadow size, Shadow opacity, Item preset |
   | Labels | look | Label lines, Label size, Label shadow |
   | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
   | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |

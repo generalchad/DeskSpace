@@ -958,7 +958,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-21 | Auto-consolidate new icons | M7 | Open |
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
-| F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color built 2026-10-19, check pending (`TASKS.md` section V, "Border settings") |
+| F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color and drawn shadows (D15) built 2026-10-19, check pending (`TASKS.md` section V, "Border settings", "Drawn shadows") |
 | F-25 | Icon size | M3 | Done (50-200 %, jumbo icons, per-monitor DPI, per space; Ctrl+wheel per D9); check pending (`TASKS.md` V: F13, Display) |
 | F-26 | Grid density | M3 | Done (icon spacing and edge padding) |
 | F-27 | Label style | M3 | Done (lines, size, shadow mode) |
