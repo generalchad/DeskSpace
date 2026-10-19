@@ -60,7 +60,7 @@ pub(crate) struct DebugTools {
     /// The space an effect preview plays on; a deleted one falls back to the
     /// first space.
     preview_space: Option<SpaceId>,
-    /// The chosen `PREVIEW_KINDS` index.
+    /// The Kind box's chosen index (`debug::animations::preview_kind`).
     preview_kind: usize,
     /// The configuration file's permissions before the debug window made it
     /// read-only, put back when it is turned off or DeskSpace closes.

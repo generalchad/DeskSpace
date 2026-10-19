@@ -1,6 +1,7 @@
 //! `App` animations (ROADMAP D12): what each kind of moment plays, from the
 //! settings and Windows' "Animation effects" switch. The platform plays it.
 
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use deskspace_core::animation::{Animations, Kind, StartupOrder};
@@ -15,18 +16,27 @@ pub(super) const EXIT_LIMIT: Duration = Duration::from_secs(2);
 
 /// The debug window's animation tweaks (ROADMAP D14), for this session
 /// only: slow motion, and playing even while Windows' switch is off.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AnimationTweak {
-    /// How many times slower everything plays; 0 and 1 both mean normal.
-    pub speed: u32,
+    /// How many times slower everything plays; 1 is normal.
+    pub speed: NonZeroU32,
     /// Play as if Windows' "Animation effects" were on.
     pub ignore_windows: bool,
+}
+
+impl Default for AnimationTweak {
+    fn default() -> Self {
+        Self {
+            speed: NonZeroU32::MIN,
+            ignore_windows: false,
+        }
+    }
 }
 
 impl AnimationTweak {
     /// `time` stretched by the speed.
     fn slow(self, time: Duration) -> Duration {
-        time * self.speed.max(1)
+        time * self.speed.get()
     }
 }
 
@@ -287,7 +297,7 @@ mod tests {
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
         animations.startup_exit.duration_ms = 300;
         let quarter = AnimationTweak {
-            speed: 4,
+            speed: NonZeroU32::new(4).unwrap(),
             ignore_windows: false,
         };
         let play = play_for(&animations, true, quarter, Kind::Startup, Way::In);
@@ -303,8 +313,8 @@ mod tests {
         let mut animations = Animations::default();
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
         let ignore = AnimationTweak {
-            speed: 0,
             ignore_windows: true,
+            ..AnimationTweak::default()
         };
         let play = play_for(&animations, false, ignore, Kind::Startup, Way::In);
         assert_eq!(play.effect, Effect::Fly);
@@ -321,13 +331,9 @@ mod tests {
             Kind::Startup,
             Way::In,
         );
-        let speed_one = AnimationTweak {
-            speed: 1,
-            ignore_windows: false,
-        };
         assert_eq!(
-            tweaked,
-            play_for(&animations, true, speed_one, Kind::Startup, Way::In)
+            tweaked.duration,
+            Duration::from_millis(animations.startup_exit.duration_ms.into())
         );
         assert_eq!(
             AnimationTweak::default().slow(Duration::from_millis(70)),
