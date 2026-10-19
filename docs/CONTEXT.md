@@ -953,7 +953,11 @@ in `ui.rs`. What spans them:
     edited) runs the menu's `FitToContents`.
 - **Dark mode.** The app calls `Ui::set_ui_dark` with `Theme.ui_mode`
   resolved against Windows on start, on `SystemThemeChanged`, and while the
-  choice is edited. The spaces follow their own `mode`.
+  choice is edited. The spaces follow their own `mode`. The selection bar,
+  marked dots, and picker ring take Windows' accent in the shade Windows'
+  own settings use (`UiColors::for_system`, WinRT `UISettings`), and the
+  default accent's shades when it cannot be read; an open settings window
+  follows an accent change.
 - **The debug window** (`--debug`, ROADMAP D14; `win32/debug_window/`,
   `app/debug/`). Modeless and data-driven like settings: the app builds a
   `DebugPanel` from `DEBUG_CONTROLS` and pushes it only when a value

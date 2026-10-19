@@ -242,7 +242,7 @@ fn coverage(distance: f32, edge: f32) -> f32 {
 }
 
 unsafe fn paint_content(hdc: HDC, state: &PickerState) {
-    let colors = UiColors::new(state.dark);
+    let colors = UiColors::for_system(state.dark);
     let whole = Rect::new(0, 0, state.layout.size.0, state.layout.size.1);
     // SAFETY: `hdc` is a live paint DC; every GDI object created here is
     // selected out and deleted before this function returns.

@@ -28,6 +28,7 @@ windows = { workspace = true, features = [
     "UI",
     "UI_Composition",
     "UI_Composition_Desktop",
+    "UI_ViewManagement",
     "Win32_Foundation",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",

@@ -278,13 +278,13 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
             dpi: 0,
             command_bar_top: 0,
             updating: true,
-            colors: UiColors::new(dark),
+            colors: UiColors::for_system(dark),
             body_brush: HBRUSH::default(),
             command_bar_brush: HBRUSH::default(),
             accent_brush: HBRUSH::default(),
             icons: WindowIcons::default(),
         };
-        state.set_colors(UiColors::new(dark));
+        state.set_colors(UiColors::for_system(dark));
         let state = Box::into_raw(Box::new(state));
         let title = wide(&form.title);
         let hwnd = CreateWindowExW(
@@ -329,15 +329,17 @@ pub(crate) fn create(form: &SettingsForm, dark: bool) -> Result<HWND, PlatformEr
     }
 }
 
-/// Switches an open settings window between dark and light.
+/// Switches an open settings window between dark and light, and to the
+/// current accent.
 pub(crate) fn set_dark(hwnd: HWND, dark: bool) {
+    let colors = UiColors::for_system(dark);
     // SAFETY: `hwnd` is the live settings window; the state borrow ends
     // before any call that sends messages.
     unsafe {
         let changed = with_state(hwnd, |state| {
-            let changed = state.colors.dark != dark;
+            let changed = state.colors != colors;
             if changed {
-                state.set_colors(UiColors::new(dark));
+                state.set_colors(colors);
             }
             changed
         });

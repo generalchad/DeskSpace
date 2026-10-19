@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use deskspace_core::Color;
 use deskspace_core::geometry::{Point, Rect, Size};
+use windows::UI::ViewManagement::{UIColorType, UISettings};
 use windows::Win32::Foundation::{ERROR_SUCCESS, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     CreateFontIndirectW, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteObject,
@@ -102,6 +103,31 @@ pub fn system_uses_dark_mode() -> bool {
 /// Colors): the `EnableTransparency` DWORD, or `None` when it is unset.
 pub fn transparency_enabled() -> Option<bool> {
     user_dword(PERSONALIZE_KEY, w!("EnableTransparency")).map(|value| value != 0)
+}
+
+/// Windows' accent in the shade its own UI draws on a dark (Light 2) or light
+/// (Dark 1) background, where it keeps its contrast; the raw accent can be
+/// too dark or too pale for one of them. `None` when WinRT cannot say, for
+/// example before COM is initialized on this thread.
+/// <https://learn.microsoft.com/uwp/api/windows.ui.viewmanagement.uicolortype>
+pub(crate) fn accent_shade(dark: bool) -> Option<Color> {
+    thread_local! {
+        // Kept, because the settings window asks on every appearance edit.
+        static SETTINGS: std::cell::RefCell<Option<UISettings>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    let kind = if dark {
+        UIColorType::AccentLight2
+    } else {
+        UIColorType::AccentDark1
+    };
+    SETTINGS.with_borrow_mut(|settings| {
+        if settings.is_none() {
+            *settings = UISettings::new().ok();
+        }
+        let shade = settings.as_ref()?.GetColorValue(kind).ok()?;
+        Some(Color::rgb(shade.R, shade.G, shade.B))
+    })
 }
 
 /// Windows' accent color, read from the DWM registry value. The value is a

@@ -58,7 +58,7 @@ pub(crate) struct DialogChrome {
 
 impl DialogChrome {
     pub(crate) fn new(dpi: u32, dark: bool) -> Self {
-        let colors = UiColors::new(dark);
+        let colors = UiColors::for_system(dark);
         // SAFETY: plain GDI object creation; the objects are owned by the
         // chrome and deleted in `Drop`.
         unsafe {
