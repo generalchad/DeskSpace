@@ -731,36 +731,6 @@ Rules for every S task:
 6. Unless a task says otherwise, a name in `code` that does not exist yet
    is one the task creates.
 
-- [ ] **S4. Signed downloads (update).**
-  - `deskspace-update/src/lib.rs`: `pub fn fetch_signed(tag, file) ->
-    Result<Vec<u8>, UpdateError>`. It downloads `{ASSETS_URL}/{tag}/{file}`
-    and `{file}.sig`, where `ASSETS_URL` is
-    `https://github.com/generalchad/DeskSpace/releases/download`, then
-    verifies them against `UPDATE_PUBKEY`. Without a key it is
-    `NotConfigured`, as `check` is. Use a blocking `reqwest` client with a
-    30 s timeout and a `DeskSpace/<version>` user agent. Refuse a body over
-    `MAX_ASSET_BYTES` (32 MiB), by its `Content-Length` and while reading,
-    so a bad server cannot fill memory. Blocking: the doc says to call it
-    on a worker thread.
-  - `fn verify(data, signature, pubkey) -> Result<(), UpdateError>`:
-    base64-decode the key and the `.sig` text, then `minisign-verify`'s
-    `PublicKey::decode`, `Signature::decode`, and `verify(.., true)`. That is
-    exactly what `cargo-packager-updater` 0.2.3 does in its
-    `verify_signature`; cite it (crates.io source, `src/lib.rs`), so one key
-    and one `cargo packager signer sign` serve both. New `UpdateError`
-    variants `Fetch(String)` and `Signature(String)`.
-  - `cargo-add` `reqwest` (no default features; `blocking` and
-    `native-tls`, as the updater uses), `minisign-verify`, and `base64` at
-    their locked versions. `cargo-deny-check` must pass with no new crates.
-  - Update the crate doc: the app also fetches icon sets, only when the
-    user has agreed (D16).
-  - Tests, with no network: generate a throwaway key with
-    `cargo packager signer generate` (no password), sign a small file, and
-    commit the public key, the file, and its `.sig` under
-    `crates/deskspace-update/tests/fixtures/` (never the private key). A good
-    signature verifies; a changed byte, another key, and garbage base64
-    each fail with an error, not a panic.
-
 - [ ] **S5. Publishing an icon set (ci).** **[needs human]**
   - `.github/workflows/icons.yml`, `workflow_dispatch` with a `prefix`
     input (default `fluent`), on `windows-latest`, copying `release.yml`'s

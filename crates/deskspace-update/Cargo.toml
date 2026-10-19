@@ -16,6 +16,14 @@ cargo-packager-updater = { version = "0.2.3", default-features = false, features
     "native-tls",
 ] }
 thiserror.workspace = true
+# Signed icon-set downloads (D16), at the versions the updater already locks,
+# so they add no crates: the same HTTP client, and its signature check.
+reqwest = { version = "0.12.28", default-features = false, features = [
+    "blocking",
+    "native-tls",
+] }
+minisign-verify = "0.2.5"
+base64 = "0.22.1"
 
 [lints]
 workspace = true

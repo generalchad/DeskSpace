@@ -1,1 +1,2 @@
 assets/icons/*.txt text eol=lf
+crates/deskspace-update/tests/fixtures/** -text

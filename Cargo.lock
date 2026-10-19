@@ -304,7 +304,10 @@ dependencies = [
 name = "deskspace-update"
 version = "0.2.4"
 dependencies = [
+ "base64 0.22.1",
  "cargo-packager-updater",
+ "minisign-verify",
+ "reqwest",
  "thiserror 2.0.21",
 ]
 
