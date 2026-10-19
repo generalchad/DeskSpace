@@ -72,6 +72,20 @@ fn apply_look_field(
                 (*value).clamp(BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()) as u8;
             Effect::Appearance
         }
+        (field::SHADOW, FieldValue::Toggle(on)) => {
+            theme.show_shadow = *on;
+            Effect::Appearance
+        }
+        (field::SHADOW_SIZE, FieldValue::Slider(value)) => {
+            theme.shadow_size =
+                (*value).clamp(SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
+        (field::SHADOW_OPACITY, FieldValue::Slider(value)) => {
+            theme.shadow_opacity =
+                (*value).clamp(SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
         (field::PRESET, FieldValue::Choice(index)) => {
             theme.preset = PRESETS.get(*index).map_or(theme.preset, |entry| entry.0);
             // Mirroring also imports Explorer's icon size and item spacing, so
@@ -709,6 +723,27 @@ mod tests {
         assert_eq!(config.theme.border_width, BORDER_WIDTH_RANGE.1);
         assert_eq!(config.theme.border_opacity, BORDER_OPACITY_RANGE.0);
         assert_eq!(config.theme.border_color, Color::rgb(9, 8, 7));
+    }
+
+    #[test]
+    fn shadow_settings_restyle_and_clamp() {
+        let (mut config, mut session) = setup();
+        let mut set = |id, value| apply_field(&mut config, &mut session, id, value, true);
+        assert_eq!(
+            set(field::SHADOW, FieldValue::Toggle(false)),
+            Effect::Appearance
+        );
+        assert_eq!(
+            set(field::SHADOW_SIZE, FieldValue::Slider(100)),
+            Effect::Appearance
+        );
+        assert_eq!(
+            set(field::SHADOW_OPACITY, FieldValue::Slider(-5)),
+            Effect::Appearance
+        );
+        assert!(!config.theme.show_shadow);
+        assert_eq!(config.theme.shadow_size, SHADOW_SIZE_RANGE.1);
+        assert_eq!(config.theme.shadow_opacity, SHADOW_OPACITY_RANGE.0);
     }
 
     #[test]

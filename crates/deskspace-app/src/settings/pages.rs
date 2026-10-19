@@ -73,6 +73,27 @@ pub(super) fn look_pages(
             )
             .suffix(" px")
             .enabled(theme.show_border),
+            Field::toggle(field::SHADOW, "Show shadow", theme.show_shadow),
+            Field::slider(
+                field::SHADOW_SIZE,
+                "Shadow size",
+                (SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()),
+                theme
+                    .shadow_size
+                    .clamp(SHADOW_SIZE_RANGE.0, SHADOW_SIZE_RANGE.1) as i32,
+            )
+            .suffix(" px")
+            .enabled(theme.show_shadow),
+            Field::slider(
+                field::SHADOW_OPACITY,
+                "Shadow opacity",
+                (SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()),
+                theme
+                    .shadow_opacity
+                    .clamp(SHADOW_OPACITY_RANGE.0, SHADOW_OPACITY_RANGE.1) as i32,
+            )
+            .suffix(" %")
+            .enabled(theme.show_shadow),
             Field::choice(
                 field::PRESET,
                 "Item preset",

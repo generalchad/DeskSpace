@@ -103,6 +103,9 @@ pub mod field {
     pub const BORDER_SOURCE: u32 = 104;
     pub const BORDER_COLOR: u32 = 105;
     pub const BORDER_OPACITY: u32 = 106;
+    pub const SHADOW: u32 = 107;
+    pub const SHADOW_SIZE: u32 = 108;
+    pub const SHADOW_OPACITY: u32 = 109;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

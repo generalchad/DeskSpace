@@ -33,7 +33,8 @@ use deskspace_core::animation::{
 use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
     BORDER_OPACITY_RANGE, BORDER_WIDTH_RANGE, ICON_SIZE_RANGE, LABEL_SIZE_RANGE,
-    OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
+    OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, SHADOW_OPACITY_RANGE, SHADOW_SIZE_RANGE,
+    TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
     Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId,
@@ -440,22 +441,22 @@ mod tests {
     fn form_reflects_the_theme_and_disables_dependent_fields() {
         let (mut config, session) = setup();
         config.theme.backdrop = Backdrop::Solid;
-        let form = build_form(
-            &config,
-            &session,
-            true,
-            true,
-            Path::new("C:/cfg.toml"),
-            SpacePreview::default(),
-        );
-        let opacity = form.field(field::TINT_OPACITY).unwrap();
+        let built = form(&config, &session);
+        let opacity = built.field(field::TINT_OPACITY).unwrap();
         assert!(!opacity.enabled);
-        assert!(!form.field(field::TINT).unwrap().enabled);
+        assert!(!built.field(field::TINT).unwrap().enabled);
         assert!(matches!(
-            form.field(field::BACKDROP).unwrap().kind,
+            built.field(field::BACKDROP).unwrap().kind,
             FieldKind::Choice { selected: 3, .. }
         ));
-        assert!(!form.apply_enabled);
+        assert!(built.field(field::SHADOW_SIZE).unwrap().enabled);
+        assert!(built.field(field::SHADOW_OPACITY).unwrap().enabled);
+        assert!(!built.apply_enabled);
+
+        config.theme.show_shadow = false;
+        let built = form(&config, &session);
+        assert!(!built.field(field::SHADOW_SIZE).unwrap().enabled);
+        assert!(!built.field(field::SHADOW_OPACITY).unwrap().enabled);
     }
 
     #[test]
