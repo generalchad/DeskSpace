@@ -185,11 +185,10 @@ pub struct TransitionFrame {
     pub content_offset: Point,
     /// The opacity of the tint and the contents, 0 to 1.
     pub opacity: f32,
+    /// What of the contents shows.
     pub mask: Mask,
-    /// The pixel block size: 1 draws normally (Pixelate).
-    pub block: u32,
-    /// How strongly a CRT's bright line glows over the contents, 0 to 1.
-    pub glow: f32,
+    /// How the contents are drawn.
+    pub content: Content,
 }
 
 impl TransitionFrame {
@@ -197,7 +196,50 @@ impl TransitionFrame {
     /// window, so nothing behind them shows through: what moves is only the
     /// window's rect (Roll, Fly, CRT).
     pub fn covers_window(&self) -> bool {
-        self.opacity >= 1.0 && self.block <= 1 && self.mask.hides_nothing()
+        self.opacity >= 1.0 && self.content.covers() && self.mask.hides_nothing()
+    }
+}
+
+/// How a frame draws the space's contents (ROADMAP D12, amended
+/// 2026-10-19): one variant per way an effect changes them, rather than a
+/// frame field per effect. An effect that draws them some new way adds a
+/// variant, and the painter's `match` asks for it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Content {
+    /// As at rest.
+    Whole,
+    /// In square blocks `block` pixels wide, more than 1 (Pixelate).
+    Pixelated { block: u32 },
+    /// Whole, under a bright line's light, `glow` from above 0 to 1 (CRT).
+    Lit { glow: f32 },
+}
+
+impl Content {
+    /// Blocks `block` pixels wide; 1 or less is `Whole`.
+    pub fn pixelated(block: u32) -> Self {
+        if block <= 1 {
+            Content::Whole
+        } else {
+            Content::Pixelated { block }
+        }
+    }
+
+    /// Lit by `glow`; none is `Whole`.
+    pub fn lit(glow: f32) -> Self {
+        if glow <= 0.0 {
+            Content::Whole
+        } else {
+            Content::Lit { glow }
+        }
+    }
+
+    /// Whether the contents cover every pixel they cover at rest.
+    fn covers(self) -> bool {
+        match self {
+            Content::Whole | Content::Lit { .. } => true,
+            // A block takes its whole area's color, so its edges blend.
+            Content::Pixelated { .. } => false,
+        }
     }
 }
 
@@ -317,8 +359,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         content_offset: Point::new(0, 0),
         opacity: 1.0,
         mask: Mask::None,
-        block: 1,
-        glow: 0.0,
+        content: Content::Whole,
     };
     let gone = 1.0 - shown;
     match play.effect {
@@ -341,7 +382,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         Effect::Pixelate => {
             let largest = f32::from(play.detail) * PIXELATE_BLOCK_PER_DETAIL;
             TransitionFrame {
-                block: (1.0 + (largest - 1.0) * gone).round() as u32,
+                content: Content::pixelated((1.0 + (largest - 1.0) * gone).round() as u32),
                 opacity: (shown / PIXELATE_FADE).min(1.0),
                 ..whole
             }
@@ -402,7 +443,7 @@ fn crt(rect: Rect, shown: f32, whole: TransitionFrame) -> TransitionFrame {
     TransitionFrame {
         rect: opened,
         content_offset: offset_of(rect, opened),
-        glow,
+        content: Content::lit(glow),
         ..whole
     }
 }
@@ -497,9 +538,25 @@ mod tests {
         frame.rect == geometry().rect
             && frame.content_offset == Point::new(0, 0)
             && frame.opacity == 1.0
-            && frame.block == 1
-            && frame.glow == 0.0
+            && frame.content == Content::Whole
             && frame.mask.hides_nothing()
+    }
+
+    /// The block size `frame` draws its contents in: 1 when not pixelated.
+    fn block(frame: TransitionFrame) -> u32 {
+        match frame.content {
+            Content::Pixelated { block } => block,
+            Content::Whole | Content::Lit { .. } => 1,
+        }
+    }
+
+    #[test]
+    fn whole_contents_have_one_form() {
+        assert_eq!(Content::pixelated(1), Content::Whole);
+        assert_eq!(Content::pixelated(0), Content::Whole);
+        assert_eq!(Content::pixelated(4), Content::Pixelated { block: 4 });
+        assert_eq!(Content::lit(0.0), Content::Whole);
+        assert_eq!(Content::lit(0.5), Content::Lit { glow: 0.5 });
     }
 
     /// Whether `frame` draws nothing at all.
@@ -576,7 +633,7 @@ mod tests {
                     let frame = transition.frame(ms(step * 5));
                     assert!(frame.shown >= last.shown, "{case} at {step}");
                     assert!(frame.opacity >= last.opacity, "{case} at {step}");
-                    assert!(frame.block <= last.block, "{case} at {step}");
+                    assert!(block(frame) <= block(last), "{case} at {step}");
                     assert!(
                         frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
                             || effect == Effect::Crt,
@@ -735,11 +792,11 @@ mod tests {
         let line = transition.frame(ms(55));
         assert_eq!(line.rect.height, CRT_LINE_THICKNESS);
         assert!(line.rect.width < rect.width);
-        assert_eq!(line.glow, 1.0);
+        assert_eq!(line.content, Content::Lit { glow: 1.0 });
         let opening = transition.frame(ms(140));
         assert_eq!(opening.rect.width, rect.width);
         assert!(opening.rect.height > CRT_LINE_THICKNESS && opening.rect.height < rect.height);
-        assert!(opening.glow > 0.0 && opening.glow < 1.0);
+        assert!(matches!(opening.content, Content::Lit { glow } if glow < 1.0));
         assert_eq!(opening.rect.center(), rect.center());
     }
 }

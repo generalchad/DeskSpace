@@ -78,7 +78,7 @@ use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
 use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
-use crate::render::transition::TransitionFrame;
+use crate::render::transition::{Content, TransitionFrame};
 
 use bitmap::to_icon;
 use canvas::{Canvas, HwndCanvas, SurfaceCanvas};
@@ -351,9 +351,11 @@ impl Painter {
         transition: &TransitionFrame,
         size: (f32, f32),
     ) -> Result<FrameResources, PlatformError> {
-        let pixelated = match transition.block {
-            0 | 1 => None,
-            block => Some(self.draw_small(window, prepared, frame, size, block)?),
+        let pixelated = match transition.content {
+            Content::Pixelated { block } => {
+                Some(self.draw_small(window, prepared, frame, size, block)?)
+            }
+            Content::Whole | Content::Lit { .. } => None,
         };
         Ok(FrameResources {
             size,
@@ -413,8 +415,8 @@ impl Painter {
                     None,
                 );
             }
-            if transition.glow > 0.0 {
-                let alpha = (transition.glow * f32::from(CRT_GLOW.a)).round() as u8;
+            if let Content::Lit { glow } = transition.content {
+                let alpha = (glow * f32::from(CRT_GLOW.a)).round() as u8;
                 brush.SetColor(&color_f(CRT_GLOW.with_alpha(alpha)));
                 target.FillRectangle(&whole, brush);
             }

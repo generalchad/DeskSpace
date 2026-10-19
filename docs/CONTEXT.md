@@ -867,7 +867,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   played backwards and `reverse` continues from the very frame it is on.
   A `TransitionFrame` gives the window rect (Roll, Fly, and CRT move or crop
   it; Fly is clipped to the work area), where the space's content sits in
-  it, and the opacity, mask, block size, and glow the painter applies.
+  it, and the opacity, mask, and `Content` (how the contents are drawn:
+  whole, pixelated, or lit) the painter applies.
   The cell effects keep their math pure, on a `render::math::Grid` of
   cells covering the space, and the painter only uploads what it writes.
   Dissolve is `render/dissolve.rs`: a fixed noise value per grain-sized
