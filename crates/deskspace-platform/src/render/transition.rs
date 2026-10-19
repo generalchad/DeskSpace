@@ -231,8 +231,14 @@ impl Transition {
         }
     }
 
+    /// The way it runs now, which `reverse` turns around.
     pub fn way(&self) -> Way {
         self.way
+    }
+
+    /// The play it started with; its `way` is the one it started in.
+    pub fn play(&self) -> Play {
+        self.play
     }
 
     pub fn geometry(&self) -> Geometry {
