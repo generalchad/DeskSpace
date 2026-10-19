@@ -96,7 +96,7 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 }
 
 /// Whether a press at `point` (screen coordinates) landed outside every
-/// space window and outside any popup menu.
+/// space window, the desktop layer, and any popup menu.
 pub(crate) fn is_outside(point: POINT) -> bool {
     // SAFETY: plain window queries; the class buffer is sized for the call.
     unsafe {
@@ -105,9 +105,12 @@ pub(crate) fn is_outside(point: POINT) -> bool {
             return true;
         }
         // Hosted spaces are children of the desktop, so test the window
-        // under the point itself as well as its top-level ancestor.
+        // under the point itself as well as its top-level ancestor. A hosted
+        // layer counts too: otherwise its root, the desktop, made the press
+        // clear the selection before a Ctrl+click on the layer could add to
+        // it, since the posted probe is handled before the click.
         let root = GetAncestor(window, GA_ROOT);
-        if runtime::is_space_window(window) || runtime::is_space_window(root) {
+        if runtime::is_surface_window(window) || runtime::is_surface_window(root) {
             return false;
         }
         let mut class = [0u16; 16];

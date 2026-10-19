@@ -195,9 +195,13 @@ pub(crate) fn tray_tooltip() -> String {
     with_runtime(|runtime| runtime.tray_tooltip.clone()).unwrap_or_default()
 }
 
-/// Whether `window` is one of this runtime's space windows.
-pub(crate) fn is_space_window(window: HWND) -> bool {
-    with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
+/// Whether `window` is one of this runtime's space windows or the desktop
+/// layer: a surface that handles its own presses.
+pub(crate) fn is_surface_window(window: HWND) -> bool {
+    with_runtime(|runtime| {
+        runtime.layer == Some(window) || runtime.spaces.values().any(|space| *space == window)
+    })
+    .unwrap_or(false)
 }
 
 /// The desktop layer's window, while it exists.

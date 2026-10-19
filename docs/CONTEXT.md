@@ -436,9 +436,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   apps. While the app asks for it (`Ui::watch_outside_clicks`: an item is
   selected, a rename is active, or a surface is current), the hook posts each
   button press to the controller, which raises
-  `Event::PointerDownOutside { on_desktop }` unless the press hit a space or
-  a popup menu. A press on the desktop layer counts as outside, because
-  `is_space_window` checks only the spaces.
+  `Event::PointerDownOutside { on_desktop }` unless the press hit a space,
+  the desktop layer, or a popup menu (`is_surface_window`). Those handle
+  their own presses.
 - Graceful exit (ROADMAP D13): Exit and the update install call
   `App::exit`, which hands `Ui::quit_after` each shown space's Startup Out
   (reverse reading order, the stagger shrunk to fit `EXIT_LIMIT`). The
