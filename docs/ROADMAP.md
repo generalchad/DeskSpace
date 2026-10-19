@@ -465,7 +465,8 @@ A native, lightweight, offline Windows desktop organizer that:
     effect tried there stays. An open settings window shows it, and its
     Cancel keeps it. The box keeps every row for every kind and greys what
     the kind or its effect does not use, as the settings pages do, so the
-    window keeps its shape.
+    window keeps its shape. The shadow settings are a second exception
+    (D15).
   - *Destructive actions* (Delete all spaces, Delete stress spaces, Crash
     now, read-only config) always ask first. The question names the config file and, when no
     `--config` was given, warns that this is the real configuration.
@@ -494,6 +495,34 @@ A native, lightweight, offline Windows desktop organizer that:
     Simulate (theme change, Explorer restart, a read-only config, a
     crash).
   - Work items: `TASKS.md` section X.
+
+- **D15. Drawn shadows (2026-10-19, maintainer).** Moving spaces to
+  composition (D12) took away the Windows 11 window shadow: it comes with
+  DWM's rounded corners, and it could not fade with an animation, so
+  composition spaces turned DWM's corners off. DeskSpace draws its own.
+  - *Where:* each space gets a shadow window of its own. It is layered,
+    click-through, and never activated, kept directly below its space and
+    above the desktop layer, and sized to the space plus the shadow's
+    reach, so clicks pass through it. Making the space window bigger was
+    rejected: the margin would take clicks from the desktop and other
+    apps, and every rect and hit test would shift.
+  - *Which spaces:* the ones DWM casts no shadow for. That means
+    composition spaces, and accent spaces whose corners DWM does not round.
+    An accent space DWM rounds keeps the system shadow whatever the
+    setting. Clear spaces have no edge to cast from. Desktop-hosted spaces
+    and the desktop layer get no shadow either.
+  - *Settings:* three look settings on the Appearance page, so a space can
+    have its own. "Show shadow" is on by default, so an upgrade gets back
+    the shadow composition took away. That is a change on purpose
+    (section 3). "Shadow size" is how far the blur reaches, in pixels at
+    96 DPI, and "Shadow opacity" how dark it is.
+  - *Animations:* the shadow follows the window's rect (Roll, Fly, CRT).
+    It fades with any frame that leaves the window see-through.
+  - *Debug window (amends D14):* a "Shadow settings" box edits the three
+    settings as the settings window does, and saves them at once, as the
+    animation settings box does. Two session-only toggles outline every
+    shadow window and hide every shadow, and the Windows table lists the
+    shadow windows.
 
 ## 3. Guiding principles
 
