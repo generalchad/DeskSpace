@@ -33,6 +33,7 @@ mod keyboard;
 mod menu;
 mod messages;
 mod outside_click;
+mod overlay;
 mod runtime;
 mod settings_window;
 pub(crate) mod shell_items;

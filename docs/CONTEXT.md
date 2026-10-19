@@ -877,13 +877,16 @@ one arm in `App::on_event`, whose match is exhaustive.
   glowing, charred, scorched, whole), written into two smooth cell
   bitmaps: the contents' opacity mask and the marks over it.
   Its flames rise past the frame, where the space's own window would put
-  blur behind them, so they are drawn on `win32/flame_overlay.rs`: a
-  layered, click-through window owned by the space window (so it stays
-  above it and dies with it), made when a Burn starts and dropped when it
-  ends. Owning does not keep it directly above the space: shown as made,
-  it sat over every app, so it is shown in the slot right above the space
-  (`space_window::window_above`). `render/flames.rs` (pure) stands tongues on the burning
-  edge and shades them on the CPU into its DIB section each frame.
+  blur behind them, so they are drawn on an overlay (`win32/overlay.rs`:
+  what an effect draws beside the space's window, chosen per effect,
+  made when the effect starts, following the space if it moves, and
+  dropped when it ends). The flames' overlay is `win32/flame_overlay.rs`:
+  a layered, click-through window owned by the space window (so it stays
+  above it and dies with it). Owning does not keep it directly above the
+  space: shown as made, it sat over every app, so it is shown in the slot
+  right above the space (`space_window::window_above`). `render/flames.rs`
+  (pure) stands tongues on the burning edge and shades them on the CPU
+  into its DIB section each frame.
 - The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
   `WS_POPUP` with the space material (`dwm::apply_style` from the global
   look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so
