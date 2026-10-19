@@ -408,10 +408,10 @@ impl Painter {
             offscreen.BeginDraw();
             offscreen.Clear(Some(&color_f(Color::TRANSPARENT)));
             offscreen.SetTransform(&Matrix3x2 {
-                M11: scale,
+                M11: scale.0,
                 M12: 0.0,
                 M21: 0.0,
-                M22: scale,
+                M22: scale.1,
                 M31: 0.0,
                 M32: 0.0,
             });

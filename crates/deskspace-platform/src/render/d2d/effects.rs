@@ -270,12 +270,19 @@ impl Effects {
     }
 }
 
-/// The scale Pixelate draws the scene at, and the part of the offscreen
-/// target that scene then covers, for a space of `size`.
-pub(super) fn pixelated(size: (f32, f32), block: u32) -> (f32, D2D_RECT_F) {
-    let scale = 1.0 / block.max(1) as f32;
-    let source = rect_f(0.0, 0.0, (size.0 * scale).ceil(), (size.1 * scale).ceil());
-    (scale, source)
+/// The scale Pixelate draws the scene at on each axis, and the part of the
+/// offscreen target that scene then covers, for a space of `size`.
+///
+/// The scene fills whole pixels, so its blocks come out a little under
+/// `block` where `block` does not divide the size. At exactly 1 / `block`
+/// the last column and row were only partly covered, so partly transparent,
+/// and drew as a pale strip a block wide down the right and bottom edges
+/// (seen 2026-10-19).
+pub(super) fn pixelated(size: (f32, f32), block: u32) -> ((f32, f32), D2D_RECT_F) {
+    let block = block.max(1) as f32;
+    let (width, height) = ((size.0 / block).ceil(), (size.1 / block).ceil());
+    let scale = (width / size.0.max(1.0), height / size.1.max(1.0));
+    (scale, rect_f(0.0, 0.0, width, height))
 }
 
 impl NoiseMask {
@@ -485,9 +492,11 @@ mod tests {
     #[test]
     fn pixelate_draws_small_and_reads_back_what_it_drew() {
         let (scale, source) = pixelated((200.0, 101.0), 4);
-        assert_eq!(scale, 0.25);
         assert_eq!((source.right, source.bottom), (50.0, 26.0));
-        assert_eq!(pixelated((200.0, 100.0), 1).0, 1.0);
+        // The scene covers every pixel it reads back, the last row too.
+        assert_eq!(200.0 * scale.0, source.right);
+        assert!((101.0 * scale.1 - source.bottom).abs() < 1e-4);
+        assert_eq!(pixelated((200.0, 100.0), 1).0, (1.0, 1.0));
     }
 
     #[test]
