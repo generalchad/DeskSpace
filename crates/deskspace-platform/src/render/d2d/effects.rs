@@ -17,6 +17,7 @@ use windows::Win32::Graphics::Direct2D::{
 
 use super::*;
 use crate::render::burn::{self, BurnField};
+use crate::render::math;
 use crate::render::transition::Mask;
 
 /// Dissolve's grain, in pixels per step of detail.
@@ -435,14 +436,10 @@ fn gradient_points(
     }
 }
 
-/// A cell's fixed noise value: an integer hash, so the same cell always
-/// dissolves at the same moment and a reversed dissolve retraces itself.
+/// A cell's fixed noise value, so the same cell always dissolves at the same
+/// moment and a reversed dissolve retraces itself.
 fn noise_value(col: u32, row: u32) -> u8 {
-    let mut hash = col.wrapping_mul(0x9E37_79B1) ^ row.wrapping_mul(0x85EB_CA77);
-    hash ^= hash >> 15;
-    hash = hash.wrapping_mul(0x2C1B_3C6D);
-    hash ^= hash >> 12;
-    (hash >> 24) as u8
+    (math::hash(col, row, 0) >> 24) as u8
 }
 
 /// Writes each cell's mask pixel: opaque (premultiplied white) while its

@@ -1,6 +1,7 @@
 pub mod burn;
 pub mod d2d;
 pub mod flames;
+pub(crate) mod math;
 pub mod scene;
 pub mod transition;
 pub mod zoom_bar;

@@ -3,10 +3,10 @@
 //! tested here and the window side only applies frames.
 //!
 //! A transition tracks one linear value, `u`, from 0 (gone) to 1 (fully
-//! there), and a direction. What is drawn is a function of `ease(u)` alone,
-//! with one symmetric curve for both directions, so an Out is the In played
-//! backwards and reversing at any moment just turns the direction around:
-//! the next frame equals the current one.
+//! there), and a direction. What is drawn is a function of `smoothstep(u)`
+//! alone, one symmetric curve for both directions, so an Out is the In
+//! played backwards and reversing at any moment just turns the direction
+//! around: the next frame equals the current one.
 
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
 use super::burn;
+use super::math::{lerp, smoothstep};
 
 /// Which way a play runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,14 +250,8 @@ impl Transition {
     }
 
     pub fn frame(&self, now: Duration) -> TransitionFrame {
-        frame(&self.play, &self.geometry, ease(self.u(now)))
+        frame(&self.play, &self.geometry, smoothstep(self.u(now)))
     }
-}
-
-/// Smoothstep: slow at both ends and symmetric, so playing it backwards is
-/// the same curve.
-fn ease(u: f32) -> f32 {
-    u * u * (3.0 - 2.0 * u)
 }
 
 /// How much of the space the gradient's soft edge spans.
@@ -288,7 +283,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             ..whole
         },
         Effect::Roll => {
-            let rect = lerp_rect(geometry.rolled, geometry.rect, shown);
+            let rect = geometry.rolled.lerp(geometry.rect, shown);
             TransitionFrame {
                 rect,
                 content_offset: offset_of(geometry.rect, rect),
@@ -332,7 +327,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         Effect::Fly => {
             let edge = resolve_fly(play.edge, geometry.rect, geometry.work_area);
             let moved = fly_rect(geometry.rect, geometry.work_area, edge, gone);
-            let rect = intersection(moved, geometry.work_area);
+            let rect = moved.intersection(geometry.work_area);
             TransitionFrame {
                 rect,
                 content_offset: offset_of(moved, rect),
@@ -407,30 +402,6 @@ fn fly_rect(rect: Rect, work_area: Rect, edge: Edge, gone: f32) -> Rect {
 /// whole space would fill) from `window`'s top-left.
 fn offset_of(content: Rect, window: Rect) -> Point {
     Point::new(content.x - window.x, content.y - window.y)
-}
-
-fn intersection(a: Rect, b: Rect) -> Rect {
-    let left = a.left().max(b.left());
-    let top = a.top().max(b.top());
-    let right = a.right().min(b.right());
-    let bottom = a.bottom().min(b.bottom());
-    if right <= left || bottom <= top {
-        return Rect::new(left, top, 0, 0);
-    }
-    Rect::new(left, top, right - left, bottom - top)
-}
-
-fn lerp(from: f32, to: f32, t: f32) -> f32 {
-    from + (to - from) * t
-}
-
-fn lerp_rect(from: Rect, to: Rect, t: f32) -> Rect {
-    let at = |a: i32, b: i32| lerp(a as f32, b as f32, t).round() as i32;
-    let left = at(from.left(), to.left());
-    let top = at(from.top(), to.top());
-    let right = at(from.right(), to.right());
-    let bottom = at(from.bottom(), to.bottom());
-    Rect::new(left, top, right - left, bottom - top)
 }
 
 #[cfg(test)]
@@ -680,15 +651,5 @@ mod tests {
         assert!(opening.rect.height > CRT_LINE_THICKNESS && opening.rect.height < rect.height);
         assert!(opening.glow > 0.0 && opening.glow < 1.0);
         assert_eq!(opening.rect.center(), rect.center());
-    }
-
-    #[test]
-    fn rects_intersect_or_come_out_empty() {
-        let a = Rect::new(0, 0, 100, 100);
-        assert_eq!(
-            intersection(a, Rect::new(50, 60, 100, 100)),
-            Rect::new(50, 60, 50, 40)
-        );
-        assert!(intersection(a, Rect::new(200, 0, 10, 10)).is_empty());
     }
 }

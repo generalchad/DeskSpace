@@ -4,6 +4,7 @@
 //! layered overlay window. Pure, so the layout and the shading are tested.
 
 use super::burn::{self, FlameBase};
+use super::math;
 
 /// How much room the overlay keeps beside and above the space for flames to
 /// rise into, in pixels.
@@ -149,8 +150,7 @@ fn brightest(a: u32, b: u32) -> u32 {
 
 /// A column's fixed flicker phase, 0 to 2π.
 fn phase_of(col: u32) -> f32 {
-    let hash = col.wrapping_mul(0x9E37_79B1) >> 8;
-    hash as f32 / (1u32 << 24) as f32 * std::f32::consts::TAU
+    math::unit(math::hash(col, 0, 0)) * std::f32::consts::TAU
 }
 
 #[cfg(test)]

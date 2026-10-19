@@ -10,6 +10,8 @@
 
 use deskspace_core::animation::DETAIL_RANGE;
 
+use super::math::{hash, smoothstep, unit};
+
 /// Pixels per field cell; the painter draws the cells with linear
 /// interpolation, so the edges stay soft.
 pub const CELL: u32 = 3;
@@ -187,7 +189,7 @@ fn fractal(x: f32, y: f32, lattice: f32) -> f32 {
 /// smoothstep weights; 0 to 1.
 fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
     let (x0, y0) = (x.floor(), y.floor());
-    let (tx, ty) = (smooth(x - x0), smooth(y - y0));
+    let (tx, ty) = (smoothstep(x - x0), smoothstep(y - y0));
     let (ix, iy) = (x0 as i32, y0 as i32);
     let corner = |dx: i32, dy: i32| lattice_value(ix + dx, iy + dy, octave);
     let top = corner(0, 0) + (corner(1, 0) - corner(0, 0)) * tx;
@@ -195,20 +197,10 @@ fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
     top + (bottom - top) * ty
 }
 
-fn smooth(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// A lattice point's fixed random value, 0 to 1: an integer hash, so a
-/// burn always takes the same shape and a reversed one retraces it.
+/// A lattice point's fixed random value, 0 to 1, so a burn always takes the
+/// same shape and a reversed one retraces it.
 fn lattice_value(x: i32, y: i32, octave: u32) -> f32 {
-    let mut hash = (x as u32).wrapping_mul(0x9E37_79B1)
-        ^ (y as u32).wrapping_mul(0x85EB_CA77)
-        ^ octave.wrapping_mul(0xC2B2_AE3D);
-    hash ^= hash >> 15;
-    hash = hash.wrapping_mul(0x2C1B_3C6D);
-    hash ^= hash >> 12;
-    (hash >> 8) as f32 / (1u32 << 24) as f32
+    unit(hash(x as u32, y as u32, octave))
 }
 
 #[cfg(test)]
