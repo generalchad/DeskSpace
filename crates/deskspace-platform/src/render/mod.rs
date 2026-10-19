@@ -1,4 +1,5 @@
 pub mod burn;
+pub(crate) mod color_picker;
 pub mod d2d;
 pub mod dissolve;
 pub mod flames;

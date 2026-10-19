@@ -10,6 +10,7 @@
 mod badge;
 mod bitmap;
 mod canvas;
+mod color_picker;
 mod drag_image;
 mod edit;
 mod effects;
@@ -21,6 +22,7 @@ mod zoom_bar;
 
 pub(crate) use badge::debug_badge;
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
+pub(crate) use color_picker::ColorPickerPainter;
 pub(crate) use drag_image::render_items;
 pub use prepared::PreparedScene;
 pub(crate) use zoom_bar::ZoomBarPainter;
