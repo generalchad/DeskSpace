@@ -363,9 +363,19 @@ A native, lightweight, offline Windows desktop organizer that:
   - *The app decides, the platform plays:* the app turns the settings and
     Windows' switch into a `Play` (effect, in or out, duration, delay,
     detail, direction) for each window and passes it with the request
-    (show, hide, create, destroy, fold). A window timer in the platform
-    runs the frames from pure frame math in `render/`, so there is still
-    no per-frame callback into the app.
+    (show, hide, create, destroy, fold). The platform runs one frame per
+    display refresh (amended 2026-10-19: a window timer drifted against
+    the refresh and stuttered) from pure frame math in `render/`, so
+    there is still no per-frame callback into the app.
+  - *Frames and overlays (amended 2026-10-19, maintainer):* a frame says
+    how the space's contents are drawn as one `Content` (whole,
+    pixelated, lit by CRT's line), never one frame field per effect;
+    Scroll's strips (T20) are a new variant. An effect that draws beyond
+    the space's own window does it on an `Overlay`, chosen per effect
+    with a match that holds every effect to an answer: Burn's flames
+    today, the magic lamp (T21) and the black hole's disk (T14) later.
+    Each is an extension point the compiler points at, so a new effect
+    never adds a branch on one effect's name.
   - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
     whole window (the accent policy, D2) and can only be on or off. Roll,
     Fly, and CRT's opening change the window's rect, so the blur follows

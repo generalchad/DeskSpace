@@ -82,6 +82,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
+| An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
@@ -555,8 +556,8 @@ Paint code applies a frame without allocating; whatever an animation needs
     the blur does not render on a never-activated window on Windows 11,
     record that in D12, delete T12-T14, and delete the example.
 - [ ] **T14. Black hole (platform).** **[needs decision]**: after T13. A
-  dark disk opens on the desktop beside the space (a layered, click-through
-  window, as `drag_ghost.rs` is) and the space spirals into it: a
+  dark disk opens on the desktop beside the space (an `Overlay`, as
+  Burn's flames are) and the space spirals into it: a
   composition visual can rotate and scale with its blur, which the accent
   path cannot. Decide where the hole opens and what Windows 10 plays
   instead, then it is one `EFFECTS` row plus its frame math and drawing.
@@ -577,7 +578,11 @@ same way:
 3. `deskspace-platform/src/render/transition.rs`: the effect's arm in the
    frame `match` (the compiler asks for it), next to the effect it builds
    on. Pure frame math goes in its own `render/<effect>.rs` when it is
-   more than a few lines, as `render/burn.rs` is.
+   more than a few lines, as `render/burn.rs` is. If it draws the
+   contents a new way, that is a `Content` variant, drawn in the
+   painter's `match` on it (`render/d2d/`); if it draws beyond the
+   space's window, an `Overlay` variant in `win32/overlay.rs`. Both
+   `match`es ask for every case; `overlay::kind_for` asks every effect.
 4. Tests beside the pure math. Then add the effect to the T8 row in
    section V ("Each Startup effect") rather than adding a new row, unless
    the task asks for its own check.
@@ -617,8 +622,10 @@ same way:
     π/2)` past the edge, and its `shade` is `cos θ` (dark at the rims,
     full at the middle). `Strip { src: (f32, f32), dst: (f32, f32), shade:
     f32 }` along the rolling axis only.
-  - Painter (`render/d2d/effects.rs`): the flat part draws as Roll's
-    does. The cylinder draws each strip from the snapshot the animation
+  - Frame: a `Content::Strips` variant carrying the radius and the
+    progress, which the painter turns into its strips.
+  - Painter (`render/d2d/`, its `match` on `Content`): the flat part
+    draws as Roll's does. The cylinder draws each strip from the snapshot the animation
     already makes at its start (`DrawBitmap` from the source band to the
     destination band), then fills the band with black at `(1 - shade) ·
     0.6` alpha. No allocation per frame: the strips live in a fixed array
@@ -647,9 +654,11 @@ same way:
     smoke. Phase two (0.5 to 1) slides the slices along that outline into
     the target, each shrinking to nothing as it arrives. `Slice { src_y:
     (f32, f32), dst: Rect }`.
-  - Window: `win32/lamp_overlay.rs`, a click-through, layered,
-    never-activated overlay over the space's monitor work area, copied
-    from `win32/flame_overlay.rs`. While Magic lamp plays, the space's own
+  - Window: an `Overlay::Lamp` variant (`win32/overlay.rs`, and
+    `kind_for` gives it to `Effect::MagicLamp`), on `win32/lamp_overlay.rs`:
+    a click-through, layered, never-activated window over the space's
+    monitor work area, built as `win32/flame_overlay.rs` is. While Magic
+    lamp plays, the space's own
     window is hidden and the overlay draws each slice from the start
     snapshot, then `UpdateLayeredWindow`. At the end of an in the window
     shows again and the overlay goes; at the end of an out the overlay
@@ -821,7 +830,7 @@ Rules for every Q task:
 
 ## D. Reserved (strong model or maintainer; do not start)
 
-Each needs design work first. Ids are `R1`-`R18` so they do not collide with
+Each needs design work first. Ids are `R`-numbered so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
 - **R7. On-screen verification pass** (maintainer). The list is section V.
@@ -892,6 +901,17 @@ the ROADMAP decision ids (`D1`-`D9`).
 
   Then split M9 items 2-5 into one-commit tasks here. If R14 lands first, a
   field's label belongs in its row.
+- **R19. A space window handle instead of `unsafe fn` contracts.** About
+  twenty functions in `win32/space_animation.rs` and
+  `win32/space_window.rs` are `unsafe fn` only for "`window` is a live
+  space window of this thread, and no state borrow is held", each call
+  repeating `// SAFETY: the caller's contract.` Design a handle that only
+  the runtime makes for a live space window, whose methods are safe.
+  Settle: how the borrow rule is kept (a guard, or `with_state` private to
+  the handle), how the desktop layer and a dying window fit, what
+  `WM_NCDESTROY` invalidates, and how the handle stays on its thread.
+  Then split it into one-commit tasks by module here. It touches
+  `window_state.rs` and every window module, so plan it with K8.
 
 ## V. Awaiting on-screen check
 
