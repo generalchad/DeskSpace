@@ -10,9 +10,28 @@ use super::*;
 const MARQUEE_FILL_ALPHA: u8 = 70;
 /// The selection box border's alpha, close to solid.
 const MARQUEE_BORDER_ALPHA: u8 = 200;
+/// How far an item's highlight and focus rectangle sit inside its cell.
+const CELL_INSET: f32 = 2.0;
+const HIGHLIGHT_RADIUS: f32 = 4.0;
+/// The space between a label and its cell's sides.
+const LABEL_INSET: f32 = 4.0;
+/// The focus rectangle's alpha.
+const FOCUS_ALPHA: u8 = 220;
+/// The check box's corner radius and tick width, as shares of its side.
+const CHECK_RADIUS_SHARE: f32 = 0.19;
+const CHECK_STROKE_SHARE: f32 = 0.12;
+/// The tick's three points, as shares of the box's side from its top-left.
+const TICK: [(f32, f32); 3] = [(0.22, 0.52), (0.43, 0.74), (0.80, 0.26)];
+const TICK_COLOR: Color = Color::rgb(255, 255, 255);
+/// An unchecked box: light, with a dark border that shows on any backdrop.
+const UNCHECKED_FILL: Color = Color::rgba(255, 255, 255, 210);
+const UNCHECKED_BORDER: Color = Color::rgba(0, 0, 0, 150);
 
 /// Draws the rubber-band selection rectangle over empty space.
-pub(super) fn draw_marquee(
+///
+/// # Safety
+/// Call between `BeginDraw` and `EndDraw` on `target`.
+pub(super) unsafe fn draw_marquee(
     target: &ID2D1RenderTarget,
     brush: &ID2D1SolidColorBrush,
     marquee: Rect,
@@ -68,9 +87,9 @@ pub(super) unsafe fn draw_item(
             brush.SetColor(&color_f(color));
             target.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: inset(cell, 2.0),
-                    radiusX: 4.0,
-                    radiusY: 4.0,
+                    rect: inset(cell, CELL_INSET),
+                    radiusX: HIGHLIGHT_RADIUS,
+                    radiusY: HIGHLIGHT_RADIUS,
                 },
                 brush,
             );
@@ -127,16 +146,21 @@ pub(super) unsafe fn draw_item(
                     buffer,
                     &format,
                     rect_f(
-                        cell.left + 4.0,
+                        cell.left + LABEL_INSET,
                         label_top,
-                        cell.right - 4.0,
+                        cell.right - LABEL_INSET,
                         label_top + EDIT_MAX_HEIGHT,
                     ),
                     scene.edit,
                     scene.caret_visible,
                 );
             } else {
-                let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
+                let label_rect = rect_f(
+                    cell.left + LABEL_INSET,
+                    label_top,
+                    cell.right - LABEL_INSET,
+                    label_bottom,
+                );
                 draw_text(
                     target,
                     brush,
@@ -152,8 +176,13 @@ pub(super) unsafe fn draw_item(
         // A dotted rectangle marks the item with keyboard focus, as Explorer
         // draws on a focused view item. A faded dragged slot keeps none.
         if scene.focused_item == Some(item.id) && item.state != ItemState::Dragged {
-            brush.SetColor(&color_f(scene.item_text.with_alpha(220)));
-            target.DrawRectangle(&inset(cell, 2.0), brush, 1.0, Some(&graphics.focus_stroke));
+            brush.SetColor(&color_f(scene.item_text.with_alpha(FOCUS_ALPHA)));
+            target.DrawRectangle(
+                &inset(cell, CELL_INSET),
+                brush,
+                1.0,
+                Some(&graphics.focus_stroke),
+            );
         }
     }
 }
@@ -181,39 +210,28 @@ unsafe fn draw_check_box(
     let DrawContext { target, brush, .. } = ctx;
     let CheckBoxRect { left, top, size } = check_box;
     let rect = rect_f(left, top, left + size, top + size);
-    let radius = (size * 0.19).max(1.0);
+    let radius = (size * CHECK_RADIUS_SHARE).max(1.0);
     let rounded = D2D1_ROUNDED_RECT {
         rect,
         radiusX: radius,
         radiusY: radius,
     };
+    let point = |(x, y): (f32, f32)| Vector2::new(left + size * x, top + size * y);
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
         if checked {
             // Explorer fills a checked box with the accent and no border.
             brush.SetColor(&color_f(check_fill.with_alpha(255)));
             target.FillRoundedRectangle(&rounded, brush);
-            brush.SetColor(&color_f(Color::rgb(255, 255, 255)));
-            let s = size;
-            let stroke = (size * 0.12).max(1.0);
-            target.DrawLine(
-                Vector2::new(left + s * 0.22, top + s * 0.52),
-                Vector2::new(left + s * 0.43, top + s * 0.74),
-                brush,
-                stroke,
-                None,
-            );
-            target.DrawLine(
-                Vector2::new(left + s * 0.43, top + s * 0.74),
-                Vector2::new(left + s * 0.80, top + s * 0.26),
-                brush,
-                stroke,
-                None,
-            );
+            brush.SetColor(&color_f(TICK_COLOR));
+            let stroke = (size * CHECK_STROKE_SHARE).max(1.0);
+            for [from, to] in [[TICK[0], TICK[1]], [TICK[1], TICK[2]]] {
+                target.DrawLine(point(from), point(to), brush, stroke, None);
+            }
         } else {
-            brush.SetColor(&color_f(Color::rgba(255, 255, 255, 210)));
+            brush.SetColor(&color_f(UNCHECKED_FILL));
             target.FillRoundedRectangle(&rounded, brush);
-            brush.SetColor(&color_f(Color::rgba(0, 0, 0, 150)));
+            brush.SetColor(&color_f(UNCHECKED_BORDER));
             target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
         }
     }

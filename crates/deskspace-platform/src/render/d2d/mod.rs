@@ -100,6 +100,13 @@ const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
+/// The lock glyph's alpha, and its gap from the title bar's right edge.
+const LOCK_ALPHA: u8 = 170;
+const LOCK_MARGIN: f32 = 4.0;
+/// The outline marking the space selected in the settings window: its gap
+/// inside the frame and its width.
+const HIGHLIGHT_GAP: f32 = 1.5;
+const HIGHLIGHT_WIDTH: f32 = 2.0;
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -510,19 +517,19 @@ impl Painter {
                 );
             }
 
-            // A 2 px outline just inside the frame marks the space selected in
-            // the settings window; drawn last so it sits over the border.
+            // Drawn last, so the settings window's highlight sits over the
+            // border.
             if scene.highlight {
-                let gap = 1.5;
+                let radius = (radius - HIGHLIGHT_GAP).max(0.0);
                 brush.SetColor(&color_f(scene.selected_fill.with_alpha(255)));
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
-                        rect: inset(whole, gap),
-                        radiusX: (radius - gap).max(0.0),
-                        radiusY: (radius - gap).max(0.0),
+                        rect: inset(whole, HIGHLIGHT_GAP),
+                        radiusX: radius,
+                        radiusY: radius,
                     },
                     brush,
-                    2.0,
+                    HIGHLIGHT_WIDTH,
                     None,
                 );
             }
@@ -560,11 +567,12 @@ impl Painter {
                 );
             }
             if let (true, Some(format)) = (scene.locked, &graphics.glyph_format) {
-                brush.SetColor(&color_f(scene.title_text.fade(170)));
+                brush.SetColor(&color_f(scene.title_text.fade(LOCK_ALPHA)));
+                let right = width - LOCK_MARGIN;
                 target.DrawText(
                     LOCK_GLYPH,
                     format,
-                    &rect_f(width - lock_width - 4.0, 0.0, width - 4.0, title_height),
+                    &rect_f(right - lock_width, 0.0, right, title_height),
                     brush,
                     D2D1_DRAW_TEXT_OPTIONS_NONE,
                     DWRITE_MEASURING_MODE_NATURAL,
