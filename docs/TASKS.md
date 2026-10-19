@@ -82,7 +82,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | `WM_APP` message ids | `deskspace-platform/src/win32/messages.rs` |
 | Keys (spaces are never focused) | `deskspace-platform/src/win32/keyboard.rs` (`fn watched_key`) |
 | Space window procedure, DWM | `deskspace-platform/src/win32/{space_window,dwm}.rs` |
-| Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` |
+| Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
 | Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
@@ -760,12 +760,6 @@ Rules for every K task:
   - `frame.rs`: `Frame` and `update_region`, with their tests.
   - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
     `show*` functions, `paint`, `with_state`, and the window procedure.
-- [ ] **K9. Split `render/d2d/mod.rs`.** 804 lines, at the guideline.
-  Turn it into `render/d2d/mod.rs` plus:
-  - `prepared.rs`: `PreparedScene`.
-  - `drag_image.rs`: `render_items`.
-  - `mod.rs` keeps `Painter`, `DrawContext`, `PaintFrame`,
-    `BorderStroke`, and the device-loss helpers.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 

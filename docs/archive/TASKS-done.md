@@ -2997,3 +2997,10 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
+
+- [x] **K9. Split `render/d2d/mod.rs`.** 804 lines, at the guideline.
+  Turn it into `render/d2d/mod.rs` plus:
+  - `prepared.rs`: `PreparedScene`.
+  - `drag_image.rs`: `render_items`.
+  - `mod.rs` keeps `Painter`, `DrawContext`, `PaintFrame`,
+    `BorderStroke`, and the device-loss helpers.
