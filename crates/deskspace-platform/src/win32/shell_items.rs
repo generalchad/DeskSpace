@@ -17,12 +17,12 @@ use windows::Win32::System::Ole::{
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
-    BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMINVOKECOMMANDINFO,
-    IContextMenu, IContextMenu2, IContextMenu3, IDataObjectAsyncCapability, IDragSourceHelper,
-    IDragSourceHelper2, ILCreateFromPathW, ILFindChild, ILFree, IShellFolder, IShellItem,
-    SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC, SHCreateDataObject, SHCreateItemFromParsingName,
-    SHDRAGIMAGE, SHDoDragDrop, SHELLEXECUTEINFOW, SHGetDesktopFolder, SVGIO_BACKGROUND,
-    ShellExecuteExW,
+    BHID_DataObject, BHID_SFUIObject, CLSID_DragDropHelper, CMF_NORMAL, CMIC_MASK_PTINVOKE,
+    CMINVOKECOMMANDINFO, CMINVOKECOMMANDINFOEX, IContextMenu, IContextMenu2, IContextMenu3,
+    IDataObjectAsyncCapability, IDragSourceHelper, IDragSourceHelper2, ILCreateFromPathW,
+    ILFindChild, ILFree, IShellFolder, IShellItem, SEE_MASK_INVOKEIDLIST, SEE_MASK_NOASYNC,
+    SHCreateDataObject, SHCreateItemFromParsingName, SHDRAGIMAGE, SHDoDragDrop, SHELLEXECUTEINFOW,
+    SHGetDesktopFolder, SVGIO_BACKGROUND, ShellExecuteExW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, CreatePopupMenu, DestroyMenu, GetMenuItemCount, HMENU,
@@ -317,14 +317,22 @@ fn track_shell_menu(
             (0, _) => None,
             (id, Some(shell_menu)) if id >= SHELL_FIRST_ID => {
                 // MAKEINTRESOURCE: the verb is the command offset, not a string.
-                let info = CMINVOKECOMMANDINFO {
-                    cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32,
+                // The EX form carries the click, so Paste and New place their
+                // item there instead of in Explorer's next free slot.
+                // https://learn.microsoft.com/windows/win32/api/shobjidl_core/ns-shobjidl_core-cminvokecommandinfoex
+                let info = CMINVOKECOMMANDINFOEX {
+                    cbSize: std::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32,
+                    fMask: CMIC_MASK_PTINVOKE,
                     hwnd: owner,
                     lpVerb: PCSTR((id - SHELL_FIRST_ID) as usize as *const u8),
                     nShow: SW_SHOWNORMAL.0,
+                    ptInvoke: POINT { x: at.x, y: at.y },
                     ..Default::default()
                 };
-                if let Err(error) = shell_menu.InvokeCommand(&info) {
+                // `cbSize` tells the handler it was given the EX layout, which
+                // starts with the plain one.
+                let info = std::ptr::from_ref(&info).cast::<CMINVOKECOMMANDINFO>();
+                if let Err(error) = shell_menu.InvokeCommand(info) {
                     tracing::debug!(%error, "shell command failed or was cancelled");
                 }
                 Some(ItemMenuChoice::Shell)
