@@ -1,7 +1,7 @@
 //! Picking an icon for a space's title, and searching a set (D16).
 
 use std::cmp::Reverse;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::icon_set::IconSet;
 
@@ -115,15 +115,10 @@ pub fn best_icon<'a>(title: &str, set: &'a IconSet, words: &[(&str, &str)]) -> O
 pub fn search<'a>(query: &str, set: &'a IconSet, words: &[(&str, &str)]) -> Vec<&'a str> {
     let query = split_words(query);
     // Each icon with the name parts of itself and of its aliases.
-    let mut parts: Vec<(&str, Vec<&str>)> = Vec::new();
+    let mut parts: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for name in set.names() {
-        let Some(icon) = set.canonical(name) else {
-            continue;
-        };
-        let name_parts = name.split('-');
-        match parts.iter_mut().find(|(i, _)| *i == icon) {
-            Some((_, all)) => all.extend(name_parts),
-            None => parts.push((icon, name_parts.collect())),
+        if let Some(icon) = set.canonical(name) {
+            parts.entry(icon).or_default().extend(name.split('-'));
         }
     }
     let mut groups: [BTreeSet<&str>; 3] = Default::default();
