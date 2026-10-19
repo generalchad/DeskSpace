@@ -11,7 +11,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section U, in order (U1 and U2 are pure and need no screen);
+- section U, in order (U2 and U3 land together; U2's code is pure);
 - section S, in order (S1-S4 are pure or need no screen);
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -415,7 +415,8 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
+- [ ] **U2. The undo stack (app, pure).** Lands in the same commit as U3,
+  its first caller (no `#[expect]` for dead code). `app/undo.rs`:
   - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
     `spaces` holds each changed space's before and after
     (`Option<(usize, Space)>` each; `None` means absent), and `files` is a
@@ -435,7 +436,8 @@ changes nothing and says so.
   - Tests: an entry round trip, the depth cap, a new entry clears redo, a
     changed space or a moved file makes an entry stale, and an empty action
     records nothing.
-- [ ] **U3. Undo and redo layout changes (app).**
+- [ ] **U3. Undo and redo layout changes (app).** Includes U2; one commit,
+  tick and archive both.
   - `App::dispatch` calls `note_space` for every space in `touched_by`
     while an entry is open. Wrap each user action in `begin`/`finish` at its
     entry point (menu choice, drag end, resize end, rename commit, new
@@ -1055,8 +1057,8 @@ Rules for every S task:
     "No thanks" never asks again until General is set back to "Ask first".
     `-Fresh` first launch: no prompt.
 
-- [ ] **S9. The icon picker (platform).** No caller until S10, which holds
-  its on-screen check.
+- [ ] **S9. The icon picker (platform).** Lands in the same commit as S10,
+  its first caller, which holds the on-screen check.
   - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
     (owner, disabled-owner loop, dark mode, DPI). At the top, a set
     dropdown, shown only when the request has more than one set (D16's
@@ -1083,8 +1085,8 @@ Rules for every S task:
   - Tests, pure: the cell label from a name; which cell the request opens
     on; the dropdown shown only for two or more sets.
 
-- [ ] **S10. Changing the icon while renaming (app, platform).**
-  **[needs human]**
+- [ ] **S10. Changing the icon while renaming (app, platform).** Includes
+  S9; one commit, tick and archive both. **[needs human]**
   - `TitleIcon` gains `button: bool` and `hovered: bool`. While the space's
     title is being renamed, `space_scene` always sets `title_icon`, with
     `button: true`. The image is the space's icon or `None`, which the
@@ -1107,7 +1109,7 @@ Rules for every S task:
     `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
     at once (`self.commit`) and refreshes the space; the rename goes on,
     and Esc later cancels only the text. If the set is not ready and
-    consent is `Allowed` or `Ask`, call `need_icon_set` first; when the
+    consent is `Allowed` or `Ask`, call `need_icon_set` first (it decides through `next_step`, S rule 2); when the
     download is still running, remember the space (`pending_picker`) and
     open the picker from `ICONS_WAKE` if that rename is still open.
   - `CONTEXT.md` section 8 (rename) and README Controls: during a rename,
