@@ -532,6 +532,34 @@ unsafe fn draw_flames(window: HWND, frame: TransitionFrame, now: Duration) {
     unsafe { with_animation(window, |animation| animation.flames = Some(flames)) };
 }
 
+/// Keeps Burn's flames on their space once it ends up at `rect` instead:
+/// the overlay follows it, or is made again for a new size. The overlay is
+/// taken out of the state meanwhile, as in `draw_flames`.
+///
+/// # Safety
+/// As `draw_flames`.
+unsafe fn follow_flames(window: HWND, rect: Rect) {
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    let taken = unsafe {
+        with_animation(window, |animation| {
+            let detail = animation.playing.transition.play().detail;
+            animation.flames.take().map(|flames| (flames, detail))
+        })
+    }
+    .flatten();
+    let Some((mut flames, detail)) = taken else {
+        return;
+    };
+    let flames = if flames.follow(rect) {
+        Some(flames)
+    } else {
+        drop(flames);
+        FlameOverlay::create(window, rect, detail)
+    };
+    // SAFETY: as above.
+    unsafe { with_animation(window, |animation| animation.flames = flames) };
+}
+
 /// Advances `window`'s animation to now, and ends it once done.
 ///
 /// # Safety
@@ -625,7 +653,11 @@ pub(crate) unsafe fn retarget(window: HWND, rect: Rect) -> bool {
         })
     };
     match retarget {
-        Some(Retarget::Taken) => true,
+        Some(Retarget::Taken) => {
+            // SAFETY: the caller's contract.
+            unsafe { follow_flames(window, rect) };
+            true
+        }
         Some(Retarget::EndFold) => {
             // SAFETY: the caller's contract.
             unsafe { finish(window) };

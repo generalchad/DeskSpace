@@ -60,14 +60,7 @@ impl FlameOverlay {
         if style & WS_CHILD.0 != 0 || rect.is_empty() {
             return None;
         }
-        let size = SIZE {
-            cx: rect.width + 2 * MARGIN_SIDE as i32,
-            cy: rect.height + MARGIN_TOP as i32,
-        };
-        let origin = POINT {
-            x: rect.x - MARGIN_SIDE as i32,
-            y: rect.y - MARGIN_TOP as i32,
-        };
+        let (origin, size) = placement(rect);
         // SAFETY: plain window and GDI object creation; every object made
         // here is released in `Drop`, or right here if a later step fails.
         unsafe {
@@ -124,6 +117,18 @@ impl FlameOverlay {
                 space_height: rect.height as f32,
             })
         }
+    }
+
+    /// Follows the space to `rect`, where its window now ends up while it
+    /// burns; the flames move at their next draw. Returns false for a rect
+    /// of another size, which needs new flames on a field of its own.
+    pub(crate) fn follow(&mut self, rect: Rect) -> bool {
+        let (origin, size) = placement(rect);
+        if size != self.size {
+            return false;
+        }
+        self.origin = origin;
+        true
     }
 
     /// Draws the flames for a burn at `front`, `time` seconds into any clock.
@@ -188,6 +193,21 @@ impl FlameOverlay {
     }
 }
 
+/// Where the overlay goes for a space at `rect` (screen coordinates): its
+/// top-left and size, with room beside and above the space for the flames
+/// to rise into.
+fn placement(rect: Rect) -> (POINT, SIZE) {
+    let origin = POINT {
+        x: rect.x - MARGIN_SIDE as i32,
+        y: rect.y - MARGIN_TOP as i32,
+    };
+    let size = SIZE {
+        cx: rect.width + 2 * MARGIN_SIDE as i32,
+        cy: rect.height + MARGIN_TOP as i32,
+    };
+    (origin, size)
+}
+
 /// The `hwndInsertAfter` that puts `overlay` directly above its space, or
 /// `None` when it is there already. `above_space` is the non-topmost window
 /// directly above the space, if any (`space_window::window_above`).
@@ -242,5 +262,17 @@ mod tests {
         assert_eq!(insert_after(overlay, Some(overlay)), None);
         // Nothing but topmost windows above the space.
         assert_eq!(insert_after(overlay, None), Some(HWND_TOP));
+    }
+
+    #[test]
+    fn the_overlay_leaves_room_beside_and_above_its_space() {
+        let rect = Rect::new(300, 200, 240, 160);
+        let (origin, size) = placement(rect);
+        assert_eq!((origin.x, origin.y), (300 - 24, 200 - 72));
+        assert_eq!((size.cx, size.cy), (240 + 48, 160 + 72));
+        let (moved, same) = placement(rect.offset(50, -20));
+        assert_eq!((moved.x, moved.y), (origin.x + 50, origin.y - 20));
+        assert_eq!(same, size, "a moved space keeps its overlay's size");
+        assert_ne!(placement(Rect::new(300, 200, 100, 160)).1, size);
     }
 }
