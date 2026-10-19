@@ -4,6 +4,7 @@
 use super::edit::{EDIT_MAX_HEIGHT, draw_edit_buffer};
 use super::geometry::{color_f, draw_text, inset, rect_f, to_rect_f};
 use super::*;
+use crate::render::ItemMetrics;
 
 /// The selection box fill's alpha, a translucent shade of its color like
 /// Explorer's rubber band.
@@ -65,10 +66,12 @@ pub(super) unsafe fn draw_item(
         target,
         brush,
     } = ctx;
-    let cell = to_rect_f(item.rect);
-    let metrics = scene.metrics;
-    let icon_size = metrics.icon_size as f32;
-    let icon_top = metrics.icon_top as f32;
+    let layout = ItemLayout::new(
+        to_rect_f(item.rect),
+        scene.metrics,
+        scene.label_size,
+        scene.label_lines,
+    );
     let highlight = match item.state {
         ItemState::Normal | ItemState::Dragged => None,
         ItemState::Hovered => Some(scene.hover_fill),
@@ -87,7 +90,7 @@ pub(super) unsafe fn draw_item(
             brush.SetColor(&color_f(color));
             target.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: inset(cell, CELL_INSET),
+                    rect: layout.frame,
                     radiusX: HIGHLIGHT_RADIUS,
                     radiusY: HIGHLIGHT_RADIUS,
                 },
@@ -95,18 +98,10 @@ pub(super) unsafe fn draw_item(
             );
         }
 
-        let center_x = (cell.left + cell.right) / 2.0;
-        let icon_left = (center_x - icon_size / 2.0).round();
         if let Some(bitmap) = icon {
-            let top = cell.top + icon_top;
             target.DrawBitmap(
                 bitmap,
-                Some(&rect_f(
-                    icon_left,
-                    top,
-                    icon_left + icon_size,
-                    top + icon_size,
-                )),
+                Some(&layout.icon),
                 alpha as f32 / 255.0,
                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
                 None,
@@ -118,23 +113,9 @@ pub(super) unsafe fn draw_item(
         let show_box = item.state != ItemState::Dragged
             && (scene.check_boxes_persistent || item.checked || item.hovered);
         if scene.show_check_boxes && show_box {
-            let margin = metrics.check_box_margin as f32;
-            let check_box = CheckBoxRect {
-                left: icon_left + margin,
-                top: cell.top + icon_top + margin,
-                size: metrics.check_box_size as f32,
-            };
-            draw_check_box(ctx, check_box, item.checked, scene.check_fill);
+            draw_check_box(ctx, layout.check_box, item.checked, scene.check_fill);
         }
-        let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
-        let scale = scene
-            .label_size
-            .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32
-            / 100.0;
-        let lines = scene.label_lines.clamp(1, 2) as f32;
-        let line_height = LABEL_LINE_HEIGHT * scale;
-        let label_bottom = (label_top + lines * line_height).min(cell.bottom);
-        if label_bottom > label_top {
+        if let Some(label_rect) = layout.label {
             let format = graphics.label_format_for(scene.label_size);
             if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
                 // Explorer's rename box wraps the whole name and grows downward
@@ -145,22 +126,11 @@ pub(super) unsafe fn draw_item(
                     text_edit,
                     buffer,
                     &format,
-                    rect_f(
-                        cell.left + LABEL_INSET,
-                        label_top,
-                        cell.right - LABEL_INSET,
-                        label_top + EDIT_MAX_HEIGHT,
-                    ),
+                    layout.edit,
                     scene.edit,
                     scene.caret_visible,
                 );
             } else {
-                let label_rect = rect_f(
-                    cell.left + LABEL_INSET,
-                    label_top,
-                    cell.right - LABEL_INSET,
-                    label_bottom,
-                );
                 draw_text(
                     target,
                     brush,
@@ -177,12 +147,55 @@ pub(super) unsafe fn draw_item(
         // draws on a focused view item. A faded dragged slot keeps none.
         if scene.focused_item == Some(item.id) && item.state != ItemState::Dragged {
             brush.SetColor(&color_f(scene.item_text.with_alpha(FOCUS_ALPHA)));
-            target.DrawRectangle(
-                &inset(cell, CELL_INSET),
-                brush,
-                1.0,
-                Some(&graphics.focus_stroke),
-            );
+            target.DrawRectangle(&layout.frame, brush, 1.0, Some(&graphics.focus_stroke));
+        }
+    }
+}
+
+/// Where an item cell's parts go, in the scene's coordinates. Pure, so the
+/// layout is tested apart from the drawing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ItemLayout {
+    /// Where the highlight and the focus rectangle go.
+    frame: D2D_RECT_F,
+    /// The icon, centred on whole pixels.
+    icon: D2D_RECT_F,
+    check_box: CheckBoxRect,
+    /// The label's box; `None` when the cell has no room below the icon.
+    label: Option<D2D_RECT_F>,
+    /// The rename box's: the label's width, and tall enough to grow over
+    /// the items below.
+    edit: D2D_RECT_F,
+}
+
+impl ItemLayout {
+    /// The layout of `cell` at `metrics`, with labels at `label_size`
+    /// percent (`LABEL_SIZE_RANGE`) and `label_lines` (one or two) tall.
+    fn new(cell: D2D_RECT_F, metrics: ItemMetrics, label_size: u8, label_lines: u8) -> Self {
+        let icon_size = metrics.icon_size as f32;
+        let icon_top = cell.top + metrics.icon_top as f32;
+        let icon_left = ((cell.left + cell.right) / 2.0 - icon_size / 2.0).round();
+        let margin = metrics.check_box_margin as f32;
+        let scale = label_size.clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32 / 100.0;
+        let lines = label_lines.clamp(1, 2) as f32;
+        let label_top = icon_top + icon_size + metrics.label_gap as f32;
+        let label_bottom = (label_top + lines * (LABEL_LINE_HEIGHT * scale)).min(cell.bottom);
+        let (left, right) = (cell.left + LABEL_INSET, cell.right - LABEL_INSET);
+        Self {
+            frame: inset(cell, CELL_INSET),
+            icon: rect_f(
+                icon_left,
+                icon_top,
+                icon_left + icon_size,
+                icon_top + icon_size,
+            ),
+            check_box: CheckBoxRect {
+                left: icon_left + margin,
+                top: icon_top + margin,
+                size: metrics.check_box_size as f32,
+            },
+            label: (label_bottom > label_top).then(|| rect_f(left, label_top, right, label_bottom)),
+            edit: rect_f(left, label_top, right, label_top + EDIT_MAX_HEIGHT),
         }
     }
 }
@@ -190,7 +203,7 @@ pub(super) unsafe fn draw_item(
 /// Where an item's check box is drawn: its top-left corner and side length.
 /// The painter keeps the icon's float position, so this can sit a rounding
 /// pixel away from `item_check_box`, the whole-pixel rect hit tests use.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CheckBoxRect {
     left: f32,
     top: f32,
@@ -234,5 +247,69 @@ unsafe fn draw_check_box(
             brush.SetColor(&color_f(UNCHECKED_BORDER));
             target.DrawRoundedRectangle(&rounded, brush, 1.0, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn layout(cell: D2D_RECT_F) -> ItemLayout {
+        ItemLayout::new(cell, ItemMetrics::for_scale(1.0), 100, 2)
+    }
+
+    #[test]
+    fn the_icon_is_centred_on_whole_pixels_with_the_check_box_at_its_corner() {
+        let metrics = ItemMetrics::for_scale(1.0);
+        let cell = rect_f(100.0, 200.0, 197.0, 304.0);
+        let layout = layout(cell);
+        let size = metrics.icon_size as f32;
+        assert_eq!(layout.icon.left, layout.icon.left.round());
+        assert!(((layout.icon.left + size / 2.0) - 148.5).abs() <= 0.5);
+        assert_eq!(layout.icon.top, cell.top + metrics.icon_top as f32);
+        assert_eq!(layout.icon.right - layout.icon.left, size);
+        let margin = metrics.check_box_margin as f32;
+        assert_eq!(
+            (layout.check_box.left, layout.check_box.top),
+            (layout.icon.left + margin, layout.icon.top + margin)
+        );
+    }
+
+    #[test]
+    fn the_label_sits_below_the_icon_inside_the_cell() {
+        let metrics = ItemMetrics::for_scale(1.0);
+        let cell = rect_f(0.0, 0.0, 96.0, 400.0);
+        let layout = layout(cell);
+        let label = layout.label.expect("room for a label");
+        assert_eq!(label.top, layout.icon.bottom + metrics.label_gap as f32);
+        assert_eq!((label.left, label.right), (LABEL_INSET, 96.0 - LABEL_INSET));
+        assert_eq!(
+            label.bottom - label.top,
+            2.0 * LABEL_LINE_HEIGHT,
+            "two lines"
+        );
+        assert!(layout.edit.bottom > label.bottom, "the rename box can grow");
+        assert_eq!(layout.frame, inset(cell, CELL_INSET));
+    }
+
+    #[test]
+    fn a_short_cell_clips_the_label_or_leaves_none() {
+        let short = layout(rect_f(0.0, 0.0, 96.0, 80.0));
+        assert_eq!(short.label.map(|label| label.bottom), Some(80.0));
+        assert_eq!(layout(rect_f(0.0, 0.0, 96.0, 50.0)).label, None);
+    }
+
+    #[test]
+    fn the_label_follows_its_size_and_lines_within_their_ranges() {
+        let cell = rect_f(0.0, 0.0, 96.0, 400.0);
+        let height = |size, lines| {
+            let label = ItemLayout::new(cell, ItemMetrics::for_scale(1.0), size, lines)
+                .label
+                .unwrap();
+            label.bottom - label.top
+        };
+        assert_eq!(height(100, 1), LABEL_LINE_HEIGHT);
+        assert_eq!(height(100, 9), height(100, 2), "two lines at most");
+        assert_eq!(height(255, 1), height(LABEL_SIZE_RANGE.1, 1));
     }
 }

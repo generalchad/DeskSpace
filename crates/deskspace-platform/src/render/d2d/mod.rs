@@ -166,6 +166,29 @@ struct FrameResources {
     burn_marks: Option<ID2D1Bitmap>,
 }
 
+/// Where a title bar's parts go, in the space's coordinates. Pure, so the
+/// layout is tested apart from the drawing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TitleLayout {
+    /// The title text's box, or the rename box's.
+    text: D2D_RECT_F,
+    /// The lock glyph's square at the right, when the space is locked.
+    lock: Option<D2D_RECT_F>,
+}
+
+impl TitleLayout {
+    /// The layout of a title bar `width` by `height`.
+    fn new(width: f32, height: f32, locked: bool) -> Self {
+        let lock_width = if locked { height } else { 0.0 };
+        let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
+        let lock_right = width - LOCK_MARGIN;
+        Self {
+            text: rect_f(TITLE_INSET, 0.0, text_right, height),
+            lock: locked.then(|| rect_f(lock_right - lock_width, 0.0, lock_right, height)),
+        }
+    }
+}
+
 /// Clears `target` for a new frame: to the opaque tint on a window with no
 /// per-pixel alpha, else to transparent.
 ///
@@ -581,30 +604,29 @@ impl Painter {
             brush,
         } = ctx;
         let scene = &prepared.scene;
-        let lock_width = if scene.locked { title_height } else { 0.0 };
-        let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
+        let layout = TitleLayout::new(width, title_height, scene.locked);
+        let text = layout.text;
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
             if scene.editing.is_some() {
-                draw_edit_title(ctx, prepared, TITLE_INSET, text_right, title_height);
+                draw_edit_title(ctx, prepared, text.left, text.right, title_height);
             } else {
                 draw_text(
                     target,
                     brush,
                     &prepared.title,
                     &graphics.title_format,
-                    rect_f(TITLE_INSET, 0.0, text_right, title_height),
+                    text,
                     scene.title_text,
                     scene.text_shadow,
                 );
             }
-            if let (true, Some(format)) = (scene.locked, &graphics.glyph_format) {
+            if let (Some(lock), Some(format)) = (layout.lock, &graphics.glyph_format) {
                 brush.SetColor(&color_f(scene.title_text.fade(LOCK_ALPHA)));
-                let right = width - LOCK_MARGIN;
                 target.DrawText(
                     LOCK_GLYPH,
                     format,
-                    &rect_f(right - lock_width, 0.0, right, title_height),
+                    &lock,
                     brush,
                     D2D1_DRAW_TEXT_OPTIONS_NONE,
                     DWRITE_MEASURING_MODE_NATURAL,
@@ -708,4 +730,34 @@ pub(crate) struct BorderStroke {
     /// follows DWM's corners.
     pub radius: f32,
     pub width: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unlocked_title_spans_the_bar_inside_its_insets() {
+        let layout = TitleLayout::new(240.0, 28.0, false);
+        assert_eq!(
+            layout.text,
+            rect_f(TITLE_INSET, 0.0, 240.0 - TITLE_INSET, 28.0)
+        );
+        assert_eq!(layout.lock, None);
+    }
+
+    #[test]
+    fn a_locked_title_leaves_a_square_for_the_lock_at_the_right() {
+        let layout = TitleLayout::new(240.0, 28.0, true);
+        let lock = layout.lock.expect("a lock");
+        assert_eq!(lock.right, 240.0 - LOCK_MARGIN);
+        assert_eq!(lock.right - lock.left, 28.0, "square");
+        assert_eq!(layout.text.right, 240.0 - TITLE_INSET - 28.0);
+    }
+
+    #[test]
+    fn a_narrow_title_never_turns_inside_out() {
+        let layout = TitleLayout::new(20.0, 28.0, true);
+        assert!(layout.text.right >= layout.text.left);
+    }
 }
