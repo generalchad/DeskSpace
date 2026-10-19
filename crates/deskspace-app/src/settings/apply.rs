@@ -47,6 +47,28 @@ fn apply_look_field(
             theme.show_border = *on;
             Effect::Appearance
         }
+        (field::BORDER_WIDTH, FieldValue::Slider(value)) => {
+            theme.border_width =
+                (*value).clamp(BORDER_WIDTH_RANGE.0.into(), BORDER_WIDTH_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
+        (field::CUSTOM_BORDER, FieldValue::Toggle(on)) => {
+            if *on && !theme.custom_border {
+                // Start from the border on screen rather than a stale color.
+                theme.border_color = theme.palette(system_dark).border.with_alpha(255);
+            }
+            theme.custom_border = *on;
+            Effect::Appearance
+        }
+        (field::BORDER_COLOR, FieldValue::Color(color)) => {
+            theme.border_color = color.with_alpha(255);
+            Effect::Appearance
+        }
+        (field::BORDER_OPACITY, FieldValue::Slider(value)) => {
+            theme.border_opacity =
+                (*value).clamp(BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()) as u8;
+            Effect::Appearance
+        }
         (field::PRESET, FieldValue::Choice(index)) => {
             theme.preset = PRESETS.get(*index).map_or(theme.preset, |entry| entry.0);
             // Mirroring also imports Explorer's icon size and item spacing, so
@@ -660,6 +682,49 @@ mod tests {
         );
         assert!(config.window.new_space_locked);
         assert!(session.dirty);
+    }
+
+    #[test]
+    fn border_settings_restyle_and_clamp() {
+        let (mut config, mut session) = setup();
+        let mut set = |id, value| apply_field(&mut config, &mut session, id, value, true);
+        assert_eq!(
+            set(field::BORDER_WIDTH, FieldValue::Slider(40)),
+            Effect::Appearance
+        );
+        assert_eq!(
+            set(field::BORDER_OPACITY, FieldValue::Slider(-5)),
+            Effect::Appearance
+        );
+        assert_eq!(
+            set(
+                field::BORDER_COLOR,
+                FieldValue::Color(Color::rgba(9, 8, 7, 3))
+            ),
+            Effect::Appearance
+        );
+        assert_eq!(config.theme.border_width, BORDER_WIDTH_RANGE.1);
+        assert_eq!(config.theme.border_opacity, BORDER_OPACITY_RANGE.0);
+        assert_eq!(config.theme.border_color, Color::rgb(9, 8, 7));
+    }
+
+    #[test]
+    fn turning_on_a_custom_border_starts_from_the_one_on_screen() {
+        let (mut config, mut session) = setup();
+        let before = config.theme.palette(false).border;
+        apply_field(
+            &mut config,
+            &mut session,
+            field::CUSTOM_BORDER,
+            FieldValue::Toggle(true),
+            false,
+        );
+        assert!(config.theme.custom_border);
+        assert_eq!(config.theme.border_color, before.with_alpha(255));
+        assert_eq!(
+            config.theme.palette(false).border,
+            before.with_alpha(config.theme.palette(false).border.a)
+        );
     }
 
     #[test]

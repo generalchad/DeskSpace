@@ -6,13 +6,17 @@ use crate::edit::TextEdit;
 use super::{Icon, ItemMetrics};
 
 /// Window-level appearance of a space. DWM applies what it can (material,
-/// native 4 and 8 px corners, border); the painter draws the rest.
+/// native 4 and 8 px corners); the painter draws the rest, the border
+/// included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpaceStyle {
     pub backdrop: Backdrop,
     pub corner_radius: i32,
     pub dark: bool,
     pub border: bool,
+    /// The border's thickness in pixels at 96 DPI; the window scales it to
+    /// its own DPI.
+    pub border_width: i32,
     /// Whether the window has space chrome: a title bar and a border. The
     /// desktop layer sets it false, so it reuses the space window and painter
     /// with neither.

@@ -63,6 +63,16 @@ pub(super) fn look_pages(
                     .clamp(TITLE_SHADING_RANGE.0, TITLE_SHADING_RANGE.1) as i32,
             ),
             Field::toggle(field::BORDER, "Show window border", theme.show_border),
+            Field::slider(
+                field::BORDER_WIDTH,
+                "Border thickness",
+                (BORDER_WIDTH_RANGE.0.into(), BORDER_WIDTH_RANGE.1.into()),
+                theme
+                    .border_width
+                    .clamp(BORDER_WIDTH_RANGE.0, BORDER_WIDTH_RANGE.1) as i32,
+            )
+            .suffix(" px")
+            .enabled(theme.show_border),
             Field::choice(
                 field::PRESET,
                 "Item preset",
@@ -157,6 +167,28 @@ pub(super) fn look_pages(
                 "Use Windows accent color for the selection and border",
                 theme.use_accent,
             ),
+            Field::toggle(
+                field::CUSTOM_BORDER,
+                "Custom border color",
+                theme.custom_border,
+            )
+            .enabled(theme.show_border),
+            Field::color(
+                field::BORDER_COLOR,
+                "Border color",
+                palette.border.with_alpha(255),
+            )
+            .enabled(theme.show_border && theme.custom_border),
+            Field::slider(
+                field::BORDER_OPACITY,
+                "Border opacity",
+                (BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()),
+                theme
+                    .border_opacity
+                    .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1) as i32,
+            )
+            .suffix(" %")
+            .enabled(theme.show_border && theme.custom_border),
             Field::color(
                 field::MARQUEE_COLOR,
                 "Selection box color",

@@ -99,6 +99,10 @@ pub mod field {
     pub const ANIM_FOLD_DURATION: u32 = 100;
     pub const ANIM_FOLD_DETAIL: u32 = 101;
     pub const ANIM_FOLD_DIRECTION: u32 = 102;
+    pub const BORDER_WIDTH: u32 = 103;
+    pub const CUSTOM_BORDER: u32 = 104;
+    pub const BORDER_COLOR: u32 = 105;
+    pub const BORDER_OPACITY: u32 = 106;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

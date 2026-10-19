@@ -40,7 +40,7 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, MouseButton, SpaceEvent};
-use crate::render::{PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
+use crate::render::{BorderStroke, PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
 use crate::ui::CursorShape;
 use crate::win32::composition::SpaceVisuals;
 use crate::win32::dpi::{scale_for, window_dpi};
@@ -500,7 +500,8 @@ struct Frame {
     /// The radius the painter rounds the body to; 0 where DWM rounds the
     /// window or the corners are square.
     radius: i32,
-    border: bool,
+    /// The border's thickness at 96 DPI, 0 for none.
+    border_width: i32,
     /// The radius DWM rounds the window to, at 96 DPI: 0 where it does not
     /// round (its own square corners, or Windows 10, which has none). DWM
     /// scales it with the window's DPI, so the border follows it there.
@@ -523,12 +524,16 @@ impl Frame {
         } else {
             0
         };
-        let border = style.chrome && style.border;
+        let border_width = if style.chrome && style.border {
+            style.border_width.max(1)
+        } else {
+            0
+        };
         if !hosted && style.dwm_draws_frame() {
             return Self {
                 opaque: false,
                 radius: 0,
-                border,
+                border_width,
                 // `dwm_draws_frame` allows only radii DWM has (0, 4, 8).
                 dwm_radius: if windows_11 { radius } else { 0 },
                 region_radius: None,
@@ -537,7 +542,7 @@ impl Frame {
         Self {
             opaque: hosted,
             radius,
-            border,
+            border_width,
             dwm_radius: 0,
             region_radius: (radius > 0 && hosted).then_some(radius),
         }
@@ -545,15 +550,18 @@ impl Frame {
 
     /// What the painter draws, for a window at `dpi`.
     fn paint(&self, dpi: u32) -> PaintFrame {
-        let border_radius = if self.dwm_radius > 0 {
-            self.dwm_radius as f32 * scale_for(dpi)
+        let scale = scale_for(dpi);
+        let radius = if self.dwm_radius > 0 {
+            self.dwm_radius as f32 * scale
         } else {
             self.radius as f32
         };
+        // Whole pixels keep the line crisp at any scale.
+        let width = (self.border_width as f32 * scale).round().max(1.0);
         PaintFrame {
             opaque: self.opaque,
             radius: self.radius,
-            border: self.border.then_some(border_radius),
+            border: (self.border_width > 0).then_some(BorderStroke { radius, width }),
         }
     }
 }
@@ -1015,35 +1023,52 @@ mod tests {
             corner_radius,
             dark: false,
             border: true,
+            border_width: 1,
             chrome: true,
         }
+    }
+
+    fn stroke(radius: f32, width: f32) -> BorderStroke {
+        BorderStroke { radius, width }
+    }
+
+    #[test]
+    fn the_border_thickness_scales_to_whole_pixels() {
+        let thick = SpaceStyle {
+            border_width: 3,
+            ..style(deskspace_core::Backdrop::Clear, 0)
+        };
+        let frame = Frame::for_style(thick, false, true);
+        assert_eq!(frame.paint(96).border.unwrap().width, 3.0);
+        assert_eq!(frame.paint(120).border.unwrap().width, 4.0);
+        assert_eq!(frame.paint(144).border.unwrap().width, 5.0);
     }
 
     #[test]
     fn where_dwm_rounds_the_border_follows_its_corners_at_the_windows_dpi() {
         let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, true);
         assert_eq!(frame.paint(96).radius, 0);
-        assert_eq!(frame.paint(96).border, Some(8.0));
-        assert_eq!(frame.paint(144).border, Some(12.0));
+        assert_eq!(frame.paint(96).border, Some(stroke(8.0, 1.0)));
+        assert_eq!(frame.paint(144).border, Some(stroke(12.0, 2.0)));
         let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), false, true);
-        assert_eq!(small.paint(120).border, Some(5.0));
+        assert_eq!(small.paint(120).border, Some(stroke(5.0, 1.0)));
     }
 
     #[test]
     fn windows_10_squares_the_painted_border_as_it_squares_the_window() {
         let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, false);
-        assert_eq!(frame.paint(144).border, Some(0.0));
+        assert_eq!(frame.paint(144).border, Some(stroke(0.0, 2.0)));
     }
 
     #[test]
     fn a_painter_rounded_space_borders_at_its_own_radius() {
         let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), false, true);
         let paint = clear.paint(144);
-        assert_eq!((paint.radius, paint.border), (12, Some(12.0)));
+        assert_eq!((paint.radius, paint.border), (12, Some(stroke(12.0, 2.0))));
         let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), true, true);
         let paint = hosted.paint(96);
         assert!(paint.opaque);
-        assert_eq!((paint.radius, paint.border), (8, Some(8.0)));
+        assert_eq!((paint.radius, paint.border), (8, Some(stroke(8.0, 1.0))));
         assert_eq!(hosted.region_radius, Some(8));
     }
 

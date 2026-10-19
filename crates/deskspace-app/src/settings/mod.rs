@@ -32,8 +32,8 @@ use deskspace_core::animation::{
 };
 use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
-    ICON_SIZE_RANGE, LABEL_SIZE_RANGE, OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE,
-    TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
+    BORDER_OPACITY_RANGE, BORDER_WIDTH_RANGE, ICON_SIZE_RANGE, LABEL_SIZE_RANGE,
+    OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
     Backdrop, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId, SpaceLook,

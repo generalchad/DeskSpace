@@ -113,18 +113,8 @@ impl App {
 
     /// The concrete colors for a surface, with the Windows accent when asked.
     pub(super) fn surface_palette(&self, surface: Surface) -> Palette {
-        let theme = self.surface_theme(surface);
-        let mut palette = theme.palette(self.system.dark());
-        if let Some(accent) = self.system.accent() {
-            // Explorer always fills a checked item check box with the accent,
-            // whatever the space's own selection colors are. The registry
-            // accent's alpha is unreliable, so force it opaque.
-            palette.check_fill = accent.with_alpha(255);
-            if theme.use_accent {
-                palette = palette.with_accent(accent);
-            }
-        }
-        palette
+        self.surface_theme(surface)
+            .palette_with_accent(self.system.dark(), self.system.accent())
     }
 
     /// Whether a surface mirrors Explorer's display settings.

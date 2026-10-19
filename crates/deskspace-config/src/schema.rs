@@ -596,6 +596,35 @@ mod tests {
     }
 
     #[test]
+    fn a_theme_without_border_settings_keeps_the_old_border() {
+        let text = format!(
+            "version = {CURRENT_VERSION}
+[theme]
+show_border = true
+"
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.theme.border_width, 1);
+        assert!(!parsed.theme.custom_border);
+        assert_eq!(
+            parsed.theme.border_opacity,
+            deskspace_core::theme::BORDER_OPACITY_DEFAULT
+        );
+    }
+
+    #[test]
+    fn border_settings_round_trip_through_toml() {
+        let mut config = Config::new();
+        config.theme.border_width = 4;
+        config.theme.custom_border = true;
+        config.theme.border_color = deskspace_core::Color::rgb(10, 20, 30);
+        config.theme.border_opacity = 75;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.theme, config.theme);
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         let create = deskspace_core::Command::CreateSpace {

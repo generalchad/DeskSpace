@@ -8,7 +8,7 @@ pub mod zoom_bar;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub(crate) use d2d::PaintFrame;
+pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
 pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
 pub use transition::{Geometry, Mask, Play, Transition, TransitionFrame, Way};

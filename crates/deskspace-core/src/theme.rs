@@ -240,6 +240,13 @@ pub const LABEL_SIZE_RANGE: (u8, u8) = (60, 160);
 pub const TINT_OPACITY_RANGE: (u8, u8) = (0, 100);
 /// The bounds a title-bar shading is clamped to, in percent.
 pub const TITLE_SHADING_RANGE: (u8, u8) = (0, 100);
+/// The bounds a border thickness is clamped to, in pixels at 96 DPI.
+pub const BORDER_WIDTH_RANGE: (u8, u8) = (1, 8);
+/// The bounds a custom border's opacity is clamped to, in percent.
+pub const BORDER_OPACITY_RANGE: (u8, u8) = (0, 100);
+/// The border's opacity when it follows the color mode or the accent (0x30),
+/// and a custom border's default.
+pub const BORDER_OPACITY_DEFAULT: u8 = 19;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -260,8 +267,17 @@ pub struct Theme {
     /// How much darker (dark mode) or lighter (light mode) the title bar is
     /// than the body, in percent.
     pub title_shading: u8,
-    /// Draw a 1 px border around each space.
+    /// Draw a border around each space.
     pub show_border: bool,
+    /// The border's thickness in pixels at 96 DPI, scaled with the monitor.
+    pub border_width: u8,
+    /// Draw the border in `border_color` at `border_opacity` instead of the
+    /// color mode's, and instead of the accent while `use_accent` is on.
+    pub custom_border: bool,
+    /// The custom border color; used only with `custom_border`.
+    pub border_color: Color,
+    /// The custom border's opacity, in percent.
+    pub border_opacity: u8,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
     /// Item label font size as a percent of the default (100).
@@ -306,6 +322,10 @@ impl Default for Theme {
             tint_opacity: 40,
             title_shading: 30,
             show_border: true,
+            border_width: BORDER_WIDTH_RANGE.0,
+            custom_border: false,
+            border_color: Color::rgb(255, 255, 255),
+            border_opacity: BORDER_OPACITY_DEFAULT,
             label_lines: 2,
             label_size: 100,
             icon_size: ICON_SIZE_DEFAULT,
@@ -463,6 +483,27 @@ impl Theme {
         }
     }
 
+    /// `palette` with Windows' `accent`, when it is known. Explorer always
+    /// fills a checked item check box with the accent, whatever the space's
+    /// own selection colors are; the selection and border follow it only
+    /// with `use_accent`, and a custom border keeps its own color.
+    pub fn palette_with_accent(&self, system_dark: bool, accent: Option<Color>) -> Palette {
+        let mut palette = self.palette(system_dark);
+        let Some(accent) = accent else {
+            return palette;
+        };
+        // The registry accent's alpha is unreliable, so force it opaque.
+        palette.check_fill = accent.with_alpha(255);
+        if self.use_accent {
+            let border = palette.border;
+            palette = palette.with_accent(accent);
+            if self.custom_border {
+                palette.border = border;
+            }
+        }
+        palette
+    }
+
     pub fn is_dark(&self, system_dark: bool) -> bool {
         self.mode.resolve(system_dark)
     }
@@ -483,6 +524,12 @@ impl Theme {
         self.title_shading = self
             .title_shading
             .clamp(TITLE_SHADING_RANGE.0, TITLE_SHADING_RANGE.1);
+        self.border_width = self
+            .border_width
+            .clamp(BORDER_WIDTH_RANGE.0, BORDER_WIDTH_RANGE.1);
+        self.border_opacity = self
+            .border_opacity
+            .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1);
         self.label_lines = self.label_lines.clamp(1, 2);
         self.label_size = self
             .label_size
@@ -528,7 +575,12 @@ impl Theme {
             hover_fill: highlight.with_alpha(0x18),
             selected_fill: highlight.with_alpha(0x2C),
             marquee: self.marquee_color.with_alpha(255),
-            border: highlight.with_alpha(0x30),
+            border: if self.custom_border {
+                self.border_color
+                    .with_alpha(percent_to_alpha(self.border_opacity))
+            } else {
+                highlight.with_alpha(percent_to_alpha(BORDER_OPACITY_DEFAULT))
+            },
             check_fill: CHECK_ACCENT,
             // The rename field follows Windows' app theme, as Explorer's does,
             // rather than the space's own Color mode override.
@@ -670,6 +722,58 @@ mod tests {
     }
 
     #[test]
+    fn a_custom_border_uses_its_color_and_opacity() {
+        let theme = Theme {
+            custom_border: true,
+            border_color: Color::rgb(200, 10, 10),
+            border_opacity: 100,
+            ..Theme::default()
+        };
+        assert_eq!(theme.palette(true).border, Color::rgb(200, 10, 10));
+        let faint = Theme {
+            border_opacity: 50,
+            ..theme
+        };
+        assert_eq!(faint.palette(false).border.a, percent_to_alpha(50));
+    }
+
+    #[test]
+    fn the_default_border_keeps_its_old_opacity() {
+        assert_eq!(percent_to_alpha(BORDER_OPACITY_DEFAULT), 0x30);
+        assert_eq!(Theme::default().palette(true).border.a, 0x30);
+    }
+
+    #[test]
+    fn the_accent_fills_check_boxes_and_follows_use_accent() {
+        let accent = Color::rgb(0x00, 0x78, 0xD4);
+        let theme = Theme::default();
+        assert_eq!(theme.palette_with_accent(true, None), theme.palette(true));
+        let plain = theme.palette_with_accent(true, Some(accent));
+        assert_eq!(plain.check_fill, accent);
+        assert_eq!(plain.border, theme.palette(true).border);
+        let accented = Theme {
+            use_accent: true,
+            ..Theme::default()
+        }
+        .palette_with_accent(true, Some(accent));
+        assert_eq!(accented.border, accent.with_alpha(0x30));
+    }
+
+    #[test]
+    fn a_custom_border_wins_over_the_accent() {
+        let accent = Color::rgb(0x00, 0x78, 0xD4);
+        let theme = Theme {
+            use_accent: true,
+            custom_border: true,
+            border_color: Color::rgb(1, 2, 3),
+            ..Theme::default()
+        };
+        let palette = theme.palette_with_accent(true, Some(accent));
+        assert_eq!(palette.border, theme.palette(true).border);
+        assert_eq!(palette.marquee, accent.with_alpha(255));
+    }
+
+    #[test]
     fn accent_replaces_selection_and_border_keeping_alpha() {
         let palette = Theme::default().palette(true);
         let accent = Color::rgb(0x00, 0x78, 0xD4);
@@ -790,9 +894,13 @@ mod tests {
             label_size: 5,
             icon_size: 5,
             overlay_size: 250,
+            border_width: 0,
+            border_opacity: 250,
             ..Theme::default()
         }
         .clamped();
+        assert_eq!(theme.border_width, BORDER_WIDTH_RANGE.0);
+        assert_eq!(theme.border_opacity, BORDER_OPACITY_RANGE.1);
         assert_eq!(theme.corner_radius, corner::MAX);
         assert_eq!(theme.tint_opacity, TINT_OPACITY_RANGE.1);
         assert_eq!(theme.title_shading, TITLE_SHADING_RANGE.1);

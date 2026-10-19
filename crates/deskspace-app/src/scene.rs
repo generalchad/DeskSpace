@@ -62,6 +62,7 @@ pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
         corner_radius: theme.effective_corner_radius() as i32,
         dark: theme.is_dark(system_dark),
         border: theme.show_border,
+        border_width: theme.border_width.into(),
         chrome: true,
     }
 }
@@ -74,6 +75,7 @@ pub fn layer_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
         corner_radius: 0,
         dark: theme.is_dark(system_dark),
         border: false,
+        border_width: 0,
         chrome: false,
     }
 }
