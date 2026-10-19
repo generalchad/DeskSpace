@@ -32,15 +32,40 @@ pub(super) struct EditSession {
     pub(super) text: TextEdit,
 }
 
-/// The inline-edit state: the active rename session, if any, and whether the
-/// caret is currently shown (toggled by `Timer::Caret`).
+/// How often to look for a rename Explorer started in its hidden desktop
+/// view after a command from the desktop menu, and for how many looks: New ›
+/// Folder starts one only once the shell has made the folder and its view
+/// has caught up.
+const EXPLORER_RENAME_POLL_MS: u32 = 100;
+const EXPLORER_RENAME_POLLS: u8 = 20;
+
+/// The inline-edit state: the active rename session, if any, whether the
+/// caret is currently shown (toggled by `Timer::Caret`), and how many more
+/// times to look for a rename Explorer started (`Timer::ExplorerRename`).
 #[derive(Debug, Default)]
 pub(super) struct EditState {
     session: Option<EditSession>,
     caret_visible: bool,
+    explorer_polls: u8,
 }
 
 impl EditState {
+    /// Starts looking for a rename Explorer starts.
+    fn watch_explorer(&mut self) {
+        self.explorer_polls = EXPLORER_RENAME_POLLS;
+    }
+
+    /// Uses up one look; returns whether any are left after it.
+    fn next_explorer_poll(&mut self) -> bool {
+        self.explorer_polls = self.explorer_polls.saturating_sub(1);
+        self.explorer_polls > 0
+    }
+
+    /// Stops looking.
+    fn stop_watching_explorer(&mut self) {
+        self.explorer_polls = 0;
+    }
+
     /// Whether a rename is in progress.
     pub(super) fn is_active(&self) -> bool {
         self.session.is_some()
@@ -276,6 +301,55 @@ impl App {
         }
     }
 
+    /// After a shell command from the desktop menu, watches for a rename
+    /// Explorer starts in its view (New › Folder, any New entry), which is
+    /// invisible while takeover hides its icons. Without takeover Explorer's
+    /// own box shows, so nothing is watched.
+    pub(super) fn watch_explorer_rename(&mut self, ui: &mut Ui) {
+        if !self.desktop_takeover() {
+            return;
+        }
+        self.edit.watch_explorer();
+        Self::set_timer(ui, Timer::ExplorerRename, EXPLORER_RENAME_POLL_MS);
+    }
+
+    /// `Timer::ExplorerRename`: takes over a rename Explorer started, showing
+    /// DeskSpace's own on the same item, or gives up after the last look.
+    pub(super) fn poll_explorer_rename(&mut self, ui: &mut Ui) {
+        let label = deskspace_platform::take_explorer_rename();
+        if label.is_none() && self.edit.next_explorer_poll() {
+            return;
+        }
+        self.edit.stop_watching_explorer();
+        Self::clear_timer(ui, Timer::ExplorerRename);
+        let Some(label) = label else {
+            return;
+        };
+        // The new item may not be on the layer yet.
+        self.resync_desktop_layer(ui);
+        let item = self
+            .config
+            .desktop
+            .layer()
+            .items()
+            .iter()
+            .find(|item| {
+                item.label == label
+                    || item
+                        .path
+                        .file_name()
+                        .is_some_and(|name| name == label.as_str())
+            })
+            .map(|item| item.id);
+        let Some(item) = item else {
+            tracing::debug!(%label, "Explorer renamed an item the layer does not show");
+            return;
+        };
+        self.cancel_edit(ui);
+        self.selection.select_only(Surface::Desktop, item);
+        self.begin_item_rename(ui, Surface::Desktop, item);
+    }
+
     /// Toggles the edit caret so it blinks, as Windows does.
     pub(super) fn blink_caret(&mut self, ui: &mut Ui) {
         let Some(surface) = self.edit.surface() else {
@@ -307,6 +381,18 @@ fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_explorer_rename_watch_gives_up_after_its_last_look() {
+        let mut edit = EditState::default();
+        assert!(!edit.next_explorer_poll(), "nothing is watched at first");
+        edit.watch_explorer();
+        let looks = std::iter::from_fn(|| edit.next_explorer_poll().then_some(())).count();
+        assert_eq!(looks + 1, usize::from(EXPLORER_RENAME_POLLS));
+        edit.watch_explorer();
+        edit.stop_watching_explorer();
+        assert!(!edit.next_explorer_poll());
+    }
 
     #[test]
     fn rename_preserves_hidden_extensions() {

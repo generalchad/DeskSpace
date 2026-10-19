@@ -21,9 +21,11 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows::Win32::Foundation::{HWND, LPARAM, TRUE};
+use windows::Win32::Foundation::{HWND, LPARAM, TRUE, WPARAM};
+use windows::Win32::UI::Controls::{LVM_CANCELEDITLABEL, LVM_GETEDITCONTROL};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GetClassNameW, GetParent, SW_HIDE, SW_SHOW, ShowWindow,
+    EnumChildWindows, EnumWindows, GetClassNameW, GetParent, SMTO_ABORTIFHUNG, SW_HIDE, SW_SHOW,
+    SendMessageTimeoutW, ShowWindow, WM_GETTEXT,
 };
 use windows::core::BOOL;
 
@@ -65,11 +67,84 @@ pub fn rehide_if_active() {
 }
 
 fn set_listviews_visible(visible: bool) {
+    let command = if visible { SW_SHOW } else { SW_HIDE };
+    // SAFETY: ShowWindow hides or shows Explorer's own listview, which
+    // belongs to Explorer, not to this process.
+    for_each_listview(|list| unsafe {
+        let _ = ShowWindow(list, command);
+    });
+}
+
+/// How long a message to Explorer's listview may take before it counts as
+/// hung, in milliseconds.
+const EXPLORER_TIMEOUT_MS: u32 = 200;
+
+/// The label Explorer is renaming in a hidden desktop listview, if any, after
+/// cancelling that rename. Explorer starts one after New › Folder (or any
+/// New entry) and after its own Rename, but with its icons hidden the box is
+/// invisible, so DeskSpace shows its own rename instead. Cancelling keeps the
+/// item under the name it has.
+///
+/// The edit-control and cancel messages carry no pointers, so they work
+/// across processes, and the system marshals `WM_GETTEXT`; `GetWindowTextW`
+/// would read another process's caption instead of the edit's text.
+/// <https://learn.microsoft.com/windows/win32/controls/lvm-geteditcontrol>
+pub fn take_explorer_rename() -> Option<String> {
+    let mut label = None;
+    for_each_listview(|list| {
+        if label.is_some() {
+            return;
+        }
+        let Some(edit) = send_to_explorer(list, LVM_GETEDITCONTROL, 0, 0)
+            .map(|result| HWND(result as *mut core::ffi::c_void))
+            .filter(|edit| !edit.is_invalid())
+        else {
+            return;
+        };
+        // MAX_PATH: a desktop item's name, with its extension.
+        let mut buffer = [0u16; 260];
+        let length = send_to_explorer(edit, WM_GETTEXT, buffer.len(), buffer.as_mut_ptr() as isize)
+            .unwrap_or(0)
+            .min(buffer.len());
+        label = Some(String::from_utf16_lossy(&buffer[..length]));
+        let _ = send_to_explorer(list, LVM_CANCELEDITLABEL, 0, 0);
+    });
+    label.filter(|label| !label.is_empty())
+}
+
+/// Sends a message to one of Explorer's windows, giving up if Explorer is
+/// hung. The result, or `None` when the send failed or timed out.
+fn send_to_explorer(window: HWND, message: u32, wparam: usize, lparam: isize) -> Option<usize> {
+    let mut result = 0;
+    // SAFETY: `window` is a window from the enumeration (a stale handle only
+    // fails the send); any pointer in `lparam` is the caller's live buffer,
+    // sized by `wparam`, for the duration of this synchronous call.
+    let sent = unsafe {
+        SendMessageTimeoutW(
+            window,
+            message,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            SMTO_ABORTIFHUNG,
+            EXPLORER_TIMEOUT_MS,
+            Some(&mut result),
+        )
+    };
+    (sent.0 != 0).then_some(result)
+}
+
+/// Calls `visit` with every desktop icon listview, under the desktop shell's
+/// `SHELLDLL_DefView`s.
+fn for_each_listview(mut visit: impl FnMut(HWND)) {
+    let mut visit: &mut dyn FnMut(HWND) = &mut visit;
     // SAFETY: `visit_top_level` matches the `WNDENUMPROC` signature and only
-    // reads the handles EnumWindows passes it. The `visible` flag rides in
-    // `lParam`.
+    // reads the handles EnumWindows passes it. `lParam` points at `visit`,
+    // which outlives the synchronous enumeration.
     unsafe {
-        let _ = EnumWindows(Some(visit_top_level), LPARAM(visible as isize));
+        let _ = EnumWindows(
+            Some(visit_top_level),
+            LPARAM(&mut visit as *mut &mut dyn FnMut(HWND) as isize),
+        );
     }
 }
 
@@ -88,14 +163,13 @@ unsafe extern "system" fn visit_top_level(window: HWND, param: LPARAM) -> BOOL {
 }
 
 unsafe extern "system" fn visit_child(window: HWND, param: LPARAM) -> BOOL {
-    let visible = param.0 != 0;
     // SAFETY: `window` is a live descendant handle; the class and ancestor
-    // reads only read, and ShowWindow hides or shows Explorer's own listview,
-    // which belongs to Explorer, not to this process.
+    // reads only read. `param` is the visitor `for_each_listview` passed,
+    // alive for the whole enumeration.
     unsafe {
         if class_is(window, LIST_VIEW) && has_def_view_ancestor(window) {
-            let command = if visible { SW_SHOW } else { SW_HIDE };
-            let _ = ShowWindow(window, command);
+            let visit = &mut *(param.0 as *mut &mut dyn FnMut(HWND));
+            visit(window);
         }
     }
     TRUE

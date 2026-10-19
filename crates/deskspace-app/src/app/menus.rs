@@ -209,7 +209,10 @@ impl App {
                     self.run_common_menu(ui, choice, at);
                 }
             }
-            Some(ItemMenuChoice::Shell) => self.resync_desktop_layer(ui),
+            Some(ItemMenuChoice::Shell) => {
+                self.resync_desktop_layer(ui);
+                self.watch_explorer_rename(ui);
+            }
             None => {}
         }
     }

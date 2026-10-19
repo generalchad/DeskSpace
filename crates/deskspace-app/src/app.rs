@@ -85,10 +85,13 @@ enum Timer {
     DebugLog = 11,
     /// Reading the debug window's values again (`app/debug/`).
     DebugRefresh = 12,
+    /// Looking for a rename Explorer started in its hidden desktop view
+    /// (`app/rename.rs`).
+    ExplorerRename = 13,
 }
 
 impl Timer {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -101,6 +104,7 @@ impl Timer {
         Self::ZoomBar,
         Self::DebugLog,
         Self::DebugRefresh,
+        Self::ExplorerRename,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -553,6 +557,7 @@ impl App {
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),
             Timer::DebugLog => self.feed_debug_log(ui),
             Timer::DebugRefresh => self.refresh_debug(ui),
+            Timer::ExplorerRename => self.poll_explorer_rename(ui),
         }
     }
 

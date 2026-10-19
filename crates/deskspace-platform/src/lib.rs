@@ -33,7 +33,7 @@ pub use win32::debug_info::{
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,
-    restore as restore_desktop_icons,
+    restore as restore_desktop_icons, take_explorer_rename,
 };
 pub use win32::desktop_items::{
     DesktopEntry, desktop_directory, enumerate_desktop_items, item_facts, notify_moved,

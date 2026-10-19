@@ -1244,7 +1244,10 @@ in `ui.rs`. What spans them:
   nothing selected there) for "New space", "DeskSpace settings…", and
   Hide/Show spaces above Explorer's own desktop background menu
   (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
-  that menu would be unreachable. A shell command re-syncs the layer. When
+  that menu would be unreachable. A shell command re-syncs the layer, and
+  for a moment after it the app looks for a rename Explorer started in
+  its hidden view (New › Folder does): `take_explorer_rename` cancels it and
+  DeskSpace's own rename opens on the same icon instead. When
   the view's menu adds nothing, the Desktop folder's own background menu
   (New, Display settings, Personalize; no View or Sort by) stands in, so the
   menu never ends after DeskSpace's entries.
