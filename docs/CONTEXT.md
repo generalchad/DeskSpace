@@ -1347,11 +1347,12 @@ section numbers stable.
 - **Placement is fixed for a run.** Only `--placement` chooses it; there is no
   live switch, because recreating every space window would drop the blur.
   Top-level, the default, is the only placement with blur.
-- **The icon cache is invalidated only after shell menu commands and
-  renames.** Its key includes the pixel and overlay size, so an icon-size or
-  DPI change reloads, but a Desktop-folder change (`FolderChanged`) re-syncs
-  the layer without invalidating icons, so a file whose icon changed in place
-  keeps the old one. Lens watchers will need to invalidate.
+- **The icon cache is invalidated only after shell menu commands, renames,
+  and a desktop-layer sync.** Its key includes the pixel and overlay size, so
+  an icon-size or DPI change reloads, and `sync_desktop_layer` forgets a loose
+  item whose modification time changed. Nothing watches the files in spaces,
+  so one whose icon changed in place keeps the old one. Lens watchers will
+  need to invalidate.
 - **The scroll indicator is display-only.** Spaces scroll with the wheel,
   Home/End/PageUp/PageDown, and by keeping a keyboard-selected item in view,
   but the indicator cannot be dragged, and wheel events need Windows' "scroll

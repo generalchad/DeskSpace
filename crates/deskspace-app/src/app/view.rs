@@ -1,6 +1,7 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use deskspace_core::animation::Kind;
 use deskspace_core::geometry::Rect;
@@ -496,6 +497,11 @@ impl App {
             return false;
         }
         let items = self.desktop_layer_items();
+        // A file changed in place keeps its path, so its cached icon would
+        // outlive the change (a new thumbnail, a re-pointed shortcut).
+        for path in changed_in_place(self.config.desktop.layer().items(), &items) {
+            self.icons.invalidate(path);
+        }
         self.config.desktop.apply_with_layout(
             Command::SyncDesktop { items },
             self.effective_layout(),
@@ -739,13 +745,56 @@ impl App {
     }
 }
 
+/// The paths of `fresh` items whose file was modified since `known` read it:
+/// same path, another modification time.
+fn changed_in_place<'a>(known: &[Item], fresh: &'a [Item]) -> Vec<&'a Path> {
+    let modified: HashMap<&Path, Option<u64>> = known
+        .iter()
+        .map(|item| (item.path.as_path(), item.modified))
+        .collect();
+    fresh
+        .iter()
+        .filter(|item| {
+            modified
+                .get(item.path.as_path())
+                .is_some_and(|&before| before != item.modified)
+        })
+        .map(|item| item.path.as_path())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
+    use deskspace_core::{ItemFacts, Preset};
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn only_items_modified_at_the_same_path_changed_in_place() {
+        let item = |path: &str, modified| {
+            let facts = ItemFacts {
+                modified,
+                ..ItemFacts::default()
+            };
+            Item::new(ItemId(0), path, facts)
+        };
+        let known = [
+            item("C:/d/same.txt", Some(1)),
+            item("C:/d/edited.txt", Some(1)),
+            item("C:/d/gone.txt", Some(1)),
+        ];
+        let fresh = [
+            item("C:/d/same.txt", Some(1)),
+            item("C:/d/edited.txt", Some(2)),
+            item("C:/d/new.txt", Some(5)),
+        ];
+        assert_eq!(
+            changed_in_place(&known, &fresh),
+            [Path::new("C:/d/edited.txt")]
+        );
+    }
 
     #[test]
     fn the_session_takeover_wins_without_touching_the_setting() {
