@@ -312,15 +312,16 @@ pub(crate) fn set_on_top(hwnd: HWND, on_top: bool) {
     }
 }
 
-/// Puts a desktop-hosted window below its sibling spaces. Windows creates a
-/// child above its siblings, so a layer made after the hosted spaces (takeover
-/// turned on from Settings) would cover them. A top-level window is already
-/// placed by `on_window_pos_changing`.
-pub(crate) fn sink_hosted(hwnd: HWND) {
+/// Sends `hwnd` to the bottom of its siblings, where the desktop layer
+/// belongs: a top-level window lands where `on_window_pos_changing` pins it,
+/// and a desktop-hosted one below the hosted spaces. A window kept above the
+/// others (`--on-top`) stays there, since the bottom would drop its topmost
+/// style.
+pub(crate) fn sink(hwnd: HWND) {
     // SAFETY: `hwnd` is a live space window; the state borrow is short and
     // ends before SetWindowPos.
     unsafe {
-        if with_state(hwnd, |state| state.hosted) != Some(true) {
+        if with_state(hwnd, |state| state.on_top) != Some(false) {
             return;
         }
         let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;

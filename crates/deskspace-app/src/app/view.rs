@@ -547,17 +547,27 @@ impl App {
 
     /// The health timer: re-hide Explorer's icons if it recreated its layer
     /// without broadcasting `TaskbarCreated`.
-    /// Logs when a taskbar falls under the desktop layer, which then takes
-    /// its clicks, and when it is clear again, with what Windows reports at
-    /// that moment. Diagnostic only: an open bug whose trigger is unknown.
-    pub(super) fn check_taskbars(&mut self, ui: &Ui) {
+    /// Repairs a taskbar fallen under the desktop layer, which then takes its
+    /// clicks, by sending the layer back below it. Explorer drops a taskbar's
+    /// topmost style and sends it down when it thinks a full-screen app is
+    /// up; the trigger is not known yet (seen 2026-10-18), so each
+    /// occurrence is logged with what Windows reports, and whether the
+    /// repair held.
+    pub(super) fn check_taskbars(&mut self, ui: &mut Ui) {
         if !self.layer_active() {
             self.layer.taskbar_blocked = false;
             return;
         }
         let taskbars = ui.taskbars();
-        let blocked = taskbars.iter().any(|taskbar| taskbar.is_blocked());
-        if blocked == std::mem::replace(&mut self.layer.taskbar_blocked, blocked) {
+        let found = taskbars.iter().any(|taskbar| taskbar.is_blocked());
+        let blocked = found && {
+            ui.sink_desktop_layer();
+            ui.taskbars().iter().any(|taskbar| taskbar.is_blocked())
+        };
+        let was_blocked = std::mem::replace(&mut self.layer.taskbar_blocked, blocked);
+        // A repaired occurrence logs each time; one the repair cannot fix
+        // logs once, and again when it clears.
+        if (found && was_blocked) || (!found && !was_blocked) {
             return;
         }
         let state: Vec<String> = taskbars
@@ -571,14 +581,20 @@ impl App {
             .collect();
         let foreground = foreground_window()
             .map(|window| format!("{} {:?} {:?}", window.class, window.title, window.rect));
-        if blocked {
+        if !found {
+            tracing::info!(taskbars = ?state, "every taskbar is above the desktop layer again");
+        } else if blocked {
             tracing::warn!(
                 taskbars = ?state,
                 ?foreground,
-                "a taskbar is under the desktop layer; its clicks go to the layer"
+                "a taskbar is under the desktop layer, and sinking the layer did not help; its clicks go to the layer"
             );
         } else {
-            tracing::info!(taskbars = ?state, "every taskbar is above the desktop layer again");
+            tracing::warn!(
+                taskbars = ?state,
+                ?foreground,
+                "a taskbar was under the desktop layer; sank the layer below it"
+            );
         }
     }
 

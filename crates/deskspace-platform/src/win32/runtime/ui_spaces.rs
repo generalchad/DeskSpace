@@ -201,9 +201,20 @@ impl Ui {
             composition: false,
         };
         let hwnd = space_window::create(options)?;
-        space_window::sink_hosted(hwnd);
+        // A new child goes above its siblings, so a hosted layer made after
+        // the hosted spaces (takeover turned on from Settings) would cover
+        // them.
+        space_window::sink(hwnd);
         with_runtime(|runtime| runtime.layer = Some(hwnd));
         Ok(())
+    }
+
+    /// Sends the desktop layer back to the bottom, under any taskbar that
+    /// fell below it (`TaskbarRow::is_blocked`).
+    pub fn sink_desktop_layer(&mut self) {
+        if let Some(hwnd) = with_runtime(|runtime| runtime.layer).flatten() {
+            space_window::sink(hwnd);
+        }
     }
 
     pub fn set_desktop_layer_rect(&mut self, rect: Rect) {

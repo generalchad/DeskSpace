@@ -975,6 +975,7 @@ each id is in `archive/TASKS-done.md`.
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | Menu at the click | With takeover on and "Auto arrange" off, right-click an empty spot far from other icons: Paste (after copying a file) and New › Text Document each put the new icon at the click, not in the next free slot; a space's item menu commands (Open, Properties, Delete) work as before. If Explorer ignores the point, record it here. |
 | Layer presses | With takeover on, top-level and with `--placement desktop-*`: Ctrl+click and Shift+click on loose desktop icons add to the selection; a plain click on empty layer space clears it; a click on another app keeps it; a click on the layer during a rename commits the rename. |
+| Taskbar repair | With takeover on, use the PC normally with `--debug` open for a while (full-screen video, games, Win+D, switching monitors). If the log ever says "a taskbar was under the desktop layer; sank the layer below it", the taskbar takes clicks again within 5 seconds and the spaces still take clicks and drops; record the logged foreground window in `CONTEXT.md` section 10. "sinking the layer did not help" means the repair failed: replace this row with a task for one layer per monitor. |
 | Hosted layer order | With `--placement desktop-*` and takeover off, turn takeover on from Settings: the loose desktop icons appear and every hosted space stays visible above them and takes clicks; the same after a restart with takeover on. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
 | L5 (F-54) | Copy a file and a folder in Explorer; "New shortcut ▸ Paste shortcut" in a space (and from the Shortcuts page's + tile) makes two shortcuts and the originals stay; with nothing on the clipboard the entry is grey. |
@@ -1013,17 +1014,6 @@ each id is in `archive/TASKS-done.md`.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
-- **Open bug, needs decision:** with takeover on, the primary taskbar
-  sometimes stops taking clicks; they reach the desktop layer instead
-  (seen 2026-10-18). `scripts/zorder.ps1` showed `Shell_TrayWnd` with
-  topmost cleared and below the layer, which spans the whole desktop;
-  the secondary taskbar was fine; a restart cleared it. Hypothesis:
-  Explorer's full-screen detection takes the layer, which covers the
-  monitor, for a full-screen app. `App::check_taskbars` now logs a warning
-  (with the taskbars and the foreground window) when it happens and Debug
-  → Windows → Taskbars shows it, to find the trigger. Fix options: one
-  layer per monitor sized to its work area (robust), or re-sinking the
-  layer on the health tick (a 5-second band-aid).
 - `app/menus.rs` `show_desktop_menu`: New › Folder (or any New entry) from
   the takeover desktop menu starts Explorer's rename in its hidden view, so
   the rename box is invisible. Suggested task: start DeskSpace's inline

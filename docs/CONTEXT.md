@@ -1329,6 +1329,16 @@ section numbers stable.
   icon layer unless "Take over the desktop" (or `--takeover`) is on; the
   mechanics and crash safety are in sections 5 and 6. The release zip ships
   `deskspace-watchdog.exe` beside `deskspace.exe` (I6).
+- **A taskbar can fall under the desktop layer.** With takeover on, the
+  primary taskbar was once seen with its topmost style cleared and below
+  the layer, which spans the whole desktop, so its clicks reached the
+  layer (2026-10-18). The likely cause is Explorer's full-screen detection
+  taking the layer for a full-screen app; the trigger is not known.
+  `App::check_taskbars`, on the 5-second health tick, sinks the layer back
+  below such a taskbar and logs each occurrence with the taskbars and the
+  foreground window (Debug → Windows → Taskbars shows them live). If the
+  repair does not hold, the robust fix is one layer per monitor sized to
+  its work area.
 - **File moves have no undo yet.** Deleting a space returns its stored files
   to the desktop (deleting an item recycles it, which the Recycle Bin can
   undo); files on another drive stay in place, since a move there would copy.
