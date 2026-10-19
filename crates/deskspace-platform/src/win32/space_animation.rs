@@ -19,13 +19,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
-use crate::win32::debug_info::transparency_enabled;
 use crate::win32::flame_overlay::FlameOverlay;
 use crate::win32::frame_clock;
 use crate::win32::runtime;
 use crate::win32::space_window::{
     Backing, SpaceState, current_rect, show, show_backing, with_state,
 };
+use crate::win32::system::transparency_enabled;
 use crate::win32::system::work_area_at;
 
 /// What an animation is for, which decides how it ends and what a new rect

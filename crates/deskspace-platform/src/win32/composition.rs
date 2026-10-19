@@ -41,8 +41,8 @@ use deskspace_core::theme::Backdrop;
 use crate::error::PlatformError;
 use crate::render::{Painter, SpaceStyle, d2d};
 use crate::win32::alpha_mask;
-use crate::win32::debug_info::transparency_enabled;
 use crate::win32::runtime;
+use crate::win32::system::transparency_enabled;
 // The host backdrop brush needs Windows 11.
 use crate::win32::system::{WINDOWS_11, windows_build};
 

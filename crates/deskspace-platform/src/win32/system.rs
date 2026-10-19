@@ -68,25 +68,40 @@ pub fn cursor_pos() -> Point {
     Point::new(point.x, point.y)
 }
 
-/// Whether Windows is set to dark mode for apps. There is no documented Win32
-/// API for this; the Settings app writes `AppsUseLightTheme` (0 = dark) and
-/// broadcasts `WM_SETTINGCHANGE` with "ImmersiveColorSet" when it changes.
-pub fn system_uses_dark_mode() -> bool {
-    let mut value: u32 = 1;
+/// Where Windows keeps the personalization switches DeskSpace follows.
+const PERSONALIZE_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+
+/// A DWORD value under `HKEY_CURRENT_USER`, or `None` when it is missing or
+/// not a DWORD.
+fn user_dword(key: PCWSTR, name: PCWSTR) -> Option<u32> {
+    let mut value: u32 = 0;
     let mut size = std::mem::size_of::<u32>() as u32;
     // SAFETY: `value` and `size` are valid out-pointers sized for a DWORD.
     let status = unsafe {
         RegGetValueW(
             HKEY_CURRENT_USER,
-            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
-            w!("AppsUseLightTheme"),
+            key,
+            name,
             RRF_RT_REG_DWORD,
             None,
             Some(&mut value as *mut u32 as *mut core::ffi::c_void),
             Some(&mut size),
         )
     };
-    status == ERROR_SUCCESS && value == 0
+    (status == ERROR_SUCCESS).then_some(value)
+}
+
+/// Whether Windows is set to dark mode for apps. There is no documented Win32
+/// API for this; the Settings app writes `AppsUseLightTheme` (0 = dark) and
+/// broadcasts `WM_SETTINGCHANGE` with "ImmersiveColorSet" when it changes.
+pub fn system_uses_dark_mode() -> bool {
+    user_dword(PERSONALIZE_KEY, w!("AppsUseLightTheme")) == Some(0)
+}
+
+/// Windows' "Transparency effects" switch (Settings > Personalization >
+/// Colors): the `EnableTransparency` DWORD, or `None` when it is unset.
+pub fn transparency_enabled() -> Option<bool> {
+    user_dword(PERSONALIZE_KEY, w!("EnableTransparency")).map(|value| value != 0)
 }
 
 /// Windows' accent color, read from the DWM registry value. The value is a
@@ -94,25 +109,7 @@ pub fn system_uses_dark_mode() -> bool {
 /// treat only the RGB as meaningful (`Palette::with_accent` keeps its own
 /// alpha). Returns `None` when the value is missing or unreadable.
 pub fn system_accent_color() -> Option<Color> {
-    let mut value: u32 = 0;
-    let mut size = std::mem::size_of::<u32>() as u32;
-    // SAFETY: `value` and `size` are valid out-pointers sized for a DWORD.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            w!(r"Software\Microsoft\Windows\DWM"),
-            w!("AccentColor"),
-            RRF_RT_REG_DWORD,
-            None,
-            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
-            Some(&mut size),
-        )
-    };
-    if status == ERROR_SUCCESS {
-        Some(color_from_abgr(value))
-    } else {
-        None
-    }
+    user_dword(w!(r"Software\Microsoft\Windows\DWM"), w!("AccentColor")).map(color_from_abgr)
 }
 
 /// Whether Windows' "Animation effects" switch is on (Settings >

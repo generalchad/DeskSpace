@@ -27,7 +27,7 @@ pub use win32::Placement;
 pub use win32::autostart::set_start_with_windows;
 pub use win32::debug_info::{
     HookState, MonitorRow, ProcessStats, TaskbarRow, WindowRow, foreground_window, monitors,
-    process_stats, transparency_enabled,
+    process_stats,
 };
 pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
 pub use win32::desktop_icons::{
@@ -49,7 +49,8 @@ pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::shortcuts::{create_custom_shortcut, create_shortcut, resolve_path};
 pub use win32::system::{
     cursor_pos, drag_threshold, idle_time, system_accent_color, system_animations,
-    system_uses_dark_mode, user_is_presenting, virtual_desktop_rect, windows_build, work_area_at,
+    system_uses_dark_mode, transparency_enabled, user_is_presenting, virtual_desktop_rect,
+    windows_build, work_area_at,
 };
 pub use win32::watchdog::{
     arm as arm_watchdog, is_running as watchdog_running, is_watchdog, run_watchdog,
