@@ -6,8 +6,9 @@ use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateIconIndirect, DestroyIcon, HICON, ICON_BIG, ICON_SMALL, ICONINFO, IMAGE_ICON,
-    LR_DEFAULTCOLOR, LoadImageW, SM_CXICON, SM_CXSMICON, SendMessageW, WM_SETICON,
+    CreateIconIndirect, DestroyIcon, GCLP_HICON, GCLP_HICONSM, HICON, ICON_BIG, ICON_SMALL,
+    ICONINFO, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW, SM_CXICON, SM_CXSMICON, SendMessageW,
+    SetClassLongPtrW, WM_SETICON,
 };
 use windows::core::{PCWSTR, Result};
 
@@ -60,14 +61,25 @@ pub(crate) enum Badge {
 /// size for the window's DPI: a small icon there is what left the settings
 /// and debug windows without a usable taskbar icon.
 /// https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-seticon
+///
+/// The icons are also set on the window's class. The taskbar asks the window
+/// for its icon with a timeout, and when the UI thread is still busy with
+/// startup the request goes unanswered and the button kept a generic icon
+/// (seen 2026-10-19 with `--debug`). Its fallback, the class icon, needs no
+/// answer from the window. Only settings and debug windows use this, and each
+/// class has one window at a time, so the class icons are the window's.
 #[derive(Default)]
 pub(crate) struct WindowIcons {
+    /// The window whose class holds the icons, cleared before they are
+    /// destroyed.
+    window: Option<HWND>,
     big: Option<HICON>,
     small: Option<HICON>,
 }
 
 impl WindowIcons {
-    /// Loads both sizes for `window`'s DPI with `badge` and sets them on it.
+    /// Loads both sizes for `window`'s DPI with `badge` and sets them on it
+    /// and its class.
     pub(crate) fn set(window: HWND, badge: Badge) -> Self {
         let dpi = window_dpi(window);
         // SAFETY: plain metric queries for a known DPI.
@@ -78,13 +90,19 @@ impl WindowIcons {
             )
         };
         let icons = Self {
+            window: Some(window),
             big: load_badged(big_size, badge),
             small: load_badged(small_size, badge),
         };
-        for (kind, icon) in [(ICON_BIG, icons.big), (ICON_SMALL, icons.small)] {
+        let slots = [
+            (ICON_BIG, GCLP_HICON, icons.big),
+            (ICON_SMALL, GCLP_HICONSM, icons.small),
+        ];
+        for (kind, class_slot, icon) in slots {
             let Some(icon) = icon else { continue };
             // SAFETY: `window` is live and `icon` stays alive until this value
-            // is dropped with the window's state.
+            // is dropped with the window's state, which first clears the
+            // class slot.
             unsafe {
                 SendMessageW(
                     window,
@@ -92,6 +110,7 @@ impl WindowIcons {
                     Some(WPARAM(kind as usize)),
                     Some(LPARAM(icon.0 as isize)),
                 );
+                SetClassLongPtrW(window, class_slot, icon.0 as isize);
             }
         }
         icons
@@ -100,6 +119,16 @@ impl WindowIcons {
 
 impl Drop for WindowIcons {
     fn drop(&mut self) {
+        if let Some(window) = self.window {
+            for slot in [GCLP_HICON, GCLP_HICONSM] {
+                // SAFETY: called from the window's WM_NCDESTROY, while the
+                // handle is still valid; the class must not keep icons that
+                // are destroyed below.
+                unsafe {
+                    SetClassLongPtrW(window, slot, 0);
+                }
+            }
+        }
         for icon in [self.big, self.small].into_iter().flatten() {
             // SAFETY: both icons were created by `load_badged` for this value
             // alone, and the window that showed them is being destroyed.

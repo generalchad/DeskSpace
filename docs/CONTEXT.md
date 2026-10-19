@@ -461,7 +461,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   loads it at the small-icon size. Each window owns its own big and small
   icons (`app_icon::WindowIcons`, at its DPI), because the taskbar and
   Alt+Tab draw `ICON_BIG` and a small icon there left the windows without a
-  usable taskbar icon. The debug window's copy carries a bug on an amber disc
+  usable taskbar icon. They are set on the window's class too: the taskbar
+  asks the window with a timeout, and while startup keeps the UI thread busy
+  it falls back to the class icon. The debug window's copy carries a bug on an amber disc
   (`Badge::Debug`, drawn by `render::d2d::debug_badge`), so it stands apart
   from the settings window.
 
