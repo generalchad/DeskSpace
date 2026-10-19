@@ -238,48 +238,57 @@ impl App {
         // The whole active set drags, as in Explorer, so the image is that set
         // rendered as it is now, before the slots fade.
         let ids = self.drag_items(item);
-        let id_values: Vec<u64> = ids.iter().map(|id| id.0).collect();
-        let view = self.view_for(surface);
-        let layout = self.surface_layout(surface);
-        let metrics = self.surface_metrics(surface);
-        let palette = self.surface_palette(surface);
-        let grab = self
-            .surface_window_rect(surface)
-            .map(|rect| Point::new(origin.x - rect.x, origin.y - rect.y));
-        self.pointer.drag_image = match surface {
-            Surface::Space(id) => self.config.desktop.space(id).and_then(|entry| {
-                let look = SurfaceLook {
-                    theme: entry.theme(&self.config.theme),
-                    palette: &palette,
-                    layout,
-                    metrics,
-                };
-                let scene = drag_scene(entry, &ids, look, view, &mut self.icons);
-                DragImage::of_selection(&scene, &id_values, grab?)
-            }),
-            Surface::Desktop => {
-                let scene = desktop_layer_drag_scene(
-                    self.config.desktop.layer(),
-                    virtual_desktop_rect().origin(),
-                    &ids,
-                    SurfaceLook {
-                        theme: &self.config.theme,
-                        palette: &palette,
-                        layout,
-                        metrics,
-                    },
-                    view,
-                    &mut self.icons,
-                );
-                grab.and_then(|grab| DragImage::of_selection(&scene, &id_values, grab))
-            }
-        };
+        self.pointer.drag_image = self.drag_image_of(surface, &ids, origin);
         self.pointer.dragged = Some((surface, ids));
         self.pointer.pending_click = None;
         if let Some(image) = &self.pointer.drag_image {
             ui.show_drag_ghost(image, point);
         }
         self.refresh_surface(ui, surface);
+    }
+
+    /// The group drag image of `ids` on `surface`, grabbed at `origin` (where
+    /// the button went down, in screen coordinates). `None` when the surface
+    /// has no window or nothing to draw.
+    pub(super) fn drag_image_of(
+        &mut self,
+        surface: Surface,
+        ids: &[ItemId],
+        origin: Point,
+    ) -> Option<DragImage> {
+        let id_values: Vec<u64> = ids.iter().map(|id| id.0).collect();
+        let view = self.view_for(surface);
+        let layout = self.surface_layout(surface);
+        let metrics = self.surface_metrics(surface);
+        let palette = self.surface_palette(surface);
+        let rect = self.surface_window_rect(surface)?;
+        let grab = Point::new(origin.x - rect.x, origin.y - rect.y);
+        let scene = match surface {
+            Surface::Space(id) => {
+                let entry = self.config.desktop.space(id)?;
+                let look = SurfaceLook {
+                    theme: entry.theme(&self.config.theme),
+                    palette: &palette,
+                    layout,
+                    metrics,
+                };
+                drag_scene(entry, ids, look, view, &mut self.icons)
+            }
+            Surface::Desktop => desktop_layer_drag_scene(
+                self.config.desktop.layer(),
+                virtual_desktop_rect().origin(),
+                ids,
+                SurfaceLook {
+                    theme: &self.config.theme,
+                    palette: &palette,
+                    layout,
+                    metrics,
+                },
+                view,
+                &mut self.icons,
+            ),
+        };
+        DragImage::of_selection(&scene, &id_values, grab)
     }
 
     pub(super) fn end_drag_visual(&mut self, ui: &mut Ui) {

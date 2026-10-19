@@ -716,7 +716,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   drop targets forward all four calls to one shared `IDropTargetHelper`,
   without which the image vanishes over a space; it is released before
   `OleUninitialize`. Without an image the shell substitutes its own opaque,
-  oversized one.
+  oversized one, so a right drag, which goes straight to the shell with no
+  ghost, renders the same image (`App::drag_image_of`) first.
 
 ### Selection, display matching, keys, and clipboard
 
