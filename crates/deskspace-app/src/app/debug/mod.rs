@@ -193,6 +193,9 @@ impl App {
             | DebugId::PruneNow => DebugControlKind::Button {
                 enabled: has_spaces,
             },
+            DebugId::DeleteStress => DebugControlKind::Button {
+                enabled: self.has_stress_spaces(),
+            },
             DebugId::StressSize => DebugControlKind::Choice {
                 options: STRESS_SIZES.iter().map(|size| size.to_string()).collect(),
                 selected: self.debug.as_ref().map_or(0, |tools| tools.stress_size),
@@ -226,6 +229,7 @@ impl App {
                 }
             }
             DebugId::CreateStress => self.create_stress_space(ui),
+            DebugId::DeleteStress => self.delete_stress_spaces(ui),
             DebugId::UnfoldAll => self.unfold_all(ui),
             DebugId::UnlockAll => self.unlock_all(ui),
             DebugId::RefreshAll => {

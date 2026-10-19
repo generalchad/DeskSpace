@@ -54,10 +54,11 @@ pub(crate) enum DebugId {
     InputState = 46,
     Taskbars = 47,
     PreviewPlayAll = 48,
+    DeleteStress = 49,
 }
 
 impl DebugId {
-    pub(crate) const ALL: [Self; 48] = [
+    pub(crate) const ALL: [Self; 49] = [
         Self::SpacesVisible,
         Self::DeleteAllSpaces,
         Self::CreateTestSpaces,
@@ -106,6 +107,7 @@ impl DebugId {
         Self::InputState,
         Self::Taskbars,
         Self::PreviewPlayAll,
+        Self::DeleteStress,
     ];
 
     pub(crate) fn id(self) -> u32 {

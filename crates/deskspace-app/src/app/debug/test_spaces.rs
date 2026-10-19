@@ -72,6 +72,23 @@ pub(super) const TEST_SPACES: &[TestSpace] = &[
     },
 ];
 
+/// How "Create a stress space" titles the space it makes, followed by its
+/// size, which is how "Delete stress spaces" finds them again.
+const STRESS_TITLE: &str = "Test: Stress";
+
+/// The title of a stress space of `size` shortcuts.
+pub(super) fn stress_title(size: usize) -> String {
+    format!("{STRESS_TITLE} {size}")
+}
+
+/// Whether `title` is one `stress_title` gave; a renamed space is not.
+pub(super) fn is_stress_title(title: &str) -> bool {
+    title
+        .strip_prefix(STRESS_TITLE)
+        .and_then(|rest| rest.strip_prefix(' '))
+        .is_some_and(|size| size.parse::<usize>().is_ok())
+}
+
 /// The shortcut counts "Create a stress space" offers, smallest first.
 pub(super) const STRESS_SIZES: [usize; 3] = [50, 200, 1000];
 
@@ -136,6 +153,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn stress_titles_are_known_again_and_renamed_ones_are_not() {
+        for size in STRESS_SIZES {
+            assert!(is_stress_title(&stress_title(size)));
+        }
+        assert!(!is_stress_title("Test: Stress"));
+        assert!(!is_stress_title("Test: Stress test"));
+        assert!(!is_stress_title("Test: Stress 50 (mine)"));
+        assert!(!is_stress_title("Apps"));
     }
 
     #[test]

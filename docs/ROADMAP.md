@@ -448,22 +448,26 @@ A native, lightweight, offline Windows desktop organizer that:
     Cancel keeps it. The box keeps every row for every kind and greys what
     the kind or its effect does not use, as the settings pages do, so the
     window keeps its shape.
-  - *Destructive actions* (Delete all spaces, Crash now, read-only config)
-    always ask first. The question names the config file and, when no
+  - *Destructive actions* (Delete all spaces, Delete stress spaces, Crash
+    now, read-only config) always ask first. The question names the config file and, when no
     `--config` was given, warns that this is the real configuration.
   - *Delete all spaces* sends every stored file to the Recycle Bin, unlike
     Delete space, which returns them to the desktop (D3): test files would
     otherwise pile up on the real desktop on every cycle, even with a
     scratch `--config`. Items listed in place are only unlisted, as for a
     single delete. A space whose files cannot be recycled stays, as Delete
-    space keeps one whose files cannot be returned.
+    space keeps one whose files cannot be returned. *Delete stress spaces*
+    does the same for the spaces "Create a stress space" made, found by the
+    title it gave them ("Test: Stress 50"); a renamed one is left alone
+    (amended 2026-10-18, maintainer: deleting a stress space by hand had
+    put its shortcuts on the real desktop).
   - *Create test spaces* makes four ordinary spaces (Apps, Tools, Places,
     Web) through the New space path, each holding shortcuts made through
     the one shortcut writer, covering a program, a program with
     arguments, a folder, and a web address. Nothing marks them as test
     spaces.
-  - *The other sections:* Spaces (fold, lock, refresh, prune, a stress
-    space), Config (dump, open folders), Diagnostics (versions, paths,
+  - *The other sections:* Spaces (fold, lock, refresh, prune, make and
+    delete stress spaces), Config (dump, open folders), Diagnostics (versions, paths,
     resources, copy a report), Windows (on-top, highlight, window and
     monitor tables), System (what Windows reports), Animations (slow
     motion, ignore Windows' switch, play an effect on a space, and the
