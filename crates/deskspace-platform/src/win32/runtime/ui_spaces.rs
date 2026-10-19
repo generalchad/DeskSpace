@@ -201,6 +201,7 @@ impl Ui {
             composition: false,
         };
         let hwnd = space_window::create(options)?;
+        space_window::sink_hosted(hwnd);
         with_runtime(|runtime| runtime.layer = Some(hwnd));
         Ok(())
     }

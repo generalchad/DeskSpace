@@ -312,6 +312,22 @@ pub(crate) fn set_on_top(hwnd: HWND, on_top: bool) {
     }
 }
 
+/// Puts a desktop-hosted window below its sibling spaces. Windows creates a
+/// child above its siblings, so a layer made after the hosted spaces (takeover
+/// turned on from Settings) would cover them. A top-level window is already
+/// placed by `on_window_pos_changing`.
+pub(crate) fn sink_hosted(hwnd: HWND) {
+    // SAFETY: `hwnd` is a live space window; the state borrow is short and
+    // ends before SetWindowPos.
+    unsafe {
+        if with_state(hwnd, |state| state.hosted) != Some(true) {
+            return;
+        }
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
+    }
+}
+
 pub(crate) fn set_rect(hwnd: HWND, rect: Rect) {
     // SAFETY: `hwnd` is a live space window, outside any state borrow.
     if unsafe { space_animation::retarget(hwnd, rect) } || current_rect(hwnd) == Some(rect) {
