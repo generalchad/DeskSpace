@@ -5,7 +5,7 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
-use deskspace_core::item::{ItemFacts, ItemKind};
+use deskspace_core::item::ItemFacts;
 use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED, FILE_ATTRIBUTE_HIDDEN,
     FILE_ATTRIBUTE_SYSTEM,
@@ -27,7 +27,8 @@ use crate::win32::system::wide;
 pub struct DesktopEntry {
     pub path: PathBuf,
     pub label: String,
-    pub kind: ItemKind,
+    /// What the file system said about `path` when it was listed.
+    pub facts: ItemFacts,
     /// The item's top-left in the desktop view's coordinates, when the shell
     /// view supplied it. The folder-walk fallback has no positions, so it is
     /// `None` there and the caller decides where to place the item.
@@ -88,7 +89,7 @@ fn enumerate_via_view() -> Option<Vec<DesktopEntry>> {
         };
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path, path.is_dir()),
+            facts: item_facts(&path),
             path,
             position,
         });
@@ -110,7 +111,7 @@ fn enumerate_via_folder(
         }
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path, path.is_dir()),
+            facts: item_facts(&path),
             path,
             position: None,
         });

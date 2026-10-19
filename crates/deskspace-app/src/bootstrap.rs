@@ -4,7 +4,7 @@ use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::{Command, Desktop, ItemFacts, Rect};
 use deskspace_platform::{
-    Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode, work_area_at,
+    Placement, RunOptions, enumerate_desktop_items, system_uses_dark_mode, work_area_at,
 };
 
 use crate::app::{App, DebugTools, LayerState, tray_tooltip};
@@ -36,7 +36,7 @@ fn desktop_entries() -> Vec<SeedEntry> {
         Ok(entries) => entries
             .into_iter()
             .map(|entry| SeedEntry {
-                facts: item_facts(&entry.path),
+                facts: entry.facts,
                 path: entry.path,
                 label: entry.label,
             })

@@ -11,8 +11,8 @@ use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
     arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
-    foreground_window, hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons,
-    space_dpi, system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    foreground_window, hide_desktop_icons, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
 };
 
@@ -475,9 +475,8 @@ impl App {
                 if in_space {
                     return None;
                 }
-                let mut item = Item::new(ItemId(0), &entry.path, item_facts(&entry.path))
-                    .with_label(entry.label.clone())
-                    .with_kind(entry.kind);
+                let mut item =
+                    Item::new(ItemId(0), &entry.path, entry.facts).with_label(entry.label.clone());
                 item.position = position;
                 Some(item)
             })

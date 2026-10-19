@@ -1048,8 +1048,3 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `layout` field is written directly by `settings/session.rs` (Cancel) and
   `Config::migrate`. Suggested task: make the first two crate-private, and
   decide whether the global grid is model (a `Command`) or settings.
-- `win32/desktop_items.rs`: each `DesktopEntry` is stat'ed twice, once for
-  its `kind` during enumeration and again by `item_facts` when `view.rs` /
-  `bootstrap.rs` build its `Item` (the desktop layer re-reads them on every
-  sync). Suggested task: give `DesktopEntry` an `ItemFacts` and drop its
-  `kind` field.
