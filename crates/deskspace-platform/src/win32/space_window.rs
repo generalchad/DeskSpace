@@ -47,14 +47,14 @@ use crate::win32::dpi::{scale_for, window_dpi};
 use crate::win32::space_animation::{self, Animation};
 use crate::win32::system::{hiword, is_windows_11, loword};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::{drop_target, dwm, runtime, window_state};
+use crate::win32::{drop_target, dwm, messages, runtime, window_state};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceSpace");
 
 /// The id of a space window's one-shot timer that paints it again after
-/// `show`. Like `space_animation::TIMER_ID`, it is set on the window itself.
+/// `show`. It is set on the window itself, so it never reaches the app's
+/// `Timer` ids; the value is kept from when animations had timer 1.
 const REPAINT_TIMER_ID: usize = 2;
-const _: () = assert!(REPAINT_TIMER_ID != space_animation::TIMER_ID);
 /// Long enough for DWM to have composed the shown window a few times.
 const REPAINT_DELAY_MS: u32 = 100;
 
@@ -925,8 +925,8 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_ERASEBKGND => LRESULT(1),
-            WM_TIMER if wparam.0 == space_animation::TIMER_ID => {
-                space_animation::on_timer(window);
+            messages::FRAME => {
+                space_animation::on_frame(window);
                 LRESULT(0)
             }
             WM_TIMER if wparam.0 == REPAINT_TIMER_ID => {

@@ -1,7 +1,8 @@
 //! Plays a `Transition` on a space window (ROADMAP D12).
 //!
-//! The window keeps its running animation in its state and a timer of its
-//! own; each tick takes the frame for now, moves the window to the frame's
+//! The window keeps its running animation in its state, and gets a frame
+//! after every composition while it runs (`frame_clock`); each frame takes
+//! the transition's frame for now, moves the window to the frame's
 //! rect (hiding it while that is empty), and repaints through the frame.
 //! Nothing calls into the app per frame. A request that finds an animation
 //! heading the other way reverses it from where it is.
@@ -14,24 +15,18 @@ use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{InvalidateRect, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyWindow, IsWindowVisible, KillTimer, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer,
-    SetWindowPos, ShowWindow,
+    DestroyWindow, IsWindowVisible, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos, ShowWindow,
 };
 
 use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
 use crate::win32::debug_info::transparency_enabled;
 use crate::win32::flame_overlay::FlameOverlay;
+use crate::win32::frame_clock;
 use crate::win32::runtime;
 use crate::win32::space_window::{
     Backing, SpaceState, current_rect, show, show_backing, with_state,
 };
 use crate::win32::system::work_area_at;
-
-/// The id of a space window's own animation timer. It is set on the space
-/// window, not the controller, so it never reaches the app's `Timer` ids.
-pub(crate) const TIMER_ID: usize = 1;
-/// About 60 frames a second; `SetTimer` rounds it to the system tick.
-const FRAME_INTERVAL_MS: u32 = 15;
 
 /// What an animation is for, which decides how it ends and what a new rect
 /// means while it runs.
@@ -369,7 +364,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 flat_material,
             });
         });
-        let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
+        frame_clock::subscribe(window);
         if !waiting {
             apply(window, frame, flat_material);
             draw_flames(window, frame, now);
@@ -410,8 +405,9 @@ unsafe fn draw_flames(window: HWND, frame: TransitionFrame, now: Duration) {
 /// Advances `window`'s animation to now, and ends it once done.
 ///
 /// # Safety
-/// `window` is a live space window, in its `WM_TIMER`.
-pub(crate) unsafe fn on_timer(window: HWND) {
+/// `window` is a live space window, handling `messages::FRAME`.
+pub(crate) unsafe fn on_frame(window: HWND) {
+    frame_clock::delivered(window);
     let now = now();
     // SAFETY: the caller's contract; the borrow does not re-enter.
     let step = unsafe {
@@ -427,10 +423,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
         })
     };
     let Some(Some((frame, done, waiting, flat_material))) = step else {
-        // SAFETY: killing this window's own timer.
-        unsafe {
-            let _ = KillTimer(Some(window), TIMER_ID);
-        }
+        frame_clock::unsubscribe(window);
         return;
     };
     // SAFETY: the caller's contract.
@@ -460,9 +453,9 @@ unsafe fn finish(window: HWND) {
             Some((rect, animation.purpose, gone, animation.flames.take(), then))
         })
     };
+    frame_clock::unsubscribe(window);
     // SAFETY: the caller's contract.
     unsafe {
-        let _ = KillTimer(Some(window), TIMER_ID);
         let Some(Some((rect, purpose, gone, flames, then))) = ended else {
             return;
         };

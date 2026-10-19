@@ -1,6 +1,7 @@
-//! Every private window message DeskSpace posts to its controller window, in
-//! one place so no two share a value. The values are fixed: `SHOW_SPACES`
-//! crosses processes (a second launch posts it), and none is ever renumbered.
+//! Every private window message DeskSpace posts to its own windows (the
+//! controller, unless one says otherwise), in one place so no two share a
+//! value. The values are fixed: `SHOW_SPACES` crosses processes (a second
+//! launch posts it), and none is ever renumbered.
 //! Payload encodings stay beside the code that posts and decodes them.
 //! https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-app
 
@@ -50,13 +51,16 @@ pub(crate) const NAV_KEY: u32 = WM_APP + 13;
 /// A watched folder's contents changed (`Ui::watch_folder`).
 pub(crate) const FOLDER_CHANGE: u32 = WM_APP + 14;
 
+/// To an animating space window, after each composition (`frame_clock`).
+pub(crate) const FRAME: u32 = WM_APP + 15;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Every message above. A new one must be added here too, so the checks
     /// below cover it.
-    const ALL: [u32; 14] = [
+    const ALL: [u32; 15] = [
         TRAY_CALLBACK,
         OUTSIDE_PROBE,
         EDIT_KEY,
@@ -71,6 +75,7 @@ mod tests {
         TYPE_KEY,
         NAV_KEY,
         FOLDER_CHANGE,
+        FRAME,
     ];
 
     #[test]

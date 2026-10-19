@@ -384,7 +384,7 @@ exhaustive match:
 
 | Ids | Where | Guard |
 |-----|-------|-------|
-| `WM_APP + n` messages to the controller | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
+| `WM_APP + n` messages to the controller (and `FRAME` to space windows) | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
 | App timers | `enum Timer` in `deskspace-app/src/app.rs`, delivered as `Event::Timer` and set through `App::set_timer` / `clear_timer`; each delay is a constant in the module that starts it | `Timer::ALL` and the exhaustive `App::on_timer` |
 | Menu ids | `enum MenuId` in `deskspace-app/src/app.rs`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start); a chosen id becomes a `MenuId` through `MenuId::from_id` | `menu_ids_round_trip` and `menu_ids_stay_below_the_shell_range` |
 | Settings field ids | `settings/ids.rs`'s `mod field` | `field_ids_are_unique` |
@@ -510,9 +510,13 @@ one arm in `App::on_event`, whose match is exhaustive.
     point and drops into it (`App::drop_onto`; ROADMAP D7, amended
     2026-10-17); a drop that adds nothing closes that space again.
 - **Animations** (ROADMAP D12; `win32/space_animation.rs`): a window keeps
-  its running `Animation` in its `SpaceState` and a timer of its own
-  (`space_animation::TIMER_ID`, on the window, not the controller). Each
-  tick moves the window to the frame's rect (hidden while it is empty) and
+  its running `Animation` in its `SpaceState`, and while it runs gets a
+  `messages::FRAME` after every DWM composition, so one per display
+  refresh (`win32/frame_clock.rs`: a thread waiting on `DwmFlush` that
+  lives while any window animates). A 15 ms `WM_TIMER` drifted against
+  the refresh, so frames were dropped or doubled and every animation
+  stuttered, and it held a 144 Hz display to about 60 frames. Each
+  frame moves the window to the frame's rect (hidden while it is empty) and
   repaints through the frame; the app is not called per frame. A request
   that finds an animation heading the other way reverses it, `set_rect`
   while animating moves its target instead of the window, and a window on

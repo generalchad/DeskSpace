@@ -25,6 +25,7 @@ mod dwm;
 mod file_op;
 mod flame_overlay;
 mod folder_watch;
+mod frame_clock;
 pub(crate) mod hotkey;
 pub(crate) mod icons;
 mod info_tip;
