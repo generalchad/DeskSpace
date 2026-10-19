@@ -477,6 +477,48 @@ A native, lightweight, offline Windows desktop organizer that:
     crash).
   - Work items: `TASKS.md` section X.
 
+- **D16. Space icons (2026-10-18, maintainer).** Decides F-62. A space can
+  show an icon to the left of its title, picked from its name or chosen by
+  the user.
+  - *Library:* Fluent UI System Icons (Microsoft, MIT), the one-color set
+    Windows 11's own icons come from, drawn in the title's color so it
+    follows the theme. The Segoe Fluent Icons font was ruled out: it is
+    only on Windows 11, has no keywords, and its terms do not cover
+    shipping it. Sets are read in the Iconify JSON format, which every
+    candidate set is published in, so more sets can become a user's choice
+    later (the colorful Fluent System Color Icons and Fluent Emoji Flat
+    first, then Lucide, Phosphor, Tabler, or Material Symbols) with no new
+    loader. Each set's license and author show on Settings > About, and
+    `NOTICE` names the sets DeskSpace offers.
+  - *Delivery:* downloaded on first use, not bundled. A script trims the
+    pinned upstream set to one size and style and publishes it as an asset
+    of DeskSpace's own GitHub release, signed with the updater's minisign
+    key (D6). DeskSpace fetches it the first time an icon is needed (a new
+    space with an automatic icon, or the picker opening), verifies it, and
+    keeps it under `%LocalAppData%`; a release that needs a newer set
+    fetches it once. Offline or on a failed check, spaces show no icon and
+    the picker says why; nothing else waits on it.
+  - *Matching:* pure and unit-tested, outside the platform. The space's
+    title is split into words and scored against a curated table of
+    English words to icon names ("games", "work", "photos", "school"), then
+    against the set's own names and aliases. The best score wins; ties
+    break by a fixed order; below a threshold, no icon. Other languages
+    follow M9.
+  - *Model:* each space stores its icon as automatic, none, or a chosen
+    set and name, a `#[serde(default)]` field changed through a `Command`.
+    Icon names are saved, so a set's trimmed copy never renames or drops
+    one it has shipped. The match runs again when an automatic space is
+    renamed; a chosen icon never changes by itself.
+  - *Existing spaces:* default to no icon, so nothing changes under current
+    users. New spaces start automatic; the New spaces page gets an "Icon"
+    choice (Automatic or None).
+  - *Changing it:* while the title is being renamed, the icon becomes a
+    button that opens an icon picker: a search box, a grid, and Automatic
+    and None. The picker is its own activated window, as the color picker
+    is, since spaces never take keys. A space's Settings page has the same
+    picker beside its title.
+  - Work items: to be written in `TASKS.md` once M5 starts.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -692,6 +734,10 @@ Remaining:
      are limited to DWM's radii.
    - First check that a host backdrop renders on windows that are never
      activated.
+7. Space icons: an icon left of each space's title, matched from its name
+   or chosen in a picker from the rename box or the space's settings, from
+   a downloaded Fluent icon set (F-62, D16). Build it with or after F-28,
+   which reworks the same title bar.
 
 Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
@@ -949,6 +995,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Open; decided in D16 |
 
 
 ## 8. Open questions
