@@ -3,7 +3,6 @@
 
 use std::path::Path;
 
-use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, ItemKind, SpaceId};
 use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
@@ -111,20 +110,20 @@ impl App {
     /// Handles F2: renames the focused (last-selected) item, or the current
     /// space's title when no item is selected, as F2 does in Explorer.
     pub(super) fn begin_f2_rename(&mut self, ui: &mut Ui) {
-        // Only a space renames: its title, or an item's file. A loose desktop
-        // item's file rename would need `Command::RenameItem` to reach the
-        // layer.
-        let Some(Surface::Space(space)) = self.selection.surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
-        match self.selection.items.last().copied() {
-            Some(item) => self.begin_item_rename(ui, space, item),
-            None => self.begin_rename(ui, space),
+        match (surface, self.selection.items.last().copied()) {
+            (_, Some(item)) => self.begin_item_rename(ui, surface, item),
+            (Surface::Space(space), None) => self.begin_rename(ui, space),
+            // The desktop has no title.
+            (Surface::Desktop, None) => {}
         }
     }
 
-    pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        let show_extensions = self.match_explorer(space) && self.system.shell().show_extensions;
+    pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, surface: Surface, item: ItemId) {
+        let show_extensions =
+            self.surface_theme(surface).match_explorer() && self.system.shell().show_extensions;
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };
@@ -139,7 +138,7 @@ impl App {
             }
         }
         self.edit.begin(EditSession {
-            surface: Surface::Space(space),
+            surface,
             target: EditTarget::Item {
                 id: item,
                 shows_extension,
@@ -149,7 +148,7 @@ impl App {
         });
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
-        self.refresh_space(ui, space);
+        self.refresh_surface(ui, surface);
     }
 
     pub(super) fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
@@ -232,6 +231,22 @@ impl App {
             return;
         }
         self.icons.invalidate(&path);
+        let Some(space) = self.config.desktop.space_containing(id) else {
+            // A loose item mirrors the Desktop folder, which now holds the
+            // new name; it keeps the selection under its new id.
+            self.resync_desktop_layer(ui);
+            let renamed = self
+                .config
+                .desktop
+                .layer()
+                .items()
+                .iter()
+                .find(|item| item.path == new_path);
+            if let Some(renamed) = renamed.map(|item| item.id) {
+                self.selection.select_only(Surface::Desktop, renamed);
+            }
+            return;
+        };
         let label = if kind == ItemKind::Folder {
             new_name.clone()
         } else {
@@ -241,11 +256,7 @@ impl App {
                 .unwrap_or(new_name.as_str())
                 .to_string()
         };
-        let near = self
-            .config
-            .desktop
-            .space_containing(id)
-            .map_or(Point::ZERO, |space| self.space_center(space));
+        let near = self.space_center(space);
         // Not `commit`: the file is already renamed on disk, so this saves at
         // once below.
         self.dispatch(

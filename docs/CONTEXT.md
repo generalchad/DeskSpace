@@ -791,8 +791,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   selected, and a second click on a selected item (a slow double-click)
   starts an item rename. An item rename is committed with
   `IFileOperation::RenameItem` (undoable; the extension is kept when the
-  label hid it) and applied through `Command::RenameItem`, which updates the
-  item's path and label.
+  label hid it). A space applies it through `Command::RenameItem`, which updates the
+  item's path and label; the desktop layer, a cache of the Desktop folder,
+  re-syncs and keeps the renamed item selected.
 - **Other keys**: the same hook watches keys outside a rename
   (`Ui::watch_selection_keys`); `ENGINEERING.md`'s Keys table is the one list
   of which key needs which flag, and section 8 says what each does. The arrow
@@ -1237,8 +1238,8 @@ in `ui.rs`. What spans them:
   double-click) to rename it inline. Right-click it for Explorer's context
   menu with DeskSpace's "Rename" on top (Explorer's own Delete there sends the
   file to the Recycle Bin; ROADMAP D3); right-clicking an item in a
-  multi-selection keeps the selection. A loose item on the desktop layer gets
-  Explorer's menu alone. Rest the pointer on an item for Explorer's info tip.
+  multi-selection keeps the selection. Loose items on the desktop layer
+  rename the same ways. Rest the pointer on an item for Explorer's info tip.
 - Right-click an empty spot of the desktop layer (or press the Menu key with
   nothing selected there) for "New space", "DeskSpace settings…", and
   Hide/Show spaces above Explorer's own desktop background menu

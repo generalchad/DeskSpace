@@ -195,14 +195,9 @@ impl App {
             } => {
                 // A press on an already-selected item that never became a drag
                 // is a plain click: collapse the selection, or start a rename
-                // when it was already the only selected item. Only a space
-                // renames inline.
+                // when it was already the only selected item.
                 match resolve_pending_click(pending, item, self.selection.is_selected(item)) {
-                    PendingClickOutcome::Rename => {
-                        if let Surface::Space(id) = surface {
-                            self.begin_item_rename(ui, id, item);
-                        }
-                    }
+                    PendingClickOutcome::Rename => self.begin_item_rename(ui, surface, item),
                     PendingClickOutcome::Collapse => {
                         self.selection.select_only(surface, item);
                         self.refresh_surface(ui, surface);

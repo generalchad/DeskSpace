@@ -171,19 +171,14 @@ impl App {
         };
         // Removing an item is Explorer's own Delete in the same menu (to the
         // Recycle Bin, as the Delete key does), and taking one back to the
-        // desktop is a drag, so DeskSpace adds only its inline Rename. A loose
-        // desktop item gets Explorer's menu alone.
-        let entries = match surface {
-            Surface::Space(_) => vec![menu_item(MenuId::RenameItem, "Rename")],
-            Surface::Desktop => Vec::new(),
-        };
+        // desktop is a drag, so DeskSpace adds only its inline Rename, which
+        // Explorer leaves out of a menu without a view to rename in.
+        let entries = [menu_item(MenuId::RenameItem, "Rename")];
         match ui.item_menu(&path, &entries, at) {
             Some(ItemMenuChoice::App(choice))
                 if MenuId::from_id(choice) == Some(MenuId::RenameItem) =>
             {
-                if let Surface::Space(id) = surface {
-                    self.begin_item_rename(ui, id, item);
-                }
+                self.begin_item_rename(ui, surface, item);
             }
             Some(ItemMenuChoice::Shell) => {
                 self.icons.invalidate(&path);

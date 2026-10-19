@@ -9,8 +9,8 @@ use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
-    arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceScene, SpaceStyle,
+    Ui, Way, arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
     foreground_window, hide_desktop_icons, rehide_desktop_icons, restore_desktop_icons, space_dpi,
     system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
@@ -260,11 +260,6 @@ impl App {
             .desktop
             .space(id)
             .map_or(global, |space| space.grid(global))
-    }
-
-    /// Whether a space mirrors Explorer's display settings.
-    pub(super) fn match_explorer(&self, id: SpaceId) -> bool {
-        self.theme_for(id).match_explorer()
     }
 
     /// The concrete colors for a space's scene: its theme's palette, with the
@@ -619,13 +614,14 @@ impl App {
             layout: self.surface_layout(Surface::Desktop),
             metrics: self.surface_metrics(Surface::Desktop),
         };
-        let scene = desktop_layer_scene(
+        let mut scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
             look,
             view,
             &mut self.icons,
         );
+        self.show_edit(&mut scene, Surface::Desktop);
         ui.set_desktop_layer_rect(rect);
         ui.set_desktop_layer_scene(scene);
     }
@@ -652,10 +648,18 @@ impl App {
             metrics: self.metrics_for(id),
         };
         let mut scene = space_scene(space, look, view, &mut self.icons);
+        let rect = space.visible_rect();
+        self.show_edit(&mut scene, Surface::Space(id));
+        ui.set_space_rect(id.0, rect);
+        ui.set_space_scene(id.0, scene);
+    }
+
+    /// Draws the rename in progress on `surface`, if any, into its scene.
+    fn show_edit(&self, scene: &mut SpaceScene, surface: Surface) {
         if let Some(session) = self
             .edit
             .session()
-            .filter(|session| session.surface == Surface::Space(id))
+            .filter(|session| session.surface == surface)
         {
             match session.target {
                 EditTarget::Title => scene.editing = Some(session.text.clone()),
@@ -665,8 +669,6 @@ impl App {
             }
         }
         scene.caret_visible = self.edit.caret_visible();
-        ui.set_space_rect(id.0, space.visible_rect());
-        ui.set_space_scene(id.0, scene);
     }
 
     /// Re-applies every space's style and repaints them and the desktop
