@@ -823,7 +823,8 @@ one arm in `App::on_event`, whose match is exhaustive.
 - **Delete** sends the selection to the Recycle Bin (`Ui::delete_files(paths,
   permanent)`, `IFileOperation::DeleteItem` with `FOF_ALLOWUNDO |
   FOF_NOCONFIRMATION`: no prompt, undoable; Shift+Delete passes `permanent`,
-  which drops `FOF_ALLOWUNDO`) and drops the items whose files are gone.
+  which drops `FOF_ALLOWUNDO`) and drops the items whose files are gone: a
+  space removes them, and the desktop layer re-reads the Desktop folder.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 

@@ -276,9 +276,7 @@ impl App {
     /// is distinct from deleting a space, which returns its stored files to
     /// the desktop.
     pub(super) fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
-        // Deleting a loose desktop item would need a way to drop it from the
-        // layer, so only a space's items are deleted here.
-        let Some(Surface::Space(space)) = self.selection.surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         let items = self.active_items();
@@ -296,8 +294,18 @@ impl App {
         if !paths.is_empty() {
             ui.delete_files(&paths, permanent);
         }
-        // Drop every item whose file is gone, whether the shell removed it or
-        // it was already stale, so no label without an icon is left behind.
+        match surface {
+            Surface::Space(space) => self.drop_deleted_items(ui, space, items),
+            // The layer mirrors the Desktop folder, so re-reading it drops
+            // whatever the shell removed.
+            Surface::Desktop => self.resync_desktop_layer(ui),
+        }
+    }
+
+    /// Drops every one of `items` in `space` whose file is gone, whether the
+    /// shell removed it or it was already stale, so no label without an icon
+    /// is left behind.
+    fn drop_deleted_items(&mut self, ui: &mut Ui, space: SpaceId, items: Vec<ItemId>) {
         let near = self.space_center(space);
         for item in items {
             let gone = self

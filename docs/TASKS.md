@@ -961,7 +961,7 @@ each id is in `archive/TASKS-done.md`.
 | E5-E7, E10-E12 | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one pre-release to the next). |
 | F-45 automatic install | Installed build with a feed: turn on both update toggles; after a check finds a newer release, the tray shows "Restart to update to X"; 10 minutes without input (no full-screen app) installs silently and DeskSpace comes back with the same spaces, with takeover on the desktop icons are never left blank; the tray entry installs at once with a progress window; a portable copy greys the install toggle. |
 | Update install failure | Installed build with a feed and a newer release: in PowerShell set `$env:TEMP` and `$env:TMP` to a missing drive (`Z:\none`), start `%LocalAppData%\DeskSpace.App\deskspace.exe --hidden`, then "Check for updates…" → "Update and restart": DeskSpace quits, comes back hidden on the old version with the same spaces, and a "DeskSpace was not updated" box in front of other windows names the error. With takeover on, the desktop icons are never left blank. |
-| F1-F5 | F2 with no item selected renames the space title, with one selected the file; Alt+Enter opens Properties, or Settings with nothing selected; Enter opens the item; Esc clears the selection and still closes an open menu; Shift+Delete bypasses the Recycle Bin. |
+| F1-F5 | F2 with no item selected renames the space title, with one selected the file; Alt+Enter opens Properties, or Settings with nothing selected; Enter opens the item; Esc clears the selection and still closes an open menu; Shift+Delete bypasses the Recycle Bin. With takeover on, Delete and Shift+Delete on one and on several selected loose desktop icons do the same, and the icons leave the layer at once. |
 | F9 | With "Snap resized spaces to whole columns and rows" off, a resize keeps the dragged size (still snapped to `snap`). |
 | F14 (F-51) | The color picker is opaque, rounded, and bordered; palette selection and double-click confirm; "Custom colors…" shows a flicker-free live preview; the Colors-page swatch opens it; OK and Cancel, Enter and Esc behave; the scale is right at 100 % and 150 %; the settings window does not hang. |
 | G1, G3 | On the desktop shell: typing selects by prefix and the buffer expires; Home/End/PageUp/PageDown scroll; arrows move the selection, Shift extends, Ctrl moves only the dotted focus rectangle and scrolls it into view. |
@@ -1038,10 +1038,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   the layer's own `MouseDown`. Check whether that clears a layer selection
   before a Ctrl+click adds to it, and decide whether the layer counts as
   inside.
-- `app/files.rs`: Delete and Shift+Delete do nothing for loose items on the
-  desktop layer, although Explorer would delete them; with takeover on, this
-  matters for every user who opts in. Suggested task: route layer deletes
-  through the same `delete_files` path.
 - `win32/dark_mode.rs`: the settings window's selection bar uses a fixed
   `UiColors.accent`, not the Windows accent the spaces' check boxes use.
   Consider `system_accent_color()` for consistency.
