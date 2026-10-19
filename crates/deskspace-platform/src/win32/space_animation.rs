@@ -61,6 +61,8 @@ pub(crate) struct Animation {
     /// A real blur stays: a composition space's follows the frame (T13), and
     /// the accent blur steps at the end.
     flat_material: bool,
+    /// The window's frames, which stop when the animation is dropped.
+    _frames: frame_clock::Subscription,
 }
 
 impl Animation {
@@ -340,6 +342,17 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
         .then(|| FlameOverlay::create(window, geometry.rect, play.detail))
         .flatten();
     let flat_material = transparency_enabled() == Some(false);
+    // Every caller ends a running animation first. One left over is dropped
+    // here, outside the borrow and before the new subscription, which its
+    // own would otherwise cancel.
+    // SAFETY: the caller's contract; the borrow does not re-enter.
+    let previous = unsafe { with_state(window, |state| state.animation.take()) }.flatten();
+    debug_assert!(
+        previous.is_none(),
+        "an animation starts after the last ends"
+    );
+    drop(previous);
+    let frames = frame_clock::Subscription::new(window);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
         with_state(window, |state| {
@@ -352,9 +365,9 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 flames,
                 then: None,
                 flat_material,
+                _frames: frames,
             });
         });
-        frame_clock::subscribe(window);
         if !waiting {
             apply(window, frame, flat_material);
             draw_flames(window, frame, now);
@@ -412,8 +425,8 @@ pub(crate) unsafe fn on_frame(window: HWND) {
             ))
         })
     };
+    // A frame posted before the animation ended finds nothing to do.
     let Some(Some((frame, done, waiting, flat_material))) = step else {
-        frame_clock::unsubscribe(window);
         return;
     };
     // SAFETY: the caller's contract.
@@ -443,7 +456,6 @@ unsafe fn finish(window: HWND) {
             Some((rect, animation.purpose, gone, animation.flames.take(), then))
         })
     };
-    frame_clock::unsubscribe(window);
     // SAFETY: the caller's contract.
     unsafe {
         let Some(Some((rect, purpose, gone, flames, then))) = ended else {
