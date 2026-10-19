@@ -242,10 +242,6 @@ impl Effects {
         // format is unknown, and Direct2D refused it with
         // WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT on every Pixelate frame (seen
         // 2026-10-18).
-        let format = D2D1_PIXEL_FORMAT {
-            format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-        };
         // SAFETY: a live render target and fully initialised locals.
         let offscreen = unsafe {
             let offscreen = target.CreateCompatibleRenderTarget(
@@ -254,7 +250,7 @@ impl Effects {
                     height: size.1,
                 }),
                 None,
-                Some(&format),
+                Some(&PREMULTIPLIED_BGRA),
                 D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
             )?;
             offscreen.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -300,14 +296,6 @@ impl CellMask {
         interpolation: D2D1_BITMAP_INTERPOLATION_MODE,
     ) -> Result<Self, PlatformError> {
         let Grid { cols, rows } = grid;
-        let properties = D2D1_BITMAP_PROPERTIES {
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            dpiX: 96.0,
-            dpiY: 96.0,
-        };
         // SAFETY: a live render target and fully initialised locals; the
         // bitmap starts uninitialised and is written before every use.
         let (bitmap, brush) = unsafe {
@@ -318,7 +306,7 @@ impl CellMask {
                 },
                 None,
                 0,
-                &properties,
+                &bitmap_properties(),
             )?;
             let brush = target.CreateBitmapBrush(
                 &bitmap,
@@ -330,14 +318,7 @@ impl CellMask {
                 None,
             )?;
             // One mask pixel covers one cell.
-            brush.SetTransform(&Matrix3x2 {
-                M11: cell as f32,
-                M12: 0.0,
-                M21: 0.0,
-                M22: cell as f32,
-                M31: 0.0,
-                M32: 0.0,
-            });
+            brush.SetTransform(&Matrix3x2::scale(cell as f32, cell as f32));
             (bitmap, brush)
         };
         Ok(Self {

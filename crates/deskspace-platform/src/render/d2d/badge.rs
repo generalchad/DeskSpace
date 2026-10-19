@@ -21,17 +21,6 @@ pub(crate) fn debug_badge(icon: &Icon) -> Option<Icon> {
     let (width, height) = (icon.width(), icon.height());
     let side = width.min(height) as f32;
     let graphics = graphics().ok()?;
-    let properties = D2D1_RENDER_TARGET_PROPERTIES {
-        r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        pixelFormat: D2D1_PIXEL_FORMAT {
-            format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-        },
-        dpiX: 96.0,
-        dpiY: 96.0,
-        usage: D2D1_RENDER_TARGET_USAGE_NONE,
-        minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-    };
     let ring = (side / 32.0).max(1.0);
     let diameter = side * DISC_SHARE;
     let radius = diameter / 2.0 - ring / 2.0;
@@ -61,7 +50,7 @@ pub(crate) fn debug_badge(icon: &Icon) -> Option<Icon> {
             .ok()?;
         let target = graphics
             .d2d
-            .CreateWicBitmapRenderTarget(&pixels, &properties)
+            .CreateWicBitmapRenderTarget(&pixels, &render_target_properties())
             .ok()?;
         target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         // Transparent background: ClearType needs an opaque one.
@@ -78,14 +67,7 @@ pub(crate) fn debug_badge(icon: &Icon) -> Option<Icon> {
             // The shared glyph format has a fixed em size, so the glyph is
             // scaled about the disc's center to fit it instead.
             let scale = diameter * GLYPH_SHARE / format.GetFontSize();
-            target.SetTransform(&Matrix3x2 {
-                M11: scale,
-                M12: 0.0,
-                M21: 0.0,
-                M22: scale,
-                M31: center.X * (1.0 - scale),
-                M32: center.Y * (1.0 - scale),
-            });
+            target.SetTransform(&Matrix3x2::scale_around(scale, scale, center));
             brush.SetColor(&color_f(GLYPH_COLOR));
             let half = diameter / 2.0;
             target.DrawText(

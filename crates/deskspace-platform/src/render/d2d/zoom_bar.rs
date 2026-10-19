@@ -78,14 +78,7 @@ impl ZoomBarPainter {
             target.SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
             target.Clear(Some(&color_f(Color::TRANSPARENT)));
             // Draw in 96-DPI pixels; the transform scales to the monitor.
-            target.SetTransform(&Matrix3x2 {
-                M11: scale,
-                M12: 0.0,
-                M21: 0.0,
-                M22: scale,
-                M31: 0.0,
-                M32: 0.0,
-            });
+            target.SetTransform(&Matrix3x2::scale(scale, scale));
             fill_rounded(&target, &brush, whole, radius, bar.tint);
             for action in [ZoomAction::Out, ZoomAction::In, ZoomAction::Reset] {
                 draw_button(&graphics, &target, &brush, bar, &layout, action, hovered);

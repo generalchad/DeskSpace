@@ -134,19 +134,6 @@ impl HwndCanvas {
             return Ok((target.clone().into(), brush.clone()));
         }
 
-        let properties = D2D1_RENDER_TARGET_PROPERTIES {
-            r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            // 96 DPI makes one DIP one physical pixel, matching the model's
-            // pixel coordinates.
-            dpiX: 96.0,
-            dpiY: 96.0,
-            usage: D2D1_RENDER_TARGET_USAGE_NONE,
-            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-        };
         let hwnd_properties = D2D1_HWND_RENDER_TARGET_PROPERTIES {
             hwnd,
             pixelSize: D2D_SIZE_U {
@@ -159,7 +146,7 @@ impl HwndCanvas {
         let (target, brush) = unsafe {
             let target = graphics
                 .d2d
-                .CreateHwndRenderTarget(&properties, &hwnd_properties)?;
+                .CreateHwndRenderTarget(&render_target_properties(), &hwnd_properties)?;
             target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             let brush = target.CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)?;
             (target, brush)
@@ -356,9 +343,9 @@ impl DrawingSurface {
         let origin = Vector2::new(offset.x as f32, offset.y as f32);
         // SAFETY: drawing on the context the surface just handed out. Clear
         // ignores the transform, so the clip keeps it inside this surface's
-        // part of the atlas. 96 DPI makes one DIP one pixel, as on a window.
+        // part of the atlas.
         unsafe {
-            context.SetDpi(96.0, 96.0);
+            context.SetDpi(PIXEL_DPI, PIXEL_DPI);
             context.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             context.SetTransform(&Matrix3x2::identity());
             context.PushAxisAlignedClip(

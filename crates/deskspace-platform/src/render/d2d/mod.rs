@@ -80,7 +80,10 @@ use bitmap::to_icon;
 use canvas::{Canvas, HwndCanvas, SurfaceCanvas};
 use edit::draw_edit_title;
 use effects::Effects;
-use geometry::{color_f, draw_text, fill_rounded, inset, rect_f, to_rect_f};
+use geometry::{
+    PIXEL_DPI, PREMULTIPLIED_BGRA, bitmap_properties, color_f, draw_text, fill_rounded, inset,
+    rect_f, render_target_properties, to_rect_f, upload_icon,
+};
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
 
@@ -407,14 +410,7 @@ impl Painter {
         unsafe {
             offscreen.BeginDraw();
             offscreen.Clear(Some(&color_f(Color::TRANSPARENT)));
-            offscreen.SetTransform(&Matrix3x2 {
-                M11: scale.0,
-                M12: 0.0,
-                M21: 0.0,
-                M22: scale.1,
-                M31: 0.0,
-                M32: 0.0,
-            });
+            offscreen.SetTransform(&Matrix3x2::scale(scale.0, scale.1));
             self.draw_scene(ctx, prepared, frame, size);
             offscreen.SetTransform(&Matrix3x2::identity());
             offscreen.EndDraw(None, None)?;
@@ -626,29 +622,7 @@ impl Painter {
         if let Some(bitmap) = self.icons.get(&icon.id()) {
             return Some(bitmap.clone());
         }
-        let properties = D2D1_BITMAP_PROPERTIES {
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            dpiX: 96.0,
-            dpiY: 96.0,
-        };
-        // SAFETY: `Icon::new` guarantees `pixels` holds width * height BGRA
-        // pixels, so `width * 4` is the row pitch; D2D copies the data.
-        let bitmap = unsafe {
-            target
-                .CreateBitmap(
-                    D2D_SIZE_U {
-                        width: icon.width(),
-                        height: icon.height(),
-                    },
-                    Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
-                    icon.width() * 4,
-                    &properties,
-                )
-                .ok()?
-        };
+        let bitmap = upload_icon(target, icon)?;
         self.icons.insert(icon.id(), bitmap.clone());
         Some(bitmap)
     }
@@ -688,17 +662,6 @@ pub(crate) fn render_items(
     let width = ((origin.width as f32 * scale).ceil() as u32).max(1);
     let height = ((origin.height as f32 * scale).ceil() as u32).max(1);
     let graphics = graphics().ok()?;
-    let properties = D2D1_RENDER_TARGET_PROPERTIES {
-        r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        pixelFormat: D2D1_PIXEL_FORMAT {
-            format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-        },
-        dpiX: 96.0,
-        dpiY: 96.0,
-        usage: D2D1_RENDER_TARGET_USAGE_NONE,
-        minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-    };
     // SAFETY: the WIC bitmap and its render target live for this call only;
     // drawing happens between BeginDraw and EndDraw, and the pixels are copied
     // out afterwards.
@@ -714,7 +677,7 @@ pub(crate) fn render_items(
             .ok()?;
         let target = graphics
             .d2d
-            .CreateWicBitmapRenderTarget(&pixels, &properties)
+            .CreateWicBitmapRenderTarget(&pixels, &render_target_properties())
             .ok()?;
         target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         // Transparent background: ClearType needs an opaque one.
@@ -722,11 +685,6 @@ pub(crate) fn render_items(
         let brush = target
             .CreateSolidColorBrush(&color_f(Color::TRANSPARENT), None)
             .ok()?;
-        let bitmap_properties = D2D1_BITMAP_PROPERTIES {
-            pixelFormat: properties.pixelFormat,
-            dpiX: 96.0,
-            dpiY: 96.0,
-        };
 
         let ctx = DrawContext {
             graphics: &graphics,
@@ -741,12 +699,9 @@ pub(crate) fn render_items(
         // Map scene coordinates into the canvas: p' = (p - origin) * scale.
         // https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-transforms-overview
         target.SetTransform(&Matrix3x2 {
-            M11: scale,
-            M12: 0.0,
-            M21: 0.0,
-            M22: scale,
             M31: -(origin.x as f32) * scale,
             M32: -(origin.y as f32) * scale,
+            ..Matrix3x2::scale(scale, scale)
         });
         for id in ids {
             let Some(index) = scene.items.iter().position(|item| item.id == *id) else {
@@ -760,19 +715,10 @@ pub(crate) fn render_items(
             item.checked = false;
             item.cut = false;
             let label: Vec<u16> = item.label.encode_utf16().collect();
-            let icon = item.icon.as_ref().and_then(|icon| {
-                target
-                    .CreateBitmap(
-                        D2D_SIZE_U {
-                            width: icon.width(),
-                            height: icon.height(),
-                        },
-                        Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
-                        icon.width() * 4,
-                        &bitmap_properties,
-                    )
-                    .ok()
-            });
+            let icon = item
+                .icon
+                .as_ref()
+                .and_then(|icon| upload_icon(&target, icon));
             draw_item(ctx, &scene, &item, &label, icon.as_ref(), None);
         }
         target.EndDraw(None, None).ok()?;
