@@ -654,10 +654,8 @@ impl Frame {
         PaintFrame {
             opaque: self.opaque,
             radius: self.radius,
-            border: (self.border_width > 0).then_some(BorderStroke {
-                radius: self.outline_radius(scale),
-                width,
-            }),
+            outline_radius: self.outline_radius(scale),
+            border: (self.border_width > 0).then_some(BorderStroke { width }),
         }
     }
 
@@ -1171,8 +1169,12 @@ mod tests {
         }
     }
 
-    fn stroke(radius: f32, width: f32) -> BorderStroke {
-        BorderStroke { radius, width }
+    /// The visible corners' radius and the border's width, if one is drawn.
+    fn edge(paint: &PaintFrame) -> (f32, Option<f32>) {
+        (
+            paint.outline_radius,
+            paint.border.map(|border| border.width),
+        )
     }
 
     const ACCENT: Option<dwm::Material> = Some(dwm::Material::Accent);
@@ -1238,7 +1240,7 @@ mod tests {
         let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), composed, true);
         let paint = frame.paint(144);
         assert!(!paint.opaque);
-        assert_eq!((paint.radius, paint.border), (8, Some(stroke(8.0, 2.0))));
+        assert_eq!((paint.radius, edge(&paint)), (8, (8.0, Some(2.0))));
         assert_eq!(frame.region_radius, None);
     }
 
@@ -1258,27 +1260,27 @@ mod tests {
     fn where_dwm_rounds_the_border_follows_its_corners_at_the_windows_dpi() {
         let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, true);
         assert_eq!(frame.paint(96).radius, 0);
-        assert_eq!(frame.paint(96).border, Some(stroke(8.0, 1.0)));
-        assert_eq!(frame.paint(144).border, Some(stroke(12.0, 2.0)));
+        assert_eq!(edge(&frame.paint(96)), (8.0, Some(1.0)));
+        assert_eq!(edge(&frame.paint(144)), (12.0, Some(2.0)));
         let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), ACCENT, true);
-        assert_eq!(small.paint(120).border, Some(stroke(5.0, 1.0)));
+        assert_eq!(edge(&small.paint(120)), (5.0, Some(1.0)));
     }
 
     #[test]
     fn windows_10_squares_the_painted_border_as_it_squares_the_window() {
         let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, false);
-        assert_eq!(frame.paint(144).border, Some(stroke(0.0, 2.0)));
+        assert_eq!(edge(&frame.paint(144)), (0.0, Some(2.0)));
     }
 
     #[test]
     fn a_painter_rounded_space_borders_at_its_own_radius() {
         let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), ACCENT, true);
         let paint = clear.paint(144);
-        assert_eq!((paint.radius, paint.border), (12, Some(stroke(12.0, 2.0))));
+        assert_eq!((paint.radius, edge(&paint)), (12, (12.0, Some(2.0))));
         let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), None, true);
         let paint = hosted.paint(96);
         assert!(paint.opaque);
-        assert_eq!((paint.radius, paint.border), (8, Some(stroke(8.0, 1.0))));
+        assert_eq!((paint.radius, edge(&paint)), (8, (8.0, Some(1.0))));
         assert_eq!(hosted.region_radius, Some(8));
     }
 
@@ -1288,7 +1290,11 @@ mod tests {
             border: false,
             ..style(deskspace_core::Backdrop::Acrylic, 8)
         };
-        assert_eq!(Frame::for_style(off, ACCENT, true).paint(96).border, None);
+        assert_eq!(
+            edge(&Frame::for_style(off, ACCENT, true).paint(96)),
+            (8.0, None),
+            "the highlight still follows DWM's corners"
+        );
         let layer = SpaceStyle {
             chrome: false,
             ..style(deskspace_core::Backdrop::Clear, 0)

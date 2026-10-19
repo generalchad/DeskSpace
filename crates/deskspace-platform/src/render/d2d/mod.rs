@@ -560,7 +560,7 @@ impl Painter {
                 // The stroke is centred on its rect, so a half-width inset
                 // and radius keep its outer edge on the window's.
                 let half = border.width / 2.0;
-                let radius = (border.radius - half).max(0.0);
+                let radius = (frame.outline_radius - half).max(0.0);
                 brush.SetColor(&color_f(scene.border));
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
@@ -577,7 +577,7 @@ impl Painter {
             // Drawn last, so the settings window's highlight sits over the
             // border.
             if scene.highlight {
-                let radius = (radius - HIGHLIGHT_GAP).max(0.0);
+                let radius = (frame.outline_radius - HIGHLIGHT_GAP).max(0.0);
                 brush.SetColor(&color_f(scene.selected_fill.with_alpha(255)));
                 target.DrawRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
@@ -721,16 +721,17 @@ pub(crate) struct PaintFrame {
     /// Corner radius the painter rounds the body to; 0 when DWM rounds the
     /// window or the corners are square.
     pub radius: i32,
+    /// The radius of the window's visible corners, in window pixels, which
+    /// the border and the highlight follow. It can differ from `radius`:
+    /// where DWM rounds the window, the body is not rounded but the outlines
+    /// follow DWM's corners.
+    pub outline_radius: f32,
     pub border: Option<BorderStroke>,
 }
 
 /// The border a painter draws, in window pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BorderStroke {
-    /// The outer edge's corner radius. It can differ from `PaintFrame::radius`:
-    /// where DWM rounds the window, the body is not rounded but the border
-    /// follows DWM's corners.
-    pub radius: f32,
     pub width: f32,
 }
 
