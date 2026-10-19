@@ -233,9 +233,10 @@ impl Ui {
     }
 
     /// This process's windows for the debug window's table: top-level ones
-    /// in z-order, then desktop-hosted spaces.
+    /// in z-order, then desktop-hosted spaces. A shadow window is listed
+    /// under the space that casts it.
     pub fn debug_windows(&self) -> Vec<WindowRow> {
-        let Some((host, spaces)) = with_runtime(|runtime| {
+        let Some((host, mut spaces)) = with_runtime(|runtime| {
             let spaces: Vec<(HWND, u64)> = runtime
                 .spaces
                 .iter()
@@ -245,6 +246,11 @@ impl Ui {
         }) else {
             return Vec::new();
         };
+        let shadows: Vec<(HWND, u64)> = spaces
+            .iter()
+            .filter_map(|(hwnd, id)| space_window::shadow_of(*hwnd).map(|shadow| (shadow, *id)))
+            .collect();
+        spaces.extend(shadows);
         let space_of = |window: HWND| {
             spaces
                 .iter()

@@ -68,6 +68,22 @@ impl Ui {
         with_runtime(|runtime| runtime.on_top).unwrap_or(false)
     }
 
+    /// Draws the edge of every space's shadow window, or stops, for this
+    /// session: the debug window's check on where shadows sit (ROADMAP
+    /// D15).
+    pub fn set_shadows_outlined(&mut self, on: bool) {
+        shadow_window::set_outlined(on);
+        let windows = with_runtime(|runtime| runtime.spaces.values().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for hwnd in windows {
+            space_window::sync_shadow(hwnd);
+        }
+    }
+
+    pub fn shadows_outlined(&self) -> bool {
+        shadow_window::outlined()
+    }
+
     /// Brings a new space's window in with `play` (ROADMAP D12), unless the
     /// spaces are hidden; then it shows with the rest.
     pub fn show_space(&mut self, id: u64, play: Play) {

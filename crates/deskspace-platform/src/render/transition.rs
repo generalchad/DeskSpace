@@ -198,6 +198,18 @@ impl TransitionFrame {
     pub fn covers_window(&self) -> bool {
         self.opacity >= 1.0 && self.content.covers() && self.mask.hides_nothing()
     }
+
+    /// How strongly the space casts its shadow, 0 to 1 (ROADMAP D15). A
+    /// frame that only moves the window casts it whole, since the shadow
+    /// follows the rect. One that leaves the window see-through fades it as
+    /// far as the space has faded, or as far as it has gone.
+    pub fn shadow_strength(&self) -> f32 {
+        if self.covers_window() {
+            1.0
+        } else {
+            self.opacity.min(self.shown).clamp(0.0, 1.0)
+        }
+    }
 }
 
 /// How a frame draws the space's contents (ROADMAP D12, amended
@@ -611,6 +623,21 @@ mod tests {
                 transition.frame(ms(0)).covers_window(),
                 "{effect:?} starts whole"
             );
+        }
+    }
+
+    #[test]
+    fn a_shadow_stays_whole_while_the_window_moves_and_fades_with_its_pixels() {
+        for effect in every_animated_effect() {
+            let transition = start(effect, Way::Out);
+            assert_eq!(transition.frame(ms(0)).shadow_strength(), 1.0, "{effect:?}");
+            let midway = transition.frame(ms(100));
+            let strength = midway.shadow_strength();
+            if midway.covers_window() {
+                assert_eq!(strength, 1.0, "{effect:?} only moves the window");
+            } else {
+                assert!((0.0..1.0).contains(&strength), "{effect:?}: {strength}");
+            }
         }
     }
 

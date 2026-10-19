@@ -53,8 +53,8 @@ use crate::win32::system::wide;
 use crate::win32::{
     clipboard, composition, console, controller, dark_mode, debug_window, desktop_icons,
     desktop_shell, drop_target, file_op, folder_watch, menu, messages, outside_click,
-    settings_window, shell_selection, shell_view, space_animation, space_window, tray, watchdog,
-    zoom_bar,
+    settings_window, shadow_window, shell_selection, shell_view, space_animation, space_window,
+    tray, watchdog, zoom_bar,
 };
 
 pub trait EventHandler {

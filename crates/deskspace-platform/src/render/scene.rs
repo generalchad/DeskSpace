@@ -21,6 +21,19 @@ pub struct SpaceStyle {
     /// desktop layer sets it false, so it reuses the space window and painter
     /// with neither.
     pub chrome: bool,
+    /// The shadow the space casts, `None` for none. The window draws it
+    /// only where Windows draws none (ROADMAP D15).
+    pub shadow: Option<ShadowStyle>,
+}
+
+/// A space's shadow, as its settings give it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShadowStyle {
+    /// How far the blur reaches past the space, in pixels at 96 DPI; the
+    /// window scales it to its own DPI.
+    pub size: i32,
+    /// The shadow's opacity at its darkest, in percent.
+    pub opacity: u8,
 }
 
 impl SpaceStyle {

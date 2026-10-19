@@ -274,6 +274,7 @@ mod tests {
             border: true,
             border_width: 1,
             chrome: true,
+            shadow: None,
         };
         let accent = |style| corner_preference(style, Material::Accent);
         assert_eq!(accent(style(Backdrop::Acrylic, 8)), DWMWCP_ROUND);
@@ -292,6 +293,7 @@ mod tests {
             border: true,
             border_width: 1,
             chrome: true,
+            shadow: None,
         };
         assert_eq!(
             corner_preference(style, Material::Composition),
@@ -308,6 +310,7 @@ mod tests {
             border: true,
             border_width: 1,
             chrome: true,
+            shadow: None,
         };
         assert_eq!(border_color(style, BorderOwner::Dwm), DWMWA_COLOR_DEFAULT);
         assert_eq!(border_color(style, BorderOwner::Painter), DWMWA_COLOR_NONE);

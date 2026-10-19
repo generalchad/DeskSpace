@@ -4,6 +4,7 @@ pub mod dissolve;
 pub mod flames;
 pub(crate) mod math;
 pub mod scene;
+pub mod shadow;
 pub mod transition;
 pub mod zoom_bar;
 
@@ -12,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
-pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
+pub use scene::{ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle};
 pub use transition::{Content, Geometry, Mask, Play, Side, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;
 

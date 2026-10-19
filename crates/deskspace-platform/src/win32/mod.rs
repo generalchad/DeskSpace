@@ -36,6 +36,7 @@ mod outside_click;
 mod overlay;
 mod runtime;
 mod settings_window;
+mod shadow_window;
 pub(crate) mod shell_items;
 mod shell_selection;
 mod shell_view;

@@ -25,7 +25,9 @@ use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, 
 use crate::win32::frame_clock;
 use crate::win32::overlay::Overlay;
 use crate::win32::runtime;
-use crate::win32::space_window::{Backing, current_rect, show, show_backing, with_state};
+use crate::win32::space_window::{
+    Backing, current_rect, show, show_backing, sync_shadow, with_state,
+};
 use crate::win32::system::transparency_enabled;
 use crate::win32::system::work_area_at;
 
@@ -623,6 +625,8 @@ unsafe fn finish(window: HWND) {
         }
         // After the hide, so nothing stepped aside shows around a gone space.
         show_backing(window, Backing::WHOLE);
+        // The animation is gone, so the shadow is cast whole again.
+        sync_shadow(window);
         let _ = InvalidateRect(Some(window), None, false);
         if let Some(back) = then {
             set_visible(window, true, back);
@@ -702,6 +706,8 @@ unsafe fn apply(window: HWND, frame: TransitionFrame, flat_material: bool) {
         // Paint now rather than at the next idle moment, so the window never
         // shows the previous frame at the new size.
         let _ = RedrawWindow(Some(window), None, None, RDW_INVALIDATE | RDW_UPDATENOW);
+        // A move has synced it already; a fade moves nothing.
+        sync_shadow(window);
     }
 }
 

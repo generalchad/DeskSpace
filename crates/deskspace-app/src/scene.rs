@@ -4,7 +4,9 @@ use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
     Space, Theme,
 };
-use deskspace_platform::{IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle};
+use deskspace_platform::{
+    IconCache, ItemMetrics, ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle,
+};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -64,6 +66,10 @@ pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
         border: theme.show_border,
         border_width: theme.border_width.into(),
         chrome: true,
+        shadow: theme.show_shadow.then_some(ShadowStyle {
+            size: theme.shadow_size.into(),
+            opacity: theme.shadow_opacity,
+        }),
     }
 }
 
@@ -77,6 +83,7 @@ pub fn layer_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
         border: false,
         border_width: 0,
         chrome: false,
+        shadow: None,
     }
 }
 
@@ -951,5 +958,23 @@ mod tests {
         );
         // A low per-space opacity makes an otherwise opaque tint transparent.
         assert!(auto_text_shadow(default.item_text, default.tint.fade(20)).is_some());
+    }
+
+    #[test]
+    fn space_style_carries_the_shadow_setting() {
+        let theme = Theme::default();
+        assert_eq!(
+            space_style(&theme, true).shadow,
+            Some(ShadowStyle {
+                size: 16,
+                opacity: 35,
+            })
+        );
+        let off = Theme {
+            show_shadow: false,
+            ..theme.clone()
+        };
+        assert_eq!(space_style(&off, true).shadow, None);
+        assert_eq!(layer_style(&theme, true).shadow, None);
     }
 }
