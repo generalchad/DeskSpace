@@ -421,9 +421,22 @@ mod tests {
         }
     }
 
+    /// Every kind. The match makes a new `Kind` a compile error here, so it
+    /// cannot miss its `KINDS` row.
+    fn every_kind() -> [Kind; 3] {
+        let kinds = [Kind::Startup, Kind::Delete, Kind::Fold];
+        for kind in kinds {
+            match kind {
+                Kind::Startup | Kind::Delete | Kind::Fold => {}
+            }
+        }
+        kinds
+    }
+
     #[test]
     fn every_kind_has_one_row_and_offers_none_and_its_default() {
-        for kind in [Kind::Startup, Kind::Delete, Kind::Fold] {
+        assert_eq!(KINDS.len(), every_kind().len());
+        for kind in every_kind() {
             let spec = kind.spec();
             assert_eq!(KINDS.iter().filter(|row| row.kind == kind).count(), 1);
             assert!(spec.effects.contains(&Effect::None), "{kind:?}");

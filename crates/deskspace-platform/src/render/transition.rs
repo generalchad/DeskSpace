@@ -407,18 +407,29 @@ fn offset_of(content: Rect, window: Rect) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::animation::EFFECTS;
 
-    const EVERY_EFFECT: [Effect; 9] = [
-        Effect::None,
-        Effect::Roll,
-        Effect::Fade,
-        Effect::Pixelate,
-        Effect::Gradient,
-        Effect::Dissolve,
-        Effect::Fly,
-        Effect::Crt,
-        Effect::Burn,
-    ];
+    /// Every effect, from the table, so a new one is tested without an edit
+    /// here.
+    fn every_effect() -> impl Iterator<Item = Effect> {
+        EFFECTS.iter().map(|spec| spec.effect)
+    }
+
+    /// Every effect that moves through frames: `None` has none.
+    fn every_animated_effect() -> impl Iterator<Item = Effect> {
+        every_effect().filter(|&effect| effect != Effect::None)
+    }
+
+    /// Every edge. The match makes a new `Edge` a compile error here.
+    fn every_edge() -> [Edge; 5] {
+        let edges = [Edge::Auto, Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
+        for edge in edges {
+            match edge {
+                Edge::Auto | Edge::Top | Edge::Bottom | Edge::Left | Edge::Right => {}
+            }
+        }
+        edges
+    }
 
     fn ms(millis: u64) -> Duration {
         Duration::from_millis(millis)
@@ -440,11 +451,23 @@ mod tests {
     }
 
     fn geometry() -> Geometry {
-        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), Edge::Auto)
+        geometry_from(Edge::Auto)
+    }
+
+    fn geometry_from(edge: Edge) -> Geometry {
+        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), edge)
     }
 
     fn start(effect: Effect, way: Way) -> Transition {
-        Transition::new(play(effect, way), geometry(), Duration::ZERO)
+        start_from(effect, way, Edge::Auto)
+    }
+
+    fn start_from(effect: Effect, way: Way, edge: Edge) -> Transition {
+        let play = Play {
+            edge,
+            ..play(effect, way)
+        };
+        Transition::new(play, geometry_from(edge), Duration::ZERO)
     }
 
     /// Whether `frame` draws the whole space as it is when fully there.
@@ -471,19 +494,19 @@ mod tests {
 
     #[test]
     fn every_effect_starts_and_ends_where_it_should() {
-        for effect in EVERY_EFFECT {
-            let shown = start(effect, Way::In);
-            assert!(shown.is_done(ms(200)), "{effect:?} In ends");
-            assert!(is_whole(&shown.frame(ms(200))), "{effect:?} In ends whole");
-            let hidden = start(effect, Way::Out);
-            assert!(hidden.is_done(ms(200)), "{effect:?} Out ends");
-            assert!(is_gone(&hidden.frame(ms(200))), "{effect:?} Out ends gone");
-            if effect != Effect::None {
-                assert!(is_gone(&shown.frame(ms(0))), "{effect:?} In starts gone");
-                assert!(
-                    is_whole(&hidden.frame(ms(0))),
-                    "{effect:?} Out starts whole"
-                );
+        for effect in every_effect() {
+            for edge in every_edge() {
+                let case = format!("{effect:?} from {edge:?}");
+                let shown = start_from(effect, Way::In, edge);
+                assert!(shown.is_done(ms(200)), "{case} In ends");
+                assert!(is_whole(&shown.frame(ms(200))), "{case} In ends whole");
+                let hidden = start_from(effect, Way::Out, edge);
+                assert!(hidden.is_done(ms(200)), "{case} Out ends");
+                assert!(is_gone(&hidden.frame(ms(200))), "{case} Out ends gone");
+                if effect != Effect::None {
+                    assert!(is_gone(&shown.frame(ms(0))), "{case} In starts gone");
+                    assert!(is_whole(&hidden.frame(ms(0))), "{case} Out starts whole");
+                }
             }
         }
     }
@@ -491,12 +514,11 @@ mod tests {
     #[test]
     fn only_effects_that_change_pixels_uncover_the_window_midway() {
         // None has no midway: its Out is gone at once.
-        for effect in EVERY_EFFECT
-            .into_iter()
-            .filter(|effect| *effect != Effect::None)
-        {
+        for effect in every_animated_effect() {
             let transition = start(effect, Way::Out);
             let midway = transition.frame(ms(100));
+            // The effects that fade or mask pixels; the rest only move or
+            // crop the window. A new effect fails here until it is sorted.
             let pixels = matches!(
                 effect,
                 Effect::Fade
@@ -523,20 +545,23 @@ mod tests {
 
     #[test]
     fn showing_only_ever_reveals_more() {
-        for effect in EVERY_EFFECT {
-            let transition = start(effect, Way::In);
-            let mut last = transition.frame(ms(0));
-            for step in 1..=40 {
-                let frame = transition.frame(ms(step * 5));
-                assert!(frame.shown >= last.shown, "{effect:?} at {step}");
-                assert!(frame.opacity >= last.opacity, "{effect:?} at {step}");
-                assert!(frame.block <= last.block, "{effect:?} at {step}");
-                assert!(
-                    frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
-                        || effect == Effect::Crt,
-                    "{effect:?} at {step}"
-                );
-                last = frame;
+        for effect in every_effect() {
+            for edge in every_edge() {
+                let case = format!("{effect:?} from {edge:?}");
+                let transition = start_from(effect, Way::In, edge);
+                let mut last = transition.frame(ms(0));
+                for step in 1..=40 {
+                    let frame = transition.frame(ms(step * 5));
+                    assert!(frame.shown >= last.shown, "{case} at {step}");
+                    assert!(frame.opacity >= last.opacity, "{case} at {step}");
+                    assert!(frame.block <= last.block, "{case} at {step}");
+                    assert!(
+                        frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
+                            || effect == Effect::Crt,
+                        "{case} at {step}"
+                    );
+                    last = frame;
+                }
             }
         }
     }
@@ -544,23 +569,19 @@ mod tests {
     #[test]
     fn reversing_at_any_moment_continues_from_the_same_frame() {
         // None has no frames to continue: reversing it is instant.
-        for effect in EVERY_EFFECT
-            .into_iter()
-            .filter(|&effect| effect != Effect::None)
-        {
-            for way in [Way::In, Way::Out] {
-                for at in [0, 1, 37, 100, 150, 199, 200, 260] {
-                    let mut transition = start(effect, way);
-                    let before = transition.frame(ms(at));
-                    transition.reverse(ms(at));
-                    assert_eq!(
-                        transition.frame(ms(at)),
-                        before,
-                        "{effect:?} {way:?} at {at}"
-                    );
-                    let next = transition.frame(ms(at + 5));
-                    let shift = (next.shown - before.shown).abs();
-                    assert!(shift < 0.1, "{effect:?} {way:?} at {at} jumps by {shift}");
+        for effect in every_animated_effect() {
+            for edge in every_edge() {
+                for way in [Way::In, Way::Out] {
+                    for at in [0, 1, 37, 100, 150, 199, 200, 260] {
+                        let case = format!("{effect:?} from {edge:?} {way:?} at {at}");
+                        let mut transition = start_from(effect, way, edge);
+                        let before = transition.frame(ms(at));
+                        transition.reverse(ms(at));
+                        assert_eq!(transition.frame(ms(at)), before, "{case}");
+                        let next = transition.frame(ms(at + 5));
+                        let shift = (next.shown - before.shown).abs();
+                        assert!(shift < 0.1, "{case} jumps by {shift}");
+                    }
                 }
             }
         }
@@ -595,17 +616,26 @@ mod tests {
     #[test]
     fn roll_keeps_its_edge_and_its_content_in_place() {
         let rect = geometry().rect;
-        let transition = start(Effect::Roll, Way::Out);
-        let frame = transition.frame(ms(100));
-        assert_eq!(frame.rect.top(), rect.top(), "rolls into the top");
-        assert!(frame.rect.height < rect.height);
-        assert_eq!(frame.content_offset, Point::new(0, 0));
-
-        let bottom = Geometry::for_visibility(rect, work_area(), Edge::Bottom);
-        let transition = Transition::new(play(Effect::Roll, Way::Out), bottom, Duration::ZERO);
-        let frame = transition.frame(ms(100));
-        assert_eq!(frame.rect.bottom(), rect.bottom(), "rolls into the bottom");
-        assert_eq!(frame.content_offset.y, rect.top() - frame.rect.top());
+        for edge in every_edge() {
+            let frame = start_from(Effect::Roll, Way::Out, edge).frame(ms(100));
+            let kept = match edge {
+                Edge::Auto | Edge::Top => frame.rect.top() == rect.top(),
+                Edge::Bottom => frame.rect.bottom() == rect.bottom(),
+                Edge::Left => frame.rect.left() == rect.left(),
+                Edge::Right => frame.rect.right() == rect.right(),
+            };
+            assert!(kept, "rolls into {edge:?}: {:?}", frame.rect);
+            assert!(frame.rect.width * frame.rect.height < rect.width * rect.height);
+            // The content stays where it was while the window crops it.
+            assert_eq!(
+                frame.content_offset,
+                Point::new(
+                    rect.left() - frame.rect.left(),
+                    rect.top() - frame.rect.top()
+                ),
+                "{edge:?}"
+            );
+        }
     }
 
     #[test]
@@ -635,6 +665,25 @@ mod tests {
             }
         }
         assert!(transition.frame(ms(100)).rect.left() > near_right.left());
+    }
+
+    #[test]
+    fn fly_never_leaves_the_work_area_from_any_edge() {
+        let area = work_area();
+        for edge in every_edge() {
+            let transition = start_from(Effect::Fly, Way::Out, edge);
+            for step in 0..=40 {
+                let rect = transition.frame(ms(step * 5)).rect;
+                if rect.is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    rect.intersection(area),
+                    rect,
+                    "{edge:?} at {step}: {rect:?}"
+                );
+            }
+        }
     }
 
     #[test]
