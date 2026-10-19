@@ -11,8 +11,9 @@
 
 use deskspace_core::animation::Kind;
 use deskspace_core::{SpaceId, Touched};
-use deskspace_platform::{Ui, Way, set_desktop_icon_size};
+use deskspace_platform::{Play, Ui, Way, set_desktop_icon_size};
 
+use super::animation::EXIT_LIMIT;
 use super::{App, Timer};
 
 /// One thing an event asks the shell to do.
@@ -41,6 +42,16 @@ pub(super) enum Effect {
     /// It reads the model when it runs, so it goes after the command and
     /// before the repaint that would otherwise move the window at once.
     FoldSpace(SpaceId),
+    /// Quit once each space has played its way out, or after `EXIT_LIMIT`
+    /// (ROADMAP D13).
+    QuitAfter(Vec<(SpaceId, Play)>),
+    /// Play `out` and then `back` on a space's window, leaving it as it
+    /// was: the debug window's effect preview. It never touches the model.
+    PreviewPlay {
+        space: SpaceId,
+        out: Play,
+        back: Play,
+    },
 }
 
 impl App {
@@ -78,6 +89,11 @@ impl App {
                         ui.fold_space(id.0, space.visible_rect(), play);
                     }
                 }
+                Effect::QuitAfter(plays) => {
+                    let plays = plays.into_iter().map(|(id, play)| (id.0, play)).collect();
+                    ui.quit_after(plays, EXIT_LIMIT);
+                }
+                Effect::PreviewPlay { space, out, back } => ui.preview_play(space.0, out, back),
             }
         }
     }

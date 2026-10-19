@@ -8,6 +8,7 @@ use deskspace_core::animation::{KINDS, Kind};
 use deskspace_platform::{DebugControlKind, Ui, Way};
 
 use crate::app::App;
+use crate::app::effect::Effect;
 use crate::settings::AnimationPage;
 
 /// The slow-motion speeds offered: how many times slower, and the label.
@@ -89,7 +90,8 @@ impl App {
             return;
         };
         let (kind, label) = preview_kind(tools.preview_kind);
-        ui.preview_play(id.0, self.play(kind, Way::Out), self.play(kind, Way::In));
+        let effects = self.preview_effects(kind, &[id]);
+        self.run(ui, effects);
         tracing::info!(
             space = id.0,
             kind = label,
@@ -103,16 +105,30 @@ impl App {
             return;
         };
         let (kind, label) = preview_kind(tools.preview_kind);
-        let (out, back) = (self.play(kind, Way::Out), self.play(kind, Way::In));
-        let spaces = self.config.desktop.spaces();
-        for space in spaces {
-            ui.preview_play(space.id.0, out, back);
-        }
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        let effects = self.preview_effects(kind, &ids);
+        self.run(ui, effects);
         tracing::info!(
-            spaces = spaces.len(),
+            spaces = ids.len(),
             kind = label,
             "debug: played an effect preview on every space"
         );
+    }
+
+    /// The preview of `kind` on each of `spaces`: its Out, then its In, with
+    /// the current settings and slow motion.
+    fn preview_effects(&self, kind: Kind, spaces: &[SpaceId]) -> Vec<Effect> {
+        let (out, back) = (self.play(kind, Way::Out), self.play(kind, Way::In));
+        spaces
+            .iter()
+            .map(|&space| Effect::PreviewPlay { space, out, back })
+            .collect()
     }
 
     /// The kind chosen in the Kind box.
@@ -173,5 +189,21 @@ mod tests {
             );
         }
         assert_eq!(preview_kind(99).0, KINDS[KINDS.len() - 1].kind);
+    }
+
+    #[test]
+    fn a_preview_plays_out_and_back_on_each_space() {
+        let store = deskspace_config::ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let app = App::new(deskspace_config::Config::new(), store, false, false);
+        let spaces = [SpaceId(3), SpaceId(5)];
+        let effects = app.preview_effects(Kind::Delete, &spaces);
+        assert_eq!(effects.len(), 2);
+        for (effect, id) in effects.iter().zip(spaces) {
+            let Effect::PreviewPlay { space, out, back } = effect else {
+                panic!("{effect:?} is not a preview");
+            };
+            assert_eq!(*space, id);
+            assert_eq!((out.way, back.way), (Way::Out, Way::In));
+        }
     }
 }

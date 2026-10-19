@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use deskspace_core::animation::{Animations, Kind, StartupOrder};
 use deskspace_core::{Rect, SpaceId};
-use deskspace_platform::{Play, Way};
+use deskspace_platform::{Play, Ui, Way};
 
 use super::App;
+use super::effect::Effect;
 
 /// The longest an exit may take to animate before DeskSpace tears down
 /// anyway (ROADMAP D13).
@@ -92,25 +93,31 @@ impl App {
 impl App {
     /// Exits gracefully (ROADMAP D13): the shown spaces play Startup's Out,
     /// in reverse reading order, then DeskSpace tears down as before.
-    pub(super) fn exit(&mut self, ui: &mut deskspace_platform::Ui) {
-        let plays = if self.visible {
-            let spaces: Vec<(SpaceId, Rect)> = self
-                .config
-                .desktop
-                .spaces()
-                .iter()
-                .map(|space| (space.id, space.visible_rect()))
-                .collect();
-            let play = self.play(Kind::Startup, Way::Out);
-            let animations = &self.config.window.animations;
-            exit_delays(&spaces, animations.startup, self.stagger(), play.duration)
-                .into_iter()
-                .map(|(id, delay)| (id.0, Play { delay, ..play }))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        ui.quit_after(plays, EXIT_LIMIT);
+    pub(super) fn exit(&mut self, ui: &mut Ui) {
+        let effects = self.exit_effects();
+        self.run(ui, effects);
+    }
+
+    /// What exiting asks of the shell: quit after the shown spaces' way out,
+    /// staggered so the last one ends within `EXIT_LIMIT`.
+    fn exit_effects(&self) -> Vec<Effect> {
+        if !self.visible {
+            return vec![Effect::QuitAfter(Vec::new())];
+        }
+        let spaces: Vec<(SpaceId, Rect)> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| (space.id, space.visible_rect()))
+            .collect();
+        let play = self.play(Kind::Startup, Way::Out);
+        let animations = &self.config.window.animations;
+        let plays = exit_delays(&spaces, animations.startup, self.stagger(), play.duration)
+            .into_iter()
+            .map(|(id, delay)| (id, Play { delay, ..play }))
+            .collect();
+        vec![Effect::QuitAfter(plays)]
     }
 }
 
@@ -188,6 +195,7 @@ fn play_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::effect::Effect as AppEffect;
     use deskspace_core::animation::{Edge, Effect, EffectChoice};
 
     #[test]
@@ -276,6 +284,40 @@ mod tests {
         let last = delays.iter().map(|(_, delay)| *delay).max().unwrap();
         assert!(last + Duration::from_millis(1000) <= EXIT_LIMIT, "{last:?}");
         assert!(last > Duration::ZERO, "still staggered");
+    }
+
+    /// An app with two shown spaces, the lower one made first, that animates
+    /// whatever Windows' switch says.
+    fn app_with_two_spaces() -> (App, SpaceId, SpaceId) {
+        let store = deskspace_config::ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(deskspace_config::Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lower = crate::fixtures::create_space(desktop, "Lower", Rect::new(20, 400, 200, 150));
+        let upper = crate::fixtures::create_space(desktop, "Upper", Rect::new(20, 20, 200, 150));
+        app.visible = true;
+        app.animation_tweak.ignore_windows = true;
+        (app, lower, upper)
+    }
+
+    #[test]
+    fn exiting_plays_every_shown_space_out_in_reverse_reading_order() {
+        let (app, lower, upper) = app_with_two_spaces();
+        let effects = app.exit_effects();
+        let [AppEffect::QuitAfter(plays)] = effects.as_slice() else {
+            panic!("exit asks for one QuitAfter");
+        };
+        let order: Vec<SpaceId> = plays.iter().map(|(id, _)| *id).collect();
+        let lower_turn = order.iter().position(|id| *id == lower).unwrap();
+        let upper_turn = order.iter().position(|id| *id == upper).unwrap();
+        assert!(lower_turn < upper_turn, "the lower space leaves first");
+        assert!(plays.iter().all(|(_, play)| play.way == Way::Out));
+    }
+
+    #[test]
+    fn exiting_while_hidden_quits_at_once() {
+        let (mut app, _, _) = app_with_two_spaces();
+        app.visible = false;
+        assert_eq!(app.exit_effects(), [AppEffect::QuitAfter(Vec::new())]);
     }
 
     #[test]
