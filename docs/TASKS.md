@@ -968,6 +968,7 @@ each id is in `archive/TASKS-done.md`.
 | G5a | Right-drag an item out of a space onto the desktop and into an Explorer folder: the shell's Move / Copy / Create shortcut menu appears and each choice works; a right click without moving still opens the item menu. |
 | G5b | Right-drag a file from Explorer onto a space: DeskSpace's Move here / Copy here / Show here without moving / Cancel menu appears; each entry does what it says; the source file is left alone on Copy, Show here, and Cancel; a left drag still moves and Shift still keeps in place. |
 | G5c | Right-drag a file and a `.lnk` from Explorer onto a space and choose "Create shortcuts here": the space gets a working shortcut to the file and a copy of the `.lnk`, and both originals stay; the entry sits between "Copy here" and "Show here without moving"; the same on the taken-over desktop opens a new space holding them. |
+| Right-drop greying | Right-drag onto a space from a source that offers only copy (a file on a read-only share or a zip's contents): "Move here" is greyed, "Copy here" and "Show here without moving" work; from Explorer every entry is enabled. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
@@ -1055,11 +1056,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   no keyboard support (not a Tab stop; its X and + are mouse-only).
   Suggested task: arrow-key focus, Delete for the X, and Enter on the +
   tile (ROADMAP M7 accessibility).
-- `win32/drop_target.rs` `right_drop_entries` (G5c): only "Create shortcuts
-  here" is greyed by the source's allowed effects; "Move here" and "Copy
-  here" stay enabled even when the source refuses `MOVE` or `COPY`, so the
-  menu can report an effect the source did not offer. Suggested task: grey
-  each entry by its effect.
 - `app/pointer.rs` `right_drag_to` (G5a): a right drag calls
   `drag_item_out` without setting `pointer.drag_image`, so the shell
   substitutes its own oversized image. Suggested task: factor the image build

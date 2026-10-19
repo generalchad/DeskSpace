@@ -652,9 +652,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   hovering over a space and, on `Drop`, shows the menu `right_drop_entries`
   builds, owned by the space window (G5b, G5c). The chosen entry becomes the
   `DropPlan`, the same type a left drop gets from `drop_plan`, so both take
-  one path: "Create shortcuts here" is `DropPlan::Shortcuts` (greyed when the
-  source refuses `LINK`), and `right_drop_effect` reports what each entry
-  means to the source. A drag carrying neither files nor shell items reports
+  one path: "Create shortcuts here" is `DropPlan::Shortcuts`, and
+  `right_drop_effect` reports what each entry means to the source; an entry
+  is greyed when the source refuses that effect. A drag carrying neither files nor shell items reports
   `DROPEFFECT_NONE`.
 - As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
   Alt is held and the source allows a link, or when the source offers neither
