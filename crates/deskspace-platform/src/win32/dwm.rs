@@ -71,6 +71,21 @@ pub(crate) enum Material {
     Composition,
 }
 
+impl Material {
+    /// Whether DWM rounds the window's corners, where it has the radius.
+    ///
+    /// A composition window clips itself to its corners in its visual tree,
+    /// so it leaves DWM's off: on Windows 11 they bring the system shadow,
+    /// which sits outside the window's pixels and cannot fade with them. It
+    /// stayed at full strength through every animation and vanished at the
+    /// end, and kept a rolling space from getting thinner than twice its
+    /// corner radius (seen 2026-10-19). The accent blur ignores clips and
+    /// regions, so it needs DWM's corners.
+    pub(crate) fn dwm_rounds(self) -> bool {
+        self == Self::Accent
+    }
+}
+
 #[repr(C)]
 struct AccentPolicy {
     accent_state: u32,
@@ -125,7 +140,7 @@ pub(crate) fn apply_style(hwnd: HWND, style: SpaceStyle, material: Material, bor
     set(
         hwnd,
         DWMWA_WINDOW_CORNER_PREFERENCE,
-        corner_preference(style),
+        corner_preference(style, material),
     );
     // Make sure no system backdrop competes with the accent material.
     set::<DWM_SYSTEMBACKDROP_TYPE>(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE);
@@ -206,10 +221,11 @@ fn set_accent(hwnd: HWND, state: u32) {
     }
 }
 
-/// DWM's own corners where it has the radius; otherwise square, and the
-/// space rounds itself (`space_window::update_region` and the painter).
-fn corner_preference(style: SpaceStyle) -> DWM_WINDOW_CORNER_PREFERENCE {
-    if !style.dwm_draws_frame() {
+/// DWM's own corners where it has the radius and the material lets it
+/// (`Material::dwm_rounds`); otherwise square, and the space rounds itself
+/// (its visual tree, `space_window::update_region`, and the painter).
+fn corner_preference(style: SpaceStyle, material: Material) -> DWM_WINDOW_CORNER_PREFERENCE {
+    if !material.dwm_rounds() || !style.dwm_draws_frame() {
         return DWMWCP_DONOTROUND;
     }
     match style.corner_radius {
@@ -259,21 +275,26 @@ mod tests {
             border_width: 1,
             chrome: true,
         };
-        assert_eq!(corner_preference(style(Backdrop::Acrylic, 8)), DWMWCP_ROUND);
+        let accent = |style| corner_preference(style, Material::Accent);
+        assert_eq!(accent(style(Backdrop::Acrylic, 8)), DWMWCP_ROUND);
+        assert_eq!(accent(style(Backdrop::Blur, 4)), DWMWCP_ROUNDSMALL);
+        assert_eq!(accent(style(Backdrop::Acrylic, 0)), DWMWCP_DONOTROUND);
+        assert_eq!(accent(style(Backdrop::Acrylic, 12)), DWMWCP_DONOTROUND);
+        assert_eq!(accent(style(Backdrop::Clear, 8)), DWMWCP_DONOTROUND);
+    }
+
+    #[test]
+    fn dwm_never_rounds_a_composition_window_so_it_casts_no_shadow() {
+        let style = SpaceStyle {
+            backdrop: Backdrop::Acrylic,
+            corner_radius: 8,
+            dark: true,
+            border: true,
+            border_width: 1,
+            chrome: true,
+        };
         assert_eq!(
-            corner_preference(style(Backdrop::Blur, 4)),
-            DWMWCP_ROUNDSMALL
-        );
-        assert_eq!(
-            corner_preference(style(Backdrop::Acrylic, 0)),
-            DWMWCP_DONOTROUND
-        );
-        assert_eq!(
-            corner_preference(style(Backdrop::Acrylic, 12)),
-            DWMWCP_DONOTROUND
-        );
-        assert_eq!(
-            corner_preference(style(Backdrop::Clear, 8)),
+            corner_preference(style, Material::Composition),
             DWMWCP_DONOTROUND
         );
     }

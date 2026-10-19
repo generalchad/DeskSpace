@@ -579,10 +579,15 @@ one arm in `App::on_event`, whose match is exhaustive.
   removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
   a (non-anti-aliased) window region. With no host found, `run` warns and
   falls back to top-level.
-- **Corners and border:** DWM rounds blurred and Solid spaces with square,
-  4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`). The painter rounds
-  every Clear space, Solid spaces with other radii, chrome-less windows, and
-  hosted spaces (anti-aliased fills); hosted spaces also get a window region
+- **Corners and border:** DWM rounds accent-blurred and Solid spaces with
+  square, 4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`), but never
+  a composition space (`dwm::Material::dwm_rounds`): DWM's corners bring
+  the Windows 11 shadow, which cannot fade, so it stayed behind every
+  animation as a ghost box and kept Roll from rolling thinner than twice
+  the radius. A composition space is clipped to its corners in its visual
+  tree, so it casts no shadow at all. The painter rounds every composition
+  space, every Clear space, Solid spaces with other radii, chrome-less
+  windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
   so the opaque fill does not show past the corners (`Frame` in
   `space_window.rs`). The painter draws every space's border, never DWM
   (`dwm::BorderOwner`), so the border goes through an animation's opacity

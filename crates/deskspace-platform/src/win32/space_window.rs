@@ -124,7 +124,11 @@ pub(crate) fn create(options: SpaceWindowOptions) -> Result<HWND, PlatformError>
         hosted,
         on_top: options.on_top,
         style: options.style,
-        frame: Frame::for_style(options.style, hosted, is_windows_11()),
+        frame: Frame::for_style(
+            options.style,
+            (!hosted).then(|| material(options.composition)),
+            is_windows_11(),
+        ),
         painter: Some(Painter::new()),
         scene: None,
         tracking_leave: false,
@@ -430,7 +434,8 @@ pub(crate) fn set_style(hwnd: HWND, style: SpaceStyle) {
                 return None;
             }
             state.style = style;
-            state.frame = Frame::for_style(style, state.hosted, is_windows_11());
+            let backed = (!state.hosted).then(|| material(state.visuals.is_some()));
+            state.frame = Frame::for_style(style, backed, is_windows_11());
             if let Some(visuals) = &mut state.visuals
                 && let Err(error) = visuals.set_style(style)
             {
@@ -509,14 +514,18 @@ struct Frame {
     /// Clip the window to a rounded region of this radius. Needed for opaque
     /// desktop-hosted windows, whose pixels outside the rounded corners
     /// would otherwise show. Regions are not anti-aliased, so the painter
-    /// still draws smooth corners inside them. Blurred top-level spaces use
-    /// DWM's corners instead, because the blur material ignores regions
-    /// (`Theme::effective_corner_radius`).
+    /// still draws smooth corners inside them. Accent-blurred top-level
+    /// spaces use DWM's corners instead, because the blur material ignores
+    /// regions (`Theme::effective_corner_radius`); composition spaces clip
+    /// themselves in their visual tree (`dwm::Material::dwm_rounds`).
     region_radius: Option<i32>,
 }
 
 impl Frame {
-    fn for_style(style: SpaceStyle, hosted: bool, windows_11: bool) -> Self {
+    /// `material` is what draws the window's blur, `None` for a
+    /// desktop-hosted window, which has none.
+    fn for_style(style: SpaceStyle, material: Option<dwm::Material>, windows_11: bool) -> Self {
+        let hosted = material.is_none();
         // A chrome-less window (the desktop layer) has no rounded corners or
         // border; it fills its whole rectangle.
         let radius = if style.chrome {
@@ -529,7 +538,7 @@ impl Frame {
         } else {
             0
         };
-        if !hosted && style.dwm_draws_frame() {
+        if material.is_some_and(dwm::Material::dwm_rounds) && style.dwm_draws_frame() {
             return Self {
                 opaque: false,
                 radius: 0,
@@ -1032,13 +1041,25 @@ mod tests {
         BorderStroke { radius, width }
     }
 
+    const ACCENT: Option<dwm::Material> = Some(dwm::Material::Accent);
+
+    #[test]
+    fn a_composition_space_rounds_itself_where_dwm_would_have() {
+        let composed = Some(dwm::Material::Composition);
+        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), composed, true);
+        let paint = frame.paint(144);
+        assert!(!paint.opaque);
+        assert_eq!((paint.radius, paint.border), (8, Some(stroke(8.0, 2.0))));
+        assert_eq!(frame.region_radius, None);
+    }
+
     #[test]
     fn the_border_thickness_scales_to_whole_pixels() {
         let thick = SpaceStyle {
             border_width: 3,
             ..style(deskspace_core::Backdrop::Clear, 0)
         };
-        let frame = Frame::for_style(thick, false, true);
+        let frame = Frame::for_style(thick, ACCENT, true);
         assert_eq!(frame.paint(96).border.unwrap().width, 3.0);
         assert_eq!(frame.paint(120).border.unwrap().width, 4.0);
         assert_eq!(frame.paint(144).border.unwrap().width, 5.0);
@@ -1046,26 +1067,26 @@ mod tests {
 
     #[test]
     fn where_dwm_rounds_the_border_follows_its_corners_at_the_windows_dpi() {
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, true);
+        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, true);
         assert_eq!(frame.paint(96).radius, 0);
         assert_eq!(frame.paint(96).border, Some(stroke(8.0, 1.0)));
         assert_eq!(frame.paint(144).border, Some(stroke(12.0, 2.0)));
-        let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), false, true);
+        let small = Frame::for_style(style(deskspace_core::Backdrop::Blur, 4), ACCENT, true);
         assert_eq!(small.paint(120).border, Some(stroke(5.0, 1.0)));
     }
 
     #[test]
     fn windows_10_squares_the_painted_border_as_it_squares_the_window() {
-        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), false, false);
+        let frame = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), ACCENT, false);
         assert_eq!(frame.paint(144).border, Some(stroke(0.0, 2.0)));
     }
 
     #[test]
     fn a_painter_rounded_space_borders_at_its_own_radius() {
-        let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), false, true);
+        let clear = Frame::for_style(style(deskspace_core::Backdrop::Clear, 12), ACCENT, true);
         let paint = clear.paint(144);
         assert_eq!((paint.radius, paint.border), (12, Some(stroke(12.0, 2.0))));
-        let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), true, true);
+        let hosted = Frame::for_style(style(deskspace_core::Backdrop::Acrylic, 8), None, true);
         let paint = hosted.paint(96);
         assert!(paint.opaque);
         assert_eq!((paint.radius, paint.border), (8, Some(stroke(8.0, 1.0))));
@@ -1078,12 +1099,12 @@ mod tests {
             border: false,
             ..style(deskspace_core::Backdrop::Acrylic, 8)
         };
-        assert_eq!(Frame::for_style(off, false, true).paint(96).border, None);
+        assert_eq!(Frame::for_style(off, ACCENT, true).paint(96).border, None);
         let layer = SpaceStyle {
             chrome: false,
             ..style(deskspace_core::Backdrop::Clear, 0)
         };
-        assert_eq!(Frame::for_style(layer, false, true).paint(96).border, None);
+        assert_eq!(Frame::for_style(layer, ACCENT, true).paint(96).border, None);
     }
 
     #[test]
