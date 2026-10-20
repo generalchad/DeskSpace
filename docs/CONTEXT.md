@@ -156,6 +156,16 @@ folded), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
 folded; corners twice as wide as edges), item lookup/insert/remove, and
 `set_position`.
 
+`Space.source` (`source.rs`) says what fills the space. `SpaceSource::Items`
+is the default and holds the space's own items, as before. `SpaceSource::Folder`
+makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path and the
+view settings, and `FolderEntry` is what the platform reads from the folder.
+A lens's items are a live cache: `Command::SyncLens` filters hidden entries,
+sorts naturally, and reconciles by path so an `ItemId` survives a refresh.
+They are never written to the config, and `Config::migrate` drops any a
+hand-edited file lists. `AddItem` and `MoveItem` into a lens are `Rejected`;
+file changes there are shell operations.
+
 ### Desktop and desktop layer
 
 `Desktop { spaces: Vec<Space>, layer: DesktopLayer, layout: GridSpec }` has
@@ -221,12 +231,12 @@ bounds) -> CommandOutcome` (`Applied | NotFound | Rejected`;
 `is_applied()` is the usual check), where `layout` is the effective grid and
 `bounds` the work area of the monitor nearest the action (`work_area_at`).
 `command/mod.rs` holds the types and a dispatch `match` whose every arm calls
-a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`, and
-`layer_ops.rs` hold those by what they change, `sort.rs` the `SortSpace`
-ordering, and `mod.rs` the shared helpers `with_space` (run a change on a
-space or report `NotFound`), `rearrange`, and `close_gap`. The variants and
-their fields are documented on `Command`; the rules below are the ones a
-variant's doc cannot show.
+a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`,
+`lens_ops.rs`, and `layer_ops.rs` hold those by what they change, `sort.rs` the
+`SortSpace` ordering, and `mod.rs` the shared helpers `with_space` (run a
+change on a space or report `NotFound`), `rearrange`, and `close_gap`. The
+variants and their fields are documented on `Command`; the rules below are the
+ones a variant's doc cannot show.
 
 - `CreateSpace { title, at, size, locked }` clamps to the work area (no
   snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
@@ -244,6 +254,13 @@ variant's doc cannot show.
 - `SortSpace { id, key: SortKey, descending }` sorts by `Name`
   (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
   `Size`, or `Modified`.
+- `CreateLens { title, at, size, path, locked }` clamps like `CreateSpace` and
+  starts the lens with a default `FolderView`. `SetLensFolder { id, path }`
+  rebinds it and clears its items until the next sync; `SetLensView { id, view }`
+  replaces the view; `SyncLens { id, entries }` reconciles the listed items by
+  path, keeping ids, filtering hidden entries unless the view shows them, and
+  sorting names naturally (`file2` before `file10`, folders first when asked).
+  The include/exclude filters are stored for F-22 but not applied.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
@@ -323,6 +340,10 @@ default in `Default`.
   `modified`, `compressed`, and `encrypted` default, so a partial table fills
   in defaults instead of failing the file. Unknown keys (for example the
   removed `background_alpha`) are ignored.
+- A space saves its `source`; a lens's items are omitted because they are a
+  live view of its folder (`Space`'s `Serialize`). On load `Config::migrate`
+  drops any items a hand-edited file listed under a lens, and the next
+  `SyncLens` fills them again.
 - `ConfigStore` resolves its paths through `directories::ProjectDirs`
   (`%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`) or takes an explicit
   path. `storage_dir()`, where dropped files are moved, is
