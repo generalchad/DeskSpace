@@ -142,6 +142,9 @@ impl Config {
         self.window = self.window.clone().clamped();
         self.desktop.layout = self.desktop.layout.clamped();
         self.desktop.clamp_looks();
+        // A lens's items are a live view of its folder, never saved; drop any
+        // a hand-edited file listed so the next sync fills them again.
+        self.desktop.clear_lens_items();
     }
 }
 
@@ -150,7 +153,7 @@ mod tests {
     use super::*;
     use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
     use deskspace_core::theme::{ICON_SIZE_RANGE, OVERLAY_SIZE_RANGE, corner};
-    use deskspace_core::{Backdrop, Point};
+    use deskspace_core::{Backdrop, Command, FolderEntry, ItemKind, Point, Rect, Size, SortKey};
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
@@ -644,5 +647,156 @@ show_border = true
         assert_eq!(parsed.desktop.spaces().len(), 1);
         assert_eq!(parsed.desktop.spaces()[0].title(), "Work");
         assert!(parsed.theme.custom_colors);
+    }
+
+    fn bounds() -> Rect {
+        Rect::new(0, 0, 1920, 1080)
+    }
+
+    fn entry(name: &str) -> FolderEntry {
+        FolderEntry {
+            path: format!("C:/Docs/{name}").into(),
+            label: name.trim_end_matches(".txt").into(),
+            kind: ItemKind::File,
+            size: Some(3),
+            modified: Some(4),
+            hidden: false,
+        }
+    }
+
+    #[test]
+    fn a_space_with_items_still_round_trips() {
+        let mut config = Config::new();
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CreateSpace {
+                        title: "Work".into(),
+                        at: Point::ZERO,
+                        size: Size::new(240, 120),
+                        locked: false,
+                    },
+                    bounds(),
+                )
+                .is_applied()
+        );
+        let id = config.desktop.spaces()[0].id;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::AddItem {
+                        space: id,
+                        path: "C:/Docs/a.txt".into(),
+                        facts: deskspace_core::ItemFacts::default(),
+                    },
+                    bounds(),
+                )
+                .is_applied()
+        );
+        let text = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.desktop.spaces()[0].items().len(), 1);
+        assert!(!parsed.desktop.spaces()[0].is_lens());
+    }
+
+    #[test]
+    fn lens_views_round_trip_and_lens_items_are_not_written() {
+        let mut config = Config::new();
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::CreateLens {
+                        title: "Docs".into(),
+                        at: Point::ZERO,
+                        size: Size::new(240, 120),
+                        path: "C:/Docs".into(),
+                        locked: false,
+                    },
+                    bounds(),
+                )
+                .is_applied()
+        );
+        let id = config.desktop.spaces()[0].id;
+        assert!(
+            config
+                .desktop
+                .apply(
+                    Command::SyncLens {
+                        id,
+                        entries: vec![entry("a.txt")],
+                    },
+                    bounds(),
+                )
+                .is_applied()
+        );
+        assert_eq!(config.desktop.spaces()[0].items().len(), 1);
+
+        let text = toml::to_string_pretty(&config).unwrap();
+        assert!(text.contains("source"), "{text}");
+        assert!(text.contains("folder"), "{text}");
+        assert!(!text.contains("[[desktop.spaces.items]]"), "{text}");
+
+        let parsed: Config = toml::from_str(&text).unwrap();
+        let space = &parsed.desktop.spaces()[0];
+        assert!(space.is_lens());
+        assert_eq!(
+            space.folder_view().unwrap().path,
+            std::path::PathBuf::from("C:/Docs")
+        );
+        assert!(space.items().is_empty(), "items are a live view");
+    }
+
+    #[test]
+    fn a_hand_edited_lens_with_items_loads_empty() {
+        let text = r#"
+            version = 2
+
+            [[desktop.spaces]]
+            id = 1
+            title = "Docs"
+            rect = { x = 0, y = 0, width = 240, height = 120 }
+            source = { folder = { path = "C:/Docs" } }
+
+            [[desktop.spaces.items]]
+            id = 1
+            path = "C:/Docs/a.txt"
+            label = "a"
+        "#;
+        let mut parsed: Config = toml::from_str(text).unwrap();
+        assert_eq!(parsed.desktop.spaces()[0].items().len(), 1);
+        parsed.migrate();
+        assert!(parsed.desktop.spaces()[0].is_lens());
+        assert!(parsed.desktop.spaces()[0].items().is_empty());
+    }
+
+    #[test]
+    fn lens_view_defaults_and_saved_sort_parse() {
+        let text = r#"
+            version = 2
+
+            [[desktop.spaces]]
+            id = 1
+            title = "Docs"
+            rect = { x = 0, y = 0, width = 240, height = 120 }
+            source = { folder = { path = "C:/Docs" } }
+        "#;
+        let parsed: Config = toml::from_str(text).unwrap();
+        let view = parsed.desktop.spaces()[0].folder_view().unwrap();
+        assert_eq!(view.sort, SortKey::Name);
+        assert!(!view.descending && !view.folders_first && !view.show_hidden);
+        assert!(view.include.is_empty() && view.exclude.is_empty());
+
+        let text = text.replace(
+            "path = \"C:/Docs\"",
+            "path = \"C:/Docs\", sort = \"modified\"",
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(
+            parsed.desktop.spaces()[0].folder_view().unwrap().sort,
+            SortKey::Modified
+        );
     }
 }

@@ -516,9 +516,10 @@ Takeover ships opt-in (D8, D9).
 
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
-**In progress:** M2 (undo and the stored-file watch remain) and M3 (desktop
-verbs, F-52, and entries that wait on later milestones or design). Section 5
-lists what each has done.
+**In progress:** M2 (undo and the stored-file watch remain), M3 (desktop
+verbs, F-52, and entries that wait on later milestones or design), and M4
+(phase 1, the lens core model, is done; the platform watcher, app behavior,
+and views remain). Section 5 lists what each has done.
 
 **Next, in order:**
 
@@ -626,7 +627,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Wheel scrolling with an indicator.
   - Scenes carry only the visible items.
   - An LRU-bounded `IconCache` (F-03).
-- **Phase 1 - core model.**
+- **Phase 1 - core model. [done]**
   - A source on each space:
     `Space.source: SpaceSource { Items, Folder(FolderView) }`, with
     `#[serde(default)]`.
@@ -902,7 +903,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
-| F-07 | Lenses (folder portals) | M4 | Open |
+| F-07 | Lenses (folder portals) | M4 | Partial: core model only (M4 phase 1); platform watcher, menus, and settings open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
 | F-10 | Hide all on desktop double-click | M5 | Open |

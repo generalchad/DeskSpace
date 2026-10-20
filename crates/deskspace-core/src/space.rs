@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
+use crate::source::SpaceSource;
 use crate::theme::{Color, Theme};
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
@@ -57,12 +58,16 @@ impl SpaceLook {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Space {
     pub id: SpaceId,
     pub(crate) title: String,
     /// The whole space, title bar included, in desktop coordinates.
     pub(crate) rect: Rect,
+    /// What fills the space: its own items, or a folder it mirrors (a lens).
+    /// A lens's items are a live cache and are never written to the config.
+    #[serde(default)]
+    pub(crate) source: SpaceSource,
     #[serde(default)]
     pub(crate) items: Vec<Item>,
     #[serde(default)]
@@ -127,12 +132,54 @@ fn default_title_height() -> i32 {
     DEFAULT_TITLE_HEIGHT
 }
 
+/// The fields of `Space` that are saved. A lens's items are a view of its
+/// folder, so they are omitted: `SyncLens` fills them again on startup.
+#[derive(Serialize)]
+struct PersistedSpace<'a> {
+    id: SpaceId,
+    title: &'a str,
+    rect: Rect,
+    locked: bool,
+    #[serde(rename = "rolled_up")]
+    folded: bool,
+    custom: bool,
+    title_height: i32,
+    user_sized: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    look: Option<&'a SpaceLook>,
+    /// Omitted for an ordinary space, so its file looks as it always did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<&'a SpaceSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    items: Option<&'a [Item]>,
+}
+
+impl Serialize for Space {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PersistedSpace {
+            id: self.id,
+            title: &self.title,
+            rect: self.rect,
+            locked: self.locked,
+            folded: self.folded,
+            custom: self.custom,
+            title_height: self.title_height,
+            user_sized: self.user_sized,
+            look: self.look.as_ref(),
+            source: (!self.source.is_items()).then_some(&self.source),
+            items: (!self.is_lens()).then_some(self.items.as_slice()),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl Space {
     pub fn new(id: SpaceId, title: impl Into<String>, rect: Rect) -> Self {
         Self {
             id,
             title: title.into(),
             rect,
+            source: SpaceSource::Items,
             items: Vec::new(),
             locked: false,
             folded: false,
@@ -157,6 +204,21 @@ impl Space {
 
     pub fn items(&self) -> &[Item] {
         &self.items
+    }
+
+    /// What fills the space.
+    pub fn source(&self) -> &SpaceSource {
+        &self.source
+    }
+
+    /// Whether the space mirrors a folder (M4).
+    pub fn is_lens(&self) -> bool {
+        self.source.folder().is_some()
+    }
+
+    /// The lens's folder and view settings, or `None` for an ordinary space.
+    pub fn folder_view(&self) -> Option<&crate::source::FolderView> {
+        self.source.folder()
     }
 
     pub fn locked(&self) -> bool {

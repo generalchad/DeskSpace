@@ -7,6 +7,7 @@
 
 mod item_ops;
 mod layer_ops;
+mod lens_ops;
 mod sort;
 mod space_ops;
 mod touched;
@@ -18,8 +19,10 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
+use crate::source::{FolderEntry, FolderView};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 
+pub use crate::item::SortKey;
 pub use touched::Touched;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +34,35 @@ pub enum Command {
         at: Point,
         size: Size,
         locked: bool,
+    },
+    /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
+    /// `path` is only stored; `SyncLens` fills the items.
+    CreateLens {
+        title: String,
+        at: Point,
+        size: Size,
+        path: PathBuf,
+        locked: bool,
+    },
+    /// Rebinds a lens to `path` and clears its listed items until the next
+    /// `SyncLens`.
+    SetLensFolder {
+        id: SpaceId,
+        path: PathBuf,
+    },
+    /// Replaces a lens's view settings. The items are left as they are; the
+    /// app syncs the folder again to apply a changed filter or order.
+    SetLensView {
+        id: SpaceId,
+        view: FolderView,
+    },
+    /// Replaces a lens's items from the folder's current `entries`. Hidden
+    /// entries are dropped unless the view shows them; the result is sorted
+    /// with natural name order. A path that survives keeps its `ItemId`, a new
+    /// path gets a fresh id, and a path that is gone is dropped.
+    SyncLens {
+        id: SpaceId,
+        entries: Vec<FolderEntry>,
     },
     DeleteSpace {
         id: SpaceId,
@@ -114,7 +146,8 @@ pub enum Command {
         id: SpaceId,
     },
     /// Lists `path` in `space`. The caller reads `facts` from the file
-    /// system; core does no IO.
+    /// system; core does no IO. A lens is `Rejected`: its items come from its
+    /// folder through `SyncLens`.
     AddItem {
         space: SpaceId,
         path: PathBuf,
@@ -123,6 +156,9 @@ pub enum Command {
     RemoveItem {
         id: ItemId,
     },
+    /// Moves an item into `target`. Either side being a lens is `Rejected`
+    /// (ROADMAP D3): a lens is a view, so its moves are file moves through the
+    /// shell.
     MoveItem {
         id: ItemId,
         target: SpaceId,
@@ -172,15 +208,6 @@ pub enum Command {
     },
 }
 
-/// How `Command::SortSpace` orders a space's items.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortKey {
-    Name,
-    Kind,
-    Size,
-    Modified,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandOutcome {
     /// The command changed (or deliberately kept) the model.
@@ -220,6 +247,16 @@ impl Desktop {
                 size,
                 locked,
             } => self.apply_create_space(title, at, size, locked, bounds),
+            Command::CreateLens {
+                title,
+                at,
+                size,
+                path,
+                locked,
+            } => self.apply_create_lens(title, at, size, path, locked, bounds),
+            Command::SetLensFolder { id, path } => self.apply_set_lens_folder(id, path),
+            Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
+            Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),

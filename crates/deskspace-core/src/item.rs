@@ -35,6 +35,18 @@ impl ItemKind {
     }
 }
 
+/// How items are ordered by `Command::SortSpace` and by a lens's `FolderView`.
+/// The saved spelling is part of a lens's config, so a variant is never
+/// renamed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortKey {
+    Name,
+    Kind,
+    Size,
+    Modified,
+}
+
 /// What the file system knows about an item's path, read by the caller (core
 /// does no IO). The default is what an unreadable path yields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
