@@ -10,6 +10,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
+- section O, in order (on-screen checks by script);
 - Q2-Q6.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -835,6 +836,93 @@ the ROADMAP decision ids (`D1`-`D9`).
   `WM_NCDESTROY` invalidates, and how the handle stays on its thread.
   Then split it into one-commit tasks by module here. It touches
   `window_state.rs` and every window module, so plan it with K8.
+
+## O. On-screen checks a script can do
+
+Much of section V needs no eyes. Windows reports which window sits where,
+its styles, and what a click reaches (`scripts/zorder.ps1` already does),
+and a screen capture over a plain backdrop turns "a soft shadow" into
+numbers. These tasks build that harness and point it at one row, Drawn
+shadows (D15), first. A row a script covers is cut from section V by the
+V rules; what a script cannot judge (taste, Windows 10, a DPI this machine
+lacks) stays there.
+
+The harness is PowerShell with C# P/Invoke, like `zorder.ps1`, so no
+`unsafe` or Win32 code lands outside `deskspace-platform` (`ENGINEERING.md`
+section 3). It only reads: it changes a scratch config and its own
+backdrop window, never a Windows setting. A check whose branch this
+machine's settings do not select (Transparency effects on or off, a 150 %
+monitor) is reported as **not covered**, never passed.
+
+- [ ] **O1. The harness (scripts).**
+  - `scripts/onscreen/OnScreen.psm1`, one module every check imports:
+    - the P/Invoke class from `zorder.ps1`, moved here, plus
+      `GetDpiForWindow`, `GetDC`/`BitBlt` (`CAPTUREBLT`), and
+      `CreateDIBSection`; `zorder.ps1` imports it, and its output is
+      unchanged.
+    - `Start-DeskSpace -Config <toml>`: builds with `./scripts/dev.ps1
+      -NoRun`, writes the TOML to a fresh folder under `%TEMP%`, starts
+      `deskspace.exe --config <it> --on-top --no-icons`, and returns once
+      every space window is visible and its rect has held still for 500 ms.
+      Configs set Startup to None, so nothing animates.
+    - `Stop-DeskSpace`: ends that process and deletes the folder.
+    - `Show-Backdrop -Color <rgb>`: a borderless, non-topmost window of one
+      color over the primary monitor, under the `--on-top` spaces.
+    - `Get-DeskSpaceWindows`: each window of the process with its class,
+      handle, rect, extended style, DPI, and z-order index.
+    - `Get-ScreenPixels -Rect <r>`: the composed screen there, as BGR.
+    - `Assert-Check <name> <bool> <detail>` and `Complete-Checks`: print a
+      PASS / FAIL / NOT COVERED table and exit non-zero on any FAIL.
+  - `scripts/onscreen/smoke.ps1`: one Solid space with an opaque red tint
+    over a white backdrop. The capture reads red at the space's center and
+    white well away from it.
+  - **Stop and ask** if the smoke check cannot read the space's pixels
+    with `BitBlt` (composition content missing from the capture). The
+    fallback, `Windows.Graphics.Capture`, is a design change.
+  - `ENGINEERING.md` section 1 lists `scripts/onscreen/`, and `TASKS.md`
+    rule 8 says to run any `onscreen` script that covers a check before
+    handing what is left to a human.
+  - Done when `smoke.ps1` exits 0 here and `zorder.ps1` prints what it did.
+- [ ] **O2. Shadows: which windows, where (D15).**
+  `scripts/onscreen/shadows.ps1`, structure only, no pixels. It reads
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency`
+  and runs the matching half of the D15 row. Cases: Acrylic, Blur, Solid,
+  and Clear at radius 0, 4, 8, and 16; `--placement desktop-bottom`; and
+  `--takeover-layer`. For each:
+  - Exactly one visible `DeskSpaceShadow` per space that should cast one
+    (the row's rules), and none for Clear, desktop placement, and the
+    layer; with `show_shadow = false`, none at all.
+  - The shadow is the next window below its space
+    (`GetWindow(space, GW_HWNDNEXT)`).
+  - Its extended style has `WS_EX_LAYERED`, `WS_EX_TRANSPARENT`,
+    `WS_EX_NOACTIVATE`, and `WS_EX_TOOLWINDOW`.
+  - Its rect is `ShadowLook::rect` of the space's rect (`render/shadow.rs`),
+    with the reach scaled to the window's DPI the way
+    `space_window::sync_shadow` scales it. Read both; do not guess.
+  - `WindowFromPoint` at the middle of the band left of the space, and of
+    the band below it, reaches the backdrop, not the shadow.
+  - Two spaces, one customized with `shadow_size = 40`: each shadow's
+    reach matches its own theme.
+  - Done when it exits 0 here with every case of this machine's half
+    covered.
+- [ ] **O3. Shadows: the pixels (D15).** `shadows.ps1 -Pixels` adds, over
+  a white backdrop, alpha read as `1 - R / 255` on lines out from the
+  middle of the left edge, the bottom edge, and the top-left corner's
+  diagonal:
+  - The darkest alpha is within 0.05 of `shadow_opacity` and found within
+    a few pixels of the edge. Alpha never rises going outward, and is 0
+    from the reach on (`shadow_size` 2, 16, and 48; opacity 0, 40, and 100).
+  - The band below is wider than the band above by the drop
+    (`ShadowLook::drop`).
+  - Corners follow the radius: on the diagonal, where alpha falls under
+    half the peak moves inward from radius 0 to 16 by about
+    `r * (1 - 1/sqrt(2))`, within 2 px.
+  - Inside a Solid space the pixels equal its tint: the cut-out leaves
+    the space undarkened.
+  - Done when it exits 0 here; then cut what it covers from the Drawn
+    shadows row (rest: animations, the Settings page, the debug toggles,
+    Windows 10, and any DPI not covered) and log the cut, dated, as the V
+    rules say.
 
 ## V. Awaiting on-screen check
 
