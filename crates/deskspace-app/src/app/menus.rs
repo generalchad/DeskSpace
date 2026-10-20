@@ -148,15 +148,56 @@ impl App {
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
-        self.commit(
-            ui,
+        let effects = self.sort_space_items(id, key, descending, at);
+        self.run(ui, effects);
+    }
+
+    pub(super) fn sort_space_items(
+        &mut self,
+        id: SpaceId,
+        key: SortKey,
+        descending: bool,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        self.record_effects(
+            "Sort space",
             Command::SortSpace {
                 id,
                 key,
                 descending,
             },
             at,
+            Vec::new(),
+        )
+    }
+
+    pub(super) fn fit_space_to_contents(
+        &mut self,
+        id: SpaceId,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        let effects = self.record_effects(
+            "Fit to contents",
+            Command::FitToContents { id },
+            at,
+            Vec::new(),
         );
+        if !effects.is_empty() {
+            self.view_cache.set_scroll(id, 0);
+        }
+        effects
+    }
+
+    pub(super) fn toggle_space_lock(
+        &mut self,
+        id: SpaceId,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        let label = match self.config.desktop.space(id) {
+            Some(space) if space.locked() => "Unlock space",
+            _ => "Lock space",
+        };
+        self.record_effects(label, Command::ToggleLock { id }, at, Vec::new())
     }
 
     pub(super) fn show_item_menu(
@@ -221,8 +262,12 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
+        let [undo, redo] = self.undo_entries();
         let fold = if space.folded() { "Unfold" } else { "Fold" };
         let mut entries = vec![
+            undo,
+            redo,
+            MenuEntry::Separator,
             menu_item(MenuId::Fold, fold),
             menu_item(MenuId::Rename, "Rename"),
             menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
@@ -262,15 +307,12 @@ impl App {
             Some(MenuId::Rename) => self.begin_rename(ui, id),
             Some(MenuId::Delete) => self.delete_space(ui, id),
             Some(MenuId::Fit) => {
-                if self
-                    .commit(ui, Command::FitToContents { id }, at)
-                    .is_applied()
-                {
-                    self.view_cache.set_scroll(id, 0);
-                }
+                let effects = self.fit_space_to_contents(id, at);
+                self.run(ui, effects);
             }
             Some(MenuId::Lock) => {
-                self.commit(ui, Command::ToggleLock { id }, at);
+                let effects = self.toggle_space_lock(id, at);
+                self.run(ui, effects);
             }
             Some(MenuId::SpaceTint) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
             Some(MenuId::SpaceText) => self.pick_space_color(ui, id, at, SpaceColor::Text),
@@ -371,7 +413,13 @@ impl App {
     }
 
     pub(super) fn show_tray_menu(&mut self, ui: &mut Ui, at: Point) {
-        let mut entries = vec![menu_item(MenuId::Settings, "Settings\u{2026}")];
+        let [undo, redo] = self.undo_entries();
+        let mut entries = vec![
+            undo,
+            redo,
+            MenuEntry::Separator,
+            menu_item(MenuId::Settings, "Settings\u{2026}"),
+        ];
         if self.debug.is_some() {
             entries.push(menu_item(MenuId::Debug, "Debug\u{2026}"));
         }
@@ -409,8 +457,22 @@ impl App {
         }
     }
 
+    pub(super) fn undo_entries(&self) -> [MenuEntry; 2] {
+        let undo = match self.undo.undo_label() {
+            Some(label) => menu_item(MenuId::Undo, format!("Undo {label}")),
+            None => menu_item(MenuId::Undo, "Undo").enabled(false),
+        };
+        let redo = match self.undo.redo_label() {
+            Some(label) => menu_item(MenuId::Redo, format!("Redo {label}")),
+            None => menu_item(MenuId::Redo, "Redo").enabled(false),
+        };
+        [undo, redo]
+    }
+
     pub(super) fn run_common_menu(&mut self, ui: &mut Ui, choice: MenuId, at: Point) {
         match choice {
+            MenuId::Undo => self.undo(ui),
+            MenuId::Redo => self.redo(ui),
             MenuId::NewSpace => {
                 self.create_space(ui, at);
             }
@@ -447,6 +509,16 @@ impl App {
     /// Creates a space at `origin` with the configured title and lock state,
     /// shows it, and returns its id.
     fn open_new_space(&mut self, ui: &mut Ui, origin: Point, size: Size) -> Option<SpaceId> {
+        let id = self.create_new_space(origin, size)?;
+        if !self.visible {
+            self.set_visible(ui, true);
+        }
+        self.sync_windows(ui);
+        self.schedule_save(ui);
+        Some(id)
+    }
+
+    pub(super) fn create_new_space(&mut self, origin: Point, size: Size) -> Option<SpaceId> {
         let window = &self.config.window;
         let title = window.new_space_title.trim();
         let title = if title.is_empty() {
@@ -462,17 +534,12 @@ impl App {
             size,
             locked,
         };
+        self.undo.begin("New space");
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.
-        if !self.dispatch(command, origin).is_applied() {
-            return None;
-        }
-        if !self.visible {
-            self.set_visible(ui, true);
-        }
-        self.sync_windows(ui);
-        self.schedule_save(ui);
-        Some(id)
+        let applied = self.dispatch(command, origin).is_applied();
+        self.undo.finish(&self.config.desktop);
+        applied.then_some(id)
     }
 
     /// The configured size of a new space, clamped to its range.
@@ -660,6 +727,39 @@ mod tests {
                 content.x + position.x + layout.cell_width / 2,
                 content.y + position.y + layout.cell_height / 2,
             ))
+        );
+    }
+
+    #[test]
+    fn undo_menu_entries_name_the_top_action_and_grey_when_empty() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo").enabled(false),
+                menu_item(MenuId::Redo, "Redo").enabled(false),
+            ]
+        );
+
+        app.rename_space(id, "Work".to_string());
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo Rename space"),
+                menu_item(MenuId::Redo, "Redo").enabled(false),
+            ]
+        );
+
+        app.apply_undo();
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo").enabled(false),
+                menu_item(MenuId::Redo, "Redo Rename space"),
+            ]
         );
     }
 }

@@ -1140,11 +1140,12 @@ in `ui.rs`. What spans them:
 
 **Menus**
 
-- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Fold/Unfold,
-  Rename, Lock position, Fit to contents (resized, unlocked spaces only); New
-  shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
-  unless the space is empty); New space; Settings…, Hide/Show spaces, Exit
-  DeskSpace.
+- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
+  (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
+  Fold/Unfold, Rename, Lock position, Fit to contents (resized, unlocked spaces
+  only); New shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space
+  (asks first unless the space is empty); New space; Settings…, Hide/Show
+  spaces, Exit DeskSpace.
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
@@ -1179,10 +1180,11 @@ in `ui.rs`. What spans them:
   ROADMAP D3), so a picked file is relocated exactly like a dragged one.
   Cancelling adds nothing.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Settings…, Hide/Show spaces, New space, Check for updates… (or
-  "Restart to update to X" once an automatic update is downloaded), and Exit
-  DeskSpace, and, with `--debug`, Debug…. A space created from the tray goes to the center of the work
-  area, and creating a space while spaces are hidden shows them.
+  offers Undo and Redo, Settings…, Hide/Show spaces, New space, Check for
+  updates… (or "Restart to update to X" once an automatic update is
+  downloaded), and Exit DeskSpace, and, with `--debug`, Debug…. A space
+  created from the tray goes to the center of the work area, and creating a
+  space while spaces are hidden shows them.
 
 **Settings**
 

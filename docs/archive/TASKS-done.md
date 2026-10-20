@@ -3025,3 +3025,23 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: an entry round trip, the depth cap, a new entry clears redo, a
     changed space or a moved file makes an entry stale, and an empty action
     records nothing.
+
+- [x] **U3. Undo and redo layout changes (app).**
+  - `App::dispatch` calls `note_space` for every space in `touched_by`
+    while an entry is open. Wrap each user action in `begin`/`finish` at its
+    entry point (menu choice, drag end, resize end, rename commit, new
+    space, delete space): move, resize, reorder, sort, arrange, snap all,
+    fit to contents, lock, fold, rename a space, create a space, and move
+    items between spaces. A drag records once, on release, not per mouse
+    move.
+  - `App::undo` and `App::redo` (in `app/undo.rs`): check the top entry; if
+    it is stale, drop it and tell the user with `ui.alert` ("DeskSpace can't
+    undo “Move 3 items”, because the space changed since."); otherwise
+    dispatch `RestoreSpaces`, move the entry across, refresh what it names,
+    and save. File changes are reversed in U5-U7; until then an entry that
+    holds any is never recorded.
+  - Menus (the menu-entry recipe): Undo and Redo, named for the entry's
+    label ("Undo Move 3 items"), at the top of the space menu and the tray,
+    greyed when there is nothing to do.
+  - Tests: through `fixtures.rs`, each listed action records one entry that
+    undoes and redoes; a settings-window edit records none.

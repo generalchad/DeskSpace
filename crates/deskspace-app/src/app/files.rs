@@ -10,6 +10,7 @@ use deskspace_platform::{
     desktop_directory, item_facts, notify_moved,
 };
 
+use super::undo::move_items_label;
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 use crate::storage::ItemStore;
 
@@ -36,11 +37,15 @@ impl App {
         at: Point,
         add: impl FnOnce(&mut Self, &mut Ui, SpaceId),
     ) {
+        self.undo.begin("New space");
         let target = match surface {
             Surface::Space(id) => id,
             Surface::Desktop => match self.create_space_for_drop(ui, at) {
                 Some(id) => id,
-                None => return,
+                None => {
+                    self.undo.cancel();
+                    return;
+                }
             },
         };
         add(self, ui, target);
@@ -52,7 +57,10 @@ impl App {
                 .is_some_and(|space| space.items().is_empty());
         if left_empty {
             self.delete_space(ui, target);
+            self.undo.cancel();
+            return;
         }
+        self.undo.finish(&self.config.desktop);
     }
 
     pub(super) fn add_dropped(
@@ -63,7 +71,10 @@ impl App {
         paths: Vec<PathBuf>,
         action: DropAction,
     ) {
+        self.undo.begin(move_items_label(paths.len()));
         let mut touched = HashSet::from([target]);
+        let mut moved_items = 0usize;
+        let mut touched_files = false;
         for path in paths {
             // A drop can name a file that no longer exists (for example a
             // stale desktop icon). Listing it would show a label without an
@@ -81,13 +92,20 @@ impl App {
                         }
                         None => {}
                     }
+                    moved_items += 1;
                     Command::MoveItem { id: item, target }
                 }
                 None => {
                     let placed = match action {
                         DropAction::KeepInPlace => Some(path),
-                        DropAction::Move => self.place_dropped(path),
-                        DropAction::Copy => self.copy_dropped(ui, path),
+                        DropAction::Move => {
+                            touched_files = true;
+                            self.place_dropped(path)
+                        }
+                        DropAction::Copy => {
+                            touched_files = true;
+                            self.copy_dropped(ui, path)
+                        }
                     };
                     match placed {
                         Some(path) => Command::AddItem {
@@ -102,6 +120,14 @@ impl App {
             // Not `commit`: one of several commands, refreshed once below.
             self.dispatch(command, at);
         }
+        if touched_files {
+            // File changes are reversed in U5-U7; until then an entry that
+            // holds any is not recorded.
+            self.undo.cancel();
+        } else if moved_items > 0 {
+            self.undo.set_label(move_items_label(moved_items));
+        }
+        self.undo.finish(&self.config.desktop);
         for id in &touched {
             self.refresh_space(ui, *id);
         }
@@ -112,6 +138,39 @@ impl App {
         }
         self.refresh_tray(ui);
         self.save(ui);
+    }
+
+    /// Moves `items` from their current spaces into `target`, recording one
+    /// undo entry. Returns the spaces that changed.
+    pub(super) fn move_items_to_space(
+        &mut self,
+        items: &[ItemId],
+        target: SpaceId,
+        at: Point,
+    ) -> HashSet<SpaceId> {
+        let mut touched = HashSet::from([target]);
+        let mut moved = 0usize;
+        self.undo.begin(move_items_label(items.len()));
+        for &item in items {
+            match self.config.desktop.space_containing(item) {
+                Some(source) if source == target => continue,
+                Some(source) => {
+                    touched.insert(source);
+                }
+                None => {}
+            }
+            if self
+                .dispatch(Command::MoveItem { id: item, target }, at)
+                .is_applied()
+            {
+                moved += 1;
+            }
+        }
+        if moved > 0 {
+            self.undo.set_label(move_items_label(moved));
+        }
+        self.undo.finish(&self.config.desktop);
+        touched
     }
 
     /// Creates a shortcut in the store for each source and lists it in
@@ -443,6 +502,8 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
+        let touches_files =
+            stored == StoredFiles::ToRecycleBin || !stored_paths(space, &self.storage).is_empty();
         if stored == StoredFiles::ToRecycleBin {
             let paths = stored_paths(space, &self.storage);
             let recycled = paths.is_empty()
@@ -457,13 +518,35 @@ impl App {
                 return;
             }
         }
+        self.undo.begin("Delete space");
+        if touches_files {
+            // File changes are reversed in U5-U7; until then an entry that
+            // holds any is not recorded.
+            self.undo.cancel();
+        }
         // Any stored files still here go back to the desktop before the
         // space goes; recycled ones are gone, so `release_item` only unlists
         // them.
-        let Some(space) = self.config.desktop.space(id) else {
+        if !self.release_and_delete_space(id) {
+            self.undo.cancel();
+            self.refresh_space(ui, id);
+            self.save(ui);
             return;
+        }
+        self.undo.finish(&self.config.desktop);
+        self.sync_windows(ui);
+        self.save(ui);
+    }
+
+    pub(super) fn release_and_delete_space(&mut self, id: SpaceId) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
         };
+        let near = self.space_center(id);
         let items: Vec<ItemId> = space.items().iter().map(|item| item.id).collect();
+        // Note the space before `release_item` removes its items, so `before`
+        // holds the space with all of its items.
+        self.undo.note_space(&self.config.desktop, id);
         let kept = items
             .into_iter()
             .filter(|item| !self.release_item(*item))
@@ -473,24 +556,21 @@ impl App {
                 kept,
                 "space kept because some files could not be moved back"
             );
-            self.refresh_space(ui, id);
-            self.save(ui);
-            return;
+            return false;
         }
-        let near = self.space_center(id);
         // Not `commit`: a deleted space closes its window and saves at once.
-        if self
+        if !self
             .dispatch(Command::DeleteSpace { id }, near)
             .is_applied()
         {
-            if self.selection.surface == Some(Surface::Space(id)) {
-                self.selection.clear();
-            }
-            self.pointer.clear_hover_on(Surface::Space(id));
-            self.view_cache.forget(id);
-            self.sync_windows(ui);
-            self.save(ui);
+            return false;
         }
+        if self.selection.surface == Some(Surface::Space(id)) {
+            self.selection.clear();
+        }
+        self.pointer.clear_hover_on(Surface::Space(id));
+        self.view_cache.forget(id);
+        true
     }
 }
 

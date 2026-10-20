@@ -211,8 +211,8 @@ impl App {
                 if commit {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
-                        let near = self.space_center(id);
-                        self.commit(ui, Command::RenameSpace { id, title }, near);
+                        let effects = self.rename_space(id, title);
+                        self.run(ui, effects);
                     }
                 }
             }
@@ -226,6 +226,20 @@ impl App {
             }
         }
         self.refresh_surface(ui, surface);
+    }
+
+    pub(super) fn rename_space(
+        &mut self,
+        id: SpaceId,
+        title: String,
+    ) -> Vec<super::effect::Effect> {
+        let near = self.space_center(id);
+        self.record_effects(
+            "Rename space",
+            Command::RenameSpace { id, title },
+            near,
+            Vec::new(),
+        )
     }
 
     /// Renames an item's file to the edited text and updates the model. The

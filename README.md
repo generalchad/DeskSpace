@@ -106,8 +106,8 @@ help inspect the look and the desktop layer.
   or a new row underneath.
 - Double-click a space title bar to fold or unfold it (animated; Settings >
   Animations > Fold sets the speed). Right-click a space for
-  fold, rename, lock, fit to contents, new shortcut, appearance, sort,
-  delete, new space, settings, hide/show spaces, and exit. "New shortcut"
+  undo, redo, fold, rename, lock, fit to contents, new shortcut, appearance,
+  sort, delete, new space, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
   web address, pastes a shortcut to what you copied in Explorer ("Paste

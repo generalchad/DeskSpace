@@ -1,15 +1,28 @@
-#![expect(dead_code, reason = "U3 adds the first caller")]
-
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use deskspace_core::{Desktop, Space, SpaceId};
+use deskspace_core::geometry::Point;
+use deskspace_core::{Command, Desktop, Space, SpaceId};
+use deskspace_platform::Ui;
+
+use super::effect::Effect;
+use super::{App, Surface};
 
 /// Maximum number of undo entries kept in the session history (`ROADMAP.md` D11).
 pub(super) const UNDO_DEPTH: usize = 50;
 
+/// Label for moving one or several items.
+pub(super) fn move_items_label(count: usize) -> String {
+    if count == 1 {
+        "Move item".to_string()
+    } else {
+        format!("Move {count} items")
+    }
+}
+
 /// A filesystem change made by a user action, recorded in the order it happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "U5-U7 record file changes"))]
 pub(super) enum FileChange {
     Moved { from: PathBuf, to: PathBuf },
     Renamed { from: PathBuf, to: PathBuf },
@@ -78,6 +91,8 @@ struct OpenEntry {
     label: String,
     spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
     files: Vec<FileChange>,
+    depth: usize,
+    cancelled: bool,
 }
 
 /// Session-only undo and redo stacks (`ROADMAP.md` D11).
@@ -86,16 +101,72 @@ pub(super) struct UndoStack {
     pub undo: Vec<UndoEntry>,
     pub redo: Vec<UndoEntry>,
     open: Option<OpenEntry>,
+    suppressed: bool,
 }
 
 impl UndoStack {
-    /// Starts recording a user action under `label`.
+    /// Starts recording a user action under `label`. Nested `begin` calls
+    /// merge into the outer entry so a composite action (such as opening a
+    /// new space on a desktop drop and moving items into it) records once.
     pub(super) fn begin(&mut self, label: impl Into<String>) {
-        self.open = Some(OpenEntry {
-            label: label.into(),
-            spaces: Vec::new(),
-            files: Vec::new(),
-        });
+        if self.suppressed {
+            return;
+        }
+        match &mut self.open {
+            Some(open) => open.depth += 1,
+            None => {
+                self.open = Some(OpenEntry {
+                    label: label.into(),
+                    spaces: Vec::new(),
+                    files: Vec::new(),
+                    depth: 1,
+                    cancelled: false,
+                });
+            }
+        }
+    }
+
+    /// Starts recording under `label` when no entry is open yet (used by
+    /// multi-step pointer drags that finish on button release).
+    pub(super) fn begin_if_none(&mut self, label: impl Into<String>) {
+        if self.open.is_none() {
+            self.begin(label);
+        }
+    }
+
+    /// Updates the open entry's label.
+    pub(super) fn set_label(&mut self, label: impl Into<String>) {
+        if let Some(open) = &mut self.open {
+            open.label = label.into();
+        }
+    }
+
+    /// Discards the open entry (even if nested), recording nothing.
+    pub(super) fn cancel(&mut self) {
+        if let Some(open) = &mut self.open {
+            open.cancelled = true;
+            if open.depth <= 1 {
+                self.open = None;
+            }
+        }
+    }
+
+    /// Turns recording off or on (used while a debug-window tool runs).
+    pub(super) fn set_suppressed(&mut self, suppressed: bool) {
+        self.suppressed = suppressed;
+        if suppressed {
+            self.open = None;
+        }
+    }
+
+    /// Label of the next action [`App::undo`] will undo, if any.
+    pub(super) fn undo_label(&self) -> Option<&str> {
+        self.undo.last().map(|entry| entry.label.as_str())
+    }
+
+    /// Label of the next action [`App::redo`] will redo, if any.
+    pub(super) fn redo_label(&self) -> Option<&str> {
+        self.redo.last().map(|entry| entry.label.as_str())
     }
 
     /// Captures `id`'s current state in `desktop` the first time the open entry sees it.
@@ -110,6 +181,7 @@ impl UndoStack {
     }
 
     /// Records a filesystem change in the open entry.
+    #[cfg_attr(not(test), expect(dead_code, reason = "U5-U7 record file changes"))]
     pub(super) fn note_file(&mut self, change: FileChange) {
         if let Some(open) = &mut self.open {
             open.files.push(change);
@@ -119,9 +191,19 @@ impl UndoStack {
     /// Closes the open entry, reads each noted space's `after` state from `desktop`,
     /// and pushes the entry if anything changed.
     pub(super) fn finish(&mut self, desktop: &Desktop) {
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        if open.depth > 1 {
+            open.depth -= 1;
+            return;
+        }
         let Some(open) = self.open.take() else {
             return;
         };
+        if open.cancelled {
+            return;
+        }
         let spaces: Vec<SpaceChange> = open
             .spaces
             .into_iter()
@@ -154,19 +236,216 @@ fn space_state(desktop: &Desktop, id: SpaceId) -> Option<(usize, Space)> {
         .map(|(index, space)| (index, space.clone()))
 }
 
+/// Outcome of a pure [`App::apply_undo`] or [`App::apply_redo`] step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum StepOutcome {
+    Empty,
+    Stale(String),
+    Applied {
+        touched: Vec<SpaceId>,
+        windows_changed: bool,
+        folded: Vec<SpaceId>,
+    },
+}
+
+fn stale_undo_text(label: &str) -> String {
+    format!("DeskSpace can't undo \u{201C}{label}\u{201D}, because the space changed since.")
+}
+
+fn stale_redo_text(label: &str) -> String {
+    format!("DeskSpace can't redo \u{201C}{label}\u{201D}, because the space changed since.")
+}
+
+impl App {
+    pub(super) fn undo(&mut self, ui: &mut Ui) {
+        match self.apply_undo() {
+            StepOutcome::Empty => {}
+            StepOutcome::Stale(label) => {
+                ui.alert("DeskSpace can't undo", &stale_undo_text(&label));
+            }
+            StepOutcome::Applied {
+                touched,
+                windows_changed,
+                folded,
+            } => self.finish_restore(ui, touched, windows_changed, folded),
+        }
+    }
+
+    pub(super) fn redo(&mut self, ui: &mut Ui) {
+        match self.apply_redo() {
+            StepOutcome::Empty => {}
+            StepOutcome::Stale(label) => {
+                ui.alert("DeskSpace can't redo", &stale_redo_text(&label));
+            }
+            StepOutcome::Applied {
+                touched,
+                windows_changed,
+                folded,
+            } => self.finish_restore(ui, touched, windows_changed, folded),
+        }
+    }
+
+    pub(super) fn apply_undo(&mut self) -> StepOutcome {
+        let Some(entry) = self.undo.undo.pop() else {
+            return StepOutcome::Empty;
+        };
+        if !entry.can_undo(&self.config.desktop, |path| path.exists()) {
+            return StepOutcome::Stale(entry.label);
+        }
+        let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
+            .spaces
+            .iter()
+            .map(|change| (change.id, change.before.clone()))
+            .collect();
+        let Some(outcome) = self.apply_restore_step(&entry, restore) else {
+            return StepOutcome::Stale(entry.label);
+        };
+        self.undo.redo.push(entry);
+        outcome
+    }
+
+    pub(super) fn apply_redo(&mut self) -> StepOutcome {
+        let Some(entry) = self.undo.redo.pop() else {
+            return StepOutcome::Empty;
+        };
+        if !entry.can_redo(&self.config.desktop, |path| path.exists()) {
+            return StepOutcome::Stale(entry.label);
+        }
+        let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
+            .spaces
+            .iter()
+            .map(|change| (change.id, change.after.clone()))
+            .collect();
+        let Some(outcome) = self.apply_restore_step(&entry, restore) else {
+            return StepOutcome::Stale(entry.label);
+        };
+        self.undo.undo.push(entry);
+        outcome
+    }
+
+    fn apply_restore_step(
+        &mut self,
+        entry: &UndoEntry,
+        spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
+    ) -> Option<StepOutcome> {
+        let windows_changed = entry
+            .spaces
+            .iter()
+            .any(|change| change.before.is_none() != change.after.is_none());
+        let folded: Vec<SpaceId> = entry
+            .spaces
+            .iter()
+            .filter_map(|change| {
+                let (_, before) = change.before.as_ref()?;
+                let (_, after) = change.after.as_ref()?;
+                (before.folded() != after.folded()).then_some(change.id)
+            })
+            .collect();
+        let touched: Vec<SpaceId> = entry.spaces.iter().map(|change| change.id).collect();
+        if !self
+            .dispatch(Command::RestoreSpaces { spaces }, Point::default())
+            .is_applied()
+        {
+            return None;
+        }
+        for &id in &touched {
+            match self.config.desktop.space(id) {
+                None => {
+                    if self.selection.surface == Some(Surface::Space(id)) {
+                        self.selection.clear();
+                    }
+                    self.pointer.clear_hover_on(Surface::Space(id));
+                    self.view_cache.forget(id);
+                    if let Some(session) = self.settings_ui.session_mut() {
+                        session.forget_space(id);
+                    }
+                }
+                Some(space) => {
+                    if self.selection.surface == Some(Surface::Space(id)) {
+                        if space.folded() {
+                            self.selection.clear();
+                        } else {
+                            self.selection
+                                .items
+                                .retain(|item| space.item(*item).is_some());
+                        }
+                    }
+                    if let (Some(session), Some(space)) = (
+                        self.settings_ui.session_mut(),
+                        self.config.desktop.space(id),
+                    ) {
+                        session.resnapshot(space);
+                    }
+                }
+            }
+        }
+        Some(StepOutcome::Applied {
+            touched,
+            windows_changed,
+            folded,
+        })
+    }
+
+    fn finish_restore(
+        &mut self,
+        ui: &mut Ui,
+        touched: Vec<SpaceId>,
+        windows_changed: bool,
+        folded: Vec<SpaceId>,
+    ) {
+        if windows_changed {
+            self.sync_windows(ui);
+        }
+        for id in folded {
+            self.run(ui, vec![Effect::FoldSpace(id)]);
+        }
+        for id in touched {
+            if self.config.desktop.space(id).is_some() {
+                self.restyle_space(ui, id);
+            }
+        }
+        if self.settings_ui.is_open() {
+            self.refresh_settings(ui);
+        }
+        self.refresh_tray(ui);
+        self.save(ui);
+    }
+
+    /// Arranges `id`'s items onto the grid, recording an undo entry.
+    #[cfg(test)]
+    pub(super) fn arrange_space(&mut self, id: SpaceId, at: Point) -> Vec<Effect> {
+        self.record_effects("Arrange space", Command::AutoArrange { id }, at, Vec::new())
+    }
+
+    /// Snaps every unlocked space to the grid, recording an undo entry.
+    #[cfg(test)]
+    pub(super) fn snap_all_spaces(&mut self, at: Point) -> Vec<Effect> {
+        self.record_effects("Snap all", Command::SnapAll, at, Vec::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
     use std::time::UNIX_EPOCH;
 
-    use deskspace_core::{Command, Rect};
+    use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::geometry::Size;
+    use deskspace_core::{Command, Item, ItemId, Rect, ResizeEdges, SortKey};
+    use deskspace_platform::FieldValue;
 
-    use crate::fixtures::{apply, create_space};
+    use crate::fixtures::{add_item, apply, create_space};
+    use crate::settings::{Session, field};
 
     use super::*;
 
     fn sample_rect(x: i32) -> Rect {
         Rect::new(x, 32, 320, 208)
+    }
+
+    fn test_app() -> App {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        App::new(Config::new(), store, false, false)
     }
 
     #[test]
@@ -284,6 +563,8 @@ mod tests {
 
         let from = PathBuf::from(r"C:\Users\alice\Desktop\a.txt");
         let to = PathBuf::from(r"C:\Store\a.txt");
+        let renamed_from = PathBuf::from(r"C:\Store\old_name.txt");
+        let renamed_to = PathBuf::from(r"C:\Store\new_name.txt");
         let created = PathBuf::from(r"C:\Store\copy.txt");
         let recycled = PathBuf::from(r"C:\Store\old.txt");
 
@@ -293,6 +574,10 @@ mod tests {
         stack.note_file(FileChange::Moved {
             from: from.clone(),
             to: to.clone(),
+        });
+        stack.note_file(FileChange::Renamed {
+            from: renamed_from,
+            to: renamed_to.clone(),
         });
         stack.note_file(FileChange::Created {
             path: created.clone(),
@@ -304,7 +589,9 @@ mod tests {
         stack.finish(&desktop);
 
         let entry = &stack.undo[0];
-        let mut disk: HashSet<PathBuf> = [to.clone(), created.clone()].into_iter().collect();
+        let mut disk: HashSet<PathBuf> = [to.clone(), renamed_to.clone(), created.clone()]
+            .into_iter()
+            .collect();
         assert!(entry.can_undo(&desktop, |p| disk.contains(p)));
 
         // Moving `to` away outside DeskSpace makes the entry stale.
@@ -321,6 +608,7 @@ mod tests {
         assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
         disk.clear();
         disk.insert(to);
+        disk.insert(renamed_to);
         disk.insert(created);
 
         // Changing the space outside the entry makes it stale.
@@ -332,5 +620,270 @@ mod tests {
             },
         );
         assert!(!entry.can_undo(&desktop, |p| disk.contains(p)));
+    }
+
+    #[test]
+    fn move_and_resize_drags_record_once_on_release_and_round_trip() {
+        let mut app = test_app();
+        let id = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+        let initial_rect = app.config.desktop.space(id).unwrap().rect();
+
+        // Multi-step space drag records one entry on release.
+        app.drag_space_to(id, Point::new(0, 0), Point::new(160, 32));
+        app.drag_space_to(id, Point::new(0, 0), Point::new(320, 32));
+        assert!(app.undo.undo.is_empty());
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo.len(), 1);
+        let moved_rect = app.config.desktop.space(id).unwrap().rect();
+        assert_ne!(moved_rect, initial_rect);
+
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), initial_rect);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), moved_rect);
+
+        // Multi-step resize drag records one entry on release, and FitToContents undoes it.
+        let right_edge = ResizeEdges {
+            right: true,
+            ..ResizeEdges::NONE
+        };
+        app.resize_space_to(
+            id,
+            right_edge,
+            Point::new(moved_rect.right(), 100),
+            (true, false),
+            Point::new(moved_rect.right() + 200, 100),
+        );
+        app.resize_space_to(
+            id,
+            right_edge,
+            Point::new(moved_rect.right(), 100),
+            (true, false),
+            Point::new(moved_rect.right() + 300, 100),
+        );
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo.len(), 2);
+        let resized_rect = app.config.desktop.space(id).unwrap().rect();
+        assert!(resized_rect.width > moved_rect.width);
+
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), moved_rect);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), resized_rect);
+
+        // Fit to contents records one entry and undoes/redoes.
+        app.fit_space_to_contents(id, resized_rect.center());
+        assert_eq!(app.undo.undo_label(), Some("Fit to contents"));
+        let fitted_rect = app.config.desktop.space(id).unwrap().rect();
+        assert!(!app.config.desktop.space(id).unwrap().user_sized());
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), resized_rect);
+        assert!(app.config.desktop.space(id).unwrap().user_sized());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), fitted_rect);
+    }
+
+    #[test]
+    fn reorder_sort_arrange_and_snap_all_round_trip() {
+        let mut app = test_app();
+        let id = create_space(&mut app.config.desktop, "Work", Rect::new(23, 37, 480, 320));
+        let first = add_item(&mut app.config.desktop, id, "C:/missing/b.txt");
+        let second = add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
+
+        let order = |app: &App| -> Vec<ItemId> {
+            app.config
+                .desktop
+                .space(id)
+                .unwrap()
+                .items()
+                .iter()
+                .map(|i| i.id)
+                .collect()
+        };
+        assert_eq!(order(&app), vec![first, second]);
+
+        // Reorder by dragging `first` onto `second`'s slot.
+        let second_pos = {
+            let space = app.config.desktop.space(id).unwrap();
+            let content = space.content_rect();
+            let pos = space.item(second).unwrap().position;
+            Point::new(content.x + pos.x + 10, content.y + pos.y + 10)
+        };
+        assert!(app.reorder_item_step(id, first, second_pos));
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo_label(), Some("Move item"));
+        assert_eq!(order(&app), vec![second, first]);
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(order(&app), vec![first, second]);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(order(&app), vec![second, first]);
+
+        // Sort space descending by name (`b.txt` before `a.txt`).
+        app.sort_space_items(id, SortKey::Name, true, Point::new(100, 100));
+        assert_eq!(app.undo.undo_label(), Some("Sort space"));
+        assert_eq!(order(&app), vec![first, second]);
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(order(&app), vec![second, first]);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(order(&app), vec![first, second]);
+
+        // Arrange space (`AutoArrange`) after displacing an item off-grid.
+        let mut displaced = Space::new(id, "Work", Rect::new(23, 37, 480, 320));
+        let mut off_grid = Item::new(first, "C:/missing/b.txt", Default::default());
+        off_grid.position = Point::new(333, 444);
+        displaced.push_item(off_grid);
+        apply(
+            &mut app.config.desktop,
+            Command::RestoreSpaces {
+                spaces: vec![(id, Some((0, displaced)))],
+            },
+        );
+        app.arrange_space(id, Point::new(100, 100));
+        assert_eq!(app.undo.undo_label(), Some("Arrange space"));
+        let arranged_pos = app
+            .config
+            .desktop
+            .space(id)
+            .unwrap()
+            .item(first)
+            .unwrap()
+            .position;
+        assert_ne!(arranged_pos, Point::new(333, 444));
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(
+            app.config
+                .desktop
+                .space(id)
+                .unwrap()
+                .item(first)
+                .unwrap()
+                .position,
+            Point::new(333, 444)
+        );
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(
+            app.config
+                .desktop
+                .space(id)
+                .unwrap()
+                .item(first)
+                .unwrap()
+                .position,
+            arranged_pos
+        );
+
+        // Snap all (`SnapAll`) after placing a space off the 16 px grid.
+        let unsnapped = app.config.desktop.space(id).unwrap().rect();
+        assert_eq!(unsnapped.origin(), Point::new(23, 37));
+        app.snap_all_spaces(Point::new(100, 100));
+        assert_eq!(app.undo.undo_label(), Some("Snap all"));
+        let snapped = app.config.desktop.space(id).unwrap().rect();
+        assert_ne!(snapped.origin(), unsnapped.origin());
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), unsnapped);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(id).unwrap().rect(), snapped);
+    }
+
+    #[test]
+    fn lock_fold_rename_create_delete_and_move_between_spaces_round_trip() {
+        let mut app = test_app();
+        let a = app
+            .create_new_space(Point::new(32, 32), Size::new(320, 208))
+            .unwrap();
+        assert_eq!(app.undo.undo_label(), Some("New space"));
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(a).is_none());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(a).is_some());
+
+        // Lock space.
+        app.toggle_space_lock(a, Point::new(50, 50));
+        assert!(app.config.desktop.space(a).unwrap().locked());
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(!app.config.desktop.space(a).unwrap().locked());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(a).unwrap().locked());
+        app.toggle_space_lock(a, Point::new(50, 50));
+
+        // Fold space.
+        app.toggle_space_fold(a);
+        assert!(app.config.desktop.space(a).unwrap().folded());
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(!app.config.desktop.space(a).unwrap().folded());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(a).unwrap().folded());
+        app.toggle_space_fold(a);
+
+        // Rename space.
+        app.rename_space(a, "Docs".to_string());
+        assert_eq!(app.config.desktop.space(a).unwrap().title(), "Docs");
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(a).unwrap().title(), "New space");
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(a).unwrap().title(), "Docs");
+
+        // Move items between spaces.
+        let b = app
+            .create_new_space(Point::new(400, 32), Size::new(320, 208))
+            .unwrap();
+        let item1 = add_item(&mut app.config.desktop, a, "C:/missing/1.txt");
+        let item2 = add_item(&mut app.config.desktop, a, "C:/missing/2.txt");
+        app.move_items_to_space(&[item1, item2], b, Point::new(450, 50));
+        assert_eq!(app.undo.undo_label(), Some("Move 2 items"));
+        assert!(app.config.desktop.space(a).unwrap().items().is_empty());
+        assert_eq!(app.config.desktop.space(b).unwrap().items().len(), 2);
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(a).unwrap().items().len(), 2);
+        assert!(app.config.desktop.space(b).unwrap().items().is_empty());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(a).unwrap().items().is_empty());
+        assert_eq!(app.config.desktop.space(b).unwrap().items().len(), 2);
+
+        // Delete space with in-place items.
+        app.undo.begin("Delete space");
+        assert!(app.release_and_delete_space(b));
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo_label(), Some("Delete space"));
+        assert!(app.config.desktop.space(b).is_none());
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(b).unwrap().items().len(), 2);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(b).is_none());
+    }
+
+    #[test]
+    fn settings_edit_records_no_entry_and_makes_prior_space_entry_stale() {
+        let mut app = test_app();
+        let id = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+        app.rename_space(id, "Renamed".to_string());
+        assert_eq!(app.undo.undo.len(), 1);
+
+        // A settings-window edit on the space dispatches without an open undo
+        // entry, so it records nothing and makes the earlier entry stale.
+        let mut session = Session::new(&app.config);
+        session.select_scope(Some(id));
+        let customize = crate::settings::customize_space(&app.config, &mut session, true).unwrap();
+        assert!(app.dispatch(customize, Point::new(50, 50)).is_applied());
+        let (_, command, _) = crate::settings::space_edit(
+            &app.config,
+            &mut session,
+            field::TINT_OPACITY,
+            FieldValue::Slider(60),
+            false,
+        )
+        .unwrap();
+        assert!(app.dispatch(command, Point::new(50, 50)).is_applied());
+        assert_eq!(app.undo.undo.len(), 1);
+
+        assert_eq!(
+            app.apply_undo(),
+            StepOutcome::Stale("Rename space".to_string())
+        );
+        assert!(app.undo.undo.is_empty());
+        assert_eq!(
+            stale_undo_text("Move 3 items"),
+            "DeskSpace can't undo \u{201C}Move 3 items\u{201D}, because the space changed since."
+        );
     }
 }

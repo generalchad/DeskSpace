@@ -416,25 +416,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U3. Undo and redo layout changes (app).**
-  - `App::dispatch` calls `note_space` for every space in `touched_by`
-    while an entry is open. Wrap each user action in `begin`/`finish` at its
-    entry point (menu choice, drag end, resize end, rename commit, new
-    space, delete space): move, resize, reorder, sort, arrange, snap all,
-    fit to contents, lock, fold, rename a space, create a space, and move
-    items between spaces. A drag records once, on release, not per mouse
-    move.
-  - `App::undo` and `App::redo` (in `app/undo.rs`): check the top entry; if
-    it is stale, drop it and tell the user with `ui.alert` ("DeskSpace can't
-    undo “Move 3 items”, because the space changed since."); otherwise
-    dispatch `RestoreSpaces`, move the entry across, refresh what it names,
-    and save. File changes are reversed in U5-U7; until then an entry that
-    holds any is never recorded.
-  - Menus (the menu-entry recipe): Undo and Redo, named for the entry's
-    label ("Undo Move 3 items"), at the top of the space menu and the tray,
-    greyed when there is nothing to do.
-  - Tests: through `fixtures.rs`, each listed action records one entry that
-    undoes and redoes; a settings-window edit records none.
 - [ ] **U4. Ctrl+Z and Ctrl+Y (the key recipe).** Two `SelectionKey`
   variants under `WATCH_PASTE`, the flag Ctrl+V uses, so they act only
   while a space is current and pass through to Explorer otherwise. Move
@@ -992,6 +973,7 @@ each id is in `archive/TASKS-done.md`.
 | T12 (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
+| U3 (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 
 ## Found while working
 

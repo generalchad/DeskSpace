@@ -470,6 +470,8 @@ impl App {
             DebugEvent::Toggled { id, on } => (id, DebugInput::Toggle(on)),
             DebugEvent::Chose { id, index } => (id, DebugInput::Choose(index)),
         };
+        // Debug actions are tools, not user edits, and record no undo entry (ROADMAP D14).
+        self.undo.set_suppressed(true);
         if let Some(id) = DebugId::from_id(id) {
             self.on_debug_control(ui, id, input);
         } else {
@@ -478,6 +480,7 @@ impl App {
             }
             self.on_shadow_setting(ui, id, input);
         }
+        self.undo.set_suppressed(false);
         self.push_debug_panel(ui);
     }
 }

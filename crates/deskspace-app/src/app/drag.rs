@@ -11,6 +11,7 @@ use deskspace_platform::{DragImage, Ui, drag_threshold, virtual_desktop_rect};
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
 use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
+use super::undo::move_items_label;
 use super::{App, Surface};
 
 /// The in-progress pointer gesture on a surface, if any.
@@ -103,23 +104,12 @@ impl App {
                 true
             }
             Drag::Space { id, grab } => {
-                let Some(space) = self.config.desktop.space(id) else {
+                if self.config.desktop.space(id).is_none() {
                     self.pointer.drag = Drag::None;
                     return false;
-                };
-                let rect = Rect::new(
-                    point.x - grab.x,
-                    point.y - grab.y,
-                    space.rect().width,
-                    space.rect().height,
-                );
-                // Not `commit`: runs on every pointer move; `end_drag` saves once.
-                if self
-                    .dispatch(Command::SetSpaceRect { id, rect }, point)
-                    .is_applied()
-                    && let Some(space) = self.config.desktop.space(id)
-                {
-                    ui.set_space_rect(id.0, space.visible_rect());
+                }
+                if let Some(rect) = self.drag_space_to(id, grab, point) {
+                    ui.set_space_rect(id.0, rect);
                 }
                 true
             }
@@ -130,34 +120,65 @@ impl App {
                 active_x,
                 active_y,
             } => {
-                let layout = self.layout_for(id);
-                let (active_edges, active) =
-                    resize_edges_now(edges, origin, point, layout.cell(), (active_x, active_y));
-                self.pointer.drag = Drag::Resize {
-                    id,
-                    edges,
-                    origin,
-                    active_x: active.0,
-                    active_y: active.1,
-                };
-                if !active.0 && !active.1 {
-                    return true;
-                }
-                let before = self.config.desktop.space(id).map(|space| space.rect());
-                let command = Command::ResizeSpace {
-                    id,
-                    edges: active_edges,
-                    to: point,
-                };
-                // Not `commit`: runs on every pointer move; `end_drag` saves once.
-                if self.dispatch(command, point).is_applied()
-                    && self.config.desktop.space(id).map(|space| space.rect()) != before
-                {
+                if self.resize_space_to(id, edges, origin, (active_x, active_y), point) {
                     self.refresh_space(ui, id);
                 }
                 true
             }
         }
+    }
+
+    pub(super) fn drag_space_to(&mut self, id: SpaceId, grab: Point, point: Point) -> Option<Rect> {
+        let space = self.config.desktop.space(id)?;
+        let rect = Rect::new(
+            point.x - grab.x,
+            point.y - grab.y,
+            space.rect().width,
+            space.rect().height,
+        );
+        self.undo.begin_if_none("Move space");
+        // Not `commit`: runs on every pointer move; `end_drag` saves once.
+        self.dispatch(Command::SetSpaceRect { id, rect }, point)
+            .is_applied()
+            .then(|| {
+                self.config
+                    .desktop
+                    .space(id)
+                    .map(|space| space.visible_rect())
+            })
+            .flatten()
+    }
+
+    pub(super) fn resize_space_to(
+        &mut self,
+        id: SpaceId,
+        edges: ResizeEdges,
+        origin: Point,
+        active: (bool, bool),
+        point: Point,
+    ) -> bool {
+        let layout = self.layout_for(id);
+        let (active_edges, active) = resize_edges_now(edges, origin, point, layout.cell(), active);
+        self.pointer.drag = Drag::Resize {
+            id,
+            edges,
+            origin,
+            active_x: active.0,
+            active_y: active.1,
+        };
+        if !active.0 && !active.1 {
+            return false;
+        }
+        let before = self.config.desktop.space(id).map(|space| space.rect());
+        let command = Command::ResizeSpace {
+            id,
+            edges: active_edges,
+            to: point,
+        };
+        self.undo.begin_if_none("Resize space");
+        // Not `commit`: runs on every pointer move; `end_drag` saves once.
+        self.dispatch(command, point).is_applied()
+            && self.config.desktop.space(id).map(|space| space.rect()) != before
     }
 
     /// Repositions a loose desktop item as it is dragged, so it follows the
@@ -206,6 +227,7 @@ impl App {
                 }
             }
             Drag::Item { active: true, .. } => {
+                self.undo.finish(&self.config.desktop);
                 self.end_drag_visual(ui);
                 self.schedule_save(ui);
             }
@@ -214,7 +236,10 @@ impl App {
                 self.pointer.marquee = None;
                 self.refresh_surface(ui, surface);
             }
-            Drag::Space { .. } | Drag::Resize { .. } => self.schedule_save(ui),
+            Drag::Space { .. } | Drag::Resize { .. } => {
+                self.undo.finish(&self.config.desktop);
+                self.schedule_save(ui);
+            }
         }
     }
 
@@ -303,6 +328,12 @@ impl App {
         item: ItemId,
         point: Point,
     ) {
+        if self.reorder_item_step(space, item, point) {
+            self.refresh_space(ui, space);
+        }
+    }
+
+    pub(super) fn reorder_item_step(&mut self, space: SpaceId, item: ItemId, point: Point) -> bool {
         let layout = self.layout_for(space);
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
@@ -326,20 +357,19 @@ impl App {
             Some((index, current))
         });
         let Some((index, current)) = target else {
-            return;
+            return false;
         };
         if index == current {
-            return;
+            return false;
         }
+        self.undo.begin_if_none(move_items_label(moving.len()));
         let command = if moving.len() > 1 {
             Command::ReorderItems { ids: moving, index }
         } else {
             Command::ReorderItem { id: item, index }
         };
         // Not `commit`: runs on every pointer move; `end_drag` saves once.
-        if self.dispatch(command, point).is_applied() {
-            self.refresh_space(ui, space);
-        }
+        self.dispatch(command, point).is_applied()
     }
 
     /// Drags an item out like Explorer. Wherever it lands, the drop target
@@ -364,6 +394,7 @@ impl App {
         // A stale item (its file moved or deleted since it was drawn) is
         // dropped instead of repeatedly failing to start a drag.
         if paths.is_empty() {
+            self.undo.cancel();
             match surface {
                 Surface::Space(id) => self.prune_missing(ui, id),
                 Surface::Desktop => self.resync_desktop_layer(ui),
@@ -371,9 +402,13 @@ impl App {
             return;
         }
         let Some(result) = ui.drag_out(&paths, &positions, self.pointer.drag_image.as_ref()) else {
+            self.undo.cancel();
             return;
         };
         tracing::debug!(?result, files = paths.len(), "item drag ended");
+        // A drop on a space already finished the open undo entry; a drag out
+        // to Explorer is owned by Explorer's undo (ROADMAP D11).
+        self.undo.cancel();
         // The drop target may have moved some files out; drop any item whose
         // file is gone, wherever it lives, and reconcile the loose layer.
         self.prune_all_missing(ui);

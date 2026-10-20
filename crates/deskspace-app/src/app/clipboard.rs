@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{ClipboardFiles, Ui, item_facts};
 
+use super::undo::move_items_label;
 use super::{App, Surface};
 
 impl App {
@@ -119,19 +120,8 @@ impl App {
             external_moves,
             copies,
         } = plan;
-        let mut touched = HashSet::from([target]);
-
-        for item in &moved {
-            match self.config.desktop.space_containing(*item) {
-                Some(source) if source == target => continue,
-                Some(source) => {
-                    touched.insert(source);
-                }
-                None => {}
-            }
-            // Not `commit`: one of several commands, refreshed once below.
-            self.dispatch(Command::MoveItem { id: *item, target }, at);
-        }
+        self.undo.begin(move_items_label(moved.len()));
+        let mut touched = self.move_items_to_space(&moved, target, at);
 
         let store = self.storage.root().to_path_buf();
         let mut created: Vec<PathBuf> = Vec::new();
@@ -162,6 +152,12 @@ impl App {
                 at,
             );
         }
+        if !external_moves.is_empty() || !copies.is_empty() {
+            // File changes are reversed in U5-U7; until then an entry that
+            // holds any is not recorded.
+            self.undo.cancel();
+        }
+        self.undo.finish(&self.config.desktop);
 
         // Select what was pasted, as Explorer does.
         let mut pasted: Vec<ItemId> = moved

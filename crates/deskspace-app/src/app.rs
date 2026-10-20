@@ -38,6 +38,7 @@ use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
+use undo::UndoStack;
 use update::UpdateState;
 pub(crate) use view::{LayerState, SystemLook, ViewCache};
 
@@ -159,10 +160,12 @@ enum MenuId {
     AddFiles = 48,
     /// The tray's "Debug…", only with `--debug` (ROADMAP D14).
     Debug = 49,
+    Undo = 50,
+    Redo = 51,
 }
 
 impl MenuId {
-    const ALL: [Self; 37] = [
+    const ALL: [Self; 39] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -200,6 +203,8 @@ impl MenuId {
         Self::PasteShortcut,
         Self::AddFiles,
         Self::Debug,
+        Self::Undo,
+        Self::Redo,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -445,6 +450,8 @@ pub struct App {
     /// Slow motion and ignoring Windows' animation switch, set only from the
     /// debug window; the default changes nothing.
     animation_tweak: AnimationTweak,
+    /// Session-only undo and redo stacks (ROADMAP D11).
+    undo: UndoStack,
 }
 
 impl App {
@@ -469,6 +476,7 @@ impl App {
             update: UpdateState::default(),
             debug: None,
             animation_tweak: AnimationTweak::default(),
+            undo: UndoStack::default(),
         }
     }
 
@@ -519,17 +527,26 @@ impl App {
     }
 
     fn toggle_fold(&mut self, ui: &mut Ui, id: SpaceId) {
+        let effects = self.toggle_space_fold(id);
+        self.run(ui, effects);
+    }
+
+    fn toggle_space_fold(&mut self, id: SpaceId) -> Vec<Effect> {
+        let label = match self.config.desktop.space(id) {
+            Some(space) if space.folded() => "Unfold space",
+            _ => "Fold space",
+        };
         let near = self.space_center(id);
         // A folded space hides its items, so it cannot keep one selected.
         if self.selection.surface == Some(Surface::Space(id)) {
             self.selection.clear();
         }
-        self.commit_led_by(
-            ui,
+        self.record_effects(
+            label,
             Command::ToggleFold { id },
             near,
             vec![Effect::FoldSpace(id)],
-        );
+        )
     }
 
     // ---- timers --------------------------------------------------------
