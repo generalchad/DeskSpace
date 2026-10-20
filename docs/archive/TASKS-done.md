@@ -3075,3 +3075,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   the Recycle Bin folder and its properties beside the code. **[needs
   human]** check: recycle a file in Explorer, restore it through a test
   harness or `--verbose` log, and confirm it is back under its old name.
+
+- [x] **U7. Undo deletes, copies, and new shortcuts (app).** Record
+  `Recycled` (with the time taken just before the call) for a Recycle-Bin
+  delete in `delete_selected_items` and `delete_space_item`; an item that
+  was only unlisted is a model change and needs no file record. Record
+  `Created` for copies (`copy_dropped`, a paste's copies), shortcuts
+  (`add_shortcuts`), and "Add files…". Undoing `Recycled` restores with
+  U6; undoing `Created` recycles the file and turns the record into
+  `Recycled` so redo can restore it. Shift+Delete records nothing.
+  **[needs human]** check: delete two items and undo (both return to the
+  space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty
+  the Recycle Bin between a delete and its undo: the undo says it can't and
+  changes nothing.

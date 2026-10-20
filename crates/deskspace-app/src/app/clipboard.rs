@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{ClipboardFiles, Ui, item_facts};
 
-use super::undo::{FileChange, move_items_label};
+use super::undo::{FileChange, move_items_label, paste_items_label};
 use super::{App, Surface};
 
 impl App {
@@ -120,8 +120,13 @@ impl App {
             external_moves,
             copies,
         } = plan;
-        self.undo
-            .begin(move_items_label(moved.len() + external_moves.len()));
+        let total = moved.len() + external_moves.len() + copies.len();
+        let label = if copies.is_empty() {
+            move_items_label(total)
+        } else {
+            paste_items_label(total)
+        };
+        self.undo.begin(label);
         let mut touched = self.move_items_to_space(&moved, target, at);
 
         let store = self.storage.root().to_path_buf();
@@ -144,6 +149,12 @@ impl App {
         if !copies.is_empty()
             && let Some(paths) = ui.transfer_files(&copies, &store, false)
         {
+            for path in &paths {
+                if path.exists() {
+                    self.undo
+                        .note_file(FileChange::Created { path: path.clone() });
+                }
+            }
             created.extend(paths);
         }
         for path in &created {
@@ -162,10 +173,6 @@ impl App {
                 },
                 at,
             );
-        }
-        if !copies.is_empty() {
-            // Copies are recorded as `Created` in U7.
-            self.undo.cancel();
         }
         self.undo.finish(&self.config.desktop);
 

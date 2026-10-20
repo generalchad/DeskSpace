@@ -936,7 +936,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | Id | Feature | Milestone | Status |
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
-| F-02 | Create / rename / delete space | M2 | Done; delete has no undo yet |
+| F-02 | Create / rename / delete space | M2 | Done; undo of a delete awaits its on-screen check (U5) |
 | F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |

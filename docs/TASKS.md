@@ -10,8 +10,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- Q2-Q6;
-- section U, in order (U1 and U2 are pure and need no screen);
+- Q2-Q6.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -416,18 +415,7 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U7. Undo deletes, copies, and new shortcuts (app).** Record
-  `Recycled` (with the time taken just before the call) for a Recycle-Bin
-  delete in `delete_selected_items` and `delete_space_item`; an item that
-  was only unlisted is a model change and needs no file record. Record
-  `Created` for copies (`copy_dropped`, a paste's copies), shortcuts
-  (`add_shortcuts`), and "Add files…". Undoing `Recycled` restores with
-  U6; undoing `Created` recycles the file and turns the record into
-  `Recycled` so redo can restore it. Shift+Delete records nothing.
-  **[needs human]** check: delete two items and undo (both return to the
-  space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty
-  the Recycle Bin between a delete and its undo: the undo says it can't and
-  changes nothing.
+All of U1-U7 are done; what still awaits a check is in section V.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
@@ -950,12 +938,22 @@ each id is in `archive/TASKS-done.md`.
 | U4 (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
 | U6 (D11) | Recycle a file in Explorer, restore it through a test harness or `--verbose` log, and confirm it is back under its old name. |
+| U7 (D11) | Delete two items and undo (both return to the space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty the Recycle Bin between a delete and its undo: the undo says it can't and changes nothing. Shift+Delete leaves Undo as it was. |
 
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
 
+- `app/undo.rs` `reverse_files`: the checks run first, but a file step can
+  still fail midway (the Recycle Bin emptied of one of two deleted items),
+  leaving the earlier steps applied while the entry is dropped as stale; a
+  restored file then sits in the store unlisted until a prune. Suggested
+  task: roll back the steps already applied when a later one fails.
+- `app/menus.rs` `add_files`: U7 asked for `Created` records here, but
+  "Add files…" moves (ROADMAP D3, as a drop does), so U5's `Moved` record
+  already undoes it and none was added. Suggested fix: drop it from the
+  task text if a U task is ever reopened.
 - `win32/settings_window/preview.rs`: the Shortcuts page's space preview has
   no keyboard support (not a Tab stop; its X and + are mouse-only).
   Suggested task: arrow-key focus, Delete for the X, and Enter on the +

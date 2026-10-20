@@ -22,32 +22,49 @@ pub(super) fn move_items_label(count: usize) -> String {
     }
 }
 
+/// Label for copying one or several items.
+pub(super) fn copy_items_label(count: usize) -> String {
+    if count == 1 {
+        "Copy item".to_string()
+    } else {
+        format!("Copy {count} items")
+    }
+}
+
+/// Label for pasting one or several items.
+pub(super) fn paste_items_label(count: usize) -> String {
+    if count == 1 {
+        "Paste item".to_string()
+    } else {
+        format!("Paste {count} items")
+    }
+}
+
+/// Label for deleting one or several items.
+pub(super) fn delete_items_label(count: usize) -> String {
+    if count == 1 {
+        "Delete item".to_string()
+    } else {
+        format!("Delete {count} items")
+    }
+}
+
+/// Label for creating one or several shortcuts.
+pub(super) fn new_shortcuts_label(count: usize) -> String {
+    if count == 1 {
+        "New shortcut".to_string()
+    } else {
+        format!("New {count} shortcuts")
+    }
+}
+
 /// A filesystem change made by a user action, recorded in the order it happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum FileChange {
-    Moved {
-        from: PathBuf,
-        to: PathBuf,
-    },
-    Renamed {
-        from: PathBuf,
-        to: PathBuf,
-    },
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "U7 records Created and Recycled")
-    )]
-    Created {
-        path: PathBuf,
-    },
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "U7 records Created and Recycled")
-    )]
-    Recycled {
-        original: PathBuf,
-        at: SystemTime,
-    },
+    Moved { from: PathBuf, to: PathBuf },
+    Renamed { from: PathBuf, to: PathBuf },
+    Created { path: PathBuf },
+    Recycled { original: PathBuf, at: SystemTime },
 }
 
 impl FileChange {
@@ -363,39 +380,107 @@ impl App {
         outcome
     }
 
-    /// Reverses `files` in reverse order. Caller has already checked every
-    /// change with `can_undo` or `can_redo` before touching the first file.
+    /// Reverses `files` in reverse order on undo, or forward order on redo.
+    /// Caller has already checked every change with `can_undo` or `can_redo`
+    /// before touching the first file.
     fn reverse_files(
         &mut self,
         ui: &mut Option<&mut Ui>,
         files: &mut [FileChange],
         undo: bool,
     ) -> bool {
-        for change in files.iter_mut().rev() {
-            let ok = match change {
+        let len = files.len();
+        for step in 0..len {
+            let index = if undo { len - 1 - step } else { step };
+            let ok = match &files[index] {
                 FileChange::Moved { from, to } => {
                     let (src, dst) = if undo {
-                        (to.as_path(), from.as_path())
+                        (to.clone(), from.clone())
                     } else {
-                        (from.as_path(), to.as_path())
+                        (from.clone(), to.clone())
                     };
-                    self.reverse_move(ui, src, dst)
+                    self.reverse_move(ui, &src, &dst)
                 }
                 FileChange::Renamed { from, to } => {
                     let (src, dst) = if undo {
-                        (to.as_path(), from.as_path())
+                        (to.clone(), from.clone())
                     } else {
-                        (from.as_path(), to.as_path())
+                        (from.clone(), to.clone())
                     };
-                    self.reverse_rename(ui, src, dst)
+                    self.reverse_rename(ui, &src, &dst)
                 }
-                FileChange::Created { .. } | FileChange::Recycled { .. } => false,
+                FileChange::Created { path } => {
+                    let target = path.clone();
+                    match self.reverse_created(ui, &target) {
+                        Some(at) => {
+                            files[index] = FileChange::Recycled {
+                                original: target,
+                                at,
+                            };
+                            true
+                        }
+                        None => false,
+                    }
+                }
+                FileChange::Recycled { original, at } => {
+                    let target = original.clone();
+                    let since = *at;
+                    match self.reverse_recycled(ui, &target, since) {
+                        Some(restored) => {
+                            files[index] = FileChange::Created { path: restored };
+                            true
+                        }
+                        None => false,
+                    }
+                }
             };
             if !ok {
                 return false;
             }
         }
         true
+    }
+
+    fn reverse_created(&self, ui: &mut Option<&mut Ui>, path: &Path) -> Option<SystemTime> {
+        let at = SystemTime::now();
+        let recycled = match ui.as_deref_mut() {
+            Some(ui) => {
+                ui.delete_files(std::slice::from_ref(&path.to_path_buf()), false) && !path.exists()
+            }
+            None => self.test_recycle(path),
+        };
+        recycled.then_some(at)
+    }
+
+    fn reverse_recycled(
+        &self,
+        ui: &mut Option<&mut Ui>,
+        original: &Path,
+        since: SystemTime,
+    ) -> Option<PathBuf> {
+        match ui.as_deref_mut() {
+            Some(ui) => ui.restore_recycled(original, since),
+            None => self.test_restore_recycled(original),
+        }
+    }
+
+    fn test_recycle(&self, path: &Path) -> bool {
+        let bin = self.storage.root().join(".test-recycle");
+        let Some(name) = path.file_name() else {
+            return false;
+        };
+        std::fs::create_dir_all(&bin).is_ok() && std::fs::rename(path, bin.join(name)).is_ok()
+    }
+
+    fn test_restore_recycled(&self, original: &Path) -> Option<PathBuf> {
+        if original.exists() {
+            return None;
+        }
+        let bin = self.storage.root().join(".test-recycle");
+        let recycled = bin.join(original.file_name()?);
+        std::fs::rename(&recycled, original)
+            .ok()
+            .map(|()| original.to_path_buf())
     }
 
     fn reverse_move(&self, ui: &mut Option<&mut Ui>, from: &Path, to: &Path) -> bool {
@@ -1155,5 +1240,151 @@ mod tests {
             stale_undo_text("Move 3 items"),
             "DeskSpace can't undo \u{201C}Move 3 items\u{201D}, because the space changed since."
         );
+    }
+
+    #[test]
+    fn deletes_copies_and_shortcuts_round_trip_and_shift_delete_records_nothing() {
+        use crate::app::files::ShortcutSource;
+        use deskspace_platform::{CustomShortcut, ShortcutTarget, item_facts};
+
+        let scratch = Scratch::new("deletes-copies-shortcuts");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+
+        // 1. Create a custom URL shortcut through `create_shortcuts`.
+        assert!(app.create_shortcuts(
+            space,
+            Point::new(50, 50),
+            vec![ShortcutSource::Custom(CustomShortcut {
+                name: "Docs".to_string(),
+                target: ShortcutTarget::Url("https://example.com".to_string()),
+                arguments: String::new(),
+            })],
+        ));
+        assert_eq!(app.undo.undo_label(), Some("New shortcut"));
+        let shortcut_path = app.storage.root().join("Docs.url");
+        assert!(shortcut_path.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 1);
+
+        // Undo recycles the shortcut and turns the record into `Recycled`; redo restores it.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(!shortcut_path.exists());
+        assert!(app.config.desktop.space(space).unwrap().items().is_empty());
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(shortcut_path.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 1);
+
+        // 2. Record a pasted copy (`FileChange::Created`) and undo/redo it.
+        let copy_path = app.storage.root().join("copied.txt");
+        std::fs::write(&copy_path, "copy").unwrap();
+        app.undo.begin(paste_items_label(1));
+        app.undo.note_file(FileChange::Created {
+            path: copy_path.clone(),
+        });
+        assert!(
+            app.dispatch(
+                Command::AddItem {
+                    space,
+                    path: copy_path.clone(),
+                    facts: item_facts(&copy_path),
+                },
+                Point::new(50, 50),
+            )
+            .is_applied()
+        );
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo_label(), Some("Paste item"));
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(!copy_path.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 1);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(copy_path.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+
+        // 3. Delete two items to the Recycle Bin, undo, and redo.
+        let items: Vec<_> = app
+            .config
+            .desktop
+            .space(space)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.id)
+            .collect();
+        let bin = app.storage.root().join(".test-recycle");
+        std::fs::create_dir_all(&bin).unwrap();
+        app.remove_space_items(space, items, false, |paths, _| {
+            for path in paths {
+                std::fs::rename(path, bin.join(path.file_name().unwrap())).unwrap();
+            }
+        });
+        assert_eq!(app.undo.undo_label(), Some("Delete 2 items"));
+        assert!(!shortcut_path.exists() && !copy_path.exists());
+        assert!(app.config.desktop.space(space).unwrap().items().is_empty());
+
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(shortcut_path.exists() && copy_path.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(!shortcut_path.exists() && !copy_path.exists());
+        assert!(app.config.desktop.space(space).unwrap().items().is_empty());
+
+        // Restore them again so we can test `remove_space_item_at` and Shift+Delete.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+
+        // 4. `remove_space_item_at` on an in-place item records only a model change.
+        let in_place = desktop_dir.join("keep.txt");
+        std::fs::write(&in_place, "keep").unwrap();
+        app.move_or_keep_dropped(space, Point::new(50, 50), vec![in_place.clone()], false);
+        assert!(app.remove_space_item_at(space, 2, |_| unreachable!("not stored")));
+        assert_eq!(app.undo.undo_label(), Some("Delete item"));
+        assert!(in_place.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 3);
+
+        // 5. Shift+Delete (`permanent = true`) records nothing.
+        let undo_count = app.undo.undo.len();
+        let first_id = app.config.desktop.space(space).unwrap().items()[0].id;
+        app.remove_space_items(space, vec![first_id], true, |paths, _| {
+            for path in paths {
+                std::fs::remove_file(path).unwrap();
+            }
+        });
+        assert_eq!(app.undo.undo.len(), undo_count);
+    }
+
+    #[test]
+    fn emptying_recycle_bin_before_undo_is_stale_and_changes_nothing() {
+        let scratch = Scratch::new("empty-recycle-bin");
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+
+        let stored = app.storage.root().join("gone.txt");
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+        std::fs::write(&stored, "gone").unwrap();
+        let item = add_item(&mut app.config.desktop, space, &stored.to_string_lossy());
+
+        let bin = app.storage.root().join(".test-recycle");
+        std::fs::create_dir_all(&bin).unwrap();
+        app.remove_space_items(space, vec![item], false, |paths, _| {
+            for path in paths {
+                std::fs::rename(path, bin.join(path.file_name().unwrap())).unwrap();
+            }
+        });
+        assert_eq!(app.undo.undo_label(), Some("Delete item"));
+
+        // Empty the Recycle Bin before undoing.
+        std::fs::remove_dir_all(&bin).unwrap();
+
+        assert_eq!(
+            app.apply_undo(),
+            StepOutcome::Stale("Delete item".to_string())
+        );
+        assert!(app.config.desktop.space(space).unwrap().items().is_empty());
+        assert!(!stored.exists());
     }
 }

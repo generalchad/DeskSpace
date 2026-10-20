@@ -1290,8 +1290,9 @@ in `ui.rs`. What spans them:
   source refuses a link, "Show here without moving" lists them where they
   are, and Cancel drops nothing. A right click without moving still opens the
   item or space menu.
-- Delete sends the selected items' files to the Recycle Bin (undoable, no
-  prompt), as Explorer does; Shift+Delete removes them for good. A stored file
+- Delete sends the selected items' files to the Recycle Bin (no prompt), as
+  Explorer does, and Undo restores them; Shift+Delete removes them for good
+  and records no undo. A stored file
   goes back to the desktop only by dragging it there (not with takeover on)
   or deleting its space.
 - Ctrl+X, Ctrl+C, and Ctrl+V cut, copy, and paste. Cut items are ghosted until
@@ -1352,10 +1353,9 @@ section numbers stable.
   foreground window (Debug → Windows → Taskbars shows them live). If the
   repair does not hold, the robust fix is one layer per monitor sized to
   its work area.
-- **File moves have no undo yet.** Deleting a space returns its stored files
-  to the desktop (deleting an item recycles it, which the Recycle Bin can
-  undo); files on another drive stay in place, since a move there would copy.
-  Only the Desktop folder is watched (while the layer is drawn), so a stored
+- **Stored files are not watched.** Deleting a space returns its stored
+  files to the desktop; files on another drive stay in place, since a move
+  there would copy. Only the Desktop folder is watched (while the layer is drawn), so a stored
   file deleted, moved, or restored by an undo outside DeskSpace stays listed
   until an item action or the next startup prunes it. An item's `size` and
   `modified` (used by sorting) are read once at creation and can go stale.
