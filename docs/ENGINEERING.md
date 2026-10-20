@@ -224,7 +224,7 @@ says why; the diff already shows what. Run the gates (section 1) first.
   |------|------|
   | either watch flag | F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom; main and keypad) |
   | `WATCH_SELECTION` | Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X |
-  | `WATCH_PASTE` | Ctrl+V, the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
+  | `WATCH_PASTE` | Ctrl+V, Ctrl+Z, Ctrl+Y, the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
 
   Every other key passes through. The watch consumes keys only while the
   desktop shell has the foreground (`desktop_is_foreground`), so other apps

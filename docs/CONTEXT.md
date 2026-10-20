@@ -1304,7 +1304,9 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
-- With a space current, typing selects the next item whose label starts with
+- With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
+  (passing through to Explorer when no space is current); typing selects the
+  next item whose label starts with
   the typed letters (the buffer clears after about a second); Home, End,
   PageUp, and PageDown scroll the space to the top, the bottom, or one page;
   and the arrow keys move the selection across the grid (Shift extends, Ctrl

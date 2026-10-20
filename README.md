@@ -127,7 +127,8 @@ help inspect the look and the desktop layer.
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
   Windows 11 the one "Show more options" opens) with New space, DeskSpace
   settings, and hide/show spaces on top.
-- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
+- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items, and `Ctrl+Z` /
+  `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
   selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace

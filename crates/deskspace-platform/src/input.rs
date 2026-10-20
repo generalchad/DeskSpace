@@ -160,6 +160,10 @@ pub enum SelectionKey {
     ZoomOut,
     /// Ctrl+0 (either 0 key): icons back to 100 %.
     ZoomReset,
+    /// Ctrl+Z: undo the last action.
+    Undo,
+    /// Ctrl+Y: redo the last undone action.
+    Redo,
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size

@@ -3045,3 +3045,11 @@ until I5-I6 all land, so no partial build hides the desktop.
     greyed when there is nothing to do.
   - Tests: through `fixtures.rs`, each listed action records one entry that
     undoes and redoes; a settings-window edit records none.
+
+- [x] **U4. Ctrl+Z and Ctrl+Y (the key recipe).** Two `SelectionKey`
+  variants under `WATCH_PASTE`, the flag Ctrl+V uses, so they act only
+  while a space is current and pass through to Explorer otherwise. Move
+  Ctrl+Z out of `other_keys_pass_through_to_type_to_select_or_the_app`.
+  **[needs human]** check: Ctrl+Z after a space move puts it back, Ctrl+Y
+  moves it again; with no space current, Ctrl+Z on the desktop still undoes
+  an Explorer rename.

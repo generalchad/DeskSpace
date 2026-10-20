@@ -416,13 +416,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U4. Ctrl+Z and Ctrl+Y (the key recipe).** Two `SelectionKey`
-  variants under `WATCH_PASTE`, the flag Ctrl+V uses, so they act only
-  while a space is current and pass through to Explorer otherwise. Move
-  Ctrl+Z out of `other_keys_pass_through_to_type_to_select_or_the_app`.
-  **[needs human]** check: Ctrl+Z after a space move puts it back, Ctrl+Y
-  moves it again; with no space current, Ctrl+Z on the desktop still undoes
-  an Explorer rename.
 - [ ] **U5. Undo file moves (app).** Record `Moved` where DeskSpace moves a
   file: `place_dropped` (into the store, including drops from the taken-over
   desktop), `release_item` (back to the desktop on a space delete), and a
@@ -974,6 +967,7 @@ each id is in `archive/TASKS-done.md`.
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | U3 (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
+| U4 (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 
 ## Found while working
 

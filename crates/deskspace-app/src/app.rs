@@ -510,6 +510,8 @@ impl App {
             SelectionKey::ZoomIn => self.zoom(ui, ZoomAction::In),
             SelectionKey::ZoomOut => self.zoom(ui, ZoomAction::Out),
             SelectionKey::ZoomReset => self.zoom(ui, ZoomAction::Reset),
+            SelectionKey::Undo => self.undo(ui),
+            SelectionKey::Redo => self.redo(ui),
         }
     }
 

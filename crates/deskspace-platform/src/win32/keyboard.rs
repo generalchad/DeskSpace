@@ -21,7 +21,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_0, VK_A, VK_ADD, VK_APPS, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
     VK_ESCAPE, VK_F2, VK_F5, VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
     VK_NEXT, VK_NUMPAD0, VK_OEM_MINUS, VK_OEM_PLUS, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU,
-    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP, VK_V, VK_X,
+    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP, VK_V, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -45,6 +45,8 @@ pub(crate) const SEL_PAGE_DOWN: usize = 8;
 pub(crate) const SEL_ZOOM_IN: usize = 9;
 pub(crate) const SEL_ZOOM_OUT: usize = 10;
 pub(crate) const SEL_ZOOM_RESET: usize = 11;
+pub(crate) const SEL_UNDO: usize = 12;
+pub(crate) const SEL_REDO: usize = 13;
 
 /// Direction codes packed into `NAV_KEY`'s wParam low bits.
 pub(crate) const NAV_LEFT: usize = 0;
@@ -361,6 +363,12 @@ fn watched_ctrl_key(vk: u32, watch: Watch) -> Option<(u32, usize)> {
     if let Some(action) = clipboard {
         return Some((messages::CLIPBOARD_KEY, action));
     }
+    if watch.paste && is_key(vk, VK_Z) {
+        return Some((messages::SELECTION_KEY, SEL_UNDO));
+    }
+    if watch.paste && is_key(vk, VK_Y) {
+        return Some((messages::SELECTION_KEY, SEL_REDO));
+    }
     // Ctrl+arrow moves the focus only, leaving the selection.
     if watch.paste
         && let Some(dir) = arrow_dir(vk)
@@ -614,6 +622,8 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_ZOOM_IN => SelectionKey::ZoomIn,
         SEL_ZOOM_OUT => SelectionKey::ZoomOut,
         SEL_ZOOM_RESET => SelectionKey::ZoomReset,
+        SEL_UNDO => SelectionKey::Undo,
+        SEL_REDO => SelectionKey::Redo,
         _ => return None,
     })
 }
@@ -670,7 +680,6 @@ unsafe fn char_for(vk: u32) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::UI::Input::KeyboardAndMouse::VK_Z;
 
     #[test]
     fn set_bit_sets_and_clears_a_key_status_byte() {
@@ -755,6 +764,8 @@ mod tests {
         assert_eq!(selection_key(SEL_ZOOM_IN), Some(SelectionKey::ZoomIn));
         assert_eq!(selection_key(SEL_ZOOM_OUT), Some(SelectionKey::ZoomOut));
         assert_eq!(selection_key(SEL_ZOOM_RESET), Some(SelectionKey::ZoomReset));
+        assert_eq!(selection_key(SEL_UNDO), Some(SelectionKey::Undo));
+        assert_eq!(selection_key(SEL_REDO), Some(SelectionKey::Redo));
         assert_eq!(selection_key(99), None);
     }
 
@@ -912,6 +923,8 @@ mod tests {
         assert_routes(
             &[
                 (VK_V, CTRL, (messages::CLIPBOARD_KEY, ACTION_PASTE)),
+                (VK_Z, CTRL, sel(SEL_UNDO)),
+                (VK_Y, CTRL, sel(SEL_REDO)),
                 (VK_LEFT, PLAIN, nav(NAV_LEFT)),
                 (VK_RIGHT, PLAIN, nav(NAV_RIGHT)),
                 (VK_UP, PLAIN, nav(NAV_UP)),
@@ -934,7 +947,6 @@ mod tests {
             assert_eq!(watched_key(VK_A.0 as u32, PLAIN, watch), None);
             assert_eq!(watched_key(VK_A.0 as u32, SHIFT, watch), None);
             // Ctrl, Alt, and Shift combinations the table does not name.
-            assert_eq!(watched_key(VK_Z.0 as u32, CTRL, watch), None);
             assert_eq!(watched_key(VK_F2.0 as u32, CTRL, watch), None);
             assert_eq!(watched_key(VK_F10.0 as u32, PLAIN, watch), None);
         }
