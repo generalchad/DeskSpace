@@ -3004,3 +3004,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - `drag_image.rs`: `render_items`.
   - `mod.rs` keeps `Painter`, `DrawContext`, `PaintFrame`,
     `BorderStroke`, and the device-loss helpers.
+
+- [x] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
+  - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
+    `spaces` holds each changed space's before and after
+    (`Option<(usize, Space)>` each; `None` means absent), and `files` is a
+    `Vec<FileChange>` in the order made: `Moved { from, to }`,
+    `Renamed { from, to }`, `Created { path }`, and
+    `Recycled { original, at }` (`at` is when it was recycled).
+  - Recording: `begin(label)`, then `note_space(desktop, id)` captures a
+    space's before state the first time an entry sees it, `note_file(change)`
+    adds a file change, and `finish(desktop)` reads every after state and
+    pushes the entry, unless it changed nothing. `finish` clears `redo` and
+    keeps at most `UNDO_DEPTH` (50) entries.
+  - Checks: `UndoEntry::can_undo(desktop, exists)` is true while every
+    listed space equals its after state and every file change can be
+    reversed (`to` exists and `from` is free, as `exists` reports);
+    `can_redo` is the same against the before state. `exists` is a closure,
+    so tests run without a disk.
+  - Tests: an entry round trip, the depth cap, a new entry clears redo, a
+    changed space or a moved file makes an entry stale, and an empty action
+    records nothing.

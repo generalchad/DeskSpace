@@ -25,6 +25,7 @@ mod pointer;
 mod rename;
 mod selection;
 mod settings_session;
+mod undo;
 mod update;
 mod view;
 mod visibility;

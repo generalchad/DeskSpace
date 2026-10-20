@@ -57,6 +57,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
 | Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
+| Undo and redo stack, applying entries | `deskspace-app/src/app/undo.rs` |
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
@@ -415,26 +416,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
-  - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
-    `spaces` holds each changed space's before and after
-    (`Option<(usize, Space)>` each; `None` means absent), and `files` is a
-    `Vec<FileChange>` in the order made: `Moved { from, to }`,
-    `Renamed { from, to }`, `Created { path }`, and
-    `Recycled { original, at }` (`at` is when it was recycled).
-  - Recording: `begin(label)`, then `note_space(desktop, id)` captures a
-    space's before state the first time an entry sees it, `note_file(change)`
-    adds a file change, and `finish(desktop)` reads every after state and
-    pushes the entry, unless it changed nothing. `finish` clears `redo` and
-    keeps at most `UNDO_DEPTH` (50) entries.
-  - Checks: `UndoEntry::can_undo(desktop, exists)` is true while every
-    listed space equals its after state and every file change can be
-    reversed (`to` exists and `from` is free, as `exists` reports);
-    `can_redo` is the same against the before state. `exists` is a closure,
-    so tests run without a disk.
-  - Tests: an entry round trip, the depth cap, a new entry clears redo, a
-    changed space or a moved file makes an entry stale, and an empty action
-    records nothing.
 - [ ] **U3. Undo and redo layout changes (app).**
   - `App::dispatch` calls `note_space` for every space in `touched_by`
     while an entry is open. Wrap each user action in `begin`/`finish` at its
