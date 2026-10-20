@@ -8,6 +8,7 @@ use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
 use crate::scene::item_label;
 
+use super::undo::FileChange;
 use super::{App, Surface, Timer};
 
 /// Caret blink half-period, matching Windows' default.
@@ -252,6 +253,15 @@ impl App {
         shows_extension: bool,
         typed: &str,
     ) {
+        if self.config.desktop.space_containing(id).is_some() {
+            if self.rename_space_item(id, shows_extension, typed, |path, new_name| {
+                ui.rename_path(path, new_name)
+            }) {
+                self.refresh_tray(ui);
+                self.save(ui);
+            }
+            return;
+        }
         let typed = typed.trim();
         let Some(item) = self.config.desktop.item(id) else {
             return;
@@ -270,22 +280,51 @@ impl App {
             return;
         }
         self.icons.invalidate(&path);
+        // A loose item mirrors the Desktop folder, which now holds the
+        // new name; it keeps the selection under its new id.
+        self.resync_desktop_layer(ui);
+        let renamed = self
+            .config
+            .desktop
+            .layer()
+            .items()
+            .iter()
+            .find(|item| item.path == new_path);
+        if let Some(renamed) = renamed.map(|item| item.id) {
+            self.selection.select_only(Surface::Desktop, renamed);
+        }
+    }
+
+    /// Renames space item `id` with `rename_on_disk` and records one
+    /// `"Rename item"` undo entry. Returns whether the rename succeeded.
+    pub(super) fn rename_space_item(
+        &mut self,
+        id: ItemId,
+        shows_extension: bool,
+        typed: &str,
+        rename_on_disk: impl FnOnce(&Path, &str) -> bool,
+    ) -> bool {
+        let typed = typed.trim();
         let Some(space) = self.config.desktop.space_containing(id) else {
-            // A loose item mirrors the Desktop folder, which now holds the
-            // new name; it keeps the selection under its new id.
-            self.resync_desktop_layer(ui);
-            let renamed = self
-                .config
-                .desktop
-                .layer()
-                .items()
-                .iter()
-                .find(|item| item.path == new_path);
-            if let Some(renamed) = renamed.map(|item| item.id) {
-                self.selection.select_only(Surface::Desktop, renamed);
-            }
-            return;
+            return false;
         };
+        let Some(item) = self.config.desktop.item(id) else {
+            return false;
+        };
+        let path = item.path.clone();
+        let kind = item.kind;
+        let new_name = renamed_file_name(&path, typed, shows_extension || kind == ItemKind::Folder);
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let new_path = parent.join(&new_name);
+        if new_name.is_empty() || new_path == path {
+            return false;
+        }
+        if !rename_on_disk(&path, &new_name) || !new_path.exists() {
+            return false;
+        }
+        self.icons.invalidate(&path);
         let label = if kind == ItemKind::Folder {
             new_name.clone()
         } else {
@@ -296,8 +335,13 @@ impl App {
                 .to_string()
         };
         let near = self.space_center(space);
-        // Not `commit`: the file is already renamed on disk, so this saves at
-        // once below.
+        self.undo.begin("Rename item");
+        self.undo.note_file(FileChange::Renamed {
+            from: path,
+            to: new_path.clone(),
+        });
+        // Not `commit`: the file is already renamed on disk, so the caller
+        // saves at once.
         self.dispatch(
             Command::RenameItem {
                 id,
@@ -306,7 +350,8 @@ impl App {
             },
             near,
         );
-        self.save(ui);
+        self.undo.finish(&self.config.desktop);
+        true
     }
 
     pub(super) fn cancel_edit(&mut self, ui: &mut Ui) {

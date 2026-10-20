@@ -3,7 +3,9 @@ use std::time::SystemTime;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, Space, SpaceId};
-use deskspace_platform::Ui;
+use deskspace_platform::{Ui, notify_moved};
+
+use crate::storage::StoreError;
 
 use super::effect::Effect;
 use super::{App, Surface};
@@ -22,12 +24,30 @@ pub(super) fn move_items_label(count: usize) -> String {
 
 /// A filesystem change made by a user action, recorded in the order it happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "U5-U7 record file changes"))]
 pub(super) enum FileChange {
-    Moved { from: PathBuf, to: PathBuf },
-    Renamed { from: PathBuf, to: PathBuf },
-    Created { path: PathBuf },
-    Recycled { original: PathBuf, at: SystemTime },
+    Moved {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "U7 records Created and Recycled")
+    )]
+    Created {
+        path: PathBuf,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "U7 records Created and Recycled")
+    )]
+    Recycled {
+        original: PathBuf,
+        at: SystemTime,
+    },
 }
 
 impl FileChange {
@@ -134,9 +154,11 @@ impl UndoStack {
         }
     }
 
-    /// Updates the open entry's label.
+    /// Updates the open entry's label when at the outer level.
     pub(super) fn set_label(&mut self, label: impl Into<String>) {
-        if let Some(open) = &mut self.open {
+        if let Some(open) = &mut self.open
+            && open.depth == 1
+        {
             open.label = label.into();
         }
     }
@@ -181,7 +203,6 @@ impl UndoStack {
     }
 
     /// Records a filesystem change in the open entry.
-    #[cfg_attr(not(test), expect(dead_code, reason = "U5-U7 record file changes"))]
     pub(super) fn note_file(&mut self, change: FileChange) {
         if let Some(open) = &mut self.open {
             open.files.push(change);
@@ -236,7 +257,7 @@ fn space_state(desktop: &Desktop, id: SpaceId) -> Option<(usize, Space)> {
         .map(|(index, space)| (index, space.clone()))
 }
 
-/// Outcome of a pure [`App::apply_undo`] or [`App::apply_redo`] step.
+/// Outcome of an undo or redo step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum StepOutcome {
     Empty,
@@ -245,6 +266,7 @@ pub(super) enum StepOutcome {
         touched: Vec<SpaceId>,
         windows_changed: bool,
         folded: Vec<SpaceId>,
+        files_changed: bool,
     },
 }
 
@@ -258,7 +280,7 @@ fn stale_redo_text(label: &str) -> String {
 
 impl App {
     pub(super) fn undo(&mut self, ui: &mut Ui) {
-        match self.apply_undo() {
+        match self.apply_undo_step(Some(ui)) {
             StepOutcome::Empty => {}
             StepOutcome::Stale(label) => {
                 ui.alert("DeskSpace can't undo", &stale_undo_text(&label));
@@ -267,12 +289,13 @@ impl App {
                 touched,
                 windows_changed,
                 folded,
-            } => self.finish_restore(ui, touched, windows_changed, folded),
+                files_changed,
+            } => self.finish_restore(ui, touched, windows_changed, folded, files_changed),
         }
     }
 
     pub(super) fn redo(&mut self, ui: &mut Ui) {
-        match self.apply_redo() {
+        match self.apply_redo_step(Some(ui)) {
             StepOutcome::Empty => {}
             StepOutcome::Stale(label) => {
                 ui.alert("DeskSpace can't redo", &stale_redo_text(&label));
@@ -281,15 +304,29 @@ impl App {
                 touched,
                 windows_changed,
                 folded,
-            } => self.finish_restore(ui, touched, windows_changed, folded),
+                files_changed,
+            } => self.finish_restore(ui, touched, windows_changed, folded, files_changed),
         }
     }
 
+    #[cfg(test)]
     pub(super) fn apply_undo(&mut self) -> StepOutcome {
-        let Some(entry) = self.undo.undo.pop() else {
+        self.apply_undo_step(None)
+    }
+
+    #[cfg(test)]
+    pub(super) fn apply_redo(&mut self) -> StepOutcome {
+        self.apply_redo_step(None)
+    }
+
+    fn apply_undo_step(&mut self, mut ui: Option<&mut Ui>) -> StepOutcome {
+        let Some(mut entry) = self.undo.undo.pop() else {
             return StepOutcome::Empty;
         };
         if !entry.can_undo(&self.config.desktop, |path| path.exists()) {
+            return StepOutcome::Stale(entry.label);
+        }
+        if !self.reverse_files(&mut ui, &mut entry.files, true) {
             return StepOutcome::Stale(entry.label);
         }
         let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
@@ -304,11 +341,14 @@ impl App {
         outcome
     }
 
-    pub(super) fn apply_redo(&mut self) -> StepOutcome {
-        let Some(entry) = self.undo.redo.pop() else {
+    fn apply_redo_step(&mut self, mut ui: Option<&mut Ui>) -> StepOutcome {
+        let Some(mut entry) = self.undo.redo.pop() else {
             return StepOutcome::Empty;
         };
         if !entry.can_redo(&self.config.desktop, |path| path.exists()) {
+            return StepOutcome::Stale(entry.label);
+        }
+        if !self.reverse_files(&mut ui, &mut entry.files, false) {
             return StepOutcome::Stale(entry.label);
         }
         let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
@@ -321,6 +361,90 @@ impl App {
         };
         self.undo.undo.push(entry);
         outcome
+    }
+
+    /// Reverses `files` in reverse order. Caller has already checked every
+    /// change with `can_undo` or `can_redo` before touching the first file.
+    fn reverse_files(
+        &mut self,
+        ui: &mut Option<&mut Ui>,
+        files: &mut [FileChange],
+        undo: bool,
+    ) -> bool {
+        for change in files.iter_mut().rev() {
+            let ok = match change {
+                FileChange::Moved { from, to } => {
+                    let (src, dst) = if undo {
+                        (to.as_path(), from.as_path())
+                    } else {
+                        (from.as_path(), to.as_path())
+                    };
+                    self.reverse_move(ui, src, dst)
+                }
+                FileChange::Renamed { from, to } => {
+                    let (src, dst) = if undo {
+                        (to.as_path(), from.as_path())
+                    } else {
+                        (from.as_path(), to.as_path())
+                    };
+                    self.reverse_rename(ui, src, dst)
+                }
+                FileChange::Created { .. } | FileChange::Recycled { .. } => false,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn reverse_move(&self, ui: &mut Option<&mut Ui>, from: &Path, to: &Path) -> bool {
+        match self.storage.move_between(from, to) {
+            Ok(()) => {
+                notify_moved(from, to);
+                true
+            }
+            Err(StoreError::OtherVolume(_)) => {
+                let (Some(ui), Some(parent), Some(target_name)) = (
+                    ui.as_deref_mut(),
+                    to.parent(),
+                    to.file_name().and_then(|name| name.to_str()),
+                ) else {
+                    return false;
+                };
+                let Some(moved) =
+                    ui.transfer_files(std::slice::from_ref(&from.to_path_buf()), parent, true)
+                else {
+                    return false;
+                };
+                let Some(landed) = moved.into_iter().next() else {
+                    return false;
+                };
+                if landed != to && !ui.rename_path(&landed, target_name) {
+                    return false;
+                }
+                to.exists() && !from.exists()
+            }
+            Err(error) => {
+                tracing::warn!(%error, from = %from.display(), to = %to.display(), "could not reverse file move");
+                false
+            }
+        }
+    }
+
+    fn reverse_rename(&mut self, ui: &mut Option<&mut Ui>, from: &Path, to: &Path) -> bool {
+        let Some(new_name) = to.file_name().and_then(|name| name.to_str()) else {
+            return false;
+        };
+        let ok = match ui.as_deref_mut() {
+            Some(ui) => ui.rename_path(from, new_name) && to.exists(),
+            None => std::fs::rename(from, to).is_ok(),
+        };
+        if ok {
+            self.icons.invalidate(from);
+            self.icons.invalidate(to);
+        }
+        ok
     }
 
     fn apply_restore_step(
@@ -383,6 +507,7 @@ impl App {
             touched,
             windows_changed,
             folded,
+            files_changed: !entry.files.is_empty(),
         })
     }
 
@@ -392,6 +517,7 @@ impl App {
         touched: Vec<SpaceId>,
         windows_changed: bool,
         folded: Vec<SpaceId>,
+        files_changed: bool,
     ) {
         if windows_changed {
             self.sync_windows(ui);
@@ -403,6 +529,9 @@ impl App {
             if self.config.desktop.space(id).is_some() {
                 self.restyle_space(ui, id);
             }
+        }
+        if files_changed && self.layer_active() {
+            self.resync_desktop_layer(ui);
         }
         if self.settings_ui.is_open() {
             self.refresh_settings(ui);
@@ -439,12 +568,35 @@ mod tests {
 
     use super::*;
 
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("deskspace-undo-test-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     fn sample_rect(x: i32) -> Rect {
         Rect::new(x, 32, 320, 208)
     }
 
     fn test_app() -> App {
         let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        App::new(Config::new(), store, false, false)
+    }
+
+    fn test_app_in(root: &Path) -> App {
+        let store = ConfigStore::with_path(root.join("deskspace.toml"));
         App::new(Config::new(), store, false, false)
     }
 
@@ -850,6 +1002,124 @@ mod tests {
         assert_eq!(app.config.desktop.space(b).unwrap().items().len(), 2);
         assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
         assert!(app.config.desktop.space(b).is_none());
+    }
+
+    #[test]
+    fn drop_delete_space_with_stored_files_and_rename_item_round_trip() {
+        let scratch = Scratch::new("file-moves");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+
+        let original_a = desktop_dir.join("alpha.txt");
+        let original_b = desktop_dir.join("beta.txt");
+        std::fs::write(&original_a, "alpha").unwrap();
+        std::fs::write(&original_b, "beta").unwrap();
+
+        // Drop two files into the space: they move into the store under one entry.
+        app.move_or_keep_dropped(
+            space,
+            Point::new(50, 50),
+            vec![original_a.clone(), original_b.clone()],
+            true,
+        );
+        assert_eq!(app.undo.undo_label(), Some("Move 2 items"));
+        let stored_a = app.storage.root().join("alpha.txt");
+        let stored_b = app.storage.root().join("beta.txt");
+        assert!(stored_a.exists() && stored_b.exists());
+        assert!(!original_a.exists() && !original_b.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+
+        // Undo the drop: both files return to `desktop_dir` and the space is empty again.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(original_a.exists() && original_b.exists());
+        assert!(!stored_a.exists() && !stored_b.exists());
+        assert!(app.config.desktop.space(space).unwrap().items().is_empty());
+
+        // Redo the drop: both files move back into the store and the items return.
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(stored_a.exists() && stored_b.exists());
+        assert!(!original_a.exists() && !original_b.exists());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+
+        // Rename the first item in place: records `Renamed` and updates path + label.
+        let item_a = app.config.desktop.space(space).unwrap().items()[0].id;
+        assert!(
+            app.rename_space_item(item_a, false, "gamma", |from, new_name| {
+                std::fs::rename(from, from.with_file_name(new_name)).is_ok()
+            })
+        );
+        assert_eq!(app.undo.undo_label(), Some("Rename item"));
+        let stored_gamma = app.storage.root().join("gamma.txt");
+        assert!(stored_gamma.exists() && !stored_a.exists());
+        assert_eq!(app.config.desktop.item(item_a).unwrap().label, "gamma");
+
+        // Undo and redo the item rename.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(stored_a.exists() && !stored_gamma.exists());
+        assert_eq!(app.config.desktop.item(item_a).unwrap().label, "alpha");
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(stored_gamma.exists() && !stored_a.exists());
+        assert_eq!(app.config.desktop.item(item_a).unwrap().label, "gamma");
+
+        // Delete the space with stored files: files release to `desktop_dir`.
+        app.undo.begin("Delete space");
+        assert!(app.release_and_delete_space_to(space, Some(&desktop_dir)));
+        app.undo.finish(&app.config.desktop);
+        assert_eq!(app.undo.undo_label(), Some("Delete space"));
+        let released_gamma = desktop_dir.join("gamma.txt");
+        assert!(app.config.desktop.space(space).is_none());
+        assert!(released_gamma.exists() && original_b.exists());
+        assert!(!stored_gamma.exists() && !stored_b.exists());
+
+        // Undo the space delete: files return to the store and the space comes back.
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(space).is_some());
+        assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);
+        assert!(stored_gamma.exists() && stored_b.exists());
+        assert!(!released_gamma.exists() && !original_b.exists());
+
+        // Redo the space delete: files release to `desktop_dir` and the space is gone again.
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert!(app.config.desktop.space(space).is_none());
+        assert!(released_gamma.exists() && original_b.exists());
+        assert!(!stored_gamma.exists() && !stored_b.exists());
+    }
+
+    #[test]
+    fn stale_file_entry_touches_no_file() {
+        let scratch = Scratch::new("stale-files");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+
+        let original_a = desktop_dir.join("alpha.txt");
+        let original_b = desktop_dir.join("beta.txt");
+        std::fs::write(&original_a, "alpha").unwrap();
+        std::fs::write(&original_b, "beta").unwrap();
+
+        app.move_or_keep_dropped(
+            space,
+            Point::new(50, 50),
+            vec![original_a.clone(), original_b.clone()],
+            true,
+        );
+        let stored_a = app.storage.root().join("alpha.txt");
+        let stored_b = app.storage.root().join("beta.txt");
+
+        // Put a new file at `original_a` so reversing the first move would clobber it.
+        std::fs::write(&original_a, "new file").unwrap();
+
+        // Undo checks every file first, so `stored_b` is NOT moved back either.
+        assert_eq!(
+            app.apply_undo(),
+            StepOutcome::Stale("Move 2 items".to_string())
+        );
+        assert!(stored_a.exists() && stored_b.exists());
+        assert!(!original_b.exists());
+        assert_eq!(std::fs::read_to_string(&original_a).unwrap(), "new file");
     }
 
     #[test]

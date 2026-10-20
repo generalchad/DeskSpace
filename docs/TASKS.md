@@ -416,17 +416,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U5. Undo file moves (app).** Record `Moved` where DeskSpace moves a
-  file: `place_dropped` (into the store, including drops from the taken-over
-  desktop), `release_item` (back to the desktop on a space delete), and a
-  paste's external moves; record `Renamed` for an item rename
-  (`rename.rs`). Reverse in reverse order with the same mechanism that made
-  the change (`ItemStore` for store moves, `ui.transfer_files`, and
-  `ui.rename_path`), after checking every change first, so a stale entry
-  touches no file. Then a space delete undoes: its files go back into the
-  store and the space comes back with its items. **[needs human]** check:
-  drop a file into a space and undo (it is back where it was); delete a
-  space with stored files, undo, then redo; rename an item and undo.
 - [ ] **U6. Restore from the Recycle Bin (platform).**
   `Ui::restore_recycled(original: &Path, since: SystemTime) -> Option<PathBuf>`:
   find the Recycle Bin item whose original location is `original` and that
@@ -968,6 +957,7 @@ each id is in `archive/TASKS-done.md`.
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | U3 (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
+| U5 (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
 
 ## Found while working
 

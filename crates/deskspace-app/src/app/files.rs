@@ -10,7 +10,7 @@ use deskspace_platform::{
     desktop_directory, item_facts, notify_moved,
 };
 
-use super::undo::move_items_label;
+use super::undo::{FileChange, move_items_label};
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 use crate::storage::ItemStore;
 
@@ -37,7 +37,9 @@ impl App {
         at: Point,
         add: impl FnOnce(&mut Self, &mut Ui, SpaceId),
     ) {
-        self.undo.begin("New space");
+        if surface == Surface::Desktop {
+            self.undo.begin("New space");
+        }
         let target = match surface {
             Surface::Space(id) => id,
             Surface::Desktop => match self.create_space_for_drop(ui, at) {
@@ -60,7 +62,9 @@ impl App {
             self.undo.cancel();
             return;
         }
-        self.undo.finish(&self.config.desktop);
+        if surface == Surface::Desktop {
+            self.undo.finish(&self.config.desktop);
+        }
     }
 
     pub(super) fn add_dropped(
@@ -71,10 +75,71 @@ impl App {
         paths: Vec<PathBuf>,
         action: DropAction,
     ) {
+        let touched = match action {
+            DropAction::Move => self.move_or_keep_dropped(target, at, paths, true),
+            DropAction::KeepInPlace => self.move_or_keep_dropped(target, at, paths, false),
+            DropAction::Copy => {
+                self.undo.begin(move_items_label(paths.len()));
+                let mut touched = HashSet::from([target]);
+                for path in paths {
+                    if !path.exists() {
+                        tracing::warn!(path = %path.display(), "dropped file does not exist; ignored");
+                        continue;
+                    }
+                    let command = match self.find_item_by_file(&path) {
+                        Some(item) => {
+                            match self.config.desktop.space_containing(item) {
+                                Some(source) if source == target => continue,
+                                Some(source) => {
+                                    touched.insert(source);
+                                }
+                                None => {}
+                            }
+                            Command::MoveItem { id: item, target }
+                        }
+                        None => {
+                            let Some(placed) = self.copy_dropped(ui, path) else {
+                                continue;
+                            };
+                            Command::AddItem {
+                                space: target,
+                                facts: item_facts(&placed),
+                                path: placed,
+                            }
+                        }
+                    };
+                    self.dispatch(command, at);
+                }
+                // Copies are recorded as `Created` in U7.
+                self.undo.cancel();
+                self.undo.finish(&self.config.desktop);
+                touched
+            }
+        };
+        for id in &touched {
+            self.refresh_space(ui, *id);
+        }
+        // A loose desktop item that was dropped in has moved off the desktop,
+        // so reconcile the layer now instead of at the next shell refresh.
+        if self.layer_active() {
+            self.resync_desktop_layer(ui);
+        }
+        self.refresh_tray(ui);
+        self.save(ui);
+    }
+
+    /// Moves or lists `paths` into `target`, recording one undo entry and
+    /// returning the spaces that changed.
+    pub(super) fn move_or_keep_dropped(
+        &mut self,
+        target: SpaceId,
+        at: Point,
+        paths: Vec<PathBuf>,
+        move_into_store: bool,
+    ) -> HashSet<SpaceId> {
         self.undo.begin(move_items_label(paths.len()));
         let mut touched = HashSet::from([target]);
-        let mut moved_items = 0usize;
-        let mut touched_files = false;
+        let mut count = 0usize;
         for path in paths {
             // A drop can name a file that no longer exists (for example a
             // stale desktop icon). Listing it would show a label without an
@@ -92,20 +157,13 @@ impl App {
                         }
                         None => {}
                     }
-                    moved_items += 1;
                     Command::MoveItem { id: item, target }
                 }
                 None => {
-                    let placed = match action {
-                        DropAction::KeepInPlace => Some(path),
-                        DropAction::Move => {
-                            touched_files = true;
-                            self.place_dropped(path)
-                        }
-                        DropAction::Copy => {
-                            touched_files = true;
-                            self.copy_dropped(ui, path)
-                        }
+                    let placed = if move_into_store {
+                        self.place_dropped(path)
+                    } else {
+                        Some(path)
                     };
                     match placed {
                         Some(path) => Command::AddItem {
@@ -118,26 +176,15 @@ impl App {
                 }
             };
             // Not `commit`: one of several commands, refreshed once below.
-            self.dispatch(command, at);
+            if self.dispatch(command, at).is_applied() {
+                count += 1;
+            }
         }
-        if touched_files {
-            // File changes are reversed in U5-U7; until then an entry that
-            // holds any is not recorded.
-            self.undo.cancel();
-        } else if moved_items > 0 {
-            self.undo.set_label(move_items_label(moved_items));
+        if count > 0 {
+            self.undo.set_label(move_items_label(count));
         }
         self.undo.finish(&self.config.desktop);
-        for id in &touched {
-            self.refresh_space(ui, *id);
-        }
-        // A loose desktop item that was dropped in has moved off the desktop,
-        // so reconcile the layer now instead of at the next shell refresh.
-        if self.layer_active() {
-            self.resync_desktop_layer(ui);
-        }
-        self.refresh_tray(ui);
-        self.save(ui);
+        touched
     }
 
     /// Moves `items` from their current spaces into `target`, recording one
@@ -258,12 +305,16 @@ impl App {
 
     /// Where a moved dropped file will live: in the storage folder. `None` if
     /// it vanished before it could be moved.
-    fn place_dropped(&self, path: PathBuf) -> Option<PathBuf> {
+    fn place_dropped(&mut self, path: PathBuf) -> Option<PathBuf> {
         match self.storage.adopt(&path) {
             Ok(stored) => {
                 if stored != path {
                     tracing::info!(from = %path.display(), to = %stored.display(), "moved into space storage");
                     notify_moved(&path, &stored);
+                    self.undo.note_file(FileChange::Moved {
+                        from: path,
+                        to: stored.clone(),
+                    });
                 }
                 Some(stored)
             }
@@ -295,22 +346,33 @@ impl App {
     /// was moved into the space storage goes back to the desktop first, so
     /// nothing is left behind in a folder the user never sees. Returns false
     /// if that move failed; the item then stays.
-    pub(super) fn release_item(&mut self, id: ItemId) -> bool {
+    pub(super) fn release_item(&mut self, id: ItemId, desktop_override: Option<&Path>) -> bool {
         let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
             return false;
         };
         if self.storage.contains(&path) && path.exists() {
-            let desktop = match desktop_directory() {
-                Ok(desktop) => desktop,
-                Err(error) => {
-                    tracing::error!(%error, "cannot find the desktop folder");
-                    return false;
-                }
+            let resolved;
+            let desktop = match desktop_override {
+                Some(dir) => dir,
+                None => match desktop_directory() {
+                    Ok(dir) => {
+                        resolved = dir;
+                        &resolved
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "cannot find the desktop folder");
+                        return false;
+                    }
+                },
             };
-            match self.storage.release(&path, &desktop) {
+            match self.storage.release(&path, desktop) {
                 Ok(back) => {
                     tracing::info!(to = %back.display(), "moved back to the desktop");
                     notify_moved(&path, &back);
+                    self.undo.note_file(FileChange::Moved {
+                        from: path,
+                        to: back,
+                    });
                 }
                 Err(error) => {
                     tracing::error!(%error, "could not move the item back to the desktop");
@@ -502,8 +564,6 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let touches_files =
-            stored == StoredFiles::ToRecycleBin || !stored_paths(space, &self.storage).is_empty();
         if stored == StoredFiles::ToRecycleBin {
             let paths = stored_paths(space, &self.storage);
             let recycled = paths.is_empty()
@@ -519,9 +579,7 @@ impl App {
             }
         }
         self.undo.begin("Delete space");
-        if touches_files {
-            // File changes are reversed in U5-U7; until then an entry that
-            // holds any is not recorded.
+        if stored == StoredFiles::ToRecycleBin {
             self.undo.cancel();
         }
         // Any stored files still here go back to the desktop before the
@@ -539,6 +597,14 @@ impl App {
     }
 
     pub(super) fn release_and_delete_space(&mut self, id: SpaceId) -> bool {
+        self.release_and_delete_space_to(id, None)
+    }
+
+    pub(super) fn release_and_delete_space_to(
+        &mut self,
+        id: SpaceId,
+        desktop_override: Option<&Path>,
+    ) -> bool {
         let Some(space) = self.config.desktop.space(id) else {
             return false;
         };
@@ -549,7 +615,7 @@ impl App {
         self.undo.note_space(&self.config.desktop, id);
         let kept = items
             .into_iter()
-            .filter(|item| !self.release_item(*item))
+            .filter(|item| !self.release_item(*item, desktop_override))
             .count();
         if kept > 0 {
             tracing::error!(

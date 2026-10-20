@@ -3053,3 +3053,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   **[needs human]** check: Ctrl+Z after a space move puts it back, Ctrl+Y
   moves it again; with no space current, Ctrl+Z on the desktop still undoes
   an Explorer rename.
+
+- [x] **U5. Undo file moves (app).** Record `Moved` where DeskSpace moves a
+  file: `place_dropped` (into the store, including drops from the taken-over
+  desktop), `release_item` (back to the desktop on a space delete), and a
+  paste's external moves; record `Renamed` for an item rename
+  (`rename.rs`). Reverse in reverse order with the same mechanism that made
+  the change (`ItemStore` for store moves, `ui.transfer_files`, and
+  `ui.rename_path`), after checking every change first, so a stale entry
+  touches no file. Then a space delete undoes: its files go back into the
+  store and the space comes back with its items. **[needs human]** check:
+  drop a file into a space and undo (it is back where it was); delete a
+  space with stored files, undo, then redo; rename an item and undo.
