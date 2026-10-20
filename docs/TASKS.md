@@ -416,15 +416,6 @@ and ids that are never reused. Every undoable action records one entry, and
 undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
-- [ ] **U6. Restore from the Recycle Bin (platform).**
-  `Ui::restore_recycled(original: &Path, since: SystemTime) -> Option<PathBuf>`:
-  find the Recycle Bin item whose original location is `original` and that
-  was deleted at or after `since` (the newest if several), restore it with
-  the shell's "undelete" verb, and return the restored path. `None` when it
-  is gone (emptied, or restored by hand). Cite the Microsoft Learn pages for
-  the Recycle Bin folder and its properties beside the code. **[needs
-  human]** check: recycle a file in Explorer, restore it through a test
-  harness or `--verbose` log, and confirm it is back under its old name.
 - [ ] **U7. Undo deletes, copies, and new shortcuts (app).** Record
   `Recycled` (with the time taken just before the call) for a Recycle-Bin
   delete in `delete_selected_items` and `delete_space_item`; an item that
@@ -958,6 +949,7 @@ each id is in `archive/TASKS-done.md`.
 | U3 (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
+| U6 (D11) | Recycle a file in Explorer, restore it through a test harness or `--verbose` log, and confirm it is back under its old name. |
 
 ## Found while working
 

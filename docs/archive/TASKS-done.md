@@ -3065,3 +3065,13 @@ until I5-I6 all land, so no partial build hides the desktop.
   store and the space comes back with its items. **[needs human]** check:
   drop a file into a space and undo (it is back where it was); delete a
   space with stored files, undo, then redo; rename an item and undo.
+
+- [x] **U6. Restore from the Recycle Bin (platform).**
+  `Ui::restore_recycled(original: &Path, since: SystemTime) -> Option<PathBuf>`:
+  find the Recycle Bin item whose original location is `original` and that
+  was deleted at or after `since` (the newest if several), restore it with
+  the shell's "undelete" verb, and return the restored path. `None` when it
+  is gone (emptied, or restored by hand). Cite the Microsoft Learn pages for
+  the Recycle Bin folder and its properties beside the code. **[needs
+  human]** check: recycle a file in Explorer, restore it through a test
+  harness or `--verbose` log, and confirm it is back under its old name.

@@ -830,6 +830,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   FOF_NOCONFIRMATION`: no prompt, undoable; Shift+Delete passes `permanent`,
   which drops `FOF_ALLOWUNDO`) and drops the items whose files are gone: a
   space removes them, and the desktop layer re-reads the Desktop folder.
+  `Ui::restore_recycled(original, since)` (`file_op::restore_recycled`)
+  enumerates `FOLDERID_RecycleBinFolder`, matches the newest item whose
+  `System.Recycle.DeletedFrom` + display name equals `original` and whose
+  `System.Recycle.DateDeleted` is at or after `since`, and restores it with
+  the shell's `"undelete"` context-menu verb.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 

@@ -11,23 +11,49 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, PROPERTYKEY};
+use windows::Win32::Storage::FileSystem::GetLongPathNameW;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree};
 use windows::Win32::UI::Shell::{
-    FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, IFileOperation,
-    IFileOperationProgressSink, IFileOperationProgressSink_Impl, IShellItem,
-    SHCreateItemFromParsingName, SIGDN_FILESYSPATH,
+    BHID_EnumItems, BHID_SFUIObject, CMF_NORMAL, CMINVOKECOMMANDINFO, FOF_ALLOWUNDO,
+    FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, FOLDERID_RecycleBinFolder,
+    IContextMenu, IEnumShellItems, IFileOperation, IFileOperationProgressSink,
+    IFileOperationProgressSink_Impl, IShellItem, IShellItem2, KF_FLAG_DEFAULT, SEE_MASK_FLAG_NO_UI,
+    SHCreateItemFromParsingName, SHGetKnownFolderItem, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
 };
-use windows::core::{GUID, HRESULT, PCWSTR, Ref, Result as WinResult};
+use windows::Win32::UI::WindowsAndMessaging::{CreatePopupMenu, DestroyMenu, SW_SHOWNORMAL};
+use windows::core::{GUID, HRESULT, Interface, PCWSTR, Ref, Result as WinResult, s};
 
 use crate::error::PlatformError;
+use crate::win32::shortcuts::display_name;
 use crate::win32::system::wide;
 
 /// `CLSID_FileOperation`; windows-rs does not export it, so the documented GUID
 /// is spelled out.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation
 const CLSID_FILE_OPERATION: GUID = GUID::from_u128(0x3ad05575_8857_4850_9277_11b85bdb8e09);
+
+/// `System.Recycle.DeletedFrom` (`SCID_OriginalLocation`, `PID_DISPLACED_FROM`):
+/// the folder from which a Recycle Bin item was deleted.
+/// https://learn.microsoft.com/en-us/windows/win32/properties/props-system-recycle-deletedfrom
+const PKEY_RECYCLE_DELETED_FROM: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x9b174b33_40ff_11d2_a27e_00c04fc30871),
+    pid: 2,
+};
+
+/// `System.Recycle.DateDeleted` (`SCID_DateDeleted`, `PID_DISPLACED_DATE`):
+/// when a Recycle Bin item was deleted, as a UTC `FILETIME`.
+/// https://learn.microsoft.com/en-us/windows/win32/properties/props-system-recycle-datedeleted
+const PKEY_RECYCLE_DATE_DELETED: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x9b174b33_40ff_11d2_a27e_00c04fc30871),
+    pid: 3,
+};
+
+/// Seconds between the Windows `FILETIME` epoch (1601-01-01) and `UNIX_EPOCH`
+/// (1970-01-01).
+const WINDOWS_TO_UNIX_EPOCH_SECS: u64 = 11_644_473_600;
 
 /// Moves or copies `paths` into `destination`, returning where the files
 /// landed. `owner` parents the shell's progress and conflict UI.
@@ -169,6 +195,146 @@ pub(crate) fn rename(
         }
     }
     Ok(())
+}
+
+/// Finds the Recycle Bin item whose original location is `original` and that
+/// was deleted at or after `since` (the newest if several), restores it with
+/// the shell's `"undelete"` verb, and returns the restored path. Returns
+/// `None` when no matching item is still in the Recycle Bin.
+/// https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid (FOLDERID_RecycleBinFolder)
+pub(crate) fn restore_recycled(
+    owner: Option<HWND>,
+    original: &Path,
+    since: SystemTime,
+) -> Option<PathBuf> {
+    // Recycle Bin deletion timestamps are stored at whole-second granularity by
+    // the shell's property store, so allow a small slack before `since` (which
+    // the caller captures right before `delete`).
+    let cutoff = filetime_ticks(since.checked_sub(Duration::from_secs(2)).unwrap_or(since));
+    let target = long_path(original);
+    // SAFETY: COM is initialized on this thread; every interface and string is
+    // released when it goes out of scope.
+    unsafe {
+        let bin =
+            SHGetKnownFolderItem::<IShellItem>(&FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, None)
+                .ok()?;
+        let items = bin
+            .BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems)
+            .ok()?;
+        let mut newest: Option<(u64, IShellItem)> = None;
+        loop {
+            let mut batch = [None];
+            let mut fetched = 0u32;
+            if items.Next(&mut batch, Some(&mut fetched)).is_err() || fetched == 0 {
+                break;
+            }
+            let Some(item) = batch[0].take() else {
+                continue;
+            };
+            let Some((origin, deleted_at)) = recycled_origin_and_time(&item) else {
+                continue;
+            };
+            if deleted_at >= cutoff
+                && same_path(&long_path(&origin), &target)
+                && newest.as_ref().is_none_or(|(best, _)| deleted_at >= *best)
+            {
+                newest = Some((deleted_at, item));
+            }
+        }
+        let (_, item) = newest?;
+        invoke_undelete(owner, &item)?;
+    }
+    original.exists().then(|| original.to_path_buf())
+}
+
+/// Reads a Recycle Bin item's original full path and deletion timestamp (in
+/// `FILETIME` 100-ns ticks).
+unsafe fn recycled_origin_and_time(item: &IShellItem) -> Option<(PathBuf, u64)> {
+    let item2: IShellItem2 = item.cast().ok()?;
+    // SAFETY: `GetString` returns a CoTaskMem-allocated wide string that is
+    // copied and freed below; `GetFileTime` writes a plain `FILETIME`.
+    let (folder, deleted) = unsafe {
+        let raw = item2.GetString(&PKEY_RECYCLE_DELETED_FROM).ok()?;
+        let text = raw.to_string().ok();
+        CoTaskMemFree(Some(raw.0 as *const core::ffi::c_void));
+        let folder = text.filter(|text| !text.is_empty()).map(PathBuf::from)?;
+        let deleted = item2.GetFileTime(&PKEY_RECYCLE_DATE_DELETED).ok()?;
+        (folder, deleted)
+    };
+    let ticks = (u64::from(deleted.dwHighDateTime) << 32) | u64::from(deleted.dwLowDateTime);
+    let name = display_name(item, SIGDN_NORMALDISPLAY)?;
+    let mut origin = folder.join(&name);
+    // When Explorer's "Hide extensions for known file types" is on,
+    // `SIGDN_NORMALDISPLAY` omits the extension while the `$R` backing file in
+    // `SIGDN_FILESYSPATH` keeps it.
+    if origin.extension().is_none()
+        && let Some(ext) = filesystem_path(item)
+            .as_deref()
+            .and_then(Path::extension)
+            .map(ToOwned::to_owned)
+    {
+        origin.set_extension(ext);
+    }
+    Some((origin, ticks))
+}
+
+/// Runs the shell's `"undelete"` context-menu verb on `item`.
+unsafe fn invoke_undelete(owner: Option<HWND>, item: &IShellItem) -> Option<()> {
+    // SAFETY: `item` is a live shell item; the temporary popup menu is
+    // destroyed before returning. `QueryContextMenu` is called first because
+    // the Recycle Bin context-menu handler populates its verb table there.
+    unsafe {
+        let menu: IContextMenu = item.BindToHandler(None, &BHID_SFUIObject).ok()?;
+        let popup = CreatePopupMenu().ok()?;
+        let _ = menu.QueryContextMenu(popup, 0, 1, 0x7FFF, CMF_NORMAL);
+        let info = CMINVOKECOMMANDINFO {
+            cbSize: std::mem::size_of::<CMINVOKECOMMANDINFO>() as u32,
+            fMask: SEE_MASK_FLAG_NO_UI,
+            hwnd: owner.unwrap_or_default(),
+            lpVerb: s!("undelete"),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        let result = menu.InvokeCommand(&info);
+        let _ = DestroyMenu(popup);
+        if let Err(error) = result {
+            tracing::warn!(%error, "could not restore item from the Recycle Bin");
+            return None;
+        }
+    }
+    Some(())
+}
+
+/// Converts a `SystemTime` to Windows `FILETIME` 100-ns ticks since 1601-01-01.
+fn filetime_ticks(time: SystemTime) -> u64 {
+    let since_unix = time.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+    let secs = since_unix
+        .as_secs()
+        .saturating_add(WINDOWS_TO_UNIX_EPOCH_SECS);
+    secs.saturating_mul(10_000_000)
+        .saturating_add(u64::from(since_unix.subsec_nanos() / 100))
+}
+
+/// Expands 8.3 short path segments (such as `TIMOTH~1` in `%TEMP%`) on `path`'s
+/// existing parent folder so it compares equal to the long path the Recycle Bin
+/// records in `System.Recycle.DeletedFrom`.
+fn long_path(path: &Path) -> PathBuf {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return path.to_path_buf();
+    };
+    let wide_parent = wide(&parent.to_string_lossy().replace('/', "\\"));
+    let mut buffer = vec![0u16; 1024];
+    // SAFETY: `wide_parent` is NUL-terminated and `buffer` bounds the write.
+    let len = unsafe { GetLongPathNameW(PCWSTR(wide_parent.as_ptr()), Some(&mut buffer)) } as usize;
+    if len > 0 && len < buffer.len() {
+        PathBuf::from(String::from_utf16_lossy(&buffer[..len])).join(name)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
 }
 
 fn shell_item(path: &Path) -> Result<IShellItem, PlatformError> {
@@ -334,5 +500,46 @@ impl IFileOperationProgressSink_Impl for CreatedItems_Impl {
 
     fn ResumeTimer(&self) -> WinResult<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+
+    #[test]
+    fn recycles_and_restores_a_file() {
+        // SAFETY: initializes COM for this test thread only.
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        let folder = std::env::temp_dir().join(format!(
+            "deskspace-recycle-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&folder).expect("create temp folder");
+        let file = folder.join("restore-me.txt");
+        std::fs::write(&file, "hello recycle bin").expect("write test file");
+
+        let since = SystemTime::now();
+        delete(None, std::slice::from_ref(&file), false).expect("recycle file");
+        assert!(!file.exists(), "file moved to the Recycle Bin");
+
+        let restored = restore_recycled(None, &file, since).expect("restored from Recycle Bin");
+        assert_eq!(restored, file);
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("read restored file"),
+            "hello recycle bin"
+        );
+        assert_eq!(
+            restore_recycled(None, &file, since),
+            None,
+            "already restored"
+        );
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }
