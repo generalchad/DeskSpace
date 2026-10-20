@@ -2997,3 +2997,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
+
+- [x] **R16. Scripting verbs: an out-of-process extension point (F-59).**
+  Resolved by `ROADMAP.md` D15 and split into tasks `P8`-`P10` (`WM_COPYDATA`
+  transport to `DeskSpaceController`, same-session trust check, shared `Verb`
+  enum in `deskspace-app`, and in-process sandboxed Rhai extensions in
+  `deskspace-ext` instead of native DLL plugins).
+  - Extensions today mean editing the source. Design a small, stable verb set
+    (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
+    `deskspace.exe --verb ...` hands to the running instance, so scripts, the
+    desktop menu (C9), and Explorer's "Send to" (F-56) share one path. Settle:
+    the transport (today `--show` posts one `WM_APP` id; arguments need
+    `WM_COPYDATA` or a named pipe), one `Verb` enum shared by `cli.rs` and the
+    controller, mapping verbs onto existing app methods (never a second way to
+    change the model), and the trust boundary (same user and session only;
+    never accept a verb from an elevated or remote caller). C9's `--new-space`
+    should be built as the first verb if this lands first. No in-process plugin
+    loading: native plugins in a shell-integrated app cost more stability and
+    security than they are worth now.

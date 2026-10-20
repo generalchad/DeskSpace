@@ -10,8 +10,11 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
+- C10a-C10c (theme files; C10a is pure and needs no screen);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
+- section P, in order within each group (P1, P4, P5, P8, and P11 are pure and
+  need no screen);
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -367,44 +370,163 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     the desktop and use "New space" and "DeskSpace Settings"; the entries are
     gone after a clean exit.
 
-- [ ] **C10. Theme files: save, load, and share a look (F-58).**
-  **[needs decision]**: the maintainer approves or amends the proposal below,
-  then removes this marker and the task is ready. Distinct from C6: C6 is
-  named *item* presets; C10 is a file holding a whole look, so people can
-  share themes without forking.
-  - Proposal (recommended by review, 2026-10-16):
-    - A theme file is a `SpaceLook` (the whole `Theme` plus grid spacing and
-      padding), because `SpaceLook` is already the unit of "a look": it
-      round-trips through serde, defaults missing fields, and clamps on load.
-      `ui_mode` is ignored on apply, as it is for a space. Open point: should
-      `preset` (Match Explorer / Custom) travel with a theme? Proposed: yes,
-      since it decides icon size and spacing, which are part of how a theme
-      looks.
-    - Format: TOML, extension `.deskspace-theme.toml`, with `format = 1`,
-      `name`, an optional `author`, and a `[look]` table. A file with a newer
-      `format` loads with a warning, unknown keys ignored, as `Config` does.
-    - Location: a `themes` folder beside the config file (so a scratch
-      `--config` has its own), listed in Settings; "Save theme…" and "Load
-      theme…" also take any path through the standard file dialogs.
-    - Applying: in the Global scope it writes `config.theme` and the grid's
-      `gap` / `padding`; in a space's scope it is a `SetSpaceLook { custom:
-      true }`. Either way it is a previewed edit that Cancel undoes, like any
-      other settings change.
-  - Once approved, three commits:
-    - **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
-      `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
-      `save(path)` returning `ConfigError`, and `themes_dir()` on
-      `ConfigStore`. Tests: round trip, missing fields default, out-of-range
-      values clamp, unknown keys ignored, a newer `format` loads.
-    - **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
-      `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
-      the open side if it has none.
-    - **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
-      theme…"): two `ButtonAction` variants and their arms in
-      `App::on_settings_button` (the "new global setting" recipe's button
-      path), and a "Themes" `Choice` listing `themes_dir()`. **[needs human]**
-      check: save a customized space's look, load it on Global and on another
-      space, Cancel undoes the load.
+- [ ] **C10a. Theme files and folder discovery (config, pure; ROADMAP D15,
+  F-58).** Distinct from C6: C6 is named *item* presets; C10 is a file
+  holding a whole look (and optional global animations), so people can share
+  themes without forking. Do C10a, C10b, and C10c in order, one commit each.
+  - Create `crates/deskspace-config/src/theme_file.rs` and re-export
+    `CURRENT_THEME_FORMAT`, `THEME_EXTENSION`, `ThemeEntry`, and `ThemeFile`
+    from `crates/deskspace-config/src/lib.rs`:
+    1. `pub const CURRENT_THEME_FORMAT: u32 = 1;` and
+       `pub const THEME_EXTENSION: &str = "deskspace-theme.toml";`.
+    2. `pub struct ThemeFile { pub format: u32, pub name: String, pub author:
+       Option<String>, pub look: SpaceLook, pub animations:
+       Option<Animations> }` with `#[derive(Debug, Clone, PartialEq, Eq,
+       Serialize, Deserialize)]` and `#[serde(default)]`. `Default` sets
+       `format: CURRENT_THEME_FORMAT`, `name: "Untitled".into()`, `author:
+       None`, `look: SpaceLook::default()`, and `animations: None`.
+    3. `pub fn clamped(mut self) -> Self`: calls `self.look =
+       self.look.clamped()` and `self.animations =
+       self.animations.map(Animations::clamped)`.
+    4. `pub fn load(path: &Path) -> Result<Self, ConfigError>`: reads the
+       file as UTF-8, parses it with `toml::from_str`, logs a `tracing::warn!`
+       when `format > CURRENT_THEME_FORMAT` (unknown keys are ignored by
+       serde, as `Config` does), and returns `Ok(theme.clamped())`.
+    5. `pub fn save(&self, path: &Path) -> Result<(), ConfigError>`: creates
+       the parent directory with `fs::create_dir_all`, writes to a sibling
+       `.tmp` file, and renames it into `path` (copy the atomic write in
+       `ConfigStore::save` in `store.rs`).
+    6. `pub struct ThemeEntry { pub name: String, pub path: PathBuf }` and
+       `pub fn list_themes(dir: &Path) -> Vec<ThemeEntry>`: when `dir` does
+       not exist, returns `Vec::new()`. Otherwise reads `dir` and collects
+       every `*.deskspace-theme.toml` file and every `<dir>/<slug>/manifest.toml`
+       file that loads with `ThemeFile::load` (logging a `tracing::warn!` and
+       skipping unreadable files). If a loaded file's `name` is empty or
+       `"Untitled"`, fall back to the file stem or `<slug>` folder name. Sort
+       the entries case-insensitively by `name`.
+  - In `crates/deskspace-config/src/store.rs` on `impl ConfigStore`, add
+    three directory getters right below `storage_dir()`:
+    - `pub fn themes_dir(&self) -> PathBuf` (`<config_dir>/themes`),
+    - `pub fn animations_dir(&self) -> PathBuf` (`<config_dir>/animations`),
+    - `pub fn scripts_dir(&self) -> PathBuf` (`<config_dir>/scripts`).
+    Because they sit beside `self.path`, a scratch `--config` automatically
+    gets its own folders.
+  - Tests in `theme_file.rs`:
+    - `theme_file_round_trips_look_and_animations`,
+    - `missing_fields_default_and_unknown_keys_are_ignored`,
+    - `out_of_range_values_are_clamped_on_load`,
+    - `newer_format_still_loads`,
+    - `list_themes_finds_single_files_and_pack_manifests_sorted`.
+  - Done when: fmt, clippy, and tests pass.
+
+- [ ] **C10b. Single-file Open and Save dialogs on `Ui` (platform; ROADMAP
+  D15, F-58).** Needs C10a.
+  - `crates/deskspace-platform/src/win32/dialog.rs` already has
+    `pick_save_path(owner, title, default_name, filter)` (built in X3).
+    Extend `dialog.rs`:
+    1. Add `initial_dir: Option<&Path>` to `pick_save_path`. When `initial_dir`
+       is `Some(dir)` and `dir.is_dir()`, pass it to `picker.SetFolder` using
+       `SHCreateItemFromParsingName` (`windows::Win32::UI::Shell::SHCreateItemFromParsingName`).
+       Update its existing caller in `win32/debug_window/console.rs` to pass
+       `None`.
+    2. Add `pub(crate) unsafe fn pick_file(owner: HWND, title: &str,
+       initial_dir: Option<&Path>, filter: &[(&str, &str)]) ->
+       Option<PathBuf>` right below `pick_files`. Copy `pick_files`, but:
+       - omit `FOS_ALLOWMULTISELECT` from `SetOptions`;
+       - build `COMDLG_FILTERSPEC` from `filter` and call
+         `picker.SetFileTypes(&specs)` the same way `pick_save_path` does;
+       - if `initial_dir` is `Some(dir)` and `dir.is_dir()`, set the folder
+         with `SHCreateItemFromParsingName`, else fall back to
+         `FOLDERID_Desktop`;
+       - read the chosen file with `picker.GetResult()` (like
+         `pick_save_path`) instead of `GetResults()`.
+  - In `crates/deskspace-platform/src/win32/runtime/ui_chrome.rs` on `impl Ui`,
+    right below `pick_files`:
+    1. Add `pub fn pick_file(&mut self, title: &str, initial_dir:
+       Option<&Path>, filter: &[(&str, &str)]) -> Option<PathBuf>`. Read
+       `owner` with `with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))`,
+       release the borrow, and call `dialog::pick_file`.
+    2. Add `pub fn pick_save_path(&mut self, title: &str, initial_dir:
+       Option<&Path>, default_name: &str, filter: &[(&str, &str)]) ->
+       Option<PathBuf>`, calling `dialog::pick_save_path` the same way.
+  - Done when: fmt, clippy, and tests pass. Checked on screen in C10c.
+
+- [ ] **C10c. The Themes settings page: apply, save, and load themes (app;
+  ROADMAP D15, F-58).** Needs C10a and C10b. **[needs human]**
+  - Add a sixth look page, **Themes**, so it appears for Global and for each
+    space without making the **Colors** page too tall for a 1080-pixel
+    display:
+    1. `crates/deskspace-app/src/settings/ids.rs`:
+       - In `mod page`, insert `pub const THEMES: usize = 5;` after
+         `ADVANCED` (4), and add 1 to `GENERAL`, `NEW_SPACES`, `HOTKEYS`,
+         `ABOUT`, `SHORTCUTS`, and `ANIMATIONS`.
+       - In `crates/deskspace-app/src/settings/mod.rs`, update
+         `pub const LOOK_PAGE_COUNT: usize = 6;`.
+       - In `ids.rs` `mod field`, add the next free ids: `THEMES_HEADING`,
+         `THEME_CHOICE`, `SAVE_THEME`, `LOAD_THEME`, `OPEN_THEMES_FOLDER`,
+         and `THEMES_NOTE`.
+    2. `crates/deskspace-app/src/settings/session.rs`:
+       - Add `pub themes: Vec<ThemeEntry>` and `pub selected_theme: usize`
+         (`0` means `"Current"`, `1 + i` means `themes[i]`) to `Session`.
+       - In `needs_restyle`, also return `true` when
+         `config.window.animations != saved.saved_animations`, and in
+         `App::cancel_settings` (`app/settings_session.rs`) restore
+         `saved_animations` so Cancel undoes a Global theme's animation
+         changes too.
+    3. `crates/deskspace-app/src/settings/pages.rs`:
+       - In `look_pages`, build and append `themes_page(session)` with:
+         - `Field::heading(field::THEMES_HEADING, "Themes")`,
+         - `Field::choice(field::THEME_CHOICE, "Installed themes", ..)` with
+           `"Current"` followed by each entry in `session.themes` (enabled
+           when `!session.themes.is_empty()`),
+         - `Field::button(field::SAVE_THEME, "", "Save theme\u{2026}")`,
+         - `Field::button(field::LOAD_THEME, "", "Load theme\u{2026}")`,
+         - `Field::button(field::OPEN_THEMES_FOLDER, "", "Open themes folder")`,
+         - `Field::note(field::THEMES_NOTE, "Themes in the themes folder appear above. Applying a theme on Global also applies its animations, if it includes any.")`.
+    4. `crates/deskspace-app/src/settings/apply.rs`:
+       - Add `pub fn apply_theme_to_global(config: &mut Config, theme:
+         &ThemeFile)`: copies `theme.look.theme` into `config.theme` while
+         keeping `config.theme.ui_mode` unchanged, sets
+         `config.desktop.layout.gap` and `padding` from `theme.look`, and when
+         `theme.animations` is `Some(animations)` sets
+         `config.window.animations = animations`.
+       - Handle `field::THEME_CHOICE` in `apply_field` (for index `> 0`, call
+         `ThemeFile::load(&session.themes[index - 1].path)` and
+         `apply_theme_to_global`, returning `Effect::Layout`) and in
+         `space_edit` (returning `Command::SetSpaceLook { id, custom: true,
+         look: theme.look }`).
+    5. `crates/deskspace-app/src/settings/mod.rs` and
+       `crates/deskspace-app/src/app/settings_session.rs`:
+       - Add `ButtonAction::{SaveTheme, LoadTheme, OpenThemesFolder}`, map
+         them in `button_action`, and handle them in `App::on_settings_button`.
+       - When opening the settings window (`open_settings`), populate
+         `session.themes = list_themes(&self.store.themes_dir())`.
+       - `SaveTheme`: build a `ThemeFile` from the current scope (Global
+         includes `Some(self.config.window.animations)`, a space sets
+         `animations: None`), ask for a path with `ui.pick_save_path("Save
+         theme", Some(&self.store.themes_dir()), "my-theme.deskspace-theme.toml",
+         &[("DeskSpace theme", "*.deskspace-theme.toml")])`, call
+         `theme.save(&path)` (alerting with `ui.alert` on error), and refresh
+         `session.themes`.
+       - `LoadTheme`: ask for a path with `ui.pick_file("Load theme",
+         Some(&self.store.themes_dir()), &[("DeskSpace theme",
+         "*.deskspace-theme.toml;manifest.toml")])`, load it with
+         `ThemeFile::load` (alerting on error), and apply it to Global or the
+         selected space just like `THEME_CHOICE`.
+       - `OpenThemesFolder`: create `self.store.themes_dir()` with
+         `std::fs::create_dir_all` and open it with `ui.open_path`.
+  - Docs: update `CONTEXT.md` section 5 (`themes_dir`) and section 8 (the
+    Themes page), the file map above (`theme_file.rs`), and the `ROADMAP.md`
+    F-58 row.
+  - Tests in `settings/`:
+    - `apply_theme_to_global_preserves_ui_mode_and_updates_look_and_animations`,
+    - `selecting_an_installed_theme_on_a_space_emits_set_space_look`,
+    - `cancel_after_global_theme_load_restores_look_and_animations`,
+    - and all four `every_*` guard tests in `settings/mod.rs`.
+  - **[needs human]** check: save a customized space's look as a theme, load
+    it on Global and on another space from the dropdown and with "Load
+    theme…", verify Cancel undoes both look and animation changes, and verify
+    "Open themes folder" opens the `themes` folder in Explorer.
 
 ## U. Undo and redo (ROADMAP D11, M2)
 
@@ -696,6 +818,472 @@ for any new debug control:
 8. **One file per section** in `app/debug/` holds its actions; `mod.rs`
    keeps only the framework and the two routing matches.
 
+## P. Extensibility: textures, custom animations, verbs, and scripts (ROADMAP D15, F-21, F-58, F-59, F-62)
+
+Users extend DeskSpace by dropping files or pack folders into three folders
+beside `deskspace.toml`: `themes/`, `animations/`, and `scripts/`. No native
+DLLs are loaded; custom animations and scripts run in a sandboxed `rhai`
+engine inside a new `#![forbid(unsafe_code)]` crate `deskspace-ext`. Every
+change to the model still flows through `Command::apply` or existing `App`
+methods. Do the tasks in order within each track (`P1`-`P3` after `C10c`,
+`P4`-`P7`, `P8`-`P10`, then `P11`-`P13`).
+
+- [ ] **P1. Texture layer schema in theme manifests (core, config; pure).**
+  Needs C10a.
+  - Step 1 (`crates/deskspace-core/src/theme.rs`): add
+    - `#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)] #[serde(rename_all = "snake_case")] pub enum TextureMode { #[default] Tile, Cover, NineSlice { left: u16, top: u16, right: u16, bottom: u16 } }`,
+    - `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)] pub struct TextureLayer { pub file: String, #[serde(default)] pub mode: TextureMode, #[serde(default = "default_texture_opacity")] pub opacity: u8 }` (`default_texture_opacity() -> u8 { 100 }`), with `pub fn clamped(self) -> Self` clamping `opacity` to `0..=100`, and
+    - `#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)] #[serde(default)] pub struct SpaceTextures { pub body: Option<TextureLayer>, pub title_bar: Option<TextureLayer>, pub frame: Option<TextureLayer> }` with `pub fn is_empty(&self) -> bool` and `pub fn clamped(self) -> Self`.
+  - Step 2 (`crates/deskspace-core/src/theme.rs`): add `#[serde(default,
+    skip_serializing_if = "SpaceTextures::is_empty")] pub textures:
+    SpaceTextures` to `ThemeManifest`, and clamp it inside
+    `ThemeManifest::clamped`. Re-export `SpaceTextures`, `TextureLayer`, and
+    `TextureMode` from `deskspace-core/src/lib.rs`.
+  - Step 3 (`crates/deskspace-config/src/theme_file.rs`): add `pub fn
+    resolve_texture_path(pack_dir: &Path, relative: &str) -> Result<PathBuf,
+    ConfigError>`. Reject empty strings, absolute paths, `Prefix` or `RootDir`
+    components, and `ParentDir` (`..`) components so a theme pack can only
+    reference image files inside its own folder. When `discover_themes` loads
+    a pack folder `themes/<slug>/manifest.toml`, validate every present layer's
+    `file` with `resolve_texture_path` and check `path.is_file()`; if any check
+    fails, log a `tracing::warn!` and clear that layer (`None`) so the rest of
+    the theme still loads. On a single `.deskspace-theme.toml` file, ignore
+    `textures` (set `textures = SpaceTextures::default()`) with a warning if
+    non-empty, because single files have no pack folder.
+  - Tests: TOML round-trip for `SpaceTextures` with `tile`, `cover`, and
+    `nine_slice`; `clamped` caps `opacity` at 100; `resolve_texture_path`
+    accepts `"bg.png"` and `"assets/frame.png"` and rejects `"../secret.png"`,
+    `"/abs.png"`, and `"C:\\abs.png"`.
+
+- [ ] **P2. Load image files with WIC (platform).** Needs P1.
+  - Step 1 (`crates/deskspace-platform/src/render/d2d/bitmap.rs`): add
+    `pub(crate) fn decode_file(wic: &IWICImagingFactory, path: &Path) ->
+    Option<Icon>`. Call `wic.CreateDecoderFromFilename` with a null-terminated
+    UTF-16 path (`GENERIC_READ`, `WICDecodeMetadataCacheOnDemand`), grab frame
+    0 with `GetFrame(0)`, convert it to `GUID_WICPixelFormat32bppPBGRA` via
+    `CreateFormatConverter` (the same format `to_premultiplied_bgra` in
+    `bitmap.rs` uses), copy the pixels into a `Vec<u8>` with `CopyPixels`, and
+    return `Icon::from_bgra(width, height, pixels)`. Return `None` (and log a
+    `tracing::warn!`) if any step fails or if `width` or `height` exceeds 4096
+    px.
+  - Step 2 (`crates/deskspace-platform/src/render/scene.rs`): add
+    - `#[derive(Debug, Clone, PartialEq)] pub struct SceneTexture { pub bitmap: Icon, pub mode: TextureMode, pub opacity: f32 }`, and
+    - `#[derive(Debug, Clone, Default, PartialEq)] pub struct SceneTextures { pub body: Option<SceneTexture>, pub title_bar: Option<SceneTexture>, pub frame: Option<SceneTexture> }`,
+    and add `pub textures: SceneTextures` to `SpaceScene` (defaulting to
+    `SceneTextures::default()`). Re-export `SceneTexture` and `SceneTextures`
+    from `render/mod.rs` and `deskspace-platform/src/lib.rs`.
+  - Step 3 (`crates/deskspace-platform/src/win32/runtime/mod.rs`): add a small
+    texture cache `textures: HashMap<(PathBuf, Option<SystemTime>), Icon>` on
+    `Runtime` and expose `pub fn load_texture(&mut self, path: &Path) ->
+    Option<Icon>` on `Ui` (`ui_chrome.rs`). It stats `path` for its `modified`
+    timestamp, returns a clone of the cached `Icon` on a hit, and otherwise
+    decodes via `decode_file(&self.rt.graphics.wic, path)` and caches the
+    result. Add `pub fn clear_texture_cache(&mut self)` on `Ui` and call it
+    alongside `clear_icon_cache`.
+  - Tests: in `bitmap.rs`, write a tiny 2×2 PNG to `std::env::temp_dir()` (a
+    hardcoded valid PNG byte slice), decode it with `decode_file`, and check
+    `width == 2`, `height == 2`, and `pixels.len() == 16`; verify a missing
+    path returns `None`.
+
+- [ ] **P3. Paint space textures: tile, cover, and nine-slice (platform, app).**
+  Needs P2 and C10c. **[needs human]**
+  - Step 1 (`crates/deskspace-platform/src/render/d2d/geometry.rs`): add two
+    pure geometry helpers so they can be unit-tested without Direct2D:
+    - `pub(super) fn cover_source_rect(src_w: f32, src_h: f32, dst_w: f32,
+      dst_h: f32) -> D2D_RECT_F`: returns the centered crop rectangle in
+      source-bitmap coordinates that matches `dst_w / dst_h` aspect ratio.
+    - `pub(super) fn nine_slice_patches(src_w: f32, src_h: f32, dst: Rect,
+      insets: (u16, u16, u16, u16)) -> [(D2D_RECT_F, D2D_RECT_F); 9]`: returns
+      the nine `(source_rect, dest_rect)` pairs (4 corners unscaled, 4 edges
+      stretched along one axis, center stretched along both; clamp insets so
+      `left + right <= src_w` and `dst.w`, and `top + bottom <= src_h` and
+      `dst.h`).
+  - Step 2 (`crates/deskspace-platform/src/render/d2d/mod.rs`): add
+    `Painter::draw_texture(&mut self, dc: &ID2D1DeviceContext, tex:
+    &SceneTexture, dst: Rect, clip_radius: f32)`. Obtain the GPU bitmap via
+    `self.icon_bitmap(dc, &tex.bitmap)` (which already caches `ID2D1Bitmap` by
+    `Icon::id`). Push a rounded-rect layer or axis-aligned clip when
+    `clip_radius > 0.0`, then draw:
+    - `TextureMode::Cover`: one `dc.DrawBitmap` call using `cover_source_rect`
+      and `tex.opacity`.
+    - `TextureMode::NineSlice { left, top, right, bottom }`: loop over
+      `nine_slice_patches` and call `dc.DrawBitmap` for each patch with
+      non-empty destination width and height.
+    - `TextureMode::Tile`: create an `ID2D1BitmapBrush1` with
+      `D2D1_EXTEND_MODE_WRAP` on X and Y and `tex.opacity`, translated to
+      `(dst.x, dst.y)`, and call `dc.FillRectangle`.
+    In `draw_scene`, paint `scene.textures.body` right after the body tint fill,
+    `scene.textures.title_bar` right after the title-bar band fill (clipped to
+    the title-bar rect), and `scene.textures.frame` right after the border
+    stroke.
+  - Step 3 (`crates/deskspace-app/src/scene.rs` and `settings/apply.rs`): store
+    an optional `active_theme_pack: Option<(PathBuf, SpaceTextures)>` on `App`
+    (set when applying a pack theme in `C10c`, cleared when switching to a
+    built-in preset or single-file theme). When building a `SpaceScene`, resolve
+    each present `TextureLayer` through `ui.load_texture` into `SceneTextures`.
+  - Tests: `cover_source_rect` crops wide and tall sources symmetrically;
+    `nine_slice_patches` keeps corner sizes exact and clamps oversized insets.
+  - **[needs human]** check: drop a test theme pack with a tiled body PNG, a
+    cover title-bar PNG, and a nine-slice frame PNG into `themes/`; apply it
+    from Settings > Themes; resize and fold the space at 100 % and 150 % DPI
+    and check that corners stay crisp and textures follow the rounded window.
+
+- [ ] **P4. Create the `deskspace-ext` crate and sandboxed Rhai engine (ext).**
+  - Step 1 (`Cargo.toml`, `deny.toml`): add `crates/deskspace-ext` to the
+    workspace members (`deskspace-ext = { path = "crates/deskspace-ext" }`) and
+    add `rhai` to `[workspace.dependencies]` with default features disabled and
+    only `std` and `f32_float` enabled (pure Rust, MIT/Apache-2.0). Run
+    `cargo deny check all` to confirm license and ban gates pass.
+  - Step 2 (`crates/deskspace-ext/Cargo.toml` and `src/lib.rs`): start
+    `src/lib.rs` with `#![forbid(unsafe_code)]`. Depend on `deskspace-core`,
+    `rhai`, `serde`, `toml`, and `tracing`. Update `docs/ENGINEERING.md`
+    section 3's dependency line (`app -> {config, platform, ext, update} ->
+    core` and `platform -> ext`), `docs/CONTEXT.md` section 2's crate table,
+    and the file map in `docs/TASKS.md`.
+  - Step 3 (`crates/deskspace-ext/src/engine.rs`): build `pub struct Sandbox {
+    engine: rhai::Engine }`. In `Sandbox::new()`:
+    - Call `engine.set_max_operations(50_000)` (a tighter per-frame limit of
+      `10_000` is used for animation `frame`/`slices` calls via a second
+      engine or `on_progress`), `engine.set_max_call_levels(16)`,
+      `engine.set_max_expr_depths(32, 16)`, `engine.set_max_string_size(4096)`,
+      `engine.set_max_array_size(256)`, and `engine.set_max_map_size(64)`.
+    - Disable `eval` (`engine.disable_symbol("eval")`).
+    - Register pure `f32` math helpers so scripts and shaders stay concise:
+      `lerp(a, b, t)`, `clamp(x, lo, hi)`, `smoothstep(edge0, edge1, x)`,
+      `ease_out_cubic(t)`, `ease_out_back(t)`, `ease_out_bounce(t)`, `sin(x)`,
+      `cos(x)`, `abs(x)`, `min(a, b)`, `max(a, b)`, and `hash(x, y, seed)` (a
+      deterministic 0.0..1.0 float hash for procedural noise).
+  - Step 4 (`crates/deskspace-ext/src/diagnostic.rs`): add `#[derive(Debug,
+    Clone, PartialEq, Eq)] pub struct ExtDiagnostic { pub slug: String, pub
+    path: PathBuf, pub line: Option<usize>, pub message: String }` so load and
+    runtime errors have one shape across animations and scripts.
+  - Tests: a script with `loop {}` stops with a max-operations error; `eval` is
+    rejected at compile time; `lerp(0.0, 10.0, 0.25)` returns `2.5`; `hash(3,
+    4, 1)` is deterministic and in `0.0..=1.0`.
+
+- [ ] **P5. Animation pack manifest and Rhai `frame` / `field` / `slices`
+  evaluator (ext; pure).** Needs P4.
+  - Step 1 (`crates/deskspace-ext/src/animation.rs`): define
+    - `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)] pub struct
+      AnimationManifest { pub name: String, #[serde(default)] pub author:
+      String, #[serde(default)] pub version: String, #[serde(default =
+      "default_duration_ms")] pub default_duration_ms: u16 }` (`220`),
+    - `#[derive(Debug, Clone, Copy, PartialEq)] pub struct FramePose { pub
+      opacity: f32, pub offset_x: f32, pub offset_y: f32, pub scale_x: f32, pub
+      scale_y: f32, pub clip_top: f32, pub clip_bottom: f32, pub clip_left:
+      f32, pub clip_right: f32, pub threshold: f32, pub edge_width: f32, pub
+      edge_r: u8, pub edge_g: u8, pub edge_b: u8 }` (defaults: `opacity = 1.0`,
+      `scale_x = 1.0`, `scale_y = 1.0`, clips `0.0..1.0`, `threshold = u`),
+    - `#[derive(Debug, Clone, Copy, PartialEq)] pub struct SlicePose { pub
+      top: f32, pub bottom: f32, pub offset_x: f32, pub offset_y: f32, pub
+      opacity: f32 }`, and
+    - `#[derive(Debug, Clone)] pub struct CustomAnimation { pub slug: String,
+      pub manifest: AnimationManifest, ast: Arc<rhai::AST>, has_field: bool,
+      has_slices: bool }`.
+  - Step 2 (`crates/deskspace-ext/src/animation.rs`): implement compilation and
+    evaluation on `CustomAnimation`:
+    - `pub fn compile(sandbox: &Sandbox, slug: String, manifest:
+      AnimationManifest, source: &str, path: &Path) -> Result<Self,
+      ExtDiagnostic>`: compiles `source` into an `AST`, checks that at least one
+      of `fn frame(u, ctx)`, `fn field(x, y, ctx)`, or `fn slices(u, ctx)`
+      exists, and records `has_field` and `has_slices`.
+    - `pub fn eval_frame(&self, sandbox: &Sandbox, u: f32, w: f32, h: f32,
+      way_in: bool, detail: u8) -> Result<FramePose, String>`: calls `frame(u,
+      ctx)` (with a 10,000-op cap) where `ctx` is a Rhai map holding `w`, `h`,
+      `way` (`"in"` or `"out"`), and `detail`, clamps all returned floats (`0..=1`
+      for opacity and clips, `-4096..=4096` for offsets, `0.01..=4.0` for
+      scales), and returns the default `FramePose` (with `threshold = u`) when
+      `fn frame` is omitted.
+    - `pub fn eval_field(&self, sandbox: &Sandbox, cols: usize, rows: usize,
+      detail: u8) -> Result<Vec<u8>, String>`: runs once when an animation
+      starts, calling `field(x, y, ctx)` for each cell `(col + 0.5) / cols`,
+      `(row + 0.5) / rows` (capped at `64 × 64` cells and `200_000` total ops)
+      and quantizing each `0.0..=1.0` float to `1..=254` `u8` (matching
+      `NoiseMask`'s cell format in `render/d2d/effects.rs`).
+    - `pub fn eval_slices(&self, sandbox: &Sandbox, u: f32, w: f32, h: f32,
+      way_in: bool, detail: u8) -> Result<Vec<SlicePose>, String>`: calls
+      `slices(u, ctx)` and returns up to 64 clamped horizontal strips.
+  - Step 3 (`crates/deskspace-ext/src/animation.rs`): add `pub fn
+    discover_animations(sandbox: &Sandbox, dirs: &[PathBuf]) ->
+    (Vec<CustomAnimation>, Vec<ExtDiagnostic>)`, scanning `<dir>/<slug>/manifest.toml`
+    + `effect.rhai` in alphabetical slug order (first directory wins on
+    duplicate slugs so user `animations/` overrides bundled theme animations).
+  - Tests: compile and evaluate a bounce `frame(u, ctx)` script, a radial
+    `field(x, y, ctx)` script (check the center cell vs corner cell), and a
+    4-strip `slices(u, ctx)` script; verify missing entry points and syntax
+    errors return an `ExtDiagnostic` with a line number.
+
+- [ ] **P6. Wire custom animations into `EffectChoice`, `Play`, and the D2D
+  painter (core, platform, app).** Needs P5.
+  - Step 1 (`crates/deskspace-core/src/settings.rs`): change `EffectChoice` so
+    it can hold a custom slug alongside the built-in effects: add `Custom(String)`
+    to `EffectChoice` (or serialize `"custom:<slug>"` via custom `Serialize` /
+    `Deserialize` impls so existing `"roll"`, `"fade"`, `"same_as_startup"`, etc.
+    strings in `deskspace.toml` are 100 % unchanged). Add `pub fn
+    clamped_with(self, known_custom: &[String]) -> Self` on `Animations`: if a
+    `Custom(slug)` is not in `known_custom`, fall back to that `AnimKind`'s
+    default effect (`Roll` for Startup/Fold, `SameAsStartup` for Delete).
+  - Step 2 (`crates/deskspace-platform/src/render/transition.rs` and
+    `render/d2d/effects.rs`): add `PlayEffect::Custom(Arc<CustomAnimation>)` (depend
+    on `deskspace-ext` in `deskspace-platform`). When `SpaceAnim::start` begins
+    a `PlayEffect::Custom(anim)`:
+    - If `anim.has_field()`, evaluate `anim.eval_field` once at start and upload
+      the resulting `Vec<u8>` grid into a `CellMask` bitmap (the same helper
+      `NoiseMask` and `BurnMask` use in `effects.rs`).
+    - On each 15 ms tick in `win32/space_animation.rs`, evaluate
+      `anim.eval_frame` (and `anim.eval_slices` if `anim.has_slices()`) to build
+      the `Transition` frame: apply `offset_x`/`offset_y`, `scale_x`/`scale_y`,
+      `opacity`, `clip_*`, threshold the precomputed `CellMask` with `threshold`
+      (plus an optional colored edge band when `edge_width > 0.0`), or draw the
+      horizontal strips from `SlicePose`. If a script errors at runtime, log one
+      `tracing::warn!` and finish the transition cleanly at `u = 1.0`.
+  - Step 3 (`crates/deskspace-app/src/app/animation.rs`): in `play_for`, resolve
+    `EffectChoice::Custom(slug)` from the loaded custom animations list into
+    `PlayEffect::Custom(Arc::clone(anim))`, falling back to `Roll`/`Fade` if
+    missing.
+  - Tests: `EffectChoice` round-trips `"roll"`, `"same_as_startup"`, and
+    `"custom:jelly"` through TOML; `clamped_with` keeps `"custom:jelly"` when
+    present and resets it to the kind's default when absent.
+
+- [ ] **P7. List custom animations in Settings and Debug, with Reload (config,
+  platform, app).** Needs P6. **[needs human]**
+  - Step 1 (`crates/deskspace-config/src/lib.rs`): add `pub fn
+    animations_dir(&self) -> PathBuf` (`self.path.parent().unwrap().join("animations")`)
+    on `ConfigStore`.
+  - Step 2 (`crates/deskspace-app/src/app/extensions.rs`, new module): hold the
+    `Sandbox`, the loaded `Vec<Arc<CustomAnimation>>`, and `Vec<ExtDiagnostic>`
+    on `App`. Add `App::reload_extensions(&mut self, ui: &mut Ui)` which scans
+    `store.themes_dir()`, `store.animations_dir()`, and any `animations/`
+    subfolders inside discovered theme packs (`themes/<theme>/animations/`),
+    clamps `config.window.animations` with `clamped_with`, and logs the counts.
+    Call it at startup and whenever the Settings window opens.
+  - Step 3 (`crates/deskspace-app/src/settings/pages.rs` and `apply.rs`): append
+    each loaded custom animation (`"Custom: <manifest.name>"`) to the Effect
+    dropdowns on the Startup, Delete, and Fold pages (`FieldId::StartupEffect`,
+    `DeleteEffect`, `FoldEffect`). When a custom animation is chosen, grey out
+    built-in-only rows (`Direction`, `Edge`, `StartFrom`, `Detail` unless the
+    script uses `field`), keep `Duration` (seeded to `default_duration_ms` when
+    first picked), and add an `"Open animations folder"` button
+    (`ButtonAction::OpenAnimationsFolder`) at the bottom of the Animations pages
+    (creating `animations/` first if missing, then calling `ui.open_path`).
+  - Step 4 (`crates/deskspace-app/src/app/debug/`): add a `"Reload extensions"`
+    button (`DebugId::ReloadExtensions`) in `DebugSectionId::Config` and include
+    custom animations in `X18`'s Debug → Animations preview.
+  - Tests: `effect_options` includes loaded custom animations after the built-in
+    choices and maps their dropdown index back to `EffectChoice::Custom(slug)`.
+  - **[needs human]** check: drop a folder `animations/jelly/` with a
+    `manifest.toml` and `effect.rhai` into the scratch config's `animations/`
+    folder; click "Reload extensions" in Debug (or reopen Settings); select
+    "Custom: Jelly" on Startup and play it on a space from Debug → Animations
+    and by hiding/showing spaces; delete the folder and reload, and check that
+    Startup falls back cleanly without crashing.
+
+- [ ] **P8. The `Verb` enum and `--verb` CLI flag (app; pure).**
+  - Step 1 (`crates/deskspace-app/src/verb.rs`, new module): define
+    `#[derive(Debug, Clone, PartialEq, Eq)] pub enum Verb { Show, Hide, Toggle,
+    Settings, NewSpace, Reload, ApplyTheme(String), RunScript(String) }`.
+    Implement:
+    - `pub fn to_wire(&self) -> String`: encodes the verb as a single line
+      (`"show"`, `"hide"`, `"toggle"`, `"settings"`, `"new-space"`, `"reload"`,
+      `"apply-theme <name>"`, `"run-script <slug>"`).
+    - `pub fn from_wire(s: &str) -> Result<Self, String>`: parses that line,
+      rejecting empty arguments, control characters (`c.is_control()`), and
+      strings longer than 256 bytes.
+  - Step 2 (`crates/deskspace-app/src/cli.rs`): add `pub verb: Option<Verb>` to
+    `Cli`. Parse `--verb <command>` (where `<command>` is either a single token
+    like `toggle` or a verb with its argument like `--verb apply-theme
+    "Nord Dark"` or `--verb "apply-theme Nord Dark"`). Keep `--show` and
+    `--settings` working as shorthand aliases that set `verb = Some(Verb::Show)`
+    and `verb = Some(Verb::Settings)`. Update `--help` and `docs/CONTEXT.md`
+    section 8's CLI flags list.
+  - Tests: every `Verb` variant round-trips through `to_wire` and `from_wire`;
+    `parse_args` parses `--verb toggle`, `--verb apply-theme Nord`, `--show`,
+    and `--settings`, and rejects unknown verbs or missing arguments with a
+    clear error message.
+
+- [ ] **P9. Send and receive verbs over `WM_COPYDATA` (platform).** Needs P8.
+  - Step 1 (`crates/deskspace-platform/src/input.rs`): add `Verb(String)` to
+    `Event`.
+  - Step 2 (`crates/deskspace-platform/src/win32/controller.rs`): define a
+    constant `COPYDATA_VERB_TAG: usize = 0x4453_5642` (`"DSVB"`). Add `pub fn
+    send_verb(wire: &str) -> bool` (re-exported from `deskspace-platform/src/lib.rs`):
+    find the running `DeskSpaceController` window with `FindWindowW`, build a
+    `COPYDATASTRUCT { dwData: COPYDATA_VERB_TAG, cbData, lpData }` pointing to
+    the UTF-8 bytes of `wire`, and send it with `SendMessageTimeoutW`
+    (`SMTO_ABORTIFHUNG | SMTO_BLOCK`, 2000 ms timeout). Keep `wake_existing_instance`
+    calling `send_verb("show")` (or `send_verb("settings")`) so there is only
+    one IPC path.
+  - Step 3 (`crates/deskspace-platform/src/win32/controller.rs`): handle
+    `WM_COPYDATA` in the controller's `wnd_proc`:
+    - Check `cds.dwData == COPYDATA_VERB_TAG` and `cds.cbData <= 256`.
+    - Trust check: if `wparam != 0`, query the sender window's process id with
+      `GetWindowThreadProcessId` and verify `ProcessIdToSessionId` matches the
+      current process's session id; ignore the message if it does not. (UIPI
+      already blocks lower-integrity processes from sending `WM_COPYDATA` to
+      DeskSpace unless explicitly allowed.)
+    - Decode the UTF-8 slice into a `String`, push `Event::Verb(wire)` onto the
+      runtime event queue, and return `LRESULT(1)`.
+  - Tests: unit-test the UTF-8 payload validation helper (rejects > 256 bytes
+    and invalid UTF-8).
+
+- [ ] **P10. Handle `Event::Verb` in `bootstrap.rs` and `App` (app).** Needs
+  P8, P9, C10c, and P7. **[needs human]**
+  - Step 1 (`crates/deskspace-app/src/bootstrap.rs`): when the single-instance
+    mutex is already held, send `cli.verb.as_ref().unwrap_or(&Verb::Show).to_wire()`
+    via `deskspace_platform::send_verb` and exit `Ok(())`. When starting as the
+    primary instance and `cli.verb` is `Some(verb)` (other than `Show`), queue
+    `Event::Verb(verb.to_wire())` after `Event::Started`.
+  - Step 2 (`crates/deskspace-app/src/app/extensions.rs` and `app.rs`): route
+    `Event::Verb(wire)` through `Verb::from_wire(&wire)` and dispatch onto the
+    existing `App` methods (never a second code path):
+    - `Verb::Show` → `self.set_visible(ui, true)`
+    - `Verb::Hide` → `self.set_visible(ui, false)`
+    - `Verb::Toggle` → `self.set_visible(ui, !self.visible)`
+    - `Verb::Settings` → `self.open_settings(ui, SettingsScope::Global)`
+    - `Verb::NewSpace` → `self.create_space(ui, ui.cursor_pos())`
+    - `Verb::Reload` → `self.reload_extensions(ui)`
+    - `Verb::ApplyTheme(name)` → look up `name` (case-insensitive match on theme
+      name or slug) and call the same theme-apply method `C10c` uses; log a
+      `tracing::warn!` if not found.
+    - `Verb::RunScript(slug)` → log a `tracing::info!` placeholder until `P12`
+      wires script execution.
+  - Tests: dispatching `Event::Verb("toggle".into())` flips `app.visible`;
+    `"new-space"` adds a space through `Command::CreateSpace`.
+  - **[needs human]** check: with DeskSpace running, run `deskspace --verb hide`,
+    `deskspace --verb show`, `deskspace --verb toggle`, `deskspace --verb
+    new-space`, `deskspace --verb settings`, and `deskspace --verb apply-theme
+    "<theme>"` from a second terminal and check that each acts on the running
+    instance at once.
+
+- [ ] **P11. Script manifest, read/action context, and sandboxed runner (ext;
+  pure).** Needs P4.
+  - Step 1 (`crates/deskspace-ext/src/script.rs`): define
+    - `#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)] pub struct
+      ScriptManifest { pub name: String, #[serde(default)] pub description:
+      String, #[serde(default)] pub author: String, #[serde(default)] pub
+      version: String, #[serde(default)] pub on_desktop_item: bool,
+      #[serde(default)] pub on_action: bool }`,
+    - `#[derive(Debug, Clone, PartialEq, Eq)] pub struct ScriptItem { pub id:
+      u64, pub name: String, pub ext: String, pub kind: String, pub path:
+      PathBuf, pub target_ext: String, pub size_bytes: u64, pub age_days: u64,
+      pub space_title: Option<String> }` (where `ext` is lowercase without the
+      leading dot, `kind` is `"file"`, `"folder"`, `"shortcut"`, or `"url"`, and
+      `target_ext` is the shortcut target's lowercase extension when `kind ==
+      "shortcut"`),
+    - `#[derive(Debug, Clone, PartialEq, Eq)] pub struct ScriptSpace { pub id:
+      u64, pub title: String, pub item_count: usize, pub folded: bool, pub
+      locked: bool }`, and
+    - `#[derive(Debug, Clone, PartialEq, Eq)] pub enum ScriptOp { RouteToSpace {
+      space_title: String, create_if_missing: bool }, MoveItemToSpace { item_id:
+      u64, space_title: String, create_if_missing: bool }, CreateSpace { title:
+      String }, RenameSpace { from: String, to: String }, SetFolded {
+      space_title: String, folded: bool }, SetLocked { space_title: String,
+      locked: bool }, SortSpace { space_title: String, by: SortBy, ascending:
+      bool }, FitSpace { space_title: String }, ApplyTheme { name: String },
+      DeleteSpace { space_title: String }, RecycleItem { item_id: u64 } }`, with
+      `pub fn is_destructive(&self) -> bool` returning `true` for `DeleteSpace`
+      and `RecycleItem`.
+  - Step 2 (`crates/deskspace-ext/src/script.rs`): implement `CustomScript`:
+    - `pub fn compile(sandbox: &Sandbox, slug: String, manifest: ScriptManifest,
+      source: &str, path: &Path) -> Result<Self, ExtDiagnostic>`.
+    - Register read getters on `item` (`item.name`, `item.ext`, `item.kind`,
+      `item.target_ext`, `item.size_bytes`, `item.age_days`, `item.space`) and
+      action methods on `ctx` (`ctx.spaces()`, `ctx.items(space_title)`,
+      `ctx.route_to(title)`, `ctx.route_to_existing(title)`,
+      `ctx.move_item(id, title)`, `ctx.create_space(title)`,
+      `ctx.rename_space(from, to)`, `ctx.set_folded(title, bool)`,
+      `ctx.set_locked(title, bool)`, `ctx.sort_space(title, by, asc)`,
+      `ctx.fit_space(title)`, `ctx.apply_theme(name)`,
+      `ctx.delete_space(title)`, `ctx.recycle_item(id)`, and `ctx.log(msg)`).
+      Each method pushes a `ScriptOp` into a per-call vec (capped at 64 ops per
+      run) rather than mutating anything directly.
+    - `pub fn run_on_desktop_item(&self, sandbox: &Sandbox, item: &ScriptItem,
+      spaces: &[ScriptSpace]) -> Result<Vec<ScriptOp>, ExtDiagnostic>` and
+      `pub fn run_on_action(&self, sandbox: &Sandbox, spaces: &[ScriptSpace],
+      items: &[ScriptItem]) -> Result<Vec<ScriptOp>, ExtDiagnostic>`.
+    - `pub fn discover_scripts(sandbox: &Sandbox, dir: &Path) ->
+      (Vec<CustomScript>, Vec<ExtDiagnostic>)` scanning `scripts/<slug>/manifest.toml`
+      + `script.rhai`.
+  - Tests: a rule script that routes `.pdf` and `.docx` items to `"Documents"`
+    and `.lnk` game shortcuts to `"Games"` returns the expected `RouteToSpace`
+    ops; an action script that sorts every space by name and folds empty spaces
+    returns `SortSpace` and `SetFolded` ops; a script calling `delete_space`
+    marks `is_destructive() == true`.
+
+- [ ] **P12. Execute `ScriptOp`s in the app with destructive confirmation and
+  single undo (config, app).** Needs P10 and P11. **[needs human]**
+  - Step 1 (`crates/deskspace-config/src/lib.rs`): add `pub fn scripts_dir(&self)
+    -> PathBuf` (`self.path.parent().unwrap().join("scripts")`) on
+    `ConfigStore`. Load scripts inside `App::reload_extensions` (`P7`).
+  - Step 2 (`crates/deskspace-app/src/app/extensions.rs`): implement
+    `App::apply_script_ops(&mut self, ui: &mut Ui, script_name: &str,
+    default_item: Option<&Path>, ops: Vec<ScriptOp>)`:
+    - If any op in `ops` has `op.is_destructive()`, build a human-readable
+      summary listing the spaces to delete and files to send to the Recycle Bin
+      and call `ui.confirm("DeskSpace Script", &question)` once before running
+      any destructive op; if the user cancels, skip all destructive ops and log
+      `tracing::info!`.
+    - Execute each op through the existing `App` and `Command` methods:
+      `RouteToSpace` / `MoveItemToSpace` finds the space by case-insensitive
+      title (or creates it via `create_space` when `create_if_missing` is true)
+      and moves the desktop file into that space with `import_files_to_space`;
+      `CreateSpace`, `RenameSpace`, `SetFolded`, `SetLocked`, `SortSpace`, and
+      `FitSpace` commit the corresponding `Command`; `ApplyTheme` calls `C10c`'s
+      theme apply; `DeleteSpace` calls `delete_space_now(ui, id,
+      StoredFiles::ToDesktop)`; `RecycleItem` calls `delete_items`. When section
+      `U` (`U3`) is present, group the non-destructive `Command`s from one
+      script run into a single undo entry.
+  - Step 3 (`crates/deskspace-app/src/app/files.rs`, `menus.rs`, and
+    `extensions.rs`):
+    - When `resync_desktop_layer` (or `Event::FolderChanged`) sees a newly
+      added loose desktop item, run enabled `on_desktop_item` scripts in slug
+      order until the first `RouteToSpace` op matches, and apply it.
+    - Add a `"Scripts ▸"` submenu on the space context menu and tray menu
+      whenever at least one `on_action` script is enabled, plus a `"Run all
+      desktop rules now"` item, and wire `Verb::RunScript(slug)` from `P10` to
+      run that script's `on_action` (or run its `on_desktop_item` across current
+      loose desktop items).
+  - Tests: `apply_script_ops` with `CreateSpace`, `SortSpace`, and `SetFolded`
+    updates `app.desktop` through `Command::apply`; destructive ops are skipped
+    when a confirmation flag is false.
+  - **[needs human]** check: drop a rule script into `scripts/auto-docs/` that
+    routes `.txt` files to `"Docs"`; with takeover on, create a new `.txt` file
+    on the Desktop and check that `"Docs"` is created (if missing) and receives
+    the file; trigger an action script from the tray menu's `Scripts ▸` submenu
+    and via `deskspace --verb run-script <slug>`.
+
+- [ ] **P13. The Global `Scripts` settings page and `--debug` live folder
+  watching (core, platform, app).** Needs P12. **[needs human]**
+  - Step 1 (`crates/deskspace-core/src/settings.rs`): add `#[serde(default,
+    skip_serializing_if = "Vec::is_empty")] pub disabled_scripts: Vec<String>`
+    to `WindowSettings` so all discovered scripts are enabled by default and
+    toggling one off persists its slug in `deskspace.toml`.
+  - Step 2 (`crates/deskspace-app/src/settings/`): add a Global-only `Scripts`
+    page (`page::SCRIPTS`, next index in `ALL_PAGES`, hidden under per-space
+    scope just like `General` and `Hotkeys`). Show:
+    - a toggle row per discovered script (`"<manifest.name> —
+      <manifest.description>"`),
+    - a `"Run desktop rules now"` button and `"Reload extensions"` button,
+    - an `"Open scripts folder"` button (`ButtonAction::OpenScriptsFolder`,
+      creating `scripts/` if missing and calling `ui.open_path`), and
+    - a read-only diagnostic note at the bottom listing any `ExtDiagnostic`
+      load/runtime errors with their file and line number (or `"No script or
+      animation errors."` when clean).
+  - Step 3 (`crates/deskspace-platform/src/win32/folder_watch.rs` and
+    `deskspace-app/src/bootstrap.rs`): when `--debug` is active, start a folder
+    watcher on the config directory covering `themes/`, `animations/`, and
+    `scripts/` (reusing `FolderWatch` with `FILE_NOTIFY_CHANGE_FILE_NAME |
+    FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE` and a 150 ms
+    debounce) that posts `Event::ExtensionsChanged`, calling
+    `app.reload_extensions(ui)` automatically whenever a file is saved.
+  - Tests: `disabled_scripts` round-trips in `WindowSettings`; the `Scripts`
+    page is present on `SettingsScope::Global` and omitted on
+    `SettingsScope::Space`.
+  - **[needs human]** check: open Settings > Scripts; toggle a script off and on
+    and check `deskspace.toml`; click "Open scripts folder"; with `--debug` on,
+    edit a theme or animation file in Notepad and save it, and verify the debug
+    log prints the reload line and the space updates within 200 ms.
+
 ## J. Tabs in spaces (ROADMAP F-49)
 
 Off by default. When a space's tabs are on, its items are paginated, one page
@@ -851,19 +1439,6 @@ the ROADMAP decision ids (`D1`-`D9`).
   read, write-and-clamp, `Effect`), as `HOTKEY_BINDINGS` does for hotkeys, so
   the setting recipe becomes one row. Decide how option tables, look versus
   Global scope, and greyed-out rules (`MatchExplorer`) fit. After B10.
-- **R16. Scripting verbs: an out-of-process extension point (F-59).**
-  Extensions today mean editing the source. Design a small, stable verb set
-  (`new-space`, `show`, `hide`, `settings`, `apply-theme <file>`, ...) that
-  `deskspace.exe --verb ...` hands to the running instance, so scripts, the
-  desktop menu (C9), and Explorer's "Send to" (F-56) share one path. Settle:
-  the transport (today `--show` posts one `WM_APP` id; arguments need
-  `WM_COPYDATA` or a named pipe), one `Verb` enum shared by `cli.rs` and the
-  controller, mapping verbs onto existing app methods (never a second way to
-  change the model), and the trust boundary (same user and session only;
-  never accept a verb from an elevated or remote caller). C9's `--new-space`
-  should be built as the first verb if this lands first. No in-process plugin
-  loading: native plugins in a shell-integrated app cost more stability and
-  security than they are worth now.
 - **R18. Translation design (F-60, ROADMAP M9).** Answer ROADMAP open
   question 4 (the format and where catalogs live), then settle:
   - how keys are checked: a generated enum, or a test that every key the

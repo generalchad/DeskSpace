@@ -485,6 +485,70 @@ A native, lightweight, offline Windows desktop organizer that:
     crash).
   - Work items: `TASKS.md` section X.
 
+- **D15. Extensibility: themes, textures, animations, verbs, and scripts
+  (2026-10-19, maintainer).** Decides F-21, F-58, F-59, and F-62.
+  - *Crate boundary:* a new `#![forbid(unsafe_code)]` crate, `deskspace-ext`
+    (`app -> {config, platform, ext, update} -> core` and `platform -> ext`),
+    owns the sandboxed `rhai` scripting engine, extension manifests, and
+    compiled script evaluation. `deskspace-core` keeps zero IO and zero
+    scripting dependencies.
+  - *Folders:* three folders sit beside `deskspace.toml` (`ConfigStore`):
+    `themes/`, `animations/`, and `scripts/`, so a scratch `--config` has its
+    own. DeskSpace re-scans them when the settings window opens, when the user
+    clicks "Reload extensions" in Settings or Debug, or on `--verb reload`,
+    and watches them live with `ReadDirectoryChangesW` while `--debug` is on.
+  - *Themes (F-58) and space textures (F-62):*
+    - A theme is either a single `<name>.deskspace-theme.toml` file in
+      `themes/` (for the standard Save and Open file dialogs) or a pack folder
+      `themes/<slug>/manifest.toml`.
+    - Each holds `format = 1`, `name`, an optional `author`, a `[look]` table
+      (`SpaceLook`, `preset` included), and an optional `[animations]` table
+      (`Animations`, applied in the Global scope and ignored on a single
+      space). `ui_mode` is ignored on apply, as it is for a space.
+    - A pack folder `themes/<slug>/` can also bundle custom animations under
+      `themes/<slug>/animations/<anim-slug>/` and space textures (`[textures]`
+      in `manifest.toml`): **body**, **title_bar**, and **frame** image layers
+      with `tile`, `cover`, or `nine_slice` placement and a per-layer opacity.
+      Images are decoded once through WIC (`IWICImagingFactory` in
+      `render/d2d/bitmap.rs`), adding no image crate.
+    - Controls live on a **Themes** look page (listed for Global and for a
+      space, keeping `Colors` short enough for a 1080-pixel display): a
+      Themes dropdown, "Save theme…", "Load theme…", and "Open themes folder".
+  - *Custom animations (F-33, F-62):*
+    - One subfolder per animation: `animations/<slug>/manifest.toml` (name,
+      author, offered `options` and `kinds`) plus `effect.rhai`, stored in
+      `EffectChoice` as `"custom:<slug>"` (clamped back to the kind's default
+      when missing).
+    - One unified model evaluated on the space window timer from a
+      pre-compiled `rhai::AST`: `fn frame(u, ctx)` runs per tick to return the
+      rect, offset, opacity, block size, glow, and mask parameters; an
+      optional `fn field(x, y, ctx)` runs once when the animation starts to
+      build a 2D heightmap cell grid that Rust thresholds per frame; an
+      optional `fn slices(u, ctx)` returns strip or slice meshes.
+    - Discovered animations appear in the Effect dropdowns on the existing
+      Animations pages (`Startup`, `Delete`, `Fold`).
+  - *Scripts and auto-organization rules (F-21, F-62):*
+    - One subfolder per script: `scripts/<slug>/manifest.toml` plus
+      `script.rhai`. A script can declare a desktop rule
+      (`fn on_desktop_item(item, ctx)`), a manual or hotkey action
+      (`fn on_action(ctx)`), or both.
+    - Scripts run in a sandboxed `rhai::Engine` (strict operation, call-stack,
+      string, and array limits; no OS, filesystem, or network access). They
+      read desktop and item facts and queue DeskSpace `Command`s and app
+      actions: create, move, resize, fold, sort, and lock spaces; route and
+      move items; switch themes; and delete spaces or recycle items (always
+      asking with a confirmation dialog before anything destructive).
+    - Every script run is recorded as one undo entry (D11).
+    - A Global-only **Scripts** settings page toggles discovered scripts,
+      runs action scripts, opens the folders, and shows any load or runtime
+      error.
+  - *Scripting verbs (F-59):* `deskspace.exe --verb <command>` (`show`,
+    `hide`, `new-space`, `settings`, `apply-theme <name>`,
+    `run-script <slug>`, `reload`) sends the verb over `WM_COPYDATA` to
+    `DeskSpaceController` (UIPI-protected on the UI thread, no background
+    thread). `--show` and `--settings` stay as shorthand aliases.
+  - *Work items:* `TASKS.md` C10 and section P.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -610,8 +674,8 @@ Remaining:
    dropdown now seeds the system with `Match Explorer's display` and
    `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
 4. Theme files (F-58): save a whole look to a file and load it on Global or
-   a space, so themes can be shared without forking (`TASKS.md` C10; the
-   proposed design awaits the maintainer's decision).
+   a space, so themes can be shared without forking (decided in D15;
+   `TASKS.md` C10).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
@@ -750,7 +814,7 @@ Goal: new icons sort themselves, and the whole app works without a mouse.
 
 Remaining:
 1. Rules for new desktop items: consolidate them into target spaces, create
-   new spaces, or leave them loose (F-21).
+   new spaces, or leave them loose (F-21, D15; `TASKS.md` section P).
 2. Include/exclude filters and an ignore list for shortcuts (F-22).
 3. Keyboard navigation between spaces and onto the desktop layer (F-23).
    Within a space it is done: arrows, type-to-select, Home/End/Page, Enter,
@@ -760,10 +824,11 @@ Remaining:
 5. Performance pass: idle CPU near zero, and large spaces handled well. Scenes
    already carry only the visible items, and the icon cache is already
    LRU-bounded.
-6. Scripting verbs (F-59): a small, stable set of `--verb` commands handed to
-   the running instance, the out-of-process extension point that the desktop
-   menu (F-52) and "Send to" (F-56) can share (`TASKS.md` R16). In-process
-   plugins are a non-goal for now.
+6. Scripting verbs (F-59, D15): a small, stable set of `--verb` commands
+   handed to the running instance over `WM_COPYDATA`, the out-of-process
+   extension point that the desktop menu (F-52), "Send to" (F-56), and user
+   automation share (`TASKS.md` section P). In-process native DLL plugins stay
+   a non-goal; user scripts run in the sandboxed `rhai` engine (`deskspace-ext`).
 
 Exit criteria: new icons file themselves according to the rules, and a full
 workflow is possible without a mouse.
@@ -916,7 +981,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
-| F-21 | Auto-consolidate new icons | M7 | Open |
+| F-21 | Auto-consolidate new icons | M7 | Open; decided in D15 (`TASKS.md` section P) |
 | F-22 | Exclude rules / filters | M7 | Open |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color built 2026-10-19, check pending (`TASKS.md` section V, "Border settings") |
@@ -928,7 +993,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T); Bounce, Scroll, and Magic lamp planned (T19-T21) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 and D15 (`TASKS.md` sections T and P); Bounce, Scroll, Magic lamp (T19-T21), and user Rhai animations (P4-P7) planned |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
@@ -953,10 +1018,11 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
-| F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
-| F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
+| F-58 | Theme files: save, load, and share a look | M3 | Open; decided in D15 (`TASKS.md` C10a-C10c) |
+| F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; decided in D15 (`TASKS.md` P8-P10) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
+| F-62 | User extensions: custom space textures in theme packs, Rhai animation scripts, and Rhai action/rule scripts | M3, M5, M7 | Open; decided in D15 (`TASKS.md` section P) |
 
 
 ## 8. Open questions
