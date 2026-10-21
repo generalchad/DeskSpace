@@ -13,41 +13,38 @@ impl Ui {
         }
     }
 
-    /// Watches `path` for changes and delivers `Event::FolderChanged` once per
-    /// debounced burst. Idempotent for the path already watched; another path
-    /// replaces the watch. Call `unwatch_folder` to stop.
-    pub fn watch_folder(&mut self, path: &Path) {
+    /// Watches `path` for changes under `key` and delivers
+    /// `Event::FolderChanged { key }` once per debounced burst. Calling it
+    /// again with the same key and path does nothing; another path replaces
+    /// that key's watch. Call `unwatch_folder` to stop.
+    pub fn watch_folder(&mut self, key: WatchKey, path: &Path) {
         let Some(controller) = with_runtime(|runtime| runtime.controller) else {
             return;
         };
-        let current = with_runtime(|runtime| {
-            runtime
-                .folder_watch
-                .as_ref()
-                .map(|(watched, _)| watched.clone())
-        })
-        .flatten();
-        if current.as_deref() == Some(path) {
-            return;
-        }
-        // Dropped outside the borrow: stopping joins the worker thread.
-        let previous = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
-        drop(previous);
-        match folder_watch::FolderWatch::start(path, controller, messages::FOLDER_CHANGE) {
-            Ok(watch) => {
-                with_runtime(|runtime| runtime.folder_watch = Some((path.to_path_buf(), watch)));
+        let result = with_runtime(|runtime| {
+            if runtime.folder_watches.is_none() {
+                match folder_watch::FolderWatch::start(controller, messages::FOLDER_CHANGE) {
+                    Ok(watches) => runtime.folder_watches = Some(watches),
+                    Err(error) => return Err(error),
+                }
             }
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "could not watch the folder");
+            match runtime.folder_watches.as_mut() {
+                Some(watches) => watches.watch(key, path),
+                None => Ok(()),
             }
+        });
+        if let Some(Err(error)) = result {
+            tracing::warn!(%error, path = %path.display(), "could not watch the folder");
         }
     }
 
-    /// Stops the folder watch started with `watch_folder`.
-    pub fn unwatch_folder(&mut self) {
-        // Dropped outside the borrow: stopping joins the worker thread.
-        let watch = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
-        drop(watch);
+    /// Stops the folder watch for `key`, if it has one.
+    pub fn unwatch_folder(&mut self, key: WatchKey) {
+        with_runtime(|runtime| {
+            if let Some(watches) = runtime.folder_watches.as_mut() {
+                watches.unwatch(key);
+            }
+        });
     }
 
     /// Arms a timer that delivers `Event::Timer` with `id` every `millis`

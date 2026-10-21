@@ -2,8 +2,8 @@ use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, Way,
-    ZoomAction, cursor_pos, desktop_display_since,
+    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
+    Way, ZoomAction, cursor_pos, desktop_display_since,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -645,7 +645,13 @@ impl EventHandler for App {
             Event::ShowSpaces => self.set_visible(ui, true),
             // A watched folder changed (I8): re-read the shell's loose items
             // and reconcile the layer. A no-op when the layer is not drawn.
-            Event::FolderChanged => self.resync_desktop_layer(ui),
+            Event::FolderChanged {
+                key: WatchKey::Desktop,
+            } => self.resync_desktop_layer(ui),
+            // A lens's folder is handled with its listing (W2).
+            Event::FolderChanged {
+                key: WatchKey::Space(_),
+            } => {}
             Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {

@@ -40,7 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
-use crate::input::{Event, ShellItem};
+use crate::input::{Event, ShellItem, WatchKey};
 use crate::render::{Play, SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, DebugPanel, MenuEntry, SettingsForm};
 use crate::win32::clipboard::ClipboardFiles;
@@ -109,9 +109,9 @@ struct Runtime {
     info_tip: Option<InfoTip>,
     /// The zoom pop-up (ROADMAP F-57), created when it is first shown.
     zoom_bar: Option<HWND>,
-    /// The folder under watch and its worker, when `Ui::watch_folder` is on.
-    /// Dropped on teardown, which stops the worker.
-    folder_watch: Option<(PathBuf, folder_watch::FolderWatch)>,
+    /// The folder watches and the worker that serves them, when
+    /// `Ui::watch_folder` is on. Dropped on teardown, which stops the worker.
+    folder_watches: Option<folder_watch::FolderWatch>,
 }
 
 thread_local! {
@@ -205,6 +205,17 @@ pub(crate) fn desktop_layer_window() -> Option<HWND> {
     with_runtime(|runtime| runtime.layer).flatten()
 }
 
+/// The app-level key for the folder watch on `slot`, if it is still watched.
+pub(crate) fn folder_watch_key(slot: usize) -> Option<WatchKey> {
+    with_runtime(|runtime| {
+        runtime
+            .folder_watches
+            .as_ref()
+            .and_then(|watches| watches.key_for_slot(slot))
+    })
+    .flatten()
+}
+
 /// The DPI scale factor of a space window (`1.0` at 96 DPI), for per-monitor
 /// layout. Falls back to `1.0` before the window exists or outside the UI
 /// thread.
@@ -261,11 +272,12 @@ pub(crate) fn forget_dying(window: HWND) {
 /// Destroys every space window, the settings window, and the debug window. Called from the
 /// controller's WM_DESTROY, after `CloseRequested` has been delivered.
 pub(crate) fn destroy_ui_windows() {
-    // Stop the folder watch first: its worker posts to the controller, which
-    // could otherwise re-create the layer window while windows are tearing
-    // down. Dropped outside the borrow, because stopping joins the worker.
-    let watch = with_runtime(|runtime| runtime.folder_watch.take()).flatten();
-    drop(watch);
+    // Stop the folder watches first: their worker posts to the controller,
+    // which could otherwise re-create the layer window while windows are
+    // tearing down. Dropped outside the borrow, because stopping joins the
+    // worker.
+    let watches = with_runtime(|runtime| runtime.folder_watches.take()).flatten();
+    drop(watches);
     let (windows, ghost, info_tip) = with_runtime(|runtime| {
         let mut windows: Vec<HWND> = runtime.spaces.drain().map(|(_, hwnd)| hwnd).collect();
         windows.append(&mut runtime.dying);
@@ -397,7 +409,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             drag_ghost: None,
             info_tip: None,
             zoom_bar: None,
-            folder_watch: None,
+            folder_watches: None,
         });
     });
     tray::add(controller, &options.tray_tooltip);

@@ -105,7 +105,9 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
         WM_CLIPBOARDUPDATE => Event::ClipboardChanged,
         messages::TRAY_CALLBACK => tray_event(wparam, lparam)?,
         messages::SHOW_SPACES => Event::ShowSpaces,
-        messages::FOLDER_CHANGE => Event::FolderChanged,
+        messages::FOLDER_CHANGE => Event::FolderChanged {
+            key: runtime::folder_watch_key(wparam.0)?,
+        },
         messages::WAKE => Event::Wake { id: wparam.0 },
         messages::EDIT_KEY => Event::EditKey(keyboard::decode(wparam.0, lparam.0)?),
         messages::DELETE_KEY => Event::DeleteSelection,

@@ -8,8 +8,8 @@ use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
-    arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui,
+    WatchKey, Way, arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
     foreground_window, hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons,
     space_dpi, system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
@@ -419,7 +419,7 @@ impl App {
     /// the same folder is already watched.
     pub(super) fn watch_desktop_folder(&mut self, ui: &mut Ui) {
         match desktop_directory() {
-            Ok(directory) => ui.watch_folder(&directory),
+            Ok(directory) => ui.watch_folder(WatchKey::Desktop, &directory),
             Err(error) => tracing::warn!(%error, "could not resolve the Desktop folder to watch"),
         }
     }
@@ -511,7 +511,7 @@ impl App {
         if self.layer_active() {
             self.watch_desktop_folder(ui);
         } else {
-            ui.unwatch_folder();
+            ui.unwatch_folder(WatchKey::Desktop);
         }
         let layer_up = self.sync_desktop_layer(ui);
         if takeover && layer_up {

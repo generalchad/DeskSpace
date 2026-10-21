@@ -957,15 +957,17 @@ in `ui.rs`. What spans them:
 
 ### Desktop shell, shell items, DPI, hotkeys
 
-- `folder_watch.rs` watches a folder off the UI thread
-  (`ReadDirectoryChangesW`, overlapped I/O on one worker thread) and posts
-  `FOLDER_CHANGE` when its contents change, debounced by up to 150 ms (the
-  pure `Coalescer`) so a multi-file copy wakes the app once. `Ui::watch_folder`
-  starts or replaces the single watch (idempotent for the same path) and
-  `Ui::unwatch_folder` stops it; the controller raises
-  `Event::FolderChanged`. M2 watches the Desktop folder while the layer is
-  drawn (a change makes the app re-enumerate and `SyncDesktop`); M4 phase 2
-  reuses the watcher for a lens's folder.
+- `folder_watch.rs` watches folders off the UI thread with one worker for
+  every watch, on an I/O completion port. A watch is keyed by `WatchKey`
+  (`Desktop`, or a lens's `Space(id)`); `ReadDirectoryChangesW` reports into
+  the port, and changes are debounced per folder by up to 150 ms (the pure
+  `Coalescer`) so a multi-file copy wakes the app once. `Ui::watch_folder(key,
+  path)` adds or replaces that key's watch (idempotent for the same path) and
+  `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
+  watch's slot in `wParam`, and the controller raises `Event::FolderChanged {
+  key }`. M2 watches the Desktop folder while the layer is drawn (a change
+  makes the app re-enumerate and `SyncDesktop`); M4 phase 2 reuses it for a
+  lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the

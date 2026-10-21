@@ -580,44 +580,6 @@ What is missing, and what these tasks add:
 
 ### Tasks
 
-- [ ] **W1. Keyed folder watches (platform, app).** The hardest task here;
-  ask a maintainer to review it.
-  - Why: today `win32/folder_watch.rs` runs one thread per watch, and
-    `Ui::watch_folder` keeps a single watch, which the Desktop folder
-    already uses. Lenses need many watches at once, and the app must know
-    which folder changed.
-  - `input.rs`: add `pub enum WatchKey { Desktop, Space(SpaceId) }`, and
-    give `Event::FolderChanged` a field: `FolderChanged { key: WatchKey }`.
-  - `folder_watch.rs`: replace the one-folder worker with one worker for
-    all folders, built on an I/O completion port.
-    - Adding a folder opens the directory exactly as `run` does today,
-      registers it with the port (`CreateIoCompletionPort`, with the
-      folder's slot number as the completion key), and starts its first
-      `ReadDirectoryChangesW`.
-    - Add, remove, and stop are sent with `PostQueuedCompletionStatus`,
-      using reserved keys that no folder slot uses. Make the reserved keys
-      named constants.
-    - The worker loop waits on the port. A folder's completion marks that
-      folder's `Coalescer` and starts its next read. A timeout posts
-      `FOLDER_CHANGE` for every folder whose burst is due. The wait's
-      timeout is the smallest `wait_ms` of all folders.
-    - A message carries only two numbers, so pass the folder's slot in
-      `wParam`. The runtime keeps the table from slot to `WatchKey`.
-    - Removing a folder must cancel its pending read and wait for it to
-      finish before closing the handle, as `run` does today. Otherwise
-      Windows writes into freed memory.
-  - `runtime`: the worker starts with the first watch and stops on
-    teardown. `Ui::watch_folder(key, path)` adds the key's watch, replaces
-    it when the path changed, and does nothing when the path is the same.
-    `Ui::unwatch_folder(key)` removes it, and does nothing for a key it
-    does not know.
-  - App: `watch_desktop_folder` and `apply_takeover` pass
-    `WatchKey::Desktop`. `Event::FolderChanged { key: WatchKey::Desktop }`
-    calls `resync_desktop_layer`, as today.
-  - Tests (pure parts): two folders debounce independently; the soonest
-    timeout wins; removing an unknown key changes nothing.
-  - Done when: the gates pass and the desktop layer behaves exactly as
-    before. **[needs human]**: the I8 check in section V again.
 - [ ] **W2. Lenses follow their folders (platform, app).**
   - Why: after W1 the app hears "this folder changed". Now the worker also
     reads the folder, and the app shows what it read.

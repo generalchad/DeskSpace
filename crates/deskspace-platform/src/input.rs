@@ -1,3 +1,5 @@
+use deskspace_core::SpaceId;
+
 use crate::ui::{FieldValue, LogLevel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,16 @@ pub enum DropAction {
     /// Put a copy in the space storage and leave the original, copied through
     /// the shell's file operation.
     Copy,
+}
+
+/// Which folder a watch belongs to. The worker reports the folder's slot;
+/// the runtime maps it back to this key before the app sees the event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WatchKey {
+    /// The user's Desktop folder, watched for the desktop layer.
+    Desktop,
+    /// A lens's bound folder.
+    Space(SpaceId),
 }
 
 /// Input on a space window. Coordinates are desktop coordinates (the
@@ -307,7 +319,9 @@ pub enum Event {
     /// A folder watched with `Ui::watch_folder` changed. The app re-reads the
     /// folder and reconciles what it draws. M2 watches the Desktop folder for
     /// the desktop layer; M4 reuses it for a lens's bound folder.
-    FolderChanged,
+    FolderChanged {
+        key: WatchKey,
+    },
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Windows' "Animation effects" switch changed (`system_animations`).
