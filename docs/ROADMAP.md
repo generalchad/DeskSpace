@@ -523,16 +523,18 @@ and views remain). Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **L1's on-screen findings** (`TASKS.md` section L): record what each
+1. **Lenses, M4 phases 2-3** (`TASKS.md` section W), moved ahead of the
+   list below on 2026-10-20 (maintainer).
+2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
+3. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
    built-but-unchecked behaviors before more work builds on them.
-3. **Release dry run on clean machines** (R12) and **code signing** (R10),
+4. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **M2 undo** for layout changes, file moves, and space deletion (D11;
+5. **M2 undo** for layout changes, file moves, and space deletion (D11;
    `TASKS.md` section U).
-5. **Animations** and graceful startup and exit (M5 item 5, D12, D13;
+6. **Animations** and graceful startup and exit (M5 item 5, D12, D13;
    `TASKS.md` section T),
    ahead of the rest of M5. The composition spike (T1) runs alongside.
 
@@ -643,12 +645,15 @@ Goal: spaces that mirror a folder live. Each phase lands green.
 - **Phase 2 - platform.**
   - Folder listing with `FindFirstFileExW`.
   - A watcher (shared with M2) using `ReadDirectoryChangesW`:
-    - debounced (about 100 ms);
-    - a full rescan off the UI thread, then a `WM_APP` wake posted to the
-      controller.
-  - `Event::Folder { Snapshot | Unavailable }`, with a periodic retry.
+    - keyed, so the Desktop folder and every lens are watched at once, all
+      on one worker thread (an I/O completion port; decided 2026-10-20);
+    - debounced (150 ms);
+    - a full rescan on the worker, never the UI thread, then a `WM_APP`
+      wake posted to the controller.
+  - `Event::FolderChanged { key, listing: Listed | Unavailable }`, with a
+    periodic retry on the worker.
   - New `Ui` calls:
-    - `Ui::watch_folder`;
+    - `Ui::watch_folder(key, path)` and `unwatch_folder(key)`;
     - `pick_folder` (`IFileOpenDialog`);
     - `move_into_folder` (`IFileOperation` with undo). It pumps messages, so
       no runtime borrow may be held across it.

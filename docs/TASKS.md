@@ -12,6 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
+- section W, in order (lenses);
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -493,6 +494,140 @@ changes nothing and says so.
   space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty
   the Recycle Bin between a delete and its undo: the undo says it can't and
   changes nothing.
+
+## W. Lenses (ROADMAP M4 phases 2-3, D3, F-07)
+
+Read D3 and M4 first; `CONTEXT.md` has the lens model (phase 1). Do the
+tasks in order, one commit each. The order is a safety order: nothing in the
+UI can create a lens until drops, item deletes, and deleting a lens all
+treat its folder as D3 says, so no file is lost on the way. Until W7, a lens
+exists only in a hand-edited config:
+
+```toml
+[[desktop.spaces]]
+id = 90
+title = "Downloads"
+rect = { x = 100, y = 100, width = 320, height = 240 }
+source = { folder = { path = "C:/Users/me/Downloads" } }
+```
+
+Decided (2026-10-20, maintainer): one worker thread serves every watch,
+each watch has a key, and the worker lists the folder itself, so the UI
+thread never touches a slow or network folder.
+
+- [ ] **W1. Keyed folder watches (platform, app).** Today
+  `win32/folder_watch.rs` runs one watch per thread and `Ui::watch_folder`
+  holds a single one.
+  - `input.rs`: `pub enum WatchKey { Desktop, Space(SpaceId) }`.
+    `Event::FolderChanged` gains `{ key: WatchKey }`.
+  - `folder_watch.rs`: one worker thread on an I/O completion port, which
+    has no 64-handle limit. Each watched directory is opened as today and
+    associated with the port, its completion key indexing the watch;
+    add, remove, and stop arrive as `PostQueuedCompletionStatus` packets
+    with reserved keys. Each watch keeps its own `Coalescer` (unchanged,
+    still pure and tested), and the port's wait timeout is the soonest
+    `wait_ms` of any watch. Keep the cancel-and-wait before a handle
+    closes.
+  - `runtime`: `folder_watch` becomes the one worker (started on the first
+    watch); `Ui::watch_folder(key, path)` adds or replaces that key's watch
+    (idempotent for the same path), `Ui::unwatch_folder(key)` removes it.
+  - App: the Desktop folder uses `WatchKey::Desktop` (`watch_desktop_folder`
+    and `apply_takeover`), and `Event::FolderChanged { key: Desktop }`
+    resyncs the layer as before.
+  - Tests: two keys debounce apart; removing an unknown key is a no-op
+    (pure parts only).
+  - Done when: the desktop layer follows Desktop-folder changes as before,
+    and the worker joins on exit. **[needs human]**: the I8 check again.
+- [ ] **W2. Lenses follow their folders (platform, app).**
+  - `win32/folder_list.rs`: `list_folder(path) -> Result<Vec<FolderEntry>>`
+    with `FindFirstFileExW` (`FindExInfoBasic`, `FIND_FIRST_EX_LARGE_FETCH`),
+    skipping `.` and `..`. A pure `entry_from(name, attributes, size,
+    last_write)` builds each `FolderEntry`: `kind` through
+    `ItemKind::classify`, `hidden` from `FILE_ATTRIBUTE_HIDDEN` or
+    `FILE_ATTRIBUTE_SYSTEM`, `modified` as Unix seconds, and an empty
+    `label` (the stem, as normal spaces show). Tests for `entry_from`.
+  - The worker lists the folder after each debounced burst and once when
+    the watch starts. `Event::FolderChanged { key, listing: FolderListing }`
+    where `FolderListing` is `Listed(Vec<FolderEntry>)` or `Unavailable`.
+    A folder that cannot be opened or listed, or that vanishes while
+    watched, posts `Unavailable` and is retried every `RETRY_MS` (5 s) by
+    the worker; no app timer. The desktop handler ignores the listing,
+    because the layer needs icon positions, which only the shell has.
+  - App: `App::sync_watches` computes the wanted set from the model (the
+    Desktop while `layer_active`, plus each lens's `(Space(id), path)`) and
+    watches or unwatches the difference; it replaces the direct calls and
+    runs after anything that can change the set (startup, takeover, and
+    later W6/W7). `Listed` dispatches `SyncLens` and refreshes that space,
+    invalidating the cached icon of each path whose `modified` changed
+    (`CONTEXT.md` known limit). `Unavailable` dispatches `SyncLens` with no
+    entries and records the id in a session `unavailable: HashSet<SpaceId>`
+    for W5.
+  - Done when: ROADMAP M4's exit timing holds. **[needs human]**: with a
+    hand-edited lens, add, rename, and delete files in its folder from
+    Explorer; the lens follows within about 150 ms. Rename the folder away
+    and back: the lens empties, then fills again within 5 s.
+- [ ] **W3. Drops and deletes in a lens (platform, app).**
+  - `file_op.rs`: `move_into(owner, paths, folder)` through `IFileOperation`
+    with `FOF_ALLOWUNDO` and without `FOF_RENAMEONCOLLISION`, so Explorer's
+    own conflict dialog appears (D3). `Ui::move_into_folder` wraps it; it
+    pumps messages, so no runtime borrow is held across it.
+  - App, pure: `paths_to_move(paths, folder)` drops paths already directly
+    in `folder`, and the folder itself or any folder that contains it.
+    Tests for both and for a mixed list.
+  - App: a drop on a lens (`drop_onto` / `add_dropped`) never adopts into
+    storage; it calls `move_into_folder` with `paths_to_move`, and the
+    watch shows the result. Ctrl or Shift on the drop changes nothing yet.
+  - App: Delete on a lens item recycles the file (D3, as Explorer's
+    Delete) through the existing `delete_files`; Shift+Delete deletes for
+    good after the same confirmation a stored file gets. The watch removes
+    the item.
+  - Done when: no path through drop or delete adds a lens item by
+    `AddItem`, or leaves a file in storage. **[needs human]**: drop files
+    from Explorer and from another space onto a lens; a clash shows
+    Explorer's dialog; Ctrl+Z in Explorer undoes the move; Delete sends a
+    lens item to the Recycle Bin.
+- [ ] **W4. Deleting a lens (app).**
+  - `delete_space_now` never releases or recycles a lens's items, whatever
+    `StoredFiles` says: the lens goes, its folder stays (D3). The debug
+    window's Delete all spaces follows from this.
+  - `delete_consequence` and the confirmation: a lens always asks, and says
+    "The folder and its files stay where they are." in place of the
+    stored-files line.
+  - A lens may not be bound to the storage folder or any folder inside it
+    (where `release_item` would move its files out): `CreateLens` and
+    `SetLensFolder` callers check `ItemStore::contains` on the path; the
+    config loader turns such a lens into an empty normal space and logs a
+    warning. Tests for each.
+  - Done when: tests show a deleted lens leaves every file in place.
+- [ ] **W5. The unavailable placeholder (app, platform).** Follow "Recipe:
+  a new visual in a space": `SpaceScene::placeholder: Option<String>`,
+  filled for a lens in `unavailable` with "Folder not available" and the
+  path. Drawn centered in the item area, in the label color at reduced
+  opacity, with no allocation per paint. **[needs human]**: rename a
+  lens's folder away; the placeholder shows, and the items return when the
+  folder does.
+- [ ] **W6. The lens menu (platform, app).**
+  - Platform: `Ui::pick_folder(title, start) -> Option<PathBuf>`
+    (`IFileOpenDialog` with `FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM`), beside
+    `pick_files` in `dialog.rs`.
+  - App: the space menu of a lens gains Open folder (`Ui::open_path`),
+    Change folder..., Sort by (the `SORT_PRESETS` keys, checked on the
+    current one), Descending, Folders first, and Show hidden files, each a
+    `SetLensView` or `SetLensFolder` (Change folder runs the W4 check and
+    `sync_watches`). Follow "Recipe: a new menu entry". A lens's Sort by is
+    a kept rule while a normal space's is one-off until F-31's kept rule
+    (phase 4); one table feeds both menus.
+  - Done when: menu tests show the entries and their commands for a lens
+    and that a normal space's menu is unchanged. **[needs human]**: each
+    entry on a real lens; the view settings survive a restart.
+- [ ] **W7. New lens (app).** "New lens..." under "New space" in the space,
+  tray, and desktop-layer menus: `pick_folder`, the W4 check, then
+  `CreateLens` placed as New space places a space, titled with the
+  folder's name, then `sync_watches`. Mark F-07 done in the ROADMAP index
+  and M4 phases 2-3 done. **[needs human]**: create a lens from each menu.
+
+Phase 4 (list and details views, kept sort rules, the Lenses settings
+page) gets its tasks once W7 lands.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
