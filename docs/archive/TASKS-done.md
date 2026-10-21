@@ -3020,13 +3020,13 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Row: `effect(Effect::Smoke, "smoke", &[Detail])`, added to
     `EVERY_EFFECT` so Startup and Delete offer it; Fold keeps its list.
   - Frame math: `render/smoke.rs`, pure. `SmokeField::new(width, height,
-    detail, seed)` lays 3 to 6 plumes along the lower edge from `seed`;
-    its value at a cell is the nearest plume's normalized distance (narrow
-    across, tall up) plus noise, so the window erodes from the bottom. A
-    frame's `front(gone)` moves from below the field to above it, and
-    `cover` fades the window across a soft edge. `Mask::Smoke { front,
-    detail, seed }` carries it; the painter writes `cover` into a smooth
-    cell bitmap.
+    detail, seed)` lays 3 to 6 plumes along the lower edge from `seed`.
+    A cell's value is low at the bottom plus noise, so the front eats
+    upward along a ragged edge; the smoke's density comes from those
+    seeded columns, leaning and spreading as they rise. `front(gone)`
+    moves from below the field to above it, and `cover` fades the window
+    across a soft edge. `Mask::Smoke { front, detail, seed }` carries it;
+    the painter writes `cover` into a smooth cell bitmap.
   - Seed: `Play::seed` is set once when a play starts (`space_animation`
     mixes a counter with the clock), so each play and space differs while
     a reverse, which keeps the seed, retraces the same wisps.
@@ -3037,8 +3037,9 @@ until I5-I6 all land, so no partial build hides the desktop.
     to the tint.
   - Overlay: `win32/effect_overlay.rs` gains `Art::Smoke`: `smoke::paint`
     shades the plume into the DIB at 3 to 8 px cells and upsamples it
-    bilinearly, tinted by the space; margins are 18 % of the width and
-    50 % of the height, clamped.
+    bilinearly, tinted by the space; it only draws where the front has
+    reached, so the smoke starts low and climbs. Margins are 18 % of the
+    width and 50 % of the height, clamped.
   - Tests: the field stays in range and is higher at the top than the
     bottom; the front covers everything at 0 and nothing at 1; sampling
     matches the cells; the same seed and progress draw the same smoke and

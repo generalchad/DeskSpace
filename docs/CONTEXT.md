@@ -883,10 +883,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   (pure) stands tongues on the burning edge and shades them on the CPU
   into its DIB section each frame; `render/burn_smoke.rs` shades the
   neutral plume that Burn draws under them when its Smoke option is on.
-- Smoke is `render/smoke.rs`, pure: seeded plumes eat the window from the
-  bottom while a density band rises above the front. The painter fades the
-  window through the same field; the overlay shades the plume and samples
-  the space's start snapshot (`render/snapshot.rs`, rendered offscreen by
+- Smoke is `render/smoke.rs`, pure: seeded columns of tinted smoke are
+  thickest at the bottom, and a front sweeps the window away along a
+  ragged edge while the overlay draws only where the front has reached,
+  so the plume starts low and climbs. The overlay samples the space's
+  start snapshot (`render/snapshot.rs`, rendered offscreen by
   `d2d/snapshot.rs`), so its contents drift away with the smoke. `Play`'s
   seed is set when the play starts, so every play and every space differs
   while a reversal retraces the same wisps.

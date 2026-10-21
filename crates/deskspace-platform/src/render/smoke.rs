@@ -18,17 +18,13 @@ use super::snapshot::Snapshot;
 /// interpolation, so the edges stay soft.
 pub const CELL: u32 = 3;
 /// The largest value a cell takes, so the final front can pass every cell.
-pub const VALUE_MAX: f32 = 0.9;
+pub const VALUE_MAX: f32 = 1.0;
 /// How far, in field units, the front's edge fades.
-pub const SOFT: f32 = 0.05;
+pub const SOFT: f32 = 0.08;
 
-/// The plume's thickness around the front, in field units.
-const THICKNESS: f32 = 0.18;
-/// How much noise roughens the front.
-const RAGGED: f32 = 0.12;
 /// The noise's coarsest lattice, in cells, and per step of detail.
-const LATTICE_BASE: f32 = 8.0;
-const LATTICE_PER_DETAIL: f32 = 2.0;
+const LATTICE_BASE: f32 = 4.0;
+const LATTICE_PER_DETAIL: f32 = 1.5;
 
 /// The window's progress as a front in field units: at `gone` 0 nothing has
 /// moved, at 1 everything has. Its ends sit a soft edge outside the field, so
@@ -63,6 +59,7 @@ pub struct SmokeField {
     lattice: f32,
     offset_x: f32,
     offset_y: f32,
+    sources: Vec<(f32, f32)>,
 }
 
 impl SmokeField {
@@ -80,14 +77,12 @@ impl SmokeField {
         let values = (0..rows)
             .flat_map(|row| (0..cols).map(move |col| (col, row)))
             .map(|(col, row)| {
-                let x = (col as f32 + 0.5) * CELL as f32;
-                let y = (row as f32 + 0.5) * CELL as f32;
-                let distance = sources
-                    .iter()
-                    .map(|(source_x, source_y)| distance(x, y, *source_x, *source_y, width, height))
-                    .fold(f32::INFINITY, f32::min);
                 let noise = noise::fractal(col as f32 + offset_x, row as f32 + offset_y, lattice);
-                (distance.min(1.0) * VALUE_MAX + (noise - 0.5) * RAGGED).clamp(0.0, VALUE_MAX)
+                // Low at the bottom, so the front eats upward; the noise keeps
+                // its edge ragged. The columns shape the smoke, not the hole.
+                let bottom = (row as f32 + 0.5) / rows as f32;
+                let value = (1.0 - bottom) * 0.35 + noise * 0.65;
+                value.clamp(0.0, VALUE_MAX)
             })
             .collect();
         Self {
@@ -101,6 +96,7 @@ impl SmokeField {
             lattice,
             offset_x,
             offset_y,
+            sources,
         }
     }
 
@@ -134,17 +130,53 @@ impl SmokeField {
         top + (bottom - top) * ty
     }
 
-    /// The tint the plume carries: the space's own, lifted a little so thin
-    /// smoke reads on a dark backdrop too.
+    /// How much of a plume is at (`x`, `y`): the nearest source's column,
+    /// narrow at the foot and spreading as it rises, with `sway` drifting the
+    /// whole plume sideways. Keeps the smoke in distinct columns rather than
+    /// one fog bank.
+    pub fn column(&self, x: f32, y: f32, sway: f32) -> f32 {
+        column_at(
+            &self.sources,
+            self.seed,
+            self.width,
+            self.height,
+            x,
+            y,
+            sway,
+        )
+    }
+
+    /// The smoke's density at (`x`, `y`): thick at the bottom and in the
+    /// columns, with the same noise as the erosion so the two agree.
+    pub fn density_at(&self, x: f32, y: f32, sway: f32) -> f32 {
+        let bottom = (y / self.height as f32).clamp(0.0, 1.0);
+        let noise = noise::fractal(
+            x / CELL as f32 + self.offset_x,
+            y / CELL as f32 + self.offset_y,
+            self.lattice,
+        );
+        let column = self.column(x, y, sway);
+        let body = (0.5 + 0.5 * noise) * (0.45 + 0.55 * bottom);
+        ((0.05 + 0.95 * column) * body).clamp(0.0, 1.0)
+    }
+
+    /// The tint the plume carries: the space's own, softened toward a neutral
+    /// gray and lifted so thin smoke reads on a dark backdrop too.
     fn body(&self, tint: Color) -> (f32, f32, f32) {
+        let neutral = (0.72, 0.72, 0.74);
         if tint.a == 0 {
-            return (0.62, 0.62, 0.64);
+            return neutral;
         }
         let lift = |channel: u8| {
             let value = f32::from(channel) / 255.0;
-            (value + (1.0 - value) * 0.18).max(0.28)
+            (value + (1.0 - value) * 0.4).max(0.48)
         };
-        (lift(tint.r), lift(tint.g), lift(tint.b))
+        let mix = |tinted: f32, plain: f32| tinted * 0.5 + plain * 0.5;
+        (
+            mix(lift(tint.r), neutral.0),
+            mix(lift(tint.g), neutral.1),
+            mix(lift(tint.b), neutral.2),
+        )
     }
 }
 
@@ -166,16 +198,31 @@ fn sources(width: u32, height: u32, detail: u8, seed: u32) -> Vec<(f32, f32)> {
         .collect()
 }
 
-/// A source's normalized distance from (`x`, `y`): narrow across, tall up,
-/// so a plume climbs rather than spreading as a disk.
-fn distance(x: f32, y: f32, source_x: f32, source_y: f32, width: u32, height: u32) -> f32 {
-    let dx = (x - source_x) / (width as f32 * 0.28);
-    let dy = if y <= source_y {
-        (source_y - y) / height as f32
-    } else {
-        (y - source_y) / (height as f32 * 0.12)
-    };
-    (dx * dx + dy * dy).sqrt()
+/// A source's column at (`x`, `y`): narrow at the foot and spreading as it
+/// rises, with `sway` drifting each plume sideways.
+fn column_at(
+    sources: &[(f32, f32)],
+    seed: u32,
+    width: u32,
+    height: u32,
+    x: f32,
+    y: f32,
+    sway: f32,
+) -> f32 {
+    let width = width as f32;
+    let height = height as f32;
+    let above = ((height - y) / height).clamp(0.0, 1.0);
+    let spread = width * (0.06 + 0.12 * above);
+    sources
+        .iter()
+        .enumerate()
+        .map(|(index, (source_x, _))| {
+            let lean = (noise::random(seed, 70 + index as u32) - 0.5) * width * 0.22 * above;
+            let own = sway * (0.55 + 0.45 * noise::random(seed, 50 + index as u32)) + lean;
+            let distance = (x - (source_x + own)) / spread;
+            (-(distance * distance)).exp()
+        })
+        .fold(0.0, f32::max)
 }
 
 /// The scratch a painter keeps between frames, so smoke allocates nothing
@@ -230,8 +277,8 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
     scratch.cells.resize((cols * rows) as usize, 0);
     let front = front(gone);
     let body = field.body(tint);
-    let scale = 14.0 + 3.0 * f32::from(field.detail);
-    let warp_scale = scale * 0.55;
+    let scale = 10.0 + 2.0 * f32::from(field.detail);
+    let warp_scale = scale * 0.5;
     let space_width = field.width as f32;
     let space_height = field.height as f32;
     for row in 0..rows {
@@ -250,18 +297,29 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
                 (sy - gone * space_height * 0.8) / scale + field.offset_y,
                 6.0,
             );
-            let sway = (drift - 0.5) * space_width * 0.25;
+            let sway = (drift - 0.5) * space_width * 0.14;
             let turbulence = noise::fractal(
                 (sx + sway) / warp_scale + field.offset_y,
                 (sy - gone * space_height * 0.6) / warp_scale + field.offset_x,
                 5.0,
             );
-            let sample_x = sx - sway;
+            let fine = noise::fractal(
+                (sx - sway) / (warp_scale * 0.35) + field.offset_x,
+                (sy - gone * space_height * 0.9) / (warp_scale * 0.35) + field.offset_y,
+                4.0,
+            );
+            let sample_x = sx - sway + (fine - 0.5) * space_width * 0.06;
             let sample_y = sy + lift;
-            let distance = field.value_at(sample_x, sample_y) - front;
-            let band = (-(distance * distance) / (THICKNESS * THICKNESS)).exp();
-            let fade = 1.0 - smoothstep(1.1, 1.7, above);
-            let density = (emission * band * (0.45 + 0.55 * turbulence) * fade).min(0.92);
+            let fade = 1.0 - smoothstep(0.85, 1.5, above);
+            let puff = 0.7 + 0.3 * smoothstep(0.25, 0.75, turbulence);
+            let edge = 0.8 + 0.2 * fine;
+            // Only the part the front has already reached smokes, so the
+            // plume starts low and climbs with the window.
+            let gate = smoothstep(-0.3, 0.05, front - field.value_at(sample_x, sample_y));
+            let density =
+                (emission * gate * field.density_at(sample_x, sample_y, sway) * puff * edge * fade)
+                    .min(0.9);
+            let light = 0.88 + 0.12 * turbulence;
             let pixel = shade(
                 density,
                 snapshot.and_then(|snapshot| {
@@ -272,6 +330,7 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
                         .then(|| snapshot.sample(sample_x, sample_y))
                 }),
                 body,
+                light,
             );
             scratch.cells[(row * cols + col) as usize] = pixel;
         }
@@ -289,44 +348,47 @@ pub(super) fn overlay_cell(width: u32, height: u32) -> u32 {
 
 /// A smoke cell's premultiplied pixel at `density`, carrying `content` (the
 /// snapshot pixel, premultiplied) or just the tinted body when there is none.
-fn shade(density: f32, content: Option<u32>, body: (f32, f32, f32)) -> u32 {
+fn shade(density: f32, content: Option<u32>, body: (f32, f32, f32), light: f32) -> u32 {
     if density <= 0.0 {
         return 0;
     }
-    let alpha = density.clamp(0.0, 1.0);
-    let (red, green, blue) = match content {
+    let density = density.clamp(0.0, 1.0);
+    let thin = 1.0 - density;
+    let lit = |value: f32| (value * light).clamp(0.0, 1.0);
+    let (color, alpha) = match content {
         Some(pixel) if pixel >> 24 > 4 => {
             let pixel_alpha = f32::from((pixel >> 24) as u8) / 255.0;
             let channel = |shift: u32| {
                 (f32::from(((pixel >> shift) & 0xFF) as u8) / 255.0) / pixel_alpha.max(0.01)
             };
-            let content = (channel(16), channel(8), channel(0));
+            let lift = |value: f32| value * 0.72 + 0.28;
+            let content = (lift(channel(16)), lift(channel(8)), lift(channel(0)));
             let tinted = (
-                content.0 * 0.65 + body.0 * 0.35,
-                content.1 * 0.65 + body.1 * 0.35,
-                content.2 * 0.65 + body.2 * 0.35,
+                content.0 * 0.55 + body.0 * 0.45,
+                content.1 * 0.55 + body.1 * 0.45,
+                content.2 * 0.55 + body.2 * 0.45,
             );
-            let thin = 1.0 - density;
-            (
-                tinted.0 + (0.86 - tinted.0) * 0.18 * thin,
-                tinted.1 + (0.86 - tinted.1) * 0.18 * thin,
-                tinted.2 + (0.88 - tinted.2) * 0.18 * thin,
-            )
+            let color = (
+                lit(tinted.0 + (0.94 - tinted.0) * 0.5 * thin),
+                lit(tinted.1 + (0.94 - tinted.1) * 0.5 * thin),
+                lit(tinted.2 + (0.96 - tinted.2) * 0.5 * thin),
+            );
+            (color, density * (0.65 + 0.25 * pixel_alpha))
         }
         _ => {
-            let thin = 1.0 - density;
-            (
-                body.0 + (0.86 - body.0) * 0.24 * thin,
-                body.1 + (0.86 - body.1) * 0.24 * thin,
-                body.2 + (0.88 - body.2) * 0.24 * thin,
-            )
+            let color = (
+                lit(body.0 + (0.94 - body.0) * 0.5 * thin),
+                lit(body.1 + (0.94 - body.1) * 0.5 * thin),
+                lit(body.2 + (0.96 - body.2) * 0.5 * thin),
+            );
+            (color, density * 0.85)
         }
     };
     let channel = |value: f32| (value.clamp(0.0, 1.0) * alpha * 255.0).round() as u32;
     ((alpha * 255.0).round() as u32) << 24
-        | channel(red) << 16
-        | channel(green) << 8
-        | channel(blue)
+        | channel(color.0) << 16
+        | channel(color.1) << 8
+        | channel(color.2)
 }
 
 /// Bilinearly stretches the coarse cells over every pixel of `pixels`.
