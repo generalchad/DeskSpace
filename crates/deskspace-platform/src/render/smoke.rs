@@ -142,7 +142,7 @@ impl SmokeField {
         }
         let lift = |channel: u8| {
             let value = f32::from(channel) / 255.0;
-            value + (1.0 - value) * 0.18
+            (value + (1.0 - value) * 0.18).max(0.28)
         };
         (lift(tint.r), lift(tint.g), lift(tint.b))
     }
@@ -241,7 +241,10 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
             let sx = x - origin.0 as f32;
             let sy = y - origin.1 as f32;
             let above = (space_height - sy).max(0.0) / space_height;
-            let lift = above.min(1.8) * space_height * 0.35;
+            // The plume keeps climbing with the play, so smoke from the first
+            // eroded cells is well above the front by the middle.
+            let rise = gone * space_height * 0.45;
+            let lift = above.min(1.8) * space_height * 0.35 + rise;
             let drift = noise::fractal(
                 sx / scale + field.offset_x,
                 (sy - gone * space_height * 0.8) / scale + field.offset_y,
@@ -464,6 +467,16 @@ mod tests {
             pixels.iter().any(|pixel| pixel & 0xFF > 40),
             "the tint's blue bodies the smoke"
         );
+    }
+
+    #[test]
+    fn smoke_rises_past_the_frame_by_the_middle_of_the_play() {
+        let (pixels, width, _) = painted(0.5, 7, None);
+        // The space's top is 60 px down in this overlay.
+        let above = (0..60)
+            .flat_map(|y| (0..width).map(move |x| (y * width + x) as usize))
+            .any(|index| pixels[index] != 0);
+        assert!(above, "the plume reaches above the space");
     }
 
     #[test]
