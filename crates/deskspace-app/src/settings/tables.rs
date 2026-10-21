@@ -121,7 +121,7 @@ pub(super) fn is_hotkey_field(id: u32) -> bool {
 }
 
 /// The labels of `deskspace_core::animation::EFFECTS`, in its order.
-pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 9] = [
+pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 10] = [
     (AnimationEffect::None, "None"),
     (AnimationEffect::Roll, "Roll"),
     (AnimationEffect::Fade, "Fade"),
@@ -131,6 +131,7 @@ pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 9] = [
     (AnimationEffect::Fly, "Fly"),
     (AnimationEffect::Crt, "CRT"),
     (AnimationEffect::Burn, "Burn"),
+    (AnimationEffect::Smoke, "Smoke"),
 ];
 pub const EDGES: [(Edge, &str); 5] = [
     (Edge::Auto, "Automatic"),

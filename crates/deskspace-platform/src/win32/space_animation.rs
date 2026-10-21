@@ -7,10 +7,12 @@
 //! heading the other way reverses it from where it is.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use deskspace_core::animation::Effect;
 use deskspace_core::geometry::Rect;
+use deskspace_core::theme::Color;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{InvalidateRect, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -18,8 +20,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowWindow,
 };
 
+use crate::render::d2d::capture_snapshot;
+use crate::render::snapshot::Snapshot;
 use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
 use crate::win32::debug_info::transparency_enabled;
+use crate::win32::dpi::window_dpi;
 use crate::win32::effect_overlay::EffectOverlay;
 use crate::win32::runtime;
 use crate::win32::space_window::{
@@ -347,12 +352,23 @@ unsafe fn turn_around(window: HWND, purpose: Purpose, way: Way) -> bool {
 
 unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) {
     let now = now();
+    let play = Play {
+        seed: next_seed(now),
+        ..play
+    };
     let transition = Transition::new(play, geometry, now);
     let frame = transition.frame(now);
     // A window waiting its turn (startup's stagger) stays as it is, hidden,
     // so not even its blur shows early.
     let waiting = transition.is_waiting(now);
-    let overlay = EffectOverlay::create(window, geometry.rect, &play);
+    // SAFETY: the caller's contract.
+    let (tint, snapshot) = if play.effect == Effect::Smoke {
+        // SAFETY: the caller's contract.
+        unsafe { capture(window, geometry.rect) }
+    } else {
+        (Color::TRANSPARENT, None)
+    };
+    let overlay = EffectOverlay::create(window, geometry.rect, &play, tint, snapshot);
     let flat_material = transparency_enabled() == Some(false);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
@@ -374,6 +390,53 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
             draw_overlay(window, frame, now);
         }
     }
+}
+
+/// A fresh seed for a play: a counter (so spaces starting together differ)
+/// mixed with the clock (so each run differs).
+fn next_seed(now: Duration) -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(0x9E37_79B1);
+    let count = NEXT.fetch_add(0x9E37_79B1, Ordering::Relaxed);
+    let nanos = now.as_nanos() as u32;
+    count ^ nanos ^ ((now.as_nanos() >> 32) as u32)
+}
+
+/// The scene's tint and a snapshot of it at `rect`, for an effect that pulls
+/// the contents apart. The scene is taken out of the state while it renders
+/// and put back, so no borrow spans the drawing.
+unsafe fn capture(window: HWND, rect: Rect) -> (Color, Option<Snapshot>) {
+    if rect.is_empty() {
+        return (Color::TRANSPARENT, None);
+    }
+    // SAFETY: the caller's contract; the borrow ends before rendering.
+    let Some((scene, frame)) = (unsafe {
+        with_state(window, |state| {
+            (state.scene.take(), state.paint_frame(window_dpi(window)))
+        })
+    }) else {
+        return (Color::TRANSPARENT, None);
+    };
+    let tint = scene
+        .as_ref()
+        .map_or(Color::TRANSPARENT, |scene| scene.scene().tint);
+    let snapshot = scene.as_ref().and_then(|scene| {
+        capture_snapshot(
+            scene,
+            frame,
+            rect.width.max(1) as u32,
+            rect.height.max(1) as u32,
+        )
+    });
+    // SAFETY: as above.
+    unsafe {
+        with_state(window, |state| state.scene = scene);
+    }
+    if snapshot.is_none() {
+        tracing::warn!(
+            "the smoke snapshot could not be rendered; the smoke will not carry the contents"
+        );
+    }
+    (tint, snapshot)
 }
 
 /// Draws `frame`'s overlay, if this animation has one. The overlay is taken

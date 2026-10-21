@@ -48,6 +48,12 @@ impl RisingField {
     }
 }
 
+/// A fixed random value from 0 to 1 for (`seed`, `index`), so a play's parts
+/// (its sources, its offsets) can be seeded once and stay put.
+pub fn random(seed: u32, index: u32) -> f32 {
+    lattice_value(seed as i32, index as i32, 0x5EED)
+}
+
 /// Fractal value noise at (`x`, `y`): `OCTAVES` of smooth noise, the first
 /// on a `lattice`-sized grid and each next on half of it; 0 to 1.
 pub fn fractal(x: f32, y: f32, lattice: f32) -> f32 {

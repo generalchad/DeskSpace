@@ -882,6 +882,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   beside the space starts and dropped when it ends. `render/flames.rs`
   (pure) stands tongues on the burning edge and shades them on the CPU
   into its DIB section each frame.
+- Smoke is `render/smoke.rs`, pure: seeded plumes eat the window from the
+  bottom while a density band rises above the front. The painter fades the
+  window through the same field; the overlay shades the plume and samples
+  the space's start snapshot (`render/snapshot.rs`, rendered offscreen by
+  `d2d/snapshot.rs`), so its contents drift away with the smoke. `Play`'s
+  seed is set when the play starts, so every play and every space differs
+  while a reversal retraces the same wisps.
 - The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
   `WS_POPUP` with the space material (`dwm::apply_style` from the global
   look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so

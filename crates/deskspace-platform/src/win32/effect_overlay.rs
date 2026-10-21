@@ -9,6 +9,7 @@
 
 use deskspace_core::animation::Effect;
 use deskspace_core::geometry::Rect;
+use deskspace_core::theme::Color;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
@@ -25,6 +26,8 @@ use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{self, BurnField, FlameBase};
 use crate::render::flames::{self, Tongue};
+use crate::render::smoke::{self, Scratch, SmokeField};
+use crate::render::snapshot::Snapshot;
 use crate::render::{Mask, Play, TransitionFrame};
 use crate::win32::window_class::{self, WindowClass};
 
@@ -45,6 +48,15 @@ pub(crate) struct EffectOverlay {
 /// The effect an overlay draws, with what it keeps between frames.
 enum Art {
     Flames(Flames),
+    Smoke(SmokeArt),
+}
+
+/// The smoke's field, the space it carries, and the scratch it paints into.
+struct SmokeArt {
+    field: SmokeField,
+    snapshot: Option<Snapshot>,
+    tint: Color,
+    scratch: Scratch,
 }
 
 struct Flames {
@@ -61,7 +73,13 @@ impl EffectOverlay {
     /// (screen coordinates). `None` for an effect with nothing beside the
     /// space, a desktop-hosted space (a child window, with nothing to float
     /// above), or when Windows refuses the window or its bitmap.
-    pub(crate) fn create(owner: HWND, rect: Rect, play: &Play) -> Option<Self> {
+    pub(crate) fn create(
+        owner: HWND,
+        rect: Rect,
+        play: &Play,
+        tint: Color,
+        snapshot: Option<Snapshot>,
+    ) -> Option<Self> {
         let (margins, art) = match play.effect {
             Effect::Burn => {
                 let cols = (rect.width as f32 / burn::CELL as f32).ceil() as u32;
@@ -78,6 +96,22 @@ impl EffectOverlay {
                 };
                 (margins, Art::Flames(flames))
             }
+            Effect::Smoke => {
+                let (side, top) = smoke::margins(rect.width as u32, rect.height as u32);
+                let field = SmokeField::new(
+                    rect.width.max(1) as u32,
+                    rect.height.max(1) as u32,
+                    play.detail,
+                    play.seed,
+                );
+                let smoke = SmokeArt {
+                    field,
+                    snapshot,
+                    tint,
+                    scratch: Scratch::default(),
+                };
+                (Margins { side, top }, Art::Smoke(smoke))
+            }
             _ => return None,
         };
         let window = LayeredWindow::create(owner, rect, margins)?;
@@ -87,14 +121,32 @@ impl EffectOverlay {
     /// Draws `frame`'s part beside the space, `time` seconds into any clock.
     pub(crate) fn draw(&mut self, frame: &TransitionFrame, time: f32) {
         let (width, height) = self.window.pixel_size();
-        let pixels = self.window.pixels();
-        match (&mut self.art, frame.mask) {
+        let origin = (self.window.space.x, self.window.space.y);
+        let (art, pixels) = (&mut self.art, self.window.pixels());
+        match (art, frame.mask) {
             (Art::Flames(state), Mask::Burn { front, .. }) => {
                 state
                     .field
                     .flame_bases(front, flames::SPACING, &mut state.bases);
                 flames::tongues(&state.bases, state.space_height, time, &mut state.tongues);
                 flames::paint(pixels, width, height, &state.tongues, time);
+            }
+            (Art::Smoke(state), Mask::Smoke { .. }) => {
+                smoke::paint(
+                    smoke::Canvas {
+                        pixels,
+                        width,
+                        height,
+                        origin,
+                    },
+                    smoke::Plume {
+                        field: &state.field,
+                        snapshot: state.snapshot.as_ref(),
+                        tint: state.tint,
+                        gone: 1.0 - frame.shown,
+                    },
+                    &mut state.scratch,
+                );
             }
             _ => return,
         }
@@ -107,6 +159,9 @@ impl EffectOverlay {
 struct LayeredWindow {
     hwnd: HWND,
     origin: POINT,
+    /// Where the space's top-left sits in the overlay, so a shader can map an
+    /// overlay pixel back to the space.
+    space: POINT,
     size: SIZE,
     memory: HDC,
     bitmap: HBITMAP,
@@ -127,9 +182,13 @@ impl LayeredWindow {
             cx: rect.width + 2 * margins.side as i32,
             cy: rect.height + margins.top as i32,
         };
+        let space = POINT {
+            x: margins.side as i32,
+            y: margins.top as i32,
+        };
         let origin = POINT {
-            x: rect.x - margins.side as i32,
-            y: rect.y - margins.top as i32,
+            x: rect.x - space.x,
+            y: rect.y - space.y,
         };
         // SAFETY: plain window and GDI object creation; every object made
         // here is released in `Drop`, or right here if a later step fails.
@@ -176,6 +235,7 @@ impl LayeredWindow {
             Some(Self {
                 hwnd,
                 origin,
+                space,
                 size,
                 memory,
                 bitmap,

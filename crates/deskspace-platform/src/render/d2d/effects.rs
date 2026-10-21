@@ -17,6 +17,7 @@ use windows::Win32::Graphics::Direct2D::{
 
 use super::*;
 use crate::render::burn::{self, BurnField};
+use crate::render::smoke::{self, SmokeField};
 use crate::render::transition::Mask;
 
 /// Dissolve's grain, in pixels per step of detail.
@@ -28,6 +29,7 @@ pub(super) struct Effects {
     gradient: Option<ID2D1LinearGradientBrush>,
     noise: Option<NoiseMask>,
     burn: Option<BurnMask>,
+    smoke: Option<SmokeMask>,
     pixels: Option<PixelTarget>,
 }
 
@@ -51,6 +53,15 @@ struct BurnMask {
     paper: CellMask,
     /// The glowing edge, the char, and the scorch, laid over the paper.
     marks: CellMask,
+}
+
+/// Smoke's paper: one pixel per `smoke::CELL`-sized cell, drawn smoothly, so
+/// the window fades where its plumes pass.
+struct SmokeMask {
+    field: SmokeField,
+    detail: u8,
+    seed: u32,
+    paper: CellMask,
 }
 
 /// One pixel per cell, rewritten each frame and stretched over the space by
@@ -131,6 +142,17 @@ impl Effects {
                 burn.marks.upload(cols, rows)?;
                 Ok(Some(burn.paper.brush.clone().into()))
             }
+            Mask::Smoke {
+                front,
+                detail,
+                seed,
+            } => {
+                let smoke = self.smoke(target, detail, seed, size)?;
+                fill_smoke(smoke.field.values(), front, &mut smoke.paper.pixels);
+                let (cols, rows) = (smoke.field.cols(), smoke.field.rows());
+                smoke.paper.upload(cols, rows)?;
+                Ok(Some(smoke.paper.brush.clone().into()))
+            }
         }
     }
 
@@ -164,6 +186,41 @@ impl Effects {
             });
         }
         Ok(self.burn.as_mut().expect("made above"))
+    }
+
+    fn smoke(
+        &mut self,
+        target: &ID2D1RenderTarget,
+        detail: u8,
+        seed: u32,
+        size: (f32, f32),
+    ) -> Result<&mut SmokeMask, PlatformError> {
+        let width = size.0.ceil().max(1.0) as u32;
+        let height = size.1.ceil().max(1.0) as u32;
+        let fits = self.smoke.as_ref().is_some_and(|smoke| {
+            (
+                smoke.field.cols(),
+                smoke.field.rows(),
+                smoke.detail,
+                smoke.seed,
+            ) == (
+                width.div_ceil(smoke::CELL),
+                height.div_ceil(smoke::CELL),
+                detail,
+                seed,
+            )
+        });
+        if !fits {
+            let field = SmokeField::new(width, height, detail, seed);
+            let (cols, rows) = (field.cols(), field.rows());
+            self.smoke = Some(SmokeMask {
+                field,
+                detail,
+                seed,
+                paper: CellMask::new(target, cols, rows, smoke::CELL, SMOOTH)?,
+            });
+        }
+        Ok(self.smoke.as_mut().expect("made above"))
     }
 
     fn gradient(
@@ -461,6 +518,15 @@ fn fill_burn(values: &[f32], front: f32, paper: &mut [u32], marks: &mut [u32]) {
     }
 }
 
+/// Writes each cell's mask pixel: opaque (premultiplied white) while the
+/// smoke has not reached it, fading as its plume passes.
+fn fill_smoke(values: &[f32], front: f32, paper: &mut [u32]) {
+    for (value, paper) in values.iter().zip(paper.iter_mut()) {
+        let alpha = (smoke::cover(*value, front) * 255.0).round() as u32;
+        *paper = alpha << 24 | alpha << 16 | alpha << 8 | alpha;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,6 +569,20 @@ mod tests {
             (u32::MAX, 0),
             "far above is untouched"
         );
+    }
+
+    #[test]
+    fn smoke_fades_where_its_plume_passes() {
+        let values = [0.0, 0.45, 0.9];
+        let mut paper = [7; 3];
+        fill_smoke(&values, smoke::front(0.5), &mut paper);
+        assert_eq!(paper[0], 0, "the bottom is gone");
+        assert!((1..u32::MAX).contains(&paper[1]), "the edge is fading");
+        assert_eq!(paper[2], u32::MAX, "the top still shows");
+        fill_smoke(&values, smoke::front(0.0), &mut paper);
+        assert_eq!(paper, [u32::MAX; 3], "nothing hides at the start");
+        fill_smoke(&values, smoke::front(1.0), &mut paper);
+        assert_eq!(paper, [0; 3], "all hides at the end");
     }
 
     #[test]

@@ -172,6 +172,8 @@ fn play_for(
         delay: Duration::ZERO,
         detail: resolved.detail,
         edge: resolved.direction,
+        // The platform seeds each play when it starts.
+        seed: 0,
     }
 }
 

@@ -4,6 +4,8 @@ pub mod d2d;
 pub mod flames;
 pub mod noise;
 pub mod scene;
+pub mod smoke;
+pub mod snapshot;
 pub mod transition;
 pub mod zoom_bar;
 

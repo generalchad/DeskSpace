@@ -319,7 +319,14 @@ A native, lightweight, offline Windows desktop organizer that:
     up along a ragged front, charring ahead of a glowing edge, with flames
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
-    space's own window carries the blur over its whole rect). Black hole (the space swallowed by a hole that
+    space's own window carries the blur over its whole rect), and Smoke (amended
+     2026-10-20, maintainer: the space sublimates into plumes of its own
+     tint that rise from a few seeded sources along its lower edge, fading
+     the window where they pass and carrying its contents away with them;
+     a show condenses the smoke into the space, and the smoke rises past
+     the frame, so it uses Burn's overlay; each play is seeded when it
+     starts, so it never looks the same twice while a reversal still
+     retraces the same wisps). Black hole (the space swallowed by a hole that
     opens on the desktop) is planned after composition (T14). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
@@ -994,7 +1001,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 and D15 (`TASKS.md` sections T and P); Bounce, Scroll, Magic lamp (T19-T21), and user Rhai animations (P4-P7) planned |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 and D15 (`TASKS.md` sections T and P); Smoke done (T22), Bounce, Scroll, Magic lamp (T19-T21), and user Rhai animations (P4-P7) planned |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |

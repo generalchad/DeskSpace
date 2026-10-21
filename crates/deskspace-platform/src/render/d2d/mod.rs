@@ -15,10 +15,12 @@ mod effects;
 mod geometry;
 mod graphics;
 mod item;
+mod snapshot;
 mod zoom_bar;
 
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
 pub(crate) use color_picker::ColorPickerPainter;
+pub(crate) use snapshot::capture as capture_snapshot;
 pub(crate) use zoom_bar::ZoomBarPainter;
 
 use std::cell::RefCell;
@@ -428,7 +430,7 @@ impl Painter {
     ///
     /// # Safety
     /// Call between `BeginDraw` and `EndDraw` on `ctx.target`.
-    unsafe fn draw_scene(
+    pub(super) unsafe fn draw_scene(
         &mut self,
         ctx: DrawContext,
         prepared: &PreparedScene,

@@ -30,6 +30,9 @@ pub enum Effect {
     Crt,
     /// A dissolve whose edge glows as it burns.
     Burn,
+    /// The space sublimates into tinted plumes that rise and carry its
+    /// contents away.
+    Smoke,
 }
 
 /// An option an effect can use, beyond the duration every effect has.
@@ -64,6 +67,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Fly, "fly", &[Direction]),
     effect(Effect::Crt, "crt", &[]),
     effect(Effect::Burn, "burn", &[Detail]),
+    effect(Effect::Smoke, "smoke", &[Detail]),
 ];
 
 const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOption]) -> EffectSpec {
@@ -135,6 +139,7 @@ const EVERY_EFFECT: &[Effect] = &[
     Effect::Fly,
     Effect::Crt,
     Effect::Burn,
+    Effect::Smoke,
 ];
 
 /// Every kind, in the order the settings page lists them.
@@ -410,7 +415,12 @@ mod tests {
 
     #[test]
     fn effects_use_the_options_d12_gives_them() {
-        let detail = [Effect::Pixelate, Effect::Dissolve, Effect::Burn];
+        let detail = [
+            Effect::Pixelate,
+            Effect::Dissolve,
+            Effect::Burn,
+            Effect::Smoke,
+        ];
         let direction = [Effect::Roll, Effect::Gradient, Effect::Fly];
         for spec in EFFECTS {
             assert_eq!(spec.effect.uses(Detail), detail.contains(&spec.effect));

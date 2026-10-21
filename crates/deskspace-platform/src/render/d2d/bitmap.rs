@@ -33,6 +33,12 @@ pub(crate) fn decode_icon(hicon: HICON) -> Option<Icon> {
 
 /// Converts any WIC source to top-down premultiplied BGRA pixels.
 pub(super) fn to_icon(graphics: &Graphics, source: &IWICBitmap) -> Option<Icon> {
+    let (width, height, pixels) = to_pixels(graphics, source)?;
+    Some(Icon::new(width, height, pixels))
+}
+
+/// A WIC source's top-down premultiplied-BGRA pixels and size.
+pub(super) fn to_pixels(graphics: &Graphics, source: &IWICBitmap) -> Option<(u32, u32, Box<[u8]>)> {
     // SAFETY: the pixel buffer is sized from the converter's reported
     // dimensions; `source` is a live WIC bitmap.
     unsafe {
@@ -56,7 +62,7 @@ pub(super) fn to_icon(graphics: &Graphics, source: &IWICBitmap) -> Option<Icon> 
         converter
             .CopyPixels(std::ptr::null(), width * 4, &mut pixels)
             .ok()?;
-        Some(Icon::new(width, height, pixels))
+        Some((width, height, pixels))
     }
 }
 

@@ -13,7 +13,7 @@ use std::time::Duration;
 use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
-use super::burn;
+use super::{burn, smoke};
 
 /// Which way a play runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +35,10 @@ pub struct Play {
     /// `DETAIL_RANGE`: the block size, grain, or edge width.
     pub detail: u8,
     pub edge: Edge,
+    /// This play's random seed, so a play that uses one smokes, flickers, or
+    /// drifts differently from the last. The platform sets it when the play
+    /// starts; a pure frame is still a function of it.
+    pub seed: u32,
 }
 
 impl Play {
@@ -47,6 +51,7 @@ impl Play {
             delay: Duration::ZERO,
             detail: DETAIL_RANGE.0,
             edge: Edge::Auto,
+            seed: 0,
         }
     }
 }
@@ -115,6 +120,14 @@ pub enum Mask {
         front: f32,
         detail: u8,
     },
+    /// Plumes eating the space from seeded sources (`render::smoke`):
+    /// `front` is how far they have got, `detail` how many and how ragged,
+    /// and `seed` which play's plumes these are.
+    Smoke {
+        front: f32,
+        detail: u8,
+        seed: u32,
+    },
 }
 
 impl Mask {
@@ -127,6 +140,7 @@ impl Mask {
             } => position - feather <= 0.0,
             Mask::Noise { threshold, .. } => threshold <= 0.0,
             Mask::Burn { front, .. } => front <= -burn::BANDS,
+            Mask::Smoke { front, .. } => front <= -2.0 * smoke::SOFT,
         }
     }
 }
@@ -329,6 +343,14 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             },
             ..whole
         },
+        Effect::Smoke => TransitionFrame {
+            mask: Mask::Smoke {
+                front: smoke::front(gone),
+                detail: play.detail,
+                seed: play.seed,
+            },
+            ..whole
+        },
         Effect::Fly => {
             let edge = resolve_fly(play.edge, geometry.rect, geometry.work_area);
             let moved = fly_rect(geometry.rect, geometry.work_area, edge, gone);
@@ -437,7 +459,7 @@ fn lerp_rect(from: Rect, to: Rect, t: f32) -> Rect {
 mod tests {
     use super::*;
 
-    const EVERY_EFFECT: [Effect; 9] = [
+    const EVERY_EFFECT: [Effect; 10] = [
         Effect::None,
         Effect::Roll,
         Effect::Fade,
@@ -447,6 +469,7 @@ mod tests {
         Effect::Fly,
         Effect::Crt,
         Effect::Burn,
+        Effect::Smoke,
     ];
 
     fn ms(millis: u64) -> Duration {
@@ -461,6 +484,7 @@ mod tests {
             delay: Duration::ZERO,
             detail: 5,
             edge: Edge::Auto,
+            seed: 7,
         }
     }
 
@@ -495,6 +519,7 @@ mod tests {
                 Mask::Gradient { position, .. } => position >= 1.0,
                 Mask::Noise { threshold, .. } => threshold >= 1.0,
                 Mask::Burn { front, .. } => front >= 1.0,
+                Mask::Smoke { front, .. } => front >= 1.0,
             }
     }
 
@@ -533,6 +558,7 @@ mod tests {
                     | Effect::Gradient
                     | Effect::Dissolve
                     | Effect::Burn
+                    | Effect::Smoke
             );
             assert_eq!(!midway.covers_window(), pixels, "{effect:?}");
             assert!(
