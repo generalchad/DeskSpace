@@ -1,10 +1,13 @@
-//! Burn's flames on screen (ROADMAP D12, amended 2026-10-18). They rise past
-//! the space's frame, and the space's own window carries the blur over its
-//! whole rect, so they are drawn on a window of their own: layered with
-//! per-pixel alpha, click-through, never activated, and owned by the space
-//! window, which keeps it directly above the space and destroys it with it.
-//! It lives as long as one Burn plays (`space_animation`).
+//! What some effects draw beside the space (ROADMAP D12): Burn's flames
+//! rise past the space's frame, and the space's own window carries the blur
+//! over its whole rect, so they are drawn on a window of their own: layered
+//! with per-pixel alpha, click-through, never activated, and owned by the
+//! space window, which keeps it directly above the space and destroys it
+//! with it. One lives as long as one play of such an effect
+//! (`space_animation`). The pixels are shaded on the CPU by pure code in
+//! `render/`; this module owns only the window and the effect's state.
 
+use deskspace_core::animation::Effect;
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -21,12 +24,87 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{self, BurnField, FlameBase};
-use crate::render::flames::{self, MARGIN_SIDE, MARGIN_TOP, SPACING, Tongue};
+use crate::render::flames::{self, Tongue};
+use crate::render::{Mask, Play, TransitionFrame};
 use crate::win32::window_class::{self, WindowClass};
 
-const CLASS_NAME: PCWSTR = w!("DeskSpaceFlames");
+const CLASS_NAME: PCWSTR = w!("DeskSpaceEffectOverlay");
 
-pub(crate) struct FlameOverlay {
+/// The room an overlay keeps around the space, in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Margins {
+    side: u32,
+    top: u32,
+}
+
+pub(crate) struct EffectOverlay {
+    window: LayeredWindow,
+    art: Art,
+}
+
+/// The effect an overlay draws, with what it keeps between frames.
+enum Art {
+    Flames(Flames),
+}
+
+struct Flames {
+    /// The same field the painter burns the space with, so the flames stand
+    /// on its edge.
+    field: BurnField,
+    bases: Vec<FlameBase>,
+    tongues: Vec<Tongue>,
+    space_height: f32,
+}
+
+impl EffectOverlay {
+    /// The overlay `play` draws beside the space window `owner` at `rect`
+    /// (screen coordinates). `None` for an effect with nothing beside the
+    /// space, a desktop-hosted space (a child window, with nothing to float
+    /// above), or when Windows refuses the window or its bitmap.
+    pub(crate) fn create(owner: HWND, rect: Rect, play: &Play) -> Option<Self> {
+        let (margins, art) = match play.effect {
+            Effect::Burn => {
+                let cols = (rect.width as f32 / burn::CELL as f32).ceil() as u32;
+                let rows = (rect.height as f32 / burn::CELL as f32).ceil() as u32;
+                let flames = Flames {
+                    field: BurnField::new(cols, rows, play.detail),
+                    bases: Vec::new(),
+                    tongues: Vec::new(),
+                    space_height: rect.height as f32,
+                };
+                let margins = Margins {
+                    side: flames::MARGIN_SIDE,
+                    top: flames::MARGIN_TOP,
+                };
+                (margins, Art::Flames(flames))
+            }
+            _ => return None,
+        };
+        let window = LayeredWindow::create(owner, rect, margins)?;
+        Some(Self { window, art })
+    }
+
+    /// Draws `frame`'s part beside the space, `time` seconds into any clock.
+    pub(crate) fn draw(&mut self, frame: &TransitionFrame, time: f32) {
+        let (width, height) = self.window.pixel_size();
+        let pixels = self.window.pixels();
+        match (&mut self.art, frame.mask) {
+            (Art::Flames(state), Mask::Burn { front, .. }) => {
+                state
+                    .field
+                    .flame_bases(front, flames::SPACING, &mut state.bases);
+                flames::tongues(&state.bases, state.space_height, time, &mut state.tongues);
+                flames::paint(pixels, width, height, &state.tongues, time);
+            }
+            _ => return,
+        }
+        self.window.present();
+    }
+}
+
+/// A layered, click-through window over the space and its margins, and the
+/// DIB section it is drawn from.
+struct LayeredWindow {
     hwnd: HWND,
     origin: POINT,
     size: SIZE,
@@ -36,35 +114,23 @@ pub(crate) struct FlameOverlay {
     /// The DIB section's pixels, `size.cx * size.cy` premultiplied BGRA,
     /// owned by `bitmap`.
     bits: *mut u32,
-    /// The same field the painter burns the space with, so the flames stand
-    /// on its edge.
-    field: BurnField,
-    bases: Vec<FlameBase>,
-    tongues: Vec<Tongue>,
-    space_height: f32,
 }
 
-impl FlameOverlay {
-    /// The flames for `space`'s window `owner` at `rect` (screen
-    /// coordinates), burning with `detail`. `None` for a desktop-hosted
-    /// space, a child window with nothing to float above, or when Windows
-    /// refuses the window or its bitmap.
-    pub(crate) fn create(owner: HWND, rect: Rect, detail: u8) -> Option<Self> {
+impl LayeredWindow {
+    fn create(owner: HWND, rect: Rect, margins: Margins) -> Option<Self> {
         // SAFETY: a style query on the live space window.
         let style = unsafe { GetWindowLongW(owner, GWL_STYLE) } as u32;
         if style & WS_CHILD.0 != 0 || rect.is_empty() {
             return None;
         }
         let size = SIZE {
-            cx: rect.width + 2 * MARGIN_SIDE as i32,
-            cy: rect.height + MARGIN_TOP as i32,
+            cx: rect.width + 2 * margins.side as i32,
+            cy: rect.height + margins.top as i32,
         };
         let origin = POINT {
-            x: rect.x - MARGIN_SIDE as i32,
-            y: rect.y - MARGIN_TOP as i32,
+            x: rect.x - margins.side as i32,
+            y: rect.y - margins.top as i32,
         };
-        let cols = (rect.width as f32 / burn::CELL as f32).ceil() as u32;
-        let rows = (rect.height as f32 / burn::CELL as f32).ceil() as u32;
         // SAFETY: plain window and GDI object creation; every object made
         // here is released in `Drop`, or right here if a later step fails.
         unsafe {
@@ -89,7 +155,8 @@ impl FlameOverlay {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
                     biWidth: size.cx,
-                    // Negative: top-down rows, as `flames::paint` writes them.
+                    // Negative: top-down rows, as the shaders in `render/`
+                    // write them.
                     biHeight: -size.cy,
                     biPlanes: 1,
                     biBitCount: 32,
@@ -114,25 +181,24 @@ impl FlameOverlay {
                 bitmap,
                 previous,
                 bits: bits.cast(),
-                field: BurnField::new(cols, rows, detail),
-                bases: Vec::new(),
-                tongues: Vec::new(),
-                space_height: rect.height as f32,
             })
         }
     }
 
-    /// Draws the flames for a burn at `front`, `time` seconds into any clock.
-    pub(crate) fn draw(&mut self, front: f32, time: f32) {
-        self.field.flame_bases(front, SPACING, &mut self.bases);
-        flames::tongues(&self.bases, self.space_height, time, &mut self.tongues);
-        let (width, height) = (self.size.cx as u32, self.size.cy as u32);
+    fn pixel_size(&self) -> (u32, u32) {
+        (self.size.cx as u32, self.size.cy as u32)
+    }
+
+    fn pixels(&mut self) -> &mut [u32] {
+        let (width, height) = self.pixel_size();
         // SAFETY: `bits` points at the DIB section's `width * height`
         // pixels, which `bitmap` owns and keeps alive while `self` lives;
-        // nothing else touches them.
-        let pixels =
-            unsafe { std::slice::from_raw_parts_mut(self.bits, (width * height) as usize) };
-        flames::paint(pixels, width, height, &self.tongues, time);
+        // the `&mut self` borrow keeps anything else from touching them.
+        unsafe { std::slice::from_raw_parts_mut(self.bits, (width * height) as usize) }
+    }
+
+    /// Puts the pixels on screen, showing the window the first time.
+    fn present(&self) {
         // Per-pixel alpha from premultiplied source pixels.
         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-updatelayeredwindow
         let blend = BLENDFUNCTION {
@@ -155,7 +221,7 @@ impl FlameOverlay {
                 Some(&blend),
                 ULW_ALPHA,
             ) {
-                tracing::debug!(%error, "flames could not be drawn");
+                tracing::debug!(%error, "an effect overlay could not be drawn");
                 return;
             }
             if !IsWindowVisible(self.hwnd).as_bool() {
@@ -165,7 +231,7 @@ impl FlameOverlay {
     }
 }
 
-impl Drop for FlameOverlay {
+impl Drop for LayeredWindow {
     fn drop(&mut self) {
         // SAFETY: the objects were made by `create` on this thread and are
         // released once. The window may already be gone with its owner, in

@@ -2,6 +2,7 @@ pub mod burn;
 pub(crate) mod color_picker;
 pub mod d2d;
 pub mod flames;
+pub mod noise;
 pub mod scene;
 pub mod transition;
 pub mod zoom_bar;

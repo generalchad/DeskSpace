@@ -770,7 +770,7 @@ same way:
     (f32, f32), dst: Rect }`.
   - Window: `win32/lamp_overlay.rs`, a click-through, layered,
     never-activated overlay over the space's monitor work area, copied
-    from `win32/flame_overlay.rs`. While Magic lamp plays, the space's own
+    from `win32/effect_overlay.rs`. While Magic lamp plays, the space's own
     window is hidden and the overlay draws each slice from the start
     snapshot, then `UpdateLayeredWindow`. At the end of an in the window
     shows again and the overlay goes; at the end of an out the overlay

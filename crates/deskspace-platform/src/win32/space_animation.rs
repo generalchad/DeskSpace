@@ -18,9 +18,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowWindow,
 };
 
-use crate::render::{Geometry, Mask, Play, PreparedScene, Transition, TransitionFrame, Way};
+use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
 use crate::win32::debug_info::transparency_enabled;
-use crate::win32::flame_overlay::FlameOverlay;
+use crate::win32::effect_overlay::EffectOverlay;
 use crate::win32::runtime;
 use crate::win32::space_window::{
     Backing, SpaceState, current_rect, show, show_backing, with_state,
@@ -55,8 +55,9 @@ pub(crate) struct Animation {
     /// A scene that arrived while folding. The folded scene has no items, so
     /// the window keeps drawing the unfolded one until the fold ends.
     deferred: Option<PreparedScene>,
-    /// Burn's flames, on their own window above the space.
-    flames: Option<FlameOverlay>,
+    /// What the effect draws beside the space, on its own window above it
+    /// (Burn's flames).
+    overlay: Option<EffectOverlay>,
     /// What plays once a hide ends, bringing the window back: the debug
     /// window's preview (`preview`).
     then: Option<Play>,
@@ -351,9 +352,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
     // A window waiting its turn (startup's stagger) stays as it is, hidden,
     // so not even its blur shows early.
     let waiting = transition.is_waiting(now);
-    let flames = (play.effect == Effect::Burn)
-        .then(|| FlameOverlay::create(window, geometry.rect, play.detail))
-        .flatten();
+    let overlay = EffectOverlay::create(window, geometry.rect, &play);
     let flat_material = transparency_enabled() == Some(false);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
@@ -364,7 +363,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 purpose,
                 frame,
                 deferred: None,
-                flames,
+                overlay,
                 then: None,
                 flat_material,
             });
@@ -372,36 +371,33 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
         let _ = SetTimer(Some(window), TIMER_ID, FRAME_INTERVAL_MS, None);
         if !waiting {
             apply(window, frame, flat_material);
-            draw_flames(window, frame, now);
+            draw_overlay(window, frame, now);
         }
     }
 }
 
-/// Draws Burn's flames for `frame`, if this animation has them. The overlay
-/// is taken out of the state while it draws, so no borrow is held across
-/// the Win32 calls.
-unsafe fn draw_flames(window: HWND, frame: TransitionFrame, now: Duration) {
-    let Mask::Burn { front, .. } = frame.mask else {
-        return;
-    };
+/// Draws `frame`'s overlay, if this animation has one. The overlay is taken
+/// out of the state while it draws, so no borrow is held across the Win32
+/// calls.
+unsafe fn draw_overlay(window: HWND, frame: TransitionFrame, now: Duration) {
     // SAFETY: the caller's contract; the borrow does not re-enter.
-    let flames = unsafe {
+    let overlay = unsafe {
         with_state(window, |state| {
             state
                 .animation
                 .as_mut()
-                .and_then(|animation| animation.flames.take())
+                .and_then(|animation| animation.overlay.take())
         })
     };
-    let Some(Some(mut flames)) = flames else {
+    let Some(Some(mut overlay)) = overlay else {
         return;
     };
-    flames.draw(front, now.as_secs_f32());
+    overlay.draw(&frame, now.as_secs_f32());
     // SAFETY: as above.
     unsafe {
         with_state(window, |state| {
             if let Some(animation) = state.animation.as_mut() {
-                animation.flames = Some(flames);
+                animation.overlay = Some(overlay);
             }
         });
     }
@@ -439,7 +435,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
             finish(window);
         } else if !waiting {
             apply(window, frame, flat_material);
-            draw_flames(window, frame, now);
+            draw_overlay(window, frame, now);
         }
     }
 }
@@ -457,17 +453,23 @@ unsafe fn finish(window: HWND) {
                 state.scene = Some(scene);
             }
             let then = animation.then.filter(|_| gone);
-            Some((rect, animation.purpose, gone, animation.flames.take(), then))
+            Some((
+                rect,
+                animation.purpose,
+                gone,
+                animation.overlay.take(),
+                then,
+            ))
         })
     };
     // SAFETY: the caller's contract.
     unsafe {
         let _ = KillTimer(Some(window), TIMER_ID);
-        let Some(Some((rect, purpose, gone, flames, then))) = ended else {
+        let Some(Some((rect, purpose, gone, overlay, then))) = ended else {
             return;
         };
-        // The flames' window goes outside any state borrow.
-        drop(flames);
+        // The overlay's window goes outside any state borrow.
+        drop(overlay);
         if purpose == Purpose::Dying {
             destroy(window);
             return;

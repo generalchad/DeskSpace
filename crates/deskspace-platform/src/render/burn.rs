@@ -10,6 +10,8 @@
 
 use deskspace_core::animation::DETAIL_RANGE;
 
+use super::noise::RisingField;
+
 /// Pixels per field cell; the painter draws the cells with linear
 /// interpolation, so the edges stay soft.
 pub const CELL: u32 = 3;
@@ -26,8 +28,6 @@ const NOISE_SHARE: f32 = 0.55;
 /// detail.
 const LATTICE_BASE: f32 = 6.0;
 const LATTICE_PER_DETAIL: f32 = 3.0;
-/// The octaves: each halves the lattice, with these weights (summing to 1).
-const OCTAVES: [f32; 3] = [0.55, 0.3, 0.15];
 
 /// The burn's progress as a front in field units: at `gone` 0 nothing is
 /// touched, at 1 everything, the bands included, has burned away.
@@ -38,9 +38,7 @@ pub fn front(gone: f32) -> f32 {
 /// The burn field of a space, `cols` by `rows` cells.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
-    cols: u32,
-    rows: u32,
-    values: Vec<f32>,
+    field: RisingField,
 }
 
 impl BurnField {
@@ -49,32 +47,25 @@ impl BurnField {
     pub fn new(cols: u32, rows: u32, detail: u8) -> Self {
         let detail = detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1);
         let lattice = LATTICE_BASE + LATTICE_PER_DETAIL * f32::from(detail);
-        let rows_f = rows.max(1) as f32;
-        let values = (0..rows)
-            .flat_map(|row| (0..cols).map(move |col| (col, row)))
-            .map(|(col, row)| {
-                let noise = fractal(col as f32, row as f32, lattice);
-                let from_bottom = 1.0 - (row as f32 + 0.5) / rows_f;
-                NOISE_SHARE * noise + (1.0 - NOISE_SHARE) * from_bottom
-            })
-            .collect();
-        Self { cols, rows, values }
+        Self {
+            field: RisingField::new(cols, rows, lattice, NOISE_SHARE),
+        }
     }
 
     pub fn cols(&self) -> u32 {
-        self.cols
+        self.field.cols()
     }
 
     pub fn rows(&self) -> u32 {
-        self.rows
+        self.field.rows()
     }
 
     pub fn values(&self) -> &[f32] {
-        &self.values
+        self.field.values()
     }
 
     pub fn value(&self, col: u32, row: u32) -> f32 {
-        self.values[(row * self.cols + col) as usize]
+        self.field.value(col, row)
     }
 
     /// Where flames stand at `front`, into `bases`: in every `every`-th
@@ -82,12 +73,12 @@ impl BurnField {
     /// there (1 right at the front).
     pub fn flame_bases(&self, front: f32, every: u32, bases: &mut Vec<FlameBase>) {
         bases.clear();
-        let last = self.cols.saturating_sub(1);
-        let columns = (0..self.cols)
+        let last = self.cols().saturating_sub(1);
+        let columns = (0..self.cols())
             .step_by(every.max(1) as usize)
             .chain((!last.is_multiple_of(every.max(1))).then_some(last));
         for col in columns {
-            let base = (0..self.rows).find_map(|row| match stage(self.value(col, row) - front) {
+            let base = (0..self.rows()).find_map(|row| match stage(self.value(col, row) - front) {
                 Stage::Burning(along) => Some(FlameBase {
                     col,
                     row,
@@ -168,47 +159,6 @@ fn mix(from: (u8, u8, u8), to: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
 fn premultiplied((r, g, b): (u8, u8, u8), alpha: u8) -> u32 {
     let scale = |channel: u8| (u32::from(channel) * u32::from(alpha) + 127) / 255;
     (u32::from(alpha) << 24) | (scale(r) << 16) | (scale(g) << 8) | scale(b)
-}
-
-/// Fractal value noise at cell (`x`, `y`): `OCTAVES` of smooth noise, the
-/// first on a `lattice`-cell grid and each next on half of it; 0 to 1.
-fn fractal(x: f32, y: f32, lattice: f32) -> f32 {
-    OCTAVES
-        .iter()
-        .enumerate()
-        .map(|(octave, weight)| {
-            let size = lattice / (1 << octave) as f32;
-            weight * value_noise(x / size, y / size, octave as u32)
-        })
-        .sum()
-}
-
-/// Smooth noise: random values on an integer lattice, blended with
-/// smoothstep weights; 0 to 1.
-fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
-    let (x0, y0) = (x.floor(), y.floor());
-    let (tx, ty) = (smooth(x - x0), smooth(y - y0));
-    let (ix, iy) = (x0 as i32, y0 as i32);
-    let corner = |dx: i32, dy: i32| lattice_value(ix + dx, iy + dy, octave);
-    let top = corner(0, 0) + (corner(1, 0) - corner(0, 0)) * tx;
-    let bottom = corner(0, 1) + (corner(1, 1) - corner(0, 1)) * tx;
-    top + (bottom - top) * ty
-}
-
-fn smooth(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// A lattice point's fixed random value, 0 to 1: an integer hash, so a
-/// burn always takes the same shape and a reversed one retraces it.
-fn lattice_value(x: i32, y: i32, octave: u32) -> f32 {
-    let mut hash = (x as u32).wrapping_mul(0x9E37_79B1)
-        ^ (y as u32).wrapping_mul(0x85EB_CA77)
-        ^ octave.wrapping_mul(0xC2B2_AE3D);
-    hash ^= hash >> 15;
-    hash = hash.wrapping_mul(0x2C1B_3C6D);
-    hash ^= hash >> 12;
-    (hash >> 8) as f32 / (1u32 << 24) as f32
 }
 
 #[cfg(test)]
