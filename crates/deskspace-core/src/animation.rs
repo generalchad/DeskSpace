@@ -279,12 +279,7 @@ pub struct AnimationSettings {
     /// Used by effects with `EffectOption::Direction`.
     pub direction: Edge,
     /// Used by effects with `EffectOption::Smoke`.
-    #[serde(default = "smoke_by_default")]
     pub smoke: bool,
-}
-
-fn smoke_by_default() -> bool {
-    true
 }
 
 impl AnimationSettings {
@@ -294,7 +289,7 @@ impl AnimationSettings {
             duration_ms: DURATION_MS_DEFAULT,
             detail: DETAIL_DEFAULT,
             direction: Edge::Auto,
-            smoke: true,
+            smoke: false,
         }
     }
 
@@ -469,7 +464,10 @@ mod tests {
         assert_eq!(animations.stagger_ms, 50);
         for spec in KINDS {
             assert_eq!(animations.get(spec.kind).duration_ms, 250);
-            assert!(animations.get(spec.kind).smoke, "burn smokes by default");
+            assert!(
+                !animations.get(spec.kind).smoke,
+                "burn does not smoke by default"
+            );
         }
     }
 

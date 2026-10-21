@@ -320,8 +320,8 @@ A native, lightweight, offline Windows desktop organizer that:
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
     space's own window carries the blur over its whole rect; a Smoke
-    toggle, on by default, gives it a neutral gray plume behind the
-    flames), and Smoke (amended 2026-10-20, maintainer: the space
+    toggle gives it a neutral gray plume behind the flames, off by
+    default until it is tuned, amended 2026-10-20, maintainer), and Smoke (amended 2026-10-20, maintainer: the space
     sublimates into plumes of its own tint that rise from a few seeded
     sources along its lower edge, fading the window where they pass, while
     its text and icons ride the same current as separate sprites and land
@@ -351,7 +351,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, Burn, and
-    Smoke; Smoke (on by default) for Burn; and Direction (which edge;
+    Smoke; Smoke (off by default) for Burn; and Direction (which edge;
     Automatic is the effect's own: the top for Roll and Gradient, the
     nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The

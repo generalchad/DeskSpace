@@ -457,12 +457,12 @@ mod tests {
         assert_eq!(animations.fold.effect, EffectChoice::Effect(Effect::Roll));
         assert_eq!(animations.stagger_ms, STAGGER_MS_RANGE.0);
         assert!(
-            animations.startup_exit.smoke,
-            "a file written before the smoke choice smokes"
+            !animations.startup_exit.smoke,
+            "a file written before the smoke choice burns as it did"
         );
 
         let written = toml::to_string(&parsed).unwrap();
-        assert!(written.contains("smoke = true"), "{written}");
+        assert!(written.contains("smoke = false"), "{written}");
         assert!(
             written.contains("effect = \"same_as_startup\""),
             "{written}"
