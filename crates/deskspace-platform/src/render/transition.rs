@@ -168,6 +168,9 @@ pub struct TransitionFrame {
     pub block: u32,
     /// How strongly a CRT's bright line glows over the contents, 0 to 1.
     pub glow: f32,
+    /// Whether the window draws its title and items. Smoke draws them on its
+    /// overlay instead, so they can fly in and land.
+    pub contents: bool,
 }
 
 impl TransitionFrame {
@@ -297,6 +300,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         mask: Mask::None,
         block: 1,
         glow: 0.0,
+        contents: true,
     };
     let gone = 1.0 - shown;
     match play.effect {

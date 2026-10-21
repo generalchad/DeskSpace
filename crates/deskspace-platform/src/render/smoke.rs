@@ -5,14 +5,13 @@
 //!
 //! A play passes a seed, so every play and every space smokes differently,
 //! yet a play is a pure function of (`seed`, progress): reversing it retraces
-//! the same wisps. The overlay samples the space's start snapshot through the
-//! plume, so the contents themselves are carried away (`render::snapshot`).
+//! the same wisps. The smoke is only the space's tinted material; its title
+//! and items are separate sprites that ride the same flow (`render::contents`).
 
 use deskspace_core::animation::DETAIL_RANGE;
 use deskspace_core::theme::Color;
 
 use super::noise;
-use super::snapshot::Snapshot;
 
 /// Pixels per field cell; the painter draws the cells with linear
 /// interpolation, so the edges stay soft.
@@ -160,6 +159,22 @@ impl SmokeField {
         ((0.05 + 0.95 * column) * body).clamp(0.0, 1.0)
     }
 
+    /// The current at (`x`, `y`) `gone` into the play: how far it drifts
+    /// sideways and rises, in pixels. The smoke and the contents that ride it
+    /// share this.
+    pub fn flow(&self, x: f32, y: f32, gone: f32) -> (f32, f32) {
+        let scale = 10.0 + 2.0 * f32::from(self.detail);
+        let above = ((self.height as f32 - y) / self.height as f32).clamp(0.0, 1.0);
+        let rise = gone * self.height as f32 * 0.45;
+        let lift = above.min(1.8) * self.height as f32 * 0.35 + rise;
+        let drift = noise::fractal(
+            x / scale + self.offset_x,
+            (y - gone * self.height as f32 * 0.8) / scale + self.offset_y,
+            6.0,
+        );
+        ((drift - 0.5) * self.width as f32 * 0.14, lift)
+    }
+
     /// The tint the plume carries: the space's own, softened toward a neutral
     /// gray and lifted so thin smoke reads on a dark backdrop too.
     fn body(&self, tint: Color) -> (f32, f32, f32) {
@@ -245,7 +260,6 @@ pub struct Canvas<'a> {
 /// `gone` (0 whole, 1 gone).
 pub struct Plume<'a> {
     pub field: &'a SmokeField,
-    pub snapshot: Option<&'a Snapshot>,
     pub tint: Color,
     pub gone: f32,
 }
@@ -259,12 +273,7 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
         height,
         origin,
     } = canvas;
-    let Plume {
-        field,
-        snapshot,
-        tint,
-        gone,
-    } = plume;
+    let Plume { field, tint, gone } = plume;
     let gone = gone.clamp(0.0, 1.0);
     let emission = smoothstep(0.0, 0.2, gone) * (1.0 - smoothstep(0.85, 1.0, gone));
     if emission <= 0.0 {
@@ -288,16 +297,7 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
             let sx = x - origin.0 as f32;
             let sy = y - origin.1 as f32;
             let above = (space_height - sy).max(0.0) / space_height;
-            // The plume keeps climbing with the play, so smoke from the first
-            // eroded cells is well above the front by the middle.
-            let rise = gone * space_height * 0.45;
-            let lift = above.min(1.8) * space_height * 0.35 + rise;
-            let drift = noise::fractal(
-                sx / scale + field.offset_x,
-                (sy - gone * space_height * 0.8) / scale + field.offset_y,
-                6.0,
-            );
-            let sway = (drift - 0.5) * space_width * 0.14;
+            let (sway, lift) = field.flow(sx, sy, gone);
             let turbulence = noise::fractal(
                 (sx + sway) / warp_scale + field.offset_y,
                 (sy - gone * space_height * 0.6) / warp_scale + field.offset_x,
@@ -320,18 +320,7 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
                 (emission * gate * field.density_at(sample_x, sample_y, sway) * puff * edge * fade)
                     .min(0.9);
             let light = 0.88 + 0.12 * turbulence;
-            let pixel = shade(
-                density,
-                snapshot.and_then(|snapshot| {
-                    (sample_x >= 0.0
-                        && sample_y >= 0.0
-                        && sample_x < snapshot.width() as f32
-                        && sample_y < snapshot.height() as f32)
-                        .then(|| snapshot.sample(sample_x, sample_y))
-                }),
-                body,
-                light,
-            );
+            let pixel = shade(density, body, light);
             scratch.cells[(row * cols + col) as usize] = pixel;
         }
     }
@@ -346,44 +335,20 @@ pub(super) fn overlay_cell(width: u32, height: u32) -> u32 {
     ((area / 45_000.0).sqrt().ceil() as u32).clamp(3, 8)
 }
 
-/// A smoke cell's premultiplied pixel at `density`, carrying `content` (the
-/// snapshot pixel, premultiplied) or just the tinted body when there is none.
-fn shade(density: f32, content: Option<u32>, body: (f32, f32, f32), light: f32) -> u32 {
+/// A smoke cell's premultiplied pixel at `density`.
+fn shade(density: f32, body: (f32, f32, f32), light: f32) -> u32 {
     if density <= 0.0 {
         return 0;
     }
     let density = density.clamp(0.0, 1.0);
     let thin = 1.0 - density;
     let lit = |value: f32| (value * light).clamp(0.0, 1.0);
-    let (color, alpha) = match content {
-        Some(pixel) if pixel >> 24 > 4 => {
-            let pixel_alpha = f32::from((pixel >> 24) as u8) / 255.0;
-            let channel = |shift: u32| {
-                (f32::from(((pixel >> shift) & 0xFF) as u8) / 255.0) / pixel_alpha.max(0.01)
-            };
-            let lift = |value: f32| value * 0.72 + 0.28;
-            let content = (lift(channel(16)), lift(channel(8)), lift(channel(0)));
-            let tinted = (
-                content.0 * 0.55 + body.0 * 0.45,
-                content.1 * 0.55 + body.1 * 0.45,
-                content.2 * 0.55 + body.2 * 0.45,
-            );
-            let color = (
-                lit(tinted.0 + (0.94 - tinted.0) * 0.5 * thin),
-                lit(tinted.1 + (0.94 - tinted.1) * 0.5 * thin),
-                lit(tinted.2 + (0.96 - tinted.2) * 0.5 * thin),
-            );
-            (color, density * (0.65 + 0.25 * pixel_alpha))
-        }
-        _ => {
-            let color = (
-                lit(body.0 + (0.94 - body.0) * 0.5 * thin),
-                lit(body.1 + (0.94 - body.1) * 0.5 * thin),
-                lit(body.2 + (0.96 - body.2) * 0.5 * thin),
-            );
-            (color, density * 0.85)
-        }
-    };
+    let color = (
+        lit(body.0 + (0.94 - body.0) * 0.5 * thin),
+        lit(body.1 + (0.94 - body.1) * 0.5 * thin),
+        lit(body.2 + (0.96 - body.2) * 0.5 * thin),
+    );
+    let alpha = density * 0.85;
     let channel = |value: f32| (value.clamp(0.0, 1.0) * alpha * 255.0).round() as u32;
     ((alpha * 255.0).round() as u32) << 24
         | channel(color.0) << 16
@@ -481,7 +446,7 @@ mod tests {
         assert_eq!(at, field.value(0, 0), "clamped to the edge");
     }
 
-    fn painted(gone: f32, seed: u32, snapshot: Option<&Snapshot>) -> (Vec<u32>, u32, u32) {
+    fn painted(gone: f32, seed: u32) -> (Vec<u32>, u32, u32) {
         let field = SmokeField::new(80, 60, 5, seed);
         let (width, height) = (160, 160);
         let mut pixels = vec![7; (width * height) as usize];
@@ -495,7 +460,6 @@ mod tests {
             },
             Plume {
                 field: &field,
-                snapshot,
                 tint: Color::rgba(20, 60, 200, 200),
                 gone,
             },
@@ -507,33 +471,26 @@ mod tests {
     #[test]
     fn nothing_is_drawn_at_either_end() {
         for gone in [0.0, 1.0] {
-            let (pixels, _, _) = painted(gone, 7, None);
+            let (pixels, _, _) = painted(gone, 7);
             assert!(pixels.iter().all(|pixel| *pixel == 0), "{gone}");
         }
     }
 
     #[test]
-    fn the_smoke_is_tinted_and_carries_the_snapshot() {
-        let snapshot = Snapshot::new(80, 60, vec![0xFFFF_0000; 80 * 60].into_boxed_slice());
-        let (pixels, _, _) = painted(0.5, 7, Some(&snapshot));
-        assert!(pixels.iter().any(|pixel| *pixel != 0), "smoke shows");
-        // The snapshot is red; the tint is blue. Both reach the plume.
-        assert!(
-            pixels
-                .iter()
-                .any(|pixel| (pixel >> 16) & 0xFF > 40 && (pixel >> 24) & 0xFF > 20),
-            "the contents' red survives"
-        );
-        let (pixels, _, _) = painted(0.5, 7, None);
-        assert!(
-            pixels.iter().any(|pixel| pixel & 0xFF > 40),
-            "the tint's blue bodies the smoke"
-        );
+    fn the_smoke_uses_the_spaces_tint() {
+        let (pixels, _, _) = painted(0.5, 7);
+        let densest = pixels
+            .iter()
+            .max_by_key(|pixel| *pixel >> 24)
+            .expect("smoke shows");
+        assert!(*densest >> 24 > 20, "smoke shows");
+        // The tint is blue, so the densest smoke is bluer than it is red.
+        assert!((*densest & 0xFF) > ((*densest >> 16) & 0xFF));
     }
 
     #[test]
     fn smoke_rises_past_the_frame_by_the_middle_of_the_play() {
-        let (pixels, width, _) = painted(0.5, 7, None);
+        let (pixels, width, _) = painted(0.5, 7);
         // The space's top is 60 px down in this overlay.
         let above = (0..60)
             .flat_map(|y| (0..width).map(move |x| (y * width + x) as usize))
@@ -543,16 +500,16 @@ mod tests {
 
     #[test]
     fn a_play_is_stable_and_its_seed_changes_the_smoke() {
-        let (first, _, _) = painted(0.5, 7, None);
-        let (again, _, _) = painted(0.5, 7, None);
+        let (first, _, _) = painted(0.5, 7);
+        let (again, _, _) = painted(0.5, 7);
         assert_eq!(first, again);
-        let (other, _, _) = painted(0.5, 8, None);
+        let (other, _, _) = painted(0.5, 8);
         assert_ne!(first, other);
     }
 
     #[test]
     fn every_smoke_pixel_stays_premultiplied() {
-        let (pixels, _, _) = painted(0.5, 7, None);
+        let (pixels, _, _) = painted(0.5, 7);
         for pixel in pixels {
             let alpha = pixel >> 24;
             for shift in [0, 8, 16] {

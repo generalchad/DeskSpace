@@ -3030,27 +3030,30 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Seed: `Play::seed` is set once when a play starts (`space_animation`
     mixes a counter with the clock), so each play and space differs while
     a reverse, which keeps the seed, retraces the same wisps.
-  - Snapshot: `render/d2d/snapshot.rs` renders the `PreparedScene` through
-    a WIC render target at the space's size once, at the start; the
-    overlay samples it through the plume so the title, items, and tint
-    are carried away. A failed snapshot is logged and the smoke falls back
-    to the tint.
+  - Contents: `render/d2d/contents.rs` renders the `PreparedScene`'s
+    title text and items through a WIC render target once, at the start;
+    `render/contents.rs` draws each as a crisp sprite that rides
+    `SmokeField::flow` and lands in its target, and
+    `TransitionFrame.contents` keeps the window from drawing them too.
+    A failed capture is logged and the window keeps its own contents.
   - Overlay: `win32/effect_overlay.rs` gains `Art::Smoke`: `smoke::paint`
     shades the plume into the DIB at 3 to 8 px cells and upsamples it
     bilinearly, tinted by the space; it only draws where the front has
-    reached, so the smoke starts low and climbs. Margins are 18 % of the
-    width and 50 % of the height, clamped.
+    reached, so the smoke starts low and climbs, then the contents sprites
+    are drawn over it. Margins are 18 % of the width and 50 % of the
+    height, clamped.
   - Tests: the field stays in range and is higher at the top than the
     bottom; the front covers everything at 0 and nothing at 1; sampling
     matches the cells; the same seed and progress draw the same smoke and
-    a different seed draws different smoke; the snapshot's red reaches a
-    blue tint's plume; pixels stay premultiplied; transition tests cover
-    the new mask.
+    a different seed draws different smoke; a sprite lands on its target
+    and is elsewhere before it lands; pixels stay premultiplied;
+    transition tests cover the new mask.
   - **[needs human]** check: Smoke on Startup (hide, show, a new space,
     startup, exit) and Delete, on Acrylic, Blur, Solid, and Clear at 100 %
     and 150 %: the space fades into tinted plumes that rise past its frame
-    with no box or blur around them; its title, icons, and labels visibly
-    drift into the smoke; Detail changes the number and scale of plumes;
+    with no box or blur around them; its title, icons, and labels ride the
+    current as crisp sprites and land in place; Detail changes the number
+    and scale of plumes;
     each play looks different, but reversing mid-way retraces the same
     smoke; a show condenses it back; no overlay is left after it ends,
     after a delete, or after quitting mid-way; a desktop-hosted space

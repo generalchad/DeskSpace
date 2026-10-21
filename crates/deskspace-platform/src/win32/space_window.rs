@@ -491,14 +491,6 @@ pub(crate) fn show_backing(hwnd: HWND, backing: Backing) {
     }
 }
 
-impl SpaceState {
-    /// The painter's frame for this window at `dpi`, for an effect that
-    /// renders the scene offscreen (Smoke's snapshot).
-    pub(super) fn paint_frame(&self, dpi: u32) -> PaintFrame {
-        self.frame.paint(dpi)
-    }
-}
-
 /// Who draws a space's corners, and how its window is clipped. The painter
 /// always draws the border (`dwm::BorderOwner::Painter`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -557,7 +549,7 @@ impl Frame {
     }
 
     /// What the painter draws, for a window at `dpi`.
-    pub(super) fn paint(&self, dpi: u32) -> PaintFrame {
+    fn paint(&self, dpi: u32) -> PaintFrame {
         let scale = scale_for(dpi);
         let radius = if self.dwm_radius > 0 {
             self.dwm_radius as f32 * scale

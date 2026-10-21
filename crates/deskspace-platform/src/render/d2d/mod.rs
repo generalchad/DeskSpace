@@ -10,17 +10,17 @@
 mod bitmap;
 mod canvas;
 mod color_picker;
+mod contents;
 mod edit;
 mod effects;
 mod geometry;
 mod graphics;
 mod item;
-mod snapshot;
 mod zoom_bar;
 
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
 pub(crate) use color_picker::ColorPickerPainter;
-pub(crate) use snapshot::capture as capture_snapshot;
+pub(crate) use contents::capture as capture_contents;
 pub(crate) use zoom_bar::ZoomBarPainter;
 
 use std::cell::RefCell;
@@ -265,6 +265,9 @@ impl Painter {
             brush: &brush,
         };
         let scene = &prepared.scene;
+        // Smoke draws the title and items on its overlay, so they can fly in
+        // and land; every other effect leaves them in the window.
+        let contents = transition.is_none_or(|transition| transition.contents);
         // The space is drawn whole even while the window around it is smaller
         // (a roll crops it, a fly clips it at the screen's edge).
         let size = match transition {
@@ -327,7 +330,7 @@ impl Painter {
                                 D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
                                 Some(source),
                             ),
-                            None => self.draw_scene(ctx, prepared, frame, size),
+                            None => self.draw_scene(ctx, prepared, frame, size, contents),
                         }
                     });
                     let whole = rect_f(0.0, 0.0, size.0, size.1);
@@ -346,7 +349,7 @@ impl Painter {
                         target.FillRectangle(&whole, &brush);
                     }
                 }
-                _ => self.draw_scene(ctx, prepared, frame, size),
+                _ => self.draw_scene(ctx, prepared, frame, size, contents),
             }
         }
         self.canvas.end()?;
@@ -416,7 +419,7 @@ impl Painter {
                 M31: 0.0,
                 M32: 0.0,
             });
-            self.draw_scene(ctx, prepared, frame, size);
+            self.draw_scene(ctx, prepared, frame, size, true);
             offscreen.SetTransform(&Matrix3x2::identity());
             offscreen.EndDraw(None, None)?;
             Ok((offscreen.GetBitmap()?, source))
@@ -436,6 +439,7 @@ impl Painter {
         prepared: &PreparedScene,
         frame: PaintFrame,
         (width, height): (f32, f32),
+        contents: bool,
     ) {
         let DrawContext { target, brush, .. } = ctx;
         let scene = &prepared.scene;
@@ -458,13 +462,15 @@ impl Painter {
                 );
                 fill_rounded(target, brush, whole, radius, scene.title_fill);
                 target.PopAxisAlignedClip();
-                self.draw_title(ctx, prepared, width, title_height);
+                if contents {
+                    self.draw_title(ctx, prepared, width, title_height);
+                }
             }
 
             // A chrome-less layer (the desktop layer) draws its items from the
             // top; a space leaves room for the title bar.
             let content_top = if scene.chrome { title_height } else { 0.0 };
-            if !scene.folded && height > content_top {
+            if contents && !scene.folded && height > content_top {
                 target.PushAxisAlignedClip(
                     &rect_f(0.0, content_top, width, height),
                     D2D1_ANTIALIAS_MODE_ALIASED,
@@ -534,7 +540,7 @@ impl Painter {
         }
     }
 
-    unsafe fn draw_title(
+    pub(super) unsafe fn draw_title(
         &self,
         ctx: DrawContext,
         prepared: &PreparedScene,
@@ -578,7 +584,7 @@ impl Painter {
         }
     }
 
-    unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
+    pub(super) unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
         let scene = &prepared.scene;
         let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
         for (item, label) in scene.items.iter().zip(&prepared.labels) {

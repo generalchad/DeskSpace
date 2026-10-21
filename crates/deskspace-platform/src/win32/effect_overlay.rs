@@ -26,9 +26,9 @@ use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{self, BurnField, FlameBase};
 use crate::render::burn_smoke;
+use crate::render::contents::{self, Contents};
 use crate::render::flames::{self, Tongue};
 use crate::render::smoke::{self, Scratch, SmokeField};
-use crate::render::snapshot::Snapshot;
 use crate::render::{Mask, Play, TransitionFrame};
 use crate::win32::window_class::{self, WindowClass};
 
@@ -52,10 +52,11 @@ enum Art {
     Smoke(SmokeArt),
 }
 
-/// The smoke's field, the space it carries, and the scratch it paints into.
+/// The smoke's field, the contents that fly on it, and the scratch it paints
+/// into.
 struct SmokeArt {
     field: SmokeField,
-    snapshot: Option<Snapshot>,
+    contents: Option<Contents>,
     tint: Color,
     scratch: Scratch,
 }
@@ -84,7 +85,7 @@ impl EffectOverlay {
         rect: Rect,
         play: &Play,
         tint: Color,
-        snapshot: Option<Snapshot>,
+        contents: Option<Contents>,
     ) -> Option<Self> {
         let (margins, art) = match play.effect {
             Effect::Burn => {
@@ -116,7 +117,7 @@ impl EffectOverlay {
                 );
                 let smoke = SmokeArt {
                     field,
-                    snapshot,
+                    contents,
                     tint,
                     scratch: Scratch::default(),
                 };
@@ -166,19 +167,31 @@ impl EffectOverlay {
             (Art::Smoke(state), Mask::Smoke { .. }) => {
                 smoke::paint(
                     smoke::Canvas {
-                        pixels,
+                        pixels: &mut *pixels,
                         width,
                         height,
                         origin,
                     },
                     smoke::Plume {
                         field: &state.field,
-                        snapshot: state.snapshot.as_ref(),
                         tint: state.tint,
                         gone: 1.0 - frame.shown,
                     },
                     &mut state.scratch,
                 );
+                if let Some(contents) = &state.contents {
+                    contents::paint(
+                        smoke::Canvas {
+                            pixels: &mut *pixels,
+                            width,
+                            height,
+                            origin,
+                        },
+                        contents,
+                        &state.field,
+                        frame.shown,
+                    );
+                }
             }
             _ => return,
         }

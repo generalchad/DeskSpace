@@ -886,11 +886,13 @@ one arm in `App::on_event`, whose match is exhaustive.
 - Smoke is `render/smoke.rs`, pure: seeded columns of tinted smoke are
   thickest at the bottom, and a front sweeps the window away along a
   ragged edge while the overlay draws only where the front has reached,
-  so the plume starts low and climbs. The overlay samples the space's
-  start snapshot (`render/snapshot.rs`, rendered offscreen by
-  `d2d/snapshot.rs`), so its contents drift away with the smoke. `Play`'s
-  seed is set when the play starts, so every play and every space differs
-  while a reversal retraces the same wisps.
+  so the plume starts low and climbs. The smoke is only the tinted body.
+  The title text and items are rendered apart (`render/contents.rs`,
+  `d2d/contents.rs`) and ride the same current as sprites, then land in
+  their places; while they fly, `TransitionFrame.contents` keeps the
+  window from drawing them too. `Play`'s seed is set when the play starts,
+  so every play and every space differs while a reversal retraces the same
+  wisps.
 - The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
   `WS_POPUP` with the space material (`dwm::apply_style` from the global
   look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so

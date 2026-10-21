@@ -20,11 +20,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, ShowWindow,
 };
 
-use crate::render::d2d::capture_snapshot;
-use crate::render::snapshot::Snapshot;
+use crate::render::contents::Contents;
+use crate::render::d2d::capture_contents;
 use crate::render::{Geometry, Play, PreparedScene, Transition, TransitionFrame, Way};
 use crate::win32::debug_info::transparency_enabled;
-use crate::win32::dpi::window_dpi;
 use crate::win32::effect_overlay::EffectOverlay;
 use crate::win32::runtime;
 use crate::win32::space_window::{
@@ -63,6 +62,9 @@ pub(crate) struct Animation {
     /// What the effect draws beside the space, on its own window above it
     /// (Burn's flames).
     overlay: Option<EffectOverlay>,
+    /// Whether the window itself draws the title and items; Smoke hides them
+    /// and flies them in on its overlay instead.
+    contents: bool,
     /// What plays once a hide ends, bringing the window back: the debug
     /// window's preview (`preview`).
     then: Option<Play>,
@@ -357,18 +359,23 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
         ..play
     };
     let transition = Transition::new(play, geometry, now);
-    let frame = transition.frame(now);
     // A window waiting its turn (startup's stagger) stays as it is, hidden,
     // so not even its blur shows early.
     let waiting = transition.is_waiting(now);
     // SAFETY: the caller's contract.
-    let (tint, snapshot) = if play.effect == Effect::Smoke {
+    let (tint, contents) = if play.effect == Effect::Smoke {
         // SAFETY: the caller's contract.
         unsafe { capture(window, geometry.rect) }
     } else {
         (Color::TRANSPARENT, None)
     };
-    let overlay = EffectOverlay::create(window, geometry.rect, &play, tint, snapshot);
+    let has_contents = contents.is_some();
+    let overlay = EffectOverlay::create(window, geometry.rect, &play, tint, contents);
+    // Without an overlay (a desktop-hosted space, or a failed window) the
+    // window keeps its own contents and the smoke mask fades them.
+    let show_contents = play.effect != Effect::Smoke || overlay.is_none() || !has_contents;
+    let mut frame = transition.frame(now);
+    frame.contents = show_contents;
     let flat_material = transparency_enabled() == Some(false);
     // SAFETY: the caller's contract; the borrow does not re-enter.
     unsafe {
@@ -380,6 +387,7 @@ unsafe fn start(window: HWND, play: Play, geometry: Geometry, purpose: Purpose) 
                 frame,
                 deferred: None,
                 overlay,
+                contents: show_contents,
                 then: None,
                 flat_material,
             });
@@ -401,42 +409,27 @@ fn next_seed(now: Duration) -> u32 {
     count ^ nanos ^ ((now.as_nanos() >> 32) as u32)
 }
 
-/// The scene's tint and a snapshot of it at `rect`, for an effect that pulls
-/// the contents apart. The scene is taken out of the state while it renders
-/// and put back, so no borrow spans the drawing.
-unsafe fn capture(window: HWND, rect: Rect) -> (Color, Option<Snapshot>) {
+/// The scene's tint and its title and items as sprites at `rect`, for Smoke
+/// to fly in. The scene is taken out of the state while it renders and put
+/// back, so no borrow spans the drawing.
+unsafe fn capture(window: HWND, rect: Rect) -> (Color, Option<Contents>) {
     if rect.is_empty() {
         return (Color::TRANSPARENT, None);
     }
     // SAFETY: the caller's contract; the borrow ends before rendering.
-    let Some((scene, frame)) = (unsafe {
-        with_state(window, |state| {
-            (state.scene.take(), state.paint_frame(window_dpi(window)))
-        })
-    }) else {
+    let Some(Some(scene)) = (unsafe { with_state(window, |state| state.scene.take()) }) else {
         return (Color::TRANSPARENT, None);
     };
-    let tint = scene
-        .as_ref()
-        .map_or(Color::TRANSPARENT, |scene| scene.scene().tint);
-    let snapshot = scene.as_ref().and_then(|scene| {
-        capture_snapshot(
-            scene,
-            frame,
-            rect.width.max(1) as u32,
-            rect.height.max(1) as u32,
-        )
-    });
+    let tint = scene.scene().tint;
+    let contents = capture_contents(&scene, rect.width.max(1) as u32, rect.height.max(1) as u32);
     // SAFETY: as above.
     unsafe {
-        with_state(window, |state| state.scene = scene);
+        with_state(window, |state| state.scene = Some(scene));
     }
-    if snapshot.is_none() {
-        tracing::warn!(
-            "the smoke snapshot could not be rendered; the smoke will not carry the contents"
-        );
+    if contents.is_none() {
+        tracing::warn!("the smoke contents could not be rendered; the window will keep its own");
     }
-    (tint, snapshot)
+    (tint, contents)
 }
 
 /// Draws `frame`'s overlay, if this animation has one. The overlay is taken
@@ -477,6 +470,7 @@ pub(crate) unsafe fn on_timer(window: HWND) {
         with_state(window, |state| {
             let animation = state.animation.as_mut()?;
             animation.frame = animation.transition.frame(now);
+            animation.frame.contents = animation.contents;
             Some((
                 animation.frame,
                 animation.transition.is_done(now),
@@ -495,6 +489,12 @@ pub(crate) unsafe fn on_timer(window: HWND) {
     // SAFETY: the caller's contract.
     unsafe {
         if done {
+            // Paint the final frame too: Smoke's sprites land exactly where
+            // the window's own contents take over.
+            if !waiting {
+                apply(window, frame, flat_material);
+                draw_overlay(window, frame, now);
+            }
             finish(window);
         } else if !waiting {
             apply(window, frame, flat_material);

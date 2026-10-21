@@ -323,9 +323,10 @@ A native, lightweight, offline Windows desktop organizer that:
     toggle, on by default, gives it a neutral gray plume behind the
     flames), and Smoke (amended 2026-10-20, maintainer: the space
     sublimates into plumes of its own tint that rise from a few seeded
-    sources along its lower edge, fading the window where they pass and
-    carrying its contents away with them; a show condenses the smoke into
-    the space, and the smoke rises past the frame, so it uses Burn's
+    sources along its lower edge, fading the window where they pass, while
+    its text and icons ride the same current as separate sprites and land
+    in their places; a show condenses the smoke and flies the contents in,
+    and the smoke rises past the frame, so it uses Burn's
     overlay; each play is seeded when it starts, so it never looks the
     same twice while a reversal still retraces the same wisps). Black
     hole (the space swallowed by a hole that opens on the desktop) is
