@@ -8,10 +8,10 @@ use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui,
-    WatchKey, Way, arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
-    foreground_window, hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons,
-    space_dpi, system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
+    arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
+    hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
 };
 
@@ -414,16 +414,6 @@ impl App {
         );
     }
 
-    /// Starts (or resumes) watching the user's Desktop folder so the layer
-    /// follows files added, removed, or renamed outside DeskSpace. A no-op once
-    /// the same folder is already watched.
-    pub(super) fn watch_desktop_folder(&mut self, ui: &mut Ui) {
-        match desktop_directory() {
-            Ok(directory) => ui.watch_folder(WatchKey::Desktop, &directory),
-            Err(error) => tracing::warn!(%error, "could not resolve the Desktop folder to watch"),
-        }
-    }
-
     /// The window style for the desktop layer (chrome-less, transparent).
     pub(super) fn layer_style(&self) -> SpaceStyle {
         layer_style(&self.config.theme, self.system.dark())
@@ -506,13 +496,10 @@ impl App {
     /// until the layer is up, so a failure never leaves the desktop blank.
     pub(super) fn apply_takeover(&mut self, ui: &mut Ui) {
         let takeover = self.desktop_takeover();
-        // Follow the Desktop folder while the layer is drawn, so a file added
-        // or removed outside DeskSpace reaches the layer (I8).
-        if self.layer_active() {
-            self.watch_desktop_folder(ui);
-        } else {
-            ui.unwatch_folder(WatchKey::Desktop);
-        }
+        // Follow the Desktop folder while the layer is drawn, and every
+        // lens's folder, so files added or removed outside DeskSpace reach
+        // what DeskSpace draws (I8, M4 phase 2).
+        self.sync_watches(ui);
         let layer_up = self.sync_desktop_layer(ui);
         if takeover && layer_up {
             // Tests must not hide the developer's real desktop.

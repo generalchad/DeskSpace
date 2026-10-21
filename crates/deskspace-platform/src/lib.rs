@@ -10,8 +10,8 @@ pub use debug_console::format_line;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
-    ClipboardAction, DebugEvent, DropAction, Event, MouseButton, NavDir, NavKey, SelectionKey,
-    SettingsEvent, ShellItem, SpaceEvent, TrayEvent, WatchKey, ZoomAction,
+    ClipboardAction, DebugEvent, DropAction, Event, FolderListing, MouseButton, NavDir, NavKey,
+    SelectionKey, SettingsEvent, ShellItem, SpaceEvent, TrayEvent, WatchKey, ZoomAction,
 };
 pub use render::{
     Geometry, ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, Mask, Play, SpaceScene,

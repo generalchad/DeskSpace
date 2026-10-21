@@ -26,6 +26,22 @@ pub fn create_space(desktop: &mut Desktop, title: &str, rect: Rect) -> SpaceId {
     id
 }
 
+/// Creates an unlocked lens on `path` at `rect` and returns its id.
+pub fn create_lens(desktop: &mut Desktop, title: &str, rect: Rect, path: &str) -> SpaceId {
+    let id = desktop.next_space_id();
+    apply(
+        desktop,
+        Command::CreateLens {
+            title: title.to_owned(),
+            at: rect.origin(),
+            size: rect.size(),
+            path: path.into(),
+            locked: false,
+        },
+    );
+    id
+}
+
 /// Lists `path` in `space`, laid out on the grid, and returns the item's id.
 pub fn add_item(desktop: &mut Desktop, space: SpaceId, path: &str) -> ItemId {
     let id = desktop.next_item_id();

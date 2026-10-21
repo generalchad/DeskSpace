@@ -47,6 +47,19 @@ impl Ui {
         });
     }
 
+    /// The folder watches the app has now, so it can bring them in line with
+    /// the model (`App::sync_watches`).
+    pub fn watched_folders(&self) -> Vec<WatchKey> {
+        with_runtime(|runtime| {
+            runtime
+                .folder_watches
+                .as_ref()
+                .map(folder_watch::FolderWatch::watched_keys)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
+    }
+
     /// Arms a timer that delivers `Event::Timer` with `id` every `millis`
     /// milliseconds until it is cleared. Calling it again with the same id
     /// restarts it, which is how a caller debounces a burst of changes; clear

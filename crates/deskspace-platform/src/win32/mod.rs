@@ -23,6 +23,7 @@ mod drop_target;
 mod dwm;
 mod file_op;
 mod flame_overlay;
+mod folder_list;
 mod folder_watch;
 pub(crate) mod hotkey;
 pub(crate) mod icons;

@@ -908,7 +908,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
-| F-07 | Lenses (folder portals) | M4 | Partial: core model only (M4 phase 1); platform watcher, menus, and settings open |
+| F-07 | Lenses (folder portals) | M4 | Partial: core model and live folder listing (M4 phases 1-2, W1-W2); menus and settings open |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
 | F-10 | Hide all on desktop double-click | M5 | Open |

@@ -160,11 +160,12 @@ folded; corners twice as wide as edges), item lookup/insert/remove, and
 is the default and holds the space's own items, as before. `SpaceSource::Folder`
 makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path and the
 view settings, and `FolderEntry` is what the platform reads from the folder.
-A lens's items are a live cache: `Command::SyncLens` filters hidden entries,
-sorts naturally, and reconciles by path so an `ItemId` survives a refresh.
-They are never written to the config, and `Config::migrate` drops any a
-hand-edited file lists. `AddItem` and `MoveItem` into a lens are `Rejected`;
-file changes there are shell operations.
+A lens's items are a live cache: the watch worker lists the folder and posts
+`Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
+filters hidden entries, sorts naturally, and reconciles by path so an `ItemId`
+survives a refresh. They are never written to the config, and `Config::migrate`
+drops any a hand-edited file lists. `AddItem` and `MoveItem` into a lens are
+`Rejected`; file changes there are shell operations.
 
 ### Desktop and desktop layer
 
@@ -960,13 +961,19 @@ in `ui.rs`. What spans them:
 - `folder_watch.rs` watches folders off the UI thread with one worker for
   every watch, on an I/O completion port. A watch is keyed by `WatchKey`
   (`Desktop`, or a lens's `Space(id)`); `ReadDirectoryChangesW` reports into
-  the port, and changes are debounced per folder by up to 150 ms (the pure
-  `Coalescer`) so a multi-file copy wakes the app once. `Ui::watch_folder(key,
-  path)` adds or replaces that key's watch (idempotent for the same path) and
+  the port, and the worker lists the folder itself with `folder_list.rs`, so
+  the UI thread does no IO. Changes are debounced per folder by up to 150 ms
+  (the pure `Coalescer`) so a multi-file copy wakes the app once. A folder
+  that is missing or cannot be read posts `FolderListing::Unavailable` and is
+  tried again every 5 s on the worker. An open folder's path is checked on the
+  same cadence: renaming a watched folder moves its handle with it, so the
+  pending read may never fail. `Ui::watch_folder(key, path)` adds or
+  replaces that key's watch (idempotent for the same path) and
   `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
-  watch's slot in `wParam`, and the controller raises `Event::FolderChanged {
-  key }`. M2 watches the Desktop folder while the layer is drawn (a change
-  makes the app re-enumerate and `SyncDesktop`); M4 phase 2 reuses it for a
+  watch's slot in `wParam`; the worker leaves the listing in a shared slot,
+  and the controller raises `Event::FolderChanged { key, listing }`. M2
+  watches the Desktop folder while the layer is drawn (a change makes the app
+  re-enumerate and `SyncDesktop`) and ignores the listing; M4 uses it for a
   lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
   `0x052C` spawn trick) for hosted placements.
@@ -1334,11 +1341,12 @@ section numbers stable.
 - **Placement is fixed for a run.** Only `--placement` chooses it; there is no
   live switch, because recreating every space window would drop the blur.
   Top-level, the default, is the only placement with blur.
-- **The icon cache is invalidated only after shell menu commands and
-  renames.** Its key includes the pixel and overlay size, so an icon-size or
-  DPI change reloads, but a Desktop-folder change (`FolderChanged`) re-syncs
-  the layer without invalidating icons, so a file whose icon changed in place
-  keeps the old one. Lens watchers will need to invalidate.
+- **The icon cache is invalidated only after shell menu commands, renames, and
+  a lens listing.** Its key includes the pixel and overlay size, so an
+  icon-size or DPI change reloads, but a Desktop-folder change
+  (`FolderChanged`) re-syncs the layer without invalidating icons, so a file
+  whose icon changed in place keeps the old one. A lens listing invalidates
+  every entry whose `modified` changed.
 - **The scroll indicator is display-only.** Spaces scroll with the wheel,
   Home/End/PageUp/PageDown, and by keeping a keyboard-selected item in view,
   but the indicator cannot be dragged, and wheel events need Windows' "scroll

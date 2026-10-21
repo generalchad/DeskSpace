@@ -40,7 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 use crate::error::PlatformError;
-use crate::input::{Event, ShellItem, WatchKey};
+use crate::input::{Event, FolderListing, ShellItem, WatchKey};
 use crate::render::{Play, SpaceScene, SpaceStyle, d2d};
 use crate::ui::{CursorShape, DebugPanel, MenuEntry, SettingsForm};
 use crate::win32::clipboard::ClipboardFiles;
@@ -205,13 +205,14 @@ pub(crate) fn desktop_layer_window() -> Option<HWND> {
     with_runtime(|runtime| runtime.layer).flatten()
 }
 
-/// The app-level key for the folder watch on `slot`, if it is still watched.
-pub(crate) fn folder_watch_key(slot: usize) -> Option<WatchKey> {
+/// The key and listing for the folder watch on `slot`, if it is still
+/// watched.
+pub(crate) fn folder_change(slot: usize) -> Option<(WatchKey, FolderListing)> {
     with_runtime(|runtime| {
         runtime
             .folder_watches
             .as_ref()
-            .and_then(|watches| watches.key_for_slot(slot))
+            .and_then(|watches| watches.change_for_slot(slot))
     })
     .flatten()
 }

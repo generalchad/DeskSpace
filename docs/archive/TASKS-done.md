@@ -3036,3 +3036,57 @@ until I5-I6 all land, so no partial build hides the desktop.
     timeout wins; removing an unknown key changes nothing.
   - Done when: the gates pass and the desktop layer behaves exactly as
     before. **[needs human]**: the I8 check in section V again.
+
+- [x] **W2. Lenses follow their folders (platform, app).**
+  - Why: after W1 the app hears "this folder changed". Now the worker also
+    reads the folder, and the app shows what it read.
+  - New file `win32/folder_list.rs` with
+    `list_folder(path) -> Result<Vec<FolderEntry>, PlatformError>`.
+    - Call `FindFirstFileExW` with `FindExInfoBasic` and
+      `FIND_FIRST_EX_LARGE_FETCH` (the fast settings), then `FindNextFileW`
+      until there are no more files, and always `FindClose`. Skip the `.`
+      and `..` entries.
+    - Put the conversion in a pure function, `entry_from(name,
+      attributes, size, last_write)`, and test it. It sets `kind` with
+      `ItemKind::classify`, and `hidden` when the file has
+      `FILE_ATTRIBUTE_HIDDEN` or `FILE_ATTRIBUTE_SYSTEM`. `size` is `None`
+      for folders. `modified` is in seconds since 1970; a `FILETIME`
+      counts 100 ns steps since 1601. `label` stays empty, which shows the
+      file name without its extension, as normal spaces do.
+  - The worker calls `list_folder` once when a watch starts and after each
+    debounced burst. The event becomes
+    `Event::FolderChanged { key, listing: FolderListing }`, where
+    `FolderListing` is `Listed(Vec<FolderEntry>)` or `Unavailable`. A list
+    does not fit in a message's two numbers, so the worker leaves it in a
+    shared slot (an `Arc<Mutex<..>>` per watch) and the UI thread takes it
+    when the message arrives.
+  - `Unavailable` covers a folder that does not exist, cannot be opened,
+    or disappears while watched (its read then fails). The worker tries
+    that folder again every `RETRY_MS` (5 s, a named constant). The app
+    sets no timer for it.
+  - The Desktop watch ignores its listing. The desktop layer also needs
+    each icon's position, and only the shell knows those.
+  - App: a new method, `App::sync_watches`. It builds the set of watches
+    the model wants: the Desktop while `layer_active()`, and each lens as
+    `(WatchKey::Space(id), its folder)`. It compares that with what is
+    watched now and calls `watch_folder` or `unwatch_folder` for each
+    difference. Call it at startup and in place of each direct
+    `watch_desktop_folder` or `unwatch_folder` call, then delete those
+    calls. W6 and W7 call it too. Test the set it builds, with a model
+    built by `fixtures.rs`.
+  - App, the event: `Listed(entries)` dispatches
+    `Command::SyncLens { id, entries }` and refreshes that space.
+    `Unavailable` dispatches `SyncLens` with no entries and adds the id to
+    a new session field, `unavailable_lenses: HashSet<SpaceId>`, which W5
+    draws. `Listed` removes the id again. A key whose space no longer
+    exists is ignored.
+  - Icons: the icon cache keeps an icon until it is told to drop it
+    (`CONTEXT.md`, "The icon cache is invalidated only after..."). Before
+    the sync, compare each entry's `modified` with its item's, and
+    invalidate the icon of every one that changed. Then update that
+    `CONTEXT.md` note.
+  - Done when: the gates pass, and `CONTEXT.md` describes the watch and
+    the listing. **[needs human]**: with the hand-made lens, create,
+    rename, and delete files in its folder in Explorer; the lens follows
+    within about 150 ms. Rename the folder away: the lens empties. Rename
+    it back: it fills again within 5 s.

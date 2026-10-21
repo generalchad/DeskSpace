@@ -2,10 +2,12 @@
 //! when its contents change instead of polling.
 //!
 //! `ReadDirectoryChangesW` runs with overlapped I/O on one worker thread that
-//! serves every watch through an I/O completion port. A burst of changes (a
-//! copy, an extract, an Explorer move) is debounced per folder into a single
-//! posted message, so the app restyles once rather than once per file. M2 uses
-//! this for the Desktop folder; M4 phase 2 uses it for every lens's folder.
+//! serves every watch through an I/O completion port. The worker also lists
+//! each folder, so a burst costs the UI thread nothing but a repaint. A burst
+//! of changes (a copy, an extract, an Explorer move) is debounced per folder
+//! into a single posted listing, so the app restyles once rather than once per
+//! file. M2 uses this for the Desktop folder; M4 phase 2 uses it for every
+//! lens's folder.
 //! https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
 
 use std::collections::HashMap;
@@ -33,13 +35,23 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use windows::core::{HRESULT, PCWSTR};
 
 use crate::error::PlatformError;
-use crate::input::WatchKey;
+use crate::input::{FolderListing, WatchKey};
+use crate::win32::folder_list::list_folder;
 use crate::win32::system::wide;
 
 /// How long a change waits for the burst to settle before the app is woken.
 /// Long enough to fold a multi-file copy into one wake, short enough that the
 /// desktop layer still follows promptly.
 const DEBOUNCE_MS: u64 = 150;
+
+/// How often the worker tries a folder that is missing or cannot be read.
+/// The app sets no timer for it; the worker owns the retry.
+const RETRY_MS: u64 = 5_000;
+
+/// How often the worker checks that an open watch's path still names a folder.
+/// Renaming a watched folder moves its handle with it, so the pending read may
+/// never fail and the lens would keep the old items.
+const CHECK_MS: u64 = 5_000;
 
 /// The change notifications the watch reports: files and folders added,
 /// removed, or renamed, and attribute changes such as a hidden flag.
@@ -59,19 +71,36 @@ const REMOVE_KEY: usize = 1;
 const STOP_KEY: usize = 2;
 const FIRST_SLOT: usize = 3;
 
+/// Folder reads also start above the control keys. A fresh key per open keeps
+/// a canceled read's late packet from being taken for the next read's.
+const FIRST_READ_KEY: usize = 3;
+
+/// The listing a worker left for the UI thread, which takes it when the
+/// posted change arrives.
+type SharedListing = Arc<Mutex<Option<FolderListing>>>;
+
 /// The watches and the worker that serves them. Dropping it stops the worker
 /// and joins it.
 pub(crate) struct FolderWatch {
     port: HANDLE,
     thread: Option<JoinHandle<()>>,
-    /// The paths for add packets the worker has not handled yet, by slot.
-    additions: Arc<Mutex<HashMap<usize, PathBuf>>>,
+    /// The paths and listings for add packets the worker has not handled yet,
+    /// by slot.
+    additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
     /// The slot and path behind each app-level key.
     active: HashMap<WatchKey, ActiveWatch>,
     /// The app-level key behind each slot, to decode a posted change.
     slots: HashMap<usize, WatchKey>,
+    /// The listing slot the worker fills before posting a change.
+    listings: HashMap<usize, SharedListing>,
     next_slot: usize,
     port_closed: bool,
+}
+
+/// A watch the UI has added but the worker has not opened yet.
+struct PendingWatch {
+    path: PathBuf,
+    listing: SharedListing,
 }
 
 /// One key's watch, as the UI thread remembers it.
@@ -81,8 +110,8 @@ struct ActiveWatch {
 }
 
 impl FolderWatch {
-    /// Starts the worker that serves every folder watch. Each debounced change
-    /// posts `message` with the folder's slot in `wParam` to `target`.
+    /// Starts the worker that serves every folder watch. Each change posts
+    /// `message` with the folder's slot in `wParam` to `target`.
     pub(crate) fn start(target: HWND, message: u32) -> Result<Self, PlatformError> {
         // SAFETY: creates a completion port with no file handle; it is closed
         // in `stop`, after the worker that waits on it has finished.
@@ -102,8 +131,11 @@ impl FolderWatch {
                     message,
                     additions: pending,
                     folders: HashMap::new(),
+                    by_read: HashMap::new(),
+                    next_read_key: FIRST_READ_KEY,
                     bursts: Bursts::default(),
                     start: Instant::now(),
+                    next_check: CHECK_MS,
                 };
                 if let Err(error) = worker.run() {
                     tracing::debug!(%error, "folder watch stopped");
@@ -116,6 +148,7 @@ impl FolderWatch {
                 additions,
                 active: HashMap::new(),
                 slots: HashMap::new(),
+                listings: HashMap::new(),
                 next_slot: FIRST_SLOT,
                 port_closed: false,
             }),
@@ -140,17 +173,7 @@ impl FolderWatch {
         }
         let slot = self.next_slot;
         self.next_slot += 1;
-        self.additions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(slot, path.to_path_buf());
-        if let Err(error) = self.post(ADD_KEY, slot) {
-            self.additions
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&slot);
-            return Err(error.into());
-        }
+        let listing: SharedListing = Arc::new(Mutex::new(None));
         self.active.insert(
             key,
             ActiveWatch {
@@ -159,6 +182,21 @@ impl FolderWatch {
             },
         );
         self.slots.insert(slot, key);
+        self.listings.insert(slot, Arc::clone(&listing));
+        self.additions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
+                slot,
+                PendingWatch {
+                    path: path.to_path_buf(),
+                    listing,
+                },
+            );
+        if let Err(error) = self.post(ADD_KEY, slot) {
+            self.forget(key, slot);
+            return Err(error.into());
+        }
         Ok(())
     }
 
@@ -168,14 +206,38 @@ impl FolderWatch {
             return;
         };
         self.slots.remove(&active.slot);
+        self.listings.remove(&active.slot);
         if let Err(error) = self.post(REMOVE_KEY, active.slot) {
             tracing::warn!(%error, "could not remove a folder watch");
         }
     }
 
-    /// The app-level key behind `slot`, if it is still watched.
-    pub(crate) fn key_for_slot(&self, slot: usize) -> Option<WatchKey> {
-        self.slots.get(&slot).copied()
+    /// The key and listing behind `slot`, taking the listing the worker left.
+    pub(crate) fn change_for_slot(&self, slot: usize) -> Option<(WatchKey, FolderListing)> {
+        let key = *self.slots.get(&slot)?;
+        let listing = self
+            .listings
+            .get(&slot)?
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()?;
+        Some((key, listing))
+    }
+
+    /// The keys the app is watching now.
+    pub(crate) fn watched_keys(&self) -> Vec<WatchKey> {
+        self.active.keys().copied().collect()
+    }
+
+    /// Forgets an add that never reached the worker.
+    fn forget(&mut self, key: WatchKey, slot: usize) {
+        self.active.remove(&key);
+        self.slots.remove(&slot);
+        self.listings.remove(&slot);
+        self.additions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&slot);
     }
 
     /// Posts a control packet. The slot travels in the packet's byte count,
@@ -216,16 +278,22 @@ impl Drop for FolderWatch {
     }
 }
 
-/// The worker: one completion port for every folder, and a debounce clock per
-/// folder.
+/// The worker: one completion port for every folder, a debounce clock per
+/// folder, and a retry clock for folders that are missing.
 struct Worker {
     port: HANDLE,
     target: HWND,
     message: u32,
-    additions: Arc<Mutex<HashMap<usize, PathBuf>>>,
+    additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
     folders: HashMap<usize, Box<Folder>>,
+    /// The slot behind each open read's completion key.
+    by_read: HashMap<usize, usize>,
+    next_read_key: usize,
     bursts: Bursts,
     start: Instant,
+    /// When an open watch's path is checked again, in milliseconds since
+    /// `start`.
+    next_check: u64,
 }
 
 impl Worker {
@@ -237,7 +305,12 @@ impl Worker {
 
     fn watch(&mut self) -> Result<(), PlatformError> {
         loop {
-            let timeout = self.bursts.wait_ms(millis(self.start));
+            let now = millis(self.start);
+            let timeout = self
+                .bursts
+                .wait_ms(now)
+                .min(self.retry_wait(now))
+                .min(self.check_wait(now));
             let mut transferred = 0u32;
             let mut key = 0usize;
             let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
@@ -260,76 +333,289 @@ impl Worker {
                 // Any other key is a folder's slot, registered with the port
                 // when the folder's first read started.
                 Ok(()) => self.completed(key, now),
-                Err(error) if is_timeout(&error) => self.post_due(now),
+                Err(error) if is_timeout(&error) => {}
                 Err(error) => return Err(error.into()),
             }
+            self.post_due(now);
+            self.retry_due(now);
+            self.check_paths(now);
         }
     }
 
-    /// Opens a newly added folder and starts its first read.
+    /// Opens a newly added folder and posts its first listing.
     fn add(&mut self, slot: usize) {
-        let path = self
+        let pending = self
             .additions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&slot);
-        let Some(path) = path else {
+        let Some(PendingWatch { path, listing }) = pending else {
             tracing::warn!(slot, "folder watch add had no path");
             return;
         };
-        match open_folder(&path, self.port, slot) {
-            Ok(folder) => {
-                self.bursts.add(slot);
-                self.folders.insert(slot, folder);
+        let mut folder = Box::new(Folder {
+            path,
+            listing,
+            open: None,
+            retry_at: None,
+        });
+        let now = millis(self.start);
+        let read_key = self.next_read_key;
+        self.next_read_key += 1;
+        let listing = match folder.open(self.port, read_key) {
+            Ok(()) => {
+                self.by_read.insert(read_key, slot);
+                folder.list()
             }
             Err(error) => {
-                tracing::warn!(%error, path = %path.display(), "could not watch the folder");
+                tracing::warn!(
+                    %error,
+                    path = %folder.path.display(),
+                    "could not open the folder; retrying"
+                );
+                FolderListing::Unavailable
             }
+        };
+        if matches!(listing, FolderListing::Listed(_)) {
+            folder.retry_at = None;
+        } else {
+            // A listing that failed leaves the old handle watching a folder
+            // that may be gone; reopen it on the retry to follow a rename back.
+            if let Some(key) = folder.close_open() {
+                self.by_read.remove(&key);
+            }
+            folder.retry_at = Some(now + RETRY_MS);
         }
+        self.folders.insert(slot, folder);
+        self.bursts.add(slot);
+        self.publish(slot, listing);
     }
 
     /// Stops one folder's watch, canceling its pending read before the handle
     /// and buffer are freed.
     fn remove(&mut self, slot: usize) {
         self.bursts.remove(slot);
-        if let Some(folder) = self.folders.remove(&slot) {
-            folder.close();
+        let closed = self.folders.remove(&slot).and_then(|folder| folder.close());
+        if let Some(key) = closed {
+            self.by_read.remove(&key);
         }
     }
 
     /// One folder's read finished: start the next read and extend its burst.
-    fn completed(&mut self, slot: usize, now_ms: u64) {
-        let Some(folder) = self.folders.get_mut(&slot) else {
+    /// A failed read means the folder is gone; empty the lens and retry.
+    fn completed(&mut self, read_key: usize, now_ms: u64) {
+        let Some(&slot) = self.by_read.get(&read_key) else {
             return;
         };
-        if !folder.pending {
-            return;
-        }
-        folder.pending = false;
-        self.bursts.mark(slot, now_ms);
-        if let Err(error) = folder.read_changes() {
-            tracing::debug!(
-                %error,
-                path = %folder.path.display(),
-                "folder watch stopped for this folder"
-            );
+        let failed = {
+            let Some(folder) = self.folders.get_mut(&slot) else {
+                return;
+            };
+            let Some(open) = folder.open.as_mut() else {
+                return;
+            };
+            if !open.pending {
+                return;
+            }
+            open.pending = false;
+            match open.read_changes() {
+                Ok(()) => false,
+                Err(error) => {
+                    tracing::debug!(
+                        %error,
+                        path = %folder.path.display(),
+                        "folder watch stopped for this folder"
+                    );
+                    true
+                }
+            }
+        };
+        if failed {
+            let closed = self
+                .folders
+                .get_mut(&slot)
+                .and_then(|folder| folder.close_open());
+            if let Some(key) = closed {
+                self.by_read.remove(&key);
+            }
+            if let Some(folder) = self.folders.get_mut(&slot) {
+                folder.retry_at = Some(now_ms + RETRY_MS);
+            }
+            self.bursts.remove(slot);
+            self.publish(slot, FolderListing::Unavailable);
+        } else {
+            self.bursts.mark(slot, now_ms);
         }
     }
 
-    /// Posts `message` for every folder whose burst is due.
+    /// Lists every folder whose burst is due and posts the result.
     fn post_due(&mut self, now_ms: u64) {
         for slot in self.bursts.take_due(now_ms) {
-            // SAFETY: `target` is the controller window on the UI thread; a
-            // post to a destroyed window just fails.
-            unsafe {
-                let _ = PostMessageW(Some(self.target), self.message, WPARAM(slot), LPARAM(0));
+            let outcome = self.folders.get_mut(&slot).map(|folder| {
+                let listing = folder.list();
+                if matches!(listing, FolderListing::Listed(_)) {
+                    folder.retry_at = None;
+                    (listing, None)
+                } else {
+                    folder.retry_at = Some(now_ms + RETRY_MS);
+                    (listing, folder.close_open())
+                }
+            });
+            if let Some((listing, closed)) = outcome {
+                if let Some(key) = closed {
+                    self.by_read.remove(&key);
+                }
+                self.publish(slot, listing);
             }
+        }
+    }
+
+    /// Tries every missing folder whose retry is due, and posts a listing when
+    /// it comes back.
+    fn retry_due(&mut self, now_ms: u64) {
+        let due: Vec<usize> = self
+            .folders
+            .iter()
+            .filter(|(_, folder)| folder.retry_at.is_some_and(|at| at <= now_ms))
+            .map(|(slot, _)| *slot)
+            .collect();
+        for slot in due {
+            let needs_open = self
+                .folders
+                .get(&slot)
+                .is_some_and(|folder| folder.open.is_none());
+            let mut opened = None;
+            if needs_open {
+                let read_key = self.next_read_key;
+                self.next_read_key += 1;
+                let result = match self.folders.get_mut(&slot) {
+                    Some(folder) => folder.open(self.port, read_key),
+                    None => continue,
+                };
+                match result {
+                    Ok(()) => opened = Some(read_key),
+                    Err(error) => {
+                        let folder = self.folders.get_mut(&slot);
+                        if let Some(folder) = folder {
+                            tracing::debug!(
+                                %error,
+                                path = %folder.path.display(),
+                                "folder is still unavailable"
+                            );
+                            folder.retry_at = Some(now_ms + RETRY_MS);
+                        }
+                        continue;
+                    }
+                }
+            }
+            if let Some(key) = opened {
+                self.by_read.insert(key, slot);
+            }
+            let recovered = {
+                let Some(folder) = self.folders.get_mut(&slot) else {
+                    continue;
+                };
+                match folder.list() {
+                    FolderListing::Listed(entries) => {
+                        folder.retry_at = None;
+                        Some(FolderListing::Listed(entries))
+                    }
+                    FolderListing::Unavailable => {
+                        folder.retry_at = Some(now_ms + RETRY_MS);
+                        None
+                    }
+                }
+            };
+            let close_key = if recovered.is_none() {
+                self.folders
+                    .get_mut(&slot)
+                    .and_then(|folder| folder.close_open())
+            } else {
+                None
+            };
+            if let Some(key) = close_key {
+                self.by_read.remove(&key);
+            }
+            if let Some(listing) = recovered {
+                self.publish(slot, listing);
+            }
+        }
+    }
+
+    /// How long until the next missing folder is tried.
+    fn retry_wait(&self, now_ms: u64) -> u32 {
+        self.folders
+            .values()
+            .filter_map(|folder| folder.retry_at)
+            .map(|at| at.saturating_sub(now_ms).min(u64::from(u32::MAX)) as u32)
+            .min()
+            .unwrap_or(INFINITE)
+    }
+
+    /// How long until the open watches' paths are checked again.
+    fn check_wait(&self, now_ms: u64) -> u32 {
+        if self.folders.is_empty() {
+            return INFINITE;
+        }
+        self.next_check
+            .saturating_sub(now_ms)
+            .min(u64::from(u32::MAX)) as u32
+    }
+
+    /// A watched folder renamed away keeps reporting for the moved directory,
+    /// so the pending read may stay open forever. Check that the path still
+    /// names a folder, and empty the lens when it does not.
+    fn check_paths(&mut self, now_ms: u64) {
+        if now_ms < self.next_check {
+            return;
+        }
+        self.next_check = now_ms + CHECK_MS;
+        let gone: Vec<usize> = self
+            .folders
+            .iter()
+            .filter(|(_, folder)| folder.open.is_some() && !folder.path.is_dir())
+            .map(|(slot, _)| *slot)
+            .collect();
+        for slot in gone {
+            let path = self.folders.get(&slot).map(|folder| folder.path.clone());
+            if let Some(path) = path {
+                tracing::debug!(path = %path.display(), "watched folder moved or disappeared");
+            }
+            if let Some(key) = self
+                .folders
+                .get_mut(&slot)
+                .and_then(|folder| folder.close_open())
+            {
+                self.by_read.remove(&key);
+            }
+            if let Some(folder) = self.folders.get_mut(&slot) {
+                folder.retry_at = Some(now_ms + RETRY_MS);
+            }
+            self.bursts.remove(slot);
+            self.publish(slot, FolderListing::Unavailable);
+        }
+    }
+
+    /// Leaves `listing` for the UI thread and wakes it with the folder's slot.
+    fn publish(&self, slot: usize, listing: FolderListing) {
+        let Some(folder) = self.folders.get(&slot) else {
+            return;
+        };
+        *folder
+            .listing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(listing);
+        // SAFETY: `target` is the controller window on the UI thread; a post
+        // to a destroyed window just fails.
+        unsafe {
+            let _ = PostMessageW(Some(self.target), self.message, WPARAM(slot), LPARAM(0));
         }
     }
 
     /// Stops every folder's read before the worker exits.
     fn close_all(&mut self) {
         self.bursts.clear();
+        self.by_read.clear();
         for (_, folder) in self.folders.drain() {
             folder.close();
         }
@@ -340,13 +626,70 @@ impl Worker {
 /// address while Windows is reading into them.
 struct Folder {
     path: PathBuf,
+    listing: SharedListing,
+    /// `None` while the folder is missing and waiting for a retry.
+    open: Option<OpenFolder>,
+    /// When to try the folder again, in milliseconds since the worker started.
+    retry_at: Option<u64>,
+}
+
+impl Folder {
+    /// Opens the folder if it is not open and starts its read under
+    /// `read_key`.
+    fn open(&mut self, port: HANDLE, read_key: usize) -> Result<(), PlatformError> {
+        if self.open.is_some() {
+            return Ok(());
+        }
+        // Store the buffer and `OVERLAPPED` before starting the read, so the
+        // read never points at a value that then moves.
+        self.open = Some(open_folder(&self.path, port, read_key)?);
+        let started = match self.open.as_mut() {
+            Some(open) => open.read_changes(),
+            None => Ok(()),
+        };
+        if let Err(error) = started {
+            self.close_open();
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// The folder's current contents, or `Unavailable` with the reason logged.
+    fn list(&self) -> FolderListing {
+        match list_folder(&self.path) {
+            Ok(entries) => FolderListing::Listed(entries),
+            Err(error) => {
+                tracing::debug!(%error, path = %self.path.display(), "could not list the folder");
+                FolderListing::Unavailable
+            }
+        }
+    }
+
+    /// Cancels a pending read and closes the folder's handle, returning the
+    /// read's completion key.
+    fn close_open(&mut self) -> Option<usize> {
+        let open = self.open.take()?;
+        let read_key = open.read_key;
+        open.close();
+        Some(read_key)
+    }
+
+    /// Closes the folder, returning the read's completion key.
+    fn close(mut self) -> Option<usize> {
+        self.close_open()
+    }
+}
+
+/// One open folder handle and its pending change read.
+struct OpenFolder {
+    read_key: usize,
     directory: HANDLE,
     buffer: Vec<u8>,
     overlapped: OVERLAPPED,
     pending: bool,
 }
 
-impl Folder {
+impl OpenFolder {
     /// Starts the next overlapped read. The records are ignored; the
     /// completion alone means "something changed".
     fn read_changes(&mut self) -> Result<(), PlatformError> {
@@ -402,8 +745,8 @@ impl Folder {
 }
 
 /// Opens `path` for overlapped change reads and registers it with `port`
-/// under `slot`.
-fn open_folder(path: &Path, port: HANDLE, slot: usize) -> Result<Box<Folder>, PlatformError> {
+/// under `read_key`.
+fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder, PlatformError> {
     let name = wide(&path.to_string_lossy());
     // SAFETY: `name` is NUL-terminated. The directory is opened for overlapped
     // change reads; every error path below closes it before returning.
@@ -419,30 +762,21 @@ fn open_folder(path: &Path, port: HANDLE, slot: usize) -> Result<Box<Folder>, Pl
         )
     }?;
     // SAFETY: `directory` is a live handle and `port` is live for the worker's
-    // lifetime. Registering the folder makes its reads report under `slot`.
-    if let Err(error) = unsafe { CreateIoCompletionPort(directory, Some(port), slot, 0) } {
+    // lifetime. Registering the folder makes its reads report under `read_key`.
+    if let Err(error) = unsafe { CreateIoCompletionPort(directory, Some(port), read_key, 0) } {
         // SAFETY: `directory` was opened above and no read is pending.
         unsafe {
             let _ = CloseHandle(directory);
         }
         return Err(error.into());
     }
-    let mut folder = Box::new(Folder {
-        path: path.to_path_buf(),
+    Ok(OpenFolder {
+        read_key,
         directory,
         buffer: vec![0u8; BUFFER_BYTES],
         overlapped: OVERLAPPED::default(),
         pending: false,
-    });
-    if let Err(error) = folder.read_changes() {
-        // SAFETY: `read_changes` failed before a read started, so no read is
-        // pending; the handle is closed once.
-        unsafe {
-            let _ = CloseHandle(folder.directory);
-        }
-        return Err(error);
-    }
-    Ok(folder)
+    })
 }
 
 /// Whether a failed wait timed out rather than broke.

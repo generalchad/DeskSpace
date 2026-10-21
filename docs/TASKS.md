@@ -516,13 +516,8 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
-What is missing, and what these tasks add:
-
-1. Noticing that a folder changed (a *watch*), and reading what is in it
-   (a *listing*). Both live in `deskspace-platform`, because they call
-   Win32.
-2. Turning each listing into a `SyncLens` in `deskspace-app`.
-3. Making drops, deletes, and menus treat a lens as D3 says.
+What is left, and what these tasks add: making drops, deletes, and menus
+treat a lens as D3 says (W3-W7).
 
 ### Words used below
 
@@ -580,59 +575,6 @@ What is missing, and what these tasks add:
 
 ### Tasks
 
-- [ ] **W2. Lenses follow their folders (platform, app).**
-  - Why: after W1 the app hears "this folder changed". Now the worker also
-    reads the folder, and the app shows what it read.
-  - New file `win32/folder_list.rs` with
-    `list_folder(path) -> Result<Vec<FolderEntry>, PlatformError>`.
-    - Call `FindFirstFileExW` with `FindExInfoBasic` and
-      `FIND_FIRST_EX_LARGE_FETCH` (the fast settings), then `FindNextFileW`
-      until there are no more files, and always `FindClose`. Skip the `.`
-      and `..` entries.
-    - Put the conversion in a pure function, `entry_from(name,
-      attributes, size, last_write)`, and test it. It sets `kind` with
-      `ItemKind::classify`, and `hidden` when the file has
-      `FILE_ATTRIBUTE_HIDDEN` or `FILE_ATTRIBUTE_SYSTEM`. `size` is `None`
-      for folders. `modified` is in seconds since 1970; a `FILETIME`
-      counts 100 ns steps since 1601. `label` stays empty, which shows the
-      file name without its extension, as normal spaces do.
-  - The worker calls `list_folder` once when a watch starts and after each
-    debounced burst. The event becomes
-    `Event::FolderChanged { key, listing: FolderListing }`, where
-    `FolderListing` is `Listed(Vec<FolderEntry>)` or `Unavailable`. A list
-    does not fit in a message's two numbers, so the worker leaves it in a
-    shared slot (an `Arc<Mutex<..>>` per watch) and the UI thread takes it
-    when the message arrives.
-  - `Unavailable` covers a folder that does not exist, cannot be opened,
-    or disappears while watched (its read then fails). The worker tries
-    that folder again every `RETRY_MS` (5 s, a named constant). The app
-    sets no timer for it.
-  - The Desktop watch ignores its listing. The desktop layer also needs
-    each icon's position, and only the shell knows those.
-  - App: a new method, `App::sync_watches`. It builds the set of watches
-    the model wants: the Desktop while `layer_active()`, and each lens as
-    `(WatchKey::Space(id), its folder)`. It compares that with what is
-    watched now and calls `watch_folder` or `unwatch_folder` for each
-    difference. Call it at startup and in place of each direct
-    `watch_desktop_folder` or `unwatch_folder` call, then delete those
-    calls. W6 and W7 call it too. Test the set it builds, with a model
-    built by `fixtures.rs`.
-  - App, the event: `Listed(entries)` dispatches
-    `Command::SyncLens { id, entries }` and refreshes that space.
-    `Unavailable` dispatches `SyncLens` with no entries and adds the id to
-    a new session field, `unavailable_lenses: HashSet<SpaceId>`, which W5
-    draws. `Listed` removes the id again. A key whose space no longer
-    exists is ignored.
-  - Icons: the icon cache keeps an icon until it is told to drop it
-    (`CONTEXT.md`, "The icon cache is invalidated only after..."). Before
-    the sync, compare each entry's `modified` with its item's, and
-    invalidate the icon of every one that changed. Then update that
-    `CONTEXT.md` note.
-  - Done when: the gates pass, and `CONTEXT.md` describes the watch and
-    the listing. **[needs human]**: with the hand-made lens, create,
-    rename, and delete files in its folder in Explorer; the lens follows
-    within about 150 ms. Rename the folder away: the lens empties. Rename
-    it back: it fills again within 5 s.
 - [ ] **W3. Dropping onto a lens, and deleting from one (platform, app).**
   - Why: today a file dropped on a lens is first moved into DeskSpace's
     storage folder, and then `AddItem` is rejected, so the file is stuck
@@ -1174,6 +1116,7 @@ each id is in `archive/TASKS-done.md`.
 | G5c | Right-drag a file and a `.lnk` from Explorer onto a space and choose "Create shortcuts here": the space gets a working shortcut to the file and a copy of the `.lnk`, and both originals stay; the entry sits between "Copy here" and "Show here without moving"; the same on the taken-over desktop opens a new space holding them. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
+| W2 (F-07) | With the hand-made lens in section W, create, rename, and delete files in its folder in Explorer: the lens follows within about 150 ms. Rename the folder away: the lens empties. Rename it back: it fills again within 5 s. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

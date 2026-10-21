@@ -1,4 +1,5 @@
 use deskspace_core::SpaceId;
+use deskspace_core::source::FolderEntry;
 
 use crate::ui::{FieldValue, LogLevel};
 
@@ -69,6 +70,16 @@ pub enum WatchKey {
     Desktop,
     /// A lens's bound folder.
     Space(SpaceId),
+}
+
+/// What a watched folder held when its last change settled. The worker lists
+/// the folder itself, so the app never does IO for a watch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FolderListing {
+    /// The folder's entries, as the worker just read them.
+    Listed(Vec<FolderEntry>),
+    /// The folder is missing or cannot be read; the worker keeps retrying.
+    Unavailable,
 }
 
 /// Input on a space window. Coordinates are desktop coordinates (the
@@ -321,6 +332,7 @@ pub enum Event {
     /// the desktop layer; M4 reuses it for a lens's bound folder.
     FolderChanged {
         key: WatchKey,
+        listing: FolderListing,
     },
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,

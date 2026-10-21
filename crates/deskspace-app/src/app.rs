@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
@@ -19,6 +21,7 @@ mod files;
 mod hit;
 mod hotkeys;
 mod info_tip;
+mod lens;
 mod menus;
 mod persist;
 mod pointer;
@@ -426,6 +429,9 @@ pub struct App {
     autosave: Autosave,
     /// Per-space view state that is not persisted: scroll and icon factor.
     view_cache: ViewCache,
+    /// Lens folders the watch worker could not read (W5 draws the
+    /// placeholder). Session-only.
+    unavailable_lenses: HashSet<SpaceId>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -456,6 +462,7 @@ impl App {
             edit: EditState::default(),
             autosave: Autosave::default(),
             view_cache: ViewCache::default(),
+            unavailable_lenses: HashSet::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
@@ -647,11 +654,12 @@ impl EventHandler for App {
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged {
                 key: WatchKey::Desktop,
+                ..
             } => self.resync_desktop_layer(ui),
-            // A lens's folder is handled with its listing (W2).
             Event::FolderChanged {
-                key: WatchKey::Space(_),
-            } => {}
+                key: WatchKey::Space(id),
+                listing,
+            } => self.on_lens_listing(ui, id, listing),
             Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {
