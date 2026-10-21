@@ -65,7 +65,11 @@ A native, lightweight, offline Windows desktop organizer that:
     duplicate data on their own, whatever the folder's size. Dropping files
     onto a lens is a move into the bound folder that the user starts. It uses
     the shell's `IFileOperation`, so the standard conflict dialogs appear and
-    Explorer can undo it.
+    Explorer can undo it. Amended 2026-10-21: a "Copy here" drop copies,
+    keep-in-place (Shift) is refused, and paste and new shortcuts land in
+    the folder the same way. A lens item dropped on a normal space is an
+    ordinary file there and moves into the store. A lens never binds the
+    store or a folder inside it.
   - *Normal spaces* hold individual items. Dropping an item into a normal
     space moves that one item into a managed store. It is an atomic rename on
     the same volume, so nothing is duplicated and no extra disk space is used.

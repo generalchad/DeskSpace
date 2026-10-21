@@ -516,8 +516,8 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
-What is left, and what these tasks add: making drops, deletes, and menus
-treat a lens as D3 says (W3-W7).
+What is left, and what these tasks add: making drops, pastes, shortcuts,
+deletes, and menus treat a lens as D3 says (W3a-W7).
 
 ### Words used below
 
@@ -550,9 +550,10 @@ treat a lens as D3 says (W3-W7).
 ### Before you start
 
 - Do the tasks in order, one commit each ("How to work a task" above).
-  The order is about safety. No menu can create a lens until W3 and W4
+  The order is about safety. No menu can create a lens until W3a-W4
   have made drops and deletes safe, so no user can lose a file while the
-  work is half done.
+  work is half done. W3 was split into W3a-W3g on 2026-10-21; each one
+  is small enough for a first task in this codebase.
 - Until W7 adds "New lens...", make a lens by hand. Run the app with a
   scratch config (`./scripts/dev.ps1 -OnTop`; `ENGINEERING.md` section 1)
   and exit it. Add this to `%TEMP%\deskspace-dev\deskspace.toml`, then run
@@ -572,67 +573,304 @@ treat a lens as D3 says (W3-W7).
 - Decided (2026-10-20, maintainer): one worker thread serves every watch,
   each watch has a key, and the worker lists the folder itself. Do not
   redesign this inside a task. If it seems wrong, stop and ask.
+- Decided (2026-10-21, maintainer), for W3a-W4:
+  - A drop on a lens moves; "Copy here" copies. Both go through the
+    shell with Explorer's Replace or Skip dialog. Keep-in-place (Shift)
+    means nothing on a lens, so it is refused.
+  - Paste and new shortcuts on a lens put their files in the lens's
+    folder, exactly as a drop does.
+  - A lens item dropped or pasted on a normal space is an ordinary file
+    to that space: it moves into storage like a file from Explorer.
+  - There is one shell transfer function with a collision rule, not a
+    second copy of it.
+  - A lens whose folder is DeskSpace's storage folder, or inside it, is
+    kept in the config but never watched, and shows as unavailable.
+
+### Where a test cannot reach
+
+`App` methods that take `&mut Ui` cannot run in `cargo test`, because a
+`Ui` needs real windows. So every task below pulls its decision into a
+small function that takes plain data (a `&Space`, a `&Path`, a
+`DROPEFFECT`) and tests that. The method that takes the `Ui` only calls
+it. If you find yourself wanting to test a `Ui` method, stop and look for
+the decision inside it.
 
 ### Tasks
 
-- [ ] **W3. Dropping onto a lens, and deleting from one (platform, app).**
-  - Why: today a file dropped on a lens is first moved into DeskSpace's
-    storage folder, and then `AddItem` is rejected, so the file is stuck
-    in storage. D3 says a drop on a lens moves the file into the lens's
-    folder instead, with Explorer's own dialogs.
-  - Platform, `file_op.rs`: `move_into(owner, paths, folder)`. Copy
-    `transfer`, but leave out `FOF_RENAMEONCOLLISION`, so a name clash
-    shows Explorer's "Replace or Skip" dialog. Storage avoids that dialog;
-    a real folder wants it. Keep `FOF_ALLOWUNDO`, so Ctrl+Z in Explorer
-    undoes the move. Wrap it as `Ui::move_into_folder(paths, folder)`. The
-    dialog runs its own message loop, so never hold a `with_runtime`
-    borrow across the call (`ENGINEERING.md` section 6, "Re-entrancy").
-  - App, a pure function `paths_to_move(paths, folder) -> Vec<PathBuf>`.
-    It leaves out a path already directly in `folder`, `folder` itself,
-    and any folder that contains `folder`, because a folder cannot move
-    into itself. Compare paths with `storage::same_path`, which ignores
-    case. Test each rule and a mixed list.
-  - App: in `add_dropped`, when the target is a lens, call
-    `move_into_folder` with `paths_to_move(..)` and return. Never call
-    `adopt`, `AddItem`, or `MoveItem` for a lens. The watch then shows the
-    new files. An item dragged out of another space is covered too: its
-    file moves into the folder, and `add_dropped` then removes the old
-    item from its space when its file is gone, the same check
-    `delete_selected_items` makes.
-  - App, deleting. The Delete key already recycles any item's file
-    (`delete_selected_items`), which is what D3 wants for a lens; add a
-    test that shows it for a lens item. The X on the settings window's
-    Shortcuts page (`delete_space_item`) only unlists a file that is not
-    in storage, and on a lens the next sync would bring it back. Make it
-    recycle a lens item's file, as the Delete key does.
-  - Done when: no drop or delete path calls `adopt`, `AddItem`, or
-    `MoveItem` for a lens. **[needs human]**: drop files from Explorer
-    and from another space onto a lens; they land in its folder. Drop a
-    file whose name is already there: Explorer's dialog appears. Ctrl+Z
-    in Explorer undoes the move. Delete on a lens item puts the file in
-    the Recycle Bin.
+- [ ] **W3a. A lens never points into storage (app).**
+  - Why: every space shares one storage folder, and deleting a normal
+    space moves its stored files out of it. A lens on that folder would
+    show those files as its own, and a delete or a drop there could move
+    files that other spaces list. So such a lens must never be watched.
+    W3b, W6, and W7 call this check too.
+  - `storage.rs`: the tests module has `fn is_inside(path, root)`. Move
+    it, unchanged with its doc, out of `mod tests` to module level as
+    `pub(crate) fn is_inside`. Its test and
+    `user_data_is_outside_the_install_root` keep using it.
+  - `storage.rs`: add `ItemStore::allows_lens(&self, folder: &Path) ->
+    bool`. It is false when `folder` is the store's root or lies inside
+    it, and true otherwise, including for a folder that contains the
+    store. Windows paths can differ by case and by short names
+    (`TIMOTH~1`), so first canonicalize both paths. Use the canonical
+    forms only when both calls succeed, else the paths as given; this is
+    the rule `same_path` follows, so read it first.
+  - `app/lens.rs`: add `fn refused_lenses(&self) -> Vec<SpaceId>`, the
+    lenses whose folder `self.storage.allows_lens` refuses. In
+    `desired_watches`, skip those lenses. In `sync_watches`, add each
+    refused id to `self.unavailable_lenses`. When `insert` returns true
+    (it was not there yet), log one `tracing::warn!` naming the space and
+    the folder. Then the warning appears once, not on every sync.
+  - Tests, in `storage.rs`: `allows_lens` is false for the root, a child,
+    a grandchild, and the root spelled in another case; it is true for a
+    sibling whose name starts the same (`storage-old`), an unrelated
+    folder, and the root's parent. In `app/lens.rs` (copy
+    `every_lens_wants_its_folder_and_normal_spaces_want_none`): a lens on
+    `app.storage.root()` is in `refused_lenses` and has no watch in
+    `desired_watches`.
+  - Docs: in the lens part of `CONTEXT.md` section 4, one sentence: a lens
+    on the storage folder is kept but never watched.
+  - Done when: the gates pass. No screen check is needed.
+- [ ] **W3b. Dropping onto a lens moves or copies into its folder
+  (platform, app).**
+  - Why: today a file dropped on a lens is first moved into storage by
+    `place_dropped`, and then `AddItem` is rejected, so the file is stuck
+    in storage where the user never sees it. D3 says a drop on a lens
+    moves the file into the lens's folder instead, with Explorer's own
+    dialogs.
+  - Platform, `win32/file_op.rs`. Read `transfer` first.
+    1. Add `pub enum OnCollision { Rename, Ask }` with a `///` doc on
+       each variant. `Rename` gives a clashing name " (2)"; storage uses
+       it because every space shares the folder. `Ask` shows Explorer's
+       "Replace or Skip" dialog; a user's real folder wants that.
+    2. Add a pure `fn operation_flags(on_collision: OnCollision)` that
+       returns the flags `transfer` passes to `SetOperationFlags` today
+       for `Rename`, and the same flags without `FOF_RENAMEONCOLLISION`
+       for `Ask`. Look up the type `SetOperationFlags` takes in the
+       `windows` crate docs. Both keep `FOF_ALLOWUNDO`, so Ctrl+Z in
+       Explorer undoes the move.
+    3. `transfer` takes an `on_collision: OnCollision` argument and uses
+       `operation_flags`. Update the module's `//!` doc, which says name
+       clashes are always renamed.
+    4. Export `OnCollision` from the crate root (`lib.rs`, beside
+       `DropAction`). `Ui::transfer_files` (`win32/runtime/ui_shell.rs`)
+       takes it and passes it on.
+    5. Test `operation_flags`: `Rename` has `FOF_RENAMEONCOLLISION` and
+       `Ask` does not; both have `FOF_ALLOWUNDO`.
+  - App, the existing callers: `copy_dropped` (`app/files.rs`) and
+    `paste_clipboard` (`app/clipboard.rs`, two calls) pass
+    `OnCollision::Rename`. They put files in storage, so nothing changes
+    for them.
+  - App, `app/files.rs`, a pure function `fn paths_to_transfer(paths:
+    &[PathBuf], folder: &Path) -> Vec<PathBuf>`. It keeps the paths in
+    order and leaves out three kinds:
+    - a path already directly in `folder` (its parent is `folder`, by
+      `storage::same_path`), because moving it there changes nothing;
+    - `folder` itself;
+    - any folder that contains `folder` (`storage::is_inside(folder,
+      path)`), because a folder cannot move into itself.
+
+    Test each rule, then a mixed list, which keeps only the valid paths
+    in their order.
+  - App, `app/files.rs`, a new method `fn drop_into_lens(&mut self, ui:
+    &mut Ui, folder: PathBuf, paths: Vec<PathBuf>, action: DropAction)`:
+    1. If `!folder.is_dir()`, log a warning and return. W5 shows the
+       user why.
+    2. If `!self.storage.allows_lens(&folder)` (W3a), return.
+    3. Before moving anything, note which normal spaces list the dropped
+       files: for each path, `find_item_by_file`, then
+       `space_containing`. Skip lens spaces; their own watch follows the
+       move.
+    4. `let paths = paths_to_transfer(&paths, &folder);` and return if it
+       is empty.
+    5. `match action`: `Move` calls `ui.transfer_files(&paths, &folder,
+       true, OnCollision::Ask)`, and `Copy` the same with `false`.
+       `KeepInPlace` cannot apply to a folder: log at `debug` and return.
+       After W3c the platform never sends it to a lens; keep the arm and
+       say so in a comment.
+    6. Call `self.prune_missing(ui, id)` for each space noted in step 3.
+       It drops the items whose files just moved away.
+  - App, `add_dropped`: as its first statement, if the target space is a
+    lens (`space.folder_view()`), clone the folder path, call
+    `drop_into_lens`, and return. Nothing after that line runs for a
+    lens: no `adopt`, `AddItem`, or `MoveItem`. The lens's watch shows the
+    new files a moment later. "Add files…" (`menus.rs` `add_files`)
+    already goes through `add_dropped`, so it is covered.
+  - Re-entrancy: the shell's dialog runs its own message loop. The app
+    holds no runtime borrow, and `Ui::transfer_files` takes its own only
+    for a moment, so nothing more is needed. Do not add a `with_runtime`
+    call around it (`ENGINEERING.md` section 6).
+  - Done when: `add_dropped` never reaches `adopt`, `AddItem`, or
+    `MoveItem` for a lens, and the gates pass. **[needs human]**: drop
+    files from Explorer and from a normal space onto a lens; they land
+    in its folder, and the normal space no longer lists its file. Drop a
+    file whose name is already there: Explorer's Replace or Skip dialog
+    appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy
+    here": the original stays. "Add files…" on a lens moves the files
+    into its folder. Regression: a clashing drop on a normal space still
+    gets " (2)" and no dialog.
+- [ ] **W3c. Shift and the right-drop menu on a lens (platform, app).**
+  - Why: on a normal space, Shift means "show here without moving". A
+    lens shows only its folder, so it cannot show a file kept elsewhere.
+    The drop must be refused, with the "no" cursor, before the user lets
+    go. Also, a source that offers only `COPY` should copy into a lens;
+    today `drop_plan` turns `COPY` into keep-in-place.
+  - The drop target lives in the platform and does not know which spaces
+    are lenses. The app tells it through the scene, as it tells it
+    everything else (`ENGINEERING.md` section 3, "Rendering and UI are
+    data-driven"). Follow "Recipe: a new visual in a space", steps 1-2:
+    1. `render/scene.rs`: `pub enum DropInto { Space, Folder }`, deriving
+       `Default` with `Space` as the default, and a `///` doc for each.
+       Add a `SpaceScene::drop_into: DropInto` field and export the enum
+       beside `SpaceScene`.
+    2. `deskspace-app/src/scene.rs`, `space_scene`: `DropInto::Folder`
+       when the space is a lens. Test it: a lens's scene says `Folder`, a
+       normal space and the desktop layer say `Space`.
+  - Platform, `win32/space_window.rs`: `pub(crate) fn drop_into(window:
+    HWND) -> DropInto`, which reads the stored scene. Copy
+    `space_animation::is_leaving`, which reads window state the same way.
+    `PreparedScene` keeps its `SpaceScene` in a private field; add a
+    `pub(crate) fn scene(&self) -> &SpaceScene` accessor if none exists.
+    A window with no scene yet answers `DropInto::Space`.
+  - Platform, `win32/drop_target.rs`. All of these are pure, with tests
+    at the bottom of the file:
+    - `drop_plan(kind, keys, allowed, into: DropInto)`. For `Folder`
+      and `DragKind::Files`: with Shift held, `(DropPlan::None,
+      DROPEFFECT_NONE)`; otherwise `MOVE` when allowed, else `COPY`
+      gives `DropPlan::Files(DropAction::Copy)`, not `KeepInPlace`. For
+      `Space`, nothing changes. Shell items and Alt-links are the same
+      for both (W3f handles them).
+    - `drag_effect` takes `into` and passes it on.
+    - `right_drop_entries(allowed, into)`: "Show here without moving" is
+      greyed for `Folder`, as "Create shortcuts here" is greyed by
+      `allowed`.
+    - The `IDropTarget` methods read `drop_into(self.window)` and pass it
+      on. Read it once per call, not in a loop.
+    - Tests: copy the existing `drop_plan` and `drag_effect` tests and
+      add the `Folder` cases (Shift refuses; `COPY` only gives `Copy`;
+      a plain drop moves). Add a `right_drop_entries` case: for `Folder`,
+      `DROP_KEEP` is disabled. Every existing test passes `DropInto::Space`
+      and keeps its expectation.
+  - Done when: the gates pass. **[needs human]**: Shift-drag a file from
+    Explorer onto a lens: the cursor shows "no" and nothing moves. Right
+    drag onto a lens: "Show here without moving" is grey. On a normal
+    space, Shift and the right-drop menu behave as before.
+- [ ] **W3d. A lens item dropped on a normal space (app).**
+  - Why: dragging an item from a lens onto a normal space does nothing
+    today. `add_dropped` finds the item by its file and sends `MoveItem`,
+    which core rejects for a lens item. Decided (2026-10-21): to a
+    normal space, a lens's file is an ordinary file, so it moves into
+    storage like a file dropped from Explorer.
+  - `app/hit.rs`, `find_item_by_file`: skip items that belong to a lens.
+    The method answers "which item that DeskSpace owns uses this file";
+    say that in its `///` doc. A lens's items belong to its folder.
+    Callers then take their "not found" path. `add_dropped` adopts the
+    file into storage and adds a new item, and a paste's `plan_paste`
+    treats it as an outside move. The lens's watch drops the old item at
+    its next sync.
+  - Test, in `app/hit.rs` (the module has `App::new` tests to copy): put
+    an item for `C:/x/a.txt` in a normal space, and the same path in a
+    lens through `fixtures::apply` with `Command::SyncLens`.
+    `find_item_by_file` returns the normal space's item. With only the
+    lens listing it, it returns `None`.
+  - Done when: the gates pass. **[needs human]**: drag an item from a
+    lens onto a normal space: the file leaves the lens's folder, the
+    space lists it, and the lens no longer shows it. Delete that space:
+    the file goes to the desktop, not back to the folder (D3).
+- [ ] **W3e. Pasting into a lens (app).**
+  - Why: `paste_clipboard` (`app/clipboard.rs`) moves or copies the
+    clipboard's files into storage and then sends `AddItem`, which a lens
+    rejects. The files are stuck in storage, as with drops before W3b.
+  - At the top of `paste_clipboard`, once `clipboard` is read and not
+    empty: if the target is a lens, call `self.drop_into_lens(ui, folder,
+    clipboard.paths, action)` (W3b), where `action` is `DropAction::Move`
+    for a cut and `DropAction::Copy` otherwise. After a cut, call
+    `ui.clear_clipboard()`, as the end of the method already does. Then
+    return. Copy `add_dropped`'s lens check from W3b so both read the
+    same way.
+  - Nothing new is pure here; W3b already tests `paths_to_transfer`.
+  - Done when: `paste_clipboard` never reaches `transfer_files` into
+    storage or `AddItem` for a lens, and the gates pass. **[needs
+    human]**: in Explorer, copy a file and paste it on a lens (click the
+    lens, then Ctrl+V): a copy lands in the folder. Cut and paste: it
+    moves. Cut an item from a normal space and paste it on a lens: it
+    moves into the folder and leaves the space. A paste on a normal space
+    works as before.
+- [ ] **W3f. Shortcuts on a lens (app).**
+  - Why: `add_shortcuts` (`app/files.rs`) writes every new `.lnk` or
+    `.url` into storage, then sends `AddItem`, which a lens rejects. A
+    Start-menu app dropped on a lens, "Paste shortcut", the custom
+    shortcut dialog, and the installed-apps picker all end there.
+    Explorer writes such a shortcut into the folder it was dropped on.
+  - `storage.rs`: make `unique_destination` `pub(crate)`.
+    `ItemStore::unique_path` keeps calling it.
+  - `app/files.rs`, `write_shortcut`: take the destination folder as an
+    argument and use `storage::unique_destination(folder, name)` in
+    place of `self.storage.unique_path(name)` (three places).
+  - `add_shortcuts`: work out the destination first. For a lens it is
+    its folder, after the W3a `allows_lens` check and an `is_dir` check
+    (log and return when either fails). Otherwise it is
+    `self.storage.root()`, created as today. Pass it to `write_shortcut`.
+    Send `AddItem` only for a normal space; a lens's watch lists the new
+    file.
+  - Test, in `app/files.rs` (no COM needed): `write_shortcut` with a
+    `ShortcutSource::Shell` whose `path` is a `.lnk` file in a temp
+    folder copies it into a second temp folder. A second call names the
+    copy " (2)". Copy the temp-folder setup from
+    `stored_paths_lists_stored_files_and_skips_items_in_place`.
+  - Done when: `add_shortcuts` never sends `AddItem` for a lens, and the
+    gates pass. **[needs human]**: drop a Start-menu app on a lens: a
+    working `.lnk` is in the folder and the lens shows it. "New shortcut
+    ▸ Paste shortcut" and the custom shortcut dialog on a lens do the
+    same. On a normal space, shortcuts work as before.
+- [ ] **W3g. Deleting an item from a lens (app).**
+  - Why: D3 says removing a lens item recycles its file. The Delete key
+    already does that for any item (`delete_selected_items` recycles
+    every selected file). The X on the settings window's Shortcuts page
+    (`delete_space_item`) recycles only stored files and merely unlists
+    the rest. On a lens the next sync would bring the item back, so the
+    X seems to do nothing.
+  - `app/files.rs`: a pure `fn recycles_on_delete(space: &Space, store:
+    &ItemStore, path: &Path) -> bool`. It is true for a lens item and for
+    a stored file, and false for an item listed in place.
+  - `delete_space_item`: use `recycles_on_delete` where it uses
+    `stored` today (the question and the recycle step). Rename
+    `delete_item_question`'s `stored` parameter to `recycles`; its text
+    already says "moved to the Recycle Bin".
+  - Tests: `recycles_on_delete` for each case (build the spaces with
+    `fixtures`; a lens item through `Command::SyncLens`). The existing
+    `deleting_an_item_says_where_its_file_goes` keeps passing.
+  - Done when: the gates pass. **[needs human]**: select a lens item and
+    press Delete: the file is in the Recycle Bin and the lens drops it.
+    On the settings window's Shortcuts page, the X on a lens item says
+    the file goes to the Recycle Bin, and it does.
 - [ ] **W4. Deleting a lens never touches its folder (app).**
   - Why: deleting a normal space moves its stored files back to the
     desktop. For a lens, D3 says the folder and its files stay where they
-    are.
-  - `delete_space_now`: when the space is a lens, skip both the Recycle
-    Bin step and `release_item`, and only remove the space. The debug
-    window's "Delete all spaces" goes through here, so it is covered too.
-  - The question before deleting: a lens always asks, even when it shows
-    no items, and its text says "The folder and its files stay where they
-    are." Today `delete_needs_confirmation` and `delete_consequence` in
-    `app.rs` decide this. Give them what they need to know, such as the
-    `Space` itself, rather than adding a second pair of functions.
-  - Guard: a lens must not point at DeskSpace's storage folder or a
-    folder inside it, because `release_item` moves every file there out.
-    Add a pure check, `lens_folder_allowed(store, path)`, built on
-    `ItemStore::contains`, for W6 and W7 to call. When a config loads, a
-    lens that fails the check becomes an empty normal space and a warning
-    is logged. Do this in the app where the loaded config is first used,
-    because `deskspace-config` does not know the storage folder.
-  - Tests: deleting a lens leaves its files on disk (use a temp folder);
-    the confirmation text; the guard for the storage folder, a folder
-    inside it, and an unrelated folder.
+    are. After W3a no lens points into storage, so the code already
+    leaves a lens's files alone by accident. This task makes it so on
+    purpose, and fixes the question the user is asked.
+  - `app/files.rs`, the two places that touch a deleted space's files:
+    - `stored_paths`: return an empty list for a lens. The debug
+      window's "Delete all spaces" recycles what this returns.
+    - `release_item`: never move a lens item's file. Only unlist it.
+  - `delete_space_now`: after `DeleteSpace` is applied, also remove the
+    id from `self.unavailable_lenses` and call `self.sync_watches(ui)`,
+    so a deleted lens's folder stops being watched. Do it for every
+    deleted space, with no `if`; for a normal space it changes nothing.
+  - `app.rs`, the question before deleting:
+    - `delete_needs_confirmation(space)`: a lens always asks, even when
+      it shows no items. The space menu's "Delete space…" ellipsis
+      follows it with no further change (`menus.rs`).
+    - `delete_consequence`: take `space: &Space` and `stored: usize` in
+      place of `count`. For a lens, say `It shows the folder
+      “{path}”. The folder and its files stay where they are.` Normal
+      spaces keep today's text. Update the caller in `delete_space`.
+  - Tests: `stored_paths` of a lens whose folder is the store's root
+    returns nothing, even with files there (copy
+    `stored_paths_lists_stored_files_and_skips_items_in_place`). An
+    empty lens needs confirmation. A lens's consequence names the folder
+    and says the files stay. Today's `delete_consequence` tests still
+    pass with a normal space.
   - Done when: the gates pass. No screen check is needed.
 - [ ] **W5. "Folder not available" (app, platform).**
   - Why: after W2 a lens whose folder is missing is simply empty, which
@@ -654,8 +892,9 @@ treat a lens as D3 says (W3-W7).
   - App: follow "Recipe: a new menu entry". Right-clicking a lens shows
     these beside the usual space entries:
     - Open folder: `ui.open_path` on the folder.
-    - Change folder...: `pick_folder`, the W4 guard, `SetLensFolder`, then
-      `sync_watches`.
+    - Change folder...: `pick_folder`, the W3a guard
+      (`ItemStore::allows_lens`; when it fails, say why with `ui.alert`
+      and stop), `SetLensFolder`, then `sync_watches`.
     - Sort by: the same keys as a normal space's sort menu (`SORT_PRESETS`
       in `app.rs`), the current one checked. A choice dispatches
       `SetLensView`. On a lens the order is kept as files come and go,
@@ -670,7 +909,7 @@ treat a lens as D3 says (W3-W7).
 - [ ] **W7. New lens... (app).**
   - "New lens..." right under "New space" in the space menu, the tray
     menu, and the desktop layer's menu. It runs `pick_folder`, then the
-    W4 guard (when it fails, say why with `ui.alert` and stop), then
+    W3a guard, `ItemStore::allows_lens` (when it fails, say why with `ui.alert` and stop), then
     `CreateLens` sized and placed as `create_space` places a new space and
     titled with the folder's name, then `sync_watches`.
   - Update the ROADMAP: F-07's row in the feature index, and M4 phases 2
