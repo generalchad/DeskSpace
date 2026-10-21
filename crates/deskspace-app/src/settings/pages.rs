@@ -3,7 +3,8 @@
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, UNLISTED_OPTIONS,
+    corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -446,7 +447,8 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
     let own = matches!(settings.effect, EffectChoice::Effect(_));
     let option_enabled = |option| animates && own && resolved.effect.uses(option);
 
-    let choices = page.choices();
+    let choices = page.choices(Offered::Listed, settings.effect);
+    let offers = |option| spec.options.contains(&option) && !UNLISTED_OPTIONS.contains(&option);
     let choice_labels: Vec<String> = choices
         .iter()
         .map(|choice| AnimationPage::choice_label(*choice))
@@ -480,7 +482,7 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
         .suffix(" ms")
         .enabled(animates),
     ];
-    if spec.options.contains(&EffectOption::Detail) {
+    if offers(EffectOption::Detail) {
         fields.push(
             Field::slider(
                 page.detail,
@@ -496,7 +498,7 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
             .enabled(option_enabled(EffectOption::Detail)),
         );
     }
-    if spec.options.contains(&EffectOption::Direction) {
+    if offers(EffectOption::Direction) {
         fields.push(
             Field::choice(
                 page.direction,
@@ -507,7 +509,7 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
             .enabled(option_enabled(EffectOption::Direction)),
         );
     }
-    if spec.options.contains(&EffectOption::Smoke) {
+    if offers(EffectOption::Smoke) {
         fields.push(
             Field::toggle(page.smoke, "Smoke", resolved.smoke)
                 .enabled(option_enabled(EffectOption::Smoke)),

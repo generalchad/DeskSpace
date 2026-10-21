@@ -133,6 +133,21 @@ pub(super) const EFFECT_LABELS: [(AnimationEffect, &str); 10] = [
     (AnimationEffect::Burn, "Burn"),
     (AnimationEffect::Smoke, "Smoke"),
 ];
+/// What the settings window leaves out while it is tuned (ROADMAP D12):
+/// effects it lists only while one is already chosen, and options it never
+/// shows. The debug window offers both.
+const UNLISTED_EFFECTS: [AnimationEffect; 1] = [AnimationEffect::Smoke];
+pub(super) const UNLISTED_OPTIONS: [EffectOption; 1] = [EffectOption::Smoke];
+
+/// Which effect choices a window offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offered {
+    /// The settings window's: every choice but `UNLISTED_EFFECTS`.
+    Listed,
+    /// The debug window's: every choice.
+    All,
+}
+
 pub const EDGES: [(Edge, &str); 5] = [
     (Edge::Auto, "Automatic"),
     (Edge::Top, "Top"),
@@ -222,13 +237,22 @@ impl AnimationPage {
     }
 
     /// The choices the Effect dropdown lists, in order: "Same as" first when
-    /// the kind can follow another, then its effects.
-    pub fn choices(self) -> Vec<EffectChoice> {
+    /// the kind can follow another, then its effects. `Offered::Listed` keeps
+    /// an unlisted effect only when it is `current`, so the page shows what
+    /// is chosen.
+    pub fn choices(self, offered: Offered, current: EffectChoice) -> Vec<EffectChoice> {
         let spec = self.kind.spec();
+        let offers = |choice: &EffectChoice| match (offered, choice) {
+            (Offered::Listed, EffectChoice::Effect(effect)) => {
+                !UNLISTED_EFFECTS.contains(effect) || *choice == current
+            }
+            _ => true,
+        };
         spec.follows
             .map(EffectChoice::SameAs)
             .into_iter()
             .chain(spec.effects.iter().copied().map(EffectChoice::Effect))
+            .filter(offers)
             .collect()
     }
 
@@ -312,16 +336,27 @@ mod tests {
 
     #[test]
     fn delete_offers_same_as_startup_first() {
-        let choices = AnimationPage::of(Kind::Delete).choices();
+        let current = EffectChoice::SameAs(Kind::Startup);
+        let choices = AnimationPage::of(Kind::Delete).choices(Offered::All, current);
         assert_eq!(choices[0], EffectChoice::SameAs(Kind::Startup));
         assert_eq!(AnimationPage::choice_label(choices[0]), "Same as startup");
         assert_eq!(
-            AnimationPage::of(Kind::Fold).choices(),
+            AnimationPage::of(Kind::Fold).choices(Offered::All, current),
             [
                 EffectChoice::Effect(AnimationEffect::None),
                 EffectChoice::Effect(AnimationEffect::Roll)
             ]
         );
+    }
+
+    #[test]
+    fn settings_list_an_unlisted_effect_only_while_it_is_chosen() {
+        let page = AnimationPage::of(Kind::Startup);
+        let smoke = EffectChoice::Effect(AnimationEffect::Smoke);
+        let roll = EffectChoice::Effect(AnimationEffect::Roll);
+        assert!(page.choices(Offered::All, roll).contains(&smoke));
+        assert!(!page.choices(Offered::Listed, roll).contains(&smoke));
+        assert!(page.choices(Offered::Listed, smoke).contains(&smoke));
     }
 
     #[test]

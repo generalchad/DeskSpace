@@ -321,14 +321,17 @@ A native, lightweight, offline Windows desktop organizer that:
     are drawn on a click-through overlay window above it, since the
     space's own window carries the blur over its whole rect; a Smoke
     toggle gives it a neutral gray plume behind the flames, off by
-    default until it is tuned, amended 2026-10-20, maintainer), and Smoke (amended 2026-10-20, maintainer: the space
+    default and offered only in the debug window until it is tuned,
+    amended 2026-10-20, maintainer), and Smoke (amended 2026-10-20, maintainer: the space
     sublimates into plumes of its own tint that rise from a few seeded
     sources along its lower edge, fading the window where they pass, while
     its text and icons ride the same current as separate sprites and land
     in their places; a show condenses the smoke and flies the contents in,
     and the smoke rises past the frame, so it uses Burn's
     overlay; each play is seeded when it starts, so it never looks the
-    same twice while a reversal still retraces the same wisps). Black
+    same twice while a reversal still retraces the same wisps; until it
+    is tuned, only the debug window offers it, and the settings window
+    lists it only while it is already chosen). Black
     hole (the space swallowed by a hole that opens on the desktop) is
     planned after composition (T14). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):

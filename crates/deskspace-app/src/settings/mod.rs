@@ -19,7 +19,7 @@ pub use apply::{
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
-    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, STARTUP_ORDERS,
+    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, Offered, STARTUP_ORDERS,
     windows_animation_settings_uri,
 };
 
@@ -784,6 +784,16 @@ mod tests {
         assert!(form.field(field::ANIM_FOLD_DURATION).is_some());
         assert!(form.field(field::ANIM_FOLD_DETAIL).is_none());
         assert!(form.field(field::ANIM_FOLD_DIRECTION).is_none());
+    }
+
+    #[test]
+    fn burn_s_smoke_toggle_is_left_to_the_debug_window() {
+        let mut config = Config::new();
+        config.window.animations.startup_exit.effect = EffectChoice::Effect(AnimationEffect::Burn);
+        let form = animation_form(&config, true);
+        assert!(form.field(field::ANIM_STARTUP_DETAIL).is_some());
+        assert!(form.field(field::ANIM_STARTUP_SMOKE).is_none());
+        assert!(form.field(field::ANIM_DELETE_SMOKE).is_none());
     }
 
     #[test]

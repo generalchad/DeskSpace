@@ -14,7 +14,7 @@ use deskspace_core::animation::{
 use deskspace_platform::{DebugControl, DebugControlKind, FieldValue, Ui};
 
 use crate::app::App;
-use crate::settings::{self, AnimationPage, EDGES, STARTUP_ORDERS, field};
+use crate::settings::{self, AnimationPage, EDGES, Offered, STARTUP_ORDERS, field};
 
 /// The box's title.
 const GROUP: &str = "Animation settings";
@@ -116,7 +116,7 @@ fn animation_rows(animations: &Animations, kind: Kind) -> Vec<AnimationRow> {
         .map(|setting| {
             let (field, (options, selected), enabled) = match setting {
                 Setting::Effect => {
-                    let choices = page.choices();
+                    let choices = page.choices(Offered::All, settings.effect);
                     let options = choices
                         .iter()
                         .enumerate()
@@ -264,7 +264,7 @@ impl App {
             return;
         };
         let edit = |animations: &mut Animations| {
-            settings::apply_animation_edit(animations, row.field, value.clone())
+            settings::apply_animation_edit(animations, row.field, value.clone(), Offered::All)
         };
         if !edit(&mut self.config.window.animations) {
             return;
@@ -343,7 +343,12 @@ mod tests {
                 for (label, value) in &row.options {
                     let mut edited = animations;
                     assert!(
-                        settings::apply_animation_edit(&mut edited, row.field, value.clone()),
+                        settings::apply_animation_edit(
+                            &mut edited,
+                            row.field,
+                            value.clone(),
+                            Offered::All,
+                        ),
                         "{:?} {:?} {label}",
                         spec.kind,
                         row.setting
@@ -367,6 +372,7 @@ mod tests {
             &mut animations,
             effect.field,
             effect.options[none].1.clone(),
+            Offered::All,
         );
         assert_eq!(
             animations.get(Kind::Fold).effect,
@@ -379,6 +385,28 @@ mod tests {
         );
         let again = animation_rows(&animations, Kind::Fold);
         assert_eq!(row(&again, Setting::Effect).selected, none);
+    }
+
+    #[test]
+    fn smoke_is_offered_here_though_the_settings_window_leaves_it_out() {
+        let mut animations = Animations::default();
+        let rows = animation_rows(&animations, Kind::Startup);
+        let effect = row(&rows, Setting::Effect);
+        let smoke = effect
+            .options
+            .iter()
+            .position(|(label, _)| label == "Smoke")
+            .expect("Smoke is offered");
+        settings::apply_animation_edit(
+            &mut animations,
+            effect.field,
+            effect.options[smoke].1.clone(),
+            Offered::All,
+        );
+        assert_eq!(
+            animations.get(Kind::Startup).effect,
+            EffectChoice::Effect(Effect::Smoke)
+        );
     }
 
     #[test]

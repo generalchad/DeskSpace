@@ -228,7 +228,7 @@ pub fn apply_field(
             // Animations play only on what comes next, so every edit waits
             // for Apply.
             (id, value) => {
-                if apply_animation_edit(&mut config.window.animations, id, value) {
+                if apply_animation_edit(&mut config.window.animations, id, value, Offered::Listed) {
                     Effect::Pending
                 } else {
                     Effect::None
@@ -244,8 +244,14 @@ pub fn apply_field(
 
 /// Applies an edit to an animation field: a kind's page, or the startup
 /// order and delay. Returns whether `id` and `value` were one. The settings
-/// window and the debug window (ROADMAP D14) both edit through it.
-pub fn apply_animation_edit(animations: &mut Animations, id: u32, value: FieldValue) -> bool {
+/// window and the debug window (ROADMAP D14) both edit through it, each
+/// with the effect choices it `offered`.
+pub fn apply_animation_edit(
+    animations: &mut Animations,
+    id: u32,
+    value: FieldValue,
+    offered: Offered,
+) -> bool {
     match (id, value) {
         (field::ANIM_STARTUP_ORDER, FieldValue::Choice(index)) => {
             let Some((order, _)) = STARTUP_ORDERS.get(index) else {
@@ -259,7 +265,7 @@ pub fn apply_animation_edit(animations: &mut Animations, id: u32, value: FieldVa
             true
         }
         (id, value) => animation_page_of(id)
-            .is_some_and(|page| apply_animation_field(animations, page, id, value)),
+            .is_some_and(|page| apply_animation_field(animations, page, id, value, offered)),
     }
 }
 
@@ -287,11 +293,12 @@ fn apply_animation_field(
     page: &AnimationPage,
     id: u32,
     value: FieldValue,
+    offered: Offered,
 ) -> bool {
     let settings = animations.get_mut(page.kind);
     match value {
         FieldValue::Choice(index) if id == page.effect => {
-            if let Some(choice) = page.choices().get(index) {
+            if let Some(choice) = page.choices(offered, settings.effect).get(index) {
                 settings.effect = *choice;
             }
         }
@@ -449,7 +456,7 @@ mod tests {
             Effect::Pending
         );
         assert_eq!(
-            edit(field::ANIM_STARTUP_SMOKE, FieldValue::Toggle(false)),
+            edit(field::ANIM_STARTUP_SMOKE, FieldValue::Toggle(true)),
             Effect::Pending
         );
         let animations = config.window.animations;
@@ -459,7 +466,7 @@ mod tests {
         );
         assert_eq!(animations.startup_exit.duration_ms, DURATION_MS_RANGE.0);
         assert_eq!(animations.startup_exit.detail, 10);
-        assert!(!animations.startup_exit.smoke);
+        assert!(animations.startup_exit.smoke);
         assert_eq!(
             animations.resolve(Kind::Startup).direction,
             deskspace_core::animation::Edge::Left
