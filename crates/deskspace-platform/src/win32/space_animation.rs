@@ -476,10 +476,11 @@ pub(crate) unsafe fn on_timer(window: HWND) {
                 animation.transition.is_done(now),
                 animation.transition.is_waiting(now),
                 animation.flat_material,
+                animation.transition.way() == Way::In,
             ))
         })
     };
-    let Some(Some((frame, done, waiting, flat_material))) = step else {
+    let Some(Some((frame, done, waiting, flat_material, showing))) = step else {
         // SAFETY: killing this window's own timer.
         unsafe {
             let _ = KillTimer(Some(window), TIMER_ID);
@@ -489,9 +490,14 @@ pub(crate) unsafe fn on_timer(window: HWND) {
     // SAFETY: the caller's contract.
     unsafe {
         if done {
-            // Paint the final frame too: Smoke's sprites land exactly where
-            // the window's own contents take over.
+            // Paint the final frame too. A show hands the contents back to
+            // the window while the overlay still holds the sprites in the
+            // same places, so no frame is left without them.
             if !waiting {
+                let mut frame = frame;
+                if showing {
+                    frame.contents = true;
+                }
                 apply(window, frame, flat_material);
                 draw_overlay(window, frame, now);
             }
