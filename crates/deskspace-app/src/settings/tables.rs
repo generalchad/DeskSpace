@@ -163,6 +163,7 @@ pub struct AnimationPage {
     pub duration: u32,
     pub detail: u32,
     pub direction: u32,
+    pub smoke: u32,
 }
 
 /// The animation pages, in `KINDS` order and in build order from
@@ -180,6 +181,7 @@ pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
         duration: field::ANIM_STARTUP_DURATION,
         detail: field::ANIM_STARTUP_DETAIL,
         direction: field::ANIM_STARTUP_DIRECTION,
+        smoke: field::ANIM_STARTUP_SMOKE,
     },
     AnimationPage {
         kind: Kind::Delete,
@@ -193,6 +195,7 @@ pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
         duration: field::ANIM_DELETE_DURATION,
         detail: field::ANIM_DELETE_DETAIL,
         direction: field::ANIM_DELETE_DIRECTION,
+        smoke: field::ANIM_DELETE_SMOKE,
     },
     AnimationPage {
         kind: Kind::Fold,
@@ -206,6 +209,7 @@ pub(super) const ANIMATION_PAGES: [AnimationPage; 3] = [
         duration: field::ANIM_FOLD_DURATION,
         detail: field::ANIM_FOLD_DETAIL,
         direction: field::ANIM_FOLD_DIRECTION,
+        smoke: field::ANIM_FOLD_SMOKE,
     },
 ];
 

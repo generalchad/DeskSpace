@@ -279,7 +279,7 @@ pub fn paint(canvas: Canvas<'_>, plume: Plume<'_>, scratch: &mut Scratch) {
 /// The coarse cell size for an overlay of `width` by `height`: bigger overlays
 /// use bigger cells, so the CPU work stays bounded and the bilinear upscale
 /// keeps the smoke soft.
-fn overlay_cell(width: u32, height: u32) -> u32 {
+pub(super) fn overlay_cell(width: u32, height: u32) -> u32 {
     let area = width as f32 * height as f32;
     ((area / 45_000.0).sqrt().ceil() as u32).clamp(3, 8)
 }
@@ -327,7 +327,7 @@ fn shade(density: f32, content: Option<u32>, body: (f32, f32, f32)) -> u32 {
 }
 
 /// Bilinearly stretches the coarse cells over every pixel of `pixels`.
-fn upscale(
+pub(super) fn upscale(
     pixels: &mut [u32],
     width: u32,
     height: u32,

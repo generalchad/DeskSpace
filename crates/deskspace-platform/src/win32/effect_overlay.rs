@@ -25,6 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::render::burn::{self, BurnField, FlameBase};
+use crate::render::burn_smoke;
 use crate::render::flames::{self, Tongue};
 use crate::render::smoke::{self, Scratch, SmokeField};
 use crate::render::snapshot::Snapshot;
@@ -47,7 +48,7 @@ pub(crate) struct EffectOverlay {
 
 /// The effect an overlay draws, with what it keeps between frames.
 enum Art {
-    Flames(Flames),
+    Burn(BurnArt),
     Smoke(SmokeArt),
 }
 
@@ -59,13 +60,18 @@ struct SmokeArt {
     scratch: Scratch,
 }
 
-struct Flames {
+/// Burn's flames, and optionally its smoke.
+struct BurnArt {
     /// The same field the painter burns the space with, so the flames stand
-    /// on its edge.
+    /// on its edge and the smoke rises from it.
     field: BurnField,
     bases: Vec<FlameBase>,
     tongues: Vec<Tongue>,
     space_height: f32,
+    /// Where the space sits in the overlay, for both the flames and the smoke.
+    margins: (u32, u32),
+    smoke: bool,
+    scratch: burn_smoke::Scratch,
 }
 
 impl EffectOverlay {
@@ -84,17 +90,21 @@ impl EffectOverlay {
             Effect::Burn => {
                 let cols = (rect.width as f32 / burn::CELL as f32).ceil() as u32;
                 let rows = (rect.height as f32 / burn::CELL as f32).ceil() as u32;
-                let flames = Flames {
+                let (side, top) = if play.smoke {
+                    smoke::margins(rect.width.max(1) as u32, rect.height.max(1) as u32)
+                } else {
+                    (flames::MARGIN_SIDE, flames::MARGIN_TOP)
+                };
+                let burn = BurnArt {
                     field: BurnField::new(cols, rows, play.detail),
                     bases: Vec::new(),
                     tongues: Vec::new(),
                     space_height: rect.height as f32,
+                    margins: (side, top),
+                    smoke: play.smoke,
+                    scratch: burn_smoke::Scratch::default(),
                 };
-                let margins = Margins {
-                    side: flames::MARGIN_SIDE,
-                    top: flames::MARGIN_TOP,
-                };
-                (margins, Art::Flames(flames))
+                (Margins { side, top }, Art::Burn(burn))
             }
             Effect::Smoke => {
                 let (side, top) = smoke::margins(rect.width as u32, rect.height as u32);
@@ -124,12 +134,34 @@ impl EffectOverlay {
         let origin = (self.window.space.x, self.window.space.y);
         let (art, pixels) = (&mut self.art, self.window.pixels());
         match (art, frame.mask) {
-            (Art::Flames(state), Mask::Burn { front, .. }) => {
+            (Art::Burn(state), Mask::Burn { front, .. }) => {
+                if state.smoke {
+                    burn_smoke::paint(
+                        smoke::Canvas {
+                            pixels: &mut *pixels,
+                            width,
+                            height,
+                            origin,
+                        },
+                        &state.field,
+                        front,
+                        time,
+                        &mut state.scratch,
+                    );
+                } else {
+                    pixels.fill(0);
+                }
                 state
                     .field
                     .flame_bases(front, flames::SPACING, &mut state.bases);
-                flames::tongues(&state.bases, state.space_height, time, &mut state.tongues);
-                flames::paint(pixels, width, height, &state.tongues, time);
+                flames::tongues(
+                    &state.bases,
+                    state.space_height,
+                    state.margins,
+                    time,
+                    &mut state.tongues,
+                );
+                flames::paint_over(pixels, width, height, &state.tongues, time);
             }
             (Art::Smoke(state), Mask::Smoke { .. }) => {
                 smoke::paint(

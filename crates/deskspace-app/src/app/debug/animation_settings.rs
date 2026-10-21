@@ -36,16 +36,18 @@ enum Setting {
     Direction,
     Order,
     Delay,
+    Smoke,
 }
 
 impl Setting {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Effect,
         Self::Duration,
         Self::Detail,
         Self::Direction,
         Self::Order,
         Self::Delay,
+        Self::Smoke,
     ];
 
     fn label(self) -> &'static str {
@@ -56,6 +58,7 @@ impl Setting {
             Self::Direction => "Direction",
             Self::Order => "Order",
             Self::Delay => "Delay",
+            Self::Smoke => "Smoke",
         }
     }
 
@@ -77,6 +80,7 @@ impl Setting {
         match option {
             EffectOption::Detail => Self::Detail,
             EffectOption::Direction => Self::Direction,
+            EffectOption::Smoke => Self::Smoke,
         }
     }
 }
@@ -155,6 +159,7 @@ fn animation_rows(animations: &Animations, kind: Kind) -> Vec<AnimationRow> {
                     ),
                     spec.startup && animations.startup == StartupOrder::OneAfterAnother,
                 ),
+                Setting::Smoke => (page.smoke, toggled(settings.smoke), live(setting)),
             };
             AnimationRow {
                 setting,
@@ -183,6 +188,17 @@ fn labelled<T>(
         .position(|(value, _)| current(value))
         .unwrap_or(0);
     (options, selected)
+}
+
+/// Off and On, with the one `on` picks.
+fn toggled(on: bool) -> (Vec<(String, FieldValue)>, usize) {
+    (
+        vec![
+            ("Off".to_string(), FieldValue::Toggle(false)),
+            ("On".to_string(), FieldValue::Toggle(true)),
+        ],
+        if on { 1 } else { 0 },
+    )
 }
 
 fn details(current: u8) -> (Vec<(String, FieldValue)>, usize) {
@@ -314,7 +330,7 @@ mod tests {
         animations.startup = StartupOrder::AllAtOnce;
         assert_eq!(
             enabled(&animations, Kind::Startup),
-            ["Effect", "Duration", "Detail", "Order"]
+            ["Effect", "Duration", "Detail", "Order", "Smoke"]
         );
     }
 

@@ -42,6 +42,8 @@ pub enum EffectOption {
     Detail,
     /// Which edge the effect moves toward or sweeps from.
     Direction,
+    /// Whether a burn also gives off smoke.
+    Smoke,
 }
 
 /// One row of `EFFECTS`.
@@ -54,7 +56,7 @@ pub struct EffectSpec {
     pub options: &'static [EffectOption],
 }
 
-use EffectOption::{Detail, Direction};
+use EffectOption::{Detail, Direction, Smoke};
 
 /// Every effect, in the order the settings page lists them.
 pub const EFFECTS: &[EffectSpec] = &[
@@ -66,7 +68,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Dissolve, "dissolve", &[Detail]),
     effect(Effect::Fly, "fly", &[Direction]),
     effect(Effect::Crt, "crt", &[]),
-    effect(Effect::Burn, "burn", &[Detail]),
+    effect(Effect::Burn, "burn", &[Detail, Smoke]),
     effect(Effect::Smoke, "smoke", &[Detail]),
 ];
 
@@ -148,7 +150,7 @@ pub const KINDS: &[KindSpec] = &[
         kind: Kind::Startup,
         key: "startup",
         effects: EVERY_EFFECT,
-        options: &[Detail, Direction],
+        options: &[Detail, Direction, Smoke],
         follows: None,
         startup: true,
         default: EffectChoice::Effect(Effect::Roll),
@@ -157,7 +159,7 @@ pub const KINDS: &[KindSpec] = &[
         kind: Kind::Delete,
         key: "delete",
         effects: EVERY_EFFECT,
-        options: &[Detail, Direction],
+        options: &[Detail, Direction, Smoke],
         follows: Some(Kind::Startup),
         startup: false,
         default: EffectChoice::SameAs(Kind::Startup),
@@ -276,6 +278,13 @@ pub struct AnimationSettings {
     pub detail: u8,
     /// Used by effects with `EffectOption::Direction`.
     pub direction: Edge,
+    /// Used by effects with `EffectOption::Smoke`.
+    #[serde(default = "smoke_by_default")]
+    pub smoke: bool,
+}
+
+fn smoke_by_default() -> bool {
+    true
 }
 
 impl AnimationSettings {
@@ -285,6 +294,7 @@ impl AnimationSettings {
             duration_ms: DURATION_MS_DEFAULT,
             detail: DETAIL_DEFAULT,
             direction: Edge::Auto,
+            smoke: true,
         }
     }
 
@@ -301,6 +311,7 @@ impl AnimationSettings {
                 .clamp(DURATION_MS_RANGE.0, DURATION_MS_RANGE.1),
             detail: self.detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1),
             direction: self.direction,
+            smoke: self.smoke,
         }
     }
 }
@@ -319,6 +330,7 @@ pub struct Resolved {
     pub duration_ms: u16,
     pub detail: u8,
     pub direction: Edge,
+    pub smoke: bool,
 }
 
 /// Every kind's settings, and the startup order.
@@ -383,6 +395,7 @@ impl Animations {
             duration_ms: own.duration_ms,
             detail: source.detail,
             direction: source.direction,
+            smoke: source.smoke,
         }
     }
 
@@ -422,12 +435,14 @@ mod tests {
             Effect::Smoke,
         ];
         let direction = [Effect::Roll, Effect::Gradient, Effect::Fly];
+        let smoke = [Effect::Burn];
         for spec in EFFECTS {
             assert_eq!(spec.effect.uses(Detail), detail.contains(&spec.effect));
             assert_eq!(
                 spec.effect.uses(Direction),
                 direction.contains(&spec.effect)
             );
+            assert_eq!(spec.effect.uses(Smoke), smoke.contains(&spec.effect));
         }
     }
 
@@ -454,6 +469,7 @@ mod tests {
         assert_eq!(animations.stagger_ms, 50);
         for spec in KINDS {
             assert_eq!(animations.get(spec.kind).duration_ms, 250);
+            assert!(animations.get(spec.kind).smoke, "burn smokes by default");
         }
     }
 
@@ -465,6 +481,7 @@ mod tests {
                 duration_ms: 400,
                 detail: 9,
                 direction: Edge::Left,
+                smoke: false,
             },
             ..Animations::default()
         };
@@ -472,6 +489,7 @@ mod tests {
         let delete = animations.resolve(Kind::Delete);
         assert_eq!(delete.effect, Effect::Pixelate);
         assert_eq!((delete.detail, delete.direction), (9, Edge::Left));
+        assert!(!delete.smoke, "following takes the smoke choice too");
         assert_eq!(delete.duration_ms, 600);
     }
 

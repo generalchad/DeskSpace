@@ -39,6 +39,8 @@ pub struct Play {
     /// drifts differently from the last. The platform sets it when the play
     /// starts; a pure frame is still a function of it.
     pub seed: u32,
+    /// Whether a burn also gives off smoke (`EffectOption::Smoke`).
+    pub smoke: bool,
 }
 
 impl Play {
@@ -52,6 +54,7 @@ impl Play {
             detail: DETAIL_RANGE.0,
             edge: Edge::Auto,
             seed: 0,
+            smoke: false,
         }
     }
 }
@@ -485,6 +488,7 @@ mod tests {
             detail: 5,
             edge: Edge::Auto,
             seed: 7,
+            smoke: true,
         }
     }
 

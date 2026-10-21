@@ -6,7 +6,8 @@
 use super::burn::{self, FlameBase};
 
 /// How much room the overlay keeps beside and above the space for flames to
-/// rise into, in pixels.
+/// rise into, in pixels, when Burn's smoke is off; with smoke on, the larger
+/// `smoke::margins` leave room for the plume too.
 pub const MARGIN_SIDE: u32 = 24;
 pub const MARGIN_TOP: u32 = 72;
 /// A flame every this many burn cells along the front.
@@ -33,9 +34,15 @@ pub struct Tongue {
 }
 
 /// The tongues standing on `bases` at `time` (seconds) for a space
-/// `space_height` tall, into `tongues`. The space's top-left is at
-/// (`MARGIN_SIDE`, `MARGIN_TOP`) in the overlay.
-pub fn tongues(bases: &[FlameBase], space_height: f32, time: f32, tongues: &mut Vec<Tongue>) {
+/// `space_height` tall, into `tongues`, with the space's top-left at
+/// (`side`, `top`) in the overlay.
+pub fn tongues(
+    bases: &[FlameBase],
+    space_height: f32,
+    (side, top): (u32, u32),
+    time: f32,
+    tongues: &mut Vec<Tongue>,
+) {
     tongues.clear();
     let tallest = (space_height * HEIGHT_SHARE).clamp(HEIGHT_RANGE.0, HEIGHT_RANGE.1);
     tongues.extend(bases.iter().map(|base| {
@@ -43,8 +50,8 @@ pub fn tongues(bases: &[FlameBase], space_height: f32, time: f32, tongues: &mut 
         let flicker = 0.78 + 0.22 * (time * 9.0 + phase).sin() * (time * 5.3 + phase * 1.7).cos();
         let height = tallest * (0.55 + 0.45 * base.heat) * flicker;
         Tongue {
-            x: MARGIN_SIDE as f32 + (base.col * burn::CELL) as f32 + burn::CELL as f32 / 2.0,
-            y: MARGIN_TOP as f32 + (base.row * burn::CELL) as f32 + burn::CELL as f32,
+            x: side as f32 + (base.col * burn::CELL) as f32 + burn::CELL as f32 / 2.0,
+            y: top as f32 + (base.row * burn::CELL) as f32 + burn::CELL as f32,
             height,
             width: height * WIDTH_SHARE,
             heat: base.heat,
@@ -53,11 +60,10 @@ pub fn tongues(bases: &[FlameBase], space_height: f32, time: f32, tongues: &mut 
     }));
 }
 
-/// Shades `tongues` at `time` (seconds) into `pixels`, `width` by `height`
-/// premultiplied BGRA (`0xAARRGGBB`), cleared first. Overlapping fire keeps
-/// the brightest of each channel.
-pub fn paint(pixels: &mut [u32], width: u32, height: u32, tongues: &[Tongue], time: f32) {
-    pixels.fill(0);
+/// Draws `tongues` at `time` (seconds) into `pixels`, `width` by `height`
+/// premultiplied BGRA (`0xAARRGGBB`), over what it already holds: overlapping
+/// fire keeps the brightest of each channel, so smoke can lie under it.
+pub fn paint_over(pixels: &mut [u32], width: u32, height: u32, tongues: &[Tongue], time: f32) {
     for tongue in tongues {
         paint_tongue(pixels, width, height, tongue, time);
     }
@@ -168,7 +174,13 @@ mod tests {
     #[test]
     fn tongues_stand_on_their_bases_inside_the_overlay() {
         let mut out = Vec::new();
-        tongues(&[base(0, 10), base(20, 4)], 200.0, 0.5, &mut out);
+        tongues(
+            &[base(0, 10), base(20, 4)],
+            200.0,
+            (MARGIN_SIDE, MARGIN_TOP),
+            0.5,
+            &mut out,
+        );
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].y, (MARGIN_TOP + 11 * burn::CELL) as f32);
         assert!(out[0].x > MARGIN_SIDE as f32);
@@ -181,7 +193,7 @@ mod tests {
     #[test]
     fn a_tongue_is_bright_at_its_foot_and_nothing_elsewhere() {
         let (width, height) = (120, 120);
-        let mut pixels = vec![7; (width * height) as usize];
+        let mut pixels = vec![0; (width * height) as usize];
         let tongue = Tongue {
             x: 60.0,
             y: 100.0,
@@ -190,7 +202,7 @@ mod tests {
             heat: 1.0,
             phase: 0.0,
         };
-        paint(&mut pixels, width, height, &[tongue], 0.0);
+        paint_over(&mut pixels, width, height, &[tongue], 0.0);
         let at = |x: u32, y: u32| pixels[(y * width + x) as usize];
         assert!(at(60, 97) >> 24 > 200, "the foot burns");
         assert_eq!(at(5, 5), 0, "far away stays clear");

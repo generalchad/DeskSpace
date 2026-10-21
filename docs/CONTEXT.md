@@ -881,7 +881,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   directly above it and dies with it), made when an effect that draws
   beside the space starts and dropped when it ends. `render/flames.rs`
   (pure) stands tongues on the burning edge and shades them on the CPU
-  into its DIB section each frame.
+  into its DIB section each frame; `render/burn_smoke.rs` shades the
+  neutral plume that Burn draws under them when its Smoke option is on.
 - Smoke is `render/smoke.rs`, pure: seeded plumes eat the window from the
   bottom while a density band rises above the front. The painter fades the
   window through the same field; the overlay shades the plume and samples

@@ -319,15 +319,17 @@ A native, lightweight, offline Windows desktop organizer that:
     up along a ragged front, charring ahead of a glowing edge, with flames
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
-    space's own window carries the blur over its whole rect), and Smoke (amended
-     2026-10-20, maintainer: the space sublimates into plumes of its own
-     tint that rise from a few seeded sources along its lower edge, fading
-     the window where they pass and carrying its contents away with them;
-     a show condenses the smoke into the space, and the smoke rises past
-     the frame, so it uses Burn's overlay; each play is seeded when it
-     starts, so it never looks the same twice while a reversal still
-     retraces the same wisps). Black hole (the space swallowed by a hole that
-    opens on the desktop) is planned after composition (T14). Also
+    space's own window carries the blur over its whole rect; a Smoke
+    toggle, on by default, gives it a neutral gray plume behind the
+    flames), and Smoke (amended 2026-10-20, maintainer: the space
+    sublimates into plumes of its own tint that rise from a few seeded
+    sources along its lower edge, fading the window where they pass and
+    carrying its contents away with them; a show condenses the smoke into
+    the space, and the smoke rises past the frame, so it uses Burn's
+    overlay; each play is seeded when it starts, so it never looks the
+    same twice while a reversal still retraces the same wisps). Black
+    hole (the space swallowed by a hole that opens on the desktop) is
+    planned after composition (T14). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
       work area (Automatic is the top), lands on its place, and settles in
@@ -347,9 +349,10 @@ A native, lightweight, offline Windows desktop organizer that:
     A kind can limit the list: Fold offers only None, Roll, and Scroll.
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
-    block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
-    Direction (which edge; Automatic is the effect's own: the top for Roll
-    and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
+    block size, grain, or edge width) for Pixelate, Dissolve, Burn, and
+    Smoke; Smoke (on by default) for Burn; and Direction (which edge;
+    Automatic is the effect's own: the top for Roll and Gradient, the
+    nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The
     controls live in a Global-only Animations group of pages, one per kind,
     so no page grows too tall for a 1080-pixel display. Defaults: Roll at

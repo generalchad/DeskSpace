@@ -68,6 +68,13 @@ impl BurnField {
         self.field.value(col, row)
     }
 
+    /// The field at a point in space pixels, bilinear and clamped, for the
+    /// smoke that rises from the burning edge.
+    pub fn value_at(&self, x: f32, y: f32) -> f32 {
+        self.field
+            .value_at(x / CELL as f32 - 0.5, y / CELL as f32 - 0.5)
+    }
+
     /// Where flames stand at `front`, into `bases`: in every `every`-th
     /// column and the last, the top of the glowing band, with how hot it is
     /// there (1 right at the front).

@@ -46,6 +46,20 @@ impl RisingField {
     pub fn value(&self, col: u32, row: u32) -> f32 {
         self.values[(row * self.cols + col) as usize]
     }
+
+    /// The field at a point in cells, bilinear and clamped to the edges, so
+    /// sampling just outside still sees the edge.
+    pub fn value_at(&self, x: f32, y: f32) -> f32 {
+        let fx = x.clamp(0.0, (self.cols - 1) as f32);
+        let fy = y.clamp(0.0, (self.rows - 1) as f32);
+        let (x0, y0) = (fx.floor() as u32, fy.floor() as u32);
+        let (x1, y1) = ((x0 + 1).min(self.cols - 1), (y0 + 1).min(self.rows - 1));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let at = |col, row| self.value(col, row);
+        let top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * tx;
+        let bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * tx;
+        top + (bottom - top) * ty
+    }
 }
 
 /// A fixed random value from 0 to 1 for (`seed`, `index`), so a play's parts

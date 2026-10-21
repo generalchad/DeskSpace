@@ -265,9 +265,16 @@ pub fn apply_animation_edit(animations: &mut Animations, id: u32, value: FieldVa
 
 /// The animation page that owns field `id`, if any.
 fn animation_page_of(id: u32) -> Option<&'static AnimationPage> {
-    ANIMATION_PAGES
-        .iter()
-        .find(|page| [page.effect, page.duration, page.detail, page.direction].contains(&id))
+    ANIMATION_PAGES.iter().find(|page| {
+        [
+            page.effect,
+            page.duration,
+            page.detail,
+            page.direction,
+            page.smoke,
+        ]
+        .contains(&id)
+    })
 }
 
 fn clamp_u16(value: i32, range: (u16, u16)) -> u16 {
@@ -296,6 +303,9 @@ fn apply_animation_field(
         }
         FieldValue::Slider(value) if id == page.detail => {
             settings.detail = value.clamp(DETAIL_RANGE.0.into(), DETAIL_RANGE.1.into()) as u8;
+        }
+        FieldValue::Toggle(on) if id == page.smoke => {
+            settings.smoke = on;
         }
         _ => return false,
     }
@@ -438,6 +448,10 @@ mod tests {
             edit(field::ANIM_STAGGER, FieldValue::Slider(100)),
             Effect::Pending
         );
+        assert_eq!(
+            edit(field::ANIM_STARTUP_SMOKE, FieldValue::Toggle(false)),
+            Effect::Pending
+        );
         let animations = config.window.animations;
         assert_eq!(
             animations.delete.effect,
@@ -445,6 +459,7 @@ mod tests {
         );
         assert_eq!(animations.startup_exit.duration_ms, DURATION_MS_RANGE.0);
         assert_eq!(animations.startup_exit.detail, 10);
+        assert!(!animations.startup_exit.smoke);
         assert_eq!(
             animations.resolve(Kind::Startup).direction,
             deskspace_core::animation::Edge::Left

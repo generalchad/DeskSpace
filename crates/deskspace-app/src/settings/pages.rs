@@ -507,6 +507,12 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
             .enabled(option_enabled(EffectOption::Direction)),
         );
     }
+    if spec.options.contains(&EffectOption::Smoke) {
+        fields.push(
+            Field::toggle(page.smoke, "Smoke", resolved.smoke)
+                .enabled(option_enabled(EffectOption::Smoke)),
+        );
+    }
     if spec.startup {
         fields.push(
             Field::choice(

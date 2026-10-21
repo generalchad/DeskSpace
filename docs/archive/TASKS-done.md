@@ -3056,3 +3056,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     smokes without the overlay; CPU stays smooth with several spaces at
     once and on a full-screen space.
 
+- [x] **T23. Burn's smoke (core, app, platform).** **[needs human]**
+  - Option: `EffectOption::Smoke`, used by Burn alone; `AnimationSettings.smoke`
+    (on by default, so an old file loads smoking), `Resolved.smoke`, and
+    `Play.smoke`. Startup and Delete offer it; Fold does not.
+  - Settings: a Smoke toggle on Startup and Delete, greyed unless Burn is
+    chosen, and Off/On in the debug window's Animation settings box.
+  - Painter: `render/burn_smoke.rs`, pure, shades a neutral warm gray plume
+    rising from the burn front into the overlay; `flames::paint_over` draws
+    the fire over it. With smoke on, Burn's overlay uses `smoke::margins`
+    for both, so the flames stand in the larger window as before.
+  - Tests: no smoke at either end of the burn; smoke is gray and
+    premultiplied; an old config loads with smoke on; the page and the debug
+    box edit it.
+  - **[needs human]** check: Burn with Smoke on and off on Startup and
+    Delete, on each backdrop at 100 % and 150 %: on, a gray plume rises from
+    the glowing edge behind the flames, thickest at the edge and thinning
+    upward, with no box or tint; off, Burn looks exactly as it did; the
+    toggle persists and the debug box changes it.

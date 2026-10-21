@@ -73,8 +73,8 @@ pub mod field {
     pub const INSTALL_UPDATES: u32 = 72;
 
     // The animation pages (ROADMAP D12), one block per kind; `ANIMATION_PAGES`
-    // says which page each belongs to. Fold's detail and direction are kept
-    // for it although Fold offers neither. 80-86 were New space's page,
+    // says which page each belongs to. Fold's detail, direction, and smoke are
+    // kept for it although Fold offers none. 80-86 were New space's page,
     // merged into Startup (73-79) on 2026-10-18; they stay unused.
     pub const ANIM_STARTUP_HEADING: u32 = 73;
     pub const ANIM_STARTUP_NOTE: u32 = 74;
@@ -99,6 +99,9 @@ pub mod field {
     pub const ANIM_FOLD_DURATION: u32 = 100;
     pub const ANIM_FOLD_DETAIL: u32 = 101;
     pub const ANIM_FOLD_DIRECTION: u32 = 102;
+    pub const ANIM_STARTUP_SMOKE: u32 = 107;
+    pub const ANIM_DELETE_SMOKE: u32 = 108;
+    pub const ANIM_FOLD_SMOKE: u32 = 109;
     pub const BORDER_WIDTH: u32 = 103;
     pub const BORDER_SOURCE: u32 = 104;
     pub const BORDER_COLOR: u32 = 105;

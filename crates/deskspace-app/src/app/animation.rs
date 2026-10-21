@@ -174,6 +174,7 @@ fn play_for(
         edge: resolved.direction,
         // The platform seeds each play when it starts.
         seed: 0,
+        smoke: resolved.smoke,
     }
 }
 
