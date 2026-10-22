@@ -165,7 +165,6 @@ impl App {
             .iter()
             .filter_map(|path| self.find_item_by_file(path))
             .filter_map(|item| self.config.desktop.space_containing(item))
-            .filter(|id| self.config.desktop.space(*id).is_some_and(|s| !s.is_lens()))
             .collect();
         let paths = paths_to_transfer(&paths, &folder);
         if paths.is_empty() {

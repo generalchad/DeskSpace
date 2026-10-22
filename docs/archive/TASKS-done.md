@@ -3247,3 +3247,25 @@ until I5-I6 all land, so no partial build hides the desktop.
     Explorer onto a lens: the cursor shows "no" and nothing moves. Right
     drag onto a lens: "Show here without moving" is grey. On a normal
     space, Shift and the right-drop menu behave as before.
+- [x] **W3d. A lens item dropped on a normal space (app).**
+  - Why: dragging an item from a lens onto a normal space does nothing
+    today. `add_dropped` finds the item by its file and sends `MoveItem`,
+    which core rejects for a lens item. Decided (2026-10-21): to a
+    normal space, a lens's file is an ordinary file, so it moves into
+    storage like a file dropped from Explorer.
+  - `app/hit.rs`, `find_item_by_file`: skip items that belong to a lens.
+    The method answers "which item that DeskSpace owns uses this file";
+    say that in its `///` doc. A lens's items belong to its folder.
+    Callers then take their "not found" path. `add_dropped` adopts the
+    file into storage and adds a new item, and a paste's `plan_paste`
+    treats it as an outside move. The lens's watch drops the old item at
+    its next sync.
+  - Test, in `app/hit.rs` (the module has `App::new` tests to copy): put
+    an item for `C:/x/a.txt` in a normal space, and the same path in a
+    lens through `fixtures::apply` with `Command::SyncLens`.
+    `find_item_by_file` returns the normal space's item. With only the
+    lens listing it, it returns `None`.
+  - Done when: the gates pass. **[needs human]**: drag an item from a
+    lens onto a normal space: the file leaves the lens's folder, the
+    space lists it, and the lens no longer shows it. Delete that space:
+    the file goes to the desktop, not back to the folder (D3).

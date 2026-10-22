@@ -191,14 +191,17 @@ impl App {
             .then_some(item)
     }
 
-    /// The item holding the file at `path`, comparing identity rather than the
-    /// literal string so a shell-reported short name or case difference still
-    /// matches. A path in a space must be moved, not added again.
+    /// The item that DeskSpace owns for the file at `path`, comparing identity
+    /// rather than the literal string so a shell-reported short name or case
+    /// difference still matches. A path in a space must be moved, not added
+    /// again. A lens's items belong to its folder, so they never match: to any
+    /// other space, a lens's file is an ordinary file.
     pub(super) fn find_item_by_file(&self, path: &Path) -> Option<ItemId> {
         self.config
             .desktop
             .spaces()
             .iter()
+            .filter(|space| !space.is_lens())
             .flat_map(|space| space.items().iter())
             .find(|item| crate::storage::same_path(&item.path, path))
             .map(|item| item.id)
@@ -245,7 +248,40 @@ mod tests {
     use crate::fixtures;
 
     use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::Command;
+    use deskspace_core::item::ItemKind;
+    use deskspace_core::source::FolderEntry;
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn a_lens_item_is_not_owned_by_deskspace() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lens = fixtures::create_lens(desktop, "L", Rect::new(0, 0, 240, 120), "C:/x");
+        let entry = FolderEntry {
+            path: "C:/x/a.txt".into(),
+            label: String::new(),
+            kind: ItemKind::Other,
+            size: None,
+            modified: None,
+            hidden: false,
+        };
+        fixtures::apply(
+            desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![entry],
+            },
+        );
+        let path = Path::new("C:/x/a.txt");
+        assert_eq!(app.find_item_by_file(path), None, "only the lens lists it");
+
+        let desktop = &mut app.config.desktop;
+        let space = fixtures::create_space(desktop, "S", Rect::new(300, 0, 240, 120));
+        let item = fixtures::add_item(desktop, space, "C:/x/a.txt");
+        assert_eq!(app.find_item_by_file(path), Some(item));
+    }
 
     #[test]
     fn checkbox_hit_test_matches_the_icon_corner() {

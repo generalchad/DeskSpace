@@ -640,28 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W3d. A lens item dropped on a normal space (app).**
-  - Why: dragging an item from a lens onto a normal space does nothing
-    today. `add_dropped` finds the item by its file and sends `MoveItem`,
-    which core rejects for a lens item. Decided (2026-10-21): to a
-    normal space, a lens's file is an ordinary file, so it moves into
-    storage like a file dropped from Explorer.
-  - `app/hit.rs`, `find_item_by_file`: skip items that belong to a lens.
-    The method answers "which item that DeskSpace owns uses this file";
-    say that in its `///` doc. A lens's items belong to its folder.
-    Callers then take their "not found" path. `add_dropped` adopts the
-    file into storage and adds a new item, and a paste's `plan_paste`
-    treats it as an outside move. The lens's watch drops the old item at
-    its next sync.
-  - Test, in `app/hit.rs` (the module has `App::new` tests to copy): put
-    an item for `C:/x/a.txt` in a normal space, and the same path in a
-    lens through `fixtures::apply` with `Command::SyncLens`.
-    `find_item_by_file` returns the normal space's item. With only the
-    lens listing it, it returns `None`.
-  - Done when: the gates pass. **[needs human]**: drag an item from a
-    lens onto a normal space: the file leaves the lens's folder, the
-    space lists it, and the lens no longer shows it. Delete that space:
-    the file goes to the desktop, not back to the folder (D3).
 - [ ] **W3e. Pasting into a lens (app).**
   - Why: `paste_clipboard` (`app/clipboard.rs`) moves or copies the
     clipboard's files into storage and then sends `AddItem`, which a lens
@@ -1263,6 +1241,7 @@ each id is in `archive/TASKS-done.md`.
 | W2 (F-07) | With the hand-made lens in section W, create, rename, and delete files in its folder in Explorer: the lens follows within about 150 ms. Rename the folder away: the lens empties. Rename it back: it fills again within 5 s. |
 | W3b (F-07) | Drop files from Explorer and from a normal space onto a lens (hand-made, section W): they land in its folder, and the normal space no longer lists its file. Drop a file whose name is already there: Explorer's Replace or Skip dialog appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy here": the original stays. "Add files…" on a lens moves the files into its folder. Regression: a clashing drop on a normal space still gets " (2)" and no dialog. |
 | W3c (F-07) | Shift-drag a file from Explorer onto a hand-made lens (section W): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
+| W3d (F-07) | Drag an item from a hand-made lens (section W) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
