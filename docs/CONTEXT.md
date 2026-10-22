@@ -165,7 +165,9 @@ A lens's items are a live cache: the watch worker lists the folder and posts
 filters hidden entries, sorts naturally, and reconciles by path so an `ItemId`
 survives a refresh. They are never written to the config, and `Config::migrate`
 drops any a hand-edited file lists. `AddItem` and `MoveItem` into a lens are
-`Rejected`; file changes there are shell operations. A lens on the storage
+`Rejected`; file changes there are shell operations: a drop on a lens moves
+(or copies) the files into its folder with `Ui::transfer_files` and
+`OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
 folder, or inside it, is kept but never watched, and counts as unavailable
 (`ItemStore::allows_lens`).
 

@@ -2,6 +2,7 @@
 //! drag out, clipboard, file operations, and info tips.
 
 use super::*;
+use crate::win32::file_op::OnCollision;
 
 impl Ui {
     /// Opens `path` with its default verb, as a double-click in Explorer does.
@@ -116,9 +117,10 @@ impl Ui {
         paths: &[PathBuf],
         destination: &Path,
         move_items: bool,
+        on_collision: OnCollision,
     ) -> Option<Vec<PathBuf>> {
         let owner = with_runtime(|runtime| runtime.controller);
-        match file_op::transfer(owner, paths, destination, move_items) {
+        match file_op::transfer(owner, paths, destination, move_items, on_collision) {
             Ok(created) => Some(created),
             Err(error) => {
                 tracing::warn!(%error, dest = %destination.display(), "file operation failed");

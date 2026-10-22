@@ -3123,3 +3123,81 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Docs: in the lens part of `CONTEXT.md` section 4, one sentence: a lens
     on the storage folder is kept but never watched.
   - Done when: the gates pass. No screen check is needed.
+- [x] **W3b. Dropping onto a lens moves or copies into its folder
+  (platform, app).**
+  - Why: today a file dropped on a lens is first moved into storage by
+    `place_dropped`, and then `AddItem` is rejected, so the file is stuck
+    in storage where the user never sees it. D3 says a drop on a lens
+    moves the file into the lens's folder instead, with Explorer's own
+    dialogs.
+  - Platform, `win32/file_op.rs`. Read `transfer` first.
+    1. Add `pub enum OnCollision { Rename, Ask }` with a `///` doc on
+       each variant. `Rename` gives a clashing name " (2)"; storage uses
+       it because every space shares the folder. `Ask` shows Explorer's
+       "Replace or Skip" dialog; a user's real folder wants that.
+    2. Add a pure `fn operation_flags(on_collision: OnCollision)` that
+       returns the flags `transfer` passes to `SetOperationFlags` today
+       for `Rename`, and the same flags without `FOF_RENAMEONCOLLISION`
+       for `Ask`. Look up the type `SetOperationFlags` takes in the
+       `windows` crate docs. Both keep `FOF_ALLOWUNDO`, so Ctrl+Z in
+       Explorer undoes the move.
+    3. `transfer` takes an `on_collision: OnCollision` argument and uses
+       `operation_flags`. Update the module's `//!` doc, which says name
+       clashes are always renamed.
+    4. Export `OnCollision` from the crate root (`lib.rs`, beside
+       `DropAction`). `Ui::transfer_files` (`win32/runtime/ui_shell.rs`)
+       takes it and passes it on.
+    5. Test `operation_flags`: `Rename` has `FOF_RENAMEONCOLLISION` and
+       `Ask` does not; both have `FOF_ALLOWUNDO`.
+  - App, the existing callers: `copy_dropped` (`app/files.rs`) and
+    `paste_clipboard` (`app/clipboard.rs`, two calls) pass
+    `OnCollision::Rename`. They put files in storage, so nothing changes
+    for them.
+  - App, `app/files.rs`, a pure function `fn paths_to_transfer(paths:
+    &[PathBuf], folder: &Path) -> Vec<PathBuf>`. It keeps the paths in
+    order and leaves out three kinds:
+    - a path already directly in `folder` (its parent is `folder`, by
+      `storage::same_path`), because moving it there changes nothing;
+    - `folder` itself;
+    - any folder that contains `folder` (`storage::is_inside(folder,
+      path)`), because a folder cannot move into itself.
+
+    Test each rule, then a mixed list, which keeps only the valid paths
+    in their order.
+  - App, `app/files.rs`, a new method `fn drop_into_lens(&mut self, ui:
+    &mut Ui, folder: PathBuf, paths: Vec<PathBuf>, action: DropAction)`:
+    1. If `!folder.is_dir()`, log a warning and return. W5 shows the
+       user why.
+    2. If `!self.storage.allows_lens(&folder)` (W3a), return.
+    3. Before moving anything, note which normal spaces list the dropped
+       files: for each path, `find_item_by_file`, then
+       `space_containing`. Skip lens spaces; their own watch follows the
+       move.
+    4. `let paths = paths_to_transfer(&paths, &folder);` and return if it
+       is empty.
+    5. `match action`: `Move` calls `ui.transfer_files(&paths, &folder,
+       true, OnCollision::Ask)`, and `Copy` the same with `false`.
+       `KeepInPlace` cannot apply to a folder: log at `debug` and return.
+       After W3c the platform never sends it to a lens; keep the arm and
+       say so in a comment.
+    6. Call `self.prune_missing(ui, id)` for each space noted in step 3.
+       It drops the items whose files just moved away.
+  - App, `add_dropped`: as its first statement, if the target space is a
+    lens (`space.folder_view()`), clone the folder path, call
+    `drop_into_lens`, and return. Nothing after that line runs for a
+    lens: no `adopt`, `AddItem`, or `MoveItem`. The lens's watch shows the
+    new files a moment later. "Add files…" (`menus.rs` `add_files`)
+    already goes through `add_dropped`, so it is covered.
+  - Re-entrancy: the shell's dialog runs its own message loop. The app
+    holds no runtime borrow, and `Ui::transfer_files` takes its own only
+    for a moment, so nothing more is needed. Do not add a `with_runtime`
+    call around it (`ENGINEERING.md` section 6).
+  - Done when: `add_dropped` never reaches `adopt`, `AddItem`, or
+    `MoveItem` for a lens, and the gates pass. **[needs human]**: drop
+    files from Explorer and from a normal space onto a lens; they land
+    in its folder, and the normal space no longer lists its file. Drop a
+    file whose name is already there: Explorer's Replace or Skip dialog
+    appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy
+    here": the original stays. "Add files…" on a lens moves the files
+    into its folder. Regression: a clashing drop on a normal space still
+    gets " (2)" and no dialog.

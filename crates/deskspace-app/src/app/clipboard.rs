@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::{Command, ItemId, SpaceId};
-use deskspace_platform::{ClipboardFiles, Ui, item_facts};
+use deskspace_platform::{ClipboardFiles, OnCollision, Ui, item_facts};
 
 use super::{App, Surface};
 
@@ -136,12 +136,13 @@ impl App {
         let store = self.storage.root().to_path_buf();
         let mut created: Vec<PathBuf> = Vec::new();
         if !external_moves.is_empty()
-            && let Some(paths) = ui.transfer_files(&external_moves, &store, true)
+            && let Some(paths) =
+                ui.transfer_files(&external_moves, &store, true, OnCollision::Rename)
         {
             created.extend(paths);
         }
         if !copies.is_empty()
-            && let Some(paths) = ui.transfer_files(&copies, &store, false)
+            && let Some(paths) = ui.transfer_files(&copies, &store, false, OnCollision::Rename)
         {
             created.extend(paths);
         }

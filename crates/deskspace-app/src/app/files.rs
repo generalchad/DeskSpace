@@ -6,12 +6,29 @@ use std::path::{Path, PathBuf};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
-    CustomShortcut, DropAction, ShellItem, Ui, create_custom_shortcut, create_shortcut,
-    desktop_directory, item_facts, notify_moved,
+    CustomShortcut, DropAction, OnCollision, ShellItem, Ui, create_custom_shortcut,
+    create_shortcut, desktop_directory, item_facts, notify_moved,
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::ItemStore;
+use crate::storage::{ItemStore, is_inside, same_path};
+
+/// The dropped `paths` worth handing to the shell for `folder`, in order. A
+/// path already directly in `folder`, `folder` itself, and any folder that
+/// contains `folder` are left out: the first would not change, and the others
+/// cannot move into themselves.
+fn paths_to_transfer(paths: &[PathBuf], folder: &Path) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| {
+            let already_there = path
+                .parent()
+                .is_some_and(|parent| same_path(parent, folder));
+            !already_there && !same_path(path, folder) && !is_inside(folder, path)
+        })
+        .cloned()
+        .collect()
+}
 
 /// Where a deleted space's stored files go. Items listed in place are only
 /// unlisted either way.
@@ -63,6 +80,18 @@ impl App {
         paths: Vec<PathBuf>,
         action: DropAction,
     ) {
+        // A lens shows a real folder (ROADMAP D3): the files go there through
+        // the shell, never into the store or the lens's item list.
+        if let Some(folder) = self
+            .config
+            .desktop
+            .space(target)
+            .and_then(Space::folder_view)
+            .map(|view| view.path.clone())
+        {
+            self.drop_into_lens(ui, folder, paths, action);
+            return;
+        }
         let mut touched = HashSet::from([target]);
         for path in paths {
             // A drop can name a file that no longer exists (for example a
@@ -112,6 +141,50 @@ impl App {
         }
         self.refresh_tray(ui);
         self.save(ui);
+    }
+
+    /// Moves or copies dropped `paths` into a lens's `folder` with the shell's
+    /// file operation, which asks before replacing a file. The lens's watch
+    /// lists the new files; the normal spaces that listed the moved ones are
+    /// pruned.
+    fn drop_into_lens(
+        &mut self,
+        ui: &mut Ui,
+        folder: PathBuf,
+        paths: Vec<PathBuf>,
+        action: DropAction,
+    ) {
+        if !folder.is_dir() {
+            tracing::warn!(folder = %folder.display(), "lens folder is missing; drop ignored");
+            return;
+        }
+        if !self.storage.allows_lens(&folder) {
+            return;
+        }
+        let listing_spaces: HashSet<SpaceId> = paths
+            .iter()
+            .filter_map(|path| self.find_item_by_file(path))
+            .filter_map(|item| self.config.desktop.space_containing(item))
+            .filter(|id| self.config.desktop.space(*id).is_some_and(|s| !s.is_lens()))
+            .collect();
+        let paths = paths_to_transfer(&paths, &folder);
+        if paths.is_empty() {
+            return;
+        }
+        let move_items = match action {
+            DropAction::Move => true,
+            DropAction::Copy => false,
+            // Keeping a file in place means nothing for a folder. The platform
+            // never offers it over a lens (W3c); the arm keeps the match total.
+            DropAction::KeepInPlace => {
+                tracing::debug!("keep-in-place drop on a lens ignored");
+                return;
+            }
+        };
+        ui.transfer_files(&paths, &folder, move_items, OnCollision::Ask);
+        for id in listing_spaces {
+            self.prune_missing(ui, id);
+        }
     }
 
     /// Creates a shortcut in the store for each source and lists it in
@@ -228,7 +301,12 @@ impl App {
             tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
             return None;
         }
-        let created = ui.transfer_files(std::slice::from_ref(&path), root, false)?;
+        let created = ui.transfer_files(
+            std::slice::from_ref(&path),
+            root,
+            false,
+            OnCollision::Rename,
+        )?;
         created.into_iter().next()
     }
 
@@ -574,6 +652,52 @@ impl ShortcutSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn paths(list: &[&str]) -> Vec<PathBuf> {
+        list.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn a_file_already_in_the_folder_is_not_transferred() {
+        let kept = paths_to_transfer(
+            &paths(&["C:/Lens/a.txt", "c:/lens/b.txt"]),
+            Path::new("C:/Lens"),
+        );
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn the_folder_itself_is_not_transferred() {
+        let kept = paths_to_transfer(&paths(&["C:/Lens"]), Path::new("C:/lens"));
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn a_folder_containing_the_target_is_not_transferred() {
+        let kept = paths_to_transfer(
+            &paths(&["C:/Users", "C:/Users/me"]),
+            Path::new("C:/Users/me/Lens"),
+        );
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn a_mixed_drop_keeps_only_the_valid_paths_in_order() {
+        let kept = paths_to_transfer(
+            &paths(&[
+                "C:/Other/z.txt",
+                "C:/Lens/a.txt",
+                "C:/Users",
+                "C:/Other/b.txt",
+                "C:/Users/me/Lens",
+            ]),
+            Path::new("C:/Users/me/Lens"),
+        );
+        assert_eq!(
+            kept,
+            paths(&["C:/Other/z.txt", "C:/Lens/a.txt", "C:/Other/b.txt"])
+        );
+    }
 
     #[test]
     fn shortcut_names_make_illegal_characters_safe() {
