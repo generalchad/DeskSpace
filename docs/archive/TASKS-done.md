@@ -3288,3 +3288,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     moves. Cut an item from a normal space and paste it on a lens: it
     moves into the folder and leaves the space. A paste on a normal space
     works as before.
+- [x] **W3f. Shortcuts on a lens (app).**
+  - Why: `add_shortcuts` (`app/files.rs`) writes every new `.lnk` or
+    `.url` into storage, then sends `AddItem`, which a lens rejects. A
+    Start-menu app dropped on a lens, "Paste shortcut", the custom
+    shortcut dialog, and the installed-apps picker all end there.
+    Explorer writes such a shortcut into the folder it was dropped on.
+  - `storage.rs`: make `unique_destination` `pub(crate)`.
+    `ItemStore::unique_path` keeps calling it.
+  - `app/files.rs`, `write_shortcut`: take the destination folder as an
+    argument and use `storage::unique_destination(folder, name)` in
+    place of `self.storage.unique_path(name)` (three places).
+  - `add_shortcuts`: work out the destination first. For a lens it is
+    its folder, after the W3a `allows_lens` check and an `is_dir` check
+    (log and return when either fails). Otherwise it is
+    `self.storage.root()`, created as today. Pass it to `write_shortcut`.
+    Send `AddItem` only for a normal space; a lens's watch lists the new
+    file.
+  - Test, in `app/files.rs` (no COM needed): `write_shortcut` with a
+    `ShortcutSource::Shell` whose `path` is a `.lnk` file in a temp
+    folder copies it into a second temp folder. A second call names the
+    copy " (2)". Copy the temp-folder setup from
+    `stored_paths_lists_stored_files_and_skips_items_in_place`.
+  - Done when: `add_shortcuts` never sends `AddItem` for a lens, and the
+    gates pass. **[needs human]**: drop a Start-menu app on a lens: a
+    working `.lnk` is in the folder and the lens shows it. "New shortcut
+    ▸ Paste shortcut" and the custom shortcut dialog on a lens do the
+    same. On a normal space, shortcuts work as before.

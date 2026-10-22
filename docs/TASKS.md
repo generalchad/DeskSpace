@@ -640,33 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W3f. Shortcuts on a lens (app).**
-  - Why: `add_shortcuts` (`app/files.rs`) writes every new `.lnk` or
-    `.url` into storage, then sends `AddItem`, which a lens rejects. A
-    Start-menu app dropped on a lens, "Paste shortcut", the custom
-    shortcut dialog, and the installed-apps picker all end there.
-    Explorer writes such a shortcut into the folder it was dropped on.
-  - `storage.rs`: make `unique_destination` `pub(crate)`.
-    `ItemStore::unique_path` keeps calling it.
-  - `app/files.rs`, `write_shortcut`: take the destination folder as an
-    argument and use `storage::unique_destination(folder, name)` in
-    place of `self.storage.unique_path(name)` (three places).
-  - `add_shortcuts`: work out the destination first. For a lens it is
-    its folder, after the W3a `allows_lens` check and an `is_dir` check
-    (log and return when either fails). Otherwise it is
-    `self.storage.root()`, created as today. Pass it to `write_shortcut`.
-    Send `AddItem` only for a normal space; a lens's watch lists the new
-    file.
-  - Test, in `app/files.rs` (no COM needed): `write_shortcut` with a
-    `ShortcutSource::Shell` whose `path` is a `.lnk` file in a temp
-    folder copies it into a second temp folder. A second call names the
-    copy " (2)". Copy the temp-folder setup from
-    `stored_paths_lists_stored_files_and_skips_items_in_place`.
-  - Done when: `add_shortcuts` never sends `AddItem` for a lens, and the
-    gates pass. **[needs human]**: drop a Start-menu app on a lens: a
-    working `.lnk` is in the folder and the lens shows it. "New shortcut
-    ▸ Paste shortcut" and the custom shortcut dialog on a lens do the
-    same. On a normal space, shortcuts work as before.
 - [ ] **W3g. Deleting an item from a lens (app).**
   - Why: D3 says removing a lens item recycles its file. The Delete key
     already does that for any item (`delete_selected_items` recycles
@@ -1224,6 +1197,7 @@ each id is in `archive/TASKS-done.md`.
 | W3c (F-07) | Shift-drag a file from Explorer onto a hand-made lens (section W): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
 | W3d (F-07) | Drag an item from a hand-made lens (section W) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
 | W3e (F-07) | In Explorer, copy a file and paste it on a hand-made lens (section W; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
+| W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

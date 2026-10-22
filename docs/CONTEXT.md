@@ -1163,7 +1163,9 @@ in `ui.rs`. What spans them:
   target is reported in the dialog. A web address becomes a `.url`,
   everything else a `.lnk` (a copied `.lnk` or `.url` is duplicated into the
   store). All three end in `App::add_shortcuts`, which writes into the space
-  storage and lists the shortcuts at the end of the space. The same choices
+  storage and lists the shortcuts at the end of the space; for a lens it
+  writes them into the lens's folder and lists nothing, since the watch does.
+  The same choices
   open from the + tile on a space's Settings page "Shortcuts", whose preview
   also deletes an item from its X (after asking).
 - **Add files…** (F-55) picks files in the standard Open dialog

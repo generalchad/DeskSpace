@@ -11,7 +11,7 @@ use deskspace_platform::{
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::{ItemStore, is_inside, same_path};
+use crate::storage::{ItemStore, is_inside, same_path, unique_destination};
 
 /// The dropped `paths` worth handing to the shell for `folder`, in order. A
 /// path already directly in `folder`, `folder` itself, and any folder that
@@ -188,7 +188,8 @@ impl App {
     }
 
     /// Creates a shortcut in the store for each source and lists it in
-    /// `target`: shell items dropped on a space (a Start-menu or taskbar app,
+    /// `target`, or, for a lens, writes it into the lens's folder, where its
+    /// watch lists it: shell items dropped on a space (a Start-menu or taskbar app,
     /// or an Alt-drag; F-50), apps picked from the Applications folder, and
     /// custom shortcuts (F-53). Explorer writes a `.lnk` when a shell item is
     /// dropped on a folder, and the store is the space's folder, so the
@@ -203,15 +204,29 @@ impl App {
         at: Point,
         sources: Vec<ShortcutSource>,
     ) {
-        let root = self.storage.root();
-        if let Err(error) = std::fs::create_dir_all(root) {
-            tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
-            return;
-        }
+        let lens = self.lens_folder(target);
+        let destination = match &lens {
+            Some(folder) if !folder.is_dir() || !self.storage.allows_lens(folder) => {
+                tracing::warn!(folder = %folder.display(), "lens folder is unavailable; no shortcut written");
+                return;
+            }
+            Some(folder) => folder.clone(),
+            None => {
+                let root = self.storage.root();
+                if let Err(error) = std::fs::create_dir_all(root) {
+                    tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
+                    return;
+                }
+                root.to_path_buf()
+            }
+        };
         for source in sources {
-            match self.write_shortcut(&source) {
+            match write_shortcut(&destination, &source) {
                 Ok(path) => {
-                    tracing::info!(name = source.name(), path = %path.display(), "created a shortcut in the store");
+                    tracing::info!(name = source.name(), path = %path.display(), "created a shortcut");
+                    if lens.is_some() {
+                        continue;
+                    }
                     // Not `commit`: one of several commands, refreshed once below.
                     self.dispatch(
                         Command::AddItem {
@@ -231,32 +246,6 @@ impl App {
         self.refresh_tray(ui);
         self.save(ui);
         self.refresh_settings(ui);
-    }
-
-    /// Writes one shortcut into the store under a clash-free name and returns
-    /// its path: a copy of a dropped shortcut file, a new `.lnk` to a shell
-    /// item, or the `.lnk` or `.url` a custom shortcut describes.
-    fn write_shortcut(&self, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
-        match source {
-            ShortcutSource::Shell(item) => {
-                if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
-                    let path = self.storage.unique_path(&link_copy_name(link, &item.name));
-                    std::fs::copy(link, &path)?;
-                    return Ok(path);
-                }
-                let path = self
-                    .storage
-                    .unique_path(&shortcut_file_name(&item.name, "lnk"));
-                create_shortcut(item, &path)?;
-                Ok(path)
-            }
-            ShortcutSource::Custom(shortcut) => {
-                let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
-                let path = self.storage.unique_path(&name);
-                create_custom_shortcut(shortcut, &path)?;
-                Ok(path)
-            }
-        }
     }
 
     /// Re-reads the shell's loose desktop items and reconciles the layer. Used
@@ -589,6 +578,31 @@ fn delete_item_question(label: &str, stored: bool) -> String {
 
 /// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
 /// drop copies rather than links to.
+/// Writes one shortcut into `folder` under a clash-free name and returns its
+/// path: a copy of a dropped shortcut file, a new `.lnk` to a shell item, or
+/// the `.lnk` or `.url` a custom shortcut describes.
+fn write_shortcut(folder: &Path, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
+    match source {
+        ShortcutSource::Shell(item) => {
+            if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
+                let path = unique_destination(folder, Path::new(&link_copy_name(link, &item.name)));
+                std::fs::copy(link, &path)?;
+                return Ok(path);
+            }
+            let name = shortcut_file_name(&item.name, "lnk");
+            let path = unique_destination(folder, Path::new(&name));
+            create_shortcut(item, &path)?;
+            Ok(path)
+        }
+        ShortcutSource::Custom(shortcut) => {
+            let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
+            let path = unique_destination(folder, Path::new(&name));
+            create_custom_shortcut(shortcut, &path)?;
+            Ok(path)
+        }
+    }
+}
+
 fn is_link_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -655,6 +669,30 @@ mod tests {
 
     fn paths(list: &[&str]) -> Vec<PathBuf> {
         list.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn a_dropped_shortcut_is_copied_into_the_folder_under_a_free_name() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-write-shortcut-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let (from, to) = (root.join("from"), root.join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        let link = from.join("App.lnk");
+        std::fs::write(&link, "x").unwrap();
+        let source = ShortcutSource::Shell(ShellItem {
+            name: "App".to_owned(),
+            path: Some(link),
+            id_list: Vec::new(),
+        });
+        let first = write_shortcut(&to, &source).unwrap();
+        let second = write_shortcut(&to, &source).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(first, to.join("App.lnk"));
+        assert_eq!(second, to.join("App (2).lnk"));
     }
 
     #[test]
