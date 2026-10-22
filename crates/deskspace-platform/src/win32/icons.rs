@@ -19,7 +19,7 @@ use windows::core::{Interface, PCWSTR};
 
 use crate::render::Icon;
 use crate::render::d2d::{decode_bitmap, decode_icon};
-use crate::win32::system::wide;
+use crate::win32::shell_items::shell_path;
 
 /// Icons decoded per path, pixel size, and overlay size, bounded by a
 /// least-recently-used limit. Evicting is always safe: scenes hold their own
@@ -140,7 +140,7 @@ fn is_shortcut(path: &Path) -> bool {
 /// The classic 32 px `SHGetFileInfoW` icon, without overlays, for paths the
 /// image factory rejects (some virtual and shortcut targets).
 fn load_classic_icon(path: &Path) -> Option<Icon> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     let mut info = SHFILEINFOW::default();
     let flags = SHGFI_ICON | SHGFI_LARGEICON;
     // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure. The
@@ -163,7 +163,7 @@ fn load_classic_icon(path: &Path) -> Option<Icon> {
 }
 
 fn load_base_icon(path: &Path, size: u32) -> Option<Icon> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     // SAFETY: `wide` is NUL-terminated and outlives the parse.
     let item: IShellItem =
         unsafe { SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None) }.ok()?;
@@ -199,7 +199,7 @@ pub(crate) fn shell_item_icon(item: &IShellItem, size: u32) -> Option<Icon> {
 /// shortcuts because it arrows any file it is given.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
 fn overlay_index(path: &Path) -> Option<i32> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     let mut flags = SHGFI_ICON | SHGFI_OVERLAYINDEX | SHGFI_ADDOVERLAYS;
     if is_shortcut(path) {
         flags |= SHGFI_LINKOVERLAY;
