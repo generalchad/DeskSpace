@@ -3378,3 +3378,24 @@ until I5-I6 all land, so no partial build hides the desktop.
     and an available lens carry `None`.
   - **[needs human]**: rename a lens's folder away; the text shows.
     Rename it back; the items return within 5 s.
+- [x] **W6. The lens menu (platform, app).**
+  - Platform: `Ui::pick_folder(title) -> Option<PathBuf>`, a "Select
+    folder" dialog. Copy `pick_files` (`win32/dialog.rs`) and set
+    `FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM` in place of its options.
+  - App: follow "Recipe: a new menu entry". Right-clicking a lens shows
+    these beside the usual space entries:
+    - Open folder: `ui.open_path` on the folder.
+    - Change folder...: `pick_folder`, the W3a guard
+      (`ItemStore::allows_lens`; when it fails, say why with `ui.alert`
+      and stop), `SetLensFolder`, then `sync_watches`.
+    - Sort by: the same keys as a normal space's sort menu (`SORT_PRESETS`
+      in `app.rs`), the current one checked. A choice dispatches
+      `SetLensView`. On a lens the order is kept as files come and go,
+      while a normal space sorts once. Do not change normal spaces here;
+      that is F-31, in phase 4. Both menus use the one table.
+    - Folders first, and Show hidden files: checkable entries that
+      dispatch `SetLensView`.
+  - Tests: a lens's menu has these entries with the right checks and
+    commands; a normal space's menu is unchanged.
+  - **[needs human]**: each entry on a hand-made lens; after a restart the
+    sort, folders-first, and hidden-files settings are still set.

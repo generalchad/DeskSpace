@@ -157,10 +157,18 @@ enum MenuId {
     AddFiles = 48,
     /// The tray's "Debug…", only with `--debug` (ROADMAP D14).
     Debug = 49,
+    /// A lens's "Open folder".
+    OpenFolder = 50,
+    /// A lens's "Change folder…".
+    ChangeFolder = 51,
+    /// A lens's "Folders first" toggle, in its Sort by submenu.
+    FoldersFirst = 52,
+    /// A lens's "Show hidden files" toggle, in its Sort by submenu.
+    ShowHidden = 53,
 }
 
 impl MenuId {
-    const ALL: [Self; 37] = [
+    const ALL: [Self; 41] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -198,6 +206,10 @@ impl MenuId {
         Self::PasteShortcut,
         Self::AddFiles,
         Self::Debug,
+        Self::OpenFolder,
+        Self::ChangeFolder,
+        Self::FoldersFirst,
+        Self::ShowHidden,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

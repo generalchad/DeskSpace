@@ -640,27 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W6. The lens menu (platform, app).**
-  - Platform: `Ui::pick_folder(title) -> Option<PathBuf>`, a "Select
-    folder" dialog. Copy `pick_files` (`win32/dialog.rs`) and set
-    `FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM` in place of its options.
-  - App: follow "Recipe: a new menu entry". Right-clicking a lens shows
-    these beside the usual space entries:
-    - Open folder: `ui.open_path` on the folder.
-    - Change folder...: `pick_folder`, the W3a guard
-      (`ItemStore::allows_lens`; when it fails, say why with `ui.alert`
-      and stop), `SetLensFolder`, then `sync_watches`.
-    - Sort by: the same keys as a normal space's sort menu (`SORT_PRESETS`
-      in `app.rs`), the current one checked. A choice dispatches
-      `SetLensView`. On a lens the order is kept as files come and go,
-      while a normal space sorts once. Do not change normal spaces here;
-      that is F-31, in phase 4. Both menus use the one table.
-    - Folders first, and Show hidden files: checkable entries that
-      dispatch `SetLensView`.
-  - Tests: a lens's menu has these entries with the right checks and
-    commands; a normal space's menu is unchanged.
-  - **[needs human]**: each entry on a hand-made lens; after a restart the
-    sort, folders-first, and hidden-files settings are still set.
 - [ ] **W7. New lens... (app).**
   - "New lens..." right under "New space" in the space menu, the tray
     menu, and the desktop layer's menu. It runs `pick_folder`, then the
@@ -1137,6 +1116,7 @@ each id is in `archive/TASKS-done.md`.
 | W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
 | W3g (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
 | W5 (F-07) | Point a lens at a throwaway folder, then rename the folder away: "Folder not available" and the path show, centered in the lens, in a faded label color; a long path wraps inside the lens. Rename it back: the items return within 5 s and the text goes. |
+| W6 (F-07) | Right-click a hand-made lens (section W): Open folder opens it in Explorer; Change folder… picks another folder and the lens follows it, and picking DeskSpace's storage folder shows a message and changes nothing. Sort by checks the current order; each choice reorders the lens at once; Folders first and Show hidden files toggle and apply at once. After a restart the sort, folders-first, and hidden-files settings are still set. A normal space's menu is unchanged. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

@@ -1144,6 +1144,12 @@ in `ui.rs`. What spans them:
   shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
   unless the space is empty); New space; Settings…, Hide/Show spaces, Exit
   DeskSpace.
+- A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
+  folder `ItemStore::allows_lens` refuses gets a message instead) after the
+  first group. Its Sort by ▸ checks the lens's current order and keeps it as
+  files come and go (`SetLensView`), and adds Folders first and Show hidden
+  files. A view change starts the lens's watch again, so the folder is listed
+  afresh in the new order.
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
