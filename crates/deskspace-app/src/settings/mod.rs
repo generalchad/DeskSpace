@@ -91,6 +91,39 @@ pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
         .map(|space| space.id)
 }
 
+/// The kind of thing a settings scope edits: Global, an ordinary space, or a
+/// lens. The scopes pane draws each kind's glyph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    Global,
+    Space,
+    Lens,
+}
+
+impl ScopeKind {
+    /// The kind of `space`, or Global for `None`.
+    pub fn of(space: Option<&Space>) -> Self {
+        match space {
+            None => Self::Global,
+            Some(space) if space.is_lens() => Self::Lens,
+            Some(_) => Self::Space,
+        }
+    }
+
+    /// The glyph drawn before the scope's label. These code points are in
+    /// both Segoe Fluent Icons and Segoe MDL2 Assets.
+    pub fn glyph(self) -> char {
+        match self {
+            // "Settings" (MDL2 calls it "Setting").
+            Self::Global => '\u{E713}',
+            // "GridView".
+            Self::Space => '\u{F0E2}',
+            // "Folder".
+            Self::Lens => '\u{E8B7}',
+        }
+    }
+}
+
 /// The pages the categories pane lists for `scope`, in order: every Global
 /// page for Global (`None`), the animation pages last, or a space's look
 /// pages and its Shortcuts page.
@@ -201,11 +234,13 @@ pub fn build_form(
 
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
+        glyph: Some(ScopeKind::Global.glyph()),
         indent: false,
         dimmed: false,
     }];
     scopes.extend(config.desktop.spaces().iter().map(|space| SettingsScope {
         label: space.title().to_owned(),
+        glyph: Some(ScopeKind::of(Some(space)).glyph()),
         indent: true,
         dimmed: !space.custom(),
     }));
@@ -295,7 +330,7 @@ pub enum Effect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{apply, create_space};
+    use crate::fixtures::{apply, create_lens, create_space};
     use deskspace_core::Rect;
     use deskspace_platform::FieldKind;
 
@@ -633,6 +668,12 @@ mod tests {
     fn global_lists_every_space_dimmed_until_customized() {
         let (mut config, _) = config_with_space("Work");
         let games = create_space(&mut config.desktop, "Games", Rect::new(0, 0, 200, 200));
+        let _lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(400, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
         let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
         apply(
             &mut config.desktop,
@@ -652,17 +693,25 @@ mod tests {
             SpacePreview::default(),
         );
         let nav = nav(&form);
-        let scopes: Vec<(&str, bool, bool)> = nav
+        let scopes: Vec<(&str, Option<char>, bool, bool)> = nav
             .scopes
             .iter()
-            .map(|scope| (scope.label.as_str(), scope.indent, scope.dimmed))
+            .map(|scope| {
+                (
+                    scope.label.as_str(),
+                    scope.glyph,
+                    scope.indent,
+                    scope.dimmed,
+                )
+            })
             .collect();
         assert_eq!(
             scopes,
             [
-                ("Global", false, false),
-                ("Work", true, true),
-                ("Games", true, false)
+                ("Global", Some('\u{E713}'), false, false),
+                ("Work", Some('\u{F0E2}'), true, true),
+                ("Games", Some('\u{F0E2}'), true, false),
+                ("Downloads", Some('\u{E8B7}'), true, true),
             ]
         );
         assert_eq!(nav.selected_scope, 0);
@@ -674,6 +723,23 @@ mod tests {
         assert_eq!(header.title, "Global settings");
         assert!(header.switch.is_none());
         assert!(header.button.is_none(), "Global cannot be deleted");
+    }
+
+    #[test]
+    fn scope_kinds_have_their_own_glyphs() {
+        let (mut config, work) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(200, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        assert_eq!(ScopeKind::of(None), ScopeKind::Global);
+        assert_eq!(ScopeKind::of(config.desktop.space(work)), ScopeKind::Space);
+        assert_eq!(ScopeKind::of(config.desktop.space(lens)), ScopeKind::Lens);
+        assert_eq!(ScopeKind::Global.glyph(), '\u{E713}');
+        assert_eq!(ScopeKind::Space.glyph(), '\u{F0E2}');
+        assert_eq!(ScopeKind::Lens.glyph(), '\u{E8B7}');
     }
 
     #[test]

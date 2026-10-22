@@ -9,21 +9,25 @@ use deskspace_core::geometry::Rect;
 
 /// Paints one row of the scopes pane like a rail entry: an accent bar when
 /// selected, indented rows moved right, and dimmed rows (scopes that only
-/// inherit) in disabled text unless selected.
+/// inherit) in disabled text unless selected. A row's kind glyph sits before
+/// its label, in the same color.
 pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
     // SAFETY: `item.hDC` is a live DC owned by the list box during
     // WM_DRAWITEM; the borrowed data is cloned out before any GDI call.
     unsafe {
-        let Some((colors, body, accent, font, dpi, row)) = with_state(window, |state| {
-            (
-                state.colors,
-                state.body_brush,
-                state.accent_brush,
-                state.font,
-                state.dpi,
-                state.scope_rows.get(item.itemID as usize).cloned(),
-            )
-        }) else {
+        let Some((colors, body, accent, font, glyph_font, dpi, row)) =
+            with_state(window, |state| {
+                (
+                    state.colors,
+                    state.body_brush,
+                    state.accent_brush,
+                    state.font,
+                    state.glyph_font,
+                    state.dpi,
+                    state.scope_rows.get(item.itemID as usize).cloned(),
+                )
+            })
+        else {
             return;
         };
         FillRect(item.hDC, &item.rcItem, body);
@@ -47,16 +51,38 @@ pub(super) unsafe fn on_draw_scope(window: HWND, item: &DRAWITEMSTRUCT) {
             FillRect(item.hDC, &bar, accent);
         }
         SetBkMode(item.hDC, TRANSPARENT);
-        SetTextColor(item.hDC, colorref(text));
         let previous = SelectObject(item.hDC, HGDIOBJ(font.0));
-        let mut label: Vec<u16> = row.label.encode_utf16().collect();
-        let mut rect = item.rcItem;
-        rect.left += scaled(12, dpi)
+        let mut left = item.rcItem.left
+            + scaled(12, dpi)
             + if row.indent {
                 scaled(SCOPE_INDENT, dpi)
             } else {
                 0
             };
+        let glyph = row
+            .glyph
+            .filter(|_| !glyph_font.is_invalid())
+            .and_then(|glyph| u16::try_from(u32::from(glyph)).ok());
+        if let Some(glyph) = glyph {
+            let mut metrics = TEXTMETRICW::default();
+            let _ = GetTextMetricsW(item.hDC, &mut metrics);
+            let side = metrics.tmHeight.max(0);
+            if side > 0 {
+                let top = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - side) / 2;
+                let square = RECT {
+                    left,
+                    top,
+                    right: left + side,
+                    bottom: top + side,
+                };
+                crate::win32::system::draw_glyph(item.hDC, glyph_font, glyph, square, text);
+                left = square.right + scaled(SCOPE_GLYPH_GAP, dpi);
+            }
+        }
+        SetTextColor(item.hDC, colorref(text));
+        let mut label: Vec<u16> = row.label.encode_utf16().collect();
+        let mut rect = item.rcItem;
+        rect.left = left;
         rect.right -= scaled(12, dpi);
         DrawTextW(
             item.hDC,

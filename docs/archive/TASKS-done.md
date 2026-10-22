@@ -3409,4 +3409,29 @@ until I5-I6 all land, so no partial build hides the desktop.
     and 3 marked done. Add the new entries to the menu lists in
     `CONTEXT.md` section 8 and in `README.md`.
   - **[needs human]**: create a lens from each of the three menus.
+- [x] **W8. A glyph for each kind in the scopes pane (app, platform).**
+  **[needs human]**
+  - `ui.rs` `SettingsScope`: add `glyph: Option<char>` with a `///` doc
+    (a code point drawn before the label; `None` draws nothing and keeps
+    the label where it is).
+  - `settings/mod.rs`: `enum ScopeKind { Global, Space, Lens }`, with
+    `ScopeKind::of(Option<&Space>)` and `ScopeKind::glyph()`. `build_form`
+    fills each scope's glyph from it. W10 reuses `ScopeKind` for the page
+    list, so keep it beside `listed_pages`.
+  - Glyphs: Global `U+E713` (Setting), a lens `U+E8B7` (Folder), and a
+    space a grid glyph that both fonts have (choose one; the links are
+    above).
+  - `win32/settings_window/paint.rs` `on_draw_scope`: draw the glyph in a
+    square as tall as the label, before it, in the row's text color, so
+    a dimmed row dims its glyph too. `CreateFontW` quietly substitutes a
+    missing face, so test for Segoe Fluent Icons with
+    `EnumFontFamiliesExW` and fall back to Segoe MDL2 Assets. Create the
+    font once with the window's other fonts in `build.rs`, scaled for
+    DPI, and free it with them.
+  - Tests: `ScopeKind::of` for each kind; extend
+    `global_lists_every_space_dimmed_until_customized` with the glyphs.
+  - **[needs human]** check: in light and dark mode, at 100 % and 150 %,
+    on Windows 11 and 10: every row shows its kind's glyph, the labels
+    line up, a dimmed row's glyph is dimmed, and the selection covers the
+    glyph.
 

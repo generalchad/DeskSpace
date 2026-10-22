@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W8-W11 are small first tasks; W16 is the
+- section W phase 4, in order (W9-W11 are small first tasks; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -563,7 +563,7 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   `MoveItem` into a lens return `Rejected`.
 
 Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). What is left is phase 4 (W8-W23, ROADMAP
+lens as D3 says (W1-W7, archived). What is left is phase 4 (W9-W23, ROADMAP
 D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
 before anything else in this section.
 
@@ -648,8 +648,8 @@ the decision inside it.
 
 ### Where to start
 
-W1-W7 are done (2026-10-21) and archived; their on-screen checks are in
-section V. The open work is phase 4 (W8-W23) and phase 5 (W24-W43).
+W1-W8 are done (2026-10-21) and archived; their on-screen checks are in
+section V. The open work is phase 4 (W9-W23) and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -661,7 +661,7 @@ section V. The open work is phase 4 (W8-W23) and phase 5 (W24-W43).
 3. Pick a task from the table below. "Open now" means nothing it waits
    for is still open (2026-10-21). Otherwise wait until every task it
    waits for has been ticked and archived. Those are the tasks in its
-   "After:" line, or, for W8-W23, the ones phase 4's first rule names. A
+   "After:" line, or, for W9-W23, the ones phase 4's first rule names. A
    ticked box means a task is done; "Open now" goes stale, so trust the
    boxes.
 4. Find the code with the file map at the top of this file. For lenses
@@ -674,7 +674,7 @@ section V. The open work is phase 4 (W8-W23) and phase 5 (W24-W43).
 
 | Level | Tasks | Open now |
 |-------|-------|----------|
-| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26, W8 |
+| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26, W10 |
 | Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W12 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | after W12 |
@@ -715,32 +715,6 @@ lens-only.
   each one's name beside its constant:
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
-
-- [ ] **W8. A glyph for each kind in the scopes pane (app, platform).**
-  **[needs human]**
-  - `ui.rs` `SettingsScope`: add `glyph: Option<char>` with a `///` doc
-    (a code point drawn before the label; `None` draws nothing and keeps
-    the label where it is).
-  - `settings/mod.rs`: `enum ScopeKind { Global, Space, Lens }`, with
-    `ScopeKind::of(Option<&Space>)` and `ScopeKind::glyph()`. `build_form`
-    fills each scope's glyph from it. W10 reuses `ScopeKind` for the page
-    list, so keep it beside `listed_pages`.
-  - Glyphs: Global `U+E713` (Setting), a lens `U+E8B7` (Folder), and a
-    space a grid glyph that both fonts have (choose one; the links are
-    above).
-  - `win32/settings_window/paint.rs` `on_draw_scope`: draw the glyph in a
-    square as tall as the label, before it, in the row's text color, so
-    a dimmed row dims its glyph too. `CreateFontW` quietly substitutes a
-    missing face, so test for Segoe Fluent Icons with
-    `EnumFontFamiliesExW` and fall back to Segoe MDL2 Assets. Create the
-    font once with the window's other fonts in `build.rs`, scaled for
-    DPI, and free it with them.
-  - Tests: `ScopeKind::of` for each kind; extend
-    `global_lists_every_space_dimmed_until_customized` with the glyphs.
-  - **[needs human]** check: in light and dark mode, at 100 % and 150 %,
-    on Windows 11 and 10: every row shows its kind's glyph, the labels
-    line up, a dimmed row's glyph is dimmed, and the selection covers the
-    glyph.
 
 - [ ] **W9. A lens's folder icon in its title bar (the "new visual"
   recipe).** **[needs human]**
@@ -2045,6 +2019,7 @@ each id is in `archive/TASKS-done.md`.
 | T12 (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
+| W8 (D15) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
 
 ## Found while working
 

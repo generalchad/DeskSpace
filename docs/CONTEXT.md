@@ -932,10 +932,11 @@ in `ui.rs`. What spans them:
   (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another
   space moves it; Cancel, OK, and closing the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
-  indented, dimmed while it follows Global. Global lists every page but
-  Shortcuts; a space lists the five look pages, which show its values (from
-  Global until customized) greyed unless the header's "Customize this space"
-  switch is on, and its always-enabled Shortcuts page. Global edits write
+  indented, dimmed while it follows Global. Each row shows its kind's glyph in
+  the row's text color, so a dimmed row dims its glyph too. Global lists every
+  page but Shortcuts; a space lists the five look pages, which show its values
+  (from Global until customized) greyed unless the header's "Customize this
+  space" switch is on, and its always-enabled Shortcuts page. Global edits write
   `Config` directly; a space's edits become `SetSpaceLook` commands, the
   switch `CustomizeSpace`, and the Colors page's reset becomes "Match global
   appearance". Cancel restores each space's `SpaceSnapshot`; a space menu edit

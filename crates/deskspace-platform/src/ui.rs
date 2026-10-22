@@ -197,6 +197,9 @@ pub struct SettingsNav {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsScope {
     pub label: String,
+    /// A symbol drawn before the label, from the icon font. `None` draws
+    /// nothing and leaves the label where it is.
+    pub glyph: Option<char>,
     /// Indents the row under the one above it.
     pub indent: bool,
     /// Draws the row in disabled text, for a scope that only inherits.
