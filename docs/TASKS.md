@@ -12,6 +12,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
+- section W phase 4, in order (W8-W11 are small first tasks; W16 is the
+  hardest, so pair with a reviewer on it);
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -640,8 +642,432 @@ the decision inside it.
 ### Tasks
 
 W1-W7 are done (2026-10-21) and archived; their on-screen checks are in
-section V. Phase 4 (list and details views, kept sort rules, a Lenses
-settings page) gets its tasks next.
+section V.
+
+### Phase 4: views, sort rules, and lens settings
+
+Read ROADMAP D15 first; it is the spec. Most of phase 4 is for every
+space, not only lenses. A view, a status bar, and a sort rule work the
+same on both kinds. Only the folder, the title, and hidden files are
+lens-only.
+
+- Do the tasks in order, one commit each. W8-W11 are small and stand
+  alone. W12-W23 build the views on each other.
+- Each task adds a type, variant, or field in the same commit as its
+  first caller, never ahead of it with `#[expect(dead_code)]`. So
+  `ViewMode` grows one variant per view task, and the task that draws a
+  view adds it.
+- Tables carry the design, so a new view is one row:
+  - `VIEW_MODES` (`settings/tables.rs`, added in W12): one row per view,
+    with its mode, its Explorer label, and its Ctrl+Shift digit. The
+    View ▸ menu, the keys, the View page, and the status bar's tips all
+    read it.
+  - `SORT_KEYS` (W14): the Sort by keys in Explorer's order and words.
+  - `DETAILS_COLUMNS` (W18) and `STATUS_BUTTONS` (W19).
+- Explorer is the reference for every look and word. Where a task says
+  "as Explorer", open the same folder in Explorer beside the space, at
+  100 % and 150 %, and match it. Record any measured size as a named
+  constant in 96-DPI pixels, with a comment saying it was measured, and
+  when.
+- Glyphs come from Segoe Fluent Icons on Windows 11 and Segoe MDL2
+  Assets on Windows 10. Use only code points both fonts have, and write
+  each one's name beside its constant:
+  https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+  and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
+
+- [ ] **W8. A glyph for each kind in the scopes pane (app, platform).**
+  **[needs human]**
+  - `ui.rs` `SettingsScope`: add `glyph: Option<char>` with a `///` doc
+    (a code point drawn before the label; `None` draws nothing and keeps
+    the label where it is).
+  - `settings/mod.rs`: `enum ScopeKind { Global, Space, Lens }`, with
+    `ScopeKind::of(Option<&Space>)` and `ScopeKind::glyph()`. `build_form`
+    fills each scope's glyph from it. W10 reuses `ScopeKind` for the page
+    list, so keep it beside `listed_pages`.
+  - Glyphs: Global `U+E713` (Setting), a lens `U+E8B7` (Folder), and a
+    space a grid glyph that both fonts have (choose one; the links are
+    above).
+  - `win32/settings_window/paint.rs` `on_draw_scope`: draw the glyph in a
+    square as tall as the label, before it, in the row's text color, so
+    a dimmed row dims its glyph too. `CreateFontW` quietly substitutes a
+    missing face, so test for Segoe Fluent Icons with
+    `EnumFontFamiliesExW` and fall back to Segoe MDL2 Assets. Create the
+    font once with the window's other fonts in `build.rs`, scaled for
+    DPI, and free it with them.
+  - Tests: `ScopeKind::of` for each kind; extend
+    `global_lists_every_space_dimmed_until_customized` with the glyphs.
+  - **[needs human]** check: in light and dark mode, at 100 % and 150 %,
+    on Windows 11 and 10: every row shows its kind's glyph, the labels
+    line up, a dimmed row's glyph is dimmed, and the selection covers the
+    glyph.
+
+- [ ] **W9. A lens's folder icon in its title bar (the "new visual"
+  recipe).** **[needs human]**
+  - `render/scene.rs` `SpaceScene`: `title_icon: Option<Icon>`, `None` by
+    default.
+  - `scene.rs` `space_scene`: a lens gets its folder's shell icon at the
+    small size (16 px at 96 DPI, scaled), fetched the way item icons are.
+    An unavailable folder gets the generic folder icon. Ask the shell
+    for it with `SHGFI_USEFILEATTRIBUTES` and `FILE_ATTRIBUTE_DIRECTORY`,
+    so a missing folder is never touched. A normal space gets `None`.
+  - `render/d2d/`: draw the icon left of the title, centered in the title
+    bar, and move the title text right by the icon and a gap. An inline
+    title rename moves the same way. If the app turns a click in the
+    title into a caret position, shift that too.
+  - Test: copy `the_settings_highlight_reaches_the_scene`. A lens's scene
+    has a title icon, and a normal space's has none.
+  - **[needs human]** check: lenses on Downloads, on Documents, and on a
+    plain folder show each folder's own icon. Rename the folder away, and
+    the generic folder icon shows. F2 on the title starts the rename box
+    after the icon. The same folded, at 100 % and 150 %, on every
+    backdrop. A normal space's title bar is unchanged.
+
+- [ ] **W10. The Lens page (app).**
+  - `listed_pages` takes a `ScopeKind` (W8) instead of an
+    `Option<SpaceId>`. A lens lists a space's pages, then a new
+    `page::LENS`. Read how `page::SHORTCUTS` was added first. If a new
+    page cannot go there without renumbering the animation pages, stop
+    and ask.
+  - `pages.rs` `lens_page`: a "Folder" heading; a note with the full
+    path (or "Folder not available" and the path); the buttons "Open
+    folder" and "Change folder…"; a "Contents" heading; and a "Show
+    hidden files" toggle. Each button is a `ButtonAction` variant whose
+    arm in `App::on_settings_button` calls the method the lens menu
+    already calls. The toggle becomes `SetLensView`, the way a look edit
+    becomes `SetSpaceLook`. The page is built for every scope, so the
+    form keeps its shape (`the_form_shape_is_stable_across_scopes`); a
+    normal space just never lists it.
+  - Cancel: `SpaceSnapshot` gains the lens's `FolderView`, and
+    `App::cancel_settings` restores it. Change folder… commits at once, so
+    it writes the new path into the snapshot too, as a menu edit made
+    while the window is open does (`CONTEXT.md` section 6, Native UI).
+  - Tests: a lens lists the Lens page and a normal space does not;
+    the toggle becomes `SetLensView`; Cancel restores `show_hidden` and
+    keeps a changed folder; `every_button_has_an_action` covers the two
+    buttons.
+  - Done when: also `CONTEXT.md` section 6 (Native UI, "The app's form")
+    names the page.
+
+- [ ] **W11. A lens's title follows its folder (core, platform, app).**
+  - `source.rs`: `enum LensTitle { FolderName, ProfilePath, FullPath,
+    Custom }` (`snake_case`), and `FolderView.title: LensTitle`. The
+    serde default is `Custom`, so a lens saved before this task keeps
+    its title (D15). New lenses start at `FolderName`.
+  - A pure `lens_title(view: &FolderView, current: &str, profile: &Path)
+    -> String` in `source.rs`:
+    - `FolderName`: the last part of the path, or the whole path for a
+      drive root (`D:\`) or a share root (`\\server\share`);
+    - `ProfilePath`: the path below `profile`, or the profile folder's
+      own name for the profile itself, or the full path when the folder
+      is outside it. Compare without case, and treat `/` and `\` alike
+      (commit 60c0528 fixed the same trap for icons);
+    - `FullPath`: the path with `\` separators;
+    - `Custom`: `current`, unchanged.
+
+    It replaces `lens_title` in `app/menus.rs`; delete that one.
+  - `Space.title` stays the text every reader shows (the title bar, the
+    scopes pane, the delete question), so no reader changes. The app
+    computes the text and the commands carry it:
+    - `SetLensFolder` gains `title: String`;
+    - a new `SetLensTitle { id, title: LensTitle, text: String }`
+      (the Command recipe);
+    - `RenameSpace` on a lens sets its `title` to `Custom`, in core.
+  - Platform: `profile_directory()` beside `desktop_directory`
+    (`SHGetKnownFolderPath(FOLDERID_Profile)`). The app reads it once at
+    startup.
+  - Lens page (W10): a "Title" heading, a "Show as" choice (Folder name,
+    Path from your user folder, Full path, Custom), and a "Custom title"
+    text field, enabled only for Custom. Copy how the New spaces page's
+    default title field edits.
+  - Tests in core: each mode; a drive root; a share root; a profile
+    prefix in another case and with forward slashes; a folder outside the
+    profile; the profile itself; `RenameSpace` makes a lens custom; a
+    lens with no `title` key loads as `Custom`.
+  - **[needs human]** check: on a lens in the profile, each "Show as"
+    entry retitles it at once, and Cancel puts it back. Change folder…
+    retitles it under Folder name and keeps a custom title. F2 on the
+    title, then the Lens page shows Custom.
+
+- [ ] **W12. Views, part 1: the icon sizes (core, app).** **[needs
+  human]**
+  - Core: `SpaceView { mode: ViewMode }` (`#[serde(default)]`, in a new
+    `view.rs`) and `Space.view` (`#[serde(default)]`). `ViewMode` starts
+    with `Icons` (the default: today's look-driven size), `ExtraLargeIcons`,
+    `LargeIcons`, and `MediumIcons`. `ViewMode::icon_px()` returns the
+    fixed size (256, 96, 48 px at 96 DPI), or `None` for `Icons`. Small
+    icons put the label beside the icon, so they come with List's cell in
+    W16.
+  - `Command::SetSpaceView { id, view }` (the Command recipe). It works
+    on both kinds; there is no lens branch.
+  - App: where a space's icon size and grid cell are worked out (from
+    `Theme.icon_size` today, in `app/view.rs`), use `icon_px()` when it is
+    `Some`. `app/zoom.rs` leaves a space with a fixed size alone, as D9
+    leaves a customized Custom look alone.
+  - Tables: `VIEW_MODES` in `settings/tables.rs` (mode, label, digit;
+    `Icons` is "Settings icon size" and has no digit), and
+    `VIEW_PRESETS` in `app.rs`, pairing each mode with its `MenuId` as
+    `SORT_PRESETS` does. A guard test checks that every row of one has
+    exactly one row in the other.
+  - Menu (the menu-entry recipe): View ▸ above Sort by in the space
+    menu of both kinds, with one radio entry per row, checking the
+    space's mode.
+  - Tests: serde default; `SetSpaceView` outcomes; a space in
+    `LargeIcons` gets a 96 px cell at 100 %; zoom leaves it alone; the
+    guard test.
+  - **[needs human]** check: each View ▸ entry resizes only that space,
+    on a normal space and a lens. "Settings icon size" gives back the
+    look's size. Ctrl+wheel does not move a space with a fixed size. The
+    view survives a restart.
+
+- [ ] **W13. Ctrl+Shift+1..8 (the key recipe).** **[needs human]**
+  - Explorer's view keys: 1 Extra large icons, 2 Large icons, 3 Medium
+    icons, 4 Small icons, 5 List, 6 Details, 7 Tiles, 8 Content. Watch all
+    eight under `WATCH_PASTE` now, so later views need no keyboard
+    change.
+  - `win32/keyboard.rs`: eight `SEL_VIEW_*` codes decode to one
+    `SelectionKey::View(u8)`, carrying the digit. The recipe gives a key
+    with data its own `Event`, because most data does not fit in the
+    code; a digit does, so one variant is enough (decided for D15).
+  - `App::on_selection_key`: find the `VIEW_MODES` row for the digit and
+    dispatch `SetSpaceView` on the current space. A digit with no row yet
+    does nothing.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: a `keys_for_*` row and the `selection_key` mapping; the app
+    maps 2 to `LargeIcons`.
+  - **[needs human]** check: click a space, then Ctrl+Shift+1, 2, and 3
+    change it. With Explorer in front, Explorer's own Ctrl+Shift+1 still
+    works.
+
+- [ ] **W14. One sort rule, with Explorer's Sort by (core, app).**
+  - Core: `SortRule { key: SortKey, descending, folders_first }` beside
+    `SortKey`, defaulting to name ascending, and `SpaceView.sort`.
+    `FolderView` loses `sort`, `descending`, and `folders_first` (lenses
+    are unreleased, D15), and `SyncLens` sorts by `view.sort`. The normal
+    space's one-off sort (the command `App::sort_space` dispatches) takes
+    a `SortRule` and stores it in `view.sort`. If there are two sort
+    comparators today, merge them into `SortRule::compare`, keeping the
+    natural name order for ties.
+  - Menu: Sort by ▸ becomes Explorer's folder menu. First the keys from
+    `SORT_KEYS` as radio items (Name, Date modified, Type, Size), then a
+    separator, then Ascending and Descending, then a separator, then
+    Folders first. A key keeps the direction, and a direction keeps the
+    key. On a normal space each choice sorts once with the new rule, as
+    today; a lens keeps it. Retire the seven `SORT_PRESETS` menu ids and
+    note them as never reused in `MenuId`'s doc, as `ids.rs` does for
+    fields 25 and 26.
+  - Tests: `SortRule::compare` for each key, both ways, and with folders
+    first; the one-off sort stores its rule; a lens re-sorts by it; the
+    menu checks the rule's key and direction.
+  - Done when: also the W6 row in section V says "Sort by" in the new
+    shape.
+
+- [ ] **W15. Keep sorted (core, app).**
+  - Core: `SpaceView.keep_sorted: bool`, off by default.
+    `Space::keeps_sorted()` is true for a lens or when it is set; it is the
+    one place that knows a lens is always sorted.
+  - A space that `keeps_sorted()` re-sorts after every change to its items:
+    `AddItem`, `MoveItem` into it, and an item rename. Do it in core,
+    through one helper each of those `apply_` methods calls, not in the
+    app.
+  - `ReorderItem` and `ReorderItems` on such a space are `Rejected` (D15).
+    `app/drag.rs` shows no rearranging insertion there; a drag out still
+    works.
+  - Menu: Keep sorted, last in Sort by ▸, checked and grey on a lens.
+  - Tests: each re-sort trigger; reordering is rejected; a lens
+    `keeps_sorted()`; serde default.
+  - **[needs human]** check: with Keep sorted on, a dropped file lands in
+    order, a renamed item moves to its place, and a drag inside does not
+    rearrange (a drag out still moves the file). Turned off, the space
+    rearranges freely again and keeps the order it had.
+
+- [ ] **W16. Views, part 2: the view layout and Small icons (core, app,
+  platform).** **[needs human]** The largest task in the phase; pair with
+  a reviewer before starting.
+  - Today every item sits on the icon grid (`GridSpec`, `arrange_space`,
+    `Item.position`, `Space::item_at`). The views from here on place
+    items by their order instead.
+  - Core, a new `view_layout.rs`: a pure layout that takes the mode, the
+    content size, the item count, and the cell metrics. It returns each
+    item's rect in content coordinates, the content extent, and the axis
+    that scrolls. The icon views hand off to the grid as today. Small
+    icons uses an *inline cell* (the icon left and one label line beside
+    it, ellipsized), placed in rows that wrap at the width, scrolling
+    down.
+  - Every reader of item geometry moves onto it: the item rects in
+    `scene.rs`, `Space::item_at`, the marquee, `next_in_direction` (give
+    it the rects), the drag-to-rearrange drop index,
+    `content_extent`/`max_scroll`, and the scroll indicator. These views
+    never write `Item.position` (D15). If a reader cannot use the layout
+    without a lens-or-space branch, stop and ask.
+  - Paint: the inline cell at 16 px, as Explorer's Small icons; the
+    selection fills the cell, and the check box sits left of the icon.
+  - Add `ViewMode::SmallIcons` (digit 4) and its `VIEW_MODES` row.
+  - Tests: the rects tile in order with no overlap; rows wrap at the
+    width; the extent; the center of each rect hits its item; arrow keys
+    move by row and column.
+  - **[needs human]** check: Small icons on a space and on a lens, at
+    100 % and 150 %: click, Ctrl and Shift click, the marquee, the arrow
+    keys, type-to-select, F2 (the box sits over the label), drag out, and
+    a drag to rearrange (normal space, not kept sorted). Back in Medium
+    icons, the hand arrangement is as it was.
+
+- [ ] **W17. List (core, app, platform).** **[needs human]**
+  - `ViewMode::List` (digit 5): Explorer's List. Inline cells (W16) fill
+    each column top to bottom, the columns run left to right, and the
+    space scrolls sideways; the wheel scrolls sideways too, as in
+    Explorer. A column is `LIST_COLUMN_WIDTH` wide (measure Explorer's),
+    and longer labels are ellipsized. Measuring each label is for later
+    (add a **Found while working** line).
+  - The layout reports the horizontal axis. Scroll state, the wheel,
+    Home, End, PageUp, PageDown, and the scroll indicator follow the axis
+    it reports, never the mode.
+  - Tests: column breaks; the horizontal extent; the arrow keys (Down
+    within a column, Right to the next column).
+  - **[needs human]** check: the W16 list again in List view, plus the
+    wheel and the keys scrolling sideways, and the indicator along the
+    bottom.
+
+- [ ] **W18. Details (core, app, platform).** **[needs human]**
+  - `ViewMode::Details` (digit 6): one row per item at full width, under
+    a header row that stays put while the rows scroll.
+  - `DETAILS_COLUMNS` in `settings/tables.rs`: Name (it takes the width
+    left over, down to a minimum), Date modified, Type, and Size
+    (right-aligned), each with its `SortKey` and an Explorer-measured
+    default width.
+  - A click on a header sorts by its column, and a second click on the
+    same one reverses, through the W14 path. The sorted column shows
+    Explorer's arrow.
+  - Text, made when the scene is built, never while painting:
+    - Platform helpers beside `item_facts`: `type_name(path, is_folder)`
+      (`SHGetFileInfoW` with `SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES`,
+      cached by extension, with no disk access), `format_date(secs)` (the
+      user's short date and time, `GetDateFormatEx` and
+      `GetTimeFormatEx`, as Explorer shows them), and `format_kb(bytes)`
+      (`StrFormatKBSize`, "1,234 KB"). A folder's size is blank.
+    - The app formats and passes the text into `space_scene`, which stays
+      pure. `ItemVisual` gains a `///` field for the column texts, empty
+      outside Details.
+  - Hover and selection fill the whole row. F2's box sits in the Name
+    column.
+  - Tests: row layout under the header; a header hit maps to its column;
+    a second click reverses; the type-name cache key.
+  - **[needs human]** check: a folder in Details beside the same folder
+    in Explorer's Details: the same columns, values, alignment, date, and
+    size format; header clicks sort and reverse; 100 % and 150 %; light
+    and dark.
+
+- [ ] **W19. The status bar (core, app, platform).** **[needs human]**
+  - Core: `SpaceView.status_bar: bool`, off by default.
+    `Space::content_rect` leaves `STATUS_BAR_HEIGHT` (measure Explorer's;
+    scale it as `title_height` is) at the bottom while it is on and the
+    space is unfolded. Layout, scrolling, and hit tests then shrink with
+    no other change.
+  - `CreateLens` gains `view: SpaceView`. The app passes a view with the
+    status bar on (D15), and W23 turns that into a setting. New normal
+    spaces keep the default.
+  - `SpaceScene.status: Option<StatusBar>`, with the left `segments` and
+    the right `buttons` (rect, glyph, checked, hovered). The app builds
+    it:
+    - A pure `status_segments(count, selected, selected_bytes:
+      Option<u64>) -> Vec<String>`: "1 item" or "12 items", then "1 item
+      selected" or "3 items selected", then the size. The size shows only
+      when every selected item is a file with a known size, as in
+      Explorer. The size comes from a platform `format_bytes`
+      (`StrFormatByteSizeEx`, "1.20 MB"). Draw the segments with Windows
+      11 Explorer's separators.
+    - `STATUS_BUTTONS`: Details and Large icons, each a mode, a glyph,
+      and Explorer's tip: "Displays information about each item in the
+      window." and "Displays items by using large thumbnails." Build the
+      shortcut part of each tip, "(Ctrl+Shift+6)", from the mode's
+      `VIEW_MODES` digit.
+    - An unavailable lens shows no segments, but keeps its buttons.
+  - `app/pointer.rs`: a click on a button dispatches `SetSpaceView`. The
+    hit test is pure and uses the same rects the scene carries. Hover
+    highlights a button and shows its tip through `info_tip`. The current
+    mode's button is drawn checked.
+  - Menu: View ▸ "Status bar", a check entry under the modes.
+  - Tests: the segments for 0, 1, and many items, with and without a
+    selection; the size only when all selected are files; `content_rect`
+    shrinks; the button hit test; serde default; `CreateLens` keeps its
+    view.
+  - **[needs human]** check: a new lens has the bar, and a new space does
+    not. The menu toggles it. The counts follow a click, Ctrl+A, and the
+    marquee; the size shows for files only. Both buttons switch the view
+    and show which is on, and their tips read as Explorer's. Folded, the
+    bar is gone. Check every backdrop (the text is as legible as the
+    labels), at 100 % and 150 %, in light and dark.
+
+- [ ] **W20. The View page (app).**
+  - Every space's scope lists `page::VIEW`, always enabled, like
+    Shortcuts. It has a View choice (`VIEW_MODES`) and a Status bar
+    toggle. Under a "Sort" heading come Sort by (`SORT_KEYS`), Order
+    (Ascending, Descending), Folders first, and Keep sorted (on and grey
+    for a lens). Each edit becomes `SetSpaceView` and previews.
+  - `SpaceSnapshot` gains the view, and Cancel restores it.
+  - Built for Global too, so the form keeps its shape, but not listed
+    there.
+  - Tests: `every_editable_space_field_has_a_handler` covers the page;
+    Cancel restores the view; Keep sorted is grey for a lens.
+  - Done when: also `CONTEXT.md` section 6 names the page.
+
+- [ ] **W21. Tiles (app, platform).** **[needs human]**
+  - `ViewMode::Tiles` (digit 7): tiles in rows that wrap, each a 48 px
+    icon at the left and three lines beside it (name, type, size; the
+    second and third dimmed, as Explorer draws them). The text comes from
+    W18's helpers, and the layout from W16's. The tile size is measured
+    from Explorer.
+  - Tests: the layout's rects and extent.
+  - **[needs human]** check: beside Explorer's Tiles on the same folder,
+    at 100 % and 150 %, in light and dark.
+
+- [ ] **W22. Content (app, platform).** **[needs human]**
+  - `ViewMode::Content` (digit 8): one row per item, with Explorer's
+    separator line between rows. The icon is on the left, with the name
+    and the type beside it; "Date modified: …" and "Size: …" are on the
+    right. The text and layout come as for W21.
+  - Tests and check: as W21, against Explorer's Content.
+
+- [ ] **W23. The Lenses page: defaults for new lenses (config, app).**
+  - `deskspace-config` `WindowSettings.new_lens: NewLens { view:
+    SpaceView, title: LensTitle, show_hidden: bool }`, with
+    `#[serde(default)]`. Its default has the status bar on, `FolderName`,
+    and the default sort.
+  - Global lists `page::LENSES` after New spaces. Its fields are View,
+    Status bar, Sort by, Order, Folders first, Show hidden files, and Show
+    as. Build the shared fields with the View page's builder (one
+    function given a `&SpaceView`, with the Lenses page's own field ids),
+    not a copy.
+  - `App::create_lens` reads `new_lens`, replacing W19's fixed view and
+    W11's fixed `FolderName`.
+  - Tests: the config's round trip and missing-field default; a new lens
+    gets the defaults.
+  - **[needs human]** check: change each default, and "New lens…" uses
+    it; existing lenses do not change.
+
+#### Later (each **[needs decision]**; suggested 2026-10-21)
+
+Recommended while planning phase 4. Each needs the maintainer to decide
+whether and how, then gets tasks here.
+
+- **Group by**, as Explorer's View ▸ Group by (Name, Date modified, Type,
+  Size, or none), with headers that fold.
+- **More columns and keys**: Date created (`ItemFacts` and `FolderEntry`
+  gain `created`), and choosing and resizing Details columns, kept per
+  space.
+- **Compact view**, as Explorer's: tighter rows in List and Details.
+- **File name extensions** per space. Labels follow Explorer's global
+  setting today.
+- **Lens filters** on the Lens page, from `include` and `exclude`
+  (reserved for F-22).
+- **The lens's path as a tip** when hovering its title.
+- **Ctrl+wheel through the views**: past Small icons, Explorer steps into
+  List and Details. This would amend D9.
+- **Default view and status bar for new spaces** on the New spaces page.
+- **The rest of F-40**: the desktop offers only icon views, which the
+  default view already follows. Either confirm that and close F-40, or
+  decide what Match Explorer means for a space in List or Details.
+- **Browsing into subfolders** (M4 "Later").
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 

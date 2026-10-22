@@ -489,6 +489,63 @@ A native, lightweight, offline Windows desktop organizer that:
     crash).
   - Work items: `TASKS.md` section X.
 
+- **D15. Views, sort rules, and lens settings (2026-10-21, maintainer).**
+  Decides M4 phase 4 (F-08, F-09, F-17's Lenses page, F-31's kept rule).
+  - *Telling a lens from a space:* each row of the settings window's
+    scopes pane gets a glyph for its kind (Global, space, lens), from
+    Segoe Fluent Icons (Segoe MDL2 Assets on Windows 10), so it follows
+    DPI and dark mode. On the desktop, a lens's title bar shows its
+    folder's own shell icon, so a lens on Downloads shows the Downloads
+    icon. A normal space's title bar is unchanged.
+  - *Views belong to every space,* not only lenses. Normal-space items
+    carry the same facts (size, type, date), and a lens-only path in the
+    renderer would be the special case rule 2 forbids. The views are
+    Explorer's eight (Extra large, Large, Medium, and Small icons, List,
+    Details, Tiles, Content), with Explorer's Ctrl+Shift+1..8. A view is
+    per space, as Explorer keeps one per folder, so it lives in `Space`,
+    not `SpaceLook`, as tabs do (J1). The default view, "Settings icon
+    size", is today's: the look's icon size, Ctrl+wheel, and Match
+    Explorer (D9) as before. The four icon views set a fixed size for that
+    space (256, 96, 48, and 16 px at 96 DPI), which Ctrl+wheel leaves
+    alone, as it leaves a customized Custom look alone. List, Details,
+    Tiles, and Content place items by their order and never write
+    `Item.position`, so switching back to an icon view restores a hand
+    arrangement.
+  - *One sort rule for both kinds:* `SortRule { key, descending,
+    folders_first }`. A space keeps its last rule, and "Keep sorted"
+    decides whether it holds as items come and go. A lens is always kept
+    sorted, since its items have no saved positions. Dragging to rearrange
+    a kept-sorted space is refused, as Explorer refuses it in a sorted
+    folder. Sort by ▸ takes Explorer's folder shape: the keys as radio
+    items, then Ascending and Descending, then Folders first and Keep
+    sorted (checked and grey on a lens).
+  - *The status bar* is per-space chrome too, not a look setting. A look
+    setting cannot be on for lenses and off for spaces while both follow
+    Global. It shows Explorer's segments ("12 items", "3 items
+    selected", and the selected files' size) on the left. On the right
+    it has Explorer's two view buttons: Details (Ctrl+Shift+6), "Displays
+    information about each item in the window", and Large icons
+    (Ctrl+Shift+2), "Displays items by using large thumbnails". It is off
+    for new spaces and on for new lenses, from the Lenses defaults page.
+    Spaces that exist before it lands keep it off.
+  - *A lens's title* follows its label setting: the folder's name (the
+    default for a new lens), its path from the user's profile folder
+    (`C:\Users\me\Documents\Work` shows as `Documents\Work`, and a folder
+    outside the profile shows its full path), the full path, or custom
+    text. Renaming the title by hand (F2, or the Lens page) makes it
+    custom. A lens that predates the setting loads as custom, so its
+    title does not change under the user.
+  - *Settings pages:* every space lists a View page (the view, the status
+    bar, and the sort rule), always enabled like Shortcuts, because
+    views are not part of the look. A lens also lists a Lens page (its
+    folder, its title, and hidden files). Global gains a Lenses page that
+    holds the defaults for new lenses. View and Lens edits preview, and
+    Cancel undoes them. Change folder… commits at once, as the menu
+    does.
+  - Lenses are unreleased (2026-10-21), so `FolderView`'s sort fields may
+    move into `SortRule` without a migration.
+  - Work items: `TASKS.md` section W, phase 4 (W8-W23).
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
@@ -673,12 +730,20 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Deleting a lens removes only the view; its folder and the files in it
     are never deleted or moved (D3). The delete confirmation says so.
   - Double-click to open already works through `Ui::open_path`.
-- **Phase 4 - views and kept sort rules.**
-  - List and details views and icon sizes (F-09). Map Explorer's
-    `FOLDERVIEWMODE` onto these views under "Match Explorer" (the rest of
-    F-40).
-  - A kept sort rule for lenses and normal spaces (F-08, F-31).
-  - A Lenses settings page with defaults (F-17).
+- **Phase 4 - views and kept sort rules** (decided in D15; `TASKS.md` W8-W23).
+  - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
+    lens's title bar.
+  - Explorer's eight views and icon sizes, for every space (F-09), and
+    their Ctrl+Shift+1..8 keys. Map Explorer's `FOLDERVIEWMODE` onto these
+    views under "Match Explorer" (the rest of F-40).
+  - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
+    shape (F-08, F-31).
+  - Explorer's status bar: item and selection counts, the Details and
+    Large icons buttons.
+  - A lens's title from its folder name, profile path, full path, or
+    custom text.
+  - A View page for every space, a Lens page for each lens, and a Global
+    Lenses page with defaults (F-17).
 - **Later.** Browse into subfolders inside the lens, with a back control (as
   comparable tools do). Until then, subfolders open in Explorer.
 
@@ -915,8 +980,8 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Partial: lenses work end to end (M4 phases 1-3, W1-W7, 2026-10-21; on-screen checks in `TASKS.md` section V); views and a Lenses settings page are phase 4 |
-| F-08 | Lens sort rules | M4 | Open |
-| F-09 | Lens show-as / icon size | M4 | Open |
+| F-08 | Lens sort rules | M4 | Open; decided in D15 (`TASKS.md` W14, W15) |
+| F-09 | Lens show-as / icon size | M4 | Open; decided in D15 for every space (`TASKS.md` W12-W22) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
@@ -938,7 +1003,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-28 | Title bar style | M5 | Open |
 | F-29 | Windows accent color | M3 | Done; check pending |
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
-| F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
+| F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08; D15, `TASKS.md` W15) |
 | F-32 | Hover opacity | M5 | Open |
 | F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T); Bounce, Scroll, and Magic lamp planned (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
