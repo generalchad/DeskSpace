@@ -508,5 +508,5 @@ Moved from the section V rows, which now list only what is left to check.
 - `fix: never make the desktop layer topmost` passed on screen: with
   takeover on and `./scripts/dev.ps1 -OnTop`, the layer spanning both
   monitors stayed behind other windows, the spaces sat on top, and other
-  apps took clicks (maintainer, confirmed by `SetWindowPos` flags read
-  back from a running instance).
+  apps took clicks (maintainer; the window styles of the running instance,
+  read with `GetWindowLongW`, showed only the spaces as `WS_EX_TOPMOST`).
