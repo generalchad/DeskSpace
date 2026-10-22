@@ -365,19 +365,6 @@ and B33 and B36 change behavior on purpose, as each says.
     loaded path refreshes.
   - **[needs human]** check: a lens on a folder of a few thousand images
     scrolls without stalls, and its icons fill in.
-- [ ] **B34. An O(1) least-recently-used icon cache (platform, pure).**
-  - Why: once `IconCache` is full (1,024 icons), `IconCache::insert`
-    scans every entry with `min_by_key` to find the oldest, on every new
-    icon. Scrolling a large lens pays that for each icon it loads.
-  - `win32/icons.rs`: keep a `BTreeMap<u64, Key>` from `last_used` to
-    key beside `entries`. A hit moves its key to the new clock value; an
-    insert into a full cache pops the first (oldest) entry. That is
-    O(log n) with no new dependency. `invalidate` removes every variant
-    of a path from both maps.
-  - Tests: the existing `evicts_the_least_recently_used_icon` and
-    `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
-    that a hit protects an icon from the next eviction.
-  - Done when: no method scans `entries`, and the gates pass.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and

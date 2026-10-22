@@ -3585,3 +3585,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     passes.
   - Done when: no `eq_ignore_ascii_case` is left on a path in `app`, and
     the gates pass.
+- [x] **B34. An O(1) least-recently-used icon cache (platform, pure).**
+  - Why: once `IconCache` is full (1,024 icons), `IconCache::insert`
+    scans every entry with `min_by_key` to find the oldest, on every new
+    icon. Scrolling a large lens pays that for each icon it loads.
+  - `win32/icons.rs`: keep a `BTreeMap<u64, Key>` from `last_used` to
+    key beside `entries`. A hit moves its key to the new clock value; an
+    insert into a full cache pops the first (oldest) entry. That is
+    O(log n) with no new dependency. `invalidate` removes every variant
+    of a path from both maps.
+  - Tests: the existing `evicts_the_least_recently_used_icon` and
+    `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
+    that a hit protects an icon from the next eviction.
+  - Done when: no method scans `entries`, and the gates pass.
