@@ -177,14 +177,7 @@ impl App {
             return;
         };
         if !self.storage.allows_lens(&folder) {
-            ui.alert(
-                "Change folder",
-                &format!(
-                    "DeskSpace keeps its own files in \u{201C}{}\u{201D}, so a lens cannot show \
-                     that folder or one inside it.",
-                    self.storage.root().display()
-                ),
-            );
+            ui.alert("Change folder", &self.storage_refusal());
             return;
         }
         if self
@@ -254,8 +247,10 @@ impl App {
     /// entries, then Explorer's desktop background menu, which takeover would
     /// otherwise leave unreachable under the layer.
     fn show_desktop_menu(&mut self, ui: &mut Ui, at: Point) {
+        let [new_space, new_lens] = new_entries();
         let entries = [
-            menu_item(MenuId::NewSpace, "New space"),
+            new_space,
+            new_lens,
             menu_item(MenuId::Settings, "DeskSpace settings\u{2026}"),
             self.visibility_entry(),
         ];
@@ -305,10 +300,9 @@ impl App {
         } else {
             "Delete space"
         };
+        entries.extend([menu_item(MenuId::Delete, delete), MenuEntry::Separator]);
+        entries.extend(new_entries());
         entries.extend([
-            menu_item(MenuId::Delete, delete),
-            MenuEntry::Separator,
-            menu_item(MenuId::NewSpace, "New space"),
             MenuEntry::Separator,
             menu_item(MenuId::Settings, "Settings\u{2026}"),
             self.visibility_entry(),
@@ -446,9 +440,9 @@ impl App {
         if self.debug.is_some() {
             entries.push(menu_item(MenuId::Debug, "Debug\u{2026}"));
         }
+        entries.push(self.visibility_entry());
+        entries.extend(new_entries());
         entries.extend([
-            self.visibility_entry(),
-            menu_item(MenuId::NewSpace, "New space"),
             MenuEntry::Separator,
             self.update_entry(),
             MenuEntry::Separator,
@@ -485,6 +479,9 @@ impl App {
             MenuId::NewSpace => {
                 self.create_space(ui, at);
             }
+            MenuId::NewLens => {
+                self.create_lens(ui, at);
+            }
             MenuId::Settings => self.open_settings(ui),
             MenuId::ToggleVisible => self.set_visible(ui, !self.visible),
             MenuId::Exit => self.exit(ui),
@@ -496,10 +493,48 @@ impl App {
     /// line with the top row of spaces on the monitor at `at` (ROADMAP D10).
     /// Returns its id.
     pub(super) fn create_space(&mut self, ui: &mut Ui, at: Point) -> Option<SpaceId> {
+        let (origin, size) = self.new_space_spot(at);
+        self.open_new_space(ui, origin, size)
+    }
+
+    /// New lens…: asks for a folder, then opens a lens on it where New space
+    /// would put a space, titled with the folder's name. DeskSpace's storage
+    /// folder is refused with a message (W3a). Returns its id.
+    pub(super) fn create_lens(&mut self, ui: &mut Ui, at: Point) -> Option<SpaceId> {
+        let folder = ui.pick_folder("Choose a folder for the new lens")?;
+        if !self.storage.allows_lens(&folder) {
+            ui.alert("New lens", &self.storage_refusal());
+            return None;
+        }
+        let (origin, size) = self.new_space_spot(at);
+        let command = Command::CreateLens {
+            title: lens_title(&folder),
+            at: origin,
+            size,
+            path: folder,
+            locked: self.config.window.new_space_locked,
+        };
+        let id = self.show_new_space(ui, command, origin)?;
+        self.sync_watches(ui);
+        Some(id)
+    }
+
+    /// Why a lens cannot show DeskSpace's storage folder.
+    fn storage_refusal(&self) -> String {
+        format!(
+            "DeskSpace keeps its own files in \u{201C}{}\u{201D}, so a lens cannot show that \
+             folder or one inside it.",
+            self.storage.root().display()
+        )
+    }
+
+    /// Where New space puts a new space for the monitor at `at`, and its
+    /// size: in line with the top row of spaces there (ROADMAP D10).
+    fn new_space_spot(&self, at: Point) -> (Point, Size) {
         let size = self.new_space_size();
         let spaces = self.space_rects();
         let origin = new_space_origin(&spaces, size, work_area_at(at), gap_at(at)).unwrap_or(at);
-        self.open_new_space(ui, origin, size)
+        (origin, size)
     }
 
     /// A space for items dropped on the desktop layer (ROADMAP D7): as near
@@ -525,14 +560,19 @@ impl App {
         } else {
             title.to_string()
         };
-        let locked = window.new_space_locked;
-        let id = self.config.desktop.next_space_id();
         let command = Command::CreateSpace {
             title,
             at: origin,
             size,
-            locked,
+            locked: window.new_space_locked,
         };
+        self.show_new_space(ui, command, origin)
+    }
+
+    /// Applies `command`, which creates a space or a lens at `origin`, gives it
+    /// a window, and returns its id. Spaces are shown first if hidden.
+    fn show_new_space(&mut self, ui: &mut Ui, command: Command, origin: Point) -> Option<SpaceId> {
+        let id = self.config.desktop.next_space_id();
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.
         if !self.dispatch(command, origin).is_applied() {
@@ -655,6 +695,24 @@ fn space_sort_menu(lens: Option<&FolderView>) -> MenuEntry {
         ]);
     }
     MenuEntry::submenu("Sort by", entries)
+}
+
+/// "New space" and "New lens…", in that order, for every menu that creates
+/// spaces: the space menu, the tray, and the desktop layer's menu.
+fn new_entries() -> [MenuEntry; 2] {
+    [
+        menu_item(MenuId::NewSpace, "New space"),
+        menu_item(MenuId::NewLens, "New lens\u{2026}"),
+    ]
+}
+
+/// A new lens's title: the folder's name, or the whole path for a drive root
+/// such as `D:\`, which has none.
+fn lens_title(folder: &std::path::Path) -> String {
+    folder.file_name().map_or_else(
+        || folder.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 /// A lens's own entries in its space menu.
@@ -783,6 +841,23 @@ mod tests {
         let hidden = lens_view_after(&view, MenuId::ShowHidden).unwrap();
         assert!(hidden.show_hidden && !hidden.folders_first);
         assert_eq!(lens_view_after(&view, MenuId::Fold), None);
+    }
+
+    #[test]
+    fn new_lens_follows_new_space() {
+        let ids: Vec<Option<MenuId>> = item_checks(&new_entries())
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(ids, [Some(MenuId::NewSpace), Some(MenuId::NewLens)]);
+    }
+
+    #[test]
+    fn a_lens_is_titled_with_its_folder_name() {
+        use std::path::Path;
+        assert_eq!(lens_title(Path::new("C:/Users/me/Downloads")), "Downloads");
+        assert_eq!(lens_title(Path::new(r"C:\Users\me\OpenTTD")), "OpenTTD");
+        assert_eq!(lens_title(Path::new(r"D:\")), r"D:\");
     }
 
     #[test]

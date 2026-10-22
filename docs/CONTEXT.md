@@ -1142,8 +1142,8 @@ in `ui.rs`. What spans them:
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Fold/Unfold,
   Rename, Lock position, Fit to contents (resized, unlocked spaces only); New
   shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
-  unless the space is empty); New space; Settings…, Hide/Show spaces, Exit
-  DeskSpace.
+  unless the space is empty); New space, New lens…; Settings…, Hide/Show
+  spaces, Exit DeskSpace.
 - A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
   folder `ItemStore::allows_lens` refuses gets a message instead) after the
   first group. Its Sort by ▸ checks the lens's current order and keeps it as
@@ -1153,6 +1153,11 @@ in `ui.rs`. What spans them:
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
+- New lens… (`App::create_lens`), under New space in the space menu, the
+  tray, and the desktop layer's menu (`new_entries`), asks for a folder
+  (`Ui::pick_folder`), refuses DeskSpace's storage folder with a message,
+  and opens a `CreateLens` where New space would put a space, titled with
+  the folder's name. It then starts the lens's watch (`sync_watches`).
 - **Appearance ▸** sets a tint-opacity preset (100/80/60/40/20 %), an icon size
   (Small 75, Medium 100, Large 150, Extra large 200 %), or a custom tint or
   text color. Each customizes the space, starting from what it shows now; "Use
@@ -1186,7 +1191,7 @@ in `ui.rs`. What spans them:
   ROADMAP D3), so a picked file is relocated exactly like a dragged one.
   Cancelling adds nothing.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Settings…, Hide/Show spaces, New space, Check for updates… (or
+  offers Settings…, Hide/Show spaces, New space, New lens…, Check for updates… (or
   "Restart to update to X" once an automatic update is downloaded), and Exit
   DeskSpace, and, with `--debug`, Debug…. A space created from the tray goes to the center of the work
   area, and creating a space while spaces are hidden shows them.
@@ -1248,7 +1253,7 @@ in `ui.rs`. What spans them:
   multi-selection keeps the selection. A loose item on the desktop layer gets
   Explorer's menu alone. Rest the pointer on an item for Explorer's info tip.
 - Right-click an empty spot of the desktop layer (or press the Menu key with
-  nothing selected there) for "New space", "DeskSpace settings…", and
+  nothing selected there) for "New space", "New lens…", "DeskSpace settings…", and
   Hide/Show spaces above Explorer's own desktop background menu
   (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
   that menu would be unreachable. A shell command re-syncs the layer. When

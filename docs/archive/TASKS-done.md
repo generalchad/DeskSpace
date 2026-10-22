@@ -3399,3 +3399,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     commands; a normal space's menu is unchanged.
   - **[needs human]**: each entry on a hand-made lens; after a restart the
     sort, folders-first, and hidden-files settings are still set.
+- [x] **W7. New lens... (app).**
+  - "New lens..." right under "New space" in the space menu, the tray
+    menu, and the desktop layer's menu. It runs `pick_folder`, then the
+    W3a guard, `ItemStore::allows_lens` (when it fails, say why with `ui.alert` and stop), then
+    `CreateLens` sized and placed as `create_space` places a new space and
+    titled with the folder's name, then `sync_watches`.
+  - Update the ROADMAP: F-07's row in the feature index, and M4 phases 2
+    and 3 marked done. Add the new entries to the menu lists in
+    `CONTEXT.md` section 8 and in `README.md`.
+  - **[needs human]**: create a lens from each of the three menus.
+

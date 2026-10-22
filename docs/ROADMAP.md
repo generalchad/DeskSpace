@@ -522,13 +522,14 @@ Takeover ships opt-in (D8, D9).
 
 **In progress:** M2 (undo and the stored-file watch remain), M3 (desktop
 verbs, F-52, and entries that wait on later milestones or design), and M4
-(phase 1, the lens core model, is done; the platform watcher, app behavior,
-and views remain). Section 5 lists what each has done.
+(phases 1-3 are done: the core model, the watcher, and the app behavior;
+views and kept sort rules, phase 4, remain). Section 5 lists what each has done.
 
 **Next, in order:**
 
 1. **Lenses, M4 phases 2-3** (`TASKS.md` section W), moved ahead of the
-   list below on 2026-10-20 (maintainer).
+   list below on 2026-10-20 (maintainer). Built 2026-10-21; their
+   on-screen checks are in `TASKS.md` section V.
 2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
@@ -646,7 +647,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     reconciles by path, so `ItemId`s survive refreshes.
   - `AddItem` / `MoveItem` into a lens are `Rejected`.
   - Lens items are not persisted (F-07, F-08).
-- **Phase 2 - platform.**
+- **Phase 2 - platform. [done]**
   - Folder listing with `FindFirstFileExW`.
   - A watcher (shared with M2) using `ReadDirectoryChangesW`:
     - keyed, so the Desktop folder and every lens are watched at once, all
@@ -659,10 +660,11 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - New `Ui` calls:
     - `Ui::watch_folder(key, path)` and `unwatch_folder(key)`;
     - `pick_folder` (`IFileOpenDialog`);
-    - `move_into_folder` (`IFileOperation` with undo). It pumps messages, so
-      no runtime borrow may be held across it.
-- **Phase 3 - app.**
-  - "New lens..." in the space and tray menus.
+    - `transfer_files` with `OnCollision::Ask` (`IFileOperation` with undo
+      and Explorer's Replace or Skip dialog). It pumps messages, so no
+      runtime borrow may be held across it.
+- **Phase 3 - app. [done]**
+  - "New lens..." in the space, tray, and desktop layer menus.
   - Drops onto a lens move files into its folder. Items already there are
     skipped, and a folder cannot be dropped into itself.
   - A lens menu: Open folder, Change folder..., Sort by, Folders first, and
@@ -912,7 +914,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
-| F-07 | Lenses (folder portals) | M4 | Partial: core model and live folder listing (M4 phases 1-2, W1-W2); menus and settings open |
+| F-07 | Lenses (folder portals) | M4 | Partial: lenses work end to end (M4 phases 1-3, W1-W7, 2026-10-21; on-screen checks in `TASKS.md` section V); views and a Lenses settings page are phase 4 |
 | F-08 | Lens sort rules | M4 | Open |
 | F-09 | Lens show-as / icon size | M4 | Open |
 | F-10 | Hide all on desktop double-click | M5 | Open |

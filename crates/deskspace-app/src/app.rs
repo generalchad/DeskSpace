@@ -165,10 +165,12 @@ enum MenuId {
     FoldersFirst = 52,
     /// A lens's "Show hidden files" toggle, in its Sort by submenu.
     ShowHidden = 53,
+    /// "New lens…", under New space in every menu that has it.
+    NewLens = 54,
 }
 
 impl MenuId {
-    const ALL: [Self; 41] = [
+    const ALL: [Self; 42] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -210,6 +212,7 @@ impl MenuId {
         Self::ChangeFolder,
         Self::FoldersFirst,
         Self::ShowHidden,
+        Self::NewLens,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

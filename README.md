@@ -10,8 +10,8 @@ if you turn it on in Settings, about once a day. You can also let the installed
 version install updates on its own while you are away. It asks GitHub for the latest
 release and sends nothing about you or your files.
 
-Spaces currently hold desktop items and shortcuts. Next up are *lenses*:
-spaces that show the live contents of a folder. Other planned features include
+Spaces hold desktop items and shortcuts, and *lenses* show the live contents
+of a folder. Other planned features include
 auto-hiding, multiple pages, and saved layouts; see
 [`ROADMAP.md`](docs/ROADMAP.md) for the full plan.
 
@@ -107,13 +107,21 @@ help inspect the look and the desktop layer.
 - Double-click a space title bar to fold or unfold it (animated; Settings >
   Animations > Fold sets the speed). Right-click a space for
   fold, rename, lock, fit to contents, new shortcut, appearance, sort,
-  delete, new space, settings, hide/show spaces, and exit. "New shortcut"
+  delete, new space, new lens, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
   web address, pastes a shortcut to what you copied in Explorer ("Paste
   shortcut"), or moves files you pick ("Add files…"). In Settings, a space's
   "Shortcuts" page shows a preview of the space: click an item's ✕ to delete
   it, or the + tile to add a shortcut.
+- "New lens…" (in a space's menu, the tray menu, and the desktop menu) asks
+  for a folder and opens a lens on it: a space that shows what is in the
+  folder and follows changes made in Explorer. Dropping, pasting, or adding
+  files or shortcuts on a lens puts them in its folder (Explorer asks before
+  replacing a file, and "Copy here" copies); deleting an item from a lens
+  sends its file to the Recycle Bin. Deleting a lens leaves the folder and
+  its files where they are. Right-click a lens to open its folder, change
+  it, or choose its order, folders first, and hidden files.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the
@@ -125,8 +133,8 @@ help inspect the look and the desktop layer.
   item again (slowly) to rename it.
 - With the desktop takeover on, right-click an empty spot of the desktop for
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
-  Windows 11 the one "Show more options" opens) with New space, DeskSpace
-  settings, and hide/show spaces on top.
+  Windows 11 the one "Show more options" opens) with New space, New lens,
+  DeskSpace settings, and hide/show spaces on top.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
