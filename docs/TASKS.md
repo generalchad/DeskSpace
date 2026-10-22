@@ -640,19 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W5. "Folder not available" (app, platform).**
-  - Why: after W2 a lens whose folder is missing is simply empty, which
-    looks like a bug.
-  - Follow "Recipe: a new visual in a space". Add
-    `SpaceScene::placeholder: Option<String>`, `None` by default. In
-    `space_scene`, a lens in `unavailable_lenses` gets
-    `"Folder not available\n<path>"`. Draw it centered in the item area,
-    in the label color at about 60 % opacity. Build the text layout in
-    `PreparedScene`, not while painting, so a paint allocates nothing.
-  - Test: an unavailable lens's scene carries the text; a normal space
-    and an available lens carry `None`.
-  - **[needs human]**: rename a lens's folder away; the text shows.
-    Rename it back; the items return within 5 s.
 - [ ] **W6. The lens menu (platform, app).**
   - Platform: `Ui::pick_folder(title) -> Option<PathBuf>`, a "Select
     folder" dialog. Copy `pick_files` (`win32/dialog.rs`) and set
@@ -1149,6 +1136,7 @@ each id is in `archive/TASKS-done.md`.
 | W3e (F-07) | In Explorer, copy a file and paste it on a hand-made lens (section W; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
 | W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
 | W3g (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
+| W5 (F-07) | Point a lens at a throwaway folder, then rename the folder away: "Folder not available" and the path show, centered in the lens, in a faded label color; a long path wraps inside the lens. Rename it back: the items return within 5 s and the text goes. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

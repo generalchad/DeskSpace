@@ -236,6 +236,10 @@ impl App {
             focused: (self.selection.surface == Some(surface))
                 .then_some(self.selection.focused)
                 .flatten(),
+            folder_unavailable: match surface {
+                Surface::Space(id) => self.unavailable_lenses.contains(&id),
+                Surface::Desktop => false,
+            },
         }
     }
 

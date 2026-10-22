@@ -34,6 +34,7 @@ impl App {
                     .and_then(|space| space.folder_view())
                     .map(|view| view.path.display().to_string());
                 tracing::warn!(space = %id, ?folder, "lens folder is DeskSpace's storage; not watching it");
+                self.refresh_space(ui, id);
             }
         }
         let wanted = self.desired_watches(desktop);

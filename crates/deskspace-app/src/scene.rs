@@ -56,6 +56,9 @@ pub struct ViewState {
     pub highlight: bool,
     /// The item with keyboard focus, drawn with a focus rectangle.
     pub focused: Option<ItemId>,
+    /// A lens whose folder cannot be listed (missing, or refused because it
+    /// is DeskSpace's storage): the scene says so in place of items.
+    pub folder_unavailable: bool,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -181,6 +184,10 @@ pub fn space_scene(
         } else {
             DropInto::Space
         },
+        placeholder: space
+            .folder_view()
+            .filter(|_| view.folder_unavailable)
+            .map(|view| format!("Folder not available\n{}", view.path.display())),
         focused_item: view.focused.map(|id| id.0),
         editing: None,
         editing_item: None,
@@ -277,6 +284,7 @@ pub fn desktop_layer_scene(
         folded: false,
         highlight: false,
         drop_into: DropInto::Space,
+        placeholder: None,
         focused_item: view.focused.map(|id| id.0),
         editing: None,
         editing_item: None,
@@ -716,6 +724,33 @@ mod tests {
             &mut IconCache::new(),
         );
         assert_eq!(layer.drop_into, DropInto::Space);
+    }
+
+    #[test]
+    fn only_an_unavailable_lens_shows_the_placeholder() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let placeholder = |space: &Space, folder_unavailable| {
+            let view = ViewState {
+                folder_unavailable,
+                ..ViewState::default()
+            };
+            space_scene(space, look, view, &mut IconCache::new()).placeholder
+        };
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        let lens = desktop.space(lens).unwrap();
+        let text = placeholder(lens, true).expect("an unavailable lens says so");
+        assert!(text.starts_with("Folder not available\n"));
+        assert!(text.contains("Downloads"));
+        assert_eq!(placeholder(lens, false), None, "an available lens");
+        assert_eq!(placeholder(&space(), true), None, "a normal space");
     }
 
     #[test]

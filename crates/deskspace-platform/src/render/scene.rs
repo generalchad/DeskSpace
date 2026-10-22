@@ -84,6 +84,10 @@ pub struct SpaceScene {
     /// What a drop on this window lands in, which decides the modifiers and
     /// menu entries the drop target offers.
     pub drop_into: DropInto,
+    /// Text drawn centered in the item area in place of items, in the label
+    /// color at about 60 % opacity; a lens whose folder is unavailable says
+    /// so here. `None` draws nothing.
+    pub placeholder: Option<String>,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,

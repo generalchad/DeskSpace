@@ -84,6 +84,10 @@ use item::{draw_item, draw_marquee};
 const TITLE_INSET: f32 = 12.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
+/// The placeholder text's alpha factor: about 60 % of the label color.
+const PLACEHOLDER_ALPHA: u8 = 153;
+/// Space kept between the placeholder text and the item area's edges.
+const PLACEHOLDER_INSET: f32 = 12.0;
 /// Opacity of an item's slot while the item itself is dragged.
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
@@ -143,6 +147,8 @@ pub struct PreparedScene {
     /// The item id and rename buffer while `scene.editing_item` is set.
     edit_item: Option<(u64, Vec<u16>)>,
     labels: Vec<Vec<u16>>,
+    /// `scene.placeholder`, encoded once.
+    placeholder: Option<Vec<u16>>,
 }
 
 impl PreparedScene {
@@ -161,12 +167,17 @@ impl PreparedScene {
             .iter()
             .map(|item| item.label.encode_utf16().collect())
             .collect();
+        let placeholder = scene
+            .placeholder
+            .as_ref()
+            .map(|text| text.encode_utf16().collect());
         Self {
             scene,
             title,
             edit,
             edit_item,
             labels,
+            placeholder,
         }
     }
 
@@ -466,6 +477,19 @@ impl Painter {
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
+                if let Some(text) = &prepared.placeholder {
+                    draw_text(
+                        target,
+                        brush,
+                        text,
+                        &ctx.graphics.placeholder_format,
+                        inset(rect_f(0.0, content_top, width, height), PLACEHOLDER_INSET),
+                        scene.item_text.fade(PLACEHOLDER_ALPHA),
+                        scene
+                            .text_shadow
+                            .map(|shadow| shadow.fade(PLACEHOLDER_ALPHA)),
+                    );
+                }
                 if let Some(marquee) = scene.marquee {
                     draw_marquee(
                         target,

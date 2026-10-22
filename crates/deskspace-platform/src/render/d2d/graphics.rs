@@ -9,6 +9,7 @@ use windows::Win32::Graphics::Direct3D::{
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
 };
+use windows::Win32::Graphics::DirectWrite::DWRITE_WORD_WRAPPING_EMERGENCY_BREAK;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::core::Interface;
 
@@ -31,6 +32,9 @@ pub(super) struct Graphics {
     /// The zoom pop-up's percentage, and its button text (centered both ways).
     pub(super) zoom_percent_format: IDWriteTextFormat,
     pub(super) zoom_label_format: IDWriteTextFormat,
+    /// A space's placeholder text: centered both ways, wrapping, and breaking
+    /// a long path anywhere rather than running past the edge.
+    pub(super) placeholder_format: IDWriteTextFormat,
     /// A dotted stroke for the keyboard focus rectangle.
     pub(super) focus_stroke: ID2D1StrokeStyle,
 }
@@ -124,6 +128,12 @@ impl Graphics {
             let zoom_label_format =
                 centered_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
 
+            let placeholder_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            placeholder_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            placeholder_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
+            placeholder_format.SetWordWrapping(DWRITE_WORD_WRAPPING_EMERGENCY_BREAK)?;
+
             let focus_stroke = d2d.CreateStrokeStyle(
                 &D2D1_STROKE_STYLE_PROPERTIES {
                     dashStyle: D2D1_DASH_STYLE_DOT,
@@ -143,6 +153,7 @@ impl Graphics {
                 glyph_format,
                 zoom_percent_format,
                 zoom_label_format,
+                placeholder_format,
                 focus_stroke,
             })
         }

@@ -3365,3 +3365,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     and says the files stay. Today's `delete_consequence` tests still
     pass with a normal space.
   - Done when: the gates pass. No screen check is needed.
+- [x] **W5. "Folder not available" (app, platform).**
+  - Why: after W2 a lens whose folder is missing is simply empty, which
+    looks like a bug.
+  - Follow "Recipe: a new visual in a space". Add
+    `SpaceScene::placeholder: Option<String>`, `None` by default. In
+    `space_scene`, a lens in `unavailable_lenses` gets
+    `"Folder not available\n<path>"`. Draw it centered in the item area,
+    in the label color at about 60 % opacity. Build the text layout in
+    `PreparedScene`, not while painting, so a paint allocates nothing.
+  - Test: an unavailable lens's scene carries the text; a normal space
+    and an available lens carry `None`.
+  - **[needs human]**: rename a lens's folder away; the text shows.
+    Rename it back; the items return within 5 s.
