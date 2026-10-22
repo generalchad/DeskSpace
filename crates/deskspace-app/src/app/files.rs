@@ -307,7 +307,13 @@ impl App {
         let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
             return false;
         };
-        if self.storage.contains(&path) && path.exists() {
+        let in_lens = self
+            .config
+            .desktop
+            .space_containing(id)
+            .and_then(|space| self.config.desktop.space(space))
+            .is_some_and(Space::is_lens);
+        if !in_lens && self.storage.contains(&path) && path.exists() {
             let desktop = match desktop_directory() {
                 Ok(desktop) => desktop,
                 Err(error) => {
@@ -490,7 +496,7 @@ impl App {
             let question = format!(
                 "Delete the space \"{}\"?\n\n{}",
                 space.title(),
-                delete_consequence(space.items().len(), stored)
+                delete_consequence(space, stored)
             );
             if !ui.confirm("Delete space", &question) {
                 return;
@@ -551,6 +557,9 @@ impl App {
             }
             self.pointer.clear_hover_on(Surface::Space(id));
             self.view_cache.forget(id);
+            // A deleted lens's folder stops being watched; its files stay.
+            self.unavailable_lenses.remove(&id);
+            self.sync_watches(ui);
             self.sync_windows(ui);
             self.save(ui);
         }
@@ -558,8 +567,11 @@ impl App {
 }
 
 /// The stored files of `space` that still exist: what Delete all spaces
-/// sends to the Recycle Bin.
+/// sends to the Recycle Bin. A lens has none: its files are its folder's.
 pub(super) fn stored_paths(space: &Space, storage: &ItemStore) -> Vec<PathBuf> {
+    if space.is_lens() {
+        return Vec::new();
+    }
     space
         .items()
         .iter()
@@ -786,6 +798,44 @@ mod tests {
         assert!(recycles_on_delete(normal, &store, &stored));
         assert!(!recycles_on_delete(normal, &store, in_place));
         assert!(recycles_on_delete(lens, &store, in_place));
+    }
+
+    #[test]
+    fn a_lens_on_the_store_has_no_stored_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-lens-stored-paths-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+        let mut desktop = deskspace_core::Desktop::default();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "L",
+            deskspace_core::Rect::new(0, 0, 300, 200),
+            &root.to_string_lossy(),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![deskspace_core::source::FolderEntry {
+                    path: file,
+                    label: String::new(),
+                    kind: deskspace_core::item::ItemKind::Other,
+                    size: None,
+                    modified: None,
+                    hidden: false,
+                }],
+            },
+        );
+        let space = desktop.space(lens).unwrap();
+        assert_eq!(space.items().len(), 1);
+        let paths = stored_paths(space, &ItemStore::new(&root));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(paths.is_empty());
     }
 
     #[test]

@@ -640,35 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W4. Deleting a lens never touches its folder (app).**
-  - Why: deleting a normal space moves its stored files back to the
-    desktop. For a lens, D3 says the folder and its files stay where they
-    are. After W3a no lens points into storage, so the code already
-    leaves a lens's files alone by accident. This task makes it so on
-    purpose, and fixes the question the user is asked.
-  - `app/files.rs`, the two places that touch a deleted space's files:
-    - `stored_paths`: return an empty list for a lens. The debug
-      window's "Delete all spaces" recycles what this returns.
-    - `release_item`: never move a lens item's file. Only unlist it.
-  - `delete_space_now`: after `DeleteSpace` is applied, also remove the
-    id from `self.unavailable_lenses` and call `self.sync_watches(ui)`,
-    so a deleted lens's folder stops being watched. Do it for every
-    deleted space, with no `if`; for a normal space it changes nothing.
-  - `app.rs`, the question before deleting:
-    - `delete_needs_confirmation(space)`: a lens always asks, even when
-      it shows no items. The space menu's "Delete space…" ellipsis
-      follows it with no further change (`menus.rs`).
-    - `delete_consequence`: take `space: &Space` and `stored: usize` in
-      place of `count`. For a lens, say `It shows the folder
-      “{path}”. The folder and its files stay where they are.` Normal
-      spaces keep today's text. Update the caller in `delete_space`.
-  - Tests: `stored_paths` of a lens whose folder is the store's root
-    returns nothing, even with files there (copy
-    `stored_paths_lists_stored_files_and_skips_items_in_place`). An
-    empty lens needs confirmation. A lens's consequence names the folder
-    and says the files stay. Today's `delete_consequence` tests still
-    pass with a normal space.
-  - Done when: the gates pass. No screen check is needed.
 - [ ] **W5. "Folder not available" (app, platform).**
   - Why: after W2 a lens whose folder is missing is simply empty, which
     looks like a bug.

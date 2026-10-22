@@ -170,6 +170,9 @@ drops any a hand-edited file lists. `AddItem` and `MoveItem` into a lens are
 `OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
 folder, or inside it, is kept but never watched, and counts as unavailable
 (`ItemStore::allows_lens`).
+Deleting a lens always asks and only unlists it: its folder and files stay,
+it is no longer watched, and `stored_paths` and `release_item` never touch its
+files.
 
 ### Desktop and desktop layer
 

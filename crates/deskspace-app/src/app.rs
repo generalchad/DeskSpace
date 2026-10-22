@@ -714,14 +714,23 @@ impl EventHandler for App {
     }
 }
 
-/// Deleting an empty space loses nothing, so it happens without asking.
+/// Deleting an empty space loses nothing, so it happens without asking. A lens
+/// always asks, because it points at a folder the user may not expect to
+/// stay.
 fn delete_needs_confirmation(space: &Space) -> bool {
-    !space.items().is_empty()
+    space.is_lens() || !space.items().is_empty()
 }
 
-/// What deleting a space with `count` items, `stored` of them in the space
-/// storage, does to the files.
-fn delete_consequence(count: usize, stored: usize) -> String {
+/// What deleting `space`, with `stored` of its items in the space storage,
+/// does to the files.
+fn delete_consequence(space: &Space, stored: usize) -> String {
+    if let Some(view) = space.folder_view() {
+        return format!(
+            "It shows the folder \u{201C}{}\u{201D}. The folder and its files stay where they are.",
+            view.path.display()
+        );
+    }
+    let count = space.items().len();
     let plural = |n: usize| if n == 1 { "item" } else { "items" };
     match (count, stored) {
         (0, _) => "It is empty.".to_string(),
@@ -894,10 +903,37 @@ mod tests {
     }
 
     #[test]
+    fn a_lens_asks_even_when_empty_and_says_its_folder_stays() {
+        let mut desktop = Desktop::new();
+        let id = fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 200, 200),
+            "C:/Users/me/Downloads",
+        );
+        let lens = desktop.space(id).unwrap();
+        assert!(delete_needs_confirmation(lens));
+        let message = delete_consequence(lens, 0);
+        assert!(message.contains("C:/Users/me/Downloads"));
+        assert!(message.contains("stay where they are"));
+    }
+
+    #[test]
     fn delete_message_mentions_files_moved_back() {
-        assert_eq!(delete_consequence(0, 0), "It is empty.");
-        assert!(delete_consequence(1, 0).contains("1 item will be removed"));
-        let mixed = delete_consequence(3, 2);
+        let space_with = |count: u64| {
+            let mut space = Space::new(SpaceId(1), "S", Rect::new(0, 0, 200, 200));
+            for n in 0..count {
+                space.push_item(deskspace_core::Item::new(
+                    ItemId(n),
+                    format!("C:/{n}.txt"),
+                    ItemFacts::default(),
+                ));
+            }
+            space
+        };
+        assert_eq!(delete_consequence(&space_with(0), 0), "It is empty.");
+        assert!(delete_consequence(&space_with(1), 0).contains("1 item will be removed"));
+        let mixed = delete_consequence(&space_with(3), 2);
         assert!(mixed.contains("3 items"));
         assert!(mixed.contains("2 files moved into the space will be moved back"));
     }
