@@ -640,39 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W3a. A lens never points into storage (app).**
-  - Why: every space shares one storage folder, and deleting a normal
-    space moves its stored files out of it. A lens on that folder would
-    show those files as its own, and a delete or a drop there could move
-    files that other spaces list. So such a lens must never be watched.
-    W3b, W6, and W7 call this check too.
-  - `storage.rs`: the tests module has `fn is_inside(path, root)`. Move
-    it, unchanged with its doc, out of `mod tests` to module level as
-    `pub(crate) fn is_inside`. Its test and
-    `user_data_is_outside_the_install_root` keep using it.
-  - `storage.rs`: add `ItemStore::allows_lens(&self, folder: &Path) ->
-    bool`. It is false when `folder` is the store's root or lies inside
-    it, and true otherwise, including for a folder that contains the
-    store. Windows paths can differ by case and by short names
-    (`TIMOTH~1`), so first canonicalize both paths. Use the canonical
-    forms only when both calls succeed, else the paths as given; this is
-    the rule `same_path` follows, so read it first.
-  - `app/lens.rs`: add `fn refused_lenses(&self) -> Vec<SpaceId>`, the
-    lenses whose folder `self.storage.allows_lens` refuses. In
-    `desired_watches`, skip those lenses. In `sync_watches`, add each
-    refused id to `self.unavailable_lenses`. When `insert` returns true
-    (it was not there yet), log one `tracing::warn!` naming the space and
-    the folder. Then the warning appears once, not on every sync.
-  - Tests, in `storage.rs`: `allows_lens` is false for the root, a child,
-    a grandchild, and the root spelled in another case; it is true for a
-    sibling whose name starts the same (`storage-old`), an unrelated
-    folder, and the root's parent. In `app/lens.rs` (copy
-    `every_lens_wants_its_folder_and_normal_spaces_want_none`): a lens on
-    `app.storage.root()` is in `refused_lenses` and has no watch in
-    `desired_watches`.
-  - Docs: in the lens part of `CONTEXT.md` section 4, one sentence: a lens
-    on the storage folder is kept but never watched.
-  - Done when: the gates pass. No screen check is needed.
 - [ ] **W3b. Dropping onto a lens moves or copies into its folder
   (platform, app).**
   - Why: today a file dropped on a lens is first moved into storage by

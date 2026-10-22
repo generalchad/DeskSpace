@@ -46,6 +46,21 @@ impl ItemStore {
             .is_some_and(|parent| same_path(parent, &self.root))
     }
 
+    /// Whether a lens may watch `folder`. Every space shares the store, and
+    /// deleting a space moves its files out of it, so a lens on the store or
+    /// inside it would list files that other spaces own. A folder that merely
+    /// contains the store is fine.
+    pub fn allows_lens(&self, folder: &Path) -> bool {
+        let (folder, root) = match (
+            std::fs::canonicalize(folder),
+            std::fs::canonicalize(&self.root),
+        ) {
+            (Ok(folder), Ok(root)) => (folder, root),
+            _ => (folder.to_path_buf(), self.root.clone()),
+        };
+        !is_inside(&folder, &root)
+    }
+
     /// Moves `path` into the store and returns its new path. Items already
     /// stored are returned unchanged.
     pub fn adopt(&self, path: &Path) -> Result<PathBuf, StoreError> {
@@ -91,6 +106,17 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
             .to_string_lossy()
             .eq_ignore_ascii_case(&b.to_string_lossy()),
     }
+}
+
+/// Whether `path` is `root` or lies below it, comparing whole components
+/// case-insensitively as Windows paths do. Unlike a string-prefix test,
+/// `...\DeskSpace.App` is not inside `...\DeskSpace`.
+pub(crate) fn is_inside(path: &Path, root: &Path) -> bool {
+    let mut path = path.components();
+    root.components().all(|root| {
+        path.next()
+            .is_some_and(|part| part.as_os_str().eq_ignore_ascii_case(root.as_os_str()))
+    })
 }
 
 fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
@@ -236,15 +262,33 @@ mod tests {
         ));
     }
 
-    /// Whether `path` is `root` or lies below it, comparing whole components
-    /// case-insensitively as Windows paths do. Unlike a string-prefix test,
-    /// `...\DeskSpace.App` is not inside `...\DeskSpace`.
-    fn is_inside(path: &Path, root: &Path) -> bool {
-        let mut path = path.components();
-        root.components().all(|root| {
-            path.next()
-                .is_some_and(|part| part.as_os_str().eq_ignore_ascii_case(root.as_os_str()))
-        })
+    #[test]
+    fn a_lens_may_not_watch_the_store_or_anything_inside_it() {
+        let scratch = Scratch::new("lens");
+        let root = scratch.0.join("storage");
+        let store = ItemStore::new(&root);
+        for dir in [
+            root.join("child/grandchild"),
+            scratch.0.join("storage-old"),
+            scratch.0.join("elsewhere"),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        assert!(!store.allows_lens(&root));
+        assert!(!store.allows_lens(&root.join("child")));
+        assert!(!store.allows_lens(&root.join("child/grandchild")));
+        let shouted = scratch.0.join("STORAGE");
+        assert!(!store.allows_lens(&shouted), "same folder, other case");
+        assert!(store.allows_lens(&scratch.0.join("storage-old")));
+        assert!(store.allows_lens(&scratch.0.join("elsewhere")));
+        assert!(store.allows_lens(&scratch.0), "the root's parent");
+    }
+
+    #[test]
+    fn a_missing_store_still_refuses_its_own_path() {
+        let store = ItemStore::new("C:/nowhere/storage");
+        assert!(!store.allows_lens(Path::new("c:/NOWHERE/storage/sub")));
+        assert!(store.allows_lens(Path::new("C:/nowhere")));
     }
 
     #[test]

@@ -25,6 +25,17 @@ impl App {
         } else {
             None
         };
+        for id in self.refused_lenses() {
+            if self.unavailable_lenses.insert(id) {
+                let folder = self
+                    .config
+                    .desktop
+                    .space(id)
+                    .and_then(|space| space.folder_view())
+                    .map(|view| view.path.display().to_string());
+                tracing::warn!(space = %id, ?folder, "lens folder is DeskSpace's storage; not watching it");
+            }
+        }
         let wanted = self.desired_watches(desktop);
         for key in ui.watched_folders() {
             if !wanted.contains_key(&key) {
@@ -44,11 +55,29 @@ impl App {
             wanted.insert(WatchKey::Desktop, directory);
         }
         for space in self.config.desktop.spaces() {
-            if let Some(view) = space.folder_view() {
+            if let Some(view) = space.folder_view()
+                && self.storage.allows_lens(&view.path)
+            {
                 wanted.insert(WatchKey::Space(space.id), view.path.clone());
             }
         }
         wanted
+    }
+
+    /// The lenses on the storage folder or inside it. They stay in the config
+    /// but are never watched.
+    fn refused_lenses(&self) -> Vec<SpaceId> {
+        self.config
+            .desktop
+            .spaces()
+            .iter()
+            .filter(|space| {
+                space
+                    .folder_view()
+                    .is_some_and(|view| !self.storage.allows_lens(&view.path))
+            })
+            .map(|space| space.id)
+            .collect()
     }
 
     /// Applies a listing the watch worker posted for lens `id`.
@@ -166,5 +195,19 @@ mod tests {
             Some(&PathBuf::from("C:/Users/me/Downloads"))
         );
         assert_eq!(wanted.len(), 1, "the normal space wants no watch");
+    }
+
+    #[test]
+    fn a_lens_on_the_storage_folder_is_refused_and_not_watched() {
+        let mut app = app();
+        let root = app.storage.root().to_string_lossy().into_owned();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            &root,
+        );
+        assert_eq!(app.refused_lenses(), vec![lens]);
+        assert!(app.desired_watches(None).is_empty());
     }
 }
