@@ -502,3 +502,11 @@ Moved from the section V rows, which now list only what is left to check.
 - F13 (F-25): the default preset with takeover on (the layer's icons resize and re-space with the spaces, both ways) passed 2026-10-16.
 - F-57 zoom pop-up: passed 2026-10-16 at 100 % in dark mode on Acrylic: Ctrl+wheel, the buttons, Ctrl+Plus/Minus/0, the hide timer and hover hold, and no focus steal.
 - F15: passed 2026-10-16: zooming keeps a never-resized space's size, re-flows its icons, and leaves its title bar and title text alone.
+
+### 2026-10-21: the desktop layer is never topmost
+
+- `fix: never make the desktop layer topmost` passed on screen: with
+  takeover on and `./scripts/dev.ps1 -OnTop`, the layer spanning both
+  monitors stayed behind other windows, the spaces sat on top, and other
+  apps took clicks (maintainer, confirmed by `SetWindowPos` flags read
+  back from a running instance).
