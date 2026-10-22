@@ -14,6 +14,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section U, in order (U1 and U2 are pure and need no screen);
 - section W phase 4, in order (W8-W11 are small first tasks; W16 is the
   hardest, so pair with a reviewer on it);
+- section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
+  the phase 4 task each one names has landed;
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D.
@@ -539,7 +541,7 @@ changes nothing and says so.
   the Recycle Bin between a delete and its undo: the undo says it can't and
   changes nothing.
 
-## W. Lenses (ROADMAP M4 phases 2-3, D3, F-07)
+## W. Lenses (ROADMAP M4 phases 2-5, D3, D15, D16, F-07)
 
 ### What you are building
 
@@ -1045,29 +1047,466 @@ lens-only.
   - **[needs human]** check: change each default, and "New lens…" uses
     it; existing lenses do not change.
 
-#### Later (each **[needs decision]**; suggested 2026-10-21)
+### Phase 5: lens and view extras (after v0.3)
 
-Recommended while planning phase 4. Each needs the maintainer to decide
-whether and how, then gets tasks here.
+Read ROADMAP D16 first; it is the spec, and it builds on D15. Phase 5
+ships after v0.3, so no task here blocks the lens release. The phase 4
+rules above (first callers, the tables, Explorer as the reference, the
+glyph fonts) hold here too.
 
-- **Group by**, as Explorer's View ▸ Group by (Name, Date modified, Type,
-  Size, or none), with headers that fold.
-- **More columns and keys**: Date created (`ItemFacts` and `FolderEntry`
-  gain `created`), and choosing and resizing Details columns, kept per
-  space.
-- **Compact view**, as Explorer's: tighter rows in List and Details.
-- **File name extensions** per space. Labels follow Explorer's global
-  setting today.
-- **Lens filters** on the Lens page, from `include` and `exclude`
-  (reserved for F-22).
-- **The lens's path as a tip** when hovering its title.
-- **Ctrl+wheel through the views**: past Small icons, Explorer steps into
-  List and Details. This would amend D9.
-- **Default view and status bar for new spaces** on the New spaces page.
-- **The rest of F-40**: the desktop offers only icon views, which the
-  default view already follows. Either confirm that and close F-40, or
-  decide what Match Explorer means for a space in List or Details.
-- **Browsing into subfolders** (M4 "Later").
+- W24-W26 fix or tidy code that exists today. Take them any time, even
+  before phase 4; W24 and W25 are worth doing first.
+- Every other task names the phase 4 task it needs ("After: W18").
+  Within those limits, take them in any order, but read "Interleaving"
+  below before running two at once.
+
+#### Interleaving
+
+Two kinds. **Work interleaving**: tasks that edit the same code, so
+running two at once makes them collide. **Runtime interleaving**: events
+that can arrive in an order the code does not expect.
+
+Work that collides when run in parallel:
+
+- **`SpaceView` fields.** W12, W14, W15, W19, W28, W30, W33, and W36
+  each add a field and a serde-default test. Two branches add fields
+  side by side; resolve a merge by keeping both, in task order.
+- **"Next free" ids.** Menu ids (W12, W14, W15, W19, W28, W30, W33, W38),
+  `field::` ids (W10, W11, W20, W23, W28, W33, W35, W38, W40), and page
+  ids. Two branches that each take the "next free" value end up with the
+  same id, and git merges that without a conflict. The uniqueness tests
+  (`field_ids_are_unique`, the `MenuId::ALL` test) catch it after a
+  rebase; take a new id then. Never renumber an id that has landed.
+- **`view_layout.rs`** (W16) grows in W17, W18, W21, W22, W33 (compact),
+  and W37 (groups). Run those one at a time; each changes the metrics
+  every view shares.
+- **`DETAILS_COLUMNS`** is created in W18 and changed in W29-W32. Run
+  them in order.
+- **Label text.** W26 merges the four copies of the extension rule.
+  W28 then changes that one place. Taking W28 before W26 means editing
+  four places, so don't.
+- **The lens's folder.** After W42, file operations read the folder a
+  lens *shows*, through one `App::lens_folder`. A task that lands after
+  W42 and reads `FolderView.path` must say which one it means. W10 and
+  W11 mean the lens's own folder on purpose.
+- **Creation signatures.** W19 and W23 change `CreateLens`, and W40
+  changes `CreateSpace`. Rebase whichever lands second.
+- **Other sections:**
+  - J (tabs): J2 pages through the icon grid. After W16 it must page
+    through the view layout instead; if J2 starts first, stop and ask.
+  - U (undo): U3 lists the actions to record. If U3 has landed, wrap
+    each new action in `begin`/`finish` (`SetSpaceView`, `SetLensTitle`,
+    a column resize on release, not per move). If it has not, add the
+    new actions to U3's list. Browsing and folding a group are session
+    state and record nothing.
+  - B14 and B26 rework `settings_window/build.rs`, where W8 adds a font.
+    Do B14 first, or keep W8's edit inside one function.
+  - R14 (table-driven settings fields) would rewrite the pages W10, W20,
+    W23, W35, and W38 build. Do not start R14 while those are open.
+  - Section K: `win32/space_window.rs` is already over the 800-line
+    guideline. Put new hit tests and paint code in `app/pointer.rs` and
+    `render/d2d/`, not there.
+  - T (animations): the title icon (W9), status bar (W19), headers (W18,
+    W37), and Back button (W43) paint through the normal paint path, so
+    animations snapshot them for free. Each task's check includes one
+    Startup effect.
+
+Runtime orders the code must survive:
+
+- **A listing for a folder the lens no longer shows.** The watch worker
+  posts a listing as a message, so it can arrive after Change folder…
+  or (after W42) a step into a subfolder. W24 makes a listing carry the
+  folder it read, and the app drops a stale one. Until W24 lands, a
+  stale listing can briefly list the old folder's files in the lens.
+- **Message pumps inside a call.** `transfer_files`, `pick_folder`, and
+  `alert` pump messages. A listing, a settings event, or a delete can run
+  inside them. Hold no runtime borrow across them (`ENGINEERING.md`
+  section 6, Re-entrancy). Afterwards, look the space up again: it may
+  have been deleted, or (after W42) it may show another folder. Change
+  folder… from the Lens page is the case to test.
+- **An item or space that vanishes between two events.** A listing can
+  remove the item under a rename, a drag, a hover tip, or a column drag.
+  Anything that holds an `ItemId`, a group, or a column between events
+  checks that it still exists and cancels quietly if it does not.
+- **Settings window and menu at once.** A menu edit made while the
+  settings window is open goes into the window's snapshot (`CONTEXT.md`
+  section 6, Native UI). Every new `SpaceView` field follows that rule
+  (W20 sets it up), so Cancel never undoes a menu edit.
+- **The current space.** The keyboard hook decides to consume a key, and
+  the app handles it later; the current space can change in between. The
+  app looks the current space up when it handles the key, never earlier.
+- **Bursts.** Column-resize drags, Ctrl+wheel, and typing in a filter
+  field fire many events. Re-lay out per event, but save once, through
+  the existing debounced `schedule_save`.
+
+#### Performance
+
+The bar is bare-metal: a 50,000-file lens scrolls, selects, and resizes
+with no hitch. `ENGINEERING.md` sections 2-4 have the general rules;
+these are the ones phase 4 and 5 code most often breaks.
+
+- **Layout is arithmetic.** An order-placed view finds the rect for index
+  `i`, and the indices visible in a scroll window, by arithmetic, not by
+  walking every item. Groups (W37) keep prefix sums of group sizes and
+  binary-search them. Nothing costs O(items) per mouse move or wheel
+  notch.
+- **Text is made once.** Type names (cached by extension), dates, sizes,
+  and group names are formatted when a scene is built, and only for the
+  items the scene carries (the visible ones). Painting allocates nothing;
+  `PreparedScene` already encodes strings to UTF-16 once.
+- **No IO the listing did not already do.** Dates, sizes, and attributes
+  come from the `FindFirstFileExW` record the worker reads. Hover tips,
+  titles, and status text read the model. Nothing calls the disk on the
+  UI thread per item or per event; W25 removes the one place that calls
+  it per lens.
+- **Measure what could be slow.** A task that touches `SyncLens`,
+  sorting, filtering, or grouping times it on 50,000 entries with a
+  release build and records the dated result in its commit body. Over
+  8 ms (half a 60 Hz frame) on the UI thread means stop and ask before
+  merging.
+
+#### Safety and security
+
+`SECURITY.md` names file handling and parsing as the areas of most
+interest. In phase 4 and 5 terms:
+
+- **No file outside the user's intent.** A file operation acts only on
+  items the user can see and selected: filtered-out and folded items
+  are never selected (D16). It goes into the folder the lens shows,
+  inside its own folder, which passes the storage check on its final
+  path (W25).
+- **Never follow a shortcut while browsing.** Only an entry the listing
+  marks a directory is browsable. A `.lnk` to a folder opens as today.
+- **No regular expressions.** A pattern from the config cannot make
+  matching slow: the matcher (W34) is linear, its inputs are capped, and
+  there is no regex crate to audit.
+- **Every config value is untrusted.** Hand-edited files reach every
+  new field, so clamp ranges, cap list lengths, drop duplicates, and ignore
+  unknown names (`#[serde(other)]` on an unknown variant), so one bad
+  value never fails the whole config load. Each new field gets a test
+  that loads a hostile value.
+- **No new dependency** without `cargo deny check all`, and none is
+  expected in this phase.
+
+#### Phase 5 tasks
+
+- [ ] **W24. A listing carries the folder it read (platform, app).**
+  Any time.
+  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
+    keeps its key when a lens changes folder. So a listing posted for the
+    old folder, still in the queue when Change folder… runs, is applied
+    to the new one. W42 makes this happen on every step into a
+    subfolder.
+  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
+    the worker listed (or found unavailable). `win32/folder_watch.rs`
+    fills it from the watch's own record.
+  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
+    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
+    dropped with a `debug!` line. The desktop layer's listing gets the
+    same check against the Desktop folder.
+  - Tests: the pure check (same path, another case, other slashes,
+    another folder); the controller decode keeps the path.
+  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
+    listing names its folder.
+
+- [ ] **W25. The storage check runs off the UI thread (platform, app).**
+  Any time.
+  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
+    lens's folder and on the store, on the UI thread. `sync_watches`
+    calls it twice for every lens, through `desired_watches` and
+    `refused_lenses`, each time the watches are reconciled. On an
+    unreachable network share, `canonicalize` can block until the SMB
+    timeout, freezing every space. It is also the only junction guard,
+    so it must not simply be dropped.
+  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
+    it.
+  - `win32/folder_watch.rs`: when the worker opens a watched folder's
+    handle, it asks for the handle's final path
+    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
+    refuses a folder that is the store or inside it. It posts the refusal
+    as a new `FolderListing::Refused`. That costs no extra IO, since the
+    handle is already open. The store root is passed in when the watch
+    starts.
+  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
+    `allows_lens`; a `Refused` listing marks the lens unavailable, as
+    `refused_lenses` does today. `allows_lens` stays only where a user
+    has just picked a folder (New lens…, Change folder…), and it
+    compares against the stored root.
+  - Tests: a pure `inside_store(final_path, root)` (without case, with
+    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
+    `Refused` into an unavailable lens. One platform test makes a
+    junction into a temp "store" with `cmd /c mklink /J`, which needs no
+    admin rights, and expects `Refused`.
+  - **[needs human]** check: a lens on a share whose server is off
+    leaves the other spaces responsive at startup; a lens on a junction
+    into the store shows "Folder not available".
+
+- [ ] **W26. One place decides whether a label shows its extension
+  (app).** Any time; before W28.
+  - `self.surface_match_explorer(surface) &&
+    self.system.shell().show_extensions` is written out in
+    `app/rename.rs`, `app/selection.rs`, `app/settings_session.rs`, and
+    `app/view.rs`. Move it into one `App::shows_extensions(surface)` in
+    `app/view.rs` and call that from all four. A pure move.
+  - Done when: `rg "show_extensions" crates/deskspace-app/src/app` finds
+    only the new method and its callers' use of its result.
+
+- [ ] **W27. The lens's path as a tip on its title (app).** **[needs
+  human]** After: W9.
+  - Hovering a lens's title shows its full path through the existing
+    hover tip (`app/info_tip.rs`). An unavailable lens adds "Folder not
+    available". After W42, it shows the folder on display. The text
+    comes from the model; no disk access.
+  - A pure `title_tip(space, unavailable) -> Option<String>`; `None` for
+    a normal space. Hovering the title of a normal space shows no tip, as
+    today.
+  - Tests: the tip for a lens, an unavailable lens, and a normal space.
+  - **[needs human]** check: the tip appears after the usual delay and
+    leaves with the pointer; it does not cover the title while you are
+    renaming.
+
+- [ ] **W28. File name extensions per space (core, app).** **[needs
+  human]** After: W20, W26.
+  - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
+    `Automatic` is the default (D16). `App::shows_extensions` (W26) reads
+    it first and falls back to today's rule for `Automatic`.
+  - View ▸ "File name extensions": a check entry showing what the space
+    shows now. Choosing it sets `Show` or `Hide`. The View page offers all
+    three in a choice.
+  - Rename already selects the name without its extension when one
+    shows; check that it still does.
+  - Tests: each value under both presets; the menu check follows the
+    effective value.
+  - **[needs human]** check: Show and Hide on a normal space and a lens,
+    Automatic under Match Explorer with Explorer's setting on and off;
+    F2 selects only the name part.
+
+- [ ] **W29. Date created (core, platform, app).** After: W18.
+  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
+    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
+    record it already has; `item_facts` reads it from the metadata call it
+    already makes. No new IO.
+  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
+    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
+    user show it.
+  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
+
+- [ ] **W30. Choose the Details columns (core, app).** **[needs
+  human]** After: W29.
+  - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
+    Option<u16> }>`, in display order; the default is Name, Date
+    modified, Type, Size. `Column` has `#[serde(other)] Unknown`. A pure
+    `ColumnSpec::sanitize(list)` runs on load and after every edit: it
+    drops unknown and repeated ids, keeps Name first, caps the list at
+    `Column::ALL.len()`, and clamps widths to `COLUMN_WIDTH_RANGE`.
+  - A right-click on the header opens Explorer's header menu: a check
+    entry per column, with Name grey and on. Explorer's "Size all columns
+    to fit" needs text measurement, so leave it out and add a **Found
+    while working** line.
+  - Tests: `sanitize` on hostile lists (unknown ids, Name missing or
+    last, repeats, zero and huge widths, a thousand entries); the menu
+    checks the columns shown.
+  - **[needs human]** check: show and hide each column on a lens and a
+    space; the choice survives a restart; Name cannot be hidden.
+
+- [ ] **W31. Resize the Details columns (app).** **[needs human]**
+  After: W30.
+  - Dragging a header divider sets that column's `width` (Name keeps the
+    rest). The pointer shows the resize cursor over a divider. Each move
+    re-lays out the visible rows (arithmetic, see Performance); the
+    `SetSpaceView` is committed and saved once, on release. Esc during
+    the drag puts the width back.
+  - A pure `divider_at(x, columns, scale) -> Option<usize>` with a hit
+    slop scaled for DPI.
+  - Tests: `divider_at` at each edge and in between; widths clamp.
+  - **[needs human]** check: resize each column at 100 % and 150 %;
+    smooth on a 50,000-file lens; Esc cancels; a listing that arrives
+    mid-drag does not end it.
+
+- [ ] **W32. Reorder the Details columns (app).** **[needs human]**
+  After: W31.
+  - Dragging a header (not its divider) moves the column, with an
+    insertion mark between headers. Name stays first (D16). Committed on
+    release, as W31.
+  - A pure `column_drop_index(x, columns) -> usize`.
+  - Tests: drop indices, and that Name never moves.
+  - **[needs human]** check: reorder at 100 % and 150 %; Esc cancels; a
+    click without a drag still sorts.
+
+- [ ] **W33. Compact view (core, app).** **[needs human]** After: W22.
+  - `SpaceView.compact: bool`, off by default. The order-placed views
+    (Small icons, List, Details, Tiles, Content) take their row and cell
+    padding from one metrics struct in `view_layout.rs`, which has a
+    compact variant measured from Explorer's Compact view. The icon
+    views are unchanged (D16).
+  - View ▸ "Compact view" (a check entry) and a View page toggle.
+  - Tests: compact rows are shorter in each order-placed view and the
+    same in the icon views.
+  - **[needs human]** check: against Explorer's Compact view in each
+    view, at 100 % and 150 %.
+
+- [ ] **W34. Lens filters: the matcher (core).** After: W14.
+  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
+    &str) -> bool` for `*` and `?`, without case, in time linear in the
+    two lengths (the greedy matcher that remembers the last `*`; cite
+    its source beside it). Compare by `char`, folding with
+    `to_lowercase` per char; no allocation per call.
+  - `FolderView.include` and `exclude` (already reserved): caps
+    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
+    `FolderView::clamped` on load and on edit. An empty pattern is
+    dropped.
+  - `SyncLens` applies them (D16): "Show only" to files, "Hide" to every
+    entry, both by name only, never by full path.
+  - Tests: the matcher on the usual cases and on hostile ones (thousands
+    of `*`, a 260-char pattern against a 260-char name, which must stay
+    fast in a debug test), non-ASCII names, case; `SyncLens` with each
+    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
+    (see Performance).
+
+- [ ] **W35. Lens filters on the Lens page (app).** **[needs human]**
+  After: W10, W34.
+  - A "Filter" heading with two text fields, "Show only" and "Hide",
+    each a `;`-separated list (`*.pdf; *.docx`). A pure
+    `parse_patterns(text) -> Vec<String>` trims spaces and drops
+    empties; `format_patterns` writes it back. Edits preview and Cancel
+    undoes them (W10's snapshot).
+  - A lens whose filters hide every entry shows "No items match the
+    filter" in `SpaceScene::placeholder`, so it never looks broken.
+  - Changing a filter re-filters the listing the app already has; it
+    does not re-list the folder.
+  - Tests: `parse_patterns` round trip; the placeholder.
+  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
+    `*.tmp`; a filter that matches nothing shows the message; typing
+    quickly in the field stays smooth on a 50,000-file lens.
+
+- [ ] **W36. Group by: the groups (core, app).** After: W15, W18.
+  - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
+    }>`. `Space::order_is_fixed()` replaces W15's reorder check: it is
+    true while the space keeps sorted *or* is grouped, and
+    `ReorderItem` reads it (D16).
+  - App, pure: `groups(items, group_by, facts) -> Vec<Group { name,
+    range }>` over items already sorted by the sort rule, with each
+    group's items kept together. Group names follow Explorer, and the
+    implementer checks each one on screen:
+    - Name: letter ranges (for example "A - H", "I - P", "Q - Z") and
+      "0 - 9";
+    - Type: the W18 type name;
+    - Size: Explorer's buckets, from Empty and Tiny through Gigantic;
+    - Date modified: Today, Yesterday, Earlier this week, Last week,
+      Earlier this month, Last month, Earlier this year, A long time ago.
+      Pass the local date in, never read the clock inside.
+  - Tests: each key's groups and order, both directions; date buckets
+    across a week, month, and year boundary; an empty space has no
+    groups; `order_is_fixed`.
+
+- [ ] **W37. Group by: headers and folding (core, app, platform).**
+  **[needs human]** After: W36, W17.
+  - `view_layout.rs`: a header row before each group, in every view
+    (an icon view places grouped items by order, as D16 says). Prefix
+    sums and binary search keep a scroll window O(log groups)
+    (Performance).
+  - Painting: Explorer's header (name, count, a chevron, and a rule to
+    the edge).
+  - A click on a header folds or unfolds it. The fold state is per space
+    in `ViewCache` (session only). Folding drops the group's items from
+    the selection; Ctrl+A, the marquee, and the arrow keys skip folded
+    items (D16).
+  - Tests: layout with folded and open groups; the visible-window lookup
+    against a brute-force walk on random group sizes; folding clears the
+    selection; Ctrl+A skips folded items.
+  - **[needs human]** check: group a 50,000-file lens by Type and scroll
+    fast; fold and unfold; Ctrl+A then Delete after folding a group:
+    the question counts only visible items.
+
+- [ ] **W38. Group by: the menu and the settings (app).** After: W37,
+  W23.
+  - Group by ▸ beside Sort by ▸, as Explorer: (None), then the keys from
+    `SORT_KEYS`, then Ascending and Descending. Rows on the View page
+    and the Lenses defaults page, through the shared builder.
+  - Tests: the menu checks the current grouping; the page fields have
+    handlers.
+
+- [ ] **W39. Ctrl+wheel through the views (app).** **[needs human]**
+  After: W22.
+  - A pure `step_view(mode, steps: i32) -> ViewMode`. It walks
+    `VIEW_MODES` in menu order, stops at the ends, and returns
+    `ViewMode::Icons` unchanged (D16). `app/zoom.rs` calls it first for a
+    space whose mode is not `Icons`, and on a step dispatches
+    `SetSpaceView` and shows no pop-up. Ctrl+Plus and Ctrl+Minus step the
+    same way; Ctrl+0 sets `Icons`.
+  - Tests: steps both ways, the ends, `Icons` unchanged, a big wheel
+    delta that is more than one notch.
+  - **[needs human]** check: Ctrl+wheel on a space in Large icons walks
+    to Content and back and stops; a space on "Settings icon size" zooms
+    as before (the F13 row still passes).
+
+- [ ] **W40. The default view for new spaces (config, app).** After:
+  W23.
+  - `WindowSettings.new_space_view: SpaceView`, defaulting to
+    `SpaceView::default()`, so nothing changes until the user changes it.
+    `CreateSpace` takes a `view`, as `CreateLens` does since W19. Fields
+    on the New spaces page, through W23's shared builder.
+  - Tests: the config's missing-field default; a new space gets the
+    setting.
+
+- [ ] **W41. Close F-40: the desktop's view modes (docs).** **[needs
+  human]** After: W12.
+  - Check (maintainer): on Windows 10 and 11, the desktop's View menu
+    offers only Large, Medium, and Small icons. In Small icons, are the
+    desktop's labels below or beside the icon? Record it beside
+    `display_settings.rs`'s `FVM_SMALLICON` branch.
+  - If the labels sit below, nothing changes: the default view already
+    follows the desktop's size. Close F-40 in ROADMAP. If they sit
+    beside, add a task to show a matching space as Small icons under
+    Match Explorer.
+  - Done when: the finding is recorded and F-40 is closed or has its
+    task.
+
+- [ ] **W42. Browse into a subfolder (app).** **[needs human]** After:
+  W24, W25.
+  - `App` keeps, per lens, the folder shown below its own one: session
+    state, a relative path, empty by default. `App::lens_folder(id)`
+    joins the two. A pure `browse_into(root, shown, entry) ->
+    Option<PathBuf>` refuses anything that is not a directory entry of
+    the folder shown, refuses a shortcut, and refuses a result that does
+    not stay inside `root` (D16).
+  - Every app read of `FolderView.path` that means "where the files go"
+    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
+    writer's lens path, delete, Open folder, and `desired_watches`.
+    List each switched site in the commit body; leave W10 and W11's
+    reads alone.
+  - Double-clicking a directory in a lens browses into it. That empties
+    the selection, re-points the lens's watch (W24 drops the old
+    listing), and scrolls to the top. The title bar shows `Root › Sub ›
+    Sub2`, clipped from the left when too long, from a pure
+    `browse_title`.
+  - Change folder…, a restart, and deleting the lens forget the folder
+    shown.
+  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
+    `..` in it, a different case); `browse_title`; each switched site
+    reads the folder shown.
+  - **[needs human]** check: browse two levels down in a Downloads
+    lens; drop, paste, New shortcut, and Delete there all act on the
+    subfolder; deleting the subfolder in Explorer while it is shown shows
+    "Folder not available"; a junction to DeskSpace's store inside the
+    lens shows unavailable when browsed into (W25).
+
+- [ ] **W43. Back and Up (app, platform).** **[needs human]** After:
+  W42.
+  - A Back button at the left of the title bar, before the folder icon,
+    only while a lens shows a subfolder (a `SpaceScene` field, the "new
+    visual" recipe). Clicking it shows the parent. So do Alt+Left,
+    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
+    only while a space is current), and the mouse's back button
+    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
+    do nothing, and Backspace passes on to type-to-select as today.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: the parent of each depth; nothing above the root; the keys'
+    `keys_for_*` rows.
+  - **[needs human]** check: each way back at 100 % and 150 %; the
+    button is gone at the root; Backspace in a rename edits the text and
+    does not go back.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
