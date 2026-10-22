@@ -1055,7 +1055,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu, Explorer item menu, and the takeover desktop menu done (desktop menu check pending); lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; a pause-takeover entry is open, snapshot entries wait for M6 |
-| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout (New spaces: check pending); Lens, View, and Lenses pages planned (D15, `TASKS.md` W10, W20, W23) |
+| F-17 | Settings window | M3, M4 | Partial: a scopes/pages/page layout (New spaces: check pending); the Lens page is done, and View and Lenses pages are planned (D15, `TASKS.md` W20, W23) |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |

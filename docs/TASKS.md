@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W9-W11 are small first tasks; W16 is the
+- section W phase 4, in order (W11 is the next small task; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -563,8 +563,8 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   `MoveItem` into a lens return `Rejected`.
 
 Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). What is left is phase 4 (W9-W23, ROADMAP
-D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
+lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W11-W23,
+ROADMAP D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
 before anything else in this section.
 
 ### Words used below
@@ -648,8 +648,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 are done (2026-10-21) and archived; their on-screen checks are in
-section V. The open work is phase 4 (W9-W23) and phase 5 (W24-W43).
+W1-W8 and W10 are done (2026-10-21) and archived; the earlier tasks'
+on-screen checks are in section V. The open work is phase 4 (W9, W11-W23)
+and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -674,8 +675,8 @@ section V. The open work is phase 4 (W9-W23) and phase 5 (W24-W43).
 
 | Level | Tasks | Open now |
 |-------|-------|----------|
-| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26, W10 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W12 |
+| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W11, W12 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | after W12 |
 
@@ -736,32 +737,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W10. The Lens page (app).**
-  - `listed_pages` takes a `ScopeKind` (W8) instead of an
-    `Option<SpaceId>`. A lens lists a space's pages, then a new
-    `page::LENS`. Read how `page::SHORTCUTS` was added first. If a new
-    page cannot go there without renumbering the animation pages, stop
-    and ask.
-  - `pages.rs` `lens_page`: a "Folder" heading; a note with the full
-    path (or "Folder not available" and the path); the buttons "Open
-    folder" and "Change folder…"; a "Contents" heading; and a "Show
-    hidden files" toggle. Each button is a `ButtonAction` variant whose
-    arm in `App::on_settings_button` calls the method the lens menu
-    already calls. The toggle becomes `SetLensView`, the way a look edit
-    becomes `SetSpaceLook`. The page is built for every scope, so the
-    form keeps its shape (`the_form_shape_is_stable_across_scopes`); a
-    normal space just never lists it.
-  - Cancel: `SpaceSnapshot` gains the lens's `FolderView`, and
-    `App::cancel_settings` restores it. Change folder… commits at once, so
-    it writes the new path into the snapshot too, as a menu edit made
-    while the window is open does (`CONTEXT.md` section 6, Native UI).
-  - Tests: a lens lists the Lens page and a normal space does not;
-    the toggle becomes `SetLensView`; Cancel restores `show_hidden` and
-    keeps a changed folder; `every_button_has_an_action` covers the two
-    buttons.
-  - Done when: also `CONTEXT.md` section 6 (Native UI, "The app's form")
-    names the page.
 
 - [ ] **W11. A lens's title follows its folder (core, platform, app).**
   - `source.rs`: `enum LensTitle { FolderName, ProfilePath, FullPath,

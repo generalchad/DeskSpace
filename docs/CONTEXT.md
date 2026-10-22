@@ -934,14 +934,19 @@ in `ui.rs`. What spans them:
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but Shortcuts; a space lists the five look pages, which show its values
-  (from Global until customized) greyed unless the header's "Customize this
-  space" switch is on, and its always-enabled Shortcuts page. Global edits write
-  `Config` directly; a space's edits become `SetSpaceLook` commands, the
-  switch `CustomizeSpace`, and the Colors page's reset becomes "Match global
-  appearance". Cancel restores each space's `SpaceSnapshot`; a space menu edit
-  made while the window is open goes into that snapshot, because the menu
-  commits at once. These also commit at once, so Cancel does not undo them:
+  page but Shortcuts and Lens; a space lists the five look pages, which show
+  its values (from Global until customized) greyed unless the header's
+  "Customize this space" switch is on, and its always-enabled Shortcuts page.
+  A lens also lists a Lens page: its folder (or "Folder not available"), Open
+  folder and Change folder…, and Show hidden files, which previews through
+  `SetLensView`. Global edits write `Config` directly; a space's edits become
+  `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors page's
+  reset becomes "Match global appearance". Cancel restores each space's
+  `SpaceSnapshot` (its look and a lens's view); a space menu edit made while
+  the window is open goes into that snapshot, because the menu commits at
+  once. These also commit at once, so Cancel does not undo them:
+  - the Lens page's "Change folder…", which writes the new path into the
+    snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation
     (`App::delete_space_item`: a stored file goes to the Recycle Bin, an item
     listed in place is only unlisted; ROADMAP D3), and its + offers the New

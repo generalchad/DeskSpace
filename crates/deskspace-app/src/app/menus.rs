@@ -132,13 +132,9 @@ impl App {
         }
     }
 
-    /// Shows a space's changed look, saves it, and keeps an open settings
-    /// window in step: the change is taken into its Cancel snapshot (a menu
-    /// edit commits at once, so Cancel must not undo it) and shown.
-    fn space_look_changed(&mut self, ui: &mut Ui, id: SpaceId) {
-        self.restyle_space(ui, id);
-        self.reflow_space(ui, id);
-        self.schedule_save(ui);
+    /// Takes a committed menu edit into an open settings window's Cancel
+    /// snapshot, so Cancel does not undo it, and shows it.
+    fn resnapshot_settings(&mut self, ui: &mut Ui, id: SpaceId) {
         if let (Some(session), Some(space)) = (
             self.settings_ui.session_mut(),
             self.config.desktop.space(id),
@@ -146,6 +142,16 @@ impl App {
             session.resnapshot(space);
             self.refresh_settings(ui);
         }
+    }
+
+    /// Shows a space's changed look, saves it, and keeps an open settings
+    /// window in step: the change is taken into its Cancel snapshot (a menu
+    /// edit commits at once, so Cancel must not undo it) and shown.
+    fn space_look_changed(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.restyle_space(ui, id);
+        self.reflow_space(ui, id);
+        self.schedule_save(ui);
+        self.resnapshot_settings(ui, id);
     }
 
     fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, key: SortKey, descending: bool, at: Point) {
@@ -160,10 +166,18 @@ impl App {
         );
     }
 
+    /// Opens lens `id`'s folder in Explorer. The menu and the Lens page share
+    /// this.
+    pub(super) fn open_lens_folder(&mut self, ui: &mut Ui, id: SpaceId) {
+        if let Some(view) = self.config.desktop.space(id).and_then(Space::folder_view) {
+            ui.open_path(&view.path);
+        }
+    }
+
     /// Asks for a new folder for lens `id` and points the lens at it. A folder
     /// DeskSpace keeps its own files in is refused with a message, as W3a's
     /// guard refuses it at startup.
-    fn change_lens_folder(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+    pub(super) fn change_lens_folder(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
         let Some(title) = self
             .config
             .desktop
@@ -186,6 +200,7 @@ impl App {
         {
             self.unavailable_lenses.remove(&id);
             self.sync_watches(ui);
+            self.resnapshot_settings(ui, id);
         }
     }
 
@@ -200,6 +215,7 @@ impl App {
             // a fresh listing through the same path as every other.
             ui.unwatch_folder(WatchKey::Space(id));
             self.sync_watches(ui);
+            self.resnapshot_settings(ui, id);
         }
     }
 
@@ -310,11 +326,7 @@ impl App {
         ]);
         let lens_view = space.folder_view().cloned();
         match ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
-            Some(MenuId::OpenFolder) => {
-                if let Some(view) = &lens_view {
-                    ui.open_path(&view.path);
-                }
-            }
+            Some(MenuId::OpenFolder) => self.open_lens_folder(ui, id),
             Some(MenuId::ChangeFolder) => self.change_lens_folder(ui, id, at),
             Some(MenuId::Fold) => self.toggle_fold(ui, id),
             Some(MenuId::Rename) => self.begin_rename(ui, id),

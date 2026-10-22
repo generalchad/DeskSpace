@@ -302,9 +302,30 @@ fn apply_animation_field(
     true
 }
 
-/// The command for an edit on a customized space's page, with what it changes.
-/// `None` when Global is selected, the space follows Global, or `id` is not
-/// a look field.
+/// The command for the Lens page's "Show hidden files" toggle, or `None`
+/// when the selected scope is not a lens or `id` is another field.
+fn lens_edit(
+    config: &Config,
+    session: &mut Session,
+    id: u32,
+    value: &FieldValue,
+) -> Option<(SpaceId, Command)> {
+    if id != field::LENS_SHOW_HIDDEN {
+        return None;
+    }
+    let space = scope_space(config, session).filter(|space| space.is_lens())?;
+    let FieldValue::Toggle(on) = value else {
+        return None;
+    };
+    let mut view = space.folder_view()?.clone();
+    view.show_hidden = *on;
+    session.dirty = true;
+    Some((space.id, Command::SetLensView { id: space.id, view }))
+}
+
+/// The command for an edit on a space's page: a look field on a customized
+/// space, or a lens page's hidden-files toggle. `None` when the selected
+/// scope does not fit the field.
 pub fn space_edit(
     config: &Config,
     session: &mut Session,
@@ -312,6 +333,9 @@ pub fn space_edit(
     value: FieldValue,
     system_dark: bool,
 ) -> Option<(SpaceId, Command, Effect)> {
+    if let Some((id, command)) = lens_edit(config, session, id, &value) {
+        return Some((id, command, Effect::Lens));
+    }
     let space = scope_space(config, session).filter(|space| space.custom())?;
     let mut look = space
         .look()
@@ -362,7 +386,7 @@ pub fn reset_appearance(config: &mut Config, session: &mut Session) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{apply, create_space};
+    use crate::fixtures::{apply, create_lens, create_space};
     use deskspace_core::Color;
     use deskspace_core::Rect;
 
@@ -375,6 +399,17 @@ mod tests {
     fn config_with_space(title: &str) -> (Config, SpaceId) {
         let mut config = Config::new();
         let id = create_space(&mut config.desktop, title, Rect::new(0, 0, 200, 200));
+        (config, id)
+    }
+
+    fn config_with_lens(title: &str) -> (Config, SpaceId) {
+        let mut config = Config::new();
+        let id = create_lens(
+            &mut config.desktop,
+            title,
+            Rect::new(0, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
         (config, id)
     }
 
@@ -869,7 +904,7 @@ mod tests {
     fn space_edits_become_commands_and_leave_the_global_theme_alone() {
         let (mut config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         let edit = |config: &Config, session: &mut Session| {
             space_edit(
                 config,
@@ -916,6 +951,58 @@ mod tests {
     }
 
     #[test]
+    fn the_lens_hidden_toggle_becomes_set_lens_view() {
+        let (mut config, lens) = config_with_lens("Downloads");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let (id, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_SHOW_HIDDEN,
+            FieldValue::Toggle(true),
+            true,
+        )
+        .expect("the lens toggle has a command");
+        assert_eq!(id, lens);
+        assert_eq!(effect, Effect::Lens);
+        assert!(session.dirty);
+        let Command::SetLensView {
+            id: command_id,
+            view,
+        } = command
+        else {
+            panic!("expected SetLensView, got {command:?}");
+        };
+        assert_eq!(command_id, lens);
+        assert!(view.show_hidden);
+        apply(&mut config.desktop, Command::SetLensView { id, view });
+        assert!(
+            config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .show_hidden
+        );
+
+        let (config, space) = config_with_space("Work");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(space), ScopeKind::Space);
+        assert!(
+            space_edit(
+                &config,
+                &mut session,
+                field::LENS_SHOW_HIDDEN,
+                FieldValue::Toggle(true),
+                true,
+            )
+            .is_none(),
+            "a normal space has no Lens page"
+        );
+    }
+
+    #[test]
     fn customizing_seeds_from_global_and_match_global_copies_it() {
         let (mut config, id) = config_with_space("Work");
         config.theme.corner_radius = 4;
@@ -924,7 +1011,7 @@ mod tests {
             customize_space(&config, &mut session, true).is_none(),
             "Global"
         );
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         match customize_space(&config, &mut session, true) {
             Some(Command::CustomizeSpace {
                 id: target,

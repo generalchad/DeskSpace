@@ -535,6 +535,34 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
     }
 }
 
+/// A lens's Lens page: its folder, the buttons that act on it, and the
+/// hidden-files toggle. Built for every scope so the form keeps its shape;
+/// only a lens lists it.
+pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage {
+    let view = space.and_then(Space::folder_view);
+    let path = view.map(|view| view.path.display().to_string());
+    let folder = match (path, available) {
+        (Some(path), true) => path,
+        (Some(path), false) => format!("Folder not available\n{path}"),
+        (None, _) => String::new(),
+    };
+    SettingsPage {
+        title: "Lens".into(),
+        fields: vec![
+            Field::heading(field::LENS_HEADING, "Folder"),
+            Field::note(field::LENS_PATH, folder),
+            Field::button(field::LENS_OPEN, "", "Open folder"),
+            Field::button(field::LENS_CHANGE, "", "Change folder\u{2026}"),
+            Field::heading(field::LENS_CONTENTS_HEADING, "Contents"),
+            Field::toggle(
+                field::LENS_SHOW_HIDDEN,
+                "Show hidden files",
+                view.is_some_and(|view| view.show_hidden),
+            ),
+        ],
+    }
+}
+
 /// A space's Shortcuts page: a preview of the space whose items can be
 /// deleted (the X on each) and added to (the + tile; F-53).
 pub(super) fn shortcuts_page(preview: SpacePreview) -> SettingsPage {

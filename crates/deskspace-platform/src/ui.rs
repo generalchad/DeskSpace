@@ -328,6 +328,9 @@ pub struct SpacePreview {
     pub title_fill: Color,
     /// Title and label text.
     pub text: Color,
+    /// Whether the space's folder is available. Only a lens builds a page
+    /// from it; Global and normal spaces leave it true.
+    pub available: bool,
     pub items: Vec<PreviewItem>,
 }
 
@@ -345,6 +348,7 @@ impl Default for SpacePreview {
             fill: Color::rgb(0x20, 0x20, 0x20),
             title_fill: Color::rgb(0x18, 0x18, 0x18),
             text: Color::rgb(0xFF, 0xFF, 0xFF),
+            available: true,
             items: Vec::new(),
         }
     }

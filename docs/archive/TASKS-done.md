@@ -3434,4 +3434,29 @@ until I5-I6 all land, so no partial build hides the desktop.
     on Windows 11 and 10: every row shows its kind's glyph, the labels
     line up, a dimmed row's glyph is dimmed, and the selection covers the
     glyph.
+- [x] **W10. The Lens page (app).**
+  - `listed_pages` takes a `ScopeKind` (W8) instead of an
+    `Option<SpaceId>`. A lens lists a space's pages, then a new
+    `page::LENS`. Read how `page::SHORTCUTS` was added first. If a new
+    page cannot go there without renumbering the animation pages, stop
+    and ask.
+  - `pages.rs` `lens_page`: a "Folder" heading; a note with the full
+    path (or "Folder not available" and the path); the buttons "Open
+    folder" and "Change folder…"; a "Contents" heading; and a "Show
+    hidden files" toggle. Each button is a `ButtonAction` variant whose
+    arm in `App::on_settings_button` calls the method the lens menu
+    already calls. The toggle becomes `SetLensView`, the way a look edit
+    becomes `SetSpaceLook`. The page is built for every scope, so the
+    form keeps its shape (`the_form_shape_is_stable_across_scopes`); a
+    normal space just never lists it.
+  - Cancel: `SpaceSnapshot` gains the lens's `FolderView`, and
+    `App::cancel_settings` restores it. Change folder… commits at once, so
+    it writes the new path into the snapshot too, as a menu edit made
+    while the window is open does (`CONTEXT.md` section 6, Native UI).
+  - Tests: a lens lists the Lens page and a normal space does not;
+    the toggle becomes `SetLensView`; Cancel restores `show_hidden` and
+    keeps a changed folder; `every_button_has_an_action` covers the two
+    buttons.
+  - Done when: also `CONTEXT.md` section 6 (Native UI, "The app's form")
+    names the page.
 
