@@ -7,6 +7,7 @@ use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{ClipboardFiles, DropAction, OnCollision, Ui, item_facts};
 
 use super::{App, Surface};
+use crate::storage::path_key;
 
 impl App {
     /// Puts the selected items on the shell clipboard, cut (to be moved on
@@ -137,8 +138,9 @@ impl App {
             return;
         }
         let at = self.space_center(target);
+        let index = self.item_index();
         let plan = plan_paste(&clipboard.paths, clipboard.cut, |path| {
-            self.find_item_by_file(path)
+            index.get(&path_key(path)).copied()
         });
         let PastePlan {
             moved,

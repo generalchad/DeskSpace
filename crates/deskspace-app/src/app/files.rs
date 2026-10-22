@@ -11,7 +11,7 @@ use deskspace_platform::{
 };
 
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::{ItemStore, is_inside, same_path, unique_destination};
+use crate::storage::{ItemStore, is_inside, path_key, same_path, unique_destination};
 
 /// The dropped `paths` worth handing to the shell for `folder`, in order. A
 /// path already directly in `folder`, `folder` itself, and any folder that
@@ -86,6 +86,8 @@ impl App {
             self.drop_into_lens(ui, folder, paths, action);
             return;
         }
+        let index = self.item_index();
+        let mut handled = HashSet::new();
         let mut touched = HashSet::from([target]);
         for path in paths {
             // A drop can name a file that no longer exists (for example a
@@ -95,8 +97,14 @@ impl App {
                 tracing::warn!(path = %path.display(), "dropped file does not exist; ignored");
                 continue;
             }
-            let command = match self.find_item_by_file(&path) {
-                Some(item) => {
+            let key = path_key(&path);
+            // The same file can arrive twice, in two spellings. The index does
+            // not see an item added below, so handle each key once.
+            if !handled.insert(key.clone()) {
+                continue;
+            }
+            let command = match index.get(&key) {
+                Some(&item) => {
                     match self.config.desktop.space_containing(item) {
                         Some(source) if source == target => continue,
                         Some(source) => {
@@ -162,10 +170,11 @@ impl App {
         if !self.storage.allows_lens(&folder) {
             return;
         }
+        let index = self.item_index();
         let listing_spaces: HashSet<SpaceId> = paths
             .iter()
-            .filter_map(|path| self.find_item_by_file(path))
-            .filter_map(|item| self.config.desktop.space_containing(item))
+            .filter_map(|path| index.get(&path_key(path)))
+            .filter_map(|item| self.config.desktop.space_containing(*item))
             .collect();
         let paths = paths_to_transfer(&paths, &folder);
         if paths.is_empty() {

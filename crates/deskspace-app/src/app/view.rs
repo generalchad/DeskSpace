@@ -18,6 +18,7 @@ use deskspace_platform::{
 use crate::scene::{
     SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
 };
+use crate::storage::path_key;
 
 use super::animation::Arrival;
 use super::rename::EditTarget;
@@ -466,19 +467,20 @@ impl App {
     /// position and are not already held by a space. The `ItemId`s are
     /// placeholders; `SyncDesktop` reconciles them by path.
     pub(super) fn desktop_layer_items(&self) -> Vec<Item> {
+        let in_spaces: HashSet<_> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .flat_map(|space| space.items())
+            .map(|item| path_key(&item.path))
+            .collect();
         self.layer
             .entries
             .iter()
             .filter_map(|entry| {
                 let position = entry.position?;
-                let in_space = self
-                    .config
-                    .desktop
-                    .spaces()
-                    .iter()
-                    .flat_map(|space| space.items().iter())
-                    .any(|item| crate::storage::same_path(&item.path, &entry.path));
-                if in_space {
+                if in_spaces.contains(&path_key(&entry.path)) {
                     return None;
                 }
                 let mut item = Item::new(ItemId(0), &entry.path, item_facts(&entry.path))

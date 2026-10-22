@@ -3542,3 +3542,29 @@ until I5-I6 all land, so no partial build hides the desktop.
     failed rename leaves the old config in place and the temp file
     behind (rename onto a path whose parent is a file).
   - Done when: the gates pass.
+- [x] **B32. Index paths instead of comparing them pairwise (app).**
+  - Why: `storage::same_path` canonicalizes both paths, two filesystem
+    calls, whenever the strings differ. `app/view.rs`
+    `desktop_layer_items` calls it for every desktop entry against every
+    space item, and `app/hit.rs` `find_item_by_file` runs once per dropped
+    or pasted path. One layer sync is about 2 × entries × items calls on
+    the UI thread: about 120,000 for 200 entries and 300 items (review,
+    2026-10-21).
+  - `storage.rs`: a pure-ish `pub(crate) fn path_key(path: &Path) ->
+    PathBuf`: the canonical path when `canonicalize` succeeds, else the
+    path with `/` turned into `\` and case-folded. Two paths name the
+    same file when their keys are equal. `same_path` becomes
+    `path_key(a) == path_key(b)` after its fast `a == b` check.
+  - `app/hit.rs`: `fn item_index(&self) -> HashMap<PathBuf, ItemId>`
+    over every non-lens space's items, keyed by `path_key`.
+    `find_item_by_file` keeps its signature for single lookups. Callers
+    that look up many paths (`add_dropped`, `plan_paste`,
+    `drop_into_lens`) build the index once and look each path up.
+  - `desktop_layer_items`: build a `HashSet` of the space items' keys
+    once, then test each entry's key against it.
+  - Tests: `path_key` folds case and slashes for a missing file, and two
+    spellings of an existing temp file share a key; `item_index` skips
+    lens items (copy `a_lens_item_is_not_owned_by_deskspace`).
+  - Done when: no loop calls `same_path` against every item, and the
+    gates pass. W25 later moves the remaining canonicalize calls for
+    lens folders off the UI thread; this task does not wait for it.

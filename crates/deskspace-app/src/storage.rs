@@ -84,21 +84,28 @@ impl ItemStore {
     }
 }
 
-/// Whether two paths name the same file. Windows paths differ by case and by
-/// 8.3 short names (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report
-/// either form, so compare canonicalized paths when the file exists and fall
-/// back to a case-insensitive string compare otherwise. Exact equality is the
-/// common case and avoids the filesystem.
+/// Whether two paths name the same file, comparing `path_key`s. Exact equality
+/// is the common case and avoids the filesystem.
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
-    if a == b {
-        return true;
+    a == b || path_key(a) == path_key(b)
+}
+
+/// The key two paths share when they name the same file.
+///
+/// Windows paths differ by case, by separator, and by 8.3 short names
+/// (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report any form, so a
+/// path that exists is keyed by its canonical path and one that does not by
+/// its text, without case and with `\` separators. Keying many paths once
+/// (`App::item_index`) costs one filesystem call each, where comparing every
+/// pair would cost two per pair.
+pub(crate) fn path_key(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
     }
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy()),
-    }
+    path.to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase()
+        .into()
 }
 
 /// Whether `path` is `root` or lies below it, comparing whole components
@@ -177,6 +184,23 @@ mod tests {
     fn same_path_tolerates_case_for_missing_files() {
         assert!(same_path(Path::new("C:/A/B.txt"), Path::new("c:/a/b.TXT")));
         assert!(!same_path(Path::new("C:/a"), Path::new("C:/b")));
+    }
+
+    #[test]
+    fn path_key_folds_case_and_separators_for_missing_files() {
+        let key = path_key(Path::new("C:/Nowhere/Report.TXT"));
+        assert_eq!(key, path_key(Path::new(r"c:\nowhere\report.txt")));
+        assert_ne!(key, path_key(Path::new(r"c:\nowhere\other.txt")));
+    }
+
+    #[test]
+    fn two_spellings_of_an_existing_file_share_a_key() {
+        let scratch = Scratch::new("path-key");
+        let file = scratch.0.join("Report.txt");
+        std::fs::write(&file, "x").unwrap();
+        let other = scratch.0.join("report.TXT");
+        let other = other.to_string_lossy().replace('\\', "/");
+        assert_eq!(path_key(&file), path_key(Path::new(&other)));
     }
 
     #[test]

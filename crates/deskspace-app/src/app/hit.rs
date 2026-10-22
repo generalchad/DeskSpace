@@ -1,5 +1,6 @@
 //! `App` hit-testing: the `surface_*` accessors and item lookup (R1).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
@@ -8,6 +9,7 @@ use deskspace_core::{Item, ItemId, Palette, SpaceId, Theme};
 use deskspace_platform::{CheckBoxMode, ItemMetrics, item_check_box_hit, virtual_desktop_rect};
 
 use super::{App, Surface};
+use crate::storage::path_key;
 
 impl App {
     /// The space's scroll offset, clamped to its current content.
@@ -191,6 +193,21 @@ impl App {
             .then_some(item)
     }
 
+    /// The file each item DeskSpace owns is keyed by, so a batch of paths can
+    /// be looked up at once (`find_item_by_file` is the single-path form). A
+    /// lens's items belong to its folder, so they are left out: to any other
+    /// space, a lens's file is an ordinary file.
+    pub(super) fn item_index(&self) -> HashMap<PathBuf, ItemId> {
+        self.config
+            .desktop
+            .spaces()
+            .iter()
+            .filter(|space| !space.is_lens())
+            .flat_map(|space| space.items())
+            .map(|item| (path_key(&item.path), item.id))
+            .collect()
+    }
+
     /// The item that DeskSpace owns for the file at `path`, comparing identity
     /// rather than the literal string so a shell-reported short name or case
     /// difference still matches. A path in a space must be moved, not added
@@ -281,6 +298,36 @@ mod tests {
         let space = fixtures::create_space(desktop, "S", Rect::new(300, 0, 240, 120));
         let item = fixtures::add_item(desktop, space, "C:/x/a.txt");
         assert_eq!(app.find_item_by_file(path), Some(item));
+    }
+
+    #[test]
+    fn the_item_index_skips_lens_items() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lens = fixtures::create_lens(desktop, "L", Rect::new(0, 0, 240, 120), "C:/x");
+        let entry = FolderEntry {
+            path: "C:/x/a.txt".into(),
+            label: String::new(),
+            kind: ItemKind::Other,
+            size: None,
+            modified: None,
+            hidden: false,
+        };
+        fixtures::apply(
+            desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![entry],
+            },
+        );
+        let key = path_key(Path::new("C:/x/a.txt"));
+        assert_eq!(app.item_index().get(&key), None, "only the lens lists it");
+
+        let desktop = &mut app.config.desktop;
+        let space = fixtures::create_space(desktop, "S", Rect::new(300, 0, 240, 120));
+        let item = fixtures::add_item(desktop, space, "C:/x/a.txt");
+        assert_eq!(app.item_index().get(&key), Some(&item));
     }
 
     #[test]
