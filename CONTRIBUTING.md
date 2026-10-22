@@ -80,7 +80,9 @@ Security problems go through a private report instead of an issue; see
 
 - [`docs/TASKS.md`](docs/TASKS.md) lists ready-to-do work items, each sized for
   one commit, with the files to touch and a "Done when" list. Its "How to work
-  a task" section explains the rules.
+  a task" section explains the rules. For lenses and views, start at section
+  W's "Where to start": it ranks the tasks by difficulty and says which are
+  open now.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) has the bigger plan. For a feature that
   is not in `TASKS.md`, open an issue to agree on the design before writing
   much code.

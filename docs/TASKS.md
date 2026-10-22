@@ -562,8 +562,10 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
-What is left, and what these tasks add: making drops, pastes, shortcuts,
-deletes, and menus treat a lens as D3 says (W3a-W7).
+Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
+lens as D3 says (W1-W7, archived). What is left is phase 4 (W8-W23, ROADMAP
+D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
+before anything else in this section.
 
 ### Words used below
 
@@ -595,15 +597,18 @@ deletes, and menus treat a lens as D3 says (W3a-W7).
 
 ### Before you start
 
-- Do the tasks in order, one commit each ("How to work a task" above).
-  The order is about safety. No menu can create a lens until W3a-W4
-  have made drops and deletes safe, so no user can lose a file while the
-  work is half done. W3 was split into W3a-W3g on 2026-10-21; each one
-  is small enough for a first task in this codebase.
-- Until W7 adds "New lens...", make a lens by hand. Run the app with a
-  scratch config (`./scripts/dev.ps1 -OnTop`; `ENGINEERING.md` section 1)
-  and exit it. Add this to `%TEMP%\deskspace-dev\deskspace.toml`, then run
-  the app again. Use an `id` no other space has, and a throwaway folder:
+- One commit per task ("How to work a task" above). W1-W7 went in order
+  for safety: no menu could create a lens until drops and deletes were
+  safe, so no user could lose a file while the work was half done. Keep
+  that habit. A task that touches files lands complete, or not at all.
+- To get a lens to work on, run the app with a scratch config
+  (`./scripts/dev.ps1 -OnTop`; `ENGINEERING.md` section 1) and use "New
+  lens…" from the space or tray menu, on a throwaway folder. Never point a
+  test lens at a folder you care about: Delete in a lens recycles real
+  files. The section V rows that say "hand-made" mean one written into the
+  config instead. Exit the app, add this to
+  `%TEMP%\deskspace-dev\deskspace.toml`, and run the app again. Use an
+  `id` no other space has:
 
   ```toml
   [[desktop.spaces]]
@@ -641,10 +646,43 @@ small function that takes plain data (a `&Space`, a `&Path`, a
 it. If you find yourself wanting to test a `Ui` method, stop and look for
 the decision inside it.
 
-### Tasks
+### Where to start
 
 W1-W7 are done (2026-10-21) and archived; their on-screen checks are in
-section V.
+section V. The open work is phase 4 (W8-W23) and phase 5 (W24-W43).
+
+1. Read, in this order: "How to work a task" (top of this file),
+   `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
+   section 4 ("Space"), then ROADMAP D3, D15, and, for a phase 5 task,
+   D16.
+2. Read the phase's opening rules, then the task. A phase 5 task also
+   means reading "Interleaving", "Performance", and "Safety and
+   security" under phase 5. They bind phase 4 too.
+3. Pick a task from the table below. "Open now" means nothing it waits
+   for is still open (2026-10-21). Otherwise wait until every task it
+   waits for has been ticked and archived. Those are the tasks in its
+   "After:" line, or, for W8-W23, the ones phase 4's first rule names. A
+   ticked box means a task is done; "Open now" goes stale, so trust the
+   boxes.
+4. Find the code with the file map at the top of this file. For lenses
+   the rows to know are "A lens's folder view and entries" (core), "A
+   model mutation" (`command/lens_ops.rs`), and `app/lens.rs` (watches
+   and listings), plus `app/menus.rs` for the lens menu.
+5. Before you commit, run the gates. Tick the box and move the task to
+   `archive/TASKS-done.md` in the same commit. For a **[needs human]**
+   task, add its section V row (rule 8).
+
+| Level | Tasks | Open now |
+|-------|-------|----------|
+| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26, W8 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W12 |
+| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
+| Maintainer only: an on-screen record | W41 | after W12 |
+
+"With a reviewer" means: agree the plan with a reviewer before writing
+code, and have the same reviewer read the diff. W16 and W42 are the
+hardest tasks in the section. W24 and W25 fix code that runs today, so
+they go first among the reviewer tasks.
 
 ### Phase 4: views, sort rules, and lens settings
 
@@ -653,8 +691,9 @@ space, not only lenses. A view, a status bar, and a sort rule work the
 same on both kinds. Only the folder, the title, and hidden files are
 lens-only.
 
-- Do the tasks in order, one commit each. W8-W11 are small and stand
-  alone. W12-W23 build the views on each other.
+- One commit each. W8-W11 are small and stand apart from the views: W9
+  needs nothing, W10 needs W8, and W11 needs W10. W12-W23 build the
+  views on each other, so take them in order.
 - Each task adds a type, variant, or field in the same commit as its
   first caller, never ahead of it with `#[expect(dead_code)]`. So
   `ViewMode` grows one variant per view task, and the task that draws a

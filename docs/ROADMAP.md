@@ -632,13 +632,17 @@ Takeover ships opt-in (D8, D9).
 **In progress:** M2 (undo and the stored-file watch remain), M3 (desktop
 verbs, F-52, and entries that wait on later milestones or design), and M4
 (phases 1-3 are done: the core model, the watcher, and the app behavior;
-views and kept sort rules, phase 4, remain). Section 5 lists what each has done.
+phase 4, the views and sort rules, is next, and phase 5 follows v0.3).
+Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **Lenses, M4 phases 2-3** (`TASKS.md` section W), moved ahead of the
-   list below on 2026-10-20 (maintainer). Built 2026-10-21; their
-   on-screen checks are in `TASKS.md` section V.
+1. **Lenses, M4 phases 4 and 5** (`TASKS.md` section W, "Where to
+   start"). Phases 2-3 were moved ahead of the list below on 2026-10-20
+   (maintainer) and built 2026-10-21; their on-screen checks are in
+   `TASKS.md` section V. Phase 4 (W8-W23, D15) completes v0.3. Phase 5
+   (W24-W43, D16) follows the release, except W24 and W25: they fix code
+   that runs today and go first.
 2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
@@ -653,8 +657,8 @@ views and kept sort rules, phase 4, remain). Section 5 lists what each has done.
    ahead of the rest of M5. The composition spike (T1) runs alongside.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
-needs DeskSpace to have list and details views first, and those arrive with
-M4 phase 4.
+needs DeskSpace to have list and details views first. Those arrive with
+M4 phase 4, and the check that closes F-40 is phase 5's W41.
 
 ## 5. Milestones
 
@@ -1051,7 +1055,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu, Explorer item menu, and the takeover desktop menu done (desktop menu check pending); lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; a pause-takeover entry is open, snapshot entries wait for M6 |
-| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout (New spaces: check pending); Lenses page open |
+| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout (New spaces: check pending); Lens, View, and Lenses pages planned (D15, `TASKS.md` W10, W20, W23) |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
