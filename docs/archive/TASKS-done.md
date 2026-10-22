@@ -3269,3 +3269,22 @@ until I5-I6 all land, so no partial build hides the desktop.
     lens onto a normal space: the file leaves the lens's folder, the
     space lists it, and the lens no longer shows it. Delete that space:
     the file goes to the desktop, not back to the folder (D3).
+- [x] **W3e. Pasting into a lens (app).**
+  - Why: `paste_clipboard` (`app/clipboard.rs`) moves or copies the
+    clipboard's files into storage and then sends `AddItem`, which a lens
+    rejects. The files are stuck in storage, as with drops before W3b.
+  - At the top of `paste_clipboard`, once `clipboard` is read and not
+    empty: if the target is a lens, call `self.drop_into_lens(ui, folder,
+    clipboard.paths, action)` (W3b), where `action` is `DropAction::Move`
+    for a cut and `DropAction::Copy` otherwise. After a cut, call
+    `ui.clear_clipboard()`, as the end of the method already does. Then
+    return. Copy `add_dropped`'s lens check from W3b so both read the
+    same way.
+  - Nothing new is pure here; W3b already tests `paths_to_transfer`.
+  - Done when: `paste_clipboard` never reaches `transfer_files` into
+    storage or `AddItem` for a lens, and the gates pass. **[needs
+    human]**: in Explorer, copy a file and paste it on a lens (click the
+    lens, then Ctrl+V): a copy lands in the folder. Cut and paste: it
+    moves. Cut an item from a normal space and paste it on a lens: it
+    moves into the folder and leaves the space. A paste on a normal space
+    works as before.

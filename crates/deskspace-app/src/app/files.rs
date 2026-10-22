@@ -82,13 +82,7 @@ impl App {
     ) {
         // A lens shows a real folder (ROADMAP D3): the files go there through
         // the shell, never into the store or the lens's item list.
-        if let Some(folder) = self
-            .config
-            .desktop
-            .space(target)
-            .and_then(Space::folder_view)
-            .map(|view| view.path.clone())
-        {
+        if let Some(folder) = self.lens_folder(target) {
             self.drop_into_lens(ui, folder, paths, action);
             return;
         }
@@ -143,11 +137,18 @@ impl App {
         self.save(ui);
     }
 
+    /// The folder space `id` shows, or `None` for a normal space. Drops and
+    /// pastes ask it first: a lens takes its files by the shell, not as items.
+    pub(super) fn lens_folder(&self, id: SpaceId) -> Option<PathBuf> {
+        let space = self.config.desktop.space(id)?;
+        space.folder_view().map(|view| view.path.clone())
+    }
+
     /// Moves or copies dropped `paths` into a lens's `folder` with the shell's
     /// file operation, which asks before replacing a file. The lens's watch
     /// lists the new files; the normal spaces that listed the moved ones are
     /// pruned.
-    fn drop_into_lens(
+    pub(super) fn drop_into_lens(
         &mut self,
         ui: &mut Ui,
         folder: PathBuf,

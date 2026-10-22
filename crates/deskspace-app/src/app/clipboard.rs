@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::{Command, ItemId, SpaceId};
-use deskspace_platform::{ClipboardFiles, OnCollision, Ui, item_facts};
+use deskspace_platform::{ClipboardFiles, DropAction, OnCollision, Ui, item_facts};
 
 use super::{App, Surface};
 
@@ -94,11 +94,21 @@ impl App {
         }
     }
 
+    /// Un-ghosts every cut item, including any not part of a paste, and
+    /// returns the spaces that showed them so the caller can repaint them.
+    fn release_cut(&mut self) -> HashSet<SpaceId> {
+        std::mem::take(&mut self.selection.cut)
+            .into_iter()
+            .filter_map(|item| self.config.desktop.space_containing(item))
+            .collect()
+    }
+
     /// Adds the clipboard's files to the current space, as a drop would: a cut
     /// moves them (items already in a space just change space, sharing the
     /// file), a copy duplicates them into the store. Physical copies and moves
     /// go through the shell's file operation so Explorer's progress UI and undo
-    /// apply.
+    /// apply. On a lens the files go into its folder instead, as a drop
+    /// does (`drop_into_lens`).
     pub(super) fn paste_clipboard(&mut self, ui: &mut Ui) {
         // Pasting lands in a space, never on the loose desktop layer.
         let Some(Surface::Space(target)) = self.selection.surface else {
@@ -108,6 +118,22 @@ impl App {
             return;
         };
         if clipboard.paths.is_empty() {
+            return;
+        }
+        if let Some(folder) = self.lens_folder(target) {
+            let action = if clipboard.cut {
+                DropAction::Move
+            } else {
+                DropAction::Copy
+            };
+            self.drop_into_lens(ui, folder, clipboard.paths, action);
+            if clipboard.cut {
+                ui.clear_clipboard();
+                let ghosted = self.release_cut();
+                for id in ghosted {
+                    self.refresh_space(ui, id);
+                }
+            }
             return;
         }
         let at = self.space_center(target);
@@ -180,13 +206,7 @@ impl App {
         }
 
         if clipboard.cut {
-            // Un-ghost every cut item, including any not part of this paste,
-            // and repaint the spaces that showed them.
-            for item in std::mem::take(&mut self.selection.cut) {
-                if let Some(space) = self.config.desktop.space_containing(item) {
-                    touched.insert(space);
-                }
-            }
+            touched.extend(self.release_cut());
             ui.clear_clipboard();
         }
         for id in &touched {
