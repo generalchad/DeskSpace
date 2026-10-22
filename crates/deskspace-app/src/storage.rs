@@ -7,6 +7,7 @@
 //! touches the file. Names are never overwritten: a clash gets " (2)", " (3)",
 //! and so on, like Explorer.
 
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -95,27 +96,26 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
 /// Windows paths differ by case, by separator, and by 8.3 short names
 /// (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report any form, so a
 /// path that exists is keyed by its canonical path and one that does not by
-/// its text, without case and with `\` separators. Keying many paths once
-/// (`App::item_index`) costs one filesystem call each, where comparing every
-/// pair would cost two per pair.
+/// its text, folded to uppercase the way Windows compares names and with `\`
+/// separators. Keying many paths once (`App::item_index`) costs one filesystem
+/// call each, where comparing every pair would cost two per pair.
 pub(crate) fn path_key(path: &Path) -> PathBuf {
     if let Ok(canonical) = std::fs::canonicalize(path) {
         return canonical;
     }
-    path.to_string_lossy()
-        .replace('/', "\\")
-        .to_ascii_lowercase()
-        .into()
+    let text = path.to_string_lossy().replace('/', "\\");
+    PathBuf::from(deskspace_platform::upper_name(OsStr::new(&text)))
 }
 
-/// Whether `path` is `root` or lies below it, comparing whole components
-/// case-insensitively as Windows paths do. Unlike a string-prefix test,
+/// Whether `path` is `root` or lies below it, comparing whole components by
+/// the same rule Windows uses for names. Unlike a string-prefix test,
 /// `...\DeskSpace.App` is not inside `...\DeskSpace`.
 pub(crate) fn is_inside(path: &Path, root: &Path) -> bool {
     let mut path = path.components();
     root.components().all(|root| {
-        path.next()
-            .is_some_and(|part| part.as_os_str().eq_ignore_ascii_case(root.as_os_str()))
+        path.next().is_some_and(|part| {
+            deskspace_platform::same_name_ignoring_case(part.as_os_str(), root.as_os_str())
+        })
     })
 }
 
@@ -184,6 +184,22 @@ mod tests {
     fn same_path_tolerates_case_for_missing_files() {
         assert!(same_path(Path::new("C:/A/B.txt"), Path::new("c:/a/b.TXT")));
         assert!(!same_path(Path::new("C:/a"), Path::new("C:/b")));
+    }
+
+    #[test]
+    fn names_compare_the_way_windows_does() {
+        assert!(same_path(
+            Path::new("C:/Nowhere/É.txt"),
+            Path::new("C:/nowhere/é.TXT")
+        ));
+        assert!(!same_path(
+            Path::new("C:/Nowhere/ß.txt"),
+            Path::new("C:/nowhere/SS.txt")
+        ));
+        assert!(is_inside(
+            Path::new(r"C:\Users\Émile\file.txt"),
+            Path::new(r"C:\users\émile")
+        ));
     }
 
     #[test]

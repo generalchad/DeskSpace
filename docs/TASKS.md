@@ -378,23 +378,6 @@ and B33 and B36 change behavior on purpose, as each says.
     `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
     that a hit protects an icon from the next eviction.
   - Done when: no method scans `entries`, and the gates pass.
-- [ ] **B36. Compare file names the way Windows does (platform, app).**
-  - Why: `storage::same_path` falls back to `eq_ignore_ascii_case`, and
-    `storage::is_inside` compares components the same way, so `É.txt`
-    and `é.txt` never match, although Windows treats them as one name.
-  - Platform: `pub fn same_name_ignoring_case(a: &OsStr, b: &OsStr) ->
-    bool` over `CompareStringOrdinal` with `bIgnoreCase` set, the
-    function Microsoft documents for file names (link it beside the
-    call); export it from the crate root.
-  - App: `same_path`'s fallback and `is_inside`'s component compare call
-    it. If B32 has landed, `path_key`'s case fold uses the same rule
-    (`LCMapStringEx` with `LCMAP_UPPERCASE` on the invariant locale), so
-    keys and comparisons agree.
-  - Tests: `É` and `é` match; `ß` and `SS` do not (ordinal compares one
-    character at a time); the existing `is_inside_compares_whole_components`
-    passes.
-  - Done when: no `eq_ignore_ascii_case` is left on a path in `app`, and
-    the gates pass.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and

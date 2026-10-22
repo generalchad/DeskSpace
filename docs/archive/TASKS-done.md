@@ -3568,3 +3568,20 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: no loop calls `same_path` against every item, and the
     gates pass. W25 later moves the remaining canonicalize calls for
     lens folders off the UI thread; this task does not wait for it.
+- [x] **B36. Compare file names the way Windows does (platform, app).**
+  - Why: `storage::same_path` falls back to `eq_ignore_ascii_case`, and
+    `storage::is_inside` compares components the same way, so `É.txt`
+    and `é.txt` never match, although Windows treats them as one name.
+  - Platform: `pub fn same_name_ignoring_case(a: &OsStr, b: &OsStr) ->
+    bool` over `CompareStringOrdinal` with `bIgnoreCase` set, the
+    function Microsoft documents for file names (link it beside the
+    call); export it from the crate root.
+  - App: `same_path`'s fallback and `is_inside`'s component compare call
+    it. If B32 has landed, `path_key`'s case fold uses the same rule
+    (`LCMapStringEx` with `LCMAP_UPPERCASE` on the invariant locale), so
+    keys and comparisons agree.
+  - Tests: `É` and `é` match; `ß` and `SS` do not (ordinal compares one
+    character at a time); the existing `is_inside_compares_whole_components`
+    passes.
+  - Done when: no `eq_ignore_ascii_case` is left on a path in `app`, and
+    the gates pass.

@@ -48,6 +48,7 @@ pub use win32::drag_image::DragImage;
 pub use win32::file_op::OnCollision;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
+pub use win32::names::{same_name_ignoring_case, upper_name};
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::shortcuts::{create_custom_shortcut, create_shortcut, resolve_path};
 pub use win32::system::{

@@ -31,6 +31,7 @@ mod info_tip;
 mod keyboard;
 mod menu;
 mod messages;
+pub(crate) mod names;
 mod outside_click;
 mod runtime;
 mod settings_window;
