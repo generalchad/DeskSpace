@@ -216,7 +216,9 @@ matching on `Surface` at the call site.
 ## B. Code health (any contributor)
 
 Each is a behavior-preserving refactor: the test count only grows, and no
-user-visible change is expected. Do them in any order.
+user-visible change is expected. Do them in any order. The exceptions are
+B32-B36, from a review on 2026-10-21: they fix performance and correctness,
+and B33 and B36 change behavior on purpose, as each says.
 
 - [ ] **B13. One child-control helper.** `win32/dialog.rs` `control` and
   `win32/settings_window/build.rs` `Builder::control` are near-copies, both
@@ -343,6 +345,95 @@ user-visible change is expected. Do them in any order.
 
     No unit tests: the repository has no PowerShell test framework, and
     adding one is out of scope.
+
+- [ ] **B32. Index paths instead of comparing them pairwise (app).**
+  - Why: `storage::same_path` canonicalizes both paths, two filesystem
+    calls, whenever the strings differ. `app/view.rs`
+    `desktop_layer_items` calls it for every desktop entry against every
+    space item, and `app/hit.rs` `find_item_by_file` runs once per dropped
+    or pasted path. One layer sync is about 2 × entries × items calls on
+    the UI thread: about 120,000 for 200 entries and 300 items (review,
+    2026-10-21).
+  - `storage.rs`: a pure-ish `pub(crate) fn path_key(path: &Path) ->
+    PathBuf`: the canonical path when `canonicalize` succeeds, else the
+    path with `/` turned into `\` and case-folded. Two paths name the
+    same file when their keys are equal. `same_path` becomes
+    `path_key(a) == path_key(b)` after its fast `a == b` check.
+  - `app/hit.rs`: `fn item_index(&self) -> HashMap<PathBuf, ItemId>`
+    over every non-lens space's items, keyed by `path_key`.
+    `find_item_by_file` keeps its signature for single lookups. Callers
+    that look up many paths (`add_dropped`, `plan_paste`,
+    `drop_into_lens`) build the index once and look each path up.
+  - `desktop_layer_items`: build a `HashSet` of the space items' keys
+    once, then test each entry's key against it.
+  - Tests: `path_key` folds case and slashes for a missing file, and two
+    spellings of an existing temp file share a key; `item_index` skips
+    lens items (copy `a_lens_item_is_not_owned_by_deskspace`).
+  - Done when: no loop calls `same_path` against every item, and the
+    gates pass. W25 later moves the remaining canonicalize calls for
+    lens folders off the UI thread; this task does not wait for it.
+- [ ] **B33. Load icons off the UI thread (platform, app).**
+  **[needs decision]**: the worker and event below are a proposal.
+  - Why: `IconCache::icon_for` loads a missing icon synchronously while
+    `space_scene` builds a scene, through the shell's image factory. A
+    lens on a slow or network folder, or the first scroll through a big
+    one, stalls every space until each icon is loaded. Explorer draws a
+    generic icon at once and fills the real one in later.
+  - Proposal: `icon_for` returns the cached icon, or a generic one for
+    the item's `ItemKind` and queues the path. One worker thread (COM
+    initialized as STA, as the image factory needs) loads queued icons
+    and posts a `WM_APP` message (next free id) that becomes
+    `Event::IconsLoaded { paths }`. The app refreshes only the spaces
+    that list those paths. The queue drops paths that scrolled out of
+    view before the worker reaches them.
+  - Pure parts to test: the queue (dedupes, keeps the newest request per
+    path, drops a path that is no longer wanted) and which spaces a
+    loaded path refreshes.
+  - **[needs human]** check: a lens on a folder of a few thousand images
+    scrolls without stalls, and its icons fill in.
+- [ ] **B34. An O(1) least-recently-used icon cache (platform, pure).**
+  - Why: once `IconCache` is full (1,024 icons), `IconCache::insert`
+    scans every entry with `min_by_key` to find the oldest, on every new
+    icon. Scrolling a large lens pays that for each icon it loads.
+  - `win32/icons.rs`: keep a `BTreeMap<u64, Key>` from `last_used` to
+    key beside `entries`. A hit moves its key to the new clock value; an
+    insert into a full cache pops the first (oldest) entry. That is
+    O(log n) with no new dependency. `invalidate` removes every variant
+    of a path from both maps.
+  - Tests: the existing `evicts_the_least_recently_used_icon` and
+    `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
+    that a hit protects an icon from the next eviction.
+  - Done when: no method scans `entries`, and the gates pass.
+- [ ] **B35. Save the config durably (config).**
+  - Why: `ConfigStore::save` writes `deskspace.toml.tmp` and renames it
+    over the config, but never flushes it. NTFS can make the rename
+    durable before the data, so a power cut right after a save can leave
+    an empty or partial config, which then loads as defaults and loses
+    the user's layout (`ENGINEERING.md` rule 3).
+  - `store.rs` `save`: write the temp file through a `File`, call
+    `File::sync_all` before closing it, then rename as today. This is
+    plain `std`, so the crate stays `forbid(unsafe_code)`.
+  - Test: `save_then_load_round_trips` still passes; add one that a
+    failed rename leaves the old config in place and the temp file
+    behind (rename onto a path whose parent is a file).
+  - Done when: the gates pass.
+- [ ] **B36. Compare file names the way Windows does (platform, app).**
+  - Why: `storage::same_path` falls back to `eq_ignore_ascii_case`, and
+    `storage::is_inside` compares components the same way, so `É.txt`
+    and `é.txt` never match, although Windows treats them as one name.
+  - Platform: `pub fn same_name_ignoring_case(a: &OsStr, b: &OsStr) ->
+    bool` over `CompareStringOrdinal` with `bIgnoreCase` set, the
+    function Microsoft documents for file names (link it beside the
+    call); export it from the crate root.
+  - App: `same_path`'s fallback and `is_inside`'s component compare call
+    it. If B32 has landed, `path_key`'s case fold uses the same rule
+    (`LCMapStringEx` with `LCMAP_UPPERCASE` on the invariant locale), so
+    keys and comparisons agree.
+  - Tests: `É` and `é` match; `ß` and `SS` do not (ordinal compares one
+    character at a time); the existing `is_inside_compares_whole_components`
+    passes.
+  - Done when: no `eq_ignore_ascii_case` is left on a path in `app`, and
+    the gates pass.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
@@ -1678,6 +1769,17 @@ Rules for every K task:
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
 
+- [ ] **K8. Split `win32/space_window.rs`.** About 1,060 lines of non-test
+  code (2026-10-21). Turn it into `space_window/mod.rs` plus:
+  - `zorder.rs`: `set_on_top`, `on_window_pos_changing`, `insert_after`,
+    and `window_above`, the z-order pinning;
+  - `mouse.rs`: `on_mouse_move`, `on_mouse_leave`, `on_mouse_wheel`,
+    `on_button_down`, `on_button_up`, and their helpers `to_desktop`,
+    `modifiers`, and `button_for`.
+
+  Everything else stays in `mod.rs`. Done when: `mod.rs` is under about
+  800 lines of non-test code, and the K rules above hold.
+
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
 `CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
@@ -1931,6 +2033,11 @@ each id is in `archive/TASKS-done.md`.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
+- Code comments cite task ids and dates in about 143 places, such as
+  `(W3c)` or `T12` (review, 2026-10-21). Ids are decoded only through
+  `TASKS.md` and its archive, and they age as tasks are archived.
+  Suggested, for the maintainer to decide: keep the why in the comment
+  and the id in the commit message, and stop adding ids to new comments.
 - **Open bug, needs decision:** with takeover on, the primary taskbar
   sometimes stops taking clicks; they reach the desktop layer instead
   (seen 2026-10-18). `scripts/zorder.ps1` showed `Shell_TrayWnd` with
