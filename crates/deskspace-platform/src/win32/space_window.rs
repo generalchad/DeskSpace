@@ -81,6 +81,32 @@ pub(crate) struct SpaceWindowOptions {
     pub composition: bool,
 }
 
+impl SpaceWindowOptions {
+    /// The desktop layer's window, which spans every monitor. It is never
+    /// topmost, whatever `--on-top` says: a topmost window that size covers
+    /// every screen and takes every click, and on 2026-10-21 that left the PC
+    /// unusable until the user signed out. A top-level space places itself
+    /// above the layer anyway, so `--on-top` spaces still show.
+    pub(crate) fn desktop_layer(
+        rect: Rect,
+        style: SpaceStyle,
+        host: Option<HWND>,
+        click_through: bool,
+    ) -> Self {
+        Self {
+            id: 0,
+            rect,
+            style,
+            host,
+            click_through,
+            on_top: false,
+            visible: true,
+            // The layer never animates, so it keeps the accent blur (T12).
+            composition: false,
+        }
+    }
+}
+
 pub(super) struct SpaceState {
     id: u64,
     hosted: bool,
@@ -1035,6 +1061,14 @@ pub(crate) fn drop_into(window: HWND) -> DropInto {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_desktop_layer_is_never_topmost() {
+        let style = style(deskspace_core::Backdrop::Blur, 8);
+        let layer =
+            SpaceWindowOptions::desktop_layer(Rect::new(-1920, 0, 3840, 1080), style, None, false);
+        assert!(!layer.on_top);
+    }
 
     fn style(backdrop: deskspace_core::Backdrop, corner_radius: i32) -> SpaceStyle {
         SpaceStyle {

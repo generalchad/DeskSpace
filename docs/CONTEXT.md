@@ -638,7 +638,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   each axis joins separately: a corner grab that moves on one axis resizes
   only that axis.
 - `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
-  checked without uncovering the desktop.
+  checked without uncovering the desktop. It never applies to the desktop
+  layer: a topmost window spanning every monitor would take every click.
 
 ### Drops (`win32/drop_target.rs`)
 
