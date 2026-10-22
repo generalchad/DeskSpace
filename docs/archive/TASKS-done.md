@@ -3529,3 +3529,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     look's size. Ctrl+wheel does not move a space with a fixed size. The
     view survives a restart.
 
+- [x] **B35. Save the config durably (config).**
+  - Why: `ConfigStore::save` writes `deskspace.toml.tmp` and renames it
+    over the config, but never flushes it. NTFS can make the rename
+    durable before the data, so a power cut right after a save can leave
+    an empty or partial config, which then loads as defaults and loses
+    the user's layout (`ENGINEERING.md` rule 3).
+  - `store.rs` `save`: write the temp file through a `File`, call
+    `File::sync_all` before closing it, then rename as today. This is
+    plain `std`, so the crate stays `forbid(unsafe_code)`.
+  - Test: `save_then_load_round_trips` still passes; add one that a
+    failed rename leaves the old config in place and the temp file
+    behind (rename onto a path whose parent is a file).
+  - Done when: the gates pass.

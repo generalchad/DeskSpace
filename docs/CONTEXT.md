@@ -370,8 +370,8 @@ default in `Default`.
   path. `storage_dir()`, where dropped files are moved, is
   `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, or a `storage` folder
   beside an explicit config file, so scratch configs never touch real
-  storage. `save` writes a sibling `*.toml.tmp` and renames it, so a crash
-  never truncates the config.
+  storage. `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
+  renames it, so a crash or a power cut never truncates the config.
 - `load_or_default` returns defaults when no file exists. An unparsable file
   is copied to `deskspace.toml.unreadable-<millis>.bak` before falling back to
   defaults; a file from a newer version is loaded but first copied to

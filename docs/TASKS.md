@@ -404,19 +404,6 @@ and B33 and B36 change behavior on purpose, as each says.
     `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
     that a hit protects an icon from the next eviction.
   - Done when: no method scans `entries`, and the gates pass.
-- [ ] **B35. Save the config durably (config).**
-  - Why: `ConfigStore::save` writes `deskspace.toml.tmp` and renames it
-    over the config, but never flushes it. NTFS can make the rename
-    durable before the data, so a power cut right after a save can leave
-    an empty or partial config, which then loads as defaults and loses
-    the user's layout (`ENGINEERING.md` rule 3).
-  - `store.rs` `save`: write the temp file through a `File`, call
-    `File::sync_all` before closing it, then rename as today. This is
-    plain `std`, so the crate stays `forbid(unsafe_code)`.
-  - Test: `save_then_load_round_trips` still passes; add one that a
-    failed rename leaves the old config in place and the temp file
-    behind (rename onto a path whose parent is a file).
-  - Done when: the gates pass.
 - [ ] **B36. Compare file names the way Windows does (platform, app).**
   - Why: `storage::same_path` falls back to `eq_ignore_ascii_case`, and
     `storage::is_inside` compares components the same way, so `É.txt`
