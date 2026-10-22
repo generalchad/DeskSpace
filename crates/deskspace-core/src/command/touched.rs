@@ -48,6 +48,7 @@ impl Desktop {
             }
             Command::DeleteSpace { id }
             | Command::RenameSpace { id, .. }
+            | Command::SetSpaceView { id, .. }
             | Command::MoveSpace { id, .. }
             | Command::SetSpaceRect { id, .. }
             | Command::ResizeSpace { id, .. }

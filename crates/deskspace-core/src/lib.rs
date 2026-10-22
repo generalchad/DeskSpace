@@ -12,6 +12,7 @@ pub mod placement;
 pub mod source;
 pub mod space;
 pub mod theme;
+pub mod view;
 
 pub use command::{Command, CommandOutcome, Touched};
 pub use desktop::Desktop;
@@ -23,3 +24,4 @@ pub use layout::GridSpec;
 pub use source::{FolderEntry, FolderView, LensTitle, SpaceSource, lens_title};
 pub use space::{ResizeEdges, Space, SpaceLook};
 pub use theme::{Backdrop, BorderSource, Color, LabelShadow, Palette, Preset, Theme, ThemeMode};
+pub use view::{SpaceView, ViewMode};

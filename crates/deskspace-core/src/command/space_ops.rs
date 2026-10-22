@@ -14,6 +14,7 @@ use crate::layout::{
 };
 use crate::source::{LensTitle, SpaceSource};
 use crate::space::{ResizeEdges, Space, SpaceLook};
+use crate::view::SpaceView;
 
 impl Desktop {
     pub(super) fn apply_create_space(
@@ -94,6 +95,13 @@ impl Desktop {
             if let SpaceSource::Folder(view) = &mut space.source {
                 view.title = LensTitle::Custom;
             }
+            CommandOutcome::Applied
+        })
+    }
+
+    pub(super) fn apply_set_space_view(&mut self, id: SpaceId, view: SpaceView) -> CommandOutcome {
+        self.with_space(id, |space| {
+            space.view = view;
             CommandOutcome::Applied
         })
     }

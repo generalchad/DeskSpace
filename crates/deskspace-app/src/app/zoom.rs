@@ -136,6 +136,9 @@ impl App {
     /// they stay 1:1 with the desktop. Otherwise, or when the desktop's size
     /// cannot be read, it changes DeskSpace's global icon size, persisted
     /// through the settings rather than the config's base grid.
+    ///
+    /// A fixed icon view (D15) reads the look's size nowhere: its layout uses
+    /// `ViewMode::icon_px`, so the re-flow a zoom asks for leaves it alone.
     fn wheel_zoom_effects(&mut self, delta: i32) -> Vec<Effect> {
         let mut effects = match self.zoom_level() {
             ZoomLevel::Desktop(current) => desktop_zoom_effects(current, delta),

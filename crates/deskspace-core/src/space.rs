@@ -6,6 +6,7 @@ use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
 use crate::source::SpaceSource;
 use crate::theme::{Color, Theme};
+use crate::view::SpaceView;
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
 
@@ -68,6 +69,10 @@ pub struct Space {
     /// A lens's items are a live cache and are never written to the config.
     #[serde(default)]
     pub(crate) source: SpaceSource,
+    /// How the space lays its items out (D15). Views are not part of the look,
+    /// so a normal space and a lens share this.
+    #[serde(default)]
+    pub(crate) view: SpaceView,
     #[serde(default)]
     pub(crate) items: Vec<Item>,
     #[serde(default)]
@@ -145,6 +150,8 @@ struct PersistedSpace<'a> {
     custom: bool,
     title_height: i32,
     user_sized: bool,
+    #[serde(skip_serializing_if = "SpaceView::is_default")]
+    view: SpaceView,
     #[serde(skip_serializing_if = "Option::is_none")]
     look: Option<&'a SpaceLook>,
     /// Omitted for an ordinary space, so its file looks as it always did.
@@ -165,6 +172,7 @@ impl Serialize for Space {
             custom: self.custom,
             title_height: self.title_height,
             user_sized: self.user_sized,
+            view: self.view,
             look: self.look.as_ref(),
             source: (!self.source.is_items()).then_some(&self.source),
             items: (!self.is_lens()).then_some(self.items.as_slice()),
@@ -180,6 +188,7 @@ impl Space {
             title: title.into(),
             rect,
             source: SpaceSource::Items,
+            view: SpaceView::default(),
             items: Vec::new(),
             locked: false,
             folded: false,
@@ -209,6 +218,11 @@ impl Space {
     /// What fills the space.
     pub fn source(&self) -> &SpaceSource {
         &self.source
+    }
+
+    /// How the space lays its items out (D15).
+    pub fn view(&self) -> SpaceView {
+        self.view
     }
 
     /// Whether the space mirrors a folder (M4).

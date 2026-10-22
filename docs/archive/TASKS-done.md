@@ -3498,4 +3498,34 @@ until I5-I6 all land, so no partial build hides the desktop.
     entry retitles it at once, and Cancel puts it back. Change folder…
     retitles it under Folder name and keeps a custom title. F2 on the
     title, then the Lens page shows Custom.
+- [x] **W12. Views, part 1: the icon sizes (core, app).** **[needs
+  human]**
+  - Core: `SpaceView { mode: ViewMode }` (`#[serde(default)]`, in a new
+    `view.rs`) and `Space.view` (`#[serde(default)]`). `ViewMode` starts
+    with `Icons` (the default: today's look-driven size), `ExtraLargeIcons`,
+    `LargeIcons`, and `MediumIcons`. `ViewMode::icon_px()` returns the
+    fixed size (256, 96, 48 px at 96 DPI), or `None` for `Icons`. Small
+    icons put the label beside the icon, so they come with List's cell in
+    W16.
+  - `Command::SetSpaceView { id, view }` (the Command recipe). It works
+    on both kinds; there is no lens branch.
+  - App: where a space's icon size and grid cell are worked out (from
+    `Theme.icon_size` today, in `app/view.rs`), use `icon_px()` when it is
+    `Some`. `app/zoom.rs` leaves a space with a fixed size alone, as D9
+    leaves a customized Custom look alone.
+  - Tables: `VIEW_MODES` in `settings/tables.rs` (mode, label, digit;
+    `Icons` is "Settings icon size" and has no digit), and
+    `VIEW_PRESETS` in `app.rs`, pairing each mode with its `MenuId` as
+    `SORT_PRESETS` does. A guard test checks that every row of one has
+    exactly one row in the other.
+  - Menu (the menu-entry recipe): View ▸ above Sort by in the space
+    menu of both kinds, with one radio entry per row, checking the
+    space's mode.
+  - Tests: serde default; `SetSpaceView` outcomes; a space in
+    `LargeIcons` gets a 96 px cell at 100 %; zoom leaves it alone; the
+    guard test.
+  - **[needs human]** check: each View ▸ entry resizes only that space,
+    on a normal space and a lens. "Settings icon size" gives back the
+    look's size. Ctrl+wheel does not move a space with a fixed size. The
+    view survives a restart.
 

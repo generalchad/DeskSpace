@@ -4,7 +4,9 @@ use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
 use deskspace_core::source::{FolderView, LensTitle, lens_title};
-use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
+use deskspace_core::{
+    Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme,
+};
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
 };
@@ -13,8 +15,9 @@ use deskspace_update::InstallMode;
 use super::files::ShortcutSource;
 use super::{
     App, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES, NewShortcut, OPACITY_PRESETS,
-    SORT_PRESETS, SpaceColor, Surface, delete_needs_confirmation,
+    SORT_PRESETS, SpaceColor, Surface, VIEW_PRESETS, delete_needs_confirmation,
 };
+use crate::settings::VIEW_MODES;
 
 impl App {
     /// Opens the context menu for the focused item, or for the current space
@@ -308,6 +311,7 @@ impl App {
             space,
             space.theme(&self.config.theme),
         ));
+        entries.push(space_view_menu(space));
         entries.push(space_sort_menu(space.folder_view()));
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
@@ -348,12 +352,15 @@ impl App {
             Some(MenuId::SpaceSettings) => self.open_settings_with(ui, Some(id)),
             Some(MenuId::AddFiles) => self.add_files(ui, id, at),
             Some(choice) => {
-                // A lens keeps its order as files come and go, so its Sort by
-                // choices change its view instead of sorting once.
-                if let Some(view) = lens_view
+                // A view choice changes only this space's layout.
+                if let Some((_, mode)) = VIEW_PRESETS.iter().find(|(preset, _)| *preset == choice) {
+                    self.set_space_view(ui, id, SpaceView { mode: *mode }, at);
+                } else if let Some(view) = lens_view
                     .as_ref()
                     .and_then(|view| lens_view_after(view, choice))
                 {
+                    // A lens keeps its order as files come and go, so its Sort
+                    // by choices change its view instead of sorting once.
                     self.set_lens_view(ui, id, view, at);
                 } else if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
@@ -693,6 +700,22 @@ fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
         .map(|(.., kind)| *kind)
 }
 
+/// The "View" submenu: one radio item per icon view, checking the space's
+/// current mode.
+fn space_view_menu(space: &Space) -> MenuEntry {
+    let entries = VIEW_PRESETS
+        .iter()
+        .map(|(id, mode)| {
+            let label = VIEW_MODES
+                .iter()
+                .find(|(row, ..)| row == mode)
+                .map_or("", |(_, label, _)| *label);
+            menu_item(*id, label).checked(space.view().mode == *mode)
+        })
+        .collect();
+    MenuEntry::submenu("View", entries)
+}
+
 /// The "Sort by" submenu. On a normal space it is a one-off reorder; on a
 /// lens (`lens` is its view) the current order is checked and kept, and the
 /// lens's "Folders first" and "Show hidden files" toggles follow.
@@ -808,6 +831,82 @@ mod tests {
         match space_sort_menu(lens) {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
+        }
+    }
+
+    fn view_entries(space: &Space) -> Vec<MenuEntry> {
+        match space_view_menu(space) {
+            MenuEntry::Submenu { entries, .. } => entries,
+            _ => panic!("expected a submenu"),
+        }
+    }
+
+    #[test]
+    fn the_view_menu_checks_the_space_mode_and_uses_the_table_labels() {
+        use crate::fixtures::{apply, create_space};
+        use deskspace_core::{Desktop, ViewMode};
+
+        let mut desktop = Desktop::new();
+        let id = create_space(&mut desktop, "A", Rect::new(0, 0, 100, 100));
+        apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    mode: ViewMode::LargeIcons,
+                },
+            },
+        );
+        let entries = view_entries(desktop.space(id).unwrap());
+        let checks = item_checks(&entries);
+        assert_eq!(checks.len(), VIEW_PRESETS.len());
+        assert_eq!(
+            checks.iter().filter(|(_, checked)| *checked).count(),
+            1,
+            "one radio entry is checked"
+        );
+        assert_eq!(
+            checks
+                .iter()
+                .find(|(_, checked)| *checked)
+                .and_then(|(id, _)| *id),
+            Some(MenuId::ViewLargeIcons)
+        );
+        let labels: Vec<&str> = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                MenuEntry::Item { label, .. } => Some(label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            VIEW_MODES
+                .iter()
+                .map(|(_, label, _)| *label)
+                .collect::<Vec<&str>>()
+        );
+    }
+
+    #[test]
+    fn every_view_has_one_menu_preset_and_one_mode_row() {
+        assert_eq!(VIEW_PRESETS.len(), VIEW_MODES.len());
+        for (mode, ..) in VIEW_MODES {
+            assert_eq!(
+                VIEW_PRESETS
+                    .iter()
+                    .filter(|(_, preset)| *preset == mode)
+                    .count(),
+                1,
+                "{mode:?}"
+            );
+        }
+        for (_, mode) in VIEW_PRESETS {
+            assert_eq!(
+                VIEW_MODES.iter().filter(|(row, ..)| *row == mode).count(),
+                1,
+                "{mode:?}"
+            );
         }
     }
 

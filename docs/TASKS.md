@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W12 is next; W16 is the
+- section W phase 4, in order (W13 is next; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -51,7 +51,7 @@ Where each kind of code lives. Paths are under `crates/`.
 
 | To change... | Look in |
 |--------------|---------|
-| The model (spaces, items, the desktop layer) | `deskspace-core/src/{space,item,desktop,desktop_layer}.rs` |
+| The model (spaces, items, views, the desktop layer) | `deskspace-core/src/{space,view,item,desktop,desktop_layer}.rs` |
 | A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `lens_ops.rs`, `layer_ops.rs`) |
 | A lens's folder view and entries | `deskspace-core/src/source.rs` (`SpaceSource`, `FolderView`, `FolderEntry`) |
 | Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
@@ -563,7 +563,7 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   `MoveItem` into a lens return `Rejected`.
 
 Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W12-W23,
+lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W13-W23,
 ROADMAP D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
 before anything else in this section.
 
@@ -648,8 +648,8 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8, W10, and W11 are done (2026-10-21) and archived; the earlier tasks'
-on-screen checks are in section V. The open work is phase 4 (W9, W12-W23)
+W1-W8 and W10-W12 are done (2026-10-21) and archived; the earlier tasks'
+on-screen checks are in section V. The open work is phase 4 (W9, W13-W23)
 and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
@@ -676,9 +676,9 @@ and phase 5 (W24-W43).
 | Level | Tasks | Open now |
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W12 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W13 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
-| Maintainer only: an on-screen record | W41 | after W12 |
+| Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
 code, and have the same reviewer read the diff. W16 and W42 are the
@@ -737,37 +737,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W12. Views, part 1: the icon sizes (core, app).** **[needs
-  human]**
-  - Core: `SpaceView { mode: ViewMode }` (`#[serde(default)]`, in a new
-    `view.rs`) and `Space.view` (`#[serde(default)]`). `ViewMode` starts
-    with `Icons` (the default: today's look-driven size), `ExtraLargeIcons`,
-    `LargeIcons`, and `MediumIcons`. `ViewMode::icon_px()` returns the
-    fixed size (256, 96, 48 px at 96 DPI), or `None` for `Icons`. Small
-    icons put the label beside the icon, so they come with List's cell in
-    W16.
-  - `Command::SetSpaceView { id, view }` (the Command recipe). It works
-    on both kinds; there is no lens branch.
-  - App: where a space's icon size and grid cell are worked out (from
-    `Theme.icon_size` today, in `app/view.rs`), use `icon_px()` when it is
-    `Some`. `app/zoom.rs` leaves a space with a fixed size alone, as D9
-    leaves a customized Custom look alone.
-  - Tables: `VIEW_MODES` in `settings/tables.rs` (mode, label, digit;
-    `Icons` is "Settings icon size" and has no digit), and
-    `VIEW_PRESETS` in `app.rs`, pairing each mode with its `MenuId` as
-    `SORT_PRESETS` does. A guard test checks that every row of one has
-    exactly one row in the other.
-  - Menu (the menu-entry recipe): View ▸ above Sort by in the space
-    menu of both kinds, with one radio entry per row, checking the
-    space's mode.
-  - Tests: serde default; `SetSpaceView` outcomes; a space in
-    `LargeIcons` gets a 96 px cell at 100 %; zoom leaves it alone; the
-    guard test.
-  - **[needs human]** check: each View ▸ entry resizes only that space,
-    on a normal space and a lens. "Settings icon size" gives back the
-    look's size. Ctrl+wheel does not move a space with a fixed size. The
-    view survives a restart.
 
 - [ ] **W13. Ctrl+Shift+1..8 (the key recipe).** **[needs human]**
   - Explorer's view keys: 1 Extra large icons, 2 Large icons, 3 Medium
@@ -1956,6 +1925,7 @@ each id is in `archive/TASKS-done.md`.
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | W8 (D15) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
 | W11 (D15) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
+| W12 (D15) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
 
 ## Found while working
 
@@ -2041,9 +2011,9 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 
 - `app/effect.rs` and `settings/mod.rs`: the app crate has two `Effect` enums,
   R17's (what an event asks the shell to do) and the settings one (what a
-  field edit owes: `None`, `Appearance`, `Layout`, `Pending`). Once R17 reaches
-  the settings family, both meet in `settings_session.rs`. Suggested task:
-  rename the settings one (for example `FieldEffect`) before that step.
+  field edit owes: `None`, `Appearance`, `Layout`, `Lens`, `Pending`). Once R17
+  reaches the settings family, both meet in `settings_session.rs`. Suggested
+  task: rename the settings one (for example `FieldEffect`) before that step.
 - `deskspace-platform` tests: the crate's tests take about 16 s
   (2026-10-21), while every other crate's take under 0.1 s. The time
   goes to tests that call the real shell. Run alone,
@@ -2055,3 +2025,15 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   outline rounds with `PaintFrame.radius`, which is 0 where DWM rounds the
   window, so its corners are square inside DWM's round ones. Suggested:
   round it with the radius the border uses.
+- **Readability, W12:** the task calls `LargeIcons` "a 96 px cell", but this
+  codebase's grid cell is twice the base 48 px icon (a 96 px cell at 100 %),
+  so a fixed 96 px icon gets a 192 px cell. The task/word should say "icon",
+  or the fixed views need their own cell rule. Noted while implementing W12.
+- **API consistency:** `Space::view()` returns `SpaceView` by value while
+  `source()` and `look()` return references; harmless because `SpaceView` is
+  `Copy`, but surprising beside its siblings. Suggested task: return
+  `&SpaceView` or document the value return.
+- **app/view.rs:** `base_layout` now takes a `fixed_icon: bool` beside
+  `theme`, `grid`, `scale`, and `title_scale`. The call sites are still
+  readable, but a small `LayoutScale` (fixed view vs look) would make the
+  fixed-vs-look choice harder to misread when W14 adds more view fields.

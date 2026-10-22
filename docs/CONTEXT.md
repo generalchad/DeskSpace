@@ -161,7 +161,9 @@ is the default and holds the space's own items, as before. `SpaceSource::Folder`
 makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path and the
 view settings, and says how the title follows the folder (`LensTitle`);
 `Space.title` is the text every reader shows, computed by the app when the
-folder or the title setting changes. `FolderEntry` is what the platform reads
+folder or the title setting changes. A space also holds a `view` (`SpaceView`,
+`view.rs`): its layout mode (D15), apart from `look`, so a normal space and a
+lens share it. `FolderEntry` is what the platform reads
 from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
@@ -281,6 +283,9 @@ ones a variant's doc cannot show.
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
   edits pass `custom: true`, and Cancel uses it to restore a snapshot.
+- `SetSpaceView { id, view: SpaceView }` sets a space's view (D15): its icon
+  mode, apart from the look. The app reflows that space and saves. Every space
+  has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
   applying the layout, and changes nothing if any item id would clash.
@@ -1138,10 +1143,10 @@ in `ui.rs`. What spans them:
   display" preset it changes the desktop's own icon size (8 px a notch,
   16-256 px), as Ctrl+wheel on the desktop does, and the matching spaces
   follow (ROADMAP D9); under Custom it changes the global icon size (10 % a
-  notch). A space with its own Custom look keeps its icon size. Every space
-  keeps its size and re-flows its icons into more or fewer columns (scrolling
-  when they no longer fit), as an Explorer window does; "Fit to contents"
-  sizes it to its items again.
+  notch). A space with its own Custom look or a fixed icon view keeps its
+  icon size. Every space keeps its size and re-flows its icons into more or
+  fewer columns (scrolling when they no longer fit), as an Explorer window
+  does; "Fit to contents" sizes it to its items again.
 - Every zoom shows the zoom pop-up at the top center of the monitor under the
   pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
   icons" is 100 %), zoom out and in (one notch each), and Reset (back to
@@ -1154,8 +1159,8 @@ in `ui.rs`. What spans them:
 
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Fold/Unfold,
   Rename, Lock position, Fit to contents (resized, unlocked spaces only); New
-  shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space (asks first
-  unless the space is empty); New space, New lens…; Settings…, Hide/Show
+  shortcut ▸, Add files…, Appearance ▸, View ▸, Sort by ▸; Delete space (asks
+  first unless the space is empty); New space, New lens…; Settings…, Hide/Show
   spaces, Exit DeskSpace.
 - A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
   folder `ItemStore::allows_lens` refuses gets a message instead) after the
@@ -1176,10 +1181,14 @@ in `ui.rs`. What spans them:
   text color. Each customizes the space, starting from what it shows now; "Use
   global appearance" (greyed unless customized) makes it follow Global again
   (keeping its look for later), and "Space settings…" opens the settings
-  window on that space. **Sort by ▸** reorders items by name (A–Z or Z–A),
-  type, size (smallest or largest), or date (oldest or newest). The three
-  submenus are built from tables in `app.rs` (`OPACITY_PRESETS`,
-  `ICON_SIZE_PRESETS`, `SORT_PRESETS`).
+  window on that space. **View ▸** picks "Settings icon size" (the look's
+  size), Extra large, Large, or Medium icons; the three fixed views set that
+  space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
+  Ctrl+wheel and Match Explorer. **Sort by ▸** reorders items by name (A–Z or
+  Z–A), type, size (smallest or largest), or date (oldest or newest). The
+  menus are built from tables: `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`,
+  `VIEW_PRESETS`, and `SORT_PRESETS` in `app.rs`, with the view labels in
+  `VIEW_MODES` in `settings/tables.rs`.
 - **New shortcut ▸** (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in `app.rs`, also
   enabled on a locked space): "From installed apps…", a picker listing every
   app in the Applications folder (Store apps included) with a check box per

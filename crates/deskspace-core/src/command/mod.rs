@@ -21,6 +21,7 @@ use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::source::{FolderEntry, FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
+use crate::view::SpaceView;
 
 pub use crate::item::SortKey;
 pub use touched::Touched;
@@ -77,6 +78,12 @@ pub enum Command {
     RenameSpace {
         id: SpaceId,
         title: String,
+    },
+    /// Sets how a space lays its items out (D15). Works on a normal space and
+    /// a lens alike; the view is separate from the look.
+    SetSpaceView {
+        id: SpaceId,
+        view: SpaceView,
     },
     /// Moves an unlocked space by `delta`, snapped to the grid and kept
     /// inside the bounds.
@@ -269,6 +276,7 @@ impl Desktop {
             Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
+            Command::SetSpaceView { id, view } => self.apply_set_space_view(id, view),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
@@ -1099,6 +1107,54 @@ mod tests {
                     id: SpaceId(999),
                     on: true,
                     seed,
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn set_space_view_works_on_spaces_and_lenses() {
+        use crate::view::ViewMode;
+
+        let mut desktop = Desktop::new();
+        let normal = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let lens = desktop.next_space_id();
+        assert!(
+            desktop
+                .apply(
+                    Command::CreateLens {
+                        title: "L".into(),
+                        at: Point::new(200, 0),
+                        size: Size::new(100, 100),
+                        path: "C:/missing".into(),
+                        locked: false,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        for id in [normal, lens] {
+            assert_eq!(
+                desktop.apply(
+                    Command::SetSpaceView {
+                        id,
+                        view: SpaceView {
+                            mode: ViewMode::LargeIcons
+                        },
+                    },
+                    bounds()
+                ),
+                CommandOutcome::Applied
+            );
+            assert_eq!(desktop.space(id).unwrap().view().mode, ViewMode::LargeIcons);
+        }
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id: SpaceId(999),
+                    view: SpaceView::default(),
                 },
                 bounds()
             ),

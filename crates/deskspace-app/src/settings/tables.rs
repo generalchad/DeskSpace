@@ -48,6 +48,14 @@ pub(super) const PRESETS: [(Preset, &str); 2] = [
     (Preset::Custom, "Custom"),
 ];
 
+/// Explorer's icon views in menu order, with the Ctrl+Shift digit W13 adds.
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 4] = [
+    (ViewMode::Icons, "Settings icon size", None),
+    (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
+    (ViewMode::LargeIcons, "Large icons", Some(2)),
+    (ViewMode::MediumIcons, "Medium icons", Some(3)),
+];
+
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),

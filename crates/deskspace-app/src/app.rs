@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
+use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
     Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
@@ -168,10 +168,15 @@ enum MenuId {
     ShowHidden = 53,
     /// "New lens…", under New space in every menu that has it.
     NewLens = 54,
+    /// The View submenu's icon views (D15).
+    ViewIcons = 55,
+    ViewExtraLargeIcons = 56,
+    ViewLargeIcons = 57,
+    ViewMediumIcons = 58,
 }
 
 impl MenuId {
-    const ALL: [Self; 42] = [
+    const ALL: [Self; 46] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -214,6 +219,10 @@ impl MenuId {
         Self::FoldersFirst,
         Self::ShowHidden,
         Self::NewLens,
+        Self::ViewIcons,
+        Self::ViewExtraLargeIcons,
+        Self::ViewLargeIcons,
+        Self::ViewMediumIcons,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -298,6 +307,14 @@ const SORT_PRESETS: [(MenuId, &str, SortKey, bool); 7] = [
         SortKey::Modified,
         true,
     ),
+];
+
+/// The View submenu's choices: one per icon view, in `VIEW_MODES` order.
+const VIEW_PRESETS: [(MenuId, ViewMode); 4] = [
+    (MenuId::ViewIcons, ViewMode::Icons),
+    (MenuId::ViewExtraLargeIcons, ViewMode::ExtraLargeIcons),
+    (MenuId::ViewLargeIcons, ViewMode::LargeIcons),
+    (MenuId::ViewMediumIcons, ViewMode::MediumIcons),
 ];
 
 /// The event id the platform gives the chrome-less desktop layer window
