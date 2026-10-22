@@ -3315,3 +3315,24 @@ until I5-I6 all land, so no partial build hides the desktop.
     working `.lnk` is in the folder and the lens shows it. "New shortcut
     ▸ Paste shortcut" and the custom shortcut dialog on a lens do the
     same. On a normal space, shortcuts work as before.
+- [x] **W3g. Deleting an item from a lens (app).**
+  - Why: D3 says removing a lens item recycles its file. The Delete key
+    already does that for any item (`delete_selected_items` recycles
+    every selected file). The X on the settings window's Shortcuts page
+    (`delete_space_item`) recycles only stored files and merely unlists
+    the rest. On a lens the next sync would bring the item back, so the
+    X seems to do nothing.
+  - `app/files.rs`: a pure `fn recycles_on_delete(space: &Space, store:
+    &ItemStore, path: &Path) -> bool`. It is true for a lens item and for
+    a stored file, and false for an item listed in place.
+  - `delete_space_item`: use `recycles_on_delete` where it uses
+    `stored` today (the question and the recycle step). Rename
+    `delete_item_question`'s `stored` parameter to `recycles`; its text
+    already says "moved to the Recycle Bin".
+  - Tests: `recycles_on_delete` for each case (build the spaces with
+    `fixtures`; a lens item through `Command::SyncLens`). The existing
+    `deleting_an_item_says_where_its_file_goes` keeps passing.
+  - Done when: the gates pass. **[needs human]**: select a lens item and
+    press Delete: the file is in the Recycle Bin and the lens drops it.
+    On the settings window's Shortcuts page, the X on a lens item says
+    the file goes to the Recycle Bin, and it does.

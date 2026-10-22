@@ -640,27 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W3g. Deleting an item from a lens (app).**
-  - Why: D3 says removing a lens item recycles its file. The Delete key
-    already does that for any item (`delete_selected_items` recycles
-    every selected file). The X on the settings window's Shortcuts page
-    (`delete_space_item`) recycles only stored files and merely unlists
-    the rest. On a lens the next sync would bring the item back, so the
-    X seems to do nothing.
-  - `app/files.rs`: a pure `fn recycles_on_delete(space: &Space, store:
-    &ItemStore, path: &Path) -> bool`. It is true for a lens item and for
-    a stored file, and false for an item listed in place.
-  - `delete_space_item`: use `recycles_on_delete` where it uses
-    `stored` today (the question and the recycle step). Rename
-    `delete_item_question`'s `stored` parameter to `recycles`; its text
-    already says "moved to the Recycle Bin".
-  - Tests: `recycles_on_delete` for each case (build the spaces with
-    `fixtures`; a lens item through `Command::SyncLens`). The existing
-    `deleting_an_item_says_where_its_file_goes` keeps passing.
-  - Done when: the gates pass. **[needs human]**: select a lens item and
-    press Delete: the file is in the Recycle Bin and the lens drops it.
-    On the settings window's Shortcuts page, the X on a lens item says
-    the file goes to the Recycle Bin, and it does.
 - [ ] **W4. Deleting a lens never touches its folder (app).**
   - Why: deleting a normal space moves its stored files back to the
     desktop. For a lens, D3 says the folder and its files stay where they
@@ -1198,6 +1177,7 @@ each id is in `archive/TASKS-done.md`.
 | W3d (F-07) | Drag an item from a hand-made lens (section W) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
 | W3e (F-07) | In Explorer, copy a file and paste it on a hand-made lens (section W; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
 | W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
+| W3g (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |

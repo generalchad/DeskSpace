@@ -399,11 +399,15 @@ impl App {
         else {
             return;
         };
-        let stored = self.storage.contains(&path);
-        if !ui.confirm("Delete item", &delete_item_question(&label, stored)) {
+        let recycles = self
+            .config
+            .desktop
+            .space(space)
+            .is_some_and(|space| recycles_on_delete(space, &self.storage, &path));
+        if !ui.confirm("Delete item", &delete_item_question(&label, recycles)) {
             return;
         }
-        if stored && path.exists() {
+        if recycles && path.exists() {
             ui.delete_files(std::slice::from_ref(&path), false);
             if path.exists() {
                 tracing::warn!(path = %path.display(), "the item's file could not be deleted; it stays");
@@ -564,11 +568,18 @@ pub(super) fn stored_paths(space: &Space, storage: &ItemStore) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Whether deleting the item at `path` from `space` recycles its file: a lens
+/// item (its folder is the real thing, so the next sync would bring it back)
+/// and a stored file do; an item listed in place is only unlisted.
+fn recycles_on_delete(space: &Space, store: &ItemStore, path: &Path) -> bool {
+    space.is_lens() || store.contains(path)
+}
+
 /// The confirmation for deleting one item, saying what happens to its file:
-/// a stored file goes to the Recycle Bin, an item shown in place keeps its
-/// file where it is.
-fn delete_item_question(label: &str, stored: bool) -> String {
-    let consequence = if stored {
+/// a file that `recycles` goes to the Recycle Bin, an item shown in place
+/// keeps its file where it is.
+fn delete_item_question(label: &str, recycles: bool) -> String {
+    let consequence = if recycles {
         "It will be moved to the Recycle Bin."
     } else {
         "It will be removed from this space. The file itself stays where it is."
@@ -576,8 +587,6 @@ fn delete_item_question(label: &str, stored: bool) -> String {
     format!("Delete \u{201C}{label}\u{201D}?\n\n{consequence}")
 }
 
-/// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
-/// drop copies rather than links to.
 /// Writes one shortcut into `folder` under a clash-free name and returns its
 /// path: a copy of a dropped shortcut file, a new `.lnk` to a shell item, or
 /// the `.lnk` or `.url` a custom shortcut describes.
@@ -603,6 +612,8 @@ fn write_shortcut(folder: &Path, source: &ShortcutSource) -> anyhow::Result<Path
     }
 }
 
+/// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
+/// drop copies rather than links to.
 fn is_link_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -758,6 +769,23 @@ mod tests {
         let in_place = delete_item_question("Notes", false);
         assert!(in_place.contains("stays where it is"));
         assert!(!in_place.contains("Recycle Bin"));
+    }
+
+    #[test]
+    fn a_lens_item_and_a_stored_file_are_recycled_but_an_item_in_place_is_not() {
+        let root = std::env::temp_dir().join("deskspace-recycles-test-storage");
+        let store = ItemStore::new(&root);
+        let mut desktop = deskspace_core::Desktop::default();
+        let bounds = deskspace_core::Rect::new(0, 0, 300, 200);
+        let normal = crate::fixtures::create_space(&mut desktop, "S", bounds);
+        let lens = crate::fixtures::create_lens(&mut desktop, "L", bounds, "C:/elsewhere");
+        let stored = root.join("a.txt");
+        let in_place = Path::new("C:/elsewhere/b.txt");
+        let normal = desktop.space(normal).unwrap();
+        let lens = desktop.space(lens).unwrap();
+        assert!(recycles_on_delete(normal, &store, &stored));
+        assert!(!recycles_on_delete(normal, &store, in_place));
+        assert!(recycles_on_delete(lens, &store, in_place));
     }
 
     #[test]
