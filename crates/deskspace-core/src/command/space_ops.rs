@@ -12,6 +12,7 @@ use crate::layout::{
     GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
     resize_rect, resolve_collisions, snap_rect,
 };
+use crate::source::{LensTitle, SpaceSource};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 
 impl Desktop {
@@ -90,6 +91,9 @@ impl Desktop {
     pub(super) fn apply_rename_space(&mut self, id: SpaceId, title: String) -> CommandOutcome {
         self.with_space(id, |space| {
             space.title = title;
+            if let SpaceSource::Folder(view) = &mut space.source {
+                view.title = LensTitle::Custom;
+            }
             CommandOutcome::Applied
         })
     }

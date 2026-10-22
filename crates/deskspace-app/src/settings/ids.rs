@@ -110,6 +110,9 @@ pub mod field {
     pub const LENS_CHANGE: u32 = 110;
     pub const LENS_CONTENTS_HEADING: u32 = 111;
     pub const LENS_SHOW_HIDDEN: u32 = 112;
+    pub const LENS_TITLE_HEADING: u32 = 113;
+    pub const LENS_TITLE_MODE: u32 = 114;
+    pub const LENS_TITLE_TEXT: u32 = 115;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

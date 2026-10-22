@@ -13,6 +13,7 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceSnapshot {
     pub id: SpaceId,
+    pub title: String,
     pub custom: bool,
     pub look: Option<SpaceLook>,
     pub view: Option<FolderView>,
@@ -22,6 +23,7 @@ impl SpaceSnapshot {
     pub fn of(space: &Space) -> Self {
         Self {
             id: space.id,
+            title: space.title().to_owned(),
             custom: space.custom(),
             look: space.look().cloned(),
             view: space.folder_view().cloned(),
@@ -42,6 +44,16 @@ impl SpaceSnapshot {
         self.view
             .clone()
             .map(|view| Command::SetLensView { id: self.id, view })
+    }
+
+    /// The command that puts a lens's title mode and text back.
+    pub fn restore_title(&self) -> Option<Command> {
+        let view = self.view.as_ref()?;
+        Some(Command::SetLensTitle {
+            id: self.id,
+            title: view.title,
+            text: self.title.clone(),
+        })
     }
 }
 
@@ -337,6 +349,40 @@ mod tests {
     }
 
     #[test]
+    fn a_lens_snapshot_restores_its_title() {
+        let mut config = Config::new();
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(0, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let session = Session::new(&config);
+        let snapshot = session
+            .saved_spaces
+            .iter()
+            .find(|snapshot| snapshot.id == lens)
+            .unwrap()
+            .clone();
+        assert_eq!(snapshot.title, "Downloads");
+
+        apply(
+            &mut config.desktop,
+            Command::SetLensTitle {
+                id: lens,
+                title: LensTitle::Custom,
+                text: "Mine".into(),
+            },
+        );
+        assert_eq!(config.desktop.space(lens).unwrap().title(), "Mine");
+
+        apply(&mut config.desktop, snapshot.restore_title().unwrap());
+        let space = config.desktop.space(lens).unwrap();
+        assert_eq!(space.title(), "Downloads");
+        assert_eq!(space.folder_view().unwrap().title, LensTitle::FolderName);
+    }
+
+    #[test]
     fn a_menu_folder_change_is_kept_in_the_snapshot() {
         let mut config = Config::new();
         let lens = create_lens(
@@ -358,6 +404,7 @@ mod tests {
             Command::SetLensFolder {
                 id: lens,
                 path: "C:/Temp/lens-new".into(),
+                title: "Downloads".into(),
             },
         );
         session.resnapshot(config.desktop.space(lens).unwrap());

@@ -1,11 +1,12 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
-    Way, ZoomAction, cursor_pos, desktop_display_since,
+    Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -427,6 +428,9 @@ impl Autosave {
 
 pub struct App {
     config: Config,
+    /// The user's profile folder, read once at startup; empty if it could not
+    /// be resolved.
+    profile: PathBuf,
     pub(crate) store: ConfigStore,
     pub(crate) storage: ItemStore,
     icons: IconCache,
@@ -465,8 +469,13 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config, store: ConfigStore, hidden: bool, open_settings: bool) -> Self {
+        let profile = profile_directory().unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not resolve the user's profile folder");
+            PathBuf::new()
+        });
         Self {
             config,
+            profile,
             storage: ItemStore::new(store.storage_dir()),
             store,
             icons: IconCache::new(),

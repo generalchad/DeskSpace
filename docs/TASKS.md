@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W11 is the next small task; W16 is the
+- section W phase 4, in order (W12 is next; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -563,7 +563,7 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   `MoveItem` into a lens return `Rejected`.
 
 Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W11-W23,
+lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W12-W23,
 ROADMAP D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
 before anything else in this section.
 
@@ -648,8 +648,8 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10 are done (2026-10-21) and archived; the earlier tasks'
-on-screen checks are in section V. The open work is phase 4 (W9, W11-W23)
+W1-W8, W10, and W11 are done (2026-10-21) and archived; the earlier tasks'
+on-screen checks are in section V. The open work is phase 4 (W9, W12-W23)
 and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
@@ -676,7 +676,7 @@ and phase 5 (W24-W43).
 | Level | Tasks | Open now |
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W11, W12 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W12 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | after W12 |
 
@@ -737,46 +737,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W11. A lens's title follows its folder (core, platform, app).**
-  - `source.rs`: `enum LensTitle { FolderName, ProfilePath, FullPath,
-    Custom }` (`snake_case`), and `FolderView.title: LensTitle`. The
-    serde default is `Custom`, so a lens saved before this task keeps
-    its title (D15). New lenses start at `FolderName`.
-  - A pure `lens_title(view: &FolderView, current: &str, profile: &Path)
-    -> String` in `source.rs`:
-    - `FolderName`: the last part of the path, or the whole path for a
-      drive root (`D:\`) or a share root (`\\server\share`);
-    - `ProfilePath`: the path below `profile`, or the profile folder's
-      own name for the profile itself, or the full path when the folder
-      is outside it. Compare without case, and treat `/` and `\` alike
-      (commit 60c0528 fixed the same trap for icons);
-    - `FullPath`: the path with `\` separators;
-    - `Custom`: `current`, unchanged.
-
-    It replaces `lens_title` in `app/menus.rs`; delete that one.
-  - `Space.title` stays the text every reader shows (the title bar, the
-    scopes pane, the delete question), so no reader changes. The app
-    computes the text and the commands carry it:
-    - `SetLensFolder` gains `title: String`;
-    - a new `SetLensTitle { id, title: LensTitle, text: String }`
-      (the Command recipe);
-    - `RenameSpace` on a lens sets its `title` to `Custom`, in core.
-  - Platform: `profile_directory()` beside `desktop_directory`
-    (`SHGetKnownFolderPath(FOLDERID_Profile)`). The app reads it once at
-    startup.
-  - Lens page (W10): a "Title" heading, a "Show as" choice (Folder name,
-    Path from your user folder, Full path, Custom), and a "Custom title"
-    text field, enabled only for Custom. Copy how the New spaces page's
-    default title field edits.
-  - Tests in core: each mode; a drive root; a share root; a profile
-    prefix in another case and with forward slashes; a folder outside the
-    profile; the profile itself; `RenameSpace` makes a lens custom; a
-    lens with no `title` key loads as `Custom`.
-  - **[needs human]** check: on a lens in the profile, each "Show as"
-    entry retitles it at once, and Cancel puts it back. Change folder…
-    retitles it under Folder name and keeps a custom title. F2 on the
-    title, then the Lens page shows Custom.
 
 - [ ] **W12. Views, part 1: the icon sizes (core, app).** **[needs
   human]**
@@ -1995,6 +1955,7 @@ each id is in `archive/TASKS-done.md`.
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | W8 (D15) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
+| W11 (D15) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
 
 ## Found while working
 

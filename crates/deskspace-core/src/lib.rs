@@ -20,6 +20,6 @@ pub use geometry::{Point, Rect, Size};
 pub use id::{ItemId, SpaceId};
 pub use item::{Item, ItemFacts, ItemKind, SortKey};
 pub use layout::GridSpec;
-pub use source::{FolderEntry, FolderView, SpaceSource};
+pub use source::{FolderEntry, FolderView, LensTitle, SpaceSource, lens_title};
 pub use space::{ResizeEdges, Space, SpaceLook};
 pub use theme::{Backdrop, BorderSource, Color, LabelShadow, Palette, Preset, Theme, ThemeMode};

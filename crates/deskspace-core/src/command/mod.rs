@@ -19,7 +19,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
-use crate::source::{FolderEntry, FolderView};
+use crate::source::{FolderEntry, FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 
 pub use crate::item::SortKey;
@@ -44,11 +44,18 @@ pub enum Command {
         path: PathBuf,
         locked: bool,
     },
-    /// Rebinds a lens to `path` and clears its listed items until the next
-    /// `SyncLens`.
+    /// Rebinds a lens to `path`, sets its title text, and clears its listed
+    /// items until the next `SyncLens`.
     SetLensFolder {
         id: SpaceId,
         path: PathBuf,
+        title: String,
+    },
+    /// Sets how a lens's title follows its folder and the text to show now.
+    SetLensTitle {
+        id: SpaceId,
+        title: LensTitle,
+        text: String,
     },
     /// Replaces a lens's view settings. The items are left as they are; the
     /// app syncs the folder again to apply a changed filter or order.
@@ -254,7 +261,10 @@ impl Desktop {
                 path,
                 locked,
             } => self.apply_create_lens(title, at, size, path, locked, bounds),
-            Command::SetLensFolder { id, path } => self.apply_set_lens_folder(id, path),
+            Command::SetLensFolder { id, path, title } => {
+                self.apply_set_lens_folder(id, path, title)
+            }
+            Command::SetLensTitle { id, title, text } => self.apply_set_lens_title(id, title, text),
             Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
             Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
             Command::DeleteSpace { id } => self.apply_delete_space(id),

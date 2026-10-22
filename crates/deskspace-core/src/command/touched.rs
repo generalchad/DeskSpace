@@ -60,6 +60,7 @@ impl Desktop {
             | Command::ToggleLock { id }
             | Command::ToggleFold { id }
             | Command::SetLensFolder { id, .. }
+            | Command::SetLensTitle { id, .. }
             | Command::SetLensView { id, .. }
             | Command::SyncLens { id, .. }
             | Command::AutoArrange { id } => Touched::spaces([*id]),

@@ -166,6 +166,19 @@ impl App {
         }
     }
 
+    /// Takes a committed edit made outside the window (a menu command or an
+    /// inline rename) into an open settings window's Cancel snapshot, so
+    /// Cancel does not undo it, and shows it.
+    pub(super) fn resnapshot_settings(&mut self, ui: &mut Ui, id: SpaceId) {
+        if let (Some(session), Some(space)) = (
+            self.settings_ui.session_mut(),
+            self.config.desktop.space(id),
+        ) {
+            session.resnapshot(space);
+            self.refresh_settings(ui);
+        }
+    }
+
     pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
         if let Some(form) = self.settings_form() {
             ui.update_settings(&form);
@@ -331,7 +344,14 @@ impl App {
         let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
-        let edit = settings::space_edit(&self.config, session, field, value, self.system.dark());
+        let edit = settings::space_edit(
+            &self.config,
+            session,
+            field,
+            value,
+            self.system.dark(),
+            &self.profile,
+        );
         // Not `commit`: the edit is previewed now and saved by Apply.
         if let Some((id, command, effect)) = edit
             && self.dispatch(command, self.space_center(id)).is_applied()
@@ -476,7 +496,10 @@ impl App {
             let view_restored = snapshot
                 .restore_view()
                 .is_some_and(|command| self.dispatch(command, at).is_applied());
-            if look_restored || view_restored {
+            let title_restored = snapshot
+                .restore_title()
+                .is_some_and(|command| self.dispatch(command, at).is_applied());
+            if look_restored || view_restored || title_restored {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);
             }

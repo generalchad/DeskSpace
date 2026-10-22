@@ -12,12 +12,12 @@ use windows::Win32::Storage::FileSystem::{
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
-    FOLDERID_Desktop, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT, SHCNE_CREATE,
-    SHCNE_DELETE, SHCNF_FLUSHNOWAIT, SHCNF_PATHW, SHChangeNotify, SHCreateItemFromParsingName,
-    SHCreateItemWithParent, SHGetKnownFolderPath, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
-    SVGIO_ALLVIEW,
+    FOLDERID_Desktop, FOLDERID_Profile, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT,
+    SHCNE_CREATE, SHCNE_DELETE, SHCNF_FLUSHNOWAIT, SHCNF_PATHW, SHChangeNotify,
+    SHCreateItemFromParsingName, SHCreateItemWithParent, SHGetKnownFolderPath, SIGDN_FILESYSPATH,
+    SIGDN_NORMALDISPLAY, SVGIO_ALLVIEW,
 };
-use windows::core::{Interface, PCWSTR};
+use windows::core::{GUID, Interface, PCWSTR};
 
 use crate::error::PlatformError;
 use crate::win32::display_settings::{ShellDisplay, desktop_display};
@@ -209,13 +209,22 @@ fn fallback_label(path: &Path) -> String {
 
 /// The current user's Desktop folder.
 pub fn desktop_directory() -> Result<PathBuf, PlatformError> {
+    known_folder(&FOLDERID_Desktop, "desktop path")
+}
+
+/// The current user's profile folder (`C:\Users\me`).
+pub fn profile_directory() -> Result<PathBuf, PlatformError> {
+    known_folder(&FOLDERID_Profile, "profile path")
+}
+
+fn known_folder(id: &GUID, name: &'static str) -> Result<PathBuf, PlatformError> {
     // SAFETY: the returned string is copied before it is freed with the
     // allocator the shell documents for it (CoTaskMemFree).
     unsafe {
-        let raw = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)?;
+        let raw = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None)?;
         let result = raw.to_string().map(PathBuf::from);
         CoTaskMemFree(Some(raw.0 as *const core::ffi::c_void));
-        result.map_err(|_| PlatformError::InvalidFormat("desktop path"))
+        result.map_err(|_| PlatformError::InvalidFormat(name))
     }
 }
 

@@ -3,7 +3,8 @@
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
+    corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -546,6 +547,8 @@ pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage 
         (Some(path), false) => format!("Folder not available\n{path}"),
         (None, _) => String::new(),
     };
+    let title = view.map_or(LensTitle::Custom, |view| view.title);
+    let custom_text = space.map_or("", |space| space.title());
     SettingsPage {
         title: "Lens".into(),
         fields: vec![
@@ -553,6 +556,15 @@ pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage 
             Field::note(field::LENS_PATH, folder),
             Field::button(field::LENS_OPEN, "", "Open folder"),
             Field::button(field::LENS_CHANGE, "", "Change folder\u{2026}"),
+            Field::heading(field::LENS_TITLE_HEADING, "Title"),
+            Field::choice(
+                field::LENS_TITLE_MODE,
+                "Show as",
+                &labels(&LENS_TITLES),
+                index_of(&LENS_TITLES, title),
+            ),
+            Field::text(field::LENS_TITLE_TEXT, "Custom title", custom_text)
+                .enabled(title == LensTitle::Custom),
             Field::heading(field::LENS_CONTENTS_HEADING, "Contents"),
             Field::toggle(
                 field::LENS_SHOW_HIDDEN,

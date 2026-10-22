@@ -10,7 +10,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::SpaceId;
 use crate::item::Item;
 use crate::layout::{GridSpec, arrange_space, clamp_to_bounds};
-use crate::source::{FolderEntry, FolderView, SpaceSource};
+use crate::source::{FolderEntry, FolderView, LensTitle, SpaceSource};
 
 impl Desktop {
     pub(super) fn apply_create_lens(
@@ -27,6 +27,7 @@ impl Desktop {
         if let Some(space) = self.space_mut(id) {
             space.source = SpaceSource::Folder(FolderView {
                 path,
+                title: LensTitle::FolderName,
                 ..FolderView::default()
             });
             space.locked = locked;
@@ -34,13 +35,35 @@ impl Desktop {
         CommandOutcome::Applied
     }
 
-    pub(super) fn apply_set_lens_folder(&mut self, id: SpaceId, path: PathBuf) -> CommandOutcome {
+    pub(super) fn apply_set_lens_folder(
+        &mut self,
+        id: SpaceId,
+        path: PathBuf,
+        title: String,
+    ) -> CommandOutcome {
         self.with_space(id, |space| {
             let SpaceSource::Folder(view) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
             view.path = path;
+            space.title = title;
             space.items.clear();
+            CommandOutcome::Applied
+        })
+    }
+
+    pub(super) fn apply_set_lens_title(
+        &mut self,
+        id: SpaceId,
+        title: LensTitle,
+        text: String,
+    ) -> CommandOutcome {
+        self.with_space(id, |space| {
+            let SpaceSource::Folder(view) = &mut space.source else {
+                return CommandOutcome::Rejected;
+            };
+            view.title = title;
+            space.title = text;
             CommandOutcome::Applied
         })
     }
@@ -173,6 +196,11 @@ mod tests {
         assert_eq!(
             space.folder_view().unwrap().path,
             PathBuf::from("C:/Users/me/Documents")
+        );
+        assert_eq!(
+            space.folder_view().unwrap().title,
+            LensTitle::FolderName,
+            "a new lens follows its folder's name"
         );
         assert!(space.items().is_empty());
     }
@@ -370,6 +398,7 @@ mod tests {
                 Command::SetLensFolder {
                     id,
                     path: "C:/other".into(),
+                    title: "Other".into(),
                 },
                 bounds()
             ),
@@ -377,7 +406,63 @@ mod tests {
         );
         let space = desktop.space(id).unwrap();
         assert_eq!(space.folder_view().unwrap().path, PathBuf::from("C:/other"));
+        assert_eq!(space.title(), "Other");
         assert!(space.items().is_empty());
+    }
+
+    #[test]
+    fn setting_a_lens_title_stores_its_mode_and_text() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        assert_eq!(
+            desktop.apply(
+                Command::SetLensTitle {
+                    id,
+                    title: LensTitle::ProfilePath,
+                    text: "Documents".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.folder_view().unwrap().title, LensTitle::ProfilePath);
+        assert_eq!(space.title(), "Documents");
+    }
+
+    #[test]
+    fn renaming_a_lens_makes_its_title_custom() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        assert_eq!(
+            desktop.apply(
+                Command::RenameSpace {
+                    id,
+                    title: "Mine".into()
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.title(), "Mine");
+        assert_eq!(space.folder_view().unwrap().title, LensTitle::Custom);
+    }
+
+    #[test]
+    fn setting_a_lens_title_on_a_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(
+                Command::SetLensTitle {
+                    id: SpaceId(9),
+                    title: LensTitle::Custom,
+                    text: "x".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
     }
 
     #[test]
@@ -423,6 +508,18 @@ mod tests {
                 Command::SetLensFolder {
                     id,
                     path: "C:/folder".into(),
+                    title: "Folder".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::SetLensTitle {
+                    id,
+                    title: LensTitle::Custom,
+                    text: "x".into(),
                 },
                 bounds()
             ),

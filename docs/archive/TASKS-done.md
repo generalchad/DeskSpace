@@ -3459,4 +3459,43 @@ until I5-I6 all land, so no partial build hides the desktop.
     buttons.
   - Done when: also `CONTEXT.md` section 6 (Native UI, "The app's form")
     names the page.
+- [x] **W11. A lens's title follows its folder (core, platform, app).**
+  - `source.rs`: `enum LensTitle { FolderName, ProfilePath, FullPath,
+    Custom }` (`snake_case`), and `FolderView.title: LensTitle`. The
+    serde default is `Custom`, so a lens saved before this task keeps
+    its title (D15). New lenses start at `FolderName`.
+  - A pure `lens_title(view: &FolderView, current: &str, profile: &Path)
+    -> String` in `source.rs`:
+    - `FolderName`: the last part of the path, or the whole path for a
+      drive root (`D:\`) or a share root (`\\server\share`);
+    - `ProfilePath`: the path below `profile`, or the profile folder's
+      own name for the profile itself, or the full path when the folder
+      is outside it. Compare without case, and treat `/` and `\` alike
+      (commit 60c0528 fixed the same trap for icons);
+    - `FullPath`: the path with `\` separators;
+    - `Custom`: `current`, unchanged.
+
+    It replaces `lens_title` in `app/menus.rs`; delete that one.
+  - `Space.title` stays the text every reader shows (the title bar, the
+    scopes pane, the delete question), so no reader changes. The app
+    computes the text and the commands carry it:
+    - `SetLensFolder` gains `title: String`;
+    - a new `SetLensTitle { id, title: LensTitle, text: String }`
+      (the Command recipe);
+    - `RenameSpace` on a lens sets its `title` to `Custom`, in core.
+  - Platform: `profile_directory()` beside `desktop_directory`
+    (`SHGetKnownFolderPath(FOLDERID_Profile)`). The app reads it once at
+    startup.
+  - Lens page (W10): a "Title" heading, a "Show as" choice (Folder name,
+    Path from your user folder, Full path, Custom), and a "Custom title"
+    text field, enabled only for Custom. Copy how the New spaces page's
+    default title field edits.
+  - Tests in core: each mode; a drive root; a share root; a profile
+    prefix in another case and with forward slashes; a folder outside the
+    profile; the profile itself; `RenameSpace` makes a lens custom; a
+    lens with no `title` key loads as `Custom`.
+  - **[needs human]** check: on a lens in the profile, each "Show as"
+    entry retitles it at once, and Cancel puts it back. Change folder…
+    retitles it under Folder name and keeps a custom title. F2 on the
+    title, then the Lens page shows Custom.
 

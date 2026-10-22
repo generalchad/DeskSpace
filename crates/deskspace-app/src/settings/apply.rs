@@ -5,10 +5,12 @@ use super::ids::field;
 use super::session::Session;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, is_hotkey_field,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
+    is_hotkey_field,
 };
 use super::*;
 use super::{Effect, scope_space};
+use deskspace_core::source::{LensTitle, lens_title};
 
 /// Applies a look-page edit to `look`. `None` when `id` is not a look field.
 fn apply_look_field(
@@ -309,22 +311,50 @@ fn lens_edit(
     session: &mut Session,
     id: u32,
     value: &FieldValue,
-) -> Option<(SpaceId, Command)> {
-    if id != field::LENS_SHOW_HIDDEN {
-        return None;
-    }
+    profile: &Path,
+) -> Option<(SpaceId, Command, Effect)> {
     let space = scope_space(config, session).filter(|space| space.is_lens())?;
-    let FieldValue::Toggle(on) = value else {
-        return None;
+    let (command, effect) = match (id, value) {
+        (field::LENS_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
+            let mut view = space.folder_view()?.clone();
+            view.show_hidden = *on;
+            (Command::SetLensView { id: space.id, view }, Effect::Lens)
+        }
+        (field::LENS_TITLE_MODE, FieldValue::Choice(index)) => {
+            let (title, _) = LENS_TITLES.get(*index)?;
+            let mut next = space.folder_view()?.clone();
+            next.title = *title;
+            let text = lens_title(&next, space.title(), profile);
+            (
+                Command::SetLensTitle {
+                    id: space.id,
+                    title: *title,
+                    text,
+                },
+                Effect::None,
+            )
+        }
+        (field::LENS_TITLE_TEXT, FieldValue::Text(text)) => {
+            if space.folder_view()?.title != LensTitle::Custom {
+                return None;
+            }
+            (
+                Command::SetLensTitle {
+                    id: space.id,
+                    title: LensTitle::Custom,
+                    text: text.clone(),
+                },
+                Effect::None,
+            )
+        }
+        _ => return None,
     };
-    let mut view = space.folder_view()?.clone();
-    view.show_hidden = *on;
     session.dirty = true;
-    Some((space.id, Command::SetLensView { id: space.id, view }))
+    Some((space.id, command, effect))
 }
 
 /// The command for an edit on a space's page: a look field on a customized
-/// space, or a lens page's hidden-files toggle. `None` when the selected
+/// space, or a lens page's view or title field. `None` when the selected
 /// scope does not fit the field.
 pub fn space_edit(
     config: &Config,
@@ -332,9 +362,10 @@ pub fn space_edit(
     id: u32,
     value: FieldValue,
     system_dark: bool,
+    profile: &Path,
 ) -> Option<(SpaceId, Command, Effect)> {
-    if let Some((id, command)) = lens_edit(config, session, id, &value) {
-        return Some((id, command, Effect::Lens));
+    if let Some(edit) = lens_edit(config, session, id, &value, profile) {
+        return Some(edit);
     }
     let space = scope_space(config, session).filter(|space| space.custom())?;
     let mut look = space
@@ -912,6 +943,7 @@ mod tests {
                 field::ICON_SIZE,
                 FieldValue::Slider(150),
                 true,
+                Path::new("C:/Users/me"),
             )
         };
         assert!(edit(&config, &mut session).is_none(), "follows Global");
@@ -943,7 +975,8 @@ mod tests {
                 &mut session,
                 field::HOTKEY,
                 FieldValue::Text("x".into()),
-                true
+                true,
+                Path::new(""),
             )
             .is_none(),
             "General is Global only"
@@ -961,6 +994,7 @@ mod tests {
             field::LENS_SHOW_HIDDEN,
             FieldValue::Toggle(true),
             true,
+            Path::new(""),
         )
         .expect("the lens toggle has a command");
         assert_eq!(id, lens);
@@ -996,10 +1030,103 @@ mod tests {
                 field::LENS_SHOW_HIDDEN,
                 FieldValue::Toggle(true),
                 true,
+                Path::new(""),
             )
             .is_none(),
             "a normal space has no Lens page"
         );
+    }
+
+    #[test]
+    fn the_lens_title_choices_become_set_lens_title() {
+        let (mut config, lens) = config_with_lens("Downloads");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let profile = Path::new(r"C:\Users\me");
+        assert!(
+            space_edit(
+                &config,
+                &mut session,
+                field::LENS_TITLE_TEXT,
+                FieldValue::Text("x".into()),
+                true,
+                profile,
+            )
+            .is_none(),
+            "the custom title is only editable in Custom mode"
+        );
+
+        apply(
+            &mut config.desktop,
+            Command::SetLensFolder {
+                id: lens,
+                path: r"C:\Users\me\Documents\Work".into(),
+                title: "Work".into(),
+            },
+        );
+        let (id, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_TITLE_MODE,
+            FieldValue::Choice(1),
+            true,
+            profile,
+        )
+        .unwrap();
+        assert_eq!(id, lens);
+        assert_eq!(effect, Effect::None);
+        let Command::SetLensTitle { title, text, .. } = command else {
+            panic!("expected SetLensTitle, got {command:?}");
+        };
+        assert_eq!(title, LensTitle::ProfilePath);
+        assert_eq!(text, r"Documents\Work");
+        apply(
+            &mut config.desktop,
+            Command::SetLensTitle { id, title, text },
+        );
+
+        let (id, command, _) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_TITLE_MODE,
+            FieldValue::Choice(3),
+            true,
+            profile,
+        )
+        .unwrap();
+        let Command::SetLensTitle { title, text, .. } = command else {
+            panic!("expected SetLensTitle, got {command:?}");
+        };
+        assert_eq!(title, LensTitle::Custom);
+        assert_eq!(
+            text, r"Documents\Work",
+            "Custom starts from the current text"
+        );
+        apply(
+            &mut config.desktop,
+            Command::SetLensTitle { id, title, text },
+        );
+
+        let (id, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_TITLE_TEXT,
+            FieldValue::Text("Mine".into()),
+            true,
+            profile,
+        )
+        .unwrap();
+        assert_eq!(effect, Effect::None);
+        let Command::SetLensTitle { title, text, .. } = command else {
+            panic!("expected SetLensTitle, got {command:?}");
+        };
+        assert_eq!(title, LensTitle::Custom);
+        assert_eq!(text, "Mine");
+        apply(
+            &mut config.desktop,
+            Command::SetLensTitle { id, title, text },
+        );
+        assert_eq!(config.desktop.space(lens).unwrap().title(), "Mine");
     }
 
     #[test]

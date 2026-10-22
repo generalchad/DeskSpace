@@ -36,8 +36,8 @@ use deskspace_core::theme::{
     OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId,
-    SpaceLook, Theme, ThemeMode,
+    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
+    Space, SpaceId, SpaceLook, Theme, ThemeMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
@@ -460,7 +460,8 @@ mod tests {
                     continue;
                 };
                 assert!(
-                    space_edit(&config, &mut session, field.id, value, true).is_some(),
+                    space_edit(&config, &mut session, field.id, value, true, Path::new(""))
+                        .is_some(),
                     "look field {} ({:?}) has no arm in `apply_look_field`",
                     field.id,
                     field.label
@@ -783,6 +784,11 @@ mod tests {
             &lens_form.field(field::LENS_SHOW_HIDDEN).unwrap().kind,
             FieldKind::Toggle { on: false }
         ));
+        assert!(matches!(
+            &lens_form.field(field::LENS_TITLE_MODE).unwrap().kind,
+            FieldKind::Choice { selected: 0, .. }
+        ));
+        assert!(!lens_form.field(field::LENS_TITLE_TEXT).unwrap().enabled);
 
         session.select_scope(Some(space), ScopeKind::Space);
         let space_form = form(&config, &session);

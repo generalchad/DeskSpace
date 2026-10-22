@@ -37,6 +37,7 @@ pub use win32::desktop_icons::{
 };
 pub use win32::desktop_items::{
     DesktopEntry, desktop_directory, enumerate_desktop_items, item_facts, notify_moved,
+    profile_directory,
 };
 pub use win32::display_settings::{
     CheckBoxMode, DESKTOP_ICON_RANGE, DESKTOP_ICON_STEP, ShellDisplay, desktop_display,

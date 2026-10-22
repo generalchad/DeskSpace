@@ -1,6 +1,6 @@
 //! Where a space's items come from: the space itself, or a folder it mirrors.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,22 @@ impl SpaceSource {
     }
 }
 
+/// How a lens derives its `Space.title` from its folder (ROADMAP D15). The
+/// default is `Custom`, so a lens saved before this setting keeps its title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LensTitle {
+    /// The folder's last part; a drive or share root keeps its whole path.
+    FolderName,
+    /// The path below the user's profile folder, or the profile's own name.
+    ProfilePath,
+    /// The folder's full path, with `\` separators.
+    FullPath,
+    /// The text the user typed.
+    #[default]
+    Custom,
+}
+
 /// A lens's bound folder and how its contents are shown. The view is saved
 /// with the space; the items it produces are not (M4 phase 1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +54,9 @@ impl SpaceSource {
 pub struct FolderView {
     /// The folder the lens mirrors.
     pub path: PathBuf,
+    /// How the space's title follows the folder.
+    #[serde(default)]
+    pub title: LensTitle,
     /// The item field the lens is ordered by.
     pub sort: SortKey,
     pub descending: bool,
@@ -55,6 +74,7 @@ impl Default for FolderView {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
+            title: LensTitle::Custom,
             sort: SortKey::Name,
             descending: false,
             folders_first: false,
@@ -63,6 +83,51 @@ impl Default for FolderView {
             exclude: Vec::new(),
         }
     }
+}
+
+/// The title a lens shows for `view`, given its current title text and the
+/// user's profile folder.
+pub fn lens_title(view: &FolderView, current: &str, profile: &Path) -> String {
+    match view.title {
+        LensTitle::FolderName => folder_name(&view.path),
+        LensTitle::ProfilePath => profile_path(&view.path, profile),
+        LensTitle::FullPath => full_path(&view.path),
+        LensTitle::Custom => current.to_owned(),
+    }
+}
+
+/// The last part of `path`, or the whole path for a drive or share root.
+fn folder_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| full_path(path))
+}
+
+/// The path below `profile`, the profile's own name for the profile itself,
+/// or the whole path when `path` is outside it. Comparison is without case,
+/// and `/` and `\` are alike.
+fn profile_path(path: &Path, profile: &Path) -> String {
+    let full = full_path(path);
+    let profile_full = full_path(profile);
+    let path_parts: Vec<&str> = full.trim_end_matches('\\').split('\\').collect();
+    let profile_parts: Vec<&str> = profile_full.trim_end_matches('\\').split('\\').collect();
+    if path_parts.len() < profile_parts.len()
+        || !path_parts[..profile_parts.len()]
+            .iter()
+            .zip(&profile_parts)
+            .all(|(a, b)| a.to_lowercase() == b.to_lowercase())
+    {
+        return full;
+    }
+    if path_parts.len() == profile_parts.len() {
+        return folder_name(profile);
+    }
+    path_parts[profile_parts.len()..].join("\\")
+}
+
+/// `path` with `\` separators.
+fn full_path(path: &Path) -> String {
+    path.to_string_lossy().replace('/', "\\")
 }
 
 /// One entry the platform read from a lens's folder. Core does no IO, so the
@@ -148,5 +213,90 @@ mod tests {
             hidden: false,
         };
         assert_eq!(entry.into_item(ItemId(1)).label, "report");
+    }
+
+    fn view(path: &str, title: LensTitle) -> FolderView {
+        FolderView {
+            path: path.into(),
+            title,
+            ..FolderView::default()
+        }
+    }
+
+    #[test]
+    fn a_lens_title_follows_the_folder_name() {
+        let profile = Path::new("C:/Users/me");
+        assert_eq!(
+            lens_title(
+                &view("C:/Users/me/Downloads", LensTitle::FolderName),
+                "",
+                profile
+            ),
+            "Downloads"
+        );
+        assert_eq!(
+            lens_title(&view(r"D:\", LensTitle::FolderName), "", profile),
+            r"D:\"
+        );
+        assert_eq!(
+            lens_title(&view(r"\\server\share", LensTitle::FolderName), "", profile),
+            r"\\server\share"
+        );
+    }
+
+    #[test]
+    fn a_lens_title_can_follow_the_path_below_the_profile() {
+        let profile = Path::new(r"C:\Users\me");
+        assert_eq!(
+            lens_title(
+                &view(r"C:\Users\me\Documents\Work", LensTitle::ProfilePath),
+                "",
+                profile
+            ),
+            r"Documents\Work"
+        );
+        assert_eq!(
+            lens_title(&view(r"C:\Users\me", LensTitle::ProfilePath), "", profile),
+            "me"
+        );
+        assert_eq!(
+            lens_title(&view(r"D:\Stuff", LensTitle::ProfilePath), "", profile),
+            r"D:\Stuff"
+        );
+        assert_eq!(
+            lens_title(
+                &view("c:/users/ME/Documents/Work", LensTitle::ProfilePath),
+                "",
+                profile
+            ),
+            r"Documents\Work"
+        );
+    }
+
+    #[test]
+    fn a_lens_title_can_be_the_full_path_or_custom_text() {
+        let profile = Path::new("C:/Users/me");
+        assert_eq!(
+            lens_title(
+                &view("C:/Users/me/Documents", LensTitle::FullPath),
+                "",
+                profile
+            ),
+            r"C:\Users\me\Documents"
+        );
+        assert_eq!(
+            lens_title(
+                &view("C:/Users/me/Documents", LensTitle::Custom),
+                "Mine",
+                profile
+            ),
+            "Mine"
+        );
+    }
+
+    #[test]
+    fn a_lens_without_a_title_setting_loads_as_custom() {
+        let view: FolderView = toml::from_str("path = 'C:/Temp'\n").unwrap();
+        assert_eq!(view.title, LensTitle::Custom);
     }
 }

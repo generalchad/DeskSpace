@@ -159,7 +159,10 @@ folded; corners twice as wide as edges), item lookup/insert/remove, and
 `Space.source` (`source.rs`) says what fills the space. `SpaceSource::Items`
 is the default and holds the space's own items, as before. `SpaceSource::Folder`
 makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path and the
-view settings, and `FolderEntry` is what the platform reads from the folder.
+view settings, and says how the title follows the folder (`LensTitle`);
+`Space.title` is the text every reader shows, computed by the app when the
+folder or the title setting changes. `FolderEntry` is what the platform reads
+from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
 filters hidden entries, sorts naturally, and reconciles by path so an `ItemId`
@@ -265,12 +268,15 @@ ones a variant's doc cannot show.
   (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
   `Size`, or `Modified`.
 - `CreateLens { title, at, size, path, locked }` clamps like `CreateSpace` and
-  starts the lens with a default `FolderView`. `SetLensFolder { id, path }`
-  rebinds it and clears its items until the next sync; `SetLensView { id, view }`
-  replaces the view; `SyncLens { id, entries }` reconciles the listed items by
-  path, keeping ids, filtering hidden entries unless the view shows them, and
-  sorting names naturally (`file2` before `file10`, folders first when asked).
-  The include/exclude filters are stored for F-22 but not applied.
+  starts the lens with a default `FolderView` whose title mode is
+  `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets its title
+  text, and clears its items until the next sync; `SetLensTitle { id, title,
+  text }` sets how the title follows the folder (D15); `SetLensView { id,
+  view }` replaces the view; `SyncLens { id, entries }` reconciles the listed
+  items by path, keeping ids, filtering hidden entries unless the view shows
+  them, and sorting names naturally (`file2` before `file10`, folders first
+  when asked). The include/exclude filters are stored for F-22 but not
+  applied.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
@@ -938,13 +944,14 @@ in `ui.rs`. What spans them:
   its values (from Global until customized) greyed unless the header's
   "Customize this space" switch is on, and its always-enabled Shortcuts page.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
-  folder and Change folder…, and Show hidden files, which previews through
-  `SetLensView`. Global edits write `Config` directly; a space's edits become
-  `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors page's
-  reset becomes "Match global appearance". Cancel restores each space's
-  `SpaceSnapshot` (its look and a lens's view); a space menu edit made while
-  the window is open goes into that snapshot, because the menu commits at
-  once. These also commit at once, so Cancel does not undo them:
+  folder and Change folder…, its Title (Show as and a custom title, which
+  preview through `SetLensTitle`), and Show hidden files, which previews
+  through `SetLensView`. Global edits write `Config` directly; a space's edits
+  become `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors
+  page's reset becomes "Match global appearance". Cancel restores each space's
+  `SpaceSnapshot` (its look, a lens's view, and its title); a space menu edit
+  made while the window is open goes into that snapshot, because the menu
+  commits at once. These also commit at once, so Cancel does not undo them:
   - the Lens page's "Change folder…", which writes the new path into the
     snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation

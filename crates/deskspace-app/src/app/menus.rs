@@ -3,7 +3,7 @@
 use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
-use deskspace_core::source::FolderView;
+use deskspace_core::source::{FolderView, LensTitle, lens_title};
 use deskspace_core::{Command, ItemId, Palette, SortKey, Space, SpaceId, SpaceLook, Theme};
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
@@ -132,18 +132,6 @@ impl App {
         }
     }
 
-    /// Takes a committed menu edit into an open settings window's Cancel
-    /// snapshot, so Cancel does not undo it, and shows it.
-    fn resnapshot_settings(&mut self, ui: &mut Ui, id: SpaceId) {
-        if let (Some(session), Some(space)) = (
-            self.settings_ui.session_mut(),
-            self.config.desktop.space(id),
-        ) {
-            session.resnapshot(space);
-            self.refresh_settings(ui);
-        }
-    }
-
     /// Shows a space's changed look, saves it, and keeps an open settings
     /// window in step: the change is taken into its Cancel snapshot (a menu
     /// edit commits at once, so Cancel must not undo it) and shown.
@@ -178,15 +166,16 @@ impl App {
     /// DeskSpace keeps its own files in is refused with a message, as W3a's
     /// guard refuses it at startup.
     pub(super) fn change_lens_folder(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
-        let Some(title) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| space.title().to_owned())
-        else {
+        let Some((view, current)) = self.config.desktop.space(id).and_then(|space| {
+            space
+                .folder_view()
+                .cloned()
+                .map(|view| (view, space.title().to_owned()))
+        }) else {
             return;
         };
-        let Some(folder) = ui.pick_folder(&format!("Choose a folder for \u{201C}{title}\u{201D}"))
+        let Some(folder) =
+            ui.pick_folder(&format!("Choose a folder for \u{201C}{current}\u{201D}"))
         else {
             return;
         };
@@ -194,8 +183,19 @@ impl App {
             ui.alert("Change folder", &self.storage_refusal());
             return;
         }
+        let mut next = view;
+        next.path = folder.clone();
+        let title = lens_title(&next, &current, &self.profile);
         if self
-            .commit(ui, Command::SetLensFolder { id, path: folder }, at)
+            .commit(
+                ui,
+                Command::SetLensFolder {
+                    id,
+                    path: folder,
+                    title,
+                },
+                at,
+            )
             .is_applied()
         {
             self.unavailable_lenses.remove(&id);
@@ -519,8 +519,14 @@ impl App {
             return None;
         }
         let (origin, size) = self.new_space_spot(at);
+        let view = FolderView {
+            path: folder.clone(),
+            title: LensTitle::FolderName,
+            ..FolderView::default()
+        };
+        let title = lens_title(&view, "", &self.profile);
         let command = Command::CreateLens {
-            title: lens_title(&folder),
+            title,
             at: origin,
             size,
             path: folder,
@@ -718,15 +724,6 @@ fn new_entries() -> [MenuEntry; 2] {
     ]
 }
 
-/// A new lens's title: the folder's name, or the whole path for a drive root
-/// such as `D:\`, which has none.
-fn lens_title(folder: &std::path::Path) -> String {
-    folder.file_name().map_or_else(
-        || folder.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
 /// A lens's own entries in its space menu.
 fn lens_folder_entries() -> [MenuEntry; 2] {
     [
@@ -862,14 +859,6 @@ mod tests {
             .map(|(id, _)| id)
             .collect();
         assert_eq!(ids, [Some(MenuId::NewSpace), Some(MenuId::NewLens)]);
-    }
-
-    #[test]
-    fn a_lens_is_titled_with_its_folder_name() {
-        use std::path::Path;
-        assert_eq!(lens_title(Path::new("C:/Users/me/Downloads")), "Downloads");
-        assert_eq!(lens_title(Path::new(r"C:\Users\me\OpenTTD")), "OpenTTD");
-        assert_eq!(lens_title(Path::new(r"D:\")), r"D:\");
     }
 
     #[test]

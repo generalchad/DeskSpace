@@ -22,6 +22,14 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// How a lens's title follows its folder, in dropdown order (D15).
+pub(super) const LENS_TITLES: [(LensTitle, &str); 4] = [
+    (LensTitle::FolderName, "Folder name"),
+    (LensTitle::ProfilePath, "Path from your user folder"),
+    (LensTitle::FullPath, "Full path"),
+    (LensTitle::Custom, "Custom"),
+];
+
 /// Where the border's color comes from, in dropdown order.
 pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
     (
