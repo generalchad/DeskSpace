@@ -3201,3 +3201,49 @@ until I5-I6 all land, so no partial build hides the desktop.
     here": the original stays. "Add files…" on a lens moves the files
     into its folder. Regression: a clashing drop on a normal space still
     gets " (2)" and no dialog.
+- [x] **W3c. Shift and the right-drop menu on a lens (platform, app).**
+  - Why: on a normal space, Shift means "show here without moving". A
+    lens shows only its folder, so it cannot show a file kept elsewhere.
+    The drop must be refused, with the "no" cursor, before the user lets
+    go. Also, a source that offers only `COPY` should copy into a lens;
+    today `drop_plan` turns `COPY` into keep-in-place.
+  - The drop target lives in the platform and does not know which spaces
+    are lenses. The app tells it through the scene, as it tells it
+    everything else (`ENGINEERING.md` section 3, "Rendering and UI are
+    data-driven"). Follow "Recipe: a new visual in a space", steps 1-2:
+    1. `render/scene.rs`: `pub enum DropInto { Space, Folder }`, deriving
+       `Default` with `Space` as the default, and a `///` doc for each.
+       Add a `SpaceScene::drop_into: DropInto` field and export the enum
+       beside `SpaceScene`.
+    2. `deskspace-app/src/scene.rs`, `space_scene`: `DropInto::Folder`
+       when the space is a lens. Test it: a lens's scene says `Folder`, a
+       normal space and the desktop layer say `Space`.
+  - Platform, `win32/space_window.rs`: `pub(crate) fn drop_into(window:
+    HWND) -> DropInto`, which reads the stored scene. Copy
+    `space_animation::is_leaving`, which reads window state the same way.
+    `PreparedScene` keeps its `SpaceScene` in a private field; add a
+    `pub(crate) fn scene(&self) -> &SpaceScene` accessor if none exists.
+    A window with no scene yet answers `DropInto::Space`.
+  - Platform, `win32/drop_target.rs`. All of these are pure, with tests
+    at the bottom of the file:
+    - `drop_plan(kind, keys, allowed, into: DropInto)`. For `Folder`
+      and `DragKind::Files`: with Shift held, `(DropPlan::None,
+      DROPEFFECT_NONE)`; otherwise `MOVE` when allowed, else `COPY`
+      gives `DropPlan::Files(DropAction::Copy)`, not `KeepInPlace`. For
+      `Space`, nothing changes. Shell items and Alt-links are the same
+      for both (W3f handles them).
+    - `drag_effect` takes `into` and passes it on.
+    - `right_drop_entries(allowed, into)`: "Show here without moving" is
+      greyed for `Folder`, as "Create shortcuts here" is greyed by
+      `allowed`.
+    - The `IDropTarget` methods read `drop_into(self.window)` and pass it
+      on. Read it once per call, not in a loop.
+    - Tests: copy the existing `drop_plan` and `drag_effect` tests and
+      add the `Folder` cases (Shift refuses; `COPY` only gives `Copy`;
+      a plain drop moves). Add a `right_drop_entries` case: for `Folder`,
+      `DROP_KEEP` is disabled. Every existing test passes `DropInto::Space`
+      and keeps its expectation.
+  - Done when: the gates pass. **[needs human]**: Shift-drag a file from
+    Explorer onto a lens: the cursor shows "no" and nothing moves. Right
+    drag onto a lens: "Show here without moving" is grey. On a normal
+    space, Shift and the right-drop menu behave as before.

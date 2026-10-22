@@ -4,7 +4,9 @@ use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
     Space, Theme,
 };
-use deskspace_platform::{IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle};
+use deskspace_platform::{
+    DropInto, IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
+};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -174,6 +176,11 @@ pub fn space_scene(
         locked: space.locked(),
         folded: space.folded(),
         highlight: view.highlight,
+        drop_into: if space.is_lens() {
+            DropInto::Folder
+        } else {
+            DropInto::Space
+        },
         focused_item: view.focused.map(|id| id.0),
         editing: None,
         editing_item: None,
@@ -269,6 +276,7 @@ pub fn desktop_layer_scene(
         locked: false,
         folded: false,
         highlight: false,
+        drop_into: DropInto::Space,
         focused_item: view.focused.map(|id| id.0),
         editing: None,
         editing_item: None,
@@ -681,6 +689,33 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn a_lens_drops_into_its_folder_and_everything_else_into_a_space() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let drop_into = |space: &Space| {
+            space_scene(space, look, ViewState::default(), &mut IconCache::new()).drop_into
+        };
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        assert_eq!(drop_into(desktop.space(lens).unwrap()), DropInto::Folder);
+        assert_eq!(drop_into(&space()), DropInto::Space);
+        let layer = desktop_layer_scene(
+            &DesktopLayer::default(),
+            Point::new(0, 0),
+            look,
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert_eq!(layer.drop_into, DropInto::Space);
     }
 
     #[test]

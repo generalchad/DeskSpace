@@ -657,6 +657,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   source refuses `LINK`), and `right_drop_effect` reports what each entry
   means to the source. A drag carrying neither files nor shell items reports
   `DROPEFFECT_NONE`.
+- What a drop lands in comes from the scene (`SpaceScene::drop_into`, read
+  by `space_window::drop_into`): `DropInto::Folder` for a lens. Over a lens a
+  file drop with Shift is refused, a `COPY`-only source becomes `Copy`, and
+  the right-drop menu greys "Show here without moving", because a folder
+  cannot list a file kept elsewhere.
 - As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
   Alt is held and the source allows a link, or when the source offers neither
   `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is an

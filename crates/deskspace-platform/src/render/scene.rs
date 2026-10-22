@@ -33,6 +33,17 @@ impl SpaceStyle {
     }
 }
 
+/// What a drop on a window lands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DropInto {
+    /// A space's own list of items, which can list a file where it is.
+    #[default]
+    Space,
+    /// A real folder (a lens), which only holds the files moved or copied
+    /// into it.
+    Folder,
+}
+
 /// Everything drawn inside one space window. Coordinates are relative to the
 /// window's client area.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +81,9 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// What a drop on this window lands in, which decides the modifiers and
+    /// menu entries the drop target offers.
+    pub drop_into: DropInto,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,

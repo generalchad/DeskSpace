@@ -40,7 +40,9 @@ use windows::core::{PCWSTR, w};
 
 use crate::error::PlatformError;
 use crate::input::{Event, MouseButton, SpaceEvent};
-use crate::render::{BorderStroke, PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle};
+use crate::render::{
+    BorderStroke, DropInto, PaintFrame, Painter, PreparedScene, SpaceScene, SpaceStyle,
+};
 use crate::ui::CursorShape;
 use crate::win32::composition::SpaceVisuals;
 use crate::win32::dpi::{scale_for, window_dpi};
@@ -1011,6 +1013,23 @@ unsafe extern "system" fn wndproc(
             _ => DefWindowProcW(window, message, wparam, lparam),
         }
     }
+}
+
+/// What a drop on `window` lands in, from the scene the app last pushed. A
+/// window with no scene yet takes drops as a space does.
+pub(crate) fn drop_into(window: HWND) -> DropInto {
+    // SAFETY: space windows and the desktop layer share this state; the
+    // borrow does not re-enter.
+    unsafe {
+        with_state(window, |state: &mut SpaceState| {
+            state
+                .scene
+                .as_ref()
+                .map(|prepared| prepared.scene().drop_into)
+        })
+    }
+    .flatten()
+    .unwrap_or_default()
 }
 
 #[cfg(test)]

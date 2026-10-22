@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
-pub use scene::{ItemState, ItemVisual, SpaceScene, SpaceStyle};
+pub use scene::{DropInto, ItemState, ItemVisual, SpaceScene, SpaceStyle};
 pub use transition::{Geometry, Mask, Play, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;
 

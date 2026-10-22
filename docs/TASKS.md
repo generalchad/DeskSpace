@@ -640,52 +640,6 @@ the decision inside it.
 
 ### Tasks
 
-- [ ] **W3c. Shift and the right-drop menu on a lens (platform, app).**
-  - Why: on a normal space, Shift means "show here without moving". A
-    lens shows only its folder, so it cannot show a file kept elsewhere.
-    The drop must be refused, with the "no" cursor, before the user lets
-    go. Also, a source that offers only `COPY` should copy into a lens;
-    today `drop_plan` turns `COPY` into keep-in-place.
-  - The drop target lives in the platform and does not know which spaces
-    are lenses. The app tells it through the scene, as it tells it
-    everything else (`ENGINEERING.md` section 3, "Rendering and UI are
-    data-driven"). Follow "Recipe: a new visual in a space", steps 1-2:
-    1. `render/scene.rs`: `pub enum DropInto { Space, Folder }`, deriving
-       `Default` with `Space` as the default, and a `///` doc for each.
-       Add a `SpaceScene::drop_into: DropInto` field and export the enum
-       beside `SpaceScene`.
-    2. `deskspace-app/src/scene.rs`, `space_scene`: `DropInto::Folder`
-       when the space is a lens. Test it: a lens's scene says `Folder`, a
-       normal space and the desktop layer say `Space`.
-  - Platform, `win32/space_window.rs`: `pub(crate) fn drop_into(window:
-    HWND) -> DropInto`, which reads the stored scene. Copy
-    `space_animation::is_leaving`, which reads window state the same way.
-    `PreparedScene` keeps its `SpaceScene` in a private field; add a
-    `pub(crate) fn scene(&self) -> &SpaceScene` accessor if none exists.
-    A window with no scene yet answers `DropInto::Space`.
-  - Platform, `win32/drop_target.rs`. All of these are pure, with tests
-    at the bottom of the file:
-    - `drop_plan(kind, keys, allowed, into: DropInto)`. For `Folder`
-      and `DragKind::Files`: with Shift held, `(DropPlan::None,
-      DROPEFFECT_NONE)`; otherwise `MOVE` when allowed, else `COPY`
-      gives `DropPlan::Files(DropAction::Copy)`, not `KeepInPlace`. For
-      `Space`, nothing changes. Shell items and Alt-links are the same
-      for both (W3f handles them).
-    - `drag_effect` takes `into` and passes it on.
-    - `right_drop_entries(allowed, into)`: "Show here without moving" is
-      greyed for `Folder`, as "Create shortcuts here" is greyed by
-      `allowed`.
-    - The `IDropTarget` methods read `drop_into(self.window)` and pass it
-      on. Read it once per call, not in a loop.
-    - Tests: copy the existing `drop_plan` and `drag_effect` tests and
-      add the `Folder` cases (Shift refuses; `COPY` only gives `Copy`;
-      a plain drop moves). Add a `right_drop_entries` case: for `Folder`,
-      `DROP_KEEP` is disabled. Every existing test passes `DropInto::Space`
-      and keeps its expectation.
-  - Done when: the gates pass. **[needs human]**: Shift-drag a file from
-    Explorer onto a lens: the cursor shows "no" and nothing moves. Right
-    drag onto a lens: "Show here without moving" is grey. On a normal
-    space, Shift and the right-drop menu behave as before.
 - [ ] **W3d. A lens item dropped on a normal space (app).**
   - Why: dragging an item from a lens onto a normal space does nothing
     today. `add_dropped` finds the item by its file and sends `MoveItem`,
@@ -1308,6 +1262,7 @@ each id is in `archive/TASKS-done.md`.
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms. |
 | W2 (F-07) | With the hand-made lens in section W, create, rename, and delete files in its folder in Explorer: the lens follows within about 150 ms. Rename the folder away: the lens empties. Rename it back: it fills again within 5 s. |
 | W3b (F-07) | Drop files from Explorer and from a normal space onto a lens (hand-made, section W): they land in its folder, and the normal space no longer lists its file. Drop a file whose name is already there: Explorer's Replace or Skip dialog appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy here": the original stays. "Add files…" on a lens moves the files into its folder. Regression: a clashing drop on a normal space still gets " (2)" and no dialog. |
+| W3c (F-07) | Shift-drag a file from Explorer onto a hand-made lens (section W): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | L2 (F-50) | Not elevated, `./scripts/dev.ps1 -Verbosity 1`: a Start "Pinned" app, an "All apps" app, a Store app, and a taskbar app each land in a space as a working shortcut and stay in Start; Alt-dragging an Explorer file makes a shortcut and leaves the file; dropping a `.lnk` with Alt copies it; a plain drag still moves a file and Shift keeps it in place. |
