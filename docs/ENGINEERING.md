@@ -127,6 +127,17 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 - Use `tracing` for diagnostics, and `debug` or `trace` (never `info`) on
   per-frame or noisy paths.
 - Tests sit in each module as `#[cfg(test)] mod tests`.
+- Each crate tests on its own: `cargo test -p <crate>` passes with no
+  other crate's tests, and a change re-tests only that crate and the
+  crates that depend on it. So put a pure type or pure logic in the
+  lowest crate that can hold it. In particular, keep it out of a crate
+  that needs the `windows` crate, or every test that uses it pays for
+  Win32. `deskspace-platform` still mixes the two; R19 plans the split.
+- While working, test only what a change can affect with
+  `./scripts/dev.ps1 -Check -Changed` (B31). The gates (section 1)
+  still run on the whole workspace before every commit, and CI always
+  does. Cargo caches builds, not test results, so skipping is the only
+  saving.
 
 ## 4. Code style and comments
 

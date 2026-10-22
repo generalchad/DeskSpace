@@ -298,6 +298,49 @@ user-visible change is expected. Do them in any order.
   either file is over about 80 lines. **[needs human]** check: the settings
   window opens, switches scopes and pages, and previews as before.
 
+- [ ] **B31. Test only the crates a change affects (scripts).**
+  - Why: `cargo test --workspace` runs every crate's tests. A change to
+    `deskspace-config` can only break `config` and `app`, the crates that
+    depend on it, so while working the rest can be skipped. Cargo has no
+    built-in way to do this. `ENGINEERING.md` section 3 already names
+    the switch this task adds.
+  - `scripts/dev.ps1`: add a `-Changed` switch. Without `-Check` it does
+    nothing. With `-Check`, the test step runs `cargo test --locked -p
+    <crate> ...` for the affected crates only; fmt and clippy are
+    unchanged. Add an example to the script's comment-based help.
+  - Which crates are affected. Write each step as its own small
+    PowerShell function, so each can be read and tried alone:
+    1. **Changed files:** `git diff --name-only main...HEAD`, plus `git
+       diff --name-only HEAD` (uncommitted), plus untracked files from
+       `git ls-files --others --exclude-standard`. Add a `-Base` parameter
+       for the branch to compare with, default `main`.
+    2. **Changed crates:** a file under `crates/<dir>/` belongs to the
+       package in that folder. Read the package names from `cargo
+       metadata --format-version 1 --no-deps --locked` (each package's
+       `manifest_path`), never from a list in the script, so a new crate
+       needs no edit. A change to `Cargo.toml`, `Cargo.lock`,
+       `rust-toolchain.toml`, or anything under `.cargo/` affects every
+       crate. Any other file (docs, scripts, workflows) affects none.
+    3. **Dependents:** from the same metadata, a crate's dependencies
+       are its `dependencies` entries that have a `path`. Repeat until
+       nothing new is added: every crate that depends on an affected
+       crate is affected too.
+    4. If nothing is affected, print "No crate changed; no tests to
+       run." and skip the test step.
+  - Print the affected crates before testing, so the user sees what was
+    skipped.
+  - `ENGINEERING.md` section 1: add the switch to the list after `-Check`.
+  - Done when: these runs print the expected crates (try each, then
+    undo the change):
+    - edit a comment in `deskspace-app`: `deskspace-app` only;
+    - in `deskspace-config`: `deskspace-config`, `deskspace-app`;
+    - in `deskspace-core`: all five;
+    - in `docs/TASKS.md` only: none;
+    - in `Cargo.toml`: all five.
+
+    No unit tests: the repository has no PowerShell test framework, and
+    adding one is out of scope.
+
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
 `settings/mod.rs` `build_form` (about 105). They are long because a field is
@@ -1233,7 +1276,7 @@ Rules for every Q task:
 
 ## D. Reserved (strong model or maintainer; do not start)
 
-Each needs design work first. Ids are `R1`-`R18` so they do not collide with
+Each needs design work first. Ids are `R1`-`R19` so they do not collide with
 the ROADMAP decision ids (`D1`-`D9`).
 
 - **R7. On-screen verification pass** (maintainer). The list is section V.
@@ -1304,6 +1347,25 @@ the ROADMAP decision ids (`D1`-`D9`).
 
   Then split M9 items 2-5 into one-commit tasks here. If R14 lands first, a
   field's label belongs in its row.
+- **R19. Test the app without Win32 (`ENGINEERING.md` section 3).**
+  `deskspace-platform` is about 55 % of the code (2026-10-21) and holds two
+  things: the data the app hands it (`SpaceScene`, `Event`, `SettingsForm`,
+  `MenuEntry`, `Transition` and the effect math, `TextEdit`), which is
+  pure, and the Win32 code that turns that data into windows. The app's
+  tests are nearly all pure, yet they compile the `windows` crate, and
+  any platform change re-tests the app. Design the split and settle:
+  - a crate below `deskspace-platform` for the pure data and math (for
+    example `deskspace-ui`), and exactly what moves into it;
+  - how the app reaches the platform without naming the concrete `Ui`
+    struct: a trait the platform implements, or more of R17's `Effect`,
+    where a pure decision returns what to do and one place runs it;
+  - the free functions the app calls directly today (`item_facts`,
+    `desktop_directory`, `notify_moved`, ...): which go behind the same
+    seam;
+  - the order of the work, so each step is a pure move (the section K
+    rules) and the gates pass after each.
+
+  Then split it into one-commit tasks here.
 
 ## V. Awaiting on-screen check
 
@@ -1478,6 +1540,13 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   field edit owes: `None`, `Appearance`, `Layout`, `Pending`). Once R17 reaches
   the settings family, both meet in `settings_session.rs`. Suggested task:
   rename the settings one (for example `FieldEffect`) before that step.
+- `deskspace-platform` tests: the crate's tests take about 16 s
+  (2026-10-21), while every other crate's take under 0.1 s. The time
+  goes to tests that call the real shell. Run alone,
+  `win32::app_catalog::tests::a_background_refresh_fills_the_cache` takes
+  about 3 s more than an empty test. Suggested task: find what each slow
+  test waits for, and test the decision on plain data instead, keeping
+  at most one real-shell check per module.
 - `render/d2d/mod.rs` `draw_scene`: the settings window's 2 px highlight
   outline rounds with `PaintFrame.radius`, which is 0 where DWM rounds the
   window, so its corners are square inside DWM's round ones. Suggested:
