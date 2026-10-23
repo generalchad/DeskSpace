@@ -323,7 +323,12 @@ A native, lightweight, offline Windows desktop organizer that:
     up along a ragged front, charring ahead of a glowing edge, with flames
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
-    space's own window carries the blur over its whole rect). Black hole (the space swallowed by a hole that
+    space's own window carries the blur over its whole rect; amended
+    2026-10-22, maintainer: the fire spreads unevenly, from the bottom
+    and a few spots, climbing faster than it spreads, with embers
+    smouldering in the char, warm light ahead of the edge, turbulent
+    flames, and ash lifting off; it looks the same at every DPI and
+    differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
     opens on the desktop) is planned after composition (T14). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
@@ -349,7 +354,14 @@ A native, lightweight, offline Windows desktop organizer that:
     and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The
     controls live in a Global-only Animations group of pages, one per kind,
-    so no page grows too tall for a 1080-pixel display. Defaults: Roll at
+    so no page grows too tall for a 1080-pixel display. Each effect sets
+    its own pace (amended 2026-10-22, maintainer): its row stretches the
+    chosen duration and picks its progress curve, so an effect that needs
+    longer, or a different rhythm, is one value in its row, not a special
+    case. Burn plays at twice the chosen duration on a curve that catches
+    slowly and then races, so 250 ms burns in half a second. This changes
+    how Burn plays for anyone already using it, on purpose (section 3,
+    "never break users"). Defaults: Roll at
     250 ms for Startup and Fold; startup one after another at 50 ms;
     Delete the same as Startup. An upgrade starts
     animating; this change is on purpose (section 3, "never break users").

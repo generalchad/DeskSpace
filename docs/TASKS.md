@@ -14,7 +14,9 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section U, in order (U2 is pure and needs no screen);
 - section W phase 5, any time: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34, which needs W14; the rest once the phase 4 task each
-  one names has landed.
+  one names has landed;
+- section T, "Burn, upgraded": T24 now, then T25-T31 in order once
+  `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D. Phase 4's next task is W16, the
@@ -1557,6 +1559,330 @@ same way:
     with no rectangle of blur or tint left behind; reversing mid-way
     turns it around; no overlay window is left after it ends, after a
     delete, or after quitting mid-way.
+
+### Burn, upgraded (D12, amended 2026-10-22)
+
+T24-T33 make Burn read as fire rather than an orange wipe: it takes its
+time and kindles, spreads unevenly, smoulders, throws turbulent flames and
+ash, and looks the same at every DPI. One commit each, in order.
+
+- **When to start.** T24 can start now. T25-T33 build on three things
+  that are on `feat/color-picker-redesign` (as of `c1ad0f3`):
+  `render/noise.rs` (`RisingField`, `fractal`, `random`),
+  `win32/effect_overlay.rs` (`EffectOverlay`, `Art::Burn`, `Margins`),
+  and `Play::seed`. Wait until that branch is in `main`. Do not copy them
+  across by hand. If the names there have changed, stop and ask (rule 4).
+- **Units.** "px" means pixels at 96 DPI. From T26 on, multiply every px
+  constant by the window's scale (`dpi as f32 / 96.0`).
+- **Reversible.** Every frame stays a pure function of the progress, the
+  seed, and the clock. The clock only drives flicker and never moves the
+  front, so reversing mid-burn still retraces the same edge.
+- **On-screen checks.** Each task marked **[needs human]** appends its
+  check to the Burn row in section V (`T17, T18 (D12)`) and adds its id
+  to that row's first column, instead of adding a new row.
+- **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
+  keep the overlay's drawing order: smoke, then flames, then ash.
+
+- [ ] **T24. Each effect sets its own pace (core, app, platform).**
+  **[needs human]**
+  - Why: D12 (amended 2026-10-22). At the default 250 ms, Burn is over
+    before its flames read. Smoothstep, the one curve every effect uses
+    (`ease` in `render/transition.rs`), slows at both ends, while a fire
+    catches slowly and then races. An effect's pace belongs in its
+    `EFFECTS` row, so Burn needs no `if`.
+  - `deskspace-core/src/animation.rs`:
+    - `pub enum Curve { Smooth, Kindle }`, with a `///` doc on each, and
+      `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's smoothstep;
+      move `ease` and its comment here. `Kindle` is `1 - (1 - u)²`, where
+      `u` is how much of the space is shown. An out (u from 1 to 0)
+      starts slowly and ends fast; an in starts fast and settles.
+    - `pub struct Pace { pub stretch_percent: u16, pub curve: Curve }`,
+      `pub const PACE_NORMAL: Pace` (100, `Smooth`), `pub const
+      PACE_STRETCH_RANGE: (u16, u16) = (50, 300)`, and `pub fn
+      stretch(self, duration: Duration) -> Duration`.
+    - `EffectSpec` gains `pace: Pace`, and `effect()` takes it as a fourth
+      argument. Every row gets `PACE_NORMAL` except Burn, which gets
+      `Pace { stretch_percent: 200, curve: Curve::Kindle }`.
+  - `render/transition.rs`: `Transition::frame` applies
+    `self.play.effect.spec().pace.curve` where it now calls `ease`.
+    Delete `ease`.
+  - `deskspace-app/src/app/animation.rs`: `play_for` stretches the chosen
+    duration (`spec().pace.stretch`) before `tweak.slow`. The exit
+    stagger (`exit_delays`) already uses `play.duration`, so it then
+    allows for the stretch with no further change.
+  - The settings page does not change: the Duration control still shows
+    the chosen time.
+  - Tests:
+    - core: every row's stretch is within `PACE_STRETCH_RANGE`; every
+      curve is 0 at 0 and 1 at 1, and never decreases over 101 even
+      samples; `Kindle.apply(0.9)` is above 0.98 (a burn barely moves in
+      its first tenth).
+    - app: `play_for` gives Burn at 250 ms a 500 ms play and Roll at
+      250 ms a 250 ms one. With Burn on Startup at 1000 ms and ten
+      spaces, the last one still ends within `EXIT_LIMIT` (copy the
+      existing exit test).
+  - `CONTEXT.md` section 4, "Animations": one sentence saying an effect's
+    row also sets its pace.
+  - **[needs human]** check: Burn at 250 ms plays for about half a
+    second, catching slowly and then racing to the end; un-burning starts
+    fast and settles; every other effect looks and times as before.
+
+- [ ] **T25. One seeded Burn field per play (platform).**
+  **[needs human]**
+  - Why: every burn has the same shape, because the noise has no seed.
+    At exit, same-sized spaces burn identically one after another. The
+    painter (`Effects::burn` in `render/d2d/effects.rs`) and the overlay
+    (`Art::Burn`) also each build a `BurnField`, and they agree only
+    because both happen to compute the same columns and rows.
+  - `render/noise.rs`: `fractal` and `RisingField::new` take `seed: u32`.
+    Mix it into the lattice hash as the octave is mixed in:
+    `^ seed.wrapping_mul(0x27D4_EB2F)`. Seed 0 must give exactly today's
+    values; callers other than Burn pass 0.
+  - `render/burn.rs`: `BurnField::for_space(size: (f32, f32), detail: u8,
+    seed: u32) -> Self` becomes the only public constructor (`new` goes
+    private). It is the one place the cell grid is worked out from a size
+    in pixels. The painter passes its `size`, and the overlay passes
+    `(rect.width as f32, rect.height as f32)`.
+  - `Mask::Burn` gains `seed: u32`, filled from `play.seed` in the Burn
+    arm of `frame` (as `Mask::Smoke` does). The painter's rebuild check
+    (`fits` in `Effects::burn`) compares the seed too. `Art::Burn` takes
+    the seed from the `Play` it is made for.
+  - Tests:
+    - noise: seed 0 gives the values it gave before; pin three values
+      in a test before changing the hash.
+    - burn: two seeds give different fields; one seed twice gives equal
+      fields; `for_space((301.0, 199.0), 5, 1)` has the cols and rows the
+      painter and the overlay used to compute.
+  - **[needs human]** check: at exit, two spaces of the same size burn
+    along different edges; one space burns differently each time it is
+    hidden; reversing mid-burn still un-burns along the same edge.
+
+- [ ] **T26. Burn scales with DPI (platform).** **[needs human]**
+  - Why: `burn::CELL` (3), the overlay `Margins`, and the flame sizes
+    (`HEIGHT_RANGE`, 18 to 60) are physical pixels. At 150 % the flames
+    are two-thirds the size and the edge looks finer.
+  - `Geometry` (`render/transition.rs`) gains `dpi: u32`, and
+    `for_visibility` and `for_fold` take it. Every call in
+    `win32/space_animation.rs` passes `window_dpi(window)`
+    (`win32/dpi.rs`). `Mask::Burn` gains `dpi: u32`, filled from
+    `geometry.dpi`.
+  - `render/burn.rs` stays free of Win32. Add `pub fn cell_px(dpi: u32) ->
+    u32`, which is `(CELL * dpi + 48) / 96` and at least 1. `for_space`
+    takes `dpi` and uses it for the grid.
+  - `render/flames.rs`: `pub fn margins(dpi: u32) -> (u32, u32)` (side,
+    top) replaces the `MARGIN_SIDE` and `MARGIN_TOP` constants; the
+    overlay builds its `Margins` from it. `tongues` takes `scale: f32` and
+    multiplies `HEIGHT_RANGE`, the sway, and the ember sizes by it.
+  - Tests: `cell_px` is 3, 5 (rounded from 4.5), and 6 at 96, 144, and 192
+    DPI; a 600 × 400 px field at 192 DPI has half the columns it has at
+    96; tongues at scale 2 are twice as tall for the same bases (scale
+    the bases' rows too); `margins(144)` is 1.5 times `margins(96)`,
+    rounded.
+  - **[needs human]** check: on a 150 % and a 200 % monitor, Burn looks
+    the same as at 100 %, only bigger: the edge is as ragged relative to
+    the space, and the flames are as tall relative to the title bar.
+
+- [ ] **T27. The field owns its bands (platform; refactor).**
+  - Why: `GLOW`, `CHAR`, and `SCORCH` are global field units, so their
+    width in pixels depends on the noise and on the space's height. T28
+    gives each field its own bands; this task moves the code first, with
+    no visible change.
+  - `Mask::Burn` carries `gone: f32` (0 to 1) instead of `front`. The
+    free `front(gone)` and `stage(above)` become methods:
+    `BurnField::front(&self, gone)` and `BurnField::stage(&self, col, row,
+    front)`. The field stores `bands: Bands { glow, char, scorch }` (field
+    units), set by `for_space` to today's constants, which then go.
+  - `TransitionFrame`'s checks against the front (`front <= -burn::BANDS`
+    in `covers_window`, and `front >= 1.0` in the tests) become
+    `gone <= 0.0` and `gone >= 1.0`. `fill_burn`, `flame_bases`, and
+    `Art::Burn` take the front from the field.
+  - Tests: today's `burn.rs` tests, rewritten against a field, pass
+    unchanged in meaning. No new behavior, so no on-screen check; say so
+    in the commit body.
+
+- [ ] **T28. Burn spreads like fire (platform).** **[needs human]**
+  - Why: a threshold sweeping through noise moves at one speed along a
+    blobby edge. Fire catches unevenly, climbs faster than it spreads,
+    runs up in fingers, and burns holes that join the main front.
+  - `render/burn.rs`: a cell's value becomes when the fire reaches it,
+    scaled to 0 to 1. Leave the stages, `cell_pixels`, and the painter as
+    they are.
+    - **Coarse grid.** Solve on a grid of `cols.div_ceil(4)` by
+      `rows.div_ceil(4)` nodes, so a full-HD space stays cheap.
+    - **Speed** of a node: `SPEED_MIN + (SPEED_MAX - SPEED_MIN) *
+      fractal(..)`, with the seeded `noise::fractal` at today's lattice
+      for the detail. `SPEED_MIN` is 0.35 and `SPEED_MAX` is 1.0.
+    - **Steps.** A step to each of the 8 neighbours costs
+      `length / (speed(to) * climb)`. `length` is 1 for the four sides
+      and √2 for the diagonals. `climb` is `CLIMB_UP` (1.8) toward
+      row 0, 1.0 level, and `CLIMB_DOWN` (0.45) away from it.
+    - **Sources.** Each bottom-row node starts at `BOTTOM_STAGGER`
+      (0.2) × node rows × `noise::random(seed, col)`. Spot fires add
+      `(nodes / SPOT_AREA).min(SPOTS_MAX)` sources (`SPOT_AREA` 600
+      nodes, `SPOTS_MAX` 3). They sit at seeded nodes in the lower 60 %
+      of rows and the middle 80 % of columns, and each starts at
+      `SPOT_DELAY` (0.3) × node rows.
+    - **Solve** with Dijkstra's algorithm: `std::collections::BinaryHeap`
+      over `Reverse` of an `f32` wrapper ordered by `total_cmp`. Cite
+      https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm beside it.
+    - **Cell values.** A cell takes the coarse arrival at its position
+      (bilinear, as `RisingField::value_at` samples), divided by the
+      largest arrival. Then add `EDGE_RAG` (0.015) × (fine
+      `noise::fractal` − 0.5), so the edge stays ragged like paper, and
+      clamp the result to 0 to 1.
+    - **Bands from pixels.** The field keeps `units_per_cell` (1 / the
+      largest arrival, divided by 4 for the coarse grid). `for_space`
+      sets each band to `px / cell_px(dpi) * units_per_cell` from
+      `GLOW_PX` 3, `CHAR_PX` 5, and `SCORCH_PX` 12.
+  - `for_space` logs how long it took at `debug`. Both the painter and
+    the overlay build the field, so in a release build a 1920 × 1080
+    space at 100 % must build in under 3 ms. Put the timing in the
+    commit body.
+  - Tests: values stay within 0 to 1; the row means rise from the bottom
+    up (keep the test); a pure `step_cost(length, speed, climb)` costs
+    less up than level, and less level than down; a 300 × 300-node field with
+    seed 1 has a column where a higher cell burns before a lower one (a
+    hole); the median glow thickness, in pixels, of a 100 px and a
+    400 px tall field differs by less than a factor of two.
+  - **[needs human]** check: the bottom catches unevenly; the fire runs
+    up in fingers; on a large space, a hole or two opens in the middle
+    and joins the main front; the glowing edge is a similarly thin line
+    on small and large spaces; Detail still coarsens it; startup and
+    exit with many spaces do not stutter.
+
+- [ ] **T29. Turbulent flames (platform).** **[needs human]**
+  - Why: today's flames are identical teardrops every `SPACING` cells,
+    swaying on one sine, and overlapping fire keeps the brighter channel
+    (`brightest`) instead of adding up.
+  - `render/flames.rs`:
+    - **Sizes.** `tongues` takes the seed. Each tongue's height is
+      multiplied by `0.6 + 0.7 * noise::random(seed, col)`.
+    - **Turbulence.** In `paint_tongue`, multiply the heat by
+      `0.45 + 1.1 * n` and clamp it to 0 to 1. `n` is one octave of the
+      noise in `render/noise.rs` (make `value_noise` `pub(crate)`),
+      sampled at `px / (tongue.width * 0.6)` across and `(py + time *
+      RISE_PX_PER_S * scale) / (tongue.height * 0.3)` down, so the
+      pattern scrolls upward. `RISE_PX_PER_S` is 120. Keep the 0.02 cut.
+    - **Additive light.** Replace `brightest` with `add`: each byte of
+      the two premultiplied pixels added and capped at 255. This keeps
+      the pixels premultiplied (each channel ≤ alpha stays true).
+    - **Sparks** take their phase from the seed instead of the index
+      alone.
+  - In a release build, a frame of flames for a 1200 × 900 space shades
+    in under 4 ms. Measure it, log it at `trace`, and put the timing in
+    the commit body.
+  - Tests: keep today's; the same seed and time give identical pixels,
+    and two times differ; `add` of two half-alpha pixels is brighter
+    than either and stays premultiplied; two seeds give different tongue
+    heights for the same bases.
+  - **[needs human]** check: the flames lick and break up at the tips;
+    neighbours differ in size; where flames cross they glow brighter; no
+    regular comb of tongues; still no box around them.
+
+- [ ] **T30. A glow that lives (platform).** **[needs human]**
+  - Why: the glowing edge is a fixed colour ramp, the char is flat, and
+    the paper ahead gets no light from the fire.
+  - Clock: `frame` (`render/transition.rs`) takes `time: f32`, the
+    animation clock in seconds that the flames already use
+    (`now().as_secs_f32()` in `space_animation.rs`). `Mask::Burn` carries
+    it. Only Burn reads it. Flames and glow then flicker together.
+  - `render/burn.rs`:
+    - `cell_pixels(stage)` becomes `cell_pixels(stage, shimmer)`.
+      `shimmer` is `0.5 + 0.5 * sin(time * rate + phase)`, where `phase`
+      comes from `noise::random(seed, cell index)` × 2π. Work it out only
+      for cells in a band; Whole and Gone cells skip it.
+    - Burning: brightness × `(0.82 + 0.18 * shimmer)`, rate 13.
+    - `Stage::Charred` gains `along` (0 at the glow, 1 at the scorch).
+      Ember cells, those with `noise::random(seed ^ EMBER_SALT, index)`
+      below 0.1, lay ember colour (255, 110, 30) over the char at alpha
+      `(1 - along)^1.5 * (0.4 + 0.6 * shimmer)`, rate 5. `EMBER_SALT` is
+      a named constant.
+    - A new `Stage::Lit(near)` follows `Scorched`, `LIGHT_PX` (24) deep.
+      `near` is 1 next to the scorch and 0 at untouched paper. It lays
+      premultiplied (255, 150, 60) at alpha `near² * 48 * (0.75 + 0.25 *
+      shimmer)`. The light band counts toward the field's bands, so at
+      gone 0 nothing is lit.
+  - `fill_burn` (`render/d2d/effects.rs`) passes the clock; the marks
+    bitmap is already rewritten every frame, so nothing else changes in
+    the painter.
+  - Tests: Whole and Gone pixels are as before; at one time, ember cells
+    near the glow are brighter than other char cells; Lit's alpha is at
+    most 48 and 0 at its far edge; Burning pixels differ between two
+    times but stay opaque; every pixel stays premultiplied.
+  - **[needs human]** check: the edge shimmers; embers wink in the char
+    and die out toward the scorch; warm light on the paper just ahead of
+    the edge flickers with the flames; at rest after a show, no tint is
+    left on the space.
+
+- [ ] **T31. Ash (platform).** **[needs human]**
+  - Why: burned-away paper just disappears. Black flakes lifting off
+    the edge sell the fire.
+  - Pure, in a new `render/ash.rs`:
+    - **Flake cells.** `for_space` picks them once: the cells with
+      `noise::random(seed ^ ASH_SALT, index)` below `ASH_SHARE` (0.008).
+      They are stored on `BurnField`.
+    - **`ash::flakes(field, front, time, scale, out: &mut Vec<Flake>)`.**
+      A flake lives while `0 < front - value < ASH_LIFE` (0.12 field
+      units). Its `life` is `(front - value) / ASH_LIFE`. Life depends
+      on the front, not the clock, so un-burning brings the flakes back
+      down into the paper.
+    - **Position.** A flake starts at its cell's centre in overlay
+      pixels and rises `life * ASH_RISE_PX` (90) × scale. It drifts
+      sideways by `sin(time * 1.7 + phase) * 10 * scale * life`.
+    - **Shape.** An ellipse `3 * scale` px tall and
+      `3 * scale * |cos(angle)| + 0.5` px wide, so it tumbles.
+      `angle = time * spin + phase`, where `spin` (−4 to 4 rad/s) and
+      `phase` come from the flake's seeded random.
+    - **Colour.** (22, 18, 16) at alpha `(1 - life)^0.7 * 230`. While
+      `life < 0.25` it has a 1 px rim of `fire(0.6)`; make `fire`
+      `pub(crate)`.
+    - **`ash::paint`.** Source-over onto the premultiplied pixels:
+      `out = src + dst * (1 - src.alpha)`.
+  - `Art::Burn` paints the ash after the flames. Flakes that leave the
+    overlay are skipped.
+  - Tests: no flakes at gone 0; a flake is higher at a larger front for
+    the same time; the same inputs give the same flakes; `paint` keeps
+    pixels premultiplied and never writes outside the buffer.
+  - **[needs human]** check: black flakes, some with glowing rims,
+    tumble up off the burning edge and fade; reversing mid-burn sinks
+    them back in; no flake is left on screen after the burn ends.
+
+- [ ] **T32. Flames on the GPU on Windows 11 (platform).** **[needs
+  decision]**: whether a click-through overlay can show composition
+  content. Proposed below; a maintainer decides after step 1, then the
+  task is **[needs human]** and goes to a junior paired with a reviewer.
+  It comes after T29-T31, whose CPU look is the reference.
+  - Why: the CPU shades every overlay pixel each 15 ms tick (about 4.7 MB
+    for a 1200 × 900 space) and then calls `UpdateLayeredWindow`. It
+    cannot afford bloom.
+  - **Step 1, spike.** Make the overlay with `WS_EX_LAYERED |
+    WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP` and a composition
+    target (copy the tree setup from `win32/composition.rs`). Clicks must
+    pass through it: run `scripts/zorder.ps1` over a burning space. If
+    they do not, record that in D12 and delete this task and T33.
+  - **Step 2, draw on the GPU.** On the composition path, `Art::Burn` draws
+    into a composition drawing surface with Direct2D instead of
+    `flames::paint`. Each tongue is a teardrop path, filled with a
+    seeded 256 × 256 noise bitmap (made once per play) through a bitmap
+    brush that scrolls up at `RISE_PX_PER_S`. The heat ramp is applied
+    by `CLSID_D2D1TableTransfer`, and flames blend with
+    `D2D1_PRIMITIVE_BLEND_ADD`.
+  - **Step 3, bloom.** The flame layer is drawn a second time, under itself,
+    through `CLSID_D2D1GaussianBlur` (standard deviation 6 × scale) at
+    60 % opacity.
+  - **Step 4, fallback.** Windows 10 and the accent path keep today's CPU
+    overlay. Both paths share `flames::tongues`, so the layout tests
+    cover both.
+
+- [ ] **T33. Heat haze (platform).** **[needs decision]**: after T32,
+  and only on composition spaces, because their painter draws through an
+  `ID2D1DeviceContext` (`SurfaceCanvas`). The plain `ID2D1HwndRenderTarget`
+  has no effects, so other spaces would play without haze. Proposed: the
+  painter draws the space's contents through `CLSID_D2D1DisplacementMap`.
+  The map is a scrolling noise bitmap, strongest `HAZE_PX` (20) above the
+  burning edge and gone beyond 60 px. The scale is 4 × scale px, so the
+  paper shimmers above the fire. Decide whether a look that differs by
+  path is acceptable, then this is **[needs human]**.
 
 ## X. The debug window (ROADMAP D14, F-61)
 
