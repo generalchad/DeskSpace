@@ -29,6 +29,11 @@ impl SortRule {
         *self == Self::default()
     }
 
+    /// Sorts `items` in place by this rule.
+    pub fn sort_items(&self, items: &mut [Item]) {
+        items.sort_by(|a, b| self.compare(a, b));
+    }
+
     /// Orders two items by the rule. Ties use natural name order, so `file2`
     /// comes before `file10`. "Folders first" holds in both directions, as
     /// Explorer's does: it is a group order, not part of the key.

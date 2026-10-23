@@ -124,7 +124,7 @@ impl Desktop {
             items.push(item);
         }
 
-        items.sort_by(|a, b| rule.compare(a, b));
+        rule.sort_items(&mut items);
         let Some(space) = self.space_mut(id) else {
             return CommandOutcome::NotFound;
         };
@@ -204,6 +204,51 @@ mod tests {
             "a new lens follows its folder's name"
         );
         assert!(space.items().is_empty());
+    }
+
+    #[test]
+    fn a_lens_always_keeps_sorted() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        assert!(desktop.space(id).unwrap().keeps_sorted());
+
+        sync(
+            &mut desktop,
+            id,
+            vec![
+                entry("b.txt", ItemKind::File),
+                entry("a.txt", ItemKind::File),
+            ],
+        );
+        let first = desktop.space(id).unwrap().items()[0].id;
+        assert_eq!(labels(&desktop, id), ["a", "b"], "the lens is in order");
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItem {
+                    id: first,
+                    index: 1,
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b"], "the order held");
+    }
+
+    #[test]
+    fn a_normal_space_does_not_keep_sorted_until_asked() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Space".into(),
+                at: Point::ZERO,
+                size: Size::new(240, 120),
+                locked: false,
+            },
+            bounds(),
+        );
+        let id = desktop.spaces()[0].id;
+        assert!(!desktop.space(id).unwrap().keeps_sorted());
     }
 
     #[test]

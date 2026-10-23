@@ -15,6 +15,9 @@ pub struct SpaceView {
     /// a normal space keeps the rule and sorts when asked.
     #[serde(skip_serializing_if = "SortRule::is_default")]
     pub sort: SortRule,
+    /// Whether the space re-sorts its items whenever they change, holding the
+    /// rule. A lens always does; a normal space only when this is set (D15).
+    pub keep_sorted: bool,
 }
 
 impl SpaceView {
@@ -94,6 +97,10 @@ mod tests {
         let view: SpaceView = toml::from_str("").unwrap();
         assert_eq!(view.mode, ViewMode::Icons);
         assert_eq!(view.sort, SortRule::default());
+        assert!(
+            !view.keep_sorted,
+            "a space does not hold its sort by default"
+        );
     }
 
     #[test]
@@ -121,6 +128,7 @@ mod tests {
                 descending: true,
                 folders_first: true,
             },
+            ..SpaceView::default()
         };
         let text = toml::to_string(&space).unwrap();
         assert!(
@@ -131,6 +139,19 @@ mod tests {
         assert_eq!(back.view().sort.key, SortKey::Size);
         assert!(back.view().sort.descending);
         assert!(back.view().sort.folders_first);
+    }
+
+    #[test]
+    fn keep_sorted_survives_a_round_trip() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
+        space.view = SpaceView {
+            keep_sorted: true,
+            ..SpaceView::default()
+        };
+        let text = toml::to_string(&space).unwrap();
+        assert!(text.contains("keep_sorted"), "the choice shows in the file");
+        let back: Space = toml::from_str(&text).unwrap();
+        assert!(back.view().keep_sorted);
     }
 
     #[test]

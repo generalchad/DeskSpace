@@ -11,14 +11,14 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W15 is next; W16 is the
-  hardest, so pair with a reviewer on it);
-- section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
-  the phase 4 task each one names has landed;
+- section U, in order (U2 is pure and needs no screen);
+- section W phase 5, any time: W26 (a pure move), W24 and W25 (with a
+  reviewer), and W34, which needs W14; the rest once the phase 4 task each
+  one names has landed.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D.
+decision]** and everything in section D. Phase 4's next task is W16, the
+hardest in section W; pair with a reviewer on it.
 
 ## How to work a task
 
@@ -672,9 +672,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W14 are done (2026-10-21; W14 on 2026-10-22) and archived; the
-earlier tasks' on-screen checks are in section V. The open work is phase 4
-(W9, W15-W23) and phase 5 (W24-W43).
+W1-W8 and W10-W15 are done (2026-10-21; W14 and W15 on 2026-10-22) and
+archived; the earlier tasks' on-screen checks are in section V. The open work
+is phase 4 (W9, W16-W23) and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -700,7 +700,7 @@ earlier tasks' on-screen checks are in section V. The open work is phase 4
 | Level | Tasks | Open now |
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W15 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
@@ -761,25 +761,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W15. Keep sorted (core, app).**
-  - Core: `SpaceView.keep_sorted: bool`, off by default.
-    `Space::keeps_sorted()` is true for a lens or when it is set; it is the
-    one place that knows a lens is always sorted.
-  - A space that `keeps_sorted()` re-sorts after every change to its items:
-    `AddItem`, `MoveItem` into it, and an item rename. Do it in core,
-    through one helper each of those `apply_` methods calls, not in the
-    app.
-  - `ReorderItem` and `ReorderItems` on such a space are `Rejected` (D15).
-    `app/drag.rs` shows no rearranging insertion there; a drag out still
-    works.
-  - Menu: Keep sorted, last in Sort by ▸, checked and grey on a lens.
-  - Tests: each re-sort trigger; reordering is rejected; a lens
-    `keeps_sorted()`; serde default.
-  - **[needs human]** check: with Keep sorted on, a dropped file lands in
-    order, a renamed item moves to its place, and a drag inside does not
-    rearrange (a drag out still moves the file). Turned off, the space
-    rearranges freely again and keeps the order it had.
 
 - [ ] **W16. Views, part 2: the view layout and Small icons (core, app,
   platform).** **[needs human]** The largest task in the phase; pair with
@@ -1919,6 +1900,7 @@ each id is in `archive/TASKS-done.md`.
 | W11 (D15) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
 | W12 (D15) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
 | W13 (D15) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
+| W15 (D15) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
 
 ## Found while working
 
@@ -2035,3 +2017,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   `theme`, `grid`, `scale`, and `title_scale`. The call sites are still
   readable, but a small `LayoutScale` (fixed view vs look) would make the
   fixed-vs-look choice harder to misread when W14 adds more view fields.
+- **view.rs:** `SpaceView::with_mode` gives the default sort rule, so a View
+  menu choice or a Ctrl+Shift digit resets a space's sort rule and its Keep
+  sorted choice (W14, W15), though D15 says a space keeps its last rule.
+  Suggested: build the new view from the current one and change only the
+  mode, if that is what D15 means.
+- **Docs:** `CONTEXT.md`'s intro says "decisions (D1-D9)" and `ROADMAP.md`
+  section 8 lists "(D2, D3, D6-D9, D11-D13)", while section 2 now holds
+  D1-D16 (review, 2026-10-22). Suggested: point at section 2 instead of
+  listing ids.

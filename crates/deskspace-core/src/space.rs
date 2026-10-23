@@ -230,6 +230,12 @@ impl Space {
         self.source.folder().is_some()
     }
 
+    /// Whether the space holds its sort as items come and go: a lens always
+    /// does, and a normal space when its view asks (D15).
+    pub fn keeps_sorted(&self) -> bool {
+        self.is_lens() || self.view.keep_sorted
+    }
+
     /// The lens's folder and view settings, or `None` for an ordinary space.
     pub fn folder_view(&self) -> Option<&crate::source::FolderView> {
         self.source.folder()

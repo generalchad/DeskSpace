@@ -162,9 +162,12 @@ makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path, the
 hidden and filter settings, and says how the title follows the folder
 (`LensTitle`); `Space.title` is the text every reader shows, computed by the
 app when the folder or the title setting changes. A space also holds a `view`
-(`SpaceView`, `view.rs`): its layout mode and its sort rule (D15), apart from
-`look`, so a normal space and a lens share them. `FolderEntry` is what the
-platform reads from the folder.
+(`SpaceView`, `view.rs`): its layout mode, its sort rule, and whether it keeps
+that order as items come and go (D15), apart from `look`, so a normal space and
+a lens share them. `Space::keeps_sorted()` is true for a lens always and for a
+normal space whose view asks; such a space re-sorts after an item is added,
+moved in, or renamed, and when the choice is turned on, and it refuses a
+manual rearrangement. `FolderEntry` is what the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
 filters hidden entries, sorts by the space's `SortRule`, and reconciles by
@@ -285,9 +288,9 @@ ones a variant's doc cannot show.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
   edits pass `custom: true`, and Cancel uses it to restore a snapshot.
 - `SetSpaceView { id, view: SpaceView }` sets a space's view (D15): its icon
-  mode and sort rule, apart from the look. The app reflows that space and
-  saves, and lists a lens's folder again when its rule changes. Every space
-  has a `Space.view`, so a lens needs no separate command.
+  mode, sort rule, and keep-sorted choice, apart from the look. The app
+  reflows that space and saves, and lists a lens's folder again when its rule
+  changes. Every space has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
   applying the layout, and changes nothing if any item id would clash.
@@ -1191,10 +1194,12 @@ in `ui.rs`. What spans them:
   space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
   Ctrl+wheel and Match Explorer. **Sort by ▸** is Explorer's folder menu:
   Name, Date modified, Type, and Size as radio items, then Ascending and
-  Descending, then Folders first (and, on a lens, Show hidden files). A key
+  Descending, then Folders first and Keep sorted, then, on a lens, Show
+  hidden files. Keep sorted is checked and greyed on a lens. A key
   keeps the direction, a direction keeps the key, and Folders first toggles,
-  all through one `SortRule`. A normal space sorts once with the new rule; a
-  lens keeps it and lists its folder again. The menus are built from tables:
+  all through one `SortRule`. A normal space sorts once with the new rule, or
+  holds the order once Keep sorted is on; a lens always holds it and lists its
+  folder again. The menus are built from tables:
   `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
   in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
   words in `SORT_KEYS` in `settings/tables.rs`.
@@ -1305,7 +1310,8 @@ in `ui.rs`. What spans them:
 - Drag an item within its space to rearrange it (`ReorderItem`); dragging one
   member of a multi-selection moves the whole block (`ReorderItems`). The
   selection's drag image follows the pointer and every member's slot fades;
-  the new order sticks until a Sort by reorders it.
+  the new order sticks until a Sort by reorders it. A space that keeps sorted
+  (a lens, or Keep sorted on) refuses the rearrangement and keeps its order.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
   With takeover on, a drop on the desktop instead opens a new space at the

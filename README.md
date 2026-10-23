@@ -123,13 +123,14 @@ help inspect the look and the desktop layer.
   its files where they are. Right-click a lens to open its folder, change
   it, or choose its order and show hidden files.
 - "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
-  Type, and Size, then Ascending or Descending, then Folders first. A normal
-  space sorts once; a lens keeps the order as files come and go. "Folders
-  first" stands in both directions.
+  Type, and Size, then Ascending or Descending, then Folders first and Keep
+  sorted. A normal space sorts once, or holds the order as items come and go
+  once Keep sorted is on; a lens always holds it. "Folders first" stands in
+  both directions.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
-  rearrange it in a space, or out to another space, a folder, an app, or the
-  desktop.
+  rearrange it in a space (not one that keeps sorted), or out to another space,
+  a folder, an app, or the desktop.
 - Double-click an item to open it; right-click for Explorer's context menu,
   with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
   and dragging an item onto the desktop takes it out of the space (with the

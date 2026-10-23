@@ -3640,3 +3640,22 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: also the W6 row in section V says "Sort by" in the new
     shape.
 
+- [x] **W15. Keep sorted (core, app).**
+  - Core: `SpaceView.keep_sorted: bool`, off by default.
+    `Space::keeps_sorted()` is true for a lens or when it is set; it is the
+    one place that knows a lens is always sorted.
+  - A space that `keeps_sorted()` re-sorts after every change to its items:
+    `AddItem`, `MoveItem` into it, and an item rename. Do it in core,
+    through one helper each of those `apply_` methods calls, not in the
+    app.
+  - `ReorderItem` and `ReorderItems` on such a space are `Rejected` (D15).
+    `app/drag.rs` shows no rearranging insertion there; a drag out still
+    works.
+  - Menu: Keep sorted, last in Sort by ▸, checked and grey on a lens.
+  - Tests: each re-sort trigger; reordering is rejected; a lens
+    `keeps_sorted()`; serde default.
+  - **[needs human]** check: with Keep sorted on, a dropped file lands in
+    order, a renamed item moves to its place, and a drag inside does not
+    rearrange (a drag out still moves the file). Turned off, the space
+    rearranges freely again and keeps the order it had.
+

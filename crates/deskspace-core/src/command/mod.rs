@@ -178,12 +178,13 @@ pub enum Command {
         target: SpaceId,
     },
     /// Moves `id` to slot `index` within its space, a manual rearrangement.
+    /// Rejected on a space that keeps sorted (D15).
     ReorderItem {
         id: ItemId,
         index: usize,
     },
     /// Moves several items (a drag of a multi-selection) to `index`, keeping
-    /// their relative order.
+    /// their relative order. Rejected on a space that keeps sorted (D15).
     ReorderItems {
         ids: Vec<ItemId>,
         index: usize,
@@ -276,7 +277,7 @@ impl Desktop {
             Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
-            Command::SetSpaceView { id, view } => self.apply_set_space_view(id, view),
+            Command::SetSpaceView { id, view } => self.apply_set_space_view(id, view, layout),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
@@ -304,7 +305,9 @@ impl Desktop {
             Command::MoveItem { id, target } => self.apply_move_item(id, target, layout),
             Command::ReorderItem { id, index } => self.apply_reorder_item(id, index, layout),
             Command::ReorderItems { ids, index } => self.apply_reorder_items(&ids, index, layout),
-            Command::RenameItem { id, path, label } => self.apply_rename_item(id, path, label),
+            Command::RenameItem { id, path, label } => {
+                self.apply_rename_item(id, path, label, layout)
+            }
             Command::SyncDesktop { items } => self.apply_sync_desktop(items),
             Command::MoveToDesktop { item } => self.apply_move_to_desktop(item, layout),
             Command::SetDesktopItemPosition { item, position } => {
@@ -322,10 +325,17 @@ impl Desktop {
         self.space_mut(id).map_or(CommandOutcome::NotFound, change)
     }
 
-    /// Arranges space `id` to fit its items (a no-op when it is gone).
+    /// Arranges space `id` to fit its items (a no-op when it is gone), holding
+    /// a kept sort first.
     fn rearrange(&mut self, id: SpaceId, layout: GridSpec) {
         if let Some(space) = self.space_mut(id) {
+            let sorted = hold_kept_order(space);
             arrange_space(space, layout);
+            // `arrange_space` leaves a locked space alone, so a held order
+            // still needs its items placed.
+            if sorted && space.locked {
+                position_items(space, layout);
+            }
         }
     }
 
@@ -336,6 +346,17 @@ impl Desktop {
             position_items(space, layout);
         }
     }
+}
+
+/// Puts a space's items in its kept order after one changed, and reports
+/// whether it sorted. A lens always keeps sorted; a normal space when its
+/// view asks (D15).
+fn hold_kept_order(space: &mut Space) -> bool {
+    if !space.keeps_sorted() {
+        return false;
+    }
+    space.view.sort.sort_items(&mut space.items);
+    true
 }
 
 #[cfg(test)]
@@ -973,6 +994,145 @@ mod tests {
             bounds(),
         );
         assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+    }
+
+    fn keep_sorted(desktop: &mut Desktop, id: SpaceId, rule: SortRule) {
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        keep_sorted: true,
+                        sort: rule,
+                        ..SpaceView::default()
+                    },
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert!(desktop.space(id).unwrap().keeps_sorted());
+    }
+
+    #[test]
+    fn turning_keep_sorted_on_sorts_the_space_at_once() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "c", ItemKind::File, 1, 1),
+            item(2, "a", ItemKind::File, 1, 1),
+            item(3, "b", ItemKind::File, 1, 1),
+        ]);
+        assert_eq!(labels(&desktop, id), ["c", "a", "b"]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+        assert_eq!(
+            desktop.space(id).unwrap().items[0].position,
+            desktop.layout.grid_position(0)
+        );
+    }
+
+    #[test]
+    fn a_kept_sorted_space_puts_a_new_item_in_order() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "b", ItemKind::File, 1, 1),
+            item(2, "c", ItemKind::File, 1, 1),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        assert_eq!(
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: "C:/missing/a".into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+        assert_eq!(
+            desktop.space(id).unwrap().items[0].position,
+            desktop.layout.grid_position(0)
+        );
+    }
+
+    #[test]
+    fn a_kept_sorted_space_puts_a_moved_item_in_order() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "b", ItemKind::File, 1, 1),
+            item(2, "c", ItemKind::File, 1, 1),
+        ]);
+        let source = desktop.add_space("B", Rect::new(500, 0, 400, 400));
+        desktop.add_item(source, item(3, "a", ItemKind::File, 1, 1));
+        keep_sorted(&mut desktop, id, SortRule::default());
+        let moved = desktop.space(source).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::MoveItem {
+                    id: moved,
+                    target: id
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_kept_sorted_space_sorts_after_a_rename() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "b", ItemKind::File, 1, 1),
+            item(2, "c", ItemKind::File, 1, 1),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        let first = desktop.space(id).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::RenameItem {
+                    id: first,
+                    path: "C:/missing/z".into(),
+                    label: "z".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["c", "z"]);
+        assert_eq!(
+            desktop.space(id).unwrap().items[0].position,
+            desktop.layout.grid_position(0)
+        );
+    }
+
+    #[test]
+    fn a_kept_sorted_space_rejects_rearranging() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 1, 1),
+            item(2, "b", ItemKind::File, 1, 1),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        let first = desktop.space(id).unwrap().items[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItem {
+                    id: first,
+                    index: 1,
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItems {
+                    ids: vec![first],
+                    index: 1,
+                },
+                bounds()
+            ),
+            CommandOutcome::Rejected
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b"]);
     }
 
     #[test]

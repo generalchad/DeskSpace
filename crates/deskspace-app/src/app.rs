@@ -175,10 +175,12 @@ enum MenuId {
     /// The Sort by submenu's direction.
     SortAscending = 63,
     SortDescending = 64,
+    /// A space's "Keep sorted" toggle, last in its Sort by submenu (D15).
+    KeepSorted = 65,
 }
 
 impl MenuId {
-    const ALL: [Self; 45] = [
+    const ALL: [Self; 46] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -224,6 +226,7 @@ impl MenuId {
         Self::SortBySize,
         Self::SortAscending,
         Self::SortDescending,
+        Self::KeepSorted,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

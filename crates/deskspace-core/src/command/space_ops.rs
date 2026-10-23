@@ -98,9 +98,21 @@ impl Desktop {
         })
     }
 
-    pub(super) fn apply_set_space_view(&mut self, id: SpaceId, view: SpaceView) -> CommandOutcome {
+    pub(super) fn apply_set_space_view(
+        &mut self,
+        id: SpaceId,
+        view: SpaceView,
+        layout: GridSpec,
+    ) -> CommandOutcome {
         self.with_space(id, |space| {
+            let kept = space.keeps_sorted();
             space.view = view;
+            // Turning the choice on sorts at once, so a space never claims an
+            // order it does not hold.
+            if space.keeps_sorted() && !kept {
+                space.view.sort.sort_items(&mut space.items);
+                position_items(space, layout);
+            }
             CommandOutcome::Applied
         })
     }
@@ -211,7 +223,7 @@ impl Desktop {
     ) -> CommandOutcome {
         self.with_space(id, |space| {
             space.view.sort = rule;
-            space.items.sort_by(|a, b| rule.compare(a, b));
+            rule.sort_items(&mut space.items);
             position_items(space, layout);
             CommandOutcome::Applied
         })

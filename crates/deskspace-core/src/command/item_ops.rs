@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::CommandOutcome;
+use super::{CommandOutcome, hold_kept_order};
 use crate::desktop::Desktop;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
@@ -78,6 +78,9 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
+            if space.keeps_sorted() {
+                return CommandOutcome::Rejected;
+            }
             let Some(current) = space.items.iter().position(|item| item.id == id) else {
                 return CommandOutcome::NotFound;
             };
@@ -108,6 +111,9 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
+            if space.keeps_sorted() {
+                return CommandOutcome::Rejected;
+            }
             let moving: Vec<Item> = space
                 .items
                 .extract_if(.., |item| ids.contains(&item.id))
@@ -127,6 +133,7 @@ impl Desktop {
         id: ItemId,
         path: PathBuf,
         label: String,
+        layout: GridSpec,
     ) -> CommandOutcome {
         let Some(source) = self.space_containing(id) else {
             return CommandOutcome::NotFound;
@@ -137,6 +144,10 @@ impl Desktop {
             };
             item.path = path;
             item.label = label;
+            // A rename can change where a kept sort puts the item.
+            if hold_kept_order(space) {
+                position_items(space, layout);
+            }
             CommandOutcome::Applied
         })
     }

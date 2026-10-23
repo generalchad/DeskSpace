@@ -322,7 +322,7 @@ impl App {
             space.theme(&self.config.theme),
         ));
         entries.push(space_view_menu(space));
-        entries.push(space_sort_menu(space.view().sort, space.folder_view()));
+        entries.push(space_sort_menu(space.view(), space.folder_view()));
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
         let delete = if delete_needs_confirmation(space) {
@@ -339,7 +339,8 @@ impl App {
             menu_item(MenuId::Exit, "Exit DeskSpace"),
         ]);
         let lens_view = space.folder_view().cloned();
-        let rule = space.view().sort;
+        let view = space.view();
+        let rule = view.sort;
         match ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
             Some(MenuId::OpenFolder) => self.open_lens_folder(ui, id),
             Some(MenuId::ChangeFolder) => self.change_lens_folder(ui, id, at),
@@ -374,6 +375,8 @@ impl App {
                     self.set_lens_view(ui, id, view, at);
                 } else if let Some(next) = sort_rule_after(rule, choice) {
                     self.sort_space(ui, id, next, at);
+                } else if let Some(next) = keep_sorted_after(view, choice, lens_view.is_some()) {
+                    self.set_space_view(ui, id, next, at);
                 } else if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
                     .find(|(preset, ..)| *preset == choice)
@@ -725,9 +728,10 @@ fn space_view_menu(space: &Space) -> MenuEntry {
 }
 
 /// The "Sort by" submenu (D15): Explorer's four keys as radio items, the
-/// direction, then Folders first. A lens also gets its hidden-files toggle,
-/// which DeskSpace has no other menu for.
-fn space_sort_menu(rule: SortRule, lens: Option<&FolderView>) -> MenuEntry {
+/// direction, then Folders first and Keep sorted. A lens also gets its
+/// hidden-files toggle, which DeskSpace has no other menu for.
+fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
+    let rule = view.sort;
     let mut entries: Vec<MenuEntry> = SORT_MENU_IDS
         .iter()
         .map(|(id, key)| {
@@ -744,11 +748,27 @@ fn space_sort_menu(rule: SortRule, lens: Option<&FolderView>) -> MenuEntry {
         menu_item(MenuId::SortDescending, "Descending").checked(rule.descending),
         MenuEntry::Separator,
         menu_item(MenuId::FoldersFirst, "Folders first").checked(rule.folders_first),
+        menu_item(MenuId::KeepSorted, "Keep sorted")
+            .checked(lens.is_some() || view.keep_sorted)
+            .enabled(lens.is_none()),
     ]);
     if let Some(view) = lens {
         entries.push(menu_item(MenuId::ShowHidden, "Show hidden files").checked(view.show_hidden));
     }
     MenuEntry::submenu("Sort by", entries)
+}
+
+/// The view a Keep sorted choice leaves, or `None` when it is not that
+/// choice. A lens is always kept sorted, so its entry is greyed and changes
+/// nothing (D15).
+fn keep_sorted_after(view: SpaceView, choice: MenuId, lens: bool) -> Option<SpaceView> {
+    if choice != MenuId::KeepSorted || lens {
+        return None;
+    }
+    Some(SpaceView {
+        keep_sorted: !view.keep_sorted,
+        ..view
+    })
 }
 
 /// The rule a Sort by choice leaves, or `None` when `choice` is not a Sort by
@@ -858,8 +878,8 @@ mod tests {
             .collect()
     }
 
-    fn sort_entries(rule: SortRule, lens: Option<&FolderView>) -> Vec<MenuEntry> {
-        match space_sort_menu(rule, lens) {
+    fn sort_entries(view: SpaceView, lens: Option<&FolderView>) -> Vec<MenuEntry> {
+        match space_sort_menu(view, lens) {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
         }
@@ -946,7 +966,13 @@ mod tests {
             descending: true,
             folders_first: true,
         };
-        let entries = sort_entries(rule, None);
+        let entries = sort_entries(
+            SpaceView {
+                sort: rule,
+                ..SpaceView::default()
+            },
+            None,
+        );
         let labels: Vec<&str> = entries
             .iter()
             .filter_map(|entry| match entry {
@@ -955,7 +981,7 @@ mod tests {
             })
             .collect();
         let mut expected: Vec<&str> = SORT_KEYS.iter().map(|(_, label)| *label).collect();
-        expected.extend(["Ascending", "Descending", "Folders first"]);
+        expected.extend(["Ascending", "Descending", "Folders first", "Keep sorted"]);
         assert_eq!(labels, expected);
 
         let checked = |entries: &[MenuEntry]| -> Vec<MenuId> {
@@ -974,7 +1000,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            checked(&sort_entries(SortRule::default(), None)),
+            checked(&sort_entries(SpaceView::default(), None)),
             [MenuId::SortByName, MenuId::SortAscending]
         );
     }
@@ -985,13 +1011,55 @@ mod tests {
             show_hidden: true,
             ..FolderView::default()
         };
-        let checks = item_checks(&sort_entries(SortRule::default(), Some(&view)));
+        let checks = item_checks(&sort_entries(SpaceView::default(), Some(&view)));
         assert!(checks.contains(&(Some(MenuId::ShowHidden), true)));
-        let normal = item_checks(&sort_entries(SortRule::default(), None));
+        let normal = item_checks(&sort_entries(SpaceView::default(), None));
         assert!(
             !normal.iter().any(|(id, _)| *id == Some(MenuId::ShowHidden)),
             "a normal space has no hidden-files choice"
         );
+    }
+
+    /// Whether the item with `id` is enabled in `entries`.
+    fn item_enabled(entries: &[MenuEntry], id: MenuId) -> Option<bool> {
+        entries.iter().find_map(|entry| match entry {
+            MenuEntry::Item {
+                id: row, enabled, ..
+            } if MenuId::from_id(*row) == Some(id) => Some(*enabled),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_keep_sorted_entry_follows_the_view_and_greys_on_a_lens() {
+        let kept = SpaceView {
+            keep_sorted: true,
+            ..SpaceView::default()
+        };
+        let checks = item_checks(&sort_entries(kept, None));
+        assert!(checks.contains(&(Some(MenuId::KeepSorted), true)));
+        let normal = sort_entries(SpaceView::default(), None);
+        assert_eq!(item_enabled(&normal, MenuId::KeepSorted), Some(true));
+        assert!(item_checks(&normal).contains(&(Some(MenuId::KeepSorted), false)));
+
+        let lens = sort_entries(kept, Some(&FolderView::default()));
+        assert_eq!(item_enabled(&lens, MenuId::KeepSorted), Some(false));
+        assert!(
+            item_checks(&lens).contains(&(Some(MenuId::KeepSorted), true)),
+            "a lens is always kept sorted"
+        );
+    }
+
+    #[test]
+    fn keep_sorted_toggles_a_normal_space_only() {
+        let view = SpaceView::default();
+        let on = keep_sorted_after(view, MenuId::KeepSorted, false).unwrap();
+        assert!(on.keep_sorted);
+        assert_eq!(on.sort, view.sort, "the rule is kept");
+        let off = keep_sorted_after(on, MenuId::KeepSorted, false).unwrap();
+        assert!(!off.keep_sorted);
+        assert_eq!(keep_sorted_after(view, MenuId::KeepSorted, true), None);
+        assert_eq!(keep_sorted_after(view, MenuId::FoldersFirst, false), None);
     }
 
     #[test]

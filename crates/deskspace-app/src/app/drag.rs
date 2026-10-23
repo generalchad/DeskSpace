@@ -291,7 +291,8 @@ impl App {
     }
 
     /// Places the dragged item in the grid slot under `point`, reflowing the
-    /// space. Used while an item is dragged within its own space.
+    /// space. Used while an item is dragged within its own space. A space that
+    /// keeps sorted never rearranges (D15); a drag out still works.
     pub(super) fn reorder_item_at(
         &mut self,
         ui: &mut Ui,
@@ -299,6 +300,14 @@ impl App {
         item: ItemId,
         point: Point,
     ) {
+        if self
+            .config
+            .desktop
+            .space(space)
+            .is_some_and(|space| space.keeps_sorted())
+        {
+            return;
+        }
         let layout = self.layout_for(space);
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
