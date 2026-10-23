@@ -183,6 +183,10 @@ pub enum SelectionKey {
     ZoomOut,
     /// Ctrl+0 (either 0 key): icons back to 100 %.
     ZoomReset,
+    /// Ctrl+Shift+1 through 8: switch the current space to Explorer's view
+    /// with that digit (`VIEW_MODES` in the settings tables). A digit with no
+    /// view yet does nothing.
+    View(u8),
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size

@@ -545,6 +545,7 @@ impl App {
             SelectionKey::ZoomIn => self.zoom(ui, ZoomAction::In),
             SelectionKey::ZoomOut => self.zoom(ui, ZoomAction::Out),
             SelectionKey::ZoomReset => self.zoom(ui, ZoomAction::Reset),
+            SelectionKey::View(digit) => self.set_view_by_digit(ui, digit),
         }
     }
 

@@ -3598,3 +3598,22 @@ until I5-I6 all land, so no partial build hides the desktop.
     `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
     that a hit protects an icon from the next eviction.
   - Done when: no method scans `entries`, and the gates pass.
+- [x] **W13. Ctrl+Shift+1..8 (the key recipe).** **[needs human]**
+  - Explorer's view keys: 1 Extra large icons, 2 Large icons, 3 Medium
+    icons, 4 Small icons, 5 List, 6 Details, 7 Tiles, 8 Content. Watch all
+    eight under `WATCH_PASTE` now, so later views need no keyboard
+    change.
+  - `win32/keyboard.rs`: eight `SEL_VIEW_*` codes decode to one
+    `SelectionKey::View(u8)`, carrying the digit. The recipe gives a key
+    with data its own `Event`, because most data does not fit in the
+    code; a digit does, so one variant is enough (decided for D15).
+  - `App::on_selection_key`: find the `VIEW_MODES` row for the digit and
+    dispatch `SetSpaceView` on the current space. A digit with no row yet
+    does nothing.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: a `keys_for_*` row and the `selection_key` mapping; the app
+    maps 2 to `LargeIcons`.
+  - **[needs human]** check: click a space, then Ctrl+Shift+1, 2, and 3
+    change it. With Explorer in front, Explorer's own Ctrl+Shift+1 still
+    works.

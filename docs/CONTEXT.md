@@ -1333,6 +1333,9 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
+- Ctrl+Shift+1, 2, and 3 switch the current space to Extra large, Large, or
+  Medium icons, the way the View menu does; the digits with no view yet do
+  nothing (D15 adds the rest with their views).
 - With a space current, typing selects the next item whose label starts with
   the typed letters (the buffer clears after about a second); Home, End,
   PageUp, and PageDown scroll the space to the top, the bottom, or one page;

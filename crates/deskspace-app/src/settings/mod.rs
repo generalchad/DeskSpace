@@ -20,7 +20,7 @@ pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
     AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, STARTUP_ORDERS, VIEW_MODES,
-    windows_animation_settings_uri,
+    view_for_digit, windows_animation_settings_uri,
 };
 
 use std::path::Path;

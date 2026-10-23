@@ -56,6 +56,15 @@ pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 4] = [
     (ViewMode::MediumIcons, "Medium icons", Some(3)),
 ];
 
+/// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
+/// no view carries yet.
+pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
+    VIEW_MODES
+        .iter()
+        .find(|(.., shortcut)| *shortcut == Some(digit))
+        .map(|(mode, ..)| *mode)
+}
+
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),
@@ -307,6 +316,21 @@ mod tests {
         for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
             assert_eq!(binding.text(&window), format!("Ctrl+F{}", slot + 1));
         }
+    }
+
+    #[test]
+    fn each_view_shortcut_digit_names_one_view() {
+        assert_eq!(view_for_digit(1), Some(ViewMode::ExtraLargeIcons));
+        assert_eq!(view_for_digit(2), Some(ViewMode::LargeIcons));
+        assert_eq!(view_for_digit(3), Some(ViewMode::MediumIcons));
+        assert_eq!(view_for_digit(4), None, "Small icons arrives with W16");
+        assert_eq!(view_for_digit(0), None);
+
+        let mut digits: Vec<u8> = VIEW_MODES.iter().filter_map(|(.., digit)| *digit).collect();
+        let count = digits.len();
+        digits.sort_unstable();
+        digits.dedup();
+        assert_eq!(digits.len(), count, "one view per shortcut digit");
     }
 
     #[test]

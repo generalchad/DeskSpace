@@ -18,6 +18,7 @@ use deskspace_platform::{
 use crate::scene::{
     SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
 };
+use crate::settings::view_for_digit;
 use crate::storage::path_key;
 
 use super::animation::Arrival;
@@ -711,6 +712,20 @@ impl App {
             self.reflow_space(ui, id);
             self.resnapshot_settings(ui, id);
         }
+    }
+
+    /// Ctrl+Shift+1 through 8 (W13): switches the current space to the view
+    /// its `VIEW_MODES` digit names. A digit with no view yet, or no space
+    /// current, does nothing.
+    pub(super) fn set_view_by_digit(&mut self, ui: &mut Ui, digit: u8) {
+        let Some(Surface::Space(id)) = self.selection.surface else {
+            return;
+        };
+        let Some(mode) = view_for_digit(digit) else {
+            return;
+        };
+        let at = self.space_center(id);
+        self.set_space_view(ui, id, SpaceView { mode }, at);
     }
 
     /// When `id`'s icon factor changed since its last re-flow (a zoom, a view

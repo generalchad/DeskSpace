@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W13 is next; W16 is the
+- section W phase 4, in order (W14 is next; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -670,8 +670,8 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W12 are done (2026-10-21) and archived; the earlier tasks'
-on-screen checks are in section V. The open work is phase 4 (W9, W13-W23)
+W1-W8 and W10-W13 are done (2026-10-21) and archived; the earlier tasks'
+on-screen checks are in section V. The open work is phase 4 (W9, W14-W23)
 and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
@@ -698,7 +698,7 @@ and phase 5 (W24-W43).
 | Level | Tasks | Open now |
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W13 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W14 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
@@ -759,26 +759,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W13. Ctrl+Shift+1..8 (the key recipe).** **[needs human]**
-  - Explorer's view keys: 1 Extra large icons, 2 Large icons, 3 Medium
-    icons, 4 Small icons, 5 List, 6 Details, 7 Tiles, 8 Content. Watch all
-    eight under `WATCH_PASTE` now, so later views need no keyboard
-    change.
-  - `win32/keyboard.rs`: eight `SEL_VIEW_*` codes decode to one
-    `SelectionKey::View(u8)`, carrying the digit. The recipe gives a key
-    with data its own `Event`, because most data does not fit in the
-    code; a digit does, so one variant is enough (decided for D15).
-  - `App::on_selection_key`: find the `VIEW_MODES` row for the digit and
-    dispatch `SetSpaceView` on the current space. A digit with no row yet
-    does nothing.
-  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
-    `README.md` Controls.
-  - Tests: a `keys_for_*` row and the `selection_key` mapping; the app
-    maps 2 to `LargeIcons`.
-  - **[needs human]** check: click a space, then Ctrl+Shift+1, 2, and 3
-    change it. With Explorer in front, Explorer's own Ctrl+Shift+1 still
-    works.
 
 - [ ] **W14. One sort rule, with Explorer's Sort by (core, app).**
   - Core: `SortRule { key: SortKey, descending, folders_first }` beside
@@ -1959,6 +1939,7 @@ each id is in `archive/TASKS-done.md`.
 | W8 (D15) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
 | W11 (D15) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
 | W12 (D15) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
+| W13 (D15) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
 
 ## Found while working
 
