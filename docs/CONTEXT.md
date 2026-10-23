@@ -151,10 +151,10 @@ on custom colors, taking the other color from the palette shown at the time.
 
 Helpers: `title_bar()`, `visible_rect()` (the title bar when folded, else
 `rect`; used for window size and hit-testing), `content_rect()` (empty when
-folded), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
-`resize_edges_at(point, border) -> ResizeEdges` (none when locked or
+folded), `resize_edges_at(point, border) -> ResizeEdges` (none when locked or
 folded; corners twice as wide as edges), item lookup/insert/remove, and
-`set_position`.
+`set_position`. Item geometry (hit rects, the scroll extent, and the visible
+range) comes from `ViewLayout`, not the space.
 
 `Space.source` (`source.rs`) says what fills the space. `SpaceSource::Items`
 is the default and holds the space's own items, as before. `SpaceSource::Folder`
@@ -167,7 +167,15 @@ that order as items come and go (D15), apart from `look`, so a normal space and
 a lens share them. `Space::keeps_sorted()` is true for a lens always and for a
 normal space whose view asks; such a space re-sorts after an item is added,
 moved in, or renamed, and when the choice is turned on, and it refuses a
-manual rearrangement. `FolderEntry` is what the platform reads from the folder.
+manual rearrangement. `ViewLayout` (`view_layout.rs`) derives every item's
+rect, the content extent, the scroll axis, and the visible range from the
+mode, the content size, the item count, and the cell metrics. The icon views
+hand it the grid; Small icons (W16) uses an inline cell (a 16 px icon and one
+label line beside it, in rows that wrap) and never writes `Item.position`, so
+a hand arrangement returns when the space goes back to an icon view. Hit
+tests, the marquee, keyboard navigation, the drag drop index, and the scroll
+indicator all read the same layout. `FolderEntry` is what the platform reads
+from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
 filters hidden entries, sorts by the space's `SortRule`, and reconciles by
@@ -210,7 +218,8 @@ every space lays out on.
 - `arrange_space` resizes the space to fit its items (unless locked or
   user-sized) and calls `position_items`, which lays items on the grid in
   content-relative cells: `columns` wide normally, `columns_for(width)` wide
-  for user-sized spaces. It stamps `grid.title_height` onto the space, so a
+  for user-sized spaces. A view that places items by order (Small icons) does
+  neither: it keeps the space's size and `Item.position` (D15). It stamps `grid.title_height` onto the space, so a
   scale change reaches the title even for user-sized spaces. It does nothing
   for a locked space; `Command::Reflow` handles those (title height and
   positions only, size kept).
@@ -856,14 +865,20 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
   `SpaceScene` carries everything a space draws: chrome, title, resolved
-  colors, item metrics, and the visible `ItemVisual`s in window-local
-  coordinates. `SpaceStyle` carries the window-level attributes. Both are
-  documented field by field in `render/scene.rs`. A new visual is one
+  colors, item metrics, `item_layout`, and the visible `ItemVisual`s in
+  window-local coordinates. `SpaceStyle` carries the window-level attributes.
+  Both are documented field by field in `render/scene.rs`. A new visual is one
   `SpaceScene` field, filled in
   `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
   for window-level attributes only (it re-applies DWM state).
-- The app scrolls by offsetting item rects and includes only items that
-  intersect the content area; the renderer clips items below the title bar.
+- `item_layout` tells the painter how a cell places its icon and label: the
+  grid centers the icon over a wrapped label below it; `Inline` (Small icons,
+  W16) puts the check box, the icon, and one left-aligned ellipsized label
+  line in a row, all vertically centered. The check-box hit test takes the
+  same layout, so the painted box and the clickable box always agree.
+- The app scrolls by offsetting the rects `ViewLayout` gives and includes only
+  the rows its `visible` range names; the renderer clips items below the title
+  bar.
   Scenes are pushed only on change, and the window stores a `PreparedScene`
   with strings pre-encoded to UTF-16, so painting does not allocate.
   `chrome: false` (the desktop layer) draws no title bar or border and fills
@@ -1190,9 +1205,10 @@ in `ui.rs`. What spans them:
   global appearance" (greyed unless customized) makes it follow Global again
   (keeping its look for later), and "Space settings…" opens the settings
   window on that space. **View ▸** picks "Settings icon size" (the look's
-  size), Extra large, Large, or Medium icons; the three fixed views set that
-  space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
-  Ctrl+wheel and Match Explorer. **Sort by ▸** is Explorer's folder menu:
+  size), Extra large, Large, Medium, or Small icons; the three large views set
+  that space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
+  Ctrl+wheel and Match Explorer, while Small icons (W16) draws 16 px icons in
+  inline cells, in rows that wrap and scroll down. **Sort by ▸** is Explorer's folder menu:
   Name, Date modified, Type, and Size as radio items, then Ascending and
   Descending, then Folders first and Keep sorted, then, on a lens, Show
   hidden files. Keep sorted is checked and greyed on a lens. A key
@@ -1348,9 +1364,9 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
-- Ctrl+Shift+1, 2, and 3 switch the current space to Extra large, Large, or
-  Medium icons, the way the View menu does; the digits with no view yet do
-  nothing (D15 adds the rest with their views).
+- Ctrl+Shift+1, 2, 3, and 4 switch the current space to Extra large, Large,
+  Medium, or Small icons, the way the View menu does; the digits with no view
+  yet (5 through 8) do nothing (D15 adds the rest with their views).
 - With a space current, typing selects the next item whose label starts with
   the typed letters (the buffer clears after about a second); Home, End,
   PageUp, and PageDown scroll the space to the top, the bottom, or one page;

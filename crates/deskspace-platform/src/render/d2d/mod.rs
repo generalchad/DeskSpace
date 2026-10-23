@@ -70,7 +70,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
-use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
+use crate::render::scene::{ItemLayout, ItemState, ItemVisual, SpaceScene};
 use crate::render::transition::TransitionFrame;
 
 use bitmap::to_icon;

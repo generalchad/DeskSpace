@@ -147,8 +147,8 @@ help inspect the look and the desktop layer.
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
-  icons larger and smaller, `Ctrl+0` resets them to 100 %, and `Ctrl+Shift+1`,
-  `Ctrl+Shift+2`, and `Ctrl+Shift+3` pick Extra large, Large, or Medium icons.
+  icons larger and smaller, `Ctrl+0` resets them to 100 %, and `Ctrl+Shift+1`
+  through `Ctrl+Shift+4` pick Extra large, Large, Medium, or Small icons.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.

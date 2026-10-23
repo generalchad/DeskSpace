@@ -6,7 +6,8 @@ use deskspace_core::animation::Kind;
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
-use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme};
+use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
+use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
     arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
@@ -376,9 +377,37 @@ impl App {
         )
     }
 
-    /// Scaled icon, label, and check-box sizes for one space.
+    /// Scaled icon, label, and check-box sizes for one space. An order-placed
+    /// view draws its own fixed icon size and scales the rest for the display
+    /// alone, so the look and a zoom leave it alone (W16).
     pub(super) fn metrics_for(&self, id: SpaceId) -> ItemMetrics {
+        let mode = self.view_mode(id);
+        if mode.places_by_order() {
+            let dpi = space_dpi(id.0);
+            let icon_px = mode.item_icon_px().unwrap_or(ITEM_ICON_SIZE);
+            return ItemMetrics {
+                icon_size: ((icon_px as f32 * dpi).round() as i32).max(1),
+                ..ItemMetrics::for_scale(dpi)
+            };
+        }
         ItemMetrics::for_scale(self.space_scale(id))
+    }
+
+    /// The space's view mode, or the default when it is gone.
+    pub(super) fn view_mode(&self, id: SpaceId) -> ViewMode {
+        self.config
+            .desktop
+            .space(id)
+            .map_or(ViewMode::default(), |space| space.view().mode)
+    }
+
+    /// Where `id`'s items sit under its current view, with the same metrics and
+    /// scale the scene builder uses.
+    pub(super) fn view_layout(&self, id: SpaceId) -> Option<ViewLayout> {
+        let space = self.config.desktop.space(id)?;
+        let metrics =
+            ViewMetrics::for_view(space.view().mode, self.layout_for(id), space_dpi(id.0));
+        Some(ViewLayout::for_space(space, metrics))
     }
 
     /// Re-reads Explorer's display options and repaints if they changed. A
@@ -602,6 +631,7 @@ impl App {
             palette: &palette,
             layout: self.surface_layout(Surface::Desktop),
             metrics: self.surface_metrics(Surface::Desktop),
+            scale: 1.0,
         };
         let scene = desktop_layer_scene(
             self.config.desktop.layer(),
@@ -634,6 +664,7 @@ impl App {
             palette: &palette,
             layout: self.layout_for(id),
             metrics: self.metrics_for(id),
+            scale: space_dpi(id.0),
         };
         let mut scene = space_scene(space, look, view, &mut self.icons);
         if let Some(session) = self
@@ -733,12 +764,21 @@ impl App {
     /// a DPI move, which the factor leaves out), pins a space that sizes
     /// itself to its current size first. It then re-flows into fewer or more
     /// columns, as an Explorer window does when its icon size changes
-    /// (`TASKS.md` F15).
+    /// (`TASKS.md` F15). An order-placed view draws a fixed icon size, so it is
+    /// never pinned (W16).
     fn keep_size_on_zoom(&mut self, id: SpaceId) {
-        let factor = self
-            .fixed_icon_scale(id)
-            .unwrap_or_else(|| self.icon_scale(self.theme_for(id)));
+        let mode = self.view_mode(id);
+        let factor = mode.item_icon_px().map_or_else(
+            || {
+                self.fixed_icon_scale(id)
+                    .unwrap_or_else(|| self.icon_scale(self.theme_for(id)))
+            },
+            |px| px as f32 / ITEM_ICON_SIZE as f32,
+        );
         let previous = self.view_cache.record_icon_scale(id, factor);
+        if mode.places_by_order() {
+            return;
+        }
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };

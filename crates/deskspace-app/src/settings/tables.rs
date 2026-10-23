@@ -48,12 +48,13 @@ pub(super) const PRESETS: [(Preset, &str); 2] = [
     (Preset::Custom, "Custom"),
 ];
 
-/// Explorer's icon views in menu order, with the Ctrl+Shift digit W13 adds.
-pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 4] = [
+/// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 5] = [
     (ViewMode::Icons, "Settings icon size", None),
     (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
     (ViewMode::LargeIcons, "Large icons", Some(2)),
     (ViewMode::MediumIcons, "Medium icons", Some(3)),
+    (ViewMode::SmallIcons, "Small icons", Some(4)),
 ];
 
 /// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
@@ -332,7 +333,7 @@ mod tests {
         assert_eq!(view_for_digit(1), Some(ViewMode::ExtraLargeIcons));
         assert_eq!(view_for_digit(2), Some(ViewMode::LargeIcons));
         assert_eq!(view_for_digit(3), Some(ViewMode::MediumIcons));
-        assert_eq!(view_for_digit(4), None, "Small icons arrives with W16");
+        assert_eq!(view_for_digit(4), Some(ViewMode::SmallIcons));
         assert_eq!(view_for_digit(0), None);
 
         let mut digits: Vec<u8> = VIEW_MODES.iter().filter_map(|(.., digit)| *digit).collect();

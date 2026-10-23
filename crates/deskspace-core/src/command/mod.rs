@@ -512,7 +512,11 @@ mod tests {
         }
         let space = desktop.space(id).unwrap();
         assert_eq!(space.rect, sized);
-        assert!(space.max_scroll(desktop.layout.cell(), desktop.layout.padding) > 0);
+        let layout = crate::view_layout::ViewLayout::for_space(
+            space,
+            crate::view_layout::ViewMetrics::for_grid(desktop.layout),
+        );
+        assert!(layout.max_scroll(space.content_rect().height) > 0);
 
         desktop.apply(Command::FitToContents { id }, bounds());
         assert!(!desktop.space(id).unwrap().user_sized);
@@ -994,6 +998,78 @@ mod tests {
             bounds(),
         );
         assert_eq!(labels(&desktop, id), ["small", "mid", "big"]);
+    }
+
+    #[test]
+    fn an_order_view_keeps_the_grid_positions() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 1, 1),
+            item(2, "b", ItemKind::File, 1, 1),
+        ]);
+        assert_eq!(
+            desktop.apply(Command::AutoArrange { id }, bounds()),
+            CommandOutcome::Applied
+        );
+        let before: Vec<(ItemId, Point)> = desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| (item.id, item.position))
+            .collect();
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView::with_mode(crate::view::ViewMode::SmallIcons),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        for (id, position) in &before {
+            assert_eq!(
+                desktop.item(*id).unwrap().position,
+                *position,
+                "switching views"
+            );
+        }
+        assert_eq!(
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: "C:/missing/c".into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        for (id, position) in &before {
+            assert_eq!(
+                desktop.item(*id).unwrap().position,
+                *position,
+                "an added item leaves the grid positions alone"
+            );
+        }
+        let first = desktop.space(id).unwrap().items()[0].id;
+        assert_eq!(
+            desktop.apply(
+                Command::ReorderItem {
+                    id: first,
+                    index: 2,
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        for (id, position) in &before {
+            assert_eq!(
+                desktop.item(*id).unwrap().position,
+                *position,
+                "rearranging by order"
+            );
+        }
     }
 
     fn keep_sorted(desktop: &mut Desktop, id: SpaceId, rule: SortRule) {

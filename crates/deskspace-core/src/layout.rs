@@ -106,8 +106,7 @@ impl GridSpec {
 
     /// How many cell columns fit in a space `width` pixels wide (at least 1).
     pub fn columns_for(&self, width: i32) -> i32 {
-        let step = (self.cell_width + self.gap).max(1);
-        ((width - self.padding * 2 + self.gap) / step).max(1)
+        columns_for(width, self.cell_width, self.gap, self.padding)
     }
 
     /// The width that holds `columns` whole columns with equal edge padding.
@@ -223,8 +222,16 @@ pub fn fit_rect_height(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect 
     }
 }
 
+/// How many `cell_width` columns with `gap` and `padding` fit in `width`
+/// (at least 1). Shared by the icon grid and the order-placed views.
+pub(crate) fn columns_for(width: i32, cell_width: i32, gap: i32, padding: i32) -> i32 {
+    let step = (cell_width + gap).max(1);
+    ((width - padding * 2 + gap) / step).max(1)
+}
+
 /// Sizes the space to fit its items (unless the user sized it) and lays the
-/// items out. Locked spaces are left alone.
+/// items out. Locked spaces are left alone, and a view that places items by
+/// order keeps the space's size and `Item.position` (D15).
 pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     if space.locked {
         return;
@@ -232,6 +239,9 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     // The title height follows the grid even for user-sized spaces, so an icon
     // or DPI change reaches every space.
     space.title_height = spec.title_height;
+    if space.view().mode.places_by_order() {
+        return;
+    }
     if space.user_sized {
         position_items(space, spec);
         return;
@@ -250,8 +260,12 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
 
 /// Places items on the grid. Positions are relative to the space's content
 /// area, so moving the space never has to touch its items. User-sized spaces
-/// use as many columns as their width allows; others use `spec.columns`.
+/// use as many columns as their width allows; others use `spec.columns`. A view
+/// that places items by order leaves the positions alone (D15).
 pub fn position_items(space: &mut Space, spec: GridSpec) {
+    if space.view().mode.places_by_order() {
+        return;
+    }
     let columns = if space.user_sized {
         spec.columns_for(space.rect.width)
     } else {

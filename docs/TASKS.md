@@ -19,8 +19,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
   `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D. Phase 4's next task is W16, the
-hardest in section W; pair with a reviewer on it.
+decision]** and everything in section D. Phase 4's next task is W17, which
+builds on W16's layout; pair with a reviewer on it.
 
 ## How to work a task
 
@@ -58,6 +58,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `lens_ops.rs`, `layer_ops.rs`) |
 | A lens's folder view and entries | `deskspace-core/src/source.rs` (`SpaceSource`, `FolderView`, `FolderEntry`) |
 | Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
+| Where each item sits in the current view, the scroll extent, and hit rects | `deskspace-core/src/view_layout.rs` (`ViewLayout`, `ViewMetrics`) |
 | A look setting or color | `deskspace-core/src/theme.rs` (`Theme`, `Palette`, `*_RANGE`) |
 | A non-look setting, config load/migrate | `deskspace-config/src/schema.rs` (`WindowSettings`, `Config::migrate`) |
 | Config file paths and atomic save | `deskspace-config/src/store.rs` |
@@ -674,9 +675,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W15 are done (2026-10-21; W14 and W15 on 2026-10-22) and
+W1-W8 and W10-W16 are done (2026-10-21; W14, W15, and W16 on 2026-10-22) and
 archived; the earlier tasks' on-screen checks are in section V. The open work
-is phase 4 (W9, W16-W23) and phase 5 (W24-W43).
+is phase 4 (W9, W17-W23) and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -703,13 +704,13 @@ is phase 4 (W9, W16-W23) and phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
+| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W17, W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
-code, and have the same reviewer read the diff. W16 and W42 are the
-hardest tasks in the section. W24 and W25 fix code that runs today, so
-they go first among the reviewer tasks.
+code, and have the same reviewer read the diff. W42 is the hardest task left
+in the section. W24 and W25 fix code that runs today, so they go first among
+the reviewer tasks.
 
 ### Phase 4: views, sort rules, and lens settings
 
@@ -763,37 +764,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W16. Views, part 2: the view layout and Small icons (core, app,
-  platform).** **[needs human]** The largest task in the phase; pair with
-  a reviewer before starting.
-  - Today every item sits on the icon grid (`GridSpec`, `arrange_space`,
-    `Item.position`, `Space::item_at`). The views from here on place
-    items by their order instead.
-  - Core, a new `view_layout.rs`: a pure layout that takes the mode, the
-    content size, the item count, and the cell metrics. It returns each
-    item's rect in content coordinates, the content extent, and the axis
-    that scrolls. The icon views hand off to the grid as today. Small
-    icons uses an *inline cell* (the icon left and one label line beside
-    it, ellipsized), placed in rows that wrap at the width, scrolling
-    down.
-  - Every reader of item geometry moves onto it: the item rects in
-    `scene.rs`, `Space::item_at`, the marquee, `next_in_direction` (give
-    it the rects), the drag-to-rearrange drop index,
-    `content_extent`/`max_scroll`, and the scroll indicator. These views
-    never write `Item.position` (D15). If a reader cannot use the layout
-    without a lens-or-space branch, stop and ask.
-  - Paint: the inline cell at 16 px, as Explorer's Small icons; the
-    selection fills the cell, and the check box sits left of the icon.
-  - Add `ViewMode::SmallIcons` (digit 4) and its `VIEW_MODES` row.
-  - Tests: the rects tile in order with no overlap; rows wrap at the
-    width; the extent; the center of each rect hits its item; arrow keys
-    move by row and column.
-  - **[needs human]** check: Small icons on a space and on a lens, at
-    100 % and 150 %: click, Ctrl and Shift click, the marquee, the arrow
-    keys, type-to-select, F2 (the box sits over the label), drag out, and
-    a drag to rearrange (normal space, not kept sorted). Back in Medium
-    icons, the hand arrangement is as it was.
 
 - [ ] **W17. List (core, app, platform).** **[needs human]**
   - `ViewMode::List` (digit 5): Explorer's List. Inline cells (W16) fill
@@ -2227,6 +2197,7 @@ each id is in `archive/TASKS-done.md`.
 | W12 (D15) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
 | W13 (D15) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
 | W15 (D15) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
+| W16 (D15) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
 
 ## Found while working
 
@@ -2348,6 +2319,21 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   sorted choice (W14, W15), though D15 says a space keeps its last rule.
   Suggested: build the new view from the current one and change only the
   mode, if that is what D15 means.
+- **W16 Small icons:** the inline cell is 200 × 22 px at 96 DPI, with a 2 px
+  gap, because those are plausible Explorer values but have not been measured
+  on screen. Confirm them (and the row height at a larger label size, which
+  the cell does not follow yet) during W16's check, then fix the constants in
+  `view_layout.rs` and record the measurement.
+- **Docs, D15 vs W16:** D15 calls Small icons one of the "four icon views"
+  and says only List, Details, Tiles, and Content place items by order, while
+  W16 (and W12's note) puts Small icons' labels beside the icon in inline
+  cells, so it now places items by order. W16 was followed. Suggested: amend
+  D15 to say the three large icon views keep the grid and Small icons is an
+  order-placed inline view with a fixed 16 px icon.
+- **W16 Fit to contents:** on a space in Small icons the command changes
+  nothing, because an order-placed view keeps the space's size. Decide
+  whether it should fit the content extent (and what width) as the view tasks
+  continue.
 - **Docs:** `CONTEXT.md`'s intro says "decisions (D1-D9)" and `ROADMAP.md`
   section 8 lists "(D2, D3, D6-D9, D11-D13)", while section 2 now holds
   D1-D16 (review, 2026-10-22). Suggested: point at section 2 instead of

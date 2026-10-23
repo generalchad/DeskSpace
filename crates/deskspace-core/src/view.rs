@@ -36,8 +36,9 @@ impl SpaceView {
     }
 }
 
-/// Explorer's icon views. `Icons` follows the look's icon size; the rest fix
-/// it for the space.
+/// Explorer's views (D15). `Icons` follows the look's icon size; the fixed icon
+/// views set it for the space. `SmallIcons` places items by their order, in
+/// inline cells, rather than on the icon grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewMode {
@@ -50,24 +51,47 @@ pub enum ViewMode {
     LargeIcons,
     /// 48 px at 96 DPI.
     MediumIcons,
+    /// 16 px at 96 DPI, in an inline cell (W16).
+    SmallIcons,
 }
 
 impl ViewMode {
-    /// The fixed icon size at 96 DPI, or `None` when the look decides.
+    /// The fixed icon size of a grid view at 96 DPI, or `None` when the look
+    /// decides or the view places items by order.
     pub fn icon_px(self) -> Option<i32> {
         match self {
             Self::Icons => None,
             Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
             Self::LargeIcons => Some(LARGE_ICON_PX),
             Self::MediumIcons => Some(MEDIUM_ICON_PX),
+            Self::SmallIcons => None,
         }
+    }
+
+    /// The icon size the view draws at 96 DPI, or `None` when the look decides.
+    pub fn item_icon_px(self) -> Option<i32> {
+        match self {
+            Self::Icons => None,
+            Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
+            Self::LargeIcons => Some(LARGE_ICON_PX),
+            Self::MediumIcons => Some(MEDIUM_ICON_PX),
+            Self::SmallIcons => Some(SMALL_ICON_PX),
+        }
+    }
+
+    /// Whether the view places items by their order instead of on the icon
+    /// grid, so it never writes `Item.position` (D15, W16).
+    pub fn places_by_order(self) -> bool {
+        matches!(self, Self::SmallIcons)
     }
 }
 
-/// Explorer's fixed icon sizes at 96 DPI (D15).
+/// Explorer's fixed icon sizes at 96 DPI (D15). `SmallIcons` is the one an
+/// inline cell draws; the rest are grid views.
 const EXTRA_LARGE_ICON_PX: i32 = 256;
 const LARGE_ICON_PX: i32 = 96;
 const MEDIUM_ICON_PX: i32 = 48;
+pub const SMALL_ICON_PX: i32 = 16;
 
 #[cfg(test)]
 mod tests {
@@ -90,6 +114,32 @@ mod tests {
         assert_eq!(ViewMode::ExtraLargeIcons.icon_px(), Some(256));
         assert_eq!(ViewMode::LargeIcons.icon_px(), Some(96));
         assert_eq!(ViewMode::MediumIcons.icon_px(), Some(48));
+        assert_eq!(ViewMode::SmallIcons.icon_px(), None);
+        assert_eq!(ViewMode::SmallIcons.item_icon_px(), Some(16));
+        assert_eq!(ViewMode::Icons.item_icon_px(), None);
+    }
+
+    #[test]
+    fn only_small_icons_place_items_by_order() {
+        assert!(ViewMode::SmallIcons.places_by_order());
+        for mode in [
+            ViewMode::Icons,
+            ViewMode::ExtraLargeIcons,
+            ViewMode::LargeIcons,
+            ViewMode::MediumIcons,
+        ] {
+            assert!(!mode.places_by_order(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn small_icons_survive_a_round_trip() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
+        space.view = SpaceView::with_mode(ViewMode::SmallIcons);
+        let text = toml::to_string(&space).unwrap();
+        assert!(text.contains("small_icons"));
+        let back: Space = toml::from_str(&text).unwrap();
+        assert_eq!(back.view().mode, ViewMode::SmallIcons);
     }
 
     #[test]

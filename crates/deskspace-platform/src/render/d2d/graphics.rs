@@ -28,6 +28,9 @@ pub(super) struct Graphics {
     /// Label formats keyed by size percent, so scaling does not create a
     /// format on every paint.
     pub(super) label_formats: HashMap<u8, IDWriteTextFormat>,
+    /// The same sizes for an inline cell's single left-aligned line (W16).
+    pub(super) inline_label_format: IDWriteTextFormat,
+    pub(super) inline_label_formats: HashMap<u8, IDWriteTextFormat>,
     pub(super) glyph_format: Option<IDWriteTextFormat>,
     /// The zoom pop-up's percentage, and its button text (centered both ways).
     pub(super) zoom_percent_format: IDWriteTextFormat,
@@ -113,6 +116,31 @@ impl Graphics {
                 label_formats.insert(scale, format);
             }
 
+            // An inline cell (Small icons) has one left-aligned line beside its
+            // icon, ellipsized when it runs past the cell (W16).
+            let inline_label_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            inline_label_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+            inline_label_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            inline_label_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            let inline_sign = dwrite.CreateEllipsisTrimmingSign(&inline_label_format)?;
+            inline_label_format.SetTrimming(&character_trimming(), &inline_sign)?;
+            let mut inline_label_formats = HashMap::new();
+            for scale in (LABEL_SIZE_RANGE.0..=LABEL_SIZE_RANGE.1).step_by(10) {
+                let format = make_format(
+                    &dwrite,
+                    text_family,
+                    DWRITE_FONT_WEIGHT_NORMAL,
+                    12.0 * scale as f32 / 100.0,
+                )?;
+                format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
+                format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+                format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+                let sign = dwrite.CreateEllipsisTrimmingSign(&format)?;
+                format.SetTrimming(&character_trimming(), &sign)?;
+                inline_label_formats.insert(scale, format);
+            }
+
             let glyph_format = match glyph_family {
                 Some(family) => {
                     let format = make_format(&dwrite, family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
@@ -150,6 +178,8 @@ impl Graphics {
                 edit_format,
                 label_format,
                 label_formats,
+                inline_label_format,
+                inline_label_formats,
                 glyph_format,
                 zoom_percent_format,
                 zoom_label_format,
@@ -173,14 +203,15 @@ impl Graphics {
         Ok(unsafe { factory.CreateDevice(&dxgi)? })
     }
 
-    /// The label format for a size percent, rounded to the nearest cached
-    /// step, falling back to the default size.
-    pub(super) fn label_format_for(&self, scale: u8) -> IDWriteTextFormat {
+    /// The label format for a size percent and item layout, rounded to the
+    /// nearest cached step, falling back to the default size.
+    pub(super) fn item_label_format_for(&self, scale: u8, layout: ItemLayout) -> IDWriteTextFormat {
         let rounded = (scale.clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) + 5) / 10 * 10;
-        self.label_formats
-            .get(&rounded)
-            .unwrap_or(&self.label_format)
-            .clone()
+        let (formats, fallback) = match layout {
+            ItemLayout::Grid => (&self.label_formats, &self.label_format),
+            ItemLayout::Inline => (&self.inline_label_formats, &self.inline_label_format),
+        };
+        formats.get(&rounded).unwrap_or(fallback).clone()
     }
 }
 

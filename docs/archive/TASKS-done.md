@@ -3659,3 +3659,34 @@ until I5-I6 all land, so no partial build hides the desktop.
     rearrange (a drag out still moves the file). Turned off, the space
     rearranges freely again and keeps the order it had.
 
+- [x] **W16. Views, part 2: the view layout and Small icons (core, app,
+  platform).** **[needs human]** The largest task in the phase; pair with
+  a reviewer before starting.
+  - Today every item sits on the icon grid (`GridSpec`, `arrange_space`,
+    `Item.position`, `Space::item_at`). The views from here on place
+    items by their order instead.
+  - Core, a new `view_layout.rs`: a pure layout that takes the mode, the
+    content size, the item count, and the cell metrics. It returns each
+    item's rect in content coordinates, the content extent, and the axis
+    that scrolls. The icon views hand off to the grid as today. Small
+    icons uses an *inline cell* (the icon left and one label line beside
+    it, ellipsized), placed in rows that wrap at the width, scrolling
+    down.
+  - Every reader of item geometry moves onto it: the item rects in
+    `scene.rs`, `Space::item_at`, the marquee, `next_in_direction` (give
+    it the rects), the drag-to-rearrange drop index,
+    `content_extent`/`max_scroll`, and the scroll indicator. These views
+    never write `Item.position` (D15). If a reader cannot use the layout
+    without a lens-or-space branch, stop and ask.
+  - Paint: the inline cell at 16 px, as Explorer's Small icons; the
+    selection fills the cell, and the check box sits left of the icon.
+  - Add `ViewMode::SmallIcons` (digit 4) and its `VIEW_MODES` row.
+  - Tests: the rects tile in order with no overlap; rows wrap at the
+    width; the extent; the center of each rect hits its item; arrow keys
+    move by row and column.
+  - **[needs human]** check: Small icons on a space and on a lens, at
+    100 % and 150 %: click, Ctrl and Shift click, the marquee, the arrow
+    keys, type-to-select, F2 (the box sits over the label), drag out, and
+    a drag to rearrange (normal space, not kept sorted). Back in Medium
+    icons, the hand arrangement is as it was.
+

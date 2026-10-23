@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::{Point, Rect};
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
@@ -291,34 +291,6 @@ impl Space {
         )
     }
 
-    /// The item whose grid cell contains `point` (desktop coordinates) when
-    /// the content is scrolled down by `scroll` pixels.
-    pub fn item_at(&self, point: Point, cell: Size, scroll: i32) -> Option<ItemId> {
-        let content = self.content_rect();
-        if !content.contains(point) {
-            return None;
-        }
-        let local = Point::new(point.x - content.x, point.y - content.y + scroll);
-        self.items
-            .iter()
-            .find(|item| Rect::from_point_size(item.position, cell).contains(local))
-            .map(|item| item.id)
-    }
-
-    /// Height of the laid-out items including the bottom padding.
-    pub fn content_extent(&self, cell: Size, padding: i32) -> i32 {
-        self.items
-            .iter()
-            .map(|item| item.position.y + cell.height + padding)
-            .max()
-            .unwrap_or(0)
-    }
-
-    /// How far the content can scroll before its end reaches the bottom.
-    pub fn max_scroll(&self, cell: Size, padding: i32) -> i32 {
-        (self.content_extent(cell, padding) - self.content_rect().height).max(0)
-    }
-
     /// The edges a resize grabbed at `point` would move. Corners are wider
     /// than `border` so they are easy to hit. Locked and folded spaces
     /// cannot be resized.
@@ -439,7 +411,6 @@ impl Space {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::item::ItemFacts;
 
     #[test]
     fn folded_space_collapses_to_title_bar() {
@@ -451,43 +422,6 @@ mod tests {
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
         );
         assert!(space.content_rect().is_empty());
-    }
-
-    #[test]
-    fn item_at_uses_content_relative_cells() {
-        let mut space = Space::new(SpaceId(1), "F", Rect::new(100, 100, 300, 300));
-        let mut item = Item::new(ItemId(7), "a.txt", ItemFacts::default());
-        item.position = Point::new(10, 10);
-        space.push_item(item);
-        let cell = Size::new(50, 50);
-        let inside = Point::new(100 + 20, 100 + DEFAULT_TITLE_HEIGHT + 20);
-        assert_eq!(space.item_at(inside, cell, 0), Some(ItemId(7)));
-        assert_eq!(space.item_at(Point::new(100 + 200, 300), cell, 0), None);
-        space.folded = true;
-        assert_eq!(space.item_at(inside, cell, 0), None);
-    }
-
-    #[test]
-    fn item_at_accounts_for_scroll() {
-        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 100));
-        let mut item = Item::new(ItemId(3), "deep.txt", ItemFacts::default());
-        item.position = Point::new(10, 200);
-        space.push_item(item);
-        let cell = Size::new(50, 50);
-        let point = Point::new(20, DEFAULT_TITLE_HEIGHT + 20);
-        assert_eq!(space.item_at(point, cell, 0), None);
-        assert_eq!(space.item_at(point, cell, 190), Some(ItemId(3)));
-    }
-
-    #[test]
-    fn max_scroll_is_overflow_beyond_the_content_area() {
-        let mut space = Space::new(SpaceId(1), "F", Rect::new(0, 0, 300, 128));
-        assert_eq!(space.max_scroll(Size::new(50, 50), 10), 0);
-        let mut item = Item::new(ItemId(1), "a", ItemFacts::default());
-        item.position = Point::new(10, 200);
-        space.push_item(item);
-        // Extent 200 + 50 + 10 = 260; content height 128 - 28 = 100.
-        assert_eq!(space.max_scroll(Size::new(50, 50), 10), 160);
     }
 
     #[test]

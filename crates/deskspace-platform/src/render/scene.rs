@@ -105,6 +105,9 @@ pub struct SpaceScene {
     /// Scaled item sizes (icon, label gap, check box) the painter draws with;
     /// the app's hit tests use the same metrics.
     pub metrics: ItemMetrics,
+    /// How each item cell places its icon and label (W16). The painter's icon,
+    /// label, and rename-box positions and the check-box hit test both read it.
+    pub item_layout: ItemLayout,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
@@ -119,6 +122,16 @@ pub struct SpaceScene {
     pub marquee: Option<Rect>,
     /// The scroll position indicator, when the content overflows.
     pub scroll_thumb: Option<Rect>,
+}
+
+/// How an item cell places its icon and label (W16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ItemLayout {
+    /// The icon grid: the icon centered at the top, with its label below it.
+    #[default]
+    Grid,
+    /// One row of a list: the icon at the left and one label line beside it.
+    Inline,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

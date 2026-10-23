@@ -48,8 +48,9 @@ pub(super) unsafe fn draw_item(
     } = ctx;
     let cell = to_rect_f(item.rect);
     let metrics = scene.metrics;
+    let inline = scene.item_layout == ItemLayout::Inline;
     let icon_size = metrics.icon_size as f32;
-    let icon_top = metrics.icon_top as f32;
+    let icon_pad = metrics.icon_top as f32;
     let highlight = match item.state {
         ItemState::Normal | ItemState::Dragged => None,
         ItemState::Hovered => Some(scene.hover_fill),
@@ -76,17 +77,26 @@ pub(super) unsafe fn draw_item(
             );
         }
 
-        let center_x = (cell.left + cell.right) / 2.0;
-        let icon_left = (center_x - icon_size / 2.0).round();
+        // The grid centers the icon over its label; an inline cell puts the
+        // check box, then the icon, then one label line, all vertically
+        // centered (W16).
+        let (icon_left, icon_top) = if inline {
+            let left = cell.left
+                + (metrics.inline_inset + metrics.check_box_size + metrics.inline_gap) as f32;
+            let top = cell.top + ((cell.bottom - cell.top - icon_size) / 2.0).round();
+            (left, top)
+        } else {
+            let center_x = (cell.left + cell.right) / 2.0;
+            ((center_x - icon_size / 2.0).round(), cell.top + icon_pad)
+        };
         if let Some(bitmap) = icon {
-            let top = cell.top + icon_top;
             target.DrawBitmap(
                 bitmap,
                 Some(&rect_f(
                     icon_left,
-                    top,
+                    icon_top,
                     icon_left + icon_size,
-                    top + icon_size,
+                    icon_top + icon_size,
                 )),
                 alpha as f32 / 255.0,
                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
@@ -100,23 +110,48 @@ pub(super) unsafe fn draw_item(
             && (scene.check_boxes_persistent || item.checked || item.hovered);
         if scene.show_check_boxes && show_box {
             let margin = metrics.check_box_margin as f32;
-            let check_box = CheckBoxRect {
-                left: icon_left + margin,
-                top: cell.top + icon_top + margin,
-                size: metrics.check_box_size as f32,
+            let check_box = if inline {
+                CheckBoxRect {
+                    left: cell.left + metrics.inline_inset as f32,
+                    top: cell.top
+                        + (((cell.bottom - cell.top) as i32 - metrics.check_box_size) / 2) as f32,
+                    size: metrics.check_box_size as f32,
+                }
+            } else {
+                CheckBoxRect {
+                    left: icon_left + margin,
+                    top: cell.top + icon_pad + margin,
+                    size: metrics.check_box_size as f32,
+                }
             };
             draw_check_box(ctx, check_box, item.checked, scene.check_fill);
         }
-        let label_top = cell.top + icon_top + icon_size + metrics.label_gap as f32;
         let scale = scene
             .label_size
             .clamp(LABEL_SIZE_RANGE.0, LABEL_SIZE_RANGE.1) as f32
             / 100.0;
-        let lines = scene.label_lines.clamp(1, 2) as f32;
         let line_height = LABEL_LINE_HEIGHT * scale;
+        let center_y = (cell.top + cell.bottom) / 2.0;
+        let (label_left, label_top, label_right, lines) = if inline {
+            // One line beside the icon, vertically centered and ellipsized.
+            let top = (center_y - line_height / 2.0).round();
+            (
+                icon_left + icon_size + metrics.inline_gap as f32,
+                top,
+                cell.right - metrics.inline_inset as f32,
+                1.0,
+            )
+        } else {
+            (
+                cell.left + 4.0,
+                cell.top + icon_pad + icon_size + metrics.label_gap as f32,
+                cell.right - 4.0,
+                scene.label_lines.clamp(1, 2) as f32,
+            )
+        };
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            let format = graphics.label_format_for(scene.label_size);
+            let format = graphics.item_label_format_for(scene.label_size, scene.item_layout);
             if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
                 // Explorer's rename box wraps the whole name and grows downward
                 // over the items below it, so lay it out in the label's width
@@ -127,16 +162,16 @@ pub(super) unsafe fn draw_item(
                     buffer,
                     &format,
                     rect_f(
-                        cell.left + 4.0,
+                        label_left,
                         label_top,
-                        cell.right - 4.0,
+                        label_right,
                         label_top + EDIT_MAX_HEIGHT,
                     ),
                     scene.edit,
                     scene.caret_visible,
                 );
             } else {
-                let label_rect = rect_f(cell.left + 4.0, label_top, cell.right - 4.0, label_bottom);
+                let label_rect = rect_f(label_left, label_top, label_right, label_bottom);
                 draw_text(
                     target,
                     brush,

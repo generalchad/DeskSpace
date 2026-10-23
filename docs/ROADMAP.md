@@ -1059,7 +1059,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Partial: lenses work end to end (M4 phases 1-3, W1-W7, 2026-10-21; on-screen checks in `TASKS.md` section V); views and a Lenses settings page are phase 4 |
 | F-08 | Lens sort rules | M4 | Done: one `SortRule`, Explorer's Sort by (W14), and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
-| F-09 | Lens show-as / icon size | M4 | Partial: show-as is done (W11) and the extra-large, large, and medium icon views are in (W12); small icons, List, Details, Tiles, and Content come with W16-W22 (D15) |
+| F-09 | Lens show-as / icon size | M4 | Partial: show-as is done (W11), the extra-large, large, and medium icon views are in (W12), and Small icons is in (W16); List, Details, Tiles, and Content come with W17-W22 (D15) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |

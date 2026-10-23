@@ -14,8 +14,8 @@ pub use input::{
     SelectionKey, SettingsEvent, ShellItem, SpaceEvent, TrayEvent, WatchKey, ZoomAction,
 };
 pub use render::{
-    DropInto, Geometry, ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, Mask, Play,
-    SpaceScene, SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box,
+    DropInto, Geometry, ITEM_ICON_SIZE, Icon, ItemLayout, ItemMetrics, ItemState, ItemVisual, Mask,
+    Play, SpaceScene, SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box,
     item_check_box_hit,
 };
 pub use ui::{

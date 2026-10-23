@@ -1,11 +1,12 @@
 use deskspace_core::item::ItemKind;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
+use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
 use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
-    Space, Theme,
+    Space, Theme, ViewMode,
 };
 use deskspace_platform::{
-    DropInto, IconCache, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
+    DropInto, IconCache, ItemLayout, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
 };
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
@@ -23,6 +24,9 @@ pub struct SurfaceLook<'a> {
     pub palette: &'a Palette,
     pub layout: GridSpec,
     pub metrics: ItemMetrics,
+    /// The display scale (1.0 is 96 DPI) that order-placed views size their
+    /// inline cells with. Icon views already carry it in `layout`.
+    pub scale: f32,
 }
 
 /// Transient view state that affects how one space is drawn.
@@ -100,27 +104,33 @@ pub fn space_scene(
         palette,
         layout,
         metrics,
+        scale,
     } = look;
-    let cell = layout.cell();
+    let view_layout = ViewLayout::for_space(
+        space,
+        ViewMetrics::for_view(space.view().mode, layout, scale),
+    );
     let content_top = space.title_height;
     let content_bottom = space.rect().height;
     let items = if space.folded() {
         Vec::new()
     } else {
-        space
-            .items()
-            .iter()
-            .map(|item| {
-                let rect = Rect::new(
-                    item.position.x,
-                    content_top + item.position.y - view.scroll,
-                    cell.width,
-                    cell.height,
-                );
-                (item, rect)
-            })
-            .filter(|(_, rect)| rect.bottom() > content_top && rect.y < content_bottom)
-            .map(|(item, rect)| ItemVisual {
+        let mut items = Vec::new();
+        for index in view_layout.visible(view.scroll, space.content_rect().height) {
+            let Some(item) = space.items().get(index) else {
+                continue;
+            };
+            let cell = view_layout.rect(index);
+            let rect = Rect::new(
+                cell.x,
+                content_top + cell.y - view.scroll,
+                cell.width,
+                cell.height,
+            );
+            if rect.bottom() <= content_top || rect.y >= content_bottom {
+                continue;
+            }
+            items.push(ItemVisual {
                 id: item.id.0,
                 rect,
                 label: item_label(item, view.show_extensions),
@@ -144,8 +154,9 @@ pub fn space_scene(
                 },
                 cut: view.cut.contains(&item.id),
                 label_color: compressed_label(item, view.show_compressed_color),
-            })
-            .collect()
+            });
+        }
+        items
     };
 
     let tint = palette.tint;
@@ -194,13 +205,14 @@ pub fn space_scene(
         edit: palette.edit,
         caret_visible: true,
         metrics,
+        item_layout: item_layout(space.view().mode),
         items,
         show_check_boxes: view.show_check_boxes,
         check_boxes_persistent: view.check_boxes_persistent,
         marquee: view.marquee,
         scroll_thumb: scroll_thumb(
             space,
-            layout,
+            &view_layout,
             view.scroll,
             theme.effective_corner_radius() as i32,
         ),
@@ -223,6 +235,7 @@ pub fn desktop_layer_scene(
         palette,
         layout,
         metrics,
+        ..
     } = look;
     let cell = layout.cell();
     let items = layer
@@ -291,6 +304,7 @@ pub fn desktop_layer_scene(
         edit: palette.edit,
         caret_visible: true,
         metrics,
+        item_layout: ItemLayout::Grid,
         items,
         show_check_boxes: view.show_check_boxes,
         check_boxes_persistent: view.check_boxes_persistent,
@@ -353,18 +367,23 @@ pub fn drag_scene(
     let scroll = view.scroll;
     let show_extensions = view.show_extensions;
     let (icon_size, overlay_size) = (look.metrics.icon_size, look.theme.overlay_size);
+    let view_layout = ViewLayout::for_space(
+        space,
+        ViewMetrics::for_view(space.view().mode, look.layout, look.scale),
+    );
     let mut scene = space_scene(space, look, view, icons);
-    let cell = look.layout.cell();
     let content_top = space.title_height;
     scene.items = ids
         .iter()
         .filter_map(|id| {
-            let item = space.items().iter().find(|item| item.id == *id)?;
+            let index = space.items().iter().position(|item| item.id == *id)?;
+            let item = &space.items()[index];
+            let cell = view_layout.rect(index);
             Some(ItemVisual {
                 id: item.id.0,
                 rect: Rect::new(
-                    item.position.x,
-                    content_top + item.position.y - scroll,
+                    cell.x,
+                    content_top + cell.y - scroll,
                     cell.width,
                     cell.height,
                 ),
@@ -379,6 +398,18 @@ pub fn drag_scene(
         })
         .collect();
     scene
+}
+
+/// How `mode`'s item cells place their icon and label. The painter and the
+/// check-box hit test both read it, so they always agree.
+pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
+    match mode {
+        ViewMode::SmallIcons => ItemLayout::Inline,
+        ViewMode::Icons
+        | ViewMode::ExtraLargeIcons
+        | ViewMode::LargeIcons
+        | ViewMode::MediumIcons => ItemLayout::Grid,
+    }
 }
 
 /// The item's display label. Explorer never shows a shortcut's extension, even
@@ -441,16 +472,21 @@ fn thumb_bottom_margin(corner_radius: i32) -> i32 {
 
 /// A thin bar along the right edge whose length and position show which part
 /// of the content is visible. `None` when everything fits.
-fn scroll_thumb(space: &Space, layout: GridSpec, scroll: i32, corner_radius: i32) -> Option<Rect> {
+fn scroll_thumb(
+    space: &Space,
+    layout: &ViewLayout,
+    scroll: i32,
+    corner_radius: i32,
+) -> Option<Rect> {
     if space.folded() {
         return None;
     }
-    let max_scroll = space.max_scroll(layout.cell(), layout.padding);
+    let viewport = space.content_rect().height;
+    let max_scroll = layout.max_scroll(viewport);
     if max_scroll == 0 {
         return None;
     }
-    let viewport = space.content_rect().height;
-    let extent = viewport + max_scroll;
+    let extent = layout.extent();
     let track_top = space.title_height + SCROLL_THUMB_MARGIN;
     let track_height = viewport - SCROLL_THUMB_MARGIN - thumb_bottom_margin(corner_radius);
     if track_height <= 0 {
@@ -516,6 +552,7 @@ mod tests {
             palette,
             layout: GridSpec::default(),
             metrics: ItemMetrics::for_scale(1.0),
+            scale: 1.0,
         }
     }
 
@@ -613,6 +650,39 @@ mod tests {
         assert_eq!(
             scene.items[0].rect,
             Rect::new(12, space.title_height + 12, 96, 104)
+        );
+    }
+
+    #[test]
+    fn a_small_icons_space_draws_inline_cells() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Work", Rect::new(500, 300, 240, 200));
+        crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(ViewMode::SmallIcons),
+            },
+        );
+        let space = desktop.space(id).unwrap();
+        let theme = Theme::default();
+        let look = SurfaceLook {
+            theme: &theme,
+            palette: &theme.palette(true),
+            layout: GridSpec::default(),
+            metrics: ItemMetrics {
+                icon_size: 16,
+                ..ItemMetrics::for_scale(1.0)
+            },
+            scale: 1.0,
+        };
+        let scene = space_scene(space, look, ViewState::default(), &mut IconCache::new());
+        assert_eq!(scene.item_layout, ItemLayout::Inline);
+        assert_eq!(scene.metrics.icon_size, 16);
+        assert_eq!(
+            scene.items[0].rect,
+            Rect::new(12, space.title_height + 12, 200, 22)
         );
     }
 
@@ -965,7 +1035,8 @@ mod tests {
         let theme = Theme::default();
         let layout = GridSpec::default();
         let tall = tall_space();
-        let max = tall.max_scroll(layout.cell(), layout.padding);
+        let max = ViewLayout::for_space(&tall, ViewMetrics::for_grid(layout))
+            .max_scroll(tall.content_rect().height);
         let thumb = |scroll| {
             space_scene(
                 &tall,
