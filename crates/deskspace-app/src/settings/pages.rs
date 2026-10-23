@@ -3,7 +3,8 @@
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
+    corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -532,6 +533,45 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
     SettingsPage {
         title: page.title.into(),
         fields,
+    }
+}
+
+/// A lens's Lens page: its folder, the buttons that act on it, and the
+/// hidden-files toggle. Built for every scope so the form keeps its shape;
+/// only a lens lists it.
+pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage {
+    let view = space.and_then(Space::folder_view);
+    let path = view.map(|view| view.path.display().to_string());
+    let folder = match (path, available) {
+        (Some(path), true) => path,
+        (Some(path), false) => format!("Folder not available\n{path}"),
+        (None, _) => String::new(),
+    };
+    let title = view.map_or(LensTitle::Custom, |view| view.title);
+    let custom_text = space.map_or("", |space| space.title());
+    SettingsPage {
+        title: "Lens".into(),
+        fields: vec![
+            Field::heading(field::LENS_HEADING, "Folder"),
+            Field::note(field::LENS_PATH, folder),
+            Field::button(field::LENS_OPEN, "", "Open folder"),
+            Field::button(field::LENS_CHANGE, "", "Change folder\u{2026}"),
+            Field::heading(field::LENS_TITLE_HEADING, "Title"),
+            Field::choice(
+                field::LENS_TITLE_MODE,
+                "Show as",
+                &labels(&LENS_TITLES),
+                index_of(&LENS_TITLES, title),
+            ),
+            Field::text(field::LENS_TITLE_TEXT, "Custom title", custom_text)
+                .enabled(title == LensTitle::Custom),
+            Field::heading(field::LENS_CONTENTS_HEADING, "Contents"),
+            Field::toggle(
+                field::LENS_SHOW_HIDDEN,
+                "Show hidden files",
+                view.is_some_and(|view| view.show_hidden),
+            ),
+        ],
     }
 }
 

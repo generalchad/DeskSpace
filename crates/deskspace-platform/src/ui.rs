@@ -197,6 +197,9 @@ pub struct SettingsNav {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsScope {
     pub label: String,
+    /// A symbol drawn before the label, from the icon font. `None` draws
+    /// nothing and leaves the label where it is.
+    pub glyph: Option<char>,
     /// Indents the row under the one above it.
     pub indent: bool,
     /// Draws the row in disabled text, for a scope that only inherits.
@@ -325,6 +328,9 @@ pub struct SpacePreview {
     pub title_fill: Color,
     /// Title and label text.
     pub text: Color,
+    /// Whether the space's folder is available. Only a lens builds a page
+    /// from it; Global and normal spaces leave it true.
+    pub available: bool,
     pub items: Vec<PreviewItem>,
 }
 
@@ -342,6 +348,7 @@ impl Default for SpacePreview {
             fill: Color::rgb(0x20, 0x20, 0x20),
             title_fill: Color::rgb(0x18, 0x18, 0x18),
             text: Color::rgb(0xFF, 0xFF, 0xFF),
+            available: true,
             items: Vec::new(),
         }
     }

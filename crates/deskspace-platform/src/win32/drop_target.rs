@@ -42,11 +42,13 @@ use windows::core::{PCWSTR, Ref, Result as WinResult};
 
 use crate::error::PlatformError;
 use crate::input::{DropAction, Event, ShellItem, SpaceEvent};
+use crate::render::DropInto;
 use crate::ui::MenuEntry;
 use crate::win32::menu;
 use crate::win32::runtime;
 use crate::win32::shortcuts::shell_item;
 use crate::win32::space_animation;
+use crate::win32::space_window;
 use crate::win32::system::wide;
 
 /// Clipboard format naming the effect a drag source would like the target to
@@ -142,7 +144,13 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
             log_formats(data);
         }
         self.accepts.set(kind);
-        let chosen = drag_effect(kind, right, keys, allowed);
+        let chosen = drag_effect(
+            kind,
+            right,
+            keys,
+            allowed,
+            space_window::drop_into(self.window),
+        );
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // A shell source (Explorer, the desktop) puts a default action hint
@@ -172,7 +180,13 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
         } else {
             self.accepts.get()
         };
-        let chosen = drag_effect(kind, self.right_drag.get(), keys, allowed);
+        let chosen = drag_effect(
+            kind,
+            self.right_drag.get(),
+            keys,
+            allowed,
+            space_window::drop_into(self.window),
+        );
         // SAFETY: as above.
         unsafe { *effect = chosen };
         // SAFETY: forwarding this call's own arguments.
@@ -215,7 +229,8 @@ impl IDropTarget_Impl for SpaceDropTarget_Impl {
             let plan = ask_right_drop(self.window, point, allowed);
             (plan, right_drop_effect(plan))
         } else {
-            let (plan, chosen) = drop_plan(kind, keys, allowed);
+            let (plan, chosen) =
+                drop_plan(kind, keys, allowed, space_window::drop_into(self.window));
             // SAFETY: forwarding this call's own arguments.
             with_image_helper(|helper| unsafe { helper.Drop(data, &screen(point), chosen) });
             (plan, chosen)
@@ -439,6 +454,7 @@ fn drop_plan(
     kind: DragKind,
     keys: MODIFIERKEYS_FLAGS,
     allowed: DROPEFFECT,
+    into: DropInto,
 ) -> (DropPlan, DROPEFFECT) {
     let allows = |effect: DROPEFFECT| allowed.0 & effect.0 != 0;
     match kind {
@@ -450,12 +466,25 @@ fn drop_plan(
         DragKind::Files if keys.contains(ALT_KEY) && allows(DROPEFFECT_LINK) => {
             (DropPlan::Shortcuts, DROPEFFECT_LINK)
         }
+        // A folder cannot list a file kept elsewhere, so Shift is refused.
+        DragKind::Files if into == DropInto::Folder && keys.contains(MK_SHIFT) => {
+            (DropPlan::None, DROPEFFECT_NONE)
+        }
         DragKind::Files => match file_drop_effect(keys, allowed) {
             DROPEFFECT_MOVE => (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE),
-            DROPEFFECT_COPY => (DropPlan::Files(DropAction::KeepInPlace), DROPEFFECT_COPY),
+            DROPEFFECT_COPY => (copy_action(into), DROPEFFECT_COPY),
             _ if allows(DROPEFFECT_LINK) => (DropPlan::Shortcuts, DROPEFFECT_LINK),
             _ => (DropPlan::None, DROPEFFECT_NONE),
         },
+    }
+}
+
+/// What a `COPY` drop does: a space lists the file where it is, a folder
+/// receives a copy.
+fn copy_action(into: DropInto) -> DropPlan {
+    match into {
+        DropInto::Space => DropPlan::Files(DropAction::KeepInPlace),
+        DropInto::Folder => DropPlan::Files(DropAction::Copy),
     }
 }
 
@@ -483,11 +512,12 @@ fn drag_effect(
     right: bool,
     keys: MODIFIERKEYS_FLAGS,
     allowed: DROPEFFECT,
+    into: DropInto,
 ) -> DROPEFFECT {
     if right && kind == DragKind::Files && allowed.0 & DROPEFFECT_MOVE.0 != 0 {
         DROPEFFECT_MOVE
     } else {
-        drop_plan(kind, keys, allowed).1
+        drop_plan(kind, keys, allowed, into).1
     }
 }
 
@@ -513,14 +543,15 @@ const DROP_LINK: u32 = 5;
 
 /// The entries of the menu a right drag shows on a space, in order. "Create
 /// shortcuts here" is greyed when the source does not `allow` a link, so the
-/// menu never reports an effect the source refused.
-fn right_drop_entries(allowed: DROPEFFECT) -> Vec<MenuEntry> {
+/// menu never reports an effect the source refused, and "Show here without
+/// moving" is greyed for a folder, which cannot list a file kept elsewhere.
+fn right_drop_entries(allowed: DROPEFFECT, into: DropInto) -> Vec<MenuEntry> {
     vec![
         MenuEntry::item(DROP_MOVE, "Move here"),
         MenuEntry::item(DROP_COPY, "Copy here"),
         MenuEntry::item(DROP_LINK, "Create shortcuts here")
             .enabled(allowed.0 & DROPEFFECT_LINK.0 != 0),
-        MenuEntry::item(DROP_KEEP, "Show here without moving"),
+        MenuEntry::item(DROP_KEEP, "Show here without moving").enabled(into == DropInto::Space),
         MenuEntry::Separator,
         MenuEntry::item(DROP_CANCEL, "Cancel"),
     ]
@@ -544,7 +575,7 @@ fn right_drop_choice(id: u32) -> DropPlan {
 /// menu is owned by the space window; no runtime state is read across the
 /// call.
 fn ask_right_drop(window: HWND, point: &POINTL, allowed: DROPEFFECT) -> DropPlan {
-    let entries = right_drop_entries(allowed);
+    let entries = right_drop_entries(allowed, space_window::drop_into(window));
     menu::track(window, &entries, Point::new(point.x, point.y))
         .map_or(DropPlan::None, right_drop_choice)
 }
@@ -733,8 +764,50 @@ mod tests {
     const NO_KEYS: MODIFIERKEYS_FLAGS = MODIFIERKEYS_FLAGS(0);
 
     #[test]
+    fn a_folder_refuses_shift_and_copies_a_copy_only_source() {
+        let plan = |keys, allowed| drop_plan(DragKind::Files, keys, allowed, DropInto::Folder);
+        assert_eq!(
+            plan(NO_KEYS, ALL),
+            (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
+        );
+        assert_eq!(plan(MK_SHIFT, ALL), (DropPlan::None, DROPEFFECT_NONE));
+        assert_eq!(
+            plan(NO_KEYS, DROPEFFECT_COPY),
+            (DropPlan::Files(DropAction::Copy), DROPEFFECT_COPY)
+        );
+        assert_eq!(
+            drag_effect(DragKind::Files, false, MK_SHIFT, ALL, DropInto::Folder),
+            DROPEFFECT_NONE
+        );
+    }
+
+    #[test]
+    fn a_folder_still_makes_shortcuts_from_shell_items_and_alt() {
+        assert_eq!(
+            drop_plan(DragKind::ShellItems, NO_KEYS, ALL, DropInto::Folder),
+            (DropPlan::Shortcuts, DROPEFFECT_LINK)
+        );
+        assert_eq!(
+            drop_plan(DragKind::Files, ALT_KEY, ALL, DropInto::Folder),
+            (DropPlan::Shortcuts, DROPEFFECT_LINK)
+        );
+    }
+
+    #[test]
+    fn the_right_drop_menu_greys_keep_in_place_for_a_folder() {
+        let keep = |into| {
+            item_states(&right_drop_entries(ALL, into))
+                .into_iter()
+                .find(|(id, _)| *id == DROP_KEEP)
+                .map(|(_, enabled)| enabled)
+        };
+        assert_eq!(keep(DropInto::Space), Some(true));
+        assert_eq!(keep(DropInto::Folder), Some(false));
+    }
+
+    #[test]
     fn files_move_by_default_and_stay_with_shift() {
-        let plan = |keys| drop_plan(DragKind::Files, keys, ALL);
+        let plan = |keys| drop_plan(DragKind::Files, keys, ALL, DropInto::Space);
         assert_eq!(
             plan(NO_KEYS),
             (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
@@ -748,11 +821,11 @@ mod tests {
     #[test]
     fn files_fall_back_when_the_preferred_effect_is_not_allowed() {
         assert_eq!(
-            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_COPY),
+            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_COPY, DropInto::Space),
             (DropPlan::Files(DropAction::KeepInPlace), DROPEFFECT_COPY)
         );
         assert_eq!(
-            drop_plan(DragKind::Files, MK_SHIFT, DROPEFFECT_MOVE),
+            drop_plan(DragKind::Files, MK_SHIFT, DROPEFFECT_MOVE, DropInto::Space),
             (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
         );
     }
@@ -760,7 +833,7 @@ mod tests {
     #[test]
     fn files_offered_only_as_a_link_become_shortcuts() {
         assert_eq!(
-            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_LINK),
+            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_LINK, DropInto::Space),
             (DropPlan::Shortcuts, DROPEFFECT_LINK)
         );
     }
@@ -768,19 +841,19 @@ mod tests {
     #[test]
     fn alt_makes_shortcuts_when_a_link_is_allowed() {
         assert_eq!(
-            drop_plan(DragKind::Files, ALT_KEY, ALL),
+            drop_plan(DragKind::Files, ALT_KEY, ALL, DropInto::Space),
             (DropPlan::Shortcuts, DROPEFFECT_LINK)
         );
         let move_or_copy = DROPEFFECT(DROPEFFECT_MOVE.0 | DROPEFFECT_COPY.0);
         assert_eq!(
-            drop_plan(DragKind::Files, ALT_KEY, move_or_copy),
+            drop_plan(DragKind::Files, ALT_KEY, move_or_copy, DropInto::Space),
             (DropPlan::Files(DropAction::Move), DROPEFFECT_MOVE)
         );
     }
 
     #[test]
     fn shell_items_become_shortcuts_preferring_a_link() {
-        let plan = |allowed| drop_plan(DragKind::ShellItems, NO_KEYS, allowed);
+        let plan = |allowed| drop_plan(DragKind::ShellItems, NO_KEYS, allowed, DropInto::Space);
         assert_eq!(plan(ALL), (DropPlan::Shortcuts, DROPEFFECT_LINK));
         assert_eq!(
             plan(DROPEFFECT_COPY),
@@ -796,14 +869,22 @@ mod tests {
     fn nothing_allowed_or_nothing_carried_refuses_the_drop() {
         let refused = (DropPlan::None, DROPEFFECT_NONE);
         assert_eq!(
-            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_NONE),
+            drop_plan(DragKind::Files, NO_KEYS, DROPEFFECT_NONE, DropInto::Space),
             refused
         );
         assert_eq!(
-            drop_plan(DragKind::ShellItems, NO_KEYS, DROPEFFECT_NONE),
+            drop_plan(
+                DragKind::ShellItems,
+                NO_KEYS,
+                DROPEFFECT_NONE,
+                DropInto::Space
+            ),
             refused
         );
-        assert_eq!(drop_plan(DragKind::None, NO_KEYS, ALL), refused);
+        assert_eq!(
+            drop_plan(DragKind::None, NO_KEYS, ALL, DropInto::Space),
+            refused
+        );
     }
 
     #[test]
@@ -839,7 +920,7 @@ mod tests {
 
     #[test]
     fn the_right_drop_menu_offers_shortcuts_after_copy() {
-        let ids: Vec<u32> = item_states(&right_drop_entries(ALL))
+        let ids: Vec<u32> = item_states(&right_drop_entries(ALL, DropInto::Space))
             .into_iter()
             .map(|(id, _)| id)
             .collect();
@@ -852,7 +933,7 @@ mod tests {
     #[test]
     fn create_shortcuts_is_greyed_when_the_source_refuses_a_link() {
         let link_enabled = |allowed| {
-            item_states(&right_drop_entries(allowed))
+            item_states(&right_drop_entries(allowed, DropInto::Space))
                 .into_iter()
                 .find(|&(id, _)| id == DROP_LINK)
                 .map(|(_, enabled)| enabled)
@@ -896,30 +977,36 @@ mod tests {
     fn a_right_file_drag_hovers_as_a_move() {
         // The menu decides the action, so the hover does not track Shift.
         assert_eq!(
-            drag_effect(DragKind::Files, true, NO_KEYS, ALL),
+            drag_effect(DragKind::Files, true, NO_KEYS, ALL, DropInto::Space),
             DROPEFFECT_MOVE
         );
         assert_eq!(
-            drag_effect(DragKind::Files, true, MK_SHIFT, ALL),
+            drag_effect(DragKind::Files, true, MK_SHIFT, ALL, DropInto::Space),
             DROPEFFECT_MOVE
         );
         // A source that allows no move still shows its own copy.
         assert_eq!(
-            drag_effect(DragKind::Files, true, NO_KEYS, DROPEFFECT_COPY),
+            drag_effect(
+                DragKind::Files,
+                true,
+                NO_KEYS,
+                DROPEFFECT_COPY,
+                DropInto::Space
+            ),
             DROPEFFECT_COPY
         );
         // Shell items still ask for the shortcut link, never a move.
         assert_eq!(
-            drag_effect(DragKind::ShellItems, true, NO_KEYS, ALL),
+            drag_effect(DragKind::ShellItems, true, NO_KEYS, ALL, DropInto::Space),
             DROPEFFECT_LINK
         );
         // A left drag follows the modifiers as before.
         assert_eq!(
-            drag_effect(DragKind::Files, false, NO_KEYS, ALL),
+            drag_effect(DragKind::Files, false, NO_KEYS, ALL, DropInto::Space),
             DROPEFFECT_MOVE
         );
         assert_eq!(
-            drag_effect(DragKind::Files, false, MK_SHIFT, ALL),
+            drag_effect(DragKind::Files, false, MK_SHIFT, ALL, DropInto::Space),
             DROPEFFECT_COPY
         );
     }

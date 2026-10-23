@@ -1,23 +1,30 @@
 //! `App` hit-testing: the `surface_*` accessors and item lookup (R1).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::{Item, ItemId, Palette, SpaceId, Theme};
-use deskspace_platform::{CheckBoxMode, ItemMetrics, item_check_box_hit, virtual_desktop_rect};
+use deskspace_platform::{
+    CheckBoxMode, ItemLayout, ItemMetrics, item_check_box_hit, virtual_desktop_rect,
+};
 
 use super::{App, Surface};
+use crate::storage::path_key;
 
 impl App {
     /// The space's scroll offset, clamped to its current content.
     pub(super) fn scroll_of(&self, id: SpaceId) -> i32 {
-        let layout = self.layout_for(id);
         let max = self
             .config
             .desktop
             .space(id)
-            .map_or(0, |space| space.max_scroll(layout.cell(), layout.padding));
+            .and_then(|space| {
+                self.view_layout(id)
+                    .map(|layout| layout.max_scroll(space.content_rect().height))
+            })
+            .unwrap_or(0);
         self.view_cache.scroll_of(id).clamp(0, max)
     }
 
@@ -134,46 +141,122 @@ impl App {
     /// The rect of an item's cell on `surface`, in desktop coordinates.
     pub(super) fn surface_cell(&self, surface: Surface, item: &Item) -> Rect {
         let origin = self.surface_content_origin(surface);
-        let cell = self.surface_layout(surface).cell();
-        Rect::new(
-            origin.x + item.position.x,
-            origin.y + item.position.y - self.surface_scroll(surface),
-            cell.width,
-            cell.height,
-        )
+        match surface {
+            Surface::Space(id) => {
+                let Some(space) = self.config.desktop.space(id) else {
+                    return Rect::ZERO;
+                };
+                let Some(index) = space.items().iter().position(|entry| entry.id == item.id) else {
+                    return Rect::ZERO;
+                };
+                let Some(layout) = self.view_layout(id) else {
+                    return Rect::ZERO;
+                };
+                let scroll = self.scroll_of(id);
+                let cell = layout.rect(index);
+                Rect::new(
+                    origin.x + cell.x,
+                    origin.y + cell.y - scroll,
+                    cell.width,
+                    cell.height,
+                )
+            }
+            Surface::Desktop => {
+                let cell = self.surface_layout(surface).cell();
+                Rect::new(
+                    origin.x + item.position.x,
+                    origin.y + item.position.y,
+                    cell.width,
+                    cell.height,
+                )
+            }
+        }
     }
 
     /// Every item's cell on `surface`, in desktop coordinates.
     pub(super) fn surface_cells(&self, surface: Surface) -> Vec<(ItemId, Rect)> {
         let origin = self.surface_content_origin(surface);
-        let scroll = self.surface_scroll(surface);
-        let cell = self.surface_layout(surface).cell();
-        self.surface_items(surface)
-            .iter()
-            .map(|item| {
-                (
-                    item.id,
-                    Rect::new(
-                        origin.x + item.position.x,
-                        origin.y + item.position.y - scroll,
-                        cell.width,
-                        cell.height,
-                    ),
-                )
-            })
-            .collect()
+        match surface {
+            Surface::Space(id) => {
+                let Some(space) = self.config.desktop.space(id) else {
+                    return Vec::new();
+                };
+                let Some(layout) = self.view_layout(id) else {
+                    return Vec::new();
+                };
+                let scroll = self.scroll_of(id);
+                space
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        let cell = layout.rect(index);
+                        (
+                            item.id,
+                            Rect::new(
+                                origin.x + cell.x,
+                                origin.y + cell.y - scroll,
+                                cell.width,
+                                cell.height,
+                            ),
+                        )
+                    })
+                    .collect()
+            }
+            Surface::Desktop => {
+                let cell = self.surface_layout(surface).cell();
+                self.surface_items(surface)
+                    .iter()
+                    .map(|item| {
+                        (
+                            item.id,
+                            Rect::new(
+                                origin.x + item.position.x,
+                                origin.y + item.position.y,
+                                cell.width,
+                                cell.height,
+                            ),
+                        )
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// The item whose cell contains `point` (desktop coordinates).
     pub(super) fn surface_item_at(&self, surface: Surface, point: Point) -> Option<ItemId> {
-        let cell = self.surface_layout(surface).cell();
+        match surface {
+            Surface::Space(id) => {
+                let space = self.config.desktop.space(id)?;
+                let layout = self.view_layout(id)?;
+                let content = space.content_rect();
+                let local = Point::new(
+                    point.x - content.x,
+                    point.y - content.y + self.scroll_of(id),
+                );
+                layout
+                    .index_at(local)
+                    .and_then(|index| space.items().get(index))
+                    .map(|item| item.id)
+            }
+            Surface::Desktop => {
+                let cell = self.surface_layout(surface).cell();
+                self.config.desktop.layer().item_at(point, cell)
+            }
+        }
+    }
+
+    /// How a surface's cells place their icon and label.
+    pub(super) fn surface_item_layout(&self, surface: Surface) -> ItemLayout {
         match surface {
             Surface::Space(id) => self
                 .config
                 .desktop
                 .space(id)
-                .and_then(|space| space.item_at(point, cell, self.surface_scroll(surface))),
-            Surface::Desktop => self.config.desktop.layer().item_at(point, cell),
+                .map_or(ItemLayout::Grid, |space| {
+                    crate::scene::item_layout(space.view().mode)
+                }),
+            Surface::Desktop => ItemLayout::Grid,
         }
     }
 
@@ -186,19 +269,41 @@ impl App {
         let item = self.surface_item_at(surface, point)?;
         let entry = self.surface_item(surface, item)?;
         let cell = self.surface_cell(surface, entry);
-        item_check_box_hit(cell, self.surface_metrics(surface))
-            .contains(point)
-            .then_some(item)
+        item_check_box_hit(
+            cell,
+            self.surface_metrics(surface),
+            self.surface_item_layout(surface),
+        )
+        .contains(point)
+        .then_some(item)
     }
 
-    /// The item holding the file at `path`, comparing identity rather than the
-    /// literal string so a shell-reported short name or case difference still
-    /// matches. A path in a space must be moved, not added again.
+    /// The file each item DeskSpace owns is keyed by, so a batch of paths can
+    /// be looked up at once (`find_item_by_file` is the single-path form). A
+    /// lens's items belong to its folder, so they are left out: to any other
+    /// space, a lens's file is an ordinary file.
+    pub(super) fn item_index(&self) -> HashMap<PathBuf, ItemId> {
+        self.config
+            .desktop
+            .spaces()
+            .iter()
+            .filter(|space| !space.is_lens())
+            .flat_map(|space| space.items())
+            .map(|item| (path_key(&item.path), item.id))
+            .collect()
+    }
+
+    /// The item that DeskSpace owns for the file at `path`, comparing identity
+    /// rather than the literal string so a shell-reported short name or case
+    /// difference still matches. A path in a space must be moved, not added
+    /// again. A lens's items belong to its folder, so they never match: to any
+    /// other space, a lens's file is an ordinary file.
     pub(super) fn find_item_by_file(&self, path: &Path) -> Option<ItemId> {
         self.config
             .desktop
             .spaces()
             .iter()
+            .filter(|space| !space.is_lens())
             .flat_map(|space| space.items().iter())
             .find(|item| crate::storage::same_path(&item.path, path))
             .map(|item| item.id)
@@ -245,7 +350,70 @@ mod tests {
     use crate::fixtures;
 
     use deskspace_config::{Config, ConfigStore};
+    use deskspace_core::Command;
+    use deskspace_core::item::ItemKind;
+    use deskspace_core::source::FolderEntry;
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn a_lens_item_is_not_owned_by_deskspace() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lens = fixtures::create_lens(desktop, "L", Rect::new(0, 0, 240, 120), "C:/x");
+        let entry = FolderEntry {
+            path: "C:/x/a.txt".into(),
+            label: String::new(),
+            kind: ItemKind::Other,
+            size: None,
+            modified: None,
+            hidden: false,
+        };
+        fixtures::apply(
+            desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![entry],
+            },
+        );
+        let path = Path::new("C:/x/a.txt");
+        assert_eq!(app.find_item_by_file(path), None, "only the lens lists it");
+
+        let desktop = &mut app.config.desktop;
+        let space = fixtures::create_space(desktop, "S", Rect::new(300, 0, 240, 120));
+        let item = fixtures::add_item(desktop, space, "C:/x/a.txt");
+        assert_eq!(app.find_item_by_file(path), Some(item));
+    }
+
+    #[test]
+    fn the_item_index_skips_lens_items() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lens = fixtures::create_lens(desktop, "L", Rect::new(0, 0, 240, 120), "C:/x");
+        let entry = FolderEntry {
+            path: "C:/x/a.txt".into(),
+            label: String::new(),
+            kind: ItemKind::Other,
+            size: None,
+            modified: None,
+            hidden: false,
+        };
+        fixtures::apply(
+            desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![entry],
+            },
+        );
+        let key = path_key(Path::new("C:/x/a.txt"));
+        assert_eq!(app.item_index().get(&key), None, "only the lens lists it");
+
+        let desktop = &mut app.config.desktop;
+        let space = fixtures::create_space(desktop, "S", Rect::new(300, 0, 240, 120));
+        let item = fixtures::add_item(desktop, space, "C:/x/a.txt");
+        assert_eq!(app.item_index().get(&key), Some(&item));
+    }
 
     #[test]
     fn checkbox_hit_test_matches_the_icon_corner() {
@@ -268,7 +436,7 @@ mod tests {
             layout.cell_width,
             layout.cell_height,
         );
-        let checkbox = item_check_box_hit(cell, app.metrics_for(id));
+        let checkbox = item_check_box_hit(cell, app.metrics_for(id), ItemLayout::Grid);
         assert_eq!(
             app.checkbox_at(
                 Surface::Space(id),
@@ -279,6 +447,45 @@ mod tests {
         assert_eq!(
             app.checkbox_at(Surface::Space(id), Point::new(cell.x + 60, cell.y + 60)),
             None
+        );
+    }
+
+    #[test]
+    fn small_icons_hit_the_whole_inline_cell_and_its_left_box() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        let item = fixtures::add_item(&mut app.config.desktop, id, "C:/missing/a.txt");
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::SmallIcons),
+            },
+        );
+        app.system.set_shell(ShellDisplay {
+            check_boxes: CheckBoxMode::Selection,
+            ..ShellDisplay::default()
+        });
+        let content = app.config.desktop.space(id).unwrap().content_rect();
+        let cell = Rect::new(content.x + 12, content.y + 12, 200, 22);
+        assert_eq!(
+            app.surface_item_at(Surface::Space(id), Point::new(cell.x + 100, cell.y + 10)),
+            Some(item),
+            "the label is part of the cell"
+        );
+        assert_eq!(
+            app.surface_item_at(Surface::Space(id), Point::new(cell.x + 250, cell.y + 10)),
+            None
+        );
+        let checkbox = item_check_box_hit(cell, app.metrics_for(id), ItemLayout::Inline);
+        assert_eq!(
+            app.checkbox_at(
+                Surface::Space(id),
+                Point::new(checkbox.x + 2, checkbox.y + 2)
+            ),
+            Some(item)
         );
     }
 

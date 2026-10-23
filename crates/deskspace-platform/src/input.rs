@@ -1,3 +1,6 @@
+use deskspace_core::SpaceId;
+use deskspace_core::source::FolderEntry;
+
 use crate::ui::{FieldValue, LogLevel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +60,26 @@ pub enum DropAction {
     /// Put a copy in the space storage and leave the original, copied through
     /// the shell's file operation.
     Copy,
+}
+
+/// Which folder a watch belongs to. The worker reports the folder's slot;
+/// the runtime maps it back to this key before the app sees the event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WatchKey {
+    /// The user's Desktop folder, watched for the desktop layer.
+    Desktop,
+    /// A lens's bound folder.
+    Space(SpaceId),
+}
+
+/// What a watched folder held when its last change settled. The worker lists
+/// the folder itself, so the app never does IO for a watch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FolderListing {
+    /// The folder's entries, as the worker just read them.
+    Listed(Vec<FolderEntry>),
+    /// The folder is missing or cannot be read; the worker keeps retrying.
+    Unavailable,
 }
 
 /// Input on a space window. Coordinates are desktop coordinates (the
@@ -160,6 +183,10 @@ pub enum SelectionKey {
     ZoomOut,
     /// Ctrl+0 (either 0 key): icons back to 100 %.
     ZoomReset,
+    /// Ctrl+Shift+1 through 8: switch the current space to Explorer's view
+    /// with that digit (`VIEW_MODES` in the settings tables). A digit with no
+    /// view yet does nothing.
+    View(u8),
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size
@@ -307,7 +334,10 @@ pub enum Event {
     /// A folder watched with `Ui::watch_folder` changed. The app re-reads the
     /// folder and reconciles what it draws. M2 watches the Desktop folder for
     /// the desktop layer; M4 reuses it for a lens's bound folder.
-    FolderChanged,
+    FolderChanged {
+        key: WatchKey,
+        listing: FolderListing,
+    },
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
     /// Windows' "Animation effects" switch changed (`system_animations`).

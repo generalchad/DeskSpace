@@ -27,9 +27,10 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreatePen, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS, DT_NOPREFIX,
     DT_SINGLELINE, DT_VCENTER, DT_WORDBREAK, DeleteObject, DrawFocusRect, DrawTextW, Ellipse,
-    EndPaint, FillRect, GetDC, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect, PAINTSTRUCT, PS_SOLID,
-    RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow, ReleaseDC, RoundRect,
-    SelectObject, SetBkColor, SetBkMode, SetTextColor, TRANSPARENT,
+    EndPaint, FillRect, GetDC, GetTextMetricsW, HBRUSH, HDC, HFONT, HGDIOBJ, InvalidateRect,
+    PAINTSTRUCT, PS_SOLID, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow,
+    ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, TEXTMETRICW,
+    TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
@@ -98,6 +99,8 @@ const NAV_WIDTH: i32 = 168;
 const SCOPE_WIDTH: i32 = 176;
 /// How far an indented scope row is moved right, at 96 DPI.
 const SCOPE_INDENT: i32 = 16;
+/// The gap between a scope's glyph and its label, at 96 DPI.
+const SCOPE_GLYPH_GAP: i32 = 8;
 /// Height of the header line above the page, at 96 DPI.
 const HEADER_HEIGHT: i32 = 44;
 /// Width of the header switch, at 96 DPI.
@@ -167,7 +170,8 @@ pub(super) struct SettingsState {
     heading_font: HFONT,
     /// Semibold body text, for the rail's group titles.
     strong_font: HFONT,
-    /// The symbol font for the color field's eyedropper glyph.
+    /// The symbol font for glyphs such as the scope kinds and the color
+    /// field's eyedropper.
     glyph_font: HFONT,
     /// The layout DPI, for scaling the rail's paint metrics.
     dpi: u32,

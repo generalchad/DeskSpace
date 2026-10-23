@@ -43,9 +43,12 @@ impl Desktop {
         // what it touches.
         match command {
             // `apply_create_space` always takes the next id.
-            Command::CreateSpace { .. } => Touched::spaces([self.next_space_id()]),
+            Command::CreateSpace { .. } | Command::CreateLens { .. } => {
+                Touched::spaces([self.next_space_id()])
+            }
             Command::DeleteSpace { id }
             | Command::RenameSpace { id, .. }
+            | Command::SetSpaceView { id, .. }
             | Command::MoveSpace { id, .. }
             | Command::SetSpaceRect { id, .. }
             | Command::ResizeSpace { id, .. }
@@ -57,6 +60,10 @@ impl Desktop {
             | Command::SetSpaceLook { id, .. }
             | Command::ToggleLock { id }
             | Command::ToggleFold { id }
+            | Command::SetLensFolder { id, .. }
+            | Command::SetLensTitle { id, .. }
+            | Command::SetLensView { id, .. }
+            | Command::SyncLens { id, .. }
             | Command::AutoArrange { id } => Touched::spaces([*id]),
             Command::RestoreSpaces { spaces } => Touched::spaces(spaces.iter().map(|(id, _)| *id)),
             Command::AddItem { space, .. } => Touched::spaces([*space]),
@@ -119,6 +126,16 @@ mod tests {
         let touched = desktop.touched_by(&Command::AutoArrange { id: a });
         assert_eq!(touched, Touched::spaces([a]));
         assert!(!touched.layer);
+    }
+
+    #[test]
+    fn a_lens_command_touches_its_space() {
+        let (desktop, a, _, _) = desktop_with_item();
+        let touched = desktop.touched_by(&Command::SyncLens {
+            id: a,
+            entries: Vec::new(),
+        });
+        assert_eq!(touched, Touched::spaces([a]));
     }
 
     #[test]

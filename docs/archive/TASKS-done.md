@@ -2997,3 +2997,696 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Update D12's "The blur" and `CONTEXT.md` section 6.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
+
+- [x] **W1. Keyed folder watches (platform, app).** The hardest task here;
+  ask a maintainer to review it.
+  - Why: today `win32/folder_watch.rs` runs one thread per watch, and
+    `Ui::watch_folder` keeps a single watch, which the Desktop folder
+    already uses. Lenses need many watches at once, and the app must know
+    which folder changed.
+  - `input.rs`: add `pub enum WatchKey { Desktop, Space(SpaceId) }`, and
+    give `Event::FolderChanged` a field: `FolderChanged { key: WatchKey }`.
+  - `folder_watch.rs`: replace the one-folder worker with one worker for
+    all folders, built on an I/O completion port.
+    - Adding a folder opens the directory exactly as `run` does today,
+      registers it with the port (`CreateIoCompletionPort`, with the
+      folder's slot number as the completion key), and starts its first
+      `ReadDirectoryChangesW`.
+    - Add, remove, and stop are sent with `PostQueuedCompletionStatus`,
+      using reserved keys that no folder slot uses. Make the reserved keys
+      named constants.
+    - The worker loop waits on the port. A folder's completion marks that
+      folder's `Coalescer` and starts its next read. A timeout posts
+      `FOLDER_CHANGE` for every folder whose burst is due. The wait's
+      timeout is the smallest `wait_ms` of all folders.
+    - A message carries only two numbers, so pass the folder's slot in
+      `wParam`. The runtime keeps the table from slot to `WatchKey`.
+    - Removing a folder must cancel its pending read and wait for it to
+      finish before closing the handle, as `run` does today. Otherwise
+      Windows writes into freed memory.
+  - `runtime`: the worker starts with the first watch and stops on
+    teardown. `Ui::watch_folder(key, path)` adds the key's watch, replaces
+    it when the path changed, and does nothing when the path is the same.
+    `Ui::unwatch_folder(key)` removes it, and does nothing for a key it
+    does not know.
+  - App: `watch_desktop_folder` and `apply_takeover` pass
+    `WatchKey::Desktop`. `Event::FolderChanged { key: WatchKey::Desktop }`
+    calls `resync_desktop_layer`, as today.
+  - Tests (pure parts): two folders debounce independently; the soonest
+    timeout wins; removing an unknown key changes nothing.
+  - Done when: the gates pass and the desktop layer behaves exactly as
+    before. **[needs human]**: the I8 check in section V again.
+
+- [x] **W2. Lenses follow their folders (platform, app).**
+  - Why: after W1 the app hears "this folder changed". Now the worker also
+    reads the folder, and the app shows what it read.
+  - New file `win32/folder_list.rs` with
+    `list_folder(path) -> Result<Vec<FolderEntry>, PlatformError>`.
+    - Call `FindFirstFileExW` with `FindExInfoBasic` and
+      `FIND_FIRST_EX_LARGE_FETCH` (the fast settings), then `FindNextFileW`
+      until there are no more files, and always `FindClose`. Skip the `.`
+      and `..` entries.
+    - Put the conversion in a pure function, `entry_from(name,
+      attributes, size, last_write)`, and test it. It sets `kind` with
+      `ItemKind::classify`, and `hidden` when the file has
+      `FILE_ATTRIBUTE_HIDDEN` or `FILE_ATTRIBUTE_SYSTEM`. `size` is `None`
+      for folders. `modified` is in seconds since 1970; a `FILETIME`
+      counts 100 ns steps since 1601. `label` stays empty, which shows the
+      file name without its extension, as normal spaces do.
+  - The worker calls `list_folder` once when a watch starts and after each
+    debounced burst. The event becomes
+    `Event::FolderChanged { key, listing: FolderListing }`, where
+    `FolderListing` is `Listed(Vec<FolderEntry>)` or `Unavailable`. A list
+    does not fit in a message's two numbers, so the worker leaves it in a
+    shared slot (an `Arc<Mutex<..>>` per watch) and the UI thread takes it
+    when the message arrives.
+  - `Unavailable` covers a folder that does not exist, cannot be opened,
+    or disappears while watched (its read then fails). The worker tries
+    that folder again every `RETRY_MS` (5 s, a named constant). The app
+    sets no timer for it.
+  - The Desktop watch ignores its listing. The desktop layer also needs
+    each icon's position, and only the shell knows those.
+  - App: a new method, `App::sync_watches`. It builds the set of watches
+    the model wants: the Desktop while `layer_active()`, and each lens as
+    `(WatchKey::Space(id), its folder)`. It compares that with what is
+    watched now and calls `watch_folder` or `unwatch_folder` for each
+    difference. Call it at startup and in place of each direct
+    `watch_desktop_folder` or `unwatch_folder` call, then delete those
+    calls. W6 and W7 call it too. Test the set it builds, with a model
+    built by `fixtures.rs`.
+  - App, the event: `Listed(entries)` dispatches
+    `Command::SyncLens { id, entries }` and refreshes that space.
+    `Unavailable` dispatches `SyncLens` with no entries and adds the id to
+    a new session field, `unavailable_lenses: HashSet<SpaceId>`, which W5
+    draws. `Listed` removes the id again. A key whose space no longer
+    exists is ignored.
+  - Icons: the icon cache keeps an icon until it is told to drop it
+    (`CONTEXT.md`, "The icon cache is invalidated only after..."). Before
+    the sync, compare each entry's `modified` with its item's, and
+    invalidate the icon of every one that changed. Then update that
+    `CONTEXT.md` note.
+  - Done when: the gates pass, and `CONTEXT.md` describes the watch and
+    the listing. **[needs human]**: with the hand-made lens, create,
+    rename, and delete files in its folder in Explorer; the lens follows
+    within about 150 ms. Rename the folder away: the lens empties. Rename
+    it back: it fills again within 5 s.
+- [x] **W3a. A lens never points into storage (app).**
+  - Why: every space shares one storage folder, and deleting a normal
+    space moves its stored files out of it. A lens on that folder would
+    show those files as its own, and a delete or a drop there could move
+    files that other spaces list. So such a lens must never be watched.
+    W3b, W6, and W7 call this check too.
+  - `storage.rs`: the tests module has `fn is_inside(path, root)`. Move
+    it, unchanged with its doc, out of `mod tests` to module level as
+    `pub(crate) fn is_inside`. Its test and
+    `user_data_is_outside_the_install_root` keep using it.
+  - `storage.rs`: add `ItemStore::allows_lens(&self, folder: &Path) ->
+    bool`. It is false when `folder` is the store's root or lies inside
+    it, and true otherwise, including for a folder that contains the
+    store. Windows paths can differ by case and by short names
+    (`TIMOTH~1`), so first canonicalize both paths. Use the canonical
+    forms only when both calls succeed, else the paths as given; this is
+    the rule `same_path` follows, so read it first.
+  - `app/lens.rs`: add `fn refused_lenses(&self) -> Vec<SpaceId>`, the
+    lenses whose folder `self.storage.allows_lens` refuses. In
+    `desired_watches`, skip those lenses. In `sync_watches`, add each
+    refused id to `self.unavailable_lenses`. When `insert` returns true
+    (it was not there yet), log one `tracing::warn!` naming the space and
+    the folder. Then the warning appears once, not on every sync.
+  - Tests, in `storage.rs`: `allows_lens` is false for the root, a child,
+    a grandchild, and the root spelled in another case; it is true for a
+    sibling whose name starts the same (`storage-old`), an unrelated
+    folder, and the root's parent. In `app/lens.rs` (copy
+    `every_lens_wants_its_folder_and_normal_spaces_want_none`): a lens on
+    `app.storage.root()` is in `refused_lenses` and has no watch in
+    `desired_watches`.
+  - Docs: in the lens part of `CONTEXT.md` section 4, one sentence: a lens
+    on the storage folder is kept but never watched.
+  - Done when: the gates pass. No screen check is needed.
+- [x] **W3b. Dropping onto a lens moves or copies into its folder
+  (platform, app).**
+  - Why: today a file dropped on a lens is first moved into storage by
+    `place_dropped`, and then `AddItem` is rejected, so the file is stuck
+    in storage where the user never sees it. D3 says a drop on a lens
+    moves the file into the lens's folder instead, with Explorer's own
+    dialogs.
+  - Platform, `win32/file_op.rs`. Read `transfer` first.
+    1. Add `pub enum OnCollision { Rename, Ask }` with a `///` doc on
+       each variant. `Rename` gives a clashing name " (2)"; storage uses
+       it because every space shares the folder. `Ask` shows Explorer's
+       "Replace or Skip" dialog; a user's real folder wants that.
+    2. Add a pure `fn operation_flags(on_collision: OnCollision)` that
+       returns the flags `transfer` passes to `SetOperationFlags` today
+       for `Rename`, and the same flags without `FOF_RENAMEONCOLLISION`
+       for `Ask`. Look up the type `SetOperationFlags` takes in the
+       `windows` crate docs. Both keep `FOF_ALLOWUNDO`, so Ctrl+Z in
+       Explorer undoes the move.
+    3. `transfer` takes an `on_collision: OnCollision` argument and uses
+       `operation_flags`. Update the module's `//!` doc, which says name
+       clashes are always renamed.
+    4. Export `OnCollision` from the crate root (`lib.rs`, beside
+       `DropAction`). `Ui::transfer_files` (`win32/runtime/ui_shell.rs`)
+       takes it and passes it on.
+    5. Test `operation_flags`: `Rename` has `FOF_RENAMEONCOLLISION` and
+       `Ask` does not; both have `FOF_ALLOWUNDO`.
+  - App, the existing callers: `copy_dropped` (`app/files.rs`) and
+    `paste_clipboard` (`app/clipboard.rs`, two calls) pass
+    `OnCollision::Rename`. They put files in storage, so nothing changes
+    for them.
+  - App, `app/files.rs`, a pure function `fn paths_to_transfer(paths:
+    &[PathBuf], folder: &Path) -> Vec<PathBuf>`. It keeps the paths in
+    order and leaves out three kinds:
+    - a path already directly in `folder` (its parent is `folder`, by
+      `storage::same_path`), because moving it there changes nothing;
+    - `folder` itself;
+    - any folder that contains `folder` (`storage::is_inside(folder,
+      path)`), because a folder cannot move into itself.
+
+    Test each rule, then a mixed list, which keeps only the valid paths
+    in their order.
+  - App, `app/files.rs`, a new method `fn drop_into_lens(&mut self, ui:
+    &mut Ui, folder: PathBuf, paths: Vec<PathBuf>, action: DropAction)`:
+    1. If `!folder.is_dir()`, log a warning and return. W5 shows the
+       user why.
+    2. If `!self.storage.allows_lens(&folder)` (W3a), return.
+    3. Before moving anything, note which normal spaces list the dropped
+       files: for each path, `find_item_by_file`, then
+       `space_containing`. Skip lens spaces; their own watch follows the
+       move.
+    4. `let paths = paths_to_transfer(&paths, &folder);` and return if it
+       is empty.
+    5. `match action`: `Move` calls `ui.transfer_files(&paths, &folder,
+       true, OnCollision::Ask)`, and `Copy` the same with `false`.
+       `KeepInPlace` cannot apply to a folder: log at `debug` and return.
+       After W3c the platform never sends it to a lens; keep the arm and
+       say so in a comment.
+    6. Call `self.prune_missing(ui, id)` for each space noted in step 3.
+       It drops the items whose files just moved away.
+  - App, `add_dropped`: as its first statement, if the target space is a
+    lens (`space.folder_view()`), clone the folder path, call
+    `drop_into_lens`, and return. Nothing after that line runs for a
+    lens: no `adopt`, `AddItem`, or `MoveItem`. The lens's watch shows the
+    new files a moment later. "Add files…" (`menus.rs` `add_files`)
+    already goes through `add_dropped`, so it is covered.
+  - Re-entrancy: the shell's dialog runs its own message loop. The app
+    holds no runtime borrow, and `Ui::transfer_files` takes its own only
+    for a moment, so nothing more is needed. Do not add a `with_runtime`
+    call around it (`ENGINEERING.md` section 6).
+  - Done when: `add_dropped` never reaches `adopt`, `AddItem`, or
+    `MoveItem` for a lens, and the gates pass. **[needs human]**: drop
+    files from Explorer and from a normal space onto a lens; they land
+    in its folder, and the normal space no longer lists its file. Drop a
+    file whose name is already there: Explorer's Replace or Skip dialog
+    appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy
+    here": the original stays. "Add files…" on a lens moves the files
+    into its folder. Regression: a clashing drop on a normal space still
+    gets " (2)" and no dialog.
+- [x] **W3c. Shift and the right-drop menu on a lens (platform, app).**
+  - Why: on a normal space, Shift means "show here without moving". A
+    lens shows only its folder, so it cannot show a file kept elsewhere.
+    The drop must be refused, with the "no" cursor, before the user lets
+    go. Also, a source that offers only `COPY` should copy into a lens;
+    today `drop_plan` turns `COPY` into keep-in-place.
+  - The drop target lives in the platform and does not know which spaces
+    are lenses. The app tells it through the scene, as it tells it
+    everything else (`ENGINEERING.md` section 3, "Rendering and UI are
+    data-driven"). Follow "Recipe: a new visual in a space", steps 1-2:
+    1. `render/scene.rs`: `pub enum DropInto { Space, Folder }`, deriving
+       `Default` with `Space` as the default, and a `///` doc for each.
+       Add a `SpaceScene::drop_into: DropInto` field and export the enum
+       beside `SpaceScene`.
+    2. `deskspace-app/src/scene.rs`, `space_scene`: `DropInto::Folder`
+       when the space is a lens. Test it: a lens's scene says `Folder`, a
+       normal space and the desktop layer say `Space`.
+  - Platform, `win32/space_window.rs`: `pub(crate) fn drop_into(window:
+    HWND) -> DropInto`, which reads the stored scene. Copy
+    `space_animation::is_leaving`, which reads window state the same way.
+    `PreparedScene` keeps its `SpaceScene` in a private field; add a
+    `pub(crate) fn scene(&self) -> &SpaceScene` accessor if none exists.
+    A window with no scene yet answers `DropInto::Space`.
+  - Platform, `win32/drop_target.rs`. All of these are pure, with tests
+    at the bottom of the file:
+    - `drop_plan(kind, keys, allowed, into: DropInto)`. For `Folder`
+      and `DragKind::Files`: with Shift held, `(DropPlan::None,
+      DROPEFFECT_NONE)`; otherwise `MOVE` when allowed, else `COPY`
+      gives `DropPlan::Files(DropAction::Copy)`, not `KeepInPlace`. For
+      `Space`, nothing changes. Shell items and Alt-links are the same
+      for both (W3f handles them).
+    - `drag_effect` takes `into` and passes it on.
+    - `right_drop_entries(allowed, into)`: "Show here without moving" is
+      greyed for `Folder`, as "Create shortcuts here" is greyed by
+      `allowed`.
+    - The `IDropTarget` methods read `drop_into(self.window)` and pass it
+      on. Read it once per call, not in a loop.
+    - Tests: copy the existing `drop_plan` and `drag_effect` tests and
+      add the `Folder` cases (Shift refuses; `COPY` only gives `Copy`;
+      a plain drop moves). Add a `right_drop_entries` case: for `Folder`,
+      `DROP_KEEP` is disabled. Every existing test passes `DropInto::Space`
+      and keeps its expectation.
+  - Done when: the gates pass. **[needs human]**: Shift-drag a file from
+    Explorer onto a lens: the cursor shows "no" and nothing moves. Right
+    drag onto a lens: "Show here without moving" is grey. On a normal
+    space, Shift and the right-drop menu behave as before.
+- [x] **W3d. A lens item dropped on a normal space (app).**
+  - Why: dragging an item from a lens onto a normal space does nothing
+    today. `add_dropped` finds the item by its file and sends `MoveItem`,
+    which core rejects for a lens item. Decided (2026-10-21): to a
+    normal space, a lens's file is an ordinary file, so it moves into
+    storage like a file dropped from Explorer.
+  - `app/hit.rs`, `find_item_by_file`: skip items that belong to a lens.
+    The method answers "which item that DeskSpace owns uses this file";
+    say that in its `///` doc. A lens's items belong to its folder.
+    Callers then take their "not found" path. `add_dropped` adopts the
+    file into storage and adds a new item, and a paste's `plan_paste`
+    treats it as an outside move. The lens's watch drops the old item at
+    its next sync.
+  - Test, in `app/hit.rs` (the module has `App::new` tests to copy): put
+    an item for `C:/x/a.txt` in a normal space, and the same path in a
+    lens through `fixtures::apply` with `Command::SyncLens`.
+    `find_item_by_file` returns the normal space's item. With only the
+    lens listing it, it returns `None`.
+  - Done when: the gates pass. **[needs human]**: drag an item from a
+    lens onto a normal space: the file leaves the lens's folder, the
+    space lists it, and the lens no longer shows it. Delete that space:
+    the file goes to the desktop, not back to the folder (D3).
+- [x] **W3e. Pasting into a lens (app).**
+  - Why: `paste_clipboard` (`app/clipboard.rs`) moves or copies the
+    clipboard's files into storage and then sends `AddItem`, which a lens
+    rejects. The files are stuck in storage, as with drops before W3b.
+  - At the top of `paste_clipboard`, once `clipboard` is read and not
+    empty: if the target is a lens, call `self.drop_into_lens(ui, folder,
+    clipboard.paths, action)` (W3b), where `action` is `DropAction::Move`
+    for a cut and `DropAction::Copy` otherwise. After a cut, call
+    `ui.clear_clipboard()`, as the end of the method already does. Then
+    return. Copy `add_dropped`'s lens check from W3b so both read the
+    same way.
+  - Nothing new is pure here; W3b already tests `paths_to_transfer`.
+  - Done when: `paste_clipboard` never reaches `transfer_files` into
+    storage or `AddItem` for a lens, and the gates pass. **[needs
+    human]**: in Explorer, copy a file and paste it on a lens (click the
+    lens, then Ctrl+V): a copy lands in the folder. Cut and paste: it
+    moves. Cut an item from a normal space and paste it on a lens: it
+    moves into the folder and leaves the space. A paste on a normal space
+    works as before.
+- [x] **W3f. Shortcuts on a lens (app).**
+  - Why: `add_shortcuts` (`app/files.rs`) writes every new `.lnk` or
+    `.url` into storage, then sends `AddItem`, which a lens rejects. A
+    Start-menu app dropped on a lens, "Paste shortcut", the custom
+    shortcut dialog, and the installed-apps picker all end there.
+    Explorer writes such a shortcut into the folder it was dropped on.
+  - `storage.rs`: make `unique_destination` `pub(crate)`.
+    `ItemStore::unique_path` keeps calling it.
+  - `app/files.rs`, `write_shortcut`: take the destination folder as an
+    argument and use `storage::unique_destination(folder, name)` in
+    place of `self.storage.unique_path(name)` (three places).
+  - `add_shortcuts`: work out the destination first. For a lens it is
+    its folder, after the W3a `allows_lens` check and an `is_dir` check
+    (log and return when either fails). Otherwise it is
+    `self.storage.root()`, created as today. Pass it to `write_shortcut`.
+    Send `AddItem` only for a normal space; a lens's watch lists the new
+    file.
+  - Test, in `app/files.rs` (no COM needed): `write_shortcut` with a
+    `ShortcutSource::Shell` whose `path` is a `.lnk` file in a temp
+    folder copies it into a second temp folder. A second call names the
+    copy " (2)". Copy the temp-folder setup from
+    `stored_paths_lists_stored_files_and_skips_items_in_place`.
+  - Done when: `add_shortcuts` never sends `AddItem` for a lens, and the
+    gates pass. **[needs human]**: drop a Start-menu app on a lens: a
+    working `.lnk` is in the folder and the lens shows it. "New shortcut
+    ▸ Paste shortcut" and the custom shortcut dialog on a lens do the
+    same. On a normal space, shortcuts work as before.
+- [x] **W3g. Deleting an item from a lens (app).**
+  - Why: D3 says removing a lens item recycles its file. The Delete key
+    already does that for any item (`delete_selected_items` recycles
+    every selected file). The X on the settings window's Shortcuts page
+    (`delete_space_item`) recycles only stored files and merely unlists
+    the rest. On a lens the next sync would bring the item back, so the
+    X seems to do nothing.
+  - `app/files.rs`: a pure `fn recycles_on_delete(space: &Space, store:
+    &ItemStore, path: &Path) -> bool`. It is true for a lens item and for
+    a stored file, and false for an item listed in place.
+  - `delete_space_item`: use `recycles_on_delete` where it uses
+    `stored` today (the question and the recycle step). Rename
+    `delete_item_question`'s `stored` parameter to `recycles`; its text
+    already says "moved to the Recycle Bin".
+  - Tests: `recycles_on_delete` for each case (build the spaces with
+    `fixtures`; a lens item through `Command::SyncLens`). The existing
+    `deleting_an_item_says_where_its_file_goes` keeps passing.
+  - Done when: the gates pass. **[needs human]**: select a lens item and
+    press Delete: the file is in the Recycle Bin and the lens drops it.
+    On the settings window's Shortcuts page, the X on a lens item says
+    the file goes to the Recycle Bin, and it does.
+- [x] **W4. Deleting a lens never touches its folder (app).**
+  - Why: deleting a normal space moves its stored files back to the
+    desktop. For a lens, D3 says the folder and its files stay where they
+    are. After W3a no lens points into storage, so the code already
+    leaves a lens's files alone by accident. This task makes it so on
+    purpose, and fixes the question the user is asked.
+  - `app/files.rs`, the two places that touch a deleted space's files:
+    - `stored_paths`: return an empty list for a lens. The debug
+      window's "Delete all spaces" recycles what this returns.
+    - `release_item`: never move a lens item's file. Only unlist it.
+  - `delete_space_now`: after `DeleteSpace` is applied, also remove the
+    id from `self.unavailable_lenses` and call `self.sync_watches(ui)`,
+    so a deleted lens's folder stops being watched. Do it for every
+    deleted space, with no `if`; for a normal space it changes nothing.
+  - `app.rs`, the question before deleting:
+    - `delete_needs_confirmation(space)`: a lens always asks, even when
+      it shows no items. The space menu's "Delete space…" ellipsis
+      follows it with no further change (`menus.rs`).
+    - `delete_consequence`: take `space: &Space` and `stored: usize` in
+      place of `count`. For a lens, say `It shows the folder
+      “{path}”. The folder and its files stay where they are.` Normal
+      spaces keep today's text. Update the caller in `delete_space`.
+  - Tests: `stored_paths` of a lens whose folder is the store's root
+    returns nothing, even with files there (copy
+    `stored_paths_lists_stored_files_and_skips_items_in_place`). An
+    empty lens needs confirmation. A lens's consequence names the folder
+    and says the files stay. Today's `delete_consequence` tests still
+    pass with a normal space.
+  - Done when: the gates pass. No screen check is needed.
+- [x] **W5. "Folder not available" (app, platform).**
+  - Why: after W2 a lens whose folder is missing is simply empty, which
+    looks like a bug.
+  - Follow "Recipe: a new visual in a space". Add
+    `SpaceScene::placeholder: Option<String>`, `None` by default. In
+    `space_scene`, a lens in `unavailable_lenses` gets
+    `"Folder not available\n<path>"`. Draw it centered in the item area,
+    in the label color at about 60 % opacity. Build the text layout in
+    `PreparedScene`, not while painting, so a paint allocates nothing.
+  - Test: an unavailable lens's scene carries the text; a normal space
+    and an available lens carry `None`.
+  - **[needs human]**: rename a lens's folder away; the text shows.
+    Rename it back; the items return within 5 s.
+- [x] **W6. The lens menu (platform, app).**
+  - Platform: `Ui::pick_folder(title) -> Option<PathBuf>`, a "Select
+    folder" dialog. Copy `pick_files` (`win32/dialog.rs`) and set
+    `FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM` in place of its options.
+  - App: follow "Recipe: a new menu entry". Right-clicking a lens shows
+    these beside the usual space entries:
+    - Open folder: `ui.open_path` on the folder.
+    - Change folder...: `pick_folder`, the W3a guard
+      (`ItemStore::allows_lens`; when it fails, say why with `ui.alert`
+      and stop), `SetLensFolder`, then `sync_watches`.
+    - Sort by: the same keys as a normal space's sort menu (`SORT_PRESETS`
+      in `app.rs`), the current one checked. A choice dispatches
+      `SetLensView`. On a lens the order is kept as files come and go,
+      while a normal space sorts once. Do not change normal spaces here;
+      that is F-31, in phase 4. Both menus use the one table.
+    - Folders first, and Show hidden files: checkable entries that
+      dispatch `SetLensView`.
+  - Tests: a lens's menu has these entries with the right checks and
+    commands; a normal space's menu is unchanged.
+  - **[needs human]**: each entry on a hand-made lens; after a restart the
+    sort, folders-first, and hidden-files settings are still set.
+- [x] **W7. New lens... (app).**
+  - "New lens..." right under "New space" in the space menu, the tray
+    menu, and the desktop layer's menu. It runs `pick_folder`, then the
+    W3a guard, `ItemStore::allows_lens` (when it fails, say why with `ui.alert` and stop), then
+    `CreateLens` sized and placed as `create_space` places a new space and
+    titled with the folder's name, then `sync_watches`.
+  - Update the ROADMAP: F-07's row in the feature index, and M4 phases 2
+    and 3 marked done. Add the new entries to the menu lists in
+    `CONTEXT.md` section 8 and in `README.md`.
+  - **[needs human]**: create a lens from each of the three menus.
+- [x] **W8. A glyph for each kind in the scopes pane (app, platform).**
+  **[needs human]**
+  - `ui.rs` `SettingsScope`: add `glyph: Option<char>` with a `///` doc
+    (a code point drawn before the label; `None` draws nothing and keeps
+    the label where it is).
+  - `settings/mod.rs`: `enum ScopeKind { Global, Space, Lens }`, with
+    `ScopeKind::of(Option<&Space>)` and `ScopeKind::glyph()`. `build_form`
+    fills each scope's glyph from it. W10 reuses `ScopeKind` for the page
+    list, so keep it beside `listed_pages`.
+  - Glyphs: Global `U+E713` (Setting), a lens `U+E8B7` (Folder), and a
+    space a grid glyph that both fonts have (choose one; the links are
+    above).
+  - `win32/settings_window/paint.rs` `on_draw_scope`: draw the glyph in a
+    square as tall as the label, before it, in the row's text color, so
+    a dimmed row dims its glyph too. `CreateFontW` quietly substitutes a
+    missing face, so test for Segoe Fluent Icons with
+    `EnumFontFamiliesExW` and fall back to Segoe MDL2 Assets. Create the
+    font once with the window's other fonts in `build.rs`, scaled for
+    DPI, and free it with them.
+  - Tests: `ScopeKind::of` for each kind; extend
+    `global_lists_every_space_dimmed_until_customized` with the glyphs.
+  - **[needs human]** check: in light and dark mode, at 100 % and 150 %,
+    on Windows 11 and 10: every row shows its kind's glyph, the labels
+    line up, a dimmed row's glyph is dimmed, and the selection covers the
+    glyph.
+- [x] **W10. The Lens page (app).**
+  - `listed_pages` takes a `ScopeKind` (W8) instead of an
+    `Option<SpaceId>`. A lens lists a space's pages, then a new
+    `page::LENS`. Read how `page::SHORTCUTS` was added first. If a new
+    page cannot go there without renumbering the animation pages, stop
+    and ask.
+  - `pages.rs` `lens_page`: a "Folder" heading; a note with the full
+    path (or "Folder not available" and the path); the buttons "Open
+    folder" and "Change folder…"; a "Contents" heading; and a "Show
+    hidden files" toggle. Each button is a `ButtonAction` variant whose
+    arm in `App::on_settings_button` calls the method the lens menu
+    already calls. The toggle becomes `SetLensView`, the way a look edit
+    becomes `SetSpaceLook`. The page is built for every scope, so the
+    form keeps its shape (`the_form_shape_is_stable_across_scopes`); a
+    normal space just never lists it.
+  - Cancel: `SpaceSnapshot` gains the lens's `FolderView`, and
+    `App::cancel_settings` restores it. Change folder… commits at once, so
+    it writes the new path into the snapshot too, as a menu edit made
+    while the window is open does (`CONTEXT.md` section 6, Native UI).
+  - Tests: a lens lists the Lens page and a normal space does not;
+    the toggle becomes `SetLensView`; Cancel restores `show_hidden` and
+    keeps a changed folder; `every_button_has_an_action` covers the two
+    buttons.
+  - Done when: also `CONTEXT.md` section 6 (Native UI, "The app's form")
+    names the page.
+- [x] **W11. A lens's title follows its folder (core, platform, app).**
+  - `source.rs`: `enum LensTitle { FolderName, ProfilePath, FullPath,
+    Custom }` (`snake_case`), and `FolderView.title: LensTitle`. The
+    serde default is `Custom`, so a lens saved before this task keeps
+    its title (D15). New lenses start at `FolderName`.
+  - A pure `lens_title(view: &FolderView, current: &str, profile: &Path)
+    -> String` in `source.rs`:
+    - `FolderName`: the last part of the path, or the whole path for a
+      drive root (`D:\`) or a share root (`\\server\share`);
+    - `ProfilePath`: the path below `profile`, or the profile folder's
+      own name for the profile itself, or the full path when the folder
+      is outside it. Compare without case, and treat `/` and `\` alike
+      (commit 60c0528 fixed the same trap for icons);
+    - `FullPath`: the path with `\` separators;
+    - `Custom`: `current`, unchanged.
+
+    It replaces `lens_title` in `app/menus.rs`; delete that one.
+  - `Space.title` stays the text every reader shows (the title bar, the
+    scopes pane, the delete question), so no reader changes. The app
+    computes the text and the commands carry it:
+    - `SetLensFolder` gains `title: String`;
+    - a new `SetLensTitle { id, title: LensTitle, text: String }`
+      (the Command recipe);
+    - `RenameSpace` on a lens sets its `title` to `Custom`, in core.
+  - Platform: `profile_directory()` beside `desktop_directory`
+    (`SHGetKnownFolderPath(FOLDERID_Profile)`). The app reads it once at
+    startup.
+  - Lens page (W10): a "Title" heading, a "Show as" choice (Folder name,
+    Path from your user folder, Full path, Custom), and a "Custom title"
+    text field, enabled only for Custom. Copy how the New spaces page's
+    default title field edits.
+  - Tests in core: each mode; a drive root; a share root; a profile
+    prefix in another case and with forward slashes; a folder outside the
+    profile; the profile itself; `RenameSpace` makes a lens custom; a
+    lens with no `title` key loads as `Custom`.
+  - **[needs human]** check: on a lens in the profile, each "Show as"
+    entry retitles it at once, and Cancel puts it back. Change folder…
+    retitles it under Folder name and keeps a custom title. F2 on the
+    title, then the Lens page shows Custom.
+- [x] **W12. Views, part 1: the icon sizes (core, app).** **[needs
+  human]**
+  - Core: `SpaceView { mode: ViewMode }` (`#[serde(default)]`, in a new
+    `view.rs`) and `Space.view` (`#[serde(default)]`). `ViewMode` starts
+    with `Icons` (the default: today's look-driven size), `ExtraLargeIcons`,
+    `LargeIcons`, and `MediumIcons`. `ViewMode::icon_px()` returns the
+    fixed size (256, 96, 48 px at 96 DPI), or `None` for `Icons`. Small
+    icons put the label beside the icon, so they come with List's cell in
+    W16.
+  - `Command::SetSpaceView { id, view }` (the Command recipe). It works
+    on both kinds; there is no lens branch.
+  - App: where a space's icon size and grid cell are worked out (from
+    `Theme.icon_size` today, in `app/view.rs`), use `icon_px()` when it is
+    `Some`. `app/zoom.rs` leaves a space with a fixed size alone, as D9
+    leaves a customized Custom look alone.
+  - Tables: `VIEW_MODES` in `settings/tables.rs` (mode, label, digit;
+    `Icons` is "Settings icon size" and has no digit), and
+    `VIEW_PRESETS` in `app.rs`, pairing each mode with its `MenuId` as
+    `SORT_PRESETS` does. A guard test checks that every row of one has
+    exactly one row in the other.
+  - Menu (the menu-entry recipe): View ▸ above Sort by in the space
+    menu of both kinds, with one radio entry per row, checking the
+    space's mode.
+  - Tests: serde default; `SetSpaceView` outcomes; a space in
+    `LargeIcons` gets a 96 px cell at 100 %; zoom leaves it alone; the
+    guard test.
+  - **[needs human]** check: each View ▸ entry resizes only that space,
+    on a normal space and a lens. "Settings icon size" gives back the
+    look's size. Ctrl+wheel does not move a space with a fixed size. The
+    view survives a restart.
+
+- [x] **B35. Save the config durably (config).**
+  - Why: `ConfigStore::save` writes `deskspace.toml.tmp` and renames it
+    over the config, but never flushes it. NTFS can make the rename
+    durable before the data, so a power cut right after a save can leave
+    an empty or partial config, which then loads as defaults and loses
+    the user's layout (`ENGINEERING.md` rule 3).
+  - `store.rs` `save`: write the temp file through a `File`, call
+    `File::sync_all` before closing it, then rename as today. This is
+    plain `std`, so the crate stays `forbid(unsafe_code)`.
+  - Test: `save_then_load_round_trips` still passes; add one that a
+    failed rename leaves the old config in place and the temp file
+    behind (rename onto a path whose parent is a file).
+  - Done when: the gates pass.
+- [x] **B32. Index paths instead of comparing them pairwise (app).**
+  - Why: `storage::same_path` canonicalizes both paths, two filesystem
+    calls, whenever the strings differ. `app/view.rs`
+    `desktop_layer_items` calls it for every desktop entry against every
+    space item, and `app/hit.rs` `find_item_by_file` runs once per dropped
+    or pasted path. One layer sync is about 2 × entries × items calls on
+    the UI thread: about 120,000 for 200 entries and 300 items (review,
+    2026-10-21).
+  - `storage.rs`: a pure-ish `pub(crate) fn path_key(path: &Path) ->
+    PathBuf`: the canonical path when `canonicalize` succeeds, else the
+    path with `/` turned into `\` and case-folded. Two paths name the
+    same file when their keys are equal. `same_path` becomes
+    `path_key(a) == path_key(b)` after its fast `a == b` check.
+  - `app/hit.rs`: `fn item_index(&self) -> HashMap<PathBuf, ItemId>`
+    over every non-lens space's items, keyed by `path_key`.
+    `find_item_by_file` keeps its signature for single lookups. Callers
+    that look up many paths (`add_dropped`, `plan_paste`,
+    `drop_into_lens`) build the index once and look each path up.
+  - `desktop_layer_items`: build a `HashSet` of the space items' keys
+    once, then test each entry's key against it.
+  - Tests: `path_key` folds case and slashes for a missing file, and two
+    spellings of an existing temp file share a key; `item_index` skips
+    lens items (copy `a_lens_item_is_not_owned_by_deskspace`).
+  - Done when: no loop calls `same_path` against every item, and the
+    gates pass. W25 later moves the remaining canonicalize calls for
+    lens folders off the UI thread; this task does not wait for it.
+- [x] **B36. Compare file names the way Windows does (platform, app).**
+  - Why: `storage::same_path` falls back to `eq_ignore_ascii_case`, and
+    `storage::is_inside` compares components the same way, so `É.txt`
+    and `é.txt` never match, although Windows treats them as one name.
+  - Platform: `pub fn same_name_ignoring_case(a: &OsStr, b: &OsStr) ->
+    bool` over `CompareStringOrdinal` with `bIgnoreCase` set, the
+    function Microsoft documents for file names (link it beside the
+    call); export it from the crate root.
+  - App: `same_path`'s fallback and `is_inside`'s component compare call
+    it. If B32 has landed, `path_key`'s case fold uses the same rule
+    (`LCMapStringEx` with `LCMAP_UPPERCASE` on the invariant locale), so
+    keys and comparisons agree.
+  - Tests: `É` and `é` match; `ß` and `SS` do not (ordinal compares one
+    character at a time); the existing `is_inside_compares_whole_components`
+    passes.
+  - Done when: no `eq_ignore_ascii_case` is left on a path in `app`, and
+    the gates pass.
+- [x] **B34. An O(1) least-recently-used icon cache (platform, pure).**
+  - Why: once `IconCache` is full (1,024 icons), `IconCache::insert`
+    scans every entry with `min_by_key` to find the oldest, on every new
+    icon. Scrolling a large lens pays that for each icon it loads.
+  - `win32/icons.rs`: keep a `BTreeMap<u64, Key>` from `last_used` to
+    key beside `entries`. A hit moves its key to the new clock value; an
+    insert into a full cache pops the first (oldest) entry. That is
+    O(log n) with no new dependency. `invalidate` removes every variant
+    of a path from both maps.
+  - Tests: the existing `evicts_the_least_recently_used_icon` and
+    `invalidate_forgets_every_variant_of_a_path` pass unchanged; add one
+    that a hit protects an icon from the next eviction.
+  - Done when: no method scans `entries`, and the gates pass.
+- [x] **W13. Ctrl+Shift+1..8 (the key recipe).** **[needs human]**
+  - Explorer's view keys: 1 Extra large icons, 2 Large icons, 3 Medium
+    icons, 4 Small icons, 5 List, 6 Details, 7 Tiles, 8 Content. Watch all
+    eight under `WATCH_PASTE` now, so later views need no keyboard
+    change.
+  - `win32/keyboard.rs`: eight `SEL_VIEW_*` codes decode to one
+    `SelectionKey::View(u8)`, carrying the digit. The recipe gives a key
+    with data its own `Event`, because most data does not fit in the
+    code; a digit does, so one variant is enough (decided for D15).
+  - `App::on_selection_key`: find the `VIEW_MODES` row for the digit and
+    dispatch `SetSpaceView` on the current space. A digit with no row yet
+    does nothing.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: a `keys_for_*` row and the `selection_key` mapping; the app
+    maps 2 to `LargeIcons`.
+  - **[needs human]** check: click a space, then Ctrl+Shift+1, 2, and 3
+    change it. With Explorer in front, Explorer's own Ctrl+Shift+1 still
+    works.
+- [x] **W14. One sort rule, with Explorer's Sort by (core, app).**
+  - Core: `SortRule { key: SortKey, descending, folders_first }` beside
+    `SortKey`, defaulting to name ascending, and `SpaceView.sort`.
+    `FolderView` loses `sort`, `descending`, and `folders_first` (lenses
+    are unreleased, D15), and `SyncLens` sorts by `view.sort`. The normal
+    space's one-off sort (the command `App::sort_space` dispatches) takes
+    a `SortRule` and stores it in `view.sort`. If there are two sort
+    comparators today, merge them into `SortRule::compare`, keeping the
+    natural name order for ties.
+  - Menu: Sort by ▸ becomes Explorer's folder menu. First the keys from
+    `SORT_KEYS` as radio items (Name, Date modified, Type, Size), then a
+    separator, then Ascending and Descending, then a separator, then
+    Folders first. A key keeps the direction, and a direction keeps the
+    key. On a normal space each choice sorts once with the new rule, as
+    today; a lens keeps it. Retire the seven `SORT_PRESETS` menu ids and
+    note them as never reused in `MenuId`'s doc, as `ids.rs` does for
+    fields 25 and 26.
+  - Tests: `SortRule::compare` for each key, both ways, and with folders
+    first; the one-off sort stores its rule; a lens re-sorts by it; the
+    menu checks the rule's key and direction.
+  - Done when: also the W6 row in section V says "Sort by" in the new
+    shape.
+
+- [x] **W15. Keep sorted (core, app).**
+  - Core: `SpaceView.keep_sorted: bool`, off by default.
+    `Space::keeps_sorted()` is true for a lens or when it is set; it is the
+    one place that knows a lens is always sorted.
+  - A space that `keeps_sorted()` re-sorts after every change to its items:
+    `AddItem`, `MoveItem` into it, and an item rename. Do it in core,
+    through one helper each of those `apply_` methods calls, not in the
+    app.
+  - `ReorderItem` and `ReorderItems` on such a space are `Rejected` (D15).
+    `app/drag.rs` shows no rearranging insertion there; a drag out still
+    works.
+  - Menu: Keep sorted, last in Sort by ▸, checked and grey on a lens.
+  - Tests: each re-sort trigger; reordering is rejected; a lens
+    `keeps_sorted()`; serde default.
+  - **[needs human]** check: with Keep sorted on, a dropped file lands in
+    order, a renamed item moves to its place, and a drag inside does not
+    rearrange (a drag out still moves the file). Turned off, the space
+    rearranges freely again and keeps the order it had.
+
+- [x] **W16. Views, part 2: the view layout and Small icons (core, app,
+  platform).** **[needs human]** The largest task in the phase; pair with
+  a reviewer before starting.
+  - Today every item sits on the icon grid (`GridSpec`, `arrange_space`,
+    `Item.position`, `Space::item_at`). The views from here on place
+    items by their order instead.
+  - Core, a new `view_layout.rs`: a pure layout that takes the mode, the
+    content size, the item count, and the cell metrics. It returns each
+    item's rect in content coordinates, the content extent, and the axis
+    that scrolls. The icon views hand off to the grid as today. Small
+    icons uses an *inline cell* (the icon left and one label line beside
+    it, ellipsized), placed in rows that wrap at the width, scrolling
+    down.
+  - Every reader of item geometry moves onto it: the item rects in
+    `scene.rs`, `Space::item_at`, the marquee, `next_in_direction` (give
+    it the rects), the drag-to-rearrange drop index,
+    `content_extent`/`max_scroll`, and the scroll indicator. These views
+    never write `Item.position` (D15). If a reader cannot use the layout
+    without a lens-or-space branch, stop and ask.
+  - Paint: the inline cell at 16 px, as Explorer's Small icons; the
+    selection fills the cell, and the check box sits left of the icon.
+  - Add `ViewMode::SmallIcons` (digit 4) and its `VIEW_MODES` row.
+  - Tests: the rects tile in order with no overlap; rows wrap at the
+    width; the extent; the center of each rect hits its item; arrow keys
+    move by row and column.
+  - **[needs human]** check: Small icons on a space and on a lens, at
+    100 % and 150 %: click, Ctrl and Shift click, the marquee, the arrow
+    keys, type-to-select, F2 (the box sits over the label), drag out, and
+    a drag to rearrange (normal space, not kept sorted). Back in Medium
+    icons, the hand arrangement is as it was.
+

@@ -20,9 +20,10 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::Shell::{
-    Common::COMDLG_FILTERSPEC, FOLDERID_Desktop, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST,
-    FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FileOpenDialog, FileSaveDialog, IFileOpenDialog,
-    IFileSaveDialog, IShellItem, KF_FLAG_DEFAULT, SHGetKnownFolderItem, SIGDN_FILESYSPATH,
+    Common::COMDLG_FILTERSPEC, FILEOPENDIALOGOPTIONS, FOLDERID_Desktop, FOS_ALLOWMULTISELECT,
+    FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FOS_PICKFOLDERS, FileOpenDialog,
+    FileSaveDialog, IFileOpenDialog, IFileSaveDialog, IShellItem, KF_FLAG_DEFAULT,
+    SHGetKnownFolderItem, SIGDN_FILESYSPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, DispatchMessageW, EnumChildWindows, GetClassNameW,
@@ -302,6 +303,25 @@ pub(crate) unsafe fn window_text(control: HWND) -> String {
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileopendialog
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-_fileopendialogoptions
 pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
+    // SAFETY: as `open_dialog` requires.
+    unsafe { open_dialog(owner, title, FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT) }
+}
+
+/// Opens the Open dialog in "Select folder" mode over `owner` and returns the
+/// folder the user picked, or `None` when they cancelled. Only filesystem
+/// folders are offered, so a library or "This PC" cannot be picked.
+pub(crate) unsafe fn pick_folder(owner: HWND, title: &str) -> Option<PathBuf> {
+    // SAFETY: as `open_dialog` requires.
+    unsafe { open_dialog(owner, title, FOS_PICKFOLDERS) }
+        .into_iter()
+        .next()
+}
+
+/// The Open dialog over `owner`, titled `title`, with `options` added to its
+/// defaults and `FOS_FORCEFILESYSTEM`, starting on the Desktop. Returns the
+/// picked paths, empty when cancelled. `owner` must be a live window of this
+/// thread, with OLE initialized.
+unsafe fn open_dialog(owner: HWND, title: &str, options: FILEOPENDIALOGOPTIONS) -> Vec<PathBuf> {
     // SAFETY: OLE is initialized on this thread; the dialog is modal over
     // `owner` and released when it goes out of scope.
     unsafe {
@@ -310,11 +330,11 @@ pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
         let Ok(picker) = created else {
             return Vec::new();
         };
-        let Ok(options) = picker.GetOptions() else {
+        let Ok(defaults) = picker.GetOptions() else {
             return Vec::new();
         };
         if picker
-            .SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT)
+            .SetOptions(defaults | FOS_FORCEFILESYSTEM | options)
             .is_err()
         {
             return Vec::new();

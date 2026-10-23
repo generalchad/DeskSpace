@@ -1,7 +1,7 @@
 //! The shell icon cache: base icons from the image factory, the classic
 //! fallback, and the overlays composited as Explorer draws them.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::SIZE;
@@ -19,7 +19,10 @@ use windows::core::{Interface, PCWSTR};
 
 use crate::render::Icon;
 use crate::render::d2d::{decode_bitmap, decode_icon};
-use crate::win32::system::wide;
+use crate::win32::shell_items::shell_path;
+
+/// One icon: a path, the pixel size it was rendered at, and the overlay size.
+type Key = (PathBuf, i32, u8);
 
 /// Icons decoded per path, pixel size, and overlay size, bounded by a
 /// least-recently-used limit. Evicting is always safe: scenes hold their own
@@ -29,7 +32,10 @@ use crate::win32::system::wide;
 pub struct IconCache {
     capacity: usize,
     clock: u64,
-    entries: HashMap<(PathBuf, i32, u8), CachedIcon>,
+    entries: HashMap<Key, CachedIcon>,
+    /// The entries' keys by last use, so the oldest is the first and eviction
+    /// needs no scan of `entries`.
+    by_age: BTreeMap<u64, Key>,
 }
 
 struct CachedIcon {
@@ -50,17 +56,16 @@ impl IconCache {
             capacity: capacity.max(1),
             clock: 0,
             entries: HashMap::new(),
+            by_age: BTreeMap::new(),
         }
     }
 
     /// The icon for `path` rendered at `size` pixels square, with the shell's
     /// overlay drawn at `overlay_size` percent of that.
     pub fn icon_for(&mut self, path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
-        self.clock += 1;
         let key = (path.to_path_buf(), size, overlay_size);
-        if let Some(entry) = self.entries.get_mut(&key) {
-            entry.last_used = self.clock;
-            return Some(entry.icon.clone());
+        if let Some(icon) = self.touch(&key) {
+            return Some(icon);
         }
         let icon = load_icon(path, size, overlay_size)?;
         self.insert(path.to_path_buf(), size, overlay_size, icon.clone());
@@ -70,12 +75,14 @@ impl IconCache {
     /// Forgets every size of the icon for `path`, so the next lookup reloads
     /// it (for example after the file changed).
     pub fn invalidate(&mut self, path: &Path) {
-        self.entries.retain(|(entry, _, _), _| entry != path);
+        self.entries.retain(|key, _| key.0 != path);
+        self.by_age.retain(|_, key| key.0 != path);
     }
 
     /// Forgets every cached icon, so each is rendered again on next use.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.by_age.clear();
     }
 
     pub fn len(&self) -> usize {
@@ -86,19 +93,27 @@ impl IconCache {
         self.entries.is_empty()
     }
 
+    /// Marks `key` as used now and returns its icon, when it is cached.
+    fn touch(&mut self, key: &Key) -> Option<Icon> {
+        let entry = self.entries.get_mut(key)?;
+        self.clock += 1;
+        self.by_age.remove(&entry.last_used);
+        entry.last_used = self.clock;
+        self.by_age.insert(self.clock, key.clone());
+        Some(entry.icon.clone())
+    }
+
     fn insert(&mut self, path: PathBuf, size: i32, overlay_size: u8, icon: Icon) {
-        if self.entries.len() >= self.capacity {
-            let oldest = self
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_used)
-                .map(|(key, _)| key.clone());
-            if let Some(oldest) = oldest {
-                self.entries.remove(&oldest);
-            }
+        self.clock += 1;
+        if self.entries.len() >= self.capacity
+            && let Some((_, oldest)) = self.by_age.pop_first()
+        {
+            self.entries.remove(&oldest);
         }
+        let key = (path, size, overlay_size);
+        self.by_age.insert(self.clock, key.clone());
         self.entries.insert(
-            (path, size, overlay_size),
+            key,
             CachedIcon {
                 icon,
                 last_used: self.clock,
@@ -140,7 +155,7 @@ fn is_shortcut(path: &Path) -> bool {
 /// The classic 32 px `SHGetFileInfoW` icon, without overlays, for paths the
 /// image factory rejects (some virtual and shortcut targets).
 fn load_classic_icon(path: &Path) -> Option<Icon> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     let mut info = SHFILEINFOW::default();
     let flags = SHGFI_ICON | SHGFI_LARGEICON;
     // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure. The
@@ -163,7 +178,7 @@ fn load_classic_icon(path: &Path) -> Option<Icon> {
 }
 
 fn load_base_icon(path: &Path, size: u32) -> Option<Icon> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     // SAFETY: `wide` is NUL-terminated and outlives the parse.
     let item: IShellItem =
         unsafe { SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None) }.ok()?;
@@ -199,7 +214,7 @@ pub(crate) fn shell_item_icon(item: &IShellItem, size: u32) -> Option<Icon> {
 /// shortcuts because it arrows any file it is given.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
 fn overlay_index(path: &Path) -> Option<i32> {
-    let wide = wide(&path.to_string_lossy());
+    let wide = shell_path(path);
     let mut flags = SHGFI_ICON | SHGFI_OVERLAYINDEX | SHGFI_ADDOVERLAYS;
     if is_shortcut(path) {
         flags |= SHGFI_LINKOVERLAY;
@@ -365,7 +380,7 @@ mod tests {
         Icon::new(1, 1, vec![0; 4].into_boxed_slice())
     }
 
-    fn key(path: &str) -> (PathBuf, i32, u8) {
+    fn key(path: &str) -> Key {
         (PathBuf::from(path), 32, 80)
     }
 
@@ -373,15 +388,28 @@ mod tests {
     fn evicts_the_least_recently_used_icon() {
         let mut cache = IconCache::with_capacity(2);
         cache.insert("a".into(), 32, 80, icon());
-        cache.clock += 1;
         cache.insert("b".into(), 32, 80, icon());
-        cache.clock += 1;
         // Touch "a" so "b" becomes the oldest.
-        cache.entries.get_mut(&key("a")).unwrap().last_used = cache.clock;
+        assert!(cache.touch(&key("a")).is_some());
         cache.insert("c".into(), 32, 80, icon());
         assert_eq!(cache.len(), 2);
         assert!(cache.entries.contains_key(&key("a")));
         assert!(!cache.entries.contains_key(&key("b")));
+    }
+
+    #[test]
+    fn a_hit_protects_the_icon_from_the_next_eviction() {
+        let mut cache = IconCache::with_capacity(2);
+        cache.insert("a".into(), 32, 80, icon());
+        cache.insert("b".into(), 32, 80, icon());
+        // A hit on the newest still moves its age, so the oldest is evicted.
+        assert!(cache.touch(&key("b")).is_some());
+        cache.insert("c".into(), 32, 80, icon());
+        assert_eq!(cache.len(), 2);
+        assert!(cache.entries.contains_key(&key("b")));
+        assert!(cache.entries.contains_key(&key("c")));
+        assert!(!cache.entries.contains_key(&key("a")));
+        assert_eq!(cache.by_age.len(), cache.entries.len(), "ages stay in step");
     }
 
     #[test]

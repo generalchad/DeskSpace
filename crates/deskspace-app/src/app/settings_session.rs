@@ -4,10 +4,12 @@ use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build};
+use deskspace_platform::{
+    FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, WatchKey, windows_build,
+};
 
 use crate::scene::item_label;
-use crate::settings::{self, ButtonAction, Effect, Session, SpaceSnapshot};
+use crate::settings::{self, ButtonAction, Effect, ScopeKind, Session, SpaceSnapshot};
 
 use super::{App, Preview, Surface, Timer};
 
@@ -114,6 +116,7 @@ impl App {
             fill,
             title_fill,
             text,
+            available: !self.unavailable_lenses.contains(&id),
             items,
         }
     }
@@ -131,7 +134,8 @@ impl App {
             .session
             .get_or_insert_with(|| Session::new(config));
         if scope.is_some() {
-            session.select_scope(scope);
+            let kind = ScopeKind::of(scope.and_then(|id| config.desktop.space(id)));
+            session.select_scope(scope, kind);
         }
         if let Some(form) = self.settings_form() {
             ui.open_settings(&form);
@@ -159,6 +163,19 @@ impl App {
             if self.config.desktop.space(id).is_some() {
                 self.refresh_space(ui, id);
             }
+        }
+    }
+
+    /// Takes a committed edit made outside the window (a menu command or an
+    /// inline rename) into an open settings window's Cancel snapshot, so
+    /// Cancel does not undo it, and shows it.
+    pub(super) fn resnapshot_settings(&mut self, ui: &mut Ui, id: SpaceId) {
+        if let (Some(session), Some(space)) = (
+            self.settings_ui.session_mut(),
+            self.config.desktop.space(id),
+        ) {
+            session.resnapshot(space);
+            self.refresh_settings(ui);
         }
     }
 
@@ -209,7 +226,8 @@ impl App {
             }
             SettingsEvent::ScopeChanged { scope } => {
                 let id = settings::scope_at(&self.config, scope);
-                session.select_scope(id);
+                let kind = ScopeKind::of(id.and_then(|id| self.config.desktop.space(id)));
+                session.select_scope(id, kind);
                 self.refresh_settings(ui);
                 match id {
                     Some(id) => self.watch_highlight(ui, id),
@@ -278,6 +296,12 @@ impl App {
             // The button is grey for Global, which has no space to fit.
             (ButtonAction::FitToContents, None) => {}
             (ButtonAction::CheckForUpdates, _) => self.start_update_check(ui, true),
+            (ButtonAction::OpenLensFolder, Some(id)) => self.open_lens_folder(ui, id),
+            (ButtonAction::ChangeLensFolder, Some(id)) => {
+                let at = self.space_center(id);
+                self.change_lens_folder(ui, id, at);
+            }
+            (ButtonAction::OpenLensFolder | ButtonAction::ChangeLensFolder, None) => {}
             (ButtonAction::OpenWindowsAnimationSettings, _) => {
                 ui.open_url(settings::windows_animation_settings_uri(windows_build()));
             }
@@ -314,22 +338,33 @@ impl App {
         }
     }
 
-    /// An edit on a customized space's page: dispatch its `SetSpaceLook`
-    /// at once, and preview it on that space alone.
+    /// An edit on a space's page: dispatch its command at once, and preview
+    /// it on that space alone.
     fn on_space_field(&mut self, ui: &mut Ui, field: u32, value: FieldValue) {
         let Some(session) = self.settings_ui.session.as_mut() else {
             return;
         };
-        let edit = settings::space_edit(&self.config, session, field, value, self.system.dark());
+        let edit = settings::space_edit(
+            &self.config,
+            session,
+            field,
+            value,
+            self.system.dark(),
+            &self.profile,
+        );
         // Not `commit`: the edit is previewed now and saved by Apply.
         if let Some((id, command, effect)) = edit
             && self.dispatch(command, self.space_center(id)).is_applied()
         {
-            let preview = match effect {
-                Effect::Layout => Preview::relayout(id),
-                _ => Preview::restyle(id),
-            };
-            self.schedule_preview(ui, preview);
+            match effect {
+                Effect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
+                Effect::Lens => {
+                    // A changed sort or filter needs a fresh listing.
+                    ui.unwatch_folder(WatchKey::Space(id));
+                    self.sync_watches(ui);
+                }
+                _ => self.schedule_preview(ui, Preview::restyle(id)),
+            }
         }
         self.refresh_settings(ui);
     }
@@ -457,9 +492,20 @@ impl App {
             }
             let at = space.rect().center();
             // Not `commit`: a restored look needs a restyle and re-flow.
-            if self.dispatch(snapshot.restore(), at).is_applied() {
+            let look_restored = self.dispatch(snapshot.restore(), at).is_applied();
+            let view_restored = snapshot
+                .restore_view()
+                .is_some_and(|command| self.dispatch(command, at).is_applied());
+            let title_restored = snapshot
+                .restore_title()
+                .is_some_and(|command| self.dispatch(command, at).is_applied());
+            if look_restored || view_restored || title_restored {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);
+            }
+            if view_restored {
+                ui.unwatch_folder(WatchKey::Space(snapshot.id));
+                self.sync_watches(ui);
             }
         }
     }

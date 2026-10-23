@@ -22,6 +22,14 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// How a lens's title follows its folder, in dropdown order (D15).
+pub(super) const LENS_TITLES: [(LensTitle, &str); 4] = [
+    (LensTitle::FolderName, "Folder name"),
+    (LensTitle::ProfilePath, "Path from your user folder"),
+    (LensTitle::FullPath, "Full path"),
+    (LensTitle::Custom, "Custom"),
+];
+
 /// Where the border's color comes from, in dropdown order.
 pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
     (
@@ -38,6 +46,33 @@ pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
 pub(super) const PRESETS: [(Preset, &str); 2] = [
     (Preset::MatchExplorer, "Match Explorer's display"),
     (Preset::Custom, "Custom"),
+];
+
+/// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 5] = [
+    (ViewMode::Icons, "Settings icon size", None),
+    (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
+    (ViewMode::LargeIcons, "Large icons", Some(2)),
+    (ViewMode::MediumIcons, "Medium icons", Some(3)),
+    (ViewMode::SmallIcons, "Small icons", Some(4)),
+];
+
+/// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
+/// no view carries yet.
+pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
+    VIEW_MODES
+        .iter()
+        .find(|(.., shortcut)| *shortcut == Some(digit))
+        .map(|(mode, ..)| *mode)
+}
+
+/// Explorer's Sort by keys, in its order and words (D15). The Sort by menu,
+/// the View page, and the Lenses defaults page read it.
+pub const SORT_KEYS: [(SortKey, &str); 4] = [
+    (SortKey::Name, "Name"),
+    (SortKey::Modified, "Date modified"),
+    (SortKey::Kind, "Type"),
+    (SortKey::Size, "Size"),
 ];
 
 pub(super) fn corner_marks() -> Vec<SliderMark> {
@@ -291,6 +326,21 @@ mod tests {
         for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
             assert_eq!(binding.text(&window), format!("Ctrl+F{}", slot + 1));
         }
+    }
+
+    #[test]
+    fn each_view_shortcut_digit_names_one_view() {
+        assert_eq!(view_for_digit(1), Some(ViewMode::ExtraLargeIcons));
+        assert_eq!(view_for_digit(2), Some(ViewMode::LargeIcons));
+        assert_eq!(view_for_digit(3), Some(ViewMode::MediumIcons));
+        assert_eq!(view_for_digit(4), Some(ViewMode::SmallIcons));
+        assert_eq!(view_for_digit(0), None);
+
+        let mut digits: Vec<u8> = VIEW_MODES.iter().filter_map(|(.., digit)| *digit).collect();
+        let count = digits.len();
+        digits.sort_unstable();
+        digits.dedup();
+        assert_eq!(digits.len(), count, "one view per shortcut digit");
     }
 
     #[test]

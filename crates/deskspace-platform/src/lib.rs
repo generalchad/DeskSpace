@@ -10,12 +10,13 @@ pub use debug_console::format_line;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
-    ClipboardAction, DebugEvent, DropAction, Event, MouseButton, NavDir, NavKey, SelectionKey,
-    SettingsEvent, ShellItem, SpaceEvent, TrayEvent, ZoomAction,
+    ClipboardAction, DebugEvent, DropAction, Event, FolderListing, MouseButton, NavDir, NavKey,
+    SelectionKey, SettingsEvent, ShellItem, SpaceEvent, TrayEvent, WatchKey, ZoomAction,
 };
 pub use render::{
-    Geometry, ITEM_ICON_SIZE, Icon, ItemMetrics, ItemState, ItemVisual, Mask, Play, SpaceScene,
-    SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box, item_check_box_hit,
+    DropInto, Geometry, ITEM_ICON_SIZE, Icon, ItemLayout, ItemMetrics, ItemState, ItemVisual, Mask,
+    Play, SpaceScene, SpaceStyle, Transition, TransitionFrame, Way, ZoomBar, item_check_box,
+    item_check_box_hit,
 };
 pub use ui::{
     CursorShape, CustomShortcut, DebugControl, DebugControlKind, DebugPanel, DebugSection, Field,
@@ -36,6 +37,7 @@ pub use win32::desktop_icons::{
 };
 pub use win32::desktop_items::{
     DesktopEntry, desktop_directory, enumerate_desktop_items, item_facts, notify_moved,
+    profile_directory,
 };
 pub use win32::display_settings::{
     CheckBoxMode, DESKTOP_ICON_RANGE, DESKTOP_ICON_STEP, ShellDisplay, desktop_display,
@@ -43,8 +45,10 @@ pub use win32::display_settings::{
 };
 pub use win32::dpi::{enable_per_monitor_awareness, monitor_dpi_at, scale_for};
 pub use win32::drag_image::DragImage;
+pub use win32::file_op::OnCollision;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
+pub use win32::names::{same_name_ignoring_case, upper_name};
 pub use win32::shell_items::{DragEffect, DragResult, ItemMenuChoice};
 pub use win32::shortcuts::{create_custom_shortcut, create_shortcut, resolve_path};
 pub use win32::system::{

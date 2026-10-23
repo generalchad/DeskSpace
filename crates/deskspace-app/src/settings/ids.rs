@@ -103,17 +103,28 @@ pub mod field {
     pub const BORDER_SOURCE: u32 = 104;
     pub const BORDER_COLOR: u32 = 105;
     pub const BORDER_OPACITY: u32 = 106;
+
+    pub const LENS_HEADING: u32 = 107;
+    pub const LENS_PATH: u32 = 108;
+    pub const LENS_OPEN: u32 = 109;
+    pub const LENS_CHANGE: u32 = 110;
+    pub const LENS_CONTENTS_HEADING: u32 = 111;
+    pub const LENS_SHOW_HIDDEN: u32 = 112;
+    pub const LENS_TITLE_HEADING: u32 = 113;
+    pub const LENS_TITLE_MODE: u32 = 114;
+    pub const LENS_TITLE_TEXT: u32 = 115;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
 /// which a space can override; General, New spaces, Hotkeys, About, and the
-/// animation pages are Global only; Shortcuts is a space's only
-/// (`listed_pages` says which a scope lists).
+/// animation pages are Global only; Shortcuts is a space's, and Lens is a
+/// lens's (`listed_pages` says which a scope lists).
 pub mod page {
     pub const APPEARANCE: usize = 0;
     pub const LAYOUT: usize = 2;
     pub const ABOUT: usize = 8;
     pub const SHORTCUTS: usize = 9;
+    pub const LENS: usize = 10;
     /// The first animation page; one per `ANIMATION_PAGES` row follows.
-    pub const ANIMATIONS: usize = 10;
+    pub const ANIMATIONS: usize = 11;
 }

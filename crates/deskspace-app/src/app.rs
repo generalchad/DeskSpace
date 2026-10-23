@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+use std::path::PathBuf;
+
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId};
+use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, Way,
-    ZoomAction, cursor_pos, desktop_display_since,
+    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
+    Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -19,6 +22,7 @@ mod files;
 mod hit;
 mod hotkeys;
 mod info_tip;
+mod lens;
 mod menus;
 mod persist;
 mod pointer;
@@ -141,23 +145,44 @@ enum MenuId {
     IconSizeMedium = 42,
     IconSizeLarge = 43,
     IconSizeXLarge = 44,
-    SortNameAsc = 30,
-    SortNameDesc = 31,
-    SortKind = 32,
-    SortSizeAsc = 33,
-    SortSizeDesc = 34,
-    SortDateAsc = 35,
-    SortDateDesc = 36,
+    // 30-36 were the one-off sort presets; they are never reused (W14).
     NewShortcutApps = 45,
     NewShortcutCustom = 46,
     PasteShortcut = 47,
     AddFiles = 48,
     /// The tray's "Debug…", only with `--debug` (ROADMAP D14).
     Debug = 49,
+    /// A lens's "Open folder".
+    OpenFolder = 50,
+    /// A lens's "Change folder…".
+    ChangeFolder = 51,
+    /// A space's "Folders first" toggle, in its Sort by submenu.
+    FoldersFirst = 52,
+    /// A lens's "Show hidden files" toggle, in its Sort by submenu.
+    ShowHidden = 53,
+    /// "New lens…", under New space in every menu that has it.
+    NewLens = 54,
+    /// The View submenu's icon views (D15).
+    ViewIcons = 55,
+    ViewExtraLargeIcons = 56,
+    ViewLargeIcons = 57,
+    ViewMediumIcons = 58,
+    /// Small icons (W16): inline cells placed by order.
+    ViewSmallIcons = 66,
+    /// The Sort by submenu's keys (D15).
+    SortByName = 59,
+    SortByModified = 60,
+    SortByKind = 61,
+    SortBySize = 62,
+    /// The Sort by submenu's direction.
+    SortAscending = 63,
+    SortDescending = 64,
+    /// A space's "Keep sorted" toggle, last in its Sort by submenu (D15).
+    KeepSorted = 65,
 }
 
 impl MenuId {
-    const ALL: [Self; 37] = [
+    const ALL: [Self; 47] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -183,18 +208,28 @@ impl MenuId {
         Self::IconSizeMedium,
         Self::IconSizeLarge,
         Self::IconSizeXLarge,
-        Self::SortNameAsc,
-        Self::SortNameDesc,
-        Self::SortKind,
-        Self::SortSizeAsc,
-        Self::SortSizeDesc,
-        Self::SortDateAsc,
-        Self::SortDateDesc,
         Self::NewShortcutApps,
         Self::NewShortcutCustom,
         Self::PasteShortcut,
         Self::AddFiles,
         Self::Debug,
+        Self::OpenFolder,
+        Self::ChangeFolder,
+        Self::FoldersFirst,
+        Self::ShowHidden,
+        Self::NewLens,
+        Self::ViewIcons,
+        Self::ViewExtraLargeIcons,
+        Self::ViewLargeIcons,
+        Self::ViewMediumIcons,
+        Self::SortByName,
+        Self::SortByModified,
+        Self::SortByKind,
+        Self::SortBySize,
+        Self::SortAscending,
+        Self::SortDescending,
+        Self::KeepSorted,
+        Self::ViewSmallIcons,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -249,36 +284,22 @@ const ICON_SIZE_PRESETS: [(MenuId, &str, u8); 4] = [
     (MenuId::IconSizeXLarge, "Extra large", 200),
 ];
 
-/// The sort choices the Sort by submenu offers: menu id, label, sort key, and
-/// whether the order descends. Drives both the submenu and the choice handling.
-const SORT_PRESETS: [(MenuId, &str, SortKey, bool); 7] = [
-    (
-        MenuId::SortNameAsc,
-        "Name (A\u{2013}Z)",
-        SortKey::Name,
-        false,
-    ),
-    (
-        MenuId::SortNameDesc,
-        "Name (Z\u{2013}A)",
-        SortKey::Name,
-        true,
-    ),
-    (MenuId::SortKind, "Type", SortKey::Kind, false),
-    (MenuId::SortSizeAsc, "Size (smallest)", SortKey::Size, false),
-    (MenuId::SortSizeDesc, "Size (largest)", SortKey::Size, true),
-    (
-        MenuId::SortDateAsc,
-        "Date (oldest)",
-        SortKey::Modified,
-        false,
-    ),
-    (
-        MenuId::SortDateDesc,
-        "Date (newest)",
-        SortKey::Modified,
-        true,
-    ),
+/// The Sort by submenu's key choices: menu id and the key it picks, in
+/// `SORT_KEYS` order. Drives both the submenu and how a choice is handled.
+const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
+    (MenuId::SortByName, SortKey::Name),
+    (MenuId::SortByModified, SortKey::Modified),
+    (MenuId::SortByKind, SortKey::Kind),
+    (MenuId::SortBySize, SortKey::Size),
+];
+
+/// The View submenu's choices: one per view, in `VIEW_MODES` order.
+const VIEW_PRESETS: [(MenuId, ViewMode); 5] = [
+    (MenuId::ViewIcons, ViewMode::Icons),
+    (MenuId::ViewExtraLargeIcons, ViewMode::ExtraLargeIcons),
+    (MenuId::ViewLargeIcons, ViewMode::LargeIcons),
+    (MenuId::ViewMediumIcons, ViewMode::MediumIcons),
+    (MenuId::ViewSmallIcons, ViewMode::SmallIcons),
 ];
 
 /// The event id the platform gives the chrome-less desktop layer window
@@ -409,6 +430,9 @@ impl Autosave {
 
 pub struct App {
     config: Config,
+    /// The user's profile folder, read once at startup; empty if it could not
+    /// be resolved.
+    profile: PathBuf,
     pub(crate) store: ConfigStore,
     pub(crate) storage: ItemStore,
     icons: IconCache,
@@ -426,6 +450,9 @@ pub struct App {
     autosave: Autosave,
     /// Per-space view state that is not persisted: scroll and icon factor.
     view_cache: ViewCache,
+    /// Lens folders the watch worker could not read (W5 draws the
+    /// placeholder). Session-only.
+    unavailable_lenses: HashSet<SpaceId>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -444,8 +471,13 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config, store: ConfigStore, hidden: bool, open_settings: bool) -> Self {
+        let profile = profile_directory().unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not resolve the user's profile folder");
+            PathBuf::new()
+        });
         Self {
             config,
+            profile,
             storage: ItemStore::new(store.storage_dir()),
             store,
             icons: IconCache::new(),
@@ -456,6 +488,7 @@ impl App {
             edit: EditState::default(),
             autosave: Autosave::default(),
             view_cache: ViewCache::default(),
+            unavailable_lenses: HashSet::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
@@ -497,6 +530,7 @@ impl App {
             SelectionKey::ZoomIn => self.zoom(ui, ZoomAction::In),
             SelectionKey::ZoomOut => self.zoom(ui, ZoomAction::Out),
             SelectionKey::ZoomReset => self.zoom(ui, ZoomAction::Reset),
+            SelectionKey::View(digit) => self.set_view_by_digit(ui, digit),
         }
     }
 
@@ -645,7 +679,14 @@ impl EventHandler for App {
             Event::ShowSpaces => self.set_visible(ui, true),
             // A watched folder changed (I8): re-read the shell's loose items
             // and reconcile the layer. A no-op when the layer is not drawn.
-            Event::FolderChanged => self.resync_desktop_layer(ui),
+            Event::FolderChanged {
+                key: WatchKey::Desktop,
+                ..
+            } => self.resync_desktop_layer(ui),
+            Event::FolderChanged {
+                key: WatchKey::Space(id),
+                listing,
+            } => self.on_lens_listing(ui, id, listing),
             Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {
@@ -700,14 +741,23 @@ impl EventHandler for App {
     }
 }
 
-/// Deleting an empty space loses nothing, so it happens without asking.
+/// Deleting an empty space loses nothing, so it happens without asking. A lens
+/// always asks, because it points at a folder the user may not expect to
+/// stay.
 fn delete_needs_confirmation(space: &Space) -> bool {
-    !space.items().is_empty()
+    space.is_lens() || !space.items().is_empty()
 }
 
-/// What deleting a space with `count` items, `stored` of them in the space
-/// storage, does to the files.
-fn delete_consequence(count: usize, stored: usize) -> String {
+/// What deleting `space`, with `stored` of its items in the space storage,
+/// does to the files.
+fn delete_consequence(space: &Space, stored: usize) -> String {
+    if let Some(view) = space.folder_view() {
+        return format!(
+            "It shows the folder \u{201C}{}\u{201D}. The folder and its files stay where they are.",
+            view.path.display()
+        );
+    }
+    let count = space.items().len();
     let plural = |n: usize| if n == 1 { "item" } else { "items" };
     match (count, stored) {
         (0, _) => "It is empty.".to_string(),
@@ -880,10 +930,37 @@ mod tests {
     }
 
     #[test]
+    fn a_lens_asks_even_when_empty_and_says_its_folder_stays() {
+        let mut desktop = Desktop::new();
+        let id = fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 200, 200),
+            "C:/Users/me/Downloads",
+        );
+        let lens = desktop.space(id).unwrap();
+        assert!(delete_needs_confirmation(lens));
+        let message = delete_consequence(lens, 0);
+        assert!(message.contains("C:/Users/me/Downloads"));
+        assert!(message.contains("stay where they are"));
+    }
+
+    #[test]
     fn delete_message_mentions_files_moved_back() {
-        assert_eq!(delete_consequence(0, 0), "It is empty.");
-        assert!(delete_consequence(1, 0).contains("1 item will be removed"));
-        let mixed = delete_consequence(3, 2);
+        let space_with = |count: u64| {
+            let mut space = Space::new(SpaceId(1), "S", Rect::new(0, 0, 200, 200));
+            for n in 0..count {
+                space.push_item(deskspace_core::Item::new(
+                    ItemId(n),
+                    format!("C:/{n}.txt"),
+                    ItemFacts::default(),
+                ));
+            }
+            space
+        };
+        assert_eq!(delete_consequence(&space_with(0), 0), "It is empty.");
+        assert!(delete_consequence(&space_with(1), 0).contains("1 item will be removed"));
+        let mixed = delete_consequence(&space_with(3), 2);
         assert!(mixed.contains("3 items"));
         assert!(mixed.contains("2 files moved into the space will be moved back"));
     }

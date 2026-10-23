@@ -79,7 +79,7 @@ Four rules come first, because the rest follow from them:
   passes about 800 lines of non-test code, split it along its existing seams
   (`TASKS.md` section K) rather than adding to it.
 - **Maintainable.** One source of truth per fact. Tables drive menus
-  (`OPACITY_PRESETS`, `SORT_PRESETS`), option lists (`(value, label)` pairs in
+  (`OPACITY_PRESETS`, `SORT_MENU_IDS`), option lists (`(value, label)` pairs in
   `settings/tables.rs`), and hotkeys (`HOTKEY_BINDINGS`), so a new entry is one
   row. Where a table cannot carry the behavior, an enum does (`ButtonAction`,
   `HotkeyAction`), so the compiler or a guard test points at every place still
@@ -127,6 +127,17 @@ The crates and what each owns are in `CONTEXT.md` section 3.
 - Use `tracing` for diagnostics, and `debug` or `trace` (never `info`) on
   per-frame or noisy paths.
 - Tests sit in each module as `#[cfg(test)] mod tests`.
+- Each crate tests on its own: `cargo test -p <crate>` passes with no
+  other crate's tests, and a change re-tests only that crate and the
+  crates that depend on it. So put a pure type or pure logic in the
+  lowest crate that can hold it. In particular, keep it out of a crate
+  that needs the `windows` crate, or every test that uses it pays for
+  Win32. `deskspace-platform` still mixes the two; R19 plans the split.
+- While working, test only what a change can affect with
+  `./scripts/dev.ps1 -Check -Changed` (B31). The gates (section 1)
+  still run on the whole workspace before every commit, and CI always
+  does. Cargo caches builds, not test results, so skipping is the only
+  saving.
 
 ## 4. Code style and comments
 
@@ -224,7 +235,7 @@ says why; the diff already shows what. Run the gates (section 1) first.
   |------|------|
   | either watch flag | F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom; main and keypad) |
   | `WATCH_SELECTION` | Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X |
-  | `WATCH_PASTE` | Ctrl+V, the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
+  | `WATCH_PASTE` | Ctrl+V, Ctrl+Shift+1..8 (Explorer's views), the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
 
   Every other key passes through. The watch consumes keys only while the
   desktop shell has the foreground (`desktop_is_foreground`), so other apps

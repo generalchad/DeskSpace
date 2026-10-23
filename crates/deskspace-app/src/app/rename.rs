@@ -188,7 +188,12 @@ impl App {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
                         let near = self.space_center(id);
-                        self.commit(ui, Command::RenameSpace { id, title }, near);
+                        if self
+                            .commit(ui, Command::RenameSpace { id, title }, near)
+                            .is_applied()
+                        {
+                            self.resnapshot_settings(ui, id);
+                        }
                     }
                 }
             }

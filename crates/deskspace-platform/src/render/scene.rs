@@ -33,6 +33,17 @@ impl SpaceStyle {
     }
 }
 
+/// What a drop on a window lands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DropInto {
+    /// A space's own list of items, which can list a file where it is.
+    #[default]
+    Space,
+    /// A real folder (a lens), which only holds the files moved or copied
+    /// into it.
+    Folder,
+}
+
 /// Everything drawn inside one space window. Coordinates are relative to the
 /// window's client area.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +81,13 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// What a drop on this window lands in, which decides the modifiers and
+    /// menu entries the drop target offers.
+    pub drop_into: DropInto,
+    /// Text drawn centered in the item area in place of items, in the label
+    /// color at about 60 % opacity; a lens whose folder is unavailable says
+    /// so here. `None` draws nothing.
+    pub placeholder: Option<String>,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,
@@ -87,6 +105,9 @@ pub struct SpaceScene {
     /// Scaled item sizes (icon, label gap, check box) the painter draws with;
     /// the app's hit tests use the same metrics.
     pub metrics: ItemMetrics,
+    /// How each item cell places its icon and label (W16). The painter's icon,
+    /// label, and rename-box positions and the check-box hit test both read it.
+    pub item_layout: ItemLayout,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
@@ -101,6 +122,16 @@ pub struct SpaceScene {
     pub marquee: Option<Rect>,
     /// The scroll position indicator, when the content overflows.
     pub scroll_thumb: Option<Rect>,
+}
+
+/// How an item cell places its icon and label (W16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ItemLayout {
+    /// The icon grid: the icon centered at the top, with its label below it.
+    #[default]
+    Grid,
+    /// One row of a list: the icon at the left and one label line beside it.
+    Inline,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -1,7 +1,7 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
@@ -426,11 +426,13 @@ impl App {
     }
 
     pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
-        let layout = self.layout_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let max = space.max_scroll(layout.cell(), layout.padding);
+        let Some(layout) = self.view_layout(id) else {
+            return;
+        };
+        let max = layout.max_scroll(space.content_rect().height);
         let current = self.scroll_of(id);
         let next = (current - delta * layout.scroll_step() / WHEEL_DELTA).clamp(0, max);
         if next == current {
@@ -466,21 +468,18 @@ impl App {
     }
 
     pub(super) fn double_click(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
-        let layout = self.surface_layout(surface);
         let target = match surface {
-            Surface::Space(id) => {
-                self.config
-                    .desktop
-                    .space(id)
-                    .map_or(DoubleClickTarget::Nothing, |space| {
-                        double_click_target(
-                            space,
-                            layout.cell(),
-                            self.surface_scroll(surface),
-                            point,
-                        )
-                    })
-            }
+            Surface::Space(id) => match self.view_layout(id) {
+                Some(layout) => {
+                    self.config
+                        .desktop
+                        .space(id)
+                        .map_or(DoubleClickTarget::Nothing, |space| {
+                            double_click_target(space, &layout, self.surface_scroll(surface), point)
+                        })
+                }
+                None => DoubleClickTarget::Nothing,
+            },
             Surface::Desktop => self
                 .surface_item_at(surface, point)
                 .map_or(DoubleClickTarget::Nothing, DoubleClickTarget::Item),
@@ -579,13 +578,23 @@ enum DoubleClickTarget {
     Nothing,
 }
 
-fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> DoubleClickTarget {
+fn double_click_target(
+    space: &Space,
+    layout: &ViewLayout,
+    scroll: i32,
+    point: Point,
+) -> DoubleClickTarget {
     if space.title_bar().contains(point) {
         DoubleClickTarget::TitleBar
-    } else if let Some(item) = space.item_at(point, cell, scroll) {
-        DoubleClickTarget::Item(item)
     } else {
-        DoubleClickTarget::Nothing
+        let content = space.content_rect();
+        let local = Point::new(point.x - content.x, point.y - content.y + scroll);
+        layout
+            .index_at(local)
+            .and_then(|index| space.items().get(index))
+            .map_or(DoubleClickTarget::Nothing, |item| {
+                DoubleClickTarget::Item(item.id)
+            })
     }
 }
 
@@ -595,6 +604,7 @@ mod tests {
     use deskspace_core::ItemFacts;
 
     use deskspace_core::GridSpec;
+    use deskspace_core::view_layout::ViewMetrics;
 
     #[test]
     fn a_second_click_on_the_only_selected_item_renames() {
@@ -737,13 +747,13 @@ mod tests {
 
     #[test]
     fn double_click_rolls_on_the_title_and_opens_items() {
-        let layout = GridSpec::default();
+        let grid = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "S", Rect::new(100, 100, 240, 400));
         let mut item = deskspace_core::Item::new(ItemId(7), "C:/a.lnk", ItemFacts::default());
         item.position = Point::new(12, 12);
         space.push_item(item);
-        let target =
-            |x, y, scroll| double_click_target(&space, layout.cell(), scroll, Point::new(x, y));
+        let layout = ViewLayout::for_space(&space, ViewMetrics::for_grid(grid));
+        let target = |x, y, scroll| double_click_target(&space, &layout, scroll, Point::new(x, y));
         let in_item = (100 + 12 + 10, 100 + space.title_height + 12 + 10);
 
         assert_eq!(target(150, 110, 0), DoubleClickTarget::TitleBar);

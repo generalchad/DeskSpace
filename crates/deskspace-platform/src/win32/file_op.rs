@@ -3,9 +3,10 @@
 //!
 //! Using it keeps DeskSpace's behavior close to Explorer's: the standard
 //! progress dialog, long-path and cross-volume handling, and an undo record.
-//! Name clashes are resolved with `FOF_RENAMEONCOLLISION` ("name (2).ext")
-//! rather than the shell's Replace dialog, because every space shares one
-//! storage folder and replacing would overwrite a file another space shows.
+//! A caller picks how name clashes are resolved (`OnCollision`): storage
+//! renames them ("name (2).ext") because every space shares one folder and
+//! replacing would overwrite a file another space shows, while a lens's real
+//! folder gets the shell's Replace or Skip dialog.
 //! Delete uses the Recycle Bin (`FOF_ALLOWUNDO`) with no prompt.
 //! https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation
 
@@ -15,9 +16,9 @@ use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree};
 use windows::Win32::UI::Shell::{
-    FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, IFileOperation,
-    IFileOperationProgressSink, IFileOperationProgressSink_Impl, IShellItem,
-    SHCreateItemFromParsingName, SIGDN_FILESYSPATH,
+    FILEOPERATION_FLAGS, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOCONFIRMMKDIR,
+    FOF_RENAMEONCOLLISION, IFileOperation, IFileOperationProgressSink,
+    IFileOperationProgressSink_Impl, IShellItem, SHCreateItemFromParsingName, SIGDN_FILESYSPATH,
 };
 use windows::core::{GUID, HRESULT, PCWSTR, Ref, Result as WinResult};
 
@@ -29,6 +30,28 @@ use crate::win32::system::wide;
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation
 const CLSID_FILE_OPERATION: GUID = GUID::from_u128(0x3ad05575_8857_4850_9277_11b85bdb8e09);
 
+/// What `transfer` does when a file with the same name is already in the
+/// destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnCollision {
+    /// Give the newcomer a free name ("name (2).ext"). Storage uses this,
+    /// because every space shares the folder.
+    Rename,
+    /// Show the shell's Replace or Skip dialog, as Explorer does in a
+    /// user's own folder.
+    Ask,
+}
+
+/// The flags `transfer` sets: both keep `FOF_ALLOWUNDO`, so Ctrl+Z in
+/// Explorer undoes the operation.
+fn operation_flags(on_collision: OnCollision) -> FILEOPERATION_FLAGS {
+    let base = FOF_NOCONFIRMMKDIR | FOF_ALLOWUNDO;
+    match on_collision {
+        OnCollision::Rename => base | FOF_RENAMEONCOLLISION,
+        OnCollision::Ask => base,
+    }
+}
+
 /// Moves or copies `paths` into `destination`, returning where the files
 /// landed. `owner` parents the shell's progress and conflict UI.
 pub(crate) fn transfer(
@@ -36,6 +59,7 @@ pub(crate) fn transfer(
     paths: &[PathBuf],
     destination: &Path,
     move_items: bool,
+    on_collision: OnCollision,
 ) -> Result<Vec<PathBuf>, PlatformError> {
     if paths.is_empty() {
         return Ok(Vec::new());
@@ -53,7 +77,7 @@ pub(crate) fn transfer(
         if let Some(owner) = owner {
             let _ = operation.SetOwnerWindow(owner);
         }
-        operation.SetOperationFlags(FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR | FOF_ALLOWUNDO)?;
+        operation.SetOperationFlags(operation_flags(on_collision))?;
         let destination = shell_item(destination)?;
         let mut queued = false;
         for path in paths {
@@ -334,5 +358,29 @@ impl IFileOperationProgressSink_Impl for CreatedItems_Impl {
 
     fn ResumeTimer(&self) -> WinResult<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has(flags: FILEOPERATION_FLAGS, flag: FILEOPERATION_FLAGS) -> bool {
+        flags.0 & flag.0 == flag.0
+    }
+
+    #[test]
+    fn rename_resolves_clashes_and_ask_leaves_them_to_the_shell() {
+        let rename = operation_flags(OnCollision::Rename);
+        let ask = operation_flags(OnCollision::Ask);
+        assert!(has(rename, FOF_RENAMEONCOLLISION));
+        assert!(!has(ask, FOF_RENAMEONCOLLISION));
+    }
+
+    #[test]
+    fn both_keep_the_explorer_undo() {
+        for on_collision in [OnCollision::Rename, OnCollision::Ask] {
+            assert!(has(operation_flags(on_collision), FOF_ALLOWUNDO));
+        }
     }
 }

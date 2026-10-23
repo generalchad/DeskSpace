@@ -3,21 +3,24 @@
 use std::collections::{HashMap, HashSet};
 
 use deskspace_core::animation::Kind;
-use deskspace_core::geometry::Rect;
+use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
-use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, Theme};
+use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
+use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
-    arm_watchdog, desktop_directory, desktop_display_since, enumerate_desktop_items,
-    foreground_window, hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons,
-    space_dpi, system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
+    hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
 };
 
 use crate::scene::{
     SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
 };
+use crate::settings::view_for_digit;
+use crate::storage::path_key;
 
 use super::animation::Arrival;
 use super::rename::EditTarget;
@@ -97,9 +100,9 @@ pub(crate) struct ViewCache {
     /// Scroll offset in pixels. May exceed the current maximum after a
     /// resize, so the app reads it through `App::scroll_of`, which clamps.
     scroll: HashMap<SpaceId, i32>,
-    /// Each space's icon factor (`icon_scale`, without DPI) at its last
-    /// re-flow, so a change to it can keep the space's size first
-    /// (`App::keep_size_on_zoom`).
+    /// Each space's icon factor at its last re-flow: a fixed view's factor,
+    /// or `App::icon_scale`'s, without DPI. A change to it can keep the
+    /// space's size first (`App::keep_size_on_zoom`).
     icon_scales: HashMap<SpaceId, f32>,
 }
 
@@ -236,6 +239,10 @@ impl App {
             focused: (self.selection.surface == Some(surface))
                 .then_some(self.selection.focused)
                 .flatten(),
+            folder_unavailable: match surface {
+                Surface::Space(id) => self.unavailable_lenses.contains(&id),
+                Surface::Desktop => false,
+            },
         }
     }
 
@@ -297,8 +304,12 @@ impl App {
 
     /// The full icon factor for one space: the icon-size factor times the
     /// monitor's DPI. Explorer's own icon size is already in physical pixels,
-    /// so mirroring does not multiply by DPI again.
+    /// so mirroring does not multiply by DPI again. A fixed icon view ignores
+    /// both the look and Explorer, and scales only for DPI.
     pub(super) fn space_scale(&self, id: SpaceId) -> f32 {
+        if let Some(scale) = self.fixed_icon_scale(id) {
+            return scale * space_dpi(id.0);
+        }
         let theme = self.theme_for(id);
         let scale = self.icon_scale(theme);
         if theme.match_explorer() && self.system.shell().icon_size.is_some() {
@@ -307,21 +318,31 @@ impl App {
         scale * space_dpi(id.0)
     }
 
+    /// The icon factor a fixed view asks for, without DPI, or `None` when the
+    /// space follows the look's icon size.
+    fn fixed_icon_scale(&self, id: SpaceId) -> Option<f32> {
+        let px = self.config.desktop.space(id)?.view().mode.icon_px()?;
+        Some(px as f32 / ITEM_ICON_SIZE as f32)
+    }
+
     /// `grid` scaled for an icon/DPI scale, with the title bar scaled by
-    /// `title_scale` (the DPI alone, so a zoom leaves it alone). When `theme`
-    /// mirrors Explorer, its item spacing (the full cell size in physical
-    /// pixels) replaces the cell and gap, so the grid step matches the desktop
-    /// exactly. The stored grids are never scaled, so the settings form keeps
-    /// editing logical values.
+    /// `title_scale` (the DPI alone, so a zoom leaves it alone). When
+    /// `fixed_icon` is false and `theme` mirrors Explorer, its item spacing
+    /// (the full cell size in physical pixels) replaces the cell and gap, so
+    /// the grid step matches the desktop exactly. A fixed icon view keeps its
+    /// own scaled grid. The stored grids are never scaled, so the settings form
+    /// keeps editing logical values.
     pub(super) fn base_layout(
         &self,
         theme: &Theme,
         grid: GridSpec,
         scale: f32,
         title_scale: f32,
+        fixed_icon: bool,
     ) -> GridSpec {
         let mut layout = grid.scaled_with_title(scale, title_scale);
-        if theme.match_explorer()
+        if !fixed_icon
+            && theme.match_explorer()
             && let Some(spacing) = self.system.shell().icon_spacing
         {
             layout.cell_width = spacing.width.max(1);
@@ -333,11 +354,13 @@ impl App {
 
     /// The scaled grid for one space, including its monitor's DPI.
     pub(super) fn layout_for(&self, id: SpaceId) -> GridSpec {
+        let fixed_icon = self.fixed_icon_scale(id).is_some();
         self.base_layout(
             self.theme_for(id),
             self.grid_for(id),
             self.space_scale(id),
             space_dpi(id.0),
+            fixed_icon,
         )
     }
 
@@ -350,12 +373,41 @@ impl App {
             self.config.desktop.layout,
             self.icon_scale(theme),
             1.0,
+            false,
         )
     }
 
-    /// Scaled icon, label, and check-box sizes for one space.
+    /// Scaled icon, label, and check-box sizes for one space. An order-placed
+    /// view draws its own fixed icon size and scales the rest for the display
+    /// alone, so the look and a zoom leave it alone (W16).
     pub(super) fn metrics_for(&self, id: SpaceId) -> ItemMetrics {
+        let mode = self.view_mode(id);
+        if mode.places_by_order() {
+            let dpi = space_dpi(id.0);
+            let icon_px = mode.item_icon_px().unwrap_or(ITEM_ICON_SIZE);
+            return ItemMetrics {
+                icon_size: ((icon_px as f32 * dpi).round() as i32).max(1),
+                ..ItemMetrics::for_scale(dpi)
+            };
+        }
         ItemMetrics::for_scale(self.space_scale(id))
+    }
+
+    /// The space's view mode, or the default when it is gone.
+    pub(super) fn view_mode(&self, id: SpaceId) -> ViewMode {
+        self.config
+            .desktop
+            .space(id)
+            .map_or(ViewMode::default(), |space| space.view().mode)
+    }
+
+    /// Where `id`'s items sit under its current view, with the same metrics and
+    /// scale the scene builder uses.
+    pub(super) fn view_layout(&self, id: SpaceId) -> Option<ViewLayout> {
+        let space = self.config.desktop.space(id)?;
+        let metrics =
+            ViewMetrics::for_view(space.view().mode, self.layout_for(id), space_dpi(id.0));
+        Some(ViewLayout::for_space(space, metrics))
     }
 
     /// Re-reads Explorer's display options and repaints if they changed. A
@@ -414,16 +466,6 @@ impl App {
         );
     }
 
-    /// Starts (or resumes) watching the user's Desktop folder so the layer
-    /// follows files added, removed, or renamed outside DeskSpace. A no-op once
-    /// the same folder is already watched.
-    pub(super) fn watch_desktop_folder(&mut self, ui: &mut Ui) {
-        match desktop_directory() {
-            Ok(directory) => ui.watch_folder(&directory),
-            Err(error) => tracing::warn!(%error, "could not resolve the Desktop folder to watch"),
-        }
-    }
-
     /// The window style for the desktop layer (chrome-less, transparent).
     pub(super) fn layer_style(&self) -> SpaceStyle {
         layer_style(&self.config.theme, self.system.dark())
@@ -455,19 +497,20 @@ impl App {
     /// position and are not already held by a space. The `ItemId`s are
     /// placeholders; `SyncDesktop` reconciles them by path.
     pub(super) fn desktop_layer_items(&self) -> Vec<Item> {
+        let in_spaces: HashSet<_> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .flat_map(|space| space.items())
+            .map(|item| path_key(&item.path))
+            .collect();
         self.layer
             .entries
             .iter()
             .filter_map(|entry| {
                 let position = entry.position?;
-                let in_space = self
-                    .config
-                    .desktop
-                    .spaces()
-                    .iter()
-                    .flat_map(|space| space.items().iter())
-                    .any(|item| crate::storage::same_path(&item.path, &entry.path));
-                if in_space {
+                if in_spaces.contains(&path_key(&entry.path)) {
                     return None;
                 }
                 let mut item = Item::new(ItemId(0), &entry.path, item_facts(&entry.path))
@@ -506,13 +549,10 @@ impl App {
     /// until the layer is up, so a failure never leaves the desktop blank.
     pub(super) fn apply_takeover(&mut self, ui: &mut Ui) {
         let takeover = self.desktop_takeover();
-        // Follow the Desktop folder while the layer is drawn, so a file added
-        // or removed outside DeskSpace reaches the layer (I8).
-        if self.layer_active() {
-            self.watch_desktop_folder(ui);
-        } else {
-            ui.unwatch_folder();
-        }
+        // Follow the Desktop folder while the layer is drawn, and every
+        // lens's folder, so files added or removed outside DeskSpace reach
+        // what DeskSpace draws (I8, M4 phase 2).
+        self.sync_watches(ui);
         let layer_up = self.sync_desktop_layer(ui);
         if takeover && layer_up {
             // Tests must not hide the developer's real desktop.
@@ -591,6 +631,7 @@ impl App {
             palette: &palette,
             layout: self.surface_layout(Surface::Desktop),
             metrics: self.surface_metrics(Surface::Desktop),
+            scale: 1.0,
         };
         let scene = desktop_layer_scene(
             self.config.desktop.layer(),
@@ -623,6 +664,7 @@ impl App {
             palette: &palette,
             layout: self.layout_for(id),
             metrics: self.metrics_for(id),
+            scale: space_dpi(id.0),
         };
         let mut scene = space_scene(space, look, view, &mut self.icons);
         if let Some(session) = self
@@ -690,14 +732,53 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    /// When `id`'s icon factor changed since its last re-flow (a zoom, the
-    /// icon-size setting, a preset, or Explorer's own size; never a DPI move,
-    /// which the factor leaves out), pins a space that sizes itself to its
-    /// current size first. It then re-flows into fewer or more columns, as an
-    /// Explorer window does when its icon size changes (`TASKS.md` F15).
+    /// Applies a view choice to space `id`, reflows that space alone, and
+    /// keeps an open settings window's snapshot. Shared by the View menu and
+    /// the Ctrl+Shift keys.
+    pub(super) fn set_space_view(&mut self, ui: &mut Ui, id: SpaceId, view: SpaceView, at: Point) {
+        if self
+            .commit(ui, Command::SetSpaceView { id, view }, at)
+            .is_applied()
+        {
+            self.reflow_space(ui, id);
+            self.resnapshot_settings(ui, id);
+        }
+    }
+
+    /// Ctrl+Shift+1 through 8 (W13): switches the current space to the view
+    /// its `VIEW_MODES` digit names. A digit with no view yet, or no space
+    /// current, does nothing.
+    pub(super) fn set_view_by_digit(&mut self, ui: &mut Ui, digit: u8) {
+        let Some(Surface::Space(id)) = self.selection.surface else {
+            return;
+        };
+        let Some(mode) = view_for_digit(digit) else {
+            return;
+        };
+        let at = self.space_center(id);
+        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+    }
+
+    /// When `id`'s icon factor changed since its last re-flow (a zoom, a view
+    /// change, the icon-size setting, a preset, or Explorer's own size; never
+    /// a DPI move, which the factor leaves out), pins a space that sizes
+    /// itself to its current size first. It then re-flows into fewer or more
+    /// columns, as an Explorer window does when its icon size changes
+    /// (`TASKS.md` F15). An order-placed view draws a fixed icon size, so it is
+    /// never pinned (W16).
     fn keep_size_on_zoom(&mut self, id: SpaceId) {
-        let factor = self.icon_scale(self.theme_for(id));
+        let mode = self.view_mode(id);
+        let factor = mode.item_icon_px().map_or_else(
+            || {
+                self.fixed_icon_scale(id)
+                    .unwrap_or_else(|| self.icon_scale(self.theme_for(id)))
+            },
+            |px| px as f32 / ITEM_ICON_SIZE as f32,
+        );
         let previous = self.view_cache.record_icon_scale(id, factor);
+        if mode.places_by_order() {
+            return;
+        }
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
@@ -738,9 +819,11 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::{apply, create_space};
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
+    use deskspace_core::{SpaceView, ViewMode};
     use deskspace_platform::ShellDisplay;
 
     #[test]
@@ -822,7 +905,13 @@ mod tests {
             icon_spacing: Some(Size::new(120, 130)),
             ..ShellDisplay::default()
         });
-        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0, 1.0);
+        let layout = app.base_layout(
+            &app.config.theme,
+            app.config.desktop.layout,
+            1.0,
+            1.0,
+            false,
+        );
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
             (120, 130, 0)
@@ -837,7 +926,13 @@ mod tests {
         });
         app.config.theme.preset = Preset::Custom;
         app.config.desktop.layout.gap = 20;
-        let layout = app.base_layout(&app.config.theme, app.config.desktop.layout, 1.0, 1.0);
+        let layout = app.base_layout(
+            &app.config.theme,
+            app.config.desktop.layout,
+            1.0,
+            1.0,
+            false,
+        );
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
             (96, 104, 20)
@@ -856,6 +951,51 @@ mod tests {
         let layout = app.layout_for(SpaceId(1));
         assert_eq!((layout.cell_width, layout.cell_height), (48, 52));
         assert_eq!(app.metrics_for(SpaceId(1)).icon_size, 24);
+    }
+
+    #[test]
+    fn a_fixed_icon_view_ignores_the_look_and_explorer() {
+        let mut app = app_with_display(ShellDisplay {
+            icon_size: Some(ITEM_ICON_SIZE),
+            icon_spacing: Some(Size::new(120, 130)),
+            ..ShellDisplay::default()
+        });
+        let id = create_space(&mut app.config.desktop, "Work", Rect::new(0, 0, 300, 300));
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::with_mode(ViewMode::LargeIcons),
+            },
+        );
+        // Large icons are 96 px at 96 DPI; the grid cell is twice the base
+        // 48 px icon, so 192 px wide.
+        assert_eq!(app.metrics_for(id).icon_size, 96);
+        assert_eq!(app.layout_for(id).cell_width, 192);
+        // Neither the look's size nor Explorer's spacing overrides a fixed
+        // icon view.
+        app.config.theme.preset = Preset::Custom;
+        app.config.theme.icon_size = 50;
+        assert_eq!(app.metrics_for(id).icon_size, 96);
+        assert_eq!(app.layout_for(id).cell_width, 192);
+    }
+
+    #[test]
+    fn a_look_zoom_does_not_move_a_fixed_view_space() {
+        let mut app = app_with_display(ShellDisplay::default());
+        app.config.theme.preset = Preset::Custom;
+        app.config.theme.icon_size = 100;
+        let id = create_space(&mut app.config.desktop, "Work", Rect::new(0, 0, 300, 300));
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::with_mode(ViewMode::LargeIcons),
+            },
+        );
+        let before = (app.metrics_for(id), app.layout_for(id));
+        app.config.theme.icon_size = 150;
+        assert_eq!((app.metrics_for(id), app.layout_for(id)), before);
     }
 
     #[test]
