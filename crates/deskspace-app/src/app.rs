@@ -169,6 +169,8 @@ enum MenuId {
     ViewMediumIcons = 58,
     /// Small icons (W16): inline cells placed by order.
     ViewSmallIcons = 66,
+    /// List (W17): inline cells in columns that scroll sideways.
+    ViewList = 67,
     /// The Sort by submenu's keys (D15).
     SortByName = 59,
     SortByModified = 60,
@@ -182,7 +184,7 @@ enum MenuId {
 }
 
 impl MenuId {
-    const ALL: [Self; 47] = [
+    const ALL: [Self; 48] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -230,6 +232,7 @@ impl MenuId {
         Self::SortDescending,
         Self::KeepSorted,
         Self::ViewSmallIcons,
+        Self::ViewList,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -294,12 +297,13 @@ const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
 ];
 
 /// The View submenu's choices: one per view, in `VIEW_MODES` order.
-const VIEW_PRESETS: [(MenuId, ViewMode); 5] = [
+const VIEW_PRESETS: [(MenuId, ViewMode); 6] = [
     (MenuId::ViewIcons, ViewMode::Icons),
     (MenuId::ViewExtraLargeIcons, ViewMode::ExtraLargeIcons),
     (MenuId::ViewLargeIcons, ViewMode::LargeIcons),
     (MenuId::ViewMediumIcons, ViewMode::MediumIcons),
     (MenuId::ViewSmallIcons, ViewMode::SmallIcons),
+    (MenuId::ViewList, ViewMode::List),
 ];
 
 /// The event id the platform gives the chrome-less desktop layer window

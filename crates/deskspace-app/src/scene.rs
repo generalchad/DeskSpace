@@ -1,6 +1,6 @@
 use deskspace_core::item::ItemKind;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
-use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
+use deskspace_core::view_layout::{ScrollAxis, ViewLayout, ViewMetrics};
 use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
     Space, Theme, ViewMode,
@@ -38,7 +38,8 @@ pub struct ViewState {
     /// Being dragged within the space; their slots are drawn faded, ahead of
     /// the selection highlight. A group drag fades every member.
     pub dragged: Vec<ItemId>,
-    /// Pixels the content is scrolled down; already clamped by the caller.
+    /// Pixels the content is scrolled along its view's axis; already clamped
+    /// by the caller.
     pub scroll: i32,
     /// Draw a check box on each item, from Explorer's view options.
     pub show_check_boxes: bool,
@@ -111,23 +112,19 @@ pub fn space_scene(
         ViewMetrics::for_view(space.view().mode, layout, scale),
     );
     let content_top = space.title_height;
-    let content_bottom = space.rect().height;
+    let content = space.content_rect();
+    let content_area = Rect::new(0, content_top, content.width, content.height);
     let items = if space.folded() {
         Vec::new()
     } else {
         let mut items = Vec::new();
-        for index in view_layout.visible(view.scroll, space.content_rect().height) {
+        for index in view_layout.visible(view.scroll, content.size()) {
             let Some(item) = space.items().get(index) else {
                 continue;
             };
-            let cell = view_layout.rect(index);
-            let rect = Rect::new(
-                cell.x,
-                content_top + cell.y - view.scroll,
-                cell.width,
-                cell.height,
-            );
-            if rect.bottom() <= content_top || rect.y >= content_bottom {
+            let cell = view_layout.scrolled(index, view.scroll);
+            let rect = Rect::new(cell.x, content_top + cell.y, cell.width, cell.height);
+            if !rect.intersects(content_area) {
                 continue;
             }
             items.push(ItemVisual {
@@ -378,15 +375,10 @@ pub fn drag_scene(
         .filter_map(|id| {
             let index = space.items().iter().position(|item| item.id == *id)?;
             let item = &space.items()[index];
-            let cell = view_layout.rect(index);
+            let cell = view_layout.scrolled(index, scroll);
             Some(ItemVisual {
                 id: item.id.0,
-                rect: Rect::new(
-                    cell.x,
-                    content_top + cell.y - scroll,
-                    cell.width,
-                    cell.height,
-                ),
+                rect: Rect::new(cell.x, content_top + cell.y, cell.width, cell.height),
                 label: item_label(item, show_extensions),
                 icon: icons.icon_for(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
@@ -404,7 +396,7 @@ pub fn drag_scene(
 /// check-box hit test both read it, so they always agree.
 pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
     match mode {
-        ViewMode::SmallIcons => ItemLayout::Inline,
+        ViewMode::SmallIcons | ViewMode::List => ItemLayout::Inline,
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -465,13 +457,15 @@ fn contrast_shadow(text: Color) -> Color {
     }
 }
 
-/// Keeps the scroll indicator's bottom clear of the rounded corner.
-fn thumb_bottom_margin(corner_radius: i32) -> i32 {
+/// Keeps the scroll indicator's far end clear of the rounded corner.
+fn thumb_end_margin(corner_radius: i32) -> i32 {
     SCROLL_THUMB_MARGIN + corner_radius / 2
 }
 
-/// A thin bar along the right edge whose length and position show which part
-/// of the content is visible. `None` when everything fits.
+/// A thin bar along the content's far edge, on the scroll axis: the right edge
+/// for a vertical view, the bottom for a horizontal one. Its length and
+/// position show which part of the content is visible. `None` when everything
+/// fits.
 fn scroll_thumb(
     space: &Space,
     layout: &ViewLayout,
@@ -481,28 +475,52 @@ fn scroll_thumb(
     if space.folded() {
         return None;
     }
-    let viewport = space.content_rect().height;
-    let max_scroll = layout.max_scroll(viewport);
+    let content = space.content_rect().size();
+    let viewport = layout.viewport(content);
+    let max_scroll = layout.max_scroll(content);
     if max_scroll == 0 {
         return None;
     }
     let extent = layout.extent();
-    let track_top = space.title_height + SCROLL_THUMB_MARGIN;
-    let track_height = viewport - SCROLL_THUMB_MARGIN - thumb_bottom_margin(corner_radius);
-    if track_height <= 0 {
-        return None;
+    let end_margin = thumb_end_margin(corner_radius);
+    match layout.axis() {
+        ScrollAxis::Vertical => {
+            let track_top = space.title_height + SCROLL_THUMB_MARGIN;
+            let track_height = viewport - SCROLL_THUMB_MARGIN - end_margin;
+            if track_height <= 0 {
+                return None;
+            }
+            let thumb_height = (track_height * viewport / extent)
+                .max(SCROLL_THUMB_MIN_HEIGHT)
+                .min(track_height);
+            let travel = track_height - thumb_height;
+            let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
+            Some(Rect::new(
+                space.rect().width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
+                track_top + offset,
+                SCROLL_THUMB_WIDTH,
+                thumb_height,
+            ))
+        }
+        ScrollAxis::Horizontal => {
+            let track_left = SCROLL_THUMB_MARGIN;
+            let track_width = viewport - SCROLL_THUMB_MARGIN - end_margin;
+            if track_width <= 0 {
+                return None;
+            }
+            let thumb_width = (track_width * viewport / extent)
+                .max(SCROLL_THUMB_MIN_HEIGHT)
+                .min(track_width);
+            let travel = track_width - thumb_width;
+            let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
+            Some(Rect::new(
+                track_left + offset,
+                space.rect().height - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
+                thumb_width,
+                SCROLL_THUMB_WIDTH,
+            ))
+        }
     }
-    let thumb_height = (track_height * viewport / extent)
-        .max(SCROLL_THUMB_MIN_HEIGHT)
-        .min(track_height);
-    let travel = track_height - thumb_height;
-    let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
-    Some(Rect::new(
-        space.rect().width - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
-        track_top + offset,
-        SCROLL_THUMB_WIDTH,
-        thumb_height,
-    ))
 }
 
 #[cfg(test)]
@@ -684,6 +702,107 @@ mod tests {
             scene.items[0].rect,
             Rect::new(12, space.title_height + 12, 200, 22)
         );
+    }
+
+    /// A user-sized space in List view holding ten items, so it fills two
+    /// columns and scrolls sideways.
+    fn list_space() -> Space {
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        apply(
+            &mut desktop,
+            Command::CreateSpace {
+                title: "List".to_owned(),
+                at: Point::ZERO,
+                size: Size::new(240, 200),
+                locked: false,
+            },
+        );
+        apply(&mut desktop, Command::KeepSize { id });
+        apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(ViewMode::List),
+            },
+        );
+        for index in 0..10 {
+            apply(
+                &mut desktop,
+                Command::AddItem {
+                    space: id,
+                    path: format!("C:/missing/{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
+            );
+        }
+        desktop.space(id).unwrap().clone()
+    }
+
+    #[test]
+    fn a_list_space_fills_columns_and_scrolls_sideways() {
+        let space = list_space();
+        let theme = Theme::default();
+        let build = |scroll| {
+            space_scene(
+                &space,
+                SurfaceLook {
+                    theme: &theme,
+                    palette: &theme.palette(true),
+                    layout: GridSpec::default(),
+                    metrics: ItemMetrics {
+                        icon_size: 16,
+                        ..ItemMetrics::for_scale(1.0)
+                    },
+                    scale: 1.0,
+                },
+                ViewState {
+                    scroll,
+                    ..ViewState::default()
+                },
+                &mut IconCache::new(),
+            )
+        };
+        let top = build(0);
+        assert_eq!(top.item_layout, ItemLayout::Inline);
+        assert_eq!(
+            top.items[0].rect,
+            Rect::new(12, space.title_height + 12, 200, 22)
+        );
+        assert_eq!(top.items[6].rect.x, 214, "the second column");
+        assert_eq!(top.items[6].rect.y, space.title_height + 12);
+        let scrolled = build(202);
+        assert_eq!(scrolled.items[6].rect.x, 12, "one column to the left");
+    }
+
+    #[test]
+    fn the_scroll_thumb_runs_along_the_bottom_in_list() {
+        let space = list_space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            SurfaceLook {
+                theme: &theme,
+                palette: &theme.palette(true),
+                layout: GridSpec::default(),
+                metrics: ItemMetrics {
+                    icon_size: 16,
+                    ..ItemMetrics::for_scale(1.0)
+                },
+                scale: 1.0,
+            },
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        let thumb = scene
+            .scroll_thumb
+            .expect("the content is wider than the space");
+        assert_eq!(thumb.height, SCROLL_THUMB_WIDTH);
+        assert_eq!(
+            thumb.y,
+            space.rect().height - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH
+        );
+        assert!(thumb.width > thumb.height);
     }
 
     #[test]
@@ -1036,7 +1155,7 @@ mod tests {
         let layout = GridSpec::default();
         let tall = tall_space();
         let max = ViewLayout::for_space(&tall, ViewMetrics::for_grid(layout))
-            .max_scroll(tall.content_rect().height);
+            .max_scroll(tall.content_rect().size());
         let thumb = |scroll| {
             space_scene(
                 &tall,
@@ -1054,7 +1173,7 @@ mod tests {
         assert_eq!(start.y, tall.title_height + SCROLL_THUMB_MARGIN);
         assert_eq!(
             end.bottom(),
-            tall.rect().height - thumb_bottom_margin(theme.effective_corner_radius() as i32)
+            tall.rect().height - thumb_end_margin(theme.effective_corner_radius() as i32)
         );
         assert_eq!(start.right(), tall.rect().width - SCROLL_THUMB_MARGIN);
 

@@ -170,12 +170,13 @@ moved in, or renamed, and when the choice is turned on, and it refuses a
 manual rearrangement. `ViewLayout` (`view_layout.rs`) derives every item's
 rect, the content extent, the scroll axis, and the visible range from the
 mode, the content size, the item count, and the cell metrics. The icon views
-hand it the grid; Small icons (W16) uses an inline cell (a 16 px icon and one
-label line beside it, in rows that wrap) and never writes `Item.position`, so
-a hand arrangement returns when the space goes back to an icon view. Hit
-tests, the marquee, keyboard navigation, the drag drop index, and the scroll
-indicator all read the same layout. `FolderEntry` is what the platform reads
-from the folder.
+hand it the grid; Small icons (W16) and List (W17) use an inline cell (a 16 px
+icon and one label line beside it). Small icons wraps the cells into rows and
+scrolls down; List fills a column top to bottom and scrolls sideways. Neither
+writes `Item.position`, so a hand arrangement returns when the space goes back
+to an icon view. Hit tests, the marquee, keyboard navigation, the drag drop
+index, and the scroll indicator all read the same layout. `FolderEntry` is what
+the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
 filters hidden entries, sorts by the space's `SortRule`, and reconciles by
@@ -218,7 +219,8 @@ every space lays out on.
 - `arrange_space` resizes the space to fit its items (unless locked or
   user-sized) and calls `position_items`, which lays items on the grid in
   content-relative cells: `columns` wide normally, `columns_for(width)` wide
-  for user-sized spaces. A view that places items by order (Small icons) does
+  for user-sized spaces. A view that places items by order (Small icons and
+  List) does
   neither: it keeps the space's size and `Item.position` (D15). It stamps `grid.title_height` onto the space, so a
   scale change reaches the title even for user-sized spaces. It does nothing
   for a locked space; `Command::Reflow` handles those (title height and
@@ -872,13 +874,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
   for window-level attributes only (it re-applies DWM state).
 - `item_layout` tells the painter how a cell places its icon and label: the
-  grid centers the icon over a wrapped label below it; `Inline` (Small icons,
-  W16) puts the check box, the icon, and one left-aligned ellipsized label
+  grid centers the icon over a wrapped label below it; `Inline` (Small icons
+  and List) puts the check box, the icon, and one left-aligned ellipsized label
   line in a row, all vertically centered. The check-box hit test takes the
   same layout, so the painted box and the clickable box always agree.
-- The app scrolls by offsetting the rects `ViewLayout` gives and includes only
-  the rows its `visible` range names; the renderer clips items below the title
-  bar.
+- The app scrolls by offsetting the rects `ViewLayout` gives, along the axis
+  the layout reports, and includes only the lines its `visible` range names;
+  the renderer clips items to the content area.
   Scenes are pushed only on change, and the window stores a `PreparedScene`
   with strings pre-encoded to UTF-16, so painting does not allocate.
   `chrome: false` (the desktop layer) draws no title bar or border and fills
@@ -1205,10 +1207,12 @@ in `ui.rs`. What spans them:
   global appearance" (greyed unless customized) makes it follow Global again
   (keeping its look for later), and "Space settings…" opens the settings
   window on that space. **View ▸** picks "Settings icon size" (the look's
-  size), Extra large, Large, Medium, or Small icons; the three large views set
-  that space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
-  Ctrl+wheel and Match Explorer, while Small icons (W16) draws 16 px icons in
-  inline cells, in rows that wrap and scroll down. **Sort by ▸** is Explorer's folder menu:
+  size), Extra large, Large, Medium, Small icons, or List; the three large
+  views set that space's icon size at 256, 96, or 48 px at 96 DPI and leave it
+  out of Ctrl+wheel and Match Explorer, while Small icons (W16) and List (W17)
+  draw 16 px icons in inline cells. Small icons wraps the cells into rows and
+  scrolls down; List fills a column top to bottom and scrolls sideways, wheel
+  included. **Sort by ▸** is Explorer's folder menu:
   Name, Date modified, Type, and Size as radio items, then Ascending and
   Descending, then Folders first and Keep sorted, then, on a lens, Show
   hidden files. Keep sorted is checked and greyed on a lens. A key
@@ -1364,14 +1368,14 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
-- Ctrl+Shift+1, 2, 3, and 4 switch the current space to Extra large, Large,
-  Medium, or Small icons, the way the View menu does; the digits with no view
-  yet (5 through 8) do nothing (D15 adds the rest with their views).
+- Ctrl+Shift+1, 2, 3, 4, and 5 switch the current space to Extra large, Large,
+  Medium, Small icons, or List, the way the View menu does; the digits with no
+  view yet (6 through 8) do nothing (D15 adds the rest with their views).
 - With a space current, typing selects the next item whose label starts with
   the typed letters (the buffer clears after about a second); Home, End,
-  PageUp, and PageDown scroll the space to the top, the bottom, or one page;
-  and the arrow keys move the selection across the grid (Shift extends, Ctrl
-  moves the dotted focus rectangle only).
+  PageUp, and PageDown scroll the space to the start, the end, or one page
+  along its view's axis; and the arrow keys move the selection across the
+  cells (Shift extends, Ctrl moves the dotted focus rectangle only).
 
 **Hotkeys and the command line**
 

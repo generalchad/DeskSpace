@@ -516,7 +516,7 @@ mod tests {
             space,
             crate::view_layout::ViewMetrics::for_grid(desktop.layout),
         );
-        assert!(layout.max_scroll(space.content_rect().height) > 0);
+        assert!(layout.max_scroll(space.content_rect().size()) > 0);
 
         desktop.apply(Command::FitToContents { id }, bounds());
         assert!(!desktop.space(id).unwrap().user_sized);

@@ -3690,3 +3690,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     a drag to rearrange (normal space, not kept sorted). Back in Medium
     icons, the hand arrangement is as it was.
 
+- [x] **W17. List (core, app, platform).** **[needs human]**
+  - `ViewMode::List` (digit 5): Explorer's List. Inline cells (W16) fill
+    each column top to bottom, the columns run left to right, and the
+    space scrolls sideways; the wheel scrolls sideways too, as in
+    Explorer. A column is `LIST_COLUMN_WIDTH` wide (measure Explorer's),
+    and longer labels are ellipsized. Measuring each label is for later
+    (add a **Found while working** line).
+  - The layout reports the horizontal axis. Scroll state, the wheel,
+    Home, End, PageUp, PageDown, and the scroll indicator follow the axis
+    it reports, never the mode.
+  - Tests: column breaks; the horizontal extent; the arrow keys (Down
+    within a column, Right to the next column).
+  - **[needs human]** check: the W16 list again in List view, plus the
+    wheel and the keys scrolling sideways, and the indicator along the
+    bottom.
+

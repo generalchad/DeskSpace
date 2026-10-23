@@ -222,11 +222,12 @@ pub fn fit_rect_height(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect 
     }
 }
 
-/// How many `cell_width` columns with `gap` and `padding` fit in `width`
-/// (at least 1). Shared by the icon grid and the order-placed views.
-pub(crate) fn columns_for(width: i32, cell_width: i32, gap: i32, padding: i32) -> i32 {
-    let step = (cell_width + gap).max(1);
-    ((width - padding * 2 + gap) / step).max(1)
+/// How many cells of `cell` px with `gap` and `padding` fit along `length`
+/// (at least 1). Shared by the icon grid and the order-placed views, which use
+/// it on the width or the height according to their flow.
+pub(crate) fn columns_for(length: i32, cell: i32, gap: i32, padding: i32) -> i32 {
+    let step = (cell + gap).max(1);
+    ((length - padding * 2 + gap) / step).max(1)
 }
 
 /// Sizes the space to fit its items (unless the user sized it) and lays the

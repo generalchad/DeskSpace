@@ -22,7 +22,7 @@ impl App {
             .space(id)
             .and_then(|space| {
                 self.view_layout(id)
-                    .map(|layout| layout.max_scroll(space.content_rect().height))
+                    .map(|layout| layout.max_scroll(space.content_rect().size()))
             })
             .unwrap_or(0);
         self.view_cache.scroll_of(id).clamp(0, max)
@@ -153,10 +153,10 @@ impl App {
                     return Rect::ZERO;
                 };
                 let scroll = self.scroll_of(id);
-                let cell = layout.rect(index);
+                let cell = layout.scrolled(index, scroll);
                 Rect::new(
                     origin.x + cell.x,
-                    origin.y + cell.y - scroll,
+                    origin.y + cell.y,
                     cell.width,
                     cell.height,
                 )
@@ -190,12 +190,12 @@ impl App {
                     .iter()
                     .enumerate()
                     .map(|(index, item)| {
-                        let cell = layout.rect(index);
+                        let cell = layout.scrolled(index, scroll);
                         (
                             item.id,
                             Rect::new(
                                 origin.x + cell.x,
-                                origin.y + cell.y - scroll,
+                                origin.y + cell.y,
                                 cell.width,
                                 cell.height,
                             ),
@@ -230,10 +230,8 @@ impl App {
                 let space = self.config.desktop.space(id)?;
                 let layout = self.view_layout(id)?;
                 let content = space.content_rect();
-                let local = Point::new(
-                    point.x - content.x,
-                    point.y - content.y + self.scroll_of(id),
-                );
+                let point = Point::new(point.x - content.x, point.y - content.y);
+                let local = layout.layout_point(point, self.scroll_of(id));
                 layout
                     .index_at(local)
                     .and_then(|index| space.items().get(index))
@@ -486,6 +484,49 @@ mod tests {
                 Point::new(checkbox.x + 2, checkbox.y + 2)
             ),
             Some(item)
+        );
+    }
+
+    #[test]
+    fn a_list_space_hits_columns_and_scrolls_sideways() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        fixtures::apply(&mut app.config.desktop, Command::KeepSize { id });
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::List),
+            },
+        );
+        let items: Vec<ItemId> = (0..7)
+            .map(|index| {
+                fixtures::add_item(
+                    &mut app.config.desktop,
+                    id,
+                    &format!("C:/missing/{index}.txt"),
+                )
+            })
+            .collect();
+        let content = app.config.desktop.space(id).unwrap().content_rect();
+        // Six rows fit the content height, so the seventh item starts the
+        // second column, one column step (200 + 2 px) to the right.
+        let second = Point::new(content.x + 214 + 5, content.y + 12 + 5);
+        assert_eq!(
+            app.surface_item_at(Surface::Space(id), second),
+            Some(items[6])
+        );
+        let layout = app.view_layout(id).unwrap();
+        let max = layout.max_scroll(content.size());
+        app.view_cache.set_scroll(id, max);
+        let cell = layout.scrolled(6, max);
+        let scrolled = Point::new(content.x + cell.x + 5, content.y + cell.y + 5);
+        assert_eq!(
+            app.surface_item_at(Surface::Space(id), scrolled),
+            Some(items[6]),
+            "scrolling sideways moves the column under the point"
         );
     }
 

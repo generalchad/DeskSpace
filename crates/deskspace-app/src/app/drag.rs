@@ -316,10 +316,8 @@ impl App {
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
             let content = space.content_rect();
-            let local = Point::new(
-                point.x - content.x,
-                point.y - content.y + self.scroll_of(space.id),
-            );
+            let point = Point::new(point.x - content.x, point.y - content.y);
+            let local = layout.layout_point(point, self.scroll_of(space.id));
             let index = layout.drop_index(local)?;
             let current = space.items().iter().position(|entry| entry.id == item)?;
             Some((index, current))

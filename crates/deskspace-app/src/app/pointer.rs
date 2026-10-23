@@ -432,7 +432,7 @@ impl App {
         let Some(layout) = self.view_layout(id) else {
             return;
         };
-        let max = layout.max_scroll(space.content_rect().height);
+        let max = layout.max_scroll(space.content_rect().size());
         let current = self.scroll_of(id);
         let next = (current - delta * layout.scroll_step() / WHEEL_DELTA).clamp(0, max);
         if next == current {
@@ -588,7 +588,8 @@ fn double_click_target(
         DoubleClickTarget::TitleBar
     } else {
         let content = space.content_rect();
-        let local = Point::new(point.x - content.x, point.y - content.y + scroll);
+        let local =
+            layout.layout_point(Point::new(point.x - content.x, point.y - content.y), scroll);
         layout
             .index_at(local)
             .and_then(|index| space.items().get(index))

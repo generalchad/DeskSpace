@@ -208,8 +208,9 @@ impl App {
         let Some(layout) = self.view_layout(id) else {
             return;
         };
-        let max = layout.max_scroll(space.content_rect().height);
-        let page = space.content_rect().height.max(1);
+        let content = space.content_rect();
+        let max = layout.max_scroll(content.size());
+        let page = layout.viewport(content.size()).max(1);
         let current = self.scroll_of(id);
         let offset = match key {
             ScrollKey::Home => 0,
@@ -326,20 +327,11 @@ impl App {
         if index >= space.items().len() {
             return;
         }
-        let content_height = space.content_rect().height;
-        let max = layout.max_scroll(content_height);
+        let content = space.content_rect().size();
         let scroll = self.view_cache.scroll_of(id);
-        let cell = layout.rect(index);
-        let top = cell.y;
-        let bottom = cell.bottom();
-        let offset = if top - scroll < 0 {
-            top
-        } else if bottom - scroll > content_height {
-            bottom - content_height
-        } else {
-            return;
-        };
-        self.view_cache.set_scroll(id, offset.clamp(0, max));
+        if let Some(offset) = layout.scroll_to_show(index, scroll, content) {
+            self.view_cache.set_scroll(id, offset);
+        }
     }
 
     /// Selects every item between the anchor and `item` in the space's order,
@@ -573,6 +565,30 @@ mod tests {
         assert_eq!(next_in_direction(&cells, 1, NavDir::Down), Some(4));
         assert_eq!(next_in_direction(&cells, 4, NavDir::Up), Some(1));
         assert_eq!(next_in_direction(&cells, 6, NavDir::Up), Some(3));
+    }
+
+    #[test]
+    fn arrows_move_down_a_list_column_and_right_to_the_next() {
+        let metrics = deskspace_core::ViewMetrics {
+            cell: deskspace_core::Size::new(100, 50),
+            gap: 10,
+            padding: 12,
+        };
+        let layout = deskspace_core::ViewLayout::new(
+            deskspace_core::ViewMode::List,
+            deskspace_core::Size::new(360, 160),
+            7,
+            metrics,
+        );
+        let cells: Vec<Rect> = (0..7).map(|index| layout.rect(index)).collect();
+        // Two rows per column: 0 1 | 2 3 | 4 5 | 6.
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(1));
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Down), None);
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Right), Some(3));
+        assert_eq!(next_in_direction(&cells, 3, NavDir::Right), Some(5));
+        assert_eq!(next_in_direction(&cells, 4, NavDir::Left), Some(2));
+        assert_eq!(next_in_direction(&cells, 5, NavDir::Left), Some(3));
+        assert_eq!(next_in_direction(&cells, 6, NavDir::Left), Some(4));
     }
 
     #[test]

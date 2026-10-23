@@ -19,8 +19,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
   `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D. Phase 4's next task is W17, which
-builds on W16's layout; pair with a reviewer on it.
+decision]** and everything in section D. Phase 4's next task is W18, which
+follows W17's List; pair with a reviewer on it.
 
 ## How to work a task
 
@@ -675,9 +675,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W16 are done (2026-10-21; W14, W15, and W16 on 2026-10-22) and
-archived; the earlier tasks' on-screen checks are in section V. The open work
-is phase 4 (W9, W17-W23) and phase 5 (W24-W43).
+W1-W8 and W10-W17 are done (2026-10-21; W14, W15, and W16 on 2026-10-22,
+W17 on 2026-10-23) and archived; the earlier tasks' on-screen checks are in
+section V. The open work is phase 4 (W9, W18-W23) and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -704,7 +704,7 @@ is phase 4 (W9, W17-W23) and phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W17, W24, W25 |
+| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W18, W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
@@ -764,22 +764,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W17. List (core, app, platform).** **[needs human]**
-  - `ViewMode::List` (digit 5): Explorer's List. Inline cells (W16) fill
-    each column top to bottom, the columns run left to right, and the
-    space scrolls sideways; the wheel scrolls sideways too, as in
-    Explorer. A column is `LIST_COLUMN_WIDTH` wide (measure Explorer's),
-    and longer labels are ellipsized. Measuring each label is for later
-    (add a **Found while working** line).
-  - The layout reports the horizontal axis. Scroll state, the wheel,
-    Home, End, PageUp, PageDown, and the scroll indicator follow the axis
-    it reports, never the mode.
-  - Tests: column breaks; the horizontal extent; the arrow keys (Down
-    within a column, Right to the next column).
-  - **[needs human]** check: the W16 list again in List view, plus the
-    wheel and the keys scrolling sideways, and the indicator along the
-    bottom.
 
 - [ ] **W18. Details (core, app, platform).** **[needs human]**
   - `ViewMode::Details` (digit 6): one row per item at full width, under
@@ -2198,6 +2182,7 @@ each id is in `archive/TASKS-done.md`.
 | W13 (D15) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
 | W15 (D15) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
 | W16 (D15) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
+| W17 (D15) | List on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, columns filling top to bottom and running left to right, the wheel scrolling sideways, Home/End/PageUp/PageDown and the arrow keys moving along the columns, and the scroll indicator along the bottom; click, Ctrl and Shift click, the marquee, and type-to-select hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Check the W16 row again in List. |
 
 ## Found while working
 
@@ -2324,6 +2309,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   on screen. Confirm them (and the row height at a larger label size, which
   the cell does not follow yet) during W16's check, then fix the constants in
   `view_layout.rs` and record the measurement.
+- **W17 List:** `LIST_COLUMN_WIDTH` (200 px) and `LIST_CELL_HEIGHT` (22 px)
+  are the same provisional values as Small icons, not measured. Confirm them
+  during W17's check and record the measurement.
+- **W17 List labels:** each label is ellipsized at the column's right edge, as
+  W17 asks; Explorer instead sizes a column to the longest label in the folder
+  (up to a limit). Measuring the labels is left for later.
 - **Docs, D15 vs W16:** D15 calls Small icons one of the "four icon views"
   and says only List, Details, Tiles, and Content place items by order, while
   W16 (and W12's note) puts Small icons' labels beside the icon in inline
