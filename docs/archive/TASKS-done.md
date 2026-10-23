@@ -3617,3 +3617,26 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: click a space, then Ctrl+Shift+1, 2, and 3
     change it. With Explorer in front, Explorer's own Ctrl+Shift+1 still
     works.
+- [x] **W14. One sort rule, with Explorer's Sort by (core, app).**
+  - Core: `SortRule { key: SortKey, descending, folders_first }` beside
+    `SortKey`, defaulting to name ascending, and `SpaceView.sort`.
+    `FolderView` loses `sort`, `descending`, and `folders_first` (lenses
+    are unreleased, D15), and `SyncLens` sorts by `view.sort`. The normal
+    space's one-off sort (the command `App::sort_space` dispatches) takes
+    a `SortRule` and stores it in `view.sort`. If there are two sort
+    comparators today, merge them into `SortRule::compare`, keeping the
+    natural name order for ties.
+  - Menu: Sort by ▸ becomes Explorer's folder menu. First the keys from
+    `SORT_KEYS` as radio items (Name, Date modified, Type, Size), then a
+    separator, then Ascending and Descending, then a separator, then
+    Folders first. A key keeps the direction, and a direction keeps the
+    key. On a normal space each choice sorts once with the new rule, as
+    today; a lens keeps it. Retire the seven `SORT_PRESETS` menu ids and
+    note them as never reused in `MenuId`'s doc, as `ids.rs` does for
+    fields 25 and 26.
+  - Tests: `SortRule::compare` for each key, both ways, and with folders
+    first; the one-off sort stores its rule; a lens re-sorts by it; the
+    menu checks the rule's key and direction.
+  - Done when: also the W6 row in section V says "Sort by" in the new
+    shape.
+

@@ -65,6 +65,15 @@ pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
         .map(|(mode, ..)| *mode)
 }
 
+/// Explorer's Sort by keys, in its order and words (D15). The Sort by menu,
+/// the View page, and the Lenses defaults page read it.
+pub const SORT_KEYS: [(SortKey, &str); 4] = [
+    (SortKey::Name, "Name"),
+    (SortKey::Modified, "Date modified"),
+    (SortKey::Kind, "Type"),
+    (SortKey::Size, "Size"),
+];
+
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),

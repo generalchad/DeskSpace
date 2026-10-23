@@ -8,7 +8,6 @@
 mod item_ops;
 mod layer_ops;
 mod lens_ops;
-mod sort;
 mod space_ops;
 mod touched;
 
@@ -19,6 +18,7 @@ use crate::geometry::{Point, Rect, Size};
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
+use crate::sort::SortRule;
 use crate::source::{FolderEntry, FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
@@ -121,11 +121,11 @@ pub enum Command {
     Reflow {
         id: SpaceId,
     },
-    /// Reorders a space's items by `key` and re-lays them out.
+    /// Reorders a space's items by `rule`, keeps the rule for the space's
+    /// next sort, and re-lays them out.
     SortSpace {
         id: SpaceId,
-        key: SortKey,
-        descending: bool,
+        rule: SortRule,
     },
     /// Turns a space's own look on or off. Turning it on for the first time
     /// starts from `seed` (the global settings); turning it off keeps the look,
@@ -287,11 +287,7 @@ impl Desktop {
             Command::FitToContents { id } => self.apply_fit_to_contents(id, layout, bounds),
             Command::KeepSize { id } => self.apply_keep_size(id),
             Command::Reflow { id } => self.apply_reflow(id, layout),
-            Command::SortSpace {
-                id,
-                key,
-                descending,
-            } => self.apply_sort_space(id, key, descending, layout),
+            Command::SortSpace { id, rule } => self.apply_sort_space(id, rule, layout),
             Command::CustomizeSpace { id, on, seed } => self.apply_customize_space(id, on, seed),
             Command::SetSpaceLook { id, custom, look } => {
                 self.apply_set_space_look(id, custom, look)
@@ -883,8 +879,10 @@ mod tests {
         desktop.apply(
             Command::SortSpace {
                 id,
-                key: SortKey::Name,
-                descending: false,
+                rule: SortRule {
+                    key: SortKey::Name,
+                    ..SortRule::default()
+                },
             },
             bounds(),
         );
@@ -892,12 +890,36 @@ mod tests {
         desktop.apply(
             Command::SortSpace {
                 id,
-                key: SortKey::Name,
-                descending: true,
+                rule: SortRule {
+                    key: SortKey::Name,
+                    descending: true,
+                    folders_first: false,
+                },
             },
             bounds(),
         );
         assert_eq!(labels(&desktop, id), ["cherry", "banana", "Apple"]);
+    }
+
+    #[test]
+    fn sort_space_keeps_its_rule_and_puts_folders_first() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "big", ItemKind::File, 300, 1),
+            item(2, "z-folder", ItemKind::Folder, 0, 2),
+            item(3, "small", ItemKind::File, 10, 3),
+        ]);
+        let rule = SortRule {
+            key: SortKey::Size,
+            descending: true,
+            folders_first: true,
+        };
+        desktop.apply(Command::SortSpace { id, rule }, bounds());
+        assert_eq!(labels(&desktop, id), ["z-folder", "big", "small"]);
+        assert_eq!(
+            desktop.space(id).unwrap().view().sort,
+            rule,
+            "the space keeps the rule it sorted by"
+        );
     }
 
     #[test]
@@ -909,8 +931,10 @@ mod tests {
         desktop.apply(
             Command::SortSpace {
                 id,
-                key: SortKey::Kind,
-                descending: false,
+                rule: SortRule {
+                    key: SortKey::Kind,
+                    ..SortRule::default()
+                },
             },
             bounds(),
         );
@@ -929,8 +953,10 @@ mod tests {
         desktop.apply(
             Command::SortSpace {
                 id,
-                key: SortKey::Size,
-                descending: false,
+                rule: SortRule {
+                    key: SortKey::Size,
+                    ..SortRule::default()
+                },
             },
             bounds(),
         );
@@ -938,8 +964,11 @@ mod tests {
         desktop.apply(
             Command::SortSpace {
                 id,
-                key: SortKey::Modified,
-                descending: true,
+                rule: SortRule {
+                    key: SortKey::Modified,
+                    descending: true,
+                    folders_first: false,
+                },
             },
             bounds(),
         );
@@ -1140,9 +1169,7 @@ mod tests {
                 desktop.apply(
                     Command::SetSpaceView {
                         id,
-                        view: SpaceView {
-                            mode: ViewMode::LargeIcons
-                        },
+                        view: SpaceView::with_mode(ViewMode::LargeIcons),
                     },
                     bounds()
                 ),

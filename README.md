@@ -121,7 +121,11 @@ help inspect the look and the desktop layer.
   replacing a file, and "Copy here" copies); deleting an item from a lens
   sends its file to the Recycle Bin. Deleting a lens leaves the folder and
   its files where they are. Right-click a lens to open its folder, change
-  it, or choose its order, folders first, and hidden files.
+  it, or choose its order and show hidden files.
+- "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
+  Type, and Size, then Ascending or Descending, then Folders first. A normal
+  space sorts once; a lens keeps the order as files come and go. "Folders
+  first" stands in both directions.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space, or out to another space, a folder, an app, or the

@@ -19,7 +19,7 @@ pub use apply::{
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
-    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, STARTUP_ORDERS, VIEW_MODES,
+    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, SORT_KEYS, STARTUP_ORDERS, VIEW_MODES,
     view_for_digit, windows_animation_settings_uri,
 };
 
@@ -37,7 +37,7 @@ use deskspace_core::theme::{
 };
 use deskspace_core::{
     Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
-    Space, SpaceId, SpaceLook, Theme, ThemeMode, ViewMode,
+    SortKey, Space, SpaceId, SpaceLook, Theme, ThemeMode, ViewMode,
 };
 use deskspace_platform::{
     Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,

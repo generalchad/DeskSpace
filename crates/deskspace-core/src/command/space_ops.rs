@@ -3,8 +3,6 @@
 use std::collections::HashSet;
 
 use super::CommandOutcome;
-use super::SortKey;
-use super::sort::compare_items;
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
 use crate::id::SpaceId;
@@ -12,6 +10,7 @@ use crate::layout::{
     GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
     resize_rect, resolve_collisions, snap_rect,
 };
+use crate::sort::SortRule;
 use crate::source::{LensTitle, SpaceSource};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
@@ -207,15 +206,12 @@ impl Desktop {
     pub(super) fn apply_sort_space(
         &mut self,
         id: SpaceId,
-        key: SortKey,
-        descending: bool,
+        rule: SortRule,
         layout: GridSpec,
     ) -> CommandOutcome {
         self.with_space(id, |space| {
-            space.items.sort_by(|a, b| {
-                let order = compare_items(key, a, b);
-                if descending { order.reverse() } else { order }
-            });
+            space.view.sort = rule;
+            space.items.sort_by(|a, b| rule.compare(a, b));
             position_items(space, layout);
             CommandOutcome::Applied
         })

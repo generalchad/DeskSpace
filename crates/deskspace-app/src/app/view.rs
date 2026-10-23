@@ -725,7 +725,7 @@ impl App {
             return;
         };
         let at = self.space_center(id);
-        self.set_space_view(ui, id, SpaceView { mode }, at);
+        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
     }
 
     /// When `id`'s icon factor changed since its last re-flow (a zoom, a view
@@ -925,9 +925,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView {
-                    mode: ViewMode::LargeIcons,
-                },
+                view: SpaceView::with_mode(ViewMode::LargeIcons),
             },
         );
         // Large icons are 96 px at 96 DPI; the grid cell is twice the base
@@ -952,9 +950,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView {
-                    mode: ViewMode::LargeIcons,
-                },
+                view: SpaceView::with_mode(ViewMode::LargeIcons),
             },
         );
         let before = (app.metrics_for(id), app.layout_for(id));

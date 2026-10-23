@@ -151,6 +151,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::SortRule;
     use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
     use deskspace_core::theme::{ICON_SIZE_RANGE, OVERLAY_SIZE_RANGE, corner};
     use deskspace_core::{Backdrop, Command, FolderEntry, ItemKind, Point, Rect, Size, SortKey};
@@ -773,7 +774,7 @@ show_border = true
     }
 
     #[test]
-    fn lens_view_defaults_and_saved_sort_parse() {
+    fn a_lens_view_defaults_and_its_saved_rule_parse() {
         let text = r#"
             version = 2
 
@@ -784,19 +785,20 @@ show_border = true
             source = { folder = { path = "C:/Docs" } }
         "#;
         let parsed: Config = toml::from_str(text).unwrap();
-        let view = parsed.desktop.spaces()[0].folder_view().unwrap();
-        assert_eq!(view.sort, SortKey::Name);
-        assert!(!view.descending && !view.folders_first && !view.show_hidden);
+        let space = &parsed.desktop.spaces()[0];
+        let view = space.folder_view().unwrap();
+        assert!(!view.show_hidden);
         assert!(view.include.is_empty() && view.exclude.is_empty());
+        assert_eq!(space.view().sort, SortRule::default());
 
         let text = text.replace(
-            "path = \"C:/Docs\"",
-            "path = \"C:/Docs\", sort = \"modified\"",
+            "source = { folder = { path = \"C:/Docs\" } }",
+            "source = { folder = { path = \"C:/Docs\" } }\n            \
+             view = { sort = { key = \"modified\", descending = true, folders_first = true } }",
         );
         let parsed: Config = toml::from_str(&text).unwrap();
-        assert_eq!(
-            parsed.desktop.spaces()[0].folder_view().unwrap().sort,
-            SortKey::Modified
-        );
+        let sort = parsed.desktop.spaces()[0].view().sort;
+        assert_eq!(sort.key, SortKey::Modified);
+        assert!(sort.descending && sort.folders_first);
     }
 }

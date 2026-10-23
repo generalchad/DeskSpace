@@ -751,13 +751,13 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - A source on each space:
     `Space.source: SpaceSource { Items, Folder(FolderView) }`, with
     `#[serde(default)]`.
-  - The view settings: `FolderView { path, sort, descending, folders_first,
-    show_hidden, include, exclude }`.
+  - The view settings: `FolderView { path, show_hidden, include, exclude }`,
+    and `SpaceView { mode, sort }` since W14.
   - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
     label, kind, size, modified, hidden }`.
   - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
-    `SyncLens { id, entries }`. `SyncLens` filters, sorts in natural order, and
-    reconciles by path, so `ItemId`s survive refreshes.
+    `SyncLens { id, entries }`. `SyncLens` filters, sorts by the space's
+    `SortRule`, and reconciles by path, so `ItemId`s survive refreshes.
   - `AddItem` / `MoveItem` into a lens are `Rejected`.
   - Lens items are not persisted (F-07, F-08).
 - **Phase 2 - platform. [done]**
@@ -780,8 +780,8 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - "New lens..." in the space, tray, and desktop layer menus.
   - Drops onto a lens move files into its folder. Items already there are
     skipped, and a folder cannot be dropped into itself.
-  - A lens menu: Open folder, Change folder..., Sort by, Folders first, and
-    Show hidden files.
+  - A lens menu: Open folder, Change folder..., and Sort by, which holds
+    Folders first and Show hidden files.
   - A placeholder when the folder is unavailable.
   - Deleting a lens removes only the view; its folder and the files in it
     are never deleted or moved (D3). The delete confirmation says so.
@@ -1046,7 +1046,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Partial: lenses work end to end (M4 phases 1-3, W1-W7, 2026-10-21; on-screen checks in `TASKS.md` section V); views and a Lenses settings page are phase 4 |
-| F-08 | Lens sort rules | M4 | Open; decided in D15 (`TASKS.md` W14, W15) |
+| F-08 | Lens sort rules | M4 | Partial: one `SortRule` and Explorer's Sort by are in (W14); Keep sorted is open (W15) |
 | F-09 | Lens show-as / icon size | M4 | Partial: show-as is done (W11) and the extra-large, large, and medium icon views are in (W12); small icons, List, Details, Tiles, and Content come with W16-W22 (D15) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
@@ -1069,7 +1069,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-28 | Title bar style | M5 | Open |
 | F-29 | Windows accent color | M3 | Done; check pending |
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
-| F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08; D15, `TASKS.md` W15) |
+| F-31 | Sort items in normal spaces | M3, M4 | Explorer's Sort by is in (W14); kept rule open (with F-08; D15, `TASKS.md` W15) |
 | F-32 | Hover opacity | M5 | Open |
 | F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T); Bounce, Scroll, and Magic lamp planned (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |

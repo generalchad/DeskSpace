@@ -35,12 +35,12 @@ impl ItemKind {
     }
 }
 
-/// How items are ordered by `Command::SortSpace` and by a lens's `FolderView`.
-/// The saved spelling is part of a lens's config, so a variant is never
-/// renamed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// How items are ordered: the field a `SortRule` compares first. The saved
+/// spelling is part of a space's config, so a variant is never renamed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortKey {
+    #[default]
     Name,
     Kind,
     Size,

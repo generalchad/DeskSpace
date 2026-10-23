@@ -12,7 +12,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U1 and U2 are pure and need no screen);
-- section W phase 4, in order (W14 is next; W16 is the
+- section W phase 4, in order (W15 is next; W16 is the
   hardest, so pair with a reviewer on it);
 - section W phase 5: W24-W26 any time (W24 and W25 first), the rest once
   the phase 4 task each one names has landed;
@@ -52,6 +52,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | To change... | Look in |
 |--------------|---------|
 | The model (spaces, items, views, the desktop layer) | `deskspace-core/src/{space,view,item,desktop,desktop_layer}.rs` |
+| Item ordering, both kinds | `deskspace-core/src/sort.rs` (`SortRule`) |
 | A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `lens_ops.rs`, `layer_ops.rs`) |
 | A lens's folder view and entries | `deskspace-core/src/source.rs` (`SpaceSource`, `FolderView`, `FolderEntry`) |
 | Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
@@ -60,7 +61,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Config file paths and atomic save | `deskspace-config/src/store.rs` |
 | CLI flags | `deskspace-app/src/cli.rs` |
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
-| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`) |
+| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`, `SORT_MENU_IDS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
@@ -579,15 +580,16 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
 
 - `CreateLens` makes one.
 - `SetLensFolder` points it at another folder.
-- `SetLensView` changes its sort and filter settings.
+- `SetLensView` changes its hidden and filter settings; `SetSpaceView`,
+  which every space has, changes its sort rule.
 - `SyncLens { id, entries }` replaces its items with a fresh listing of
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
 Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). What is left is phase 4 (W9, W13-W23,
-ROADMAP D15) and phase 5 (W24-W43, D16). New here? Read "Where to start" below
-before anything else in this section.
+lens as D3 says (W1-W7, archived). Phase 4 builds the views and the one sort
+rule (W9, W14-W23, ROADMAP D15), and phase 5 is W24-W43 (D16). New here?
+Read "Where to start" below before anything else in this section.
 
 ### Words used below
 
@@ -670,9 +672,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W13 are done (2026-10-21) and archived; the earlier tasks'
-on-screen checks are in section V. The open work is phase 4 (W9, W14-W23)
-and phase 5 (W24-W43).
+W1-W8 and W10-W14 are done (2026-10-21; W14 on 2026-10-22) and archived; the
+earlier tasks' on-screen checks are in section V. The open work is phase 4
+(W9, W15-W23) and phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -698,7 +700,7 @@ and phase 5 (W24-W43).
 | Level | Tasks | Open now |
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W14 |
+| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W15 |
 | With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
@@ -759,29 +761,6 @@ lens-only.
     the generic folder icon shows. F2 on the title starts the rename box
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
-
-- [ ] **W14. One sort rule, with Explorer's Sort by (core, app).**
-  - Core: `SortRule { key: SortKey, descending, folders_first }` beside
-    `SortKey`, defaulting to name ascending, and `SpaceView.sort`.
-    `FolderView` loses `sort`, `descending`, and `folders_first` (lenses
-    are unreleased, D15), and `SyncLens` sorts by `view.sort`. The normal
-    space's one-off sort (the command `App::sort_space` dispatches) takes
-    a `SortRule` and stores it in `view.sort`. If there are two sort
-    comparators today, merge them into `SortRule::compare`, keeping the
-    natural name order for ties.
-  - Menu: Sort by ▸ becomes Explorer's folder menu. First the keys from
-    `SORT_KEYS` as radio items (Name, Date modified, Type, Size), then a
-    separator, then Ascending and Descending, then a separator, then
-    Folders first. A key keeps the direction, and a direction keeps the
-    key. On a normal space each choice sorts once with the new rule, as
-    today; a lens keeps it. Retire the seven `SORT_PRESETS` menu ids and
-    note them as never reused in `MenuId`'s doc, as `ids.rs` does for
-    fields 25 and 26.
-  - Tests: `SortRule::compare` for each key, both ways, and with folders
-    first; the one-off sort stores its rule; a lens re-sorts by it; the
-    menu checks the rule's key and direction.
-  - Done when: also the W6 row in section V says "Sort by" in the new
-    shape.
 
 - [ ] **W15. Keep sorted (core, app).**
   - Core: `SpaceView.keep_sorted: bool`, off by default.
@@ -1900,7 +1879,7 @@ each id is in `archive/TASKS-done.md`.
 | W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
 | W3g (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
 | W5 (F-07) | Point a lens at a throwaway folder, then rename the folder away: "Folder not available" and the path show, centered in the lens, in a faded label color; a long path wraps inside the lens. Rename it back: the items return within 5 s and the text goes. |
-| W6 (F-07) | Right-click a hand-made lens (section W): Open folder opens it in Explorer; Change folder… picks another folder and the lens follows it, and picking DeskSpace's storage folder shows a message and changes nothing. Sort by checks the current order; each choice reorders the lens at once; Folders first and Show hidden files toggle and apply at once. After a restart the sort, folders-first, and hidden-files settings are still set. A normal space's menu is unchanged. |
+| W6 (F-07) | Right-click a hand-made lens (section W): Open folder opens it in Explorer; Change folder… picks another folder and the lens follows it, and picking DeskSpace's storage folder shows a message and changes nothing. Sort by has Explorer's shape (Name, Date modified, Type, Size; Ascending and Descending; Folders first) and checks the current key and direction; each choice reorders the lens at once, and Show hidden files toggles and applies at once. After a restart the sort rule (key, direction, folders first) and the hidden-files setting are still set. A normal space's Sort by looks the same, and a key choice sorts it once. |
 | W7 (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |

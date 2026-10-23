@@ -158,19 +158,20 @@ folded; corners twice as wide as edges), item lookup/insert/remove, and
 
 `Space.source` (`source.rs`) says what fills the space. `SpaceSource::Items`
 is the default and holds the space's own items, as before. `SpaceSource::Folder`
-makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path and the
-view settings, and says how the title follows the folder (`LensTitle`);
-`Space.title` is the text every reader shows, computed by the app when the
-folder or the title setting changes. A space also holds a `view` (`SpaceView`,
-`view.rs`): its layout mode (D15), apart from `look`, so a normal space and a
-lens share it. `FolderEntry` is what the platform reads
-from the folder.
+makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path, the
+hidden and filter settings, and says how the title follows the folder
+(`LensTitle`); `Space.title` is the text every reader shows, computed by the
+app when the folder or the title setting changes. A space also holds a `view`
+(`SpaceView`, `view.rs`): its layout mode and its sort rule (D15), apart from
+`look`, so a normal space and a lens share them. `FolderEntry` is what the
+platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
-filters hidden entries, sorts naturally, and reconciles by path so an `ItemId`
-survives a refresh. They are never written to the config, and `Config::migrate`
-drops any a hand-edited file lists. `AddItem` and `MoveItem` into a lens are
-`Rejected`; file changes there are shell operations: a drop on a lens moves
+filters hidden entries, sorts by the space's `SortRule`, and reconciles by
+path so an `ItemId` survives a refresh. They are never written to the config,
+and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
+`MoveItem` into a lens are `Rejected`; file changes there are shell
+operations: a drop on a lens moves
 (or copies) the files into its folder with `Ui::transfer_files` and
 `OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
 folder, or inside it, is kept but never watched, and counts as unavailable
@@ -247,8 +248,8 @@ bounds) -> CommandOutcome` (`Applied | NotFound | Rejected`;
 `bounds` the work area of the monitor nearest the action (`work_area_at`).
 `command/mod.rs` holds the types and a dispatch `match` whose every arm calls
 a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`,
-`lens_ops.rs`, and `layer_ops.rs` hold those by what they change, `sort.rs` the
-`SortSpace` ordering, and `mod.rs` the shared helpers `with_space` (run a
+`lens_ops.rs`, and `layer_ops.rs` hold those by what they change, and `mod.rs`
+the shared helpers `with_space` (run a
 change on a space or report `NotFound`), `rearrange`, and `close_gap`. The
 variants and their fields are documented on `Command`; the rules below are the
 ones a variant's doc cannot show.
@@ -266,25 +267,26 @@ ones a variant's doc cannot show.
   space's size and re-flows its columns, as an Explorer window does. Settings
   Cancel lets the spaces its preview pinned fit their items again
   (`Session::pinned`).
-- `SortSpace { id, key: SortKey, descending }` sorts by `Name`
-  (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
-  `Size`, or `Modified`.
+- `SortSpace { id, rule: SortRule }` sorts by the rule's key (name, type,
+  size, or modified), direction, and folders-first, and keeps the rule as the
+  space's own; a lens uses the same rule in `SyncLens`.
 - `CreateLens { title, at, size, path, locked }` clamps like `CreateSpace` and
   starts the lens with a default `FolderView` whose title mode is
   `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets its title
   text, and clears its items until the next sync; `SetLensTitle { id, title,
   text }` sets how the title follows the folder (D15); `SetLensView { id,
-  view }` replaces the view; `SyncLens { id, entries }` reconciles the listed
-  items by path, keeping ids, filtering hidden entries unless the view shows
-  them, and sorting names naturally (`file2` before `file10`, folders first
-  when asked). The include/exclude filters are stored for F-22 but not
-  applied.
+  view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
+  listed items by path, keeping ids, filtering hidden entries unless the view
+  shows them, and sorting by the space's `SortRule` (natural names, so
+  `file2` comes before `file10`; folders first when asked). The include/exclude
+  filters are stored for F-22 but not applied.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
   edits pass `custom: true`, and Cancel uses it to restore a snapshot.
 - `SetSpaceView { id, view: SpaceView }` sets a space's view (D15): its icon
-  mode, apart from the look. The app reflows that space and saves. Every space
+  mode and sort rule, apart from the look. The app reflows that space and
+  saves, and lists a lens's folder again when its rule changes. Every space
   has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
@@ -1164,10 +1166,11 @@ in `ui.rs`. What spans them:
   spaces, Exit DeskSpace.
 - A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
   folder `ItemStore::allows_lens` refuses gets a message instead) after the
-  first group. Its Sort by ▸ checks the lens's current order and keeps it as
-  files come and go (`SetLensView`), and adds Folders first and Show hidden
-  files. A view change starts the lens's watch again, so the folder is listed
-  afresh in the new order.
+  first group. Its Sort by ▸ checks the space's rule and keeps it as files
+  come and go (`SetSpaceView`), and adds Show hidden files (`SetLensView`).
+  Folders first is part of the rule for both kinds. A sort or hidden-files
+  change starts the lens's watch again, so the folder is listed afresh in the
+  new order.
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
@@ -1184,11 +1187,15 @@ in `ui.rs`. What spans them:
   window on that space. **View ▸** picks "Settings icon size" (the look's
   size), Extra large, Large, or Medium icons; the three fixed views set that
   space's icon size at 256, 96, or 48 px at 96 DPI and leave it out of
-  Ctrl+wheel and Match Explorer. **Sort by ▸** reorders items by name (A–Z or
-  Z–A), type, size (smallest or largest), or date (oldest or newest). The
-  menus are built from tables: `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`,
-  `VIEW_PRESETS`, and `SORT_PRESETS` in `app.rs`, with the view labels in
-  `VIEW_MODES` in `settings/tables.rs`.
+  Ctrl+wheel and Match Explorer. **Sort by ▸** is Explorer's folder menu:
+  Name, Date modified, Type, and Size as radio items, then Ascending and
+  Descending, then Folders first (and, on a lens, Show hidden files). A key
+  keeps the direction, a direction keeps the key, and Folders first toggles,
+  all through one `SortRule`. A normal space sorts once with the new rule; a
+  lens keeps it and lists its folder again. The menus are built from tables:
+  `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
+  in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
+  words in `SORT_KEYS` in `settings/tables.rs`.
 - **New shortcut ▸** (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in `app.rs`, also
   enabled on a locked space): "From installed apps…", a picker listing every
   app in the Applications folder (Store apps included) with a check box per

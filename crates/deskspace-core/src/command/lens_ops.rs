@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::CommandOutcome;
-use super::sort::compare_lens_items;
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
 use crate::id::SpaceId;
@@ -93,6 +92,7 @@ impl Desktop {
         let Some(view) = space.folder_view().cloned() else {
             return CommandOutcome::Rejected;
         };
+        let rule = space.view().sort;
         let mut existing: HashMap<PathBuf, Item> = space
             .items()
             .iter()
@@ -124,7 +124,7 @@ impl Desktop {
             items.push(item);
         }
 
-        items.sort_by(|a, b| compare_lens_items(&view, a, b));
+        items.sort_by(|a, b| rule.compare(a, b));
         let Some(space) = self.space_mut(id) else {
             return CommandOutcome::NotFound;
         };
@@ -139,6 +139,7 @@ mod tests {
     use super::*;
     use crate::command::{Command, CommandOutcome};
     use crate::item::{ItemFacts, ItemKind, SortKey};
+    use crate::sort::SortRule;
 
     fn bounds() -> Rect {
         Rect::new(0, 0, 1920, 1080)
@@ -471,9 +472,6 @@ mod tests {
         let id = lens(&mut desktop, "C:/folder");
         let view = FolderView {
             path: "C:/folder".into(),
-            sort: SortKey::Modified,
-            descending: true,
-            folders_first: true,
             show_hidden: true,
             ..FolderView::default()
         };
@@ -488,6 +486,38 @@ mod tests {
             CommandOutcome::Applied
         );
         assert_eq!(desktop.space(id).unwrap().folder_view(), Some(&view));
+    }
+
+    #[test]
+    fn sync_lens_sorts_by_the_spaces_rule() {
+        use crate::view::SpaceView;
+
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        desktop.apply(
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    sort: SortRule {
+                        key: SortKey::Size,
+                        descending: true,
+                        folders_first: false,
+                    },
+                    ..SpaceView::default()
+                },
+            },
+            bounds(),
+        );
+        let sized = |name: &str, size: u64| FolderEntry {
+            size: Some(size),
+            ..entry(name, ItemKind::File)
+        };
+        sync(
+            &mut desktop,
+            id,
+            vec![sized("small.txt", 10), sized("big.txt", 300)],
+        );
+        assert_eq!(labels(&desktop, id), ["big", "small"]);
     }
 
     #[test]

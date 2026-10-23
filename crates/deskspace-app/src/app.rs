@@ -145,13 +145,7 @@ enum MenuId {
     IconSizeMedium = 42,
     IconSizeLarge = 43,
     IconSizeXLarge = 44,
-    SortNameAsc = 30,
-    SortNameDesc = 31,
-    SortKind = 32,
-    SortSizeAsc = 33,
-    SortSizeDesc = 34,
-    SortDateAsc = 35,
-    SortDateDesc = 36,
+    // 30-36 were the one-off sort presets; they are never reused (W14).
     NewShortcutApps = 45,
     NewShortcutCustom = 46,
     PasteShortcut = 47,
@@ -162,7 +156,7 @@ enum MenuId {
     OpenFolder = 50,
     /// A lens's "Change folder…".
     ChangeFolder = 51,
-    /// A lens's "Folders first" toggle, in its Sort by submenu.
+    /// A space's "Folders first" toggle, in its Sort by submenu.
     FoldersFirst = 52,
     /// A lens's "Show hidden files" toggle, in its Sort by submenu.
     ShowHidden = 53,
@@ -173,10 +167,18 @@ enum MenuId {
     ViewExtraLargeIcons = 56,
     ViewLargeIcons = 57,
     ViewMediumIcons = 58,
+    /// The Sort by submenu's keys (D15).
+    SortByName = 59,
+    SortByModified = 60,
+    SortByKind = 61,
+    SortBySize = 62,
+    /// The Sort by submenu's direction.
+    SortAscending = 63,
+    SortDescending = 64,
 }
 
 impl MenuId {
-    const ALL: [Self; 46] = [
+    const ALL: [Self; 45] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -202,13 +204,6 @@ impl MenuId {
         Self::IconSizeMedium,
         Self::IconSizeLarge,
         Self::IconSizeXLarge,
-        Self::SortNameAsc,
-        Self::SortNameDesc,
-        Self::SortKind,
-        Self::SortSizeAsc,
-        Self::SortSizeDesc,
-        Self::SortDateAsc,
-        Self::SortDateDesc,
         Self::NewShortcutApps,
         Self::NewShortcutCustom,
         Self::PasteShortcut,
@@ -223,6 +218,12 @@ impl MenuId {
         Self::ViewExtraLargeIcons,
         Self::ViewLargeIcons,
         Self::ViewMediumIcons,
+        Self::SortByName,
+        Self::SortByModified,
+        Self::SortByKind,
+        Self::SortBySize,
+        Self::SortAscending,
+        Self::SortDescending,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -277,36 +278,13 @@ const ICON_SIZE_PRESETS: [(MenuId, &str, u8); 4] = [
     (MenuId::IconSizeXLarge, "Extra large", 200),
 ];
 
-/// The sort choices the Sort by submenu offers: menu id, label, sort key, and
-/// whether the order descends. Drives both the submenu and the choice handling.
-const SORT_PRESETS: [(MenuId, &str, SortKey, bool); 7] = [
-    (
-        MenuId::SortNameAsc,
-        "Name (A\u{2013}Z)",
-        SortKey::Name,
-        false,
-    ),
-    (
-        MenuId::SortNameDesc,
-        "Name (Z\u{2013}A)",
-        SortKey::Name,
-        true,
-    ),
-    (MenuId::SortKind, "Type", SortKey::Kind, false),
-    (MenuId::SortSizeAsc, "Size (smallest)", SortKey::Size, false),
-    (MenuId::SortSizeDesc, "Size (largest)", SortKey::Size, true),
-    (
-        MenuId::SortDateAsc,
-        "Date (oldest)",
-        SortKey::Modified,
-        false,
-    ),
-    (
-        MenuId::SortDateDesc,
-        "Date (newest)",
-        SortKey::Modified,
-        true,
-    ),
+/// The Sort by submenu's key choices: menu id and the key it picks, in
+/// `SORT_KEYS` order. Drives both the submenu and how a choice is handled.
+const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
+    (MenuId::SortByName, SortKey::Name),
+    (MenuId::SortByModified, SortKey::Modified),
+    (MenuId::SortByKind, SortKey::Kind),
+    (MenuId::SortBySize, SortKey::Size),
 ];
 
 /// The View submenu's choices: one per icon view, in `VIEW_MODES` order.

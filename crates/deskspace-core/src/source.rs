@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::id::ItemId;
-use crate::item::{Item, ItemFacts, ItemKind, SortKey};
+use crate::item::{Item, ItemFacts, ItemKind};
 
 /// What fills a space. `Items` is a normal space whose items DeskSpace owns;
 /// `Folder` is a lens, a live view of a real folder that DeskSpace never
@@ -48,7 +48,8 @@ pub enum LensTitle {
 }
 
 /// A lens's bound folder and how its contents are shown. The view is saved
-/// with the space; the items it produces are not (M4 phase 1).
+/// with the space; the items it produces are not (M4 phase 1). Its order
+/// lives in `SpaceView.sort` (D15).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FolderView {
@@ -57,11 +58,6 @@ pub struct FolderView {
     /// How the space's title follows the folder.
     #[serde(default)]
     pub title: LensTitle,
-    /// The item field the lens is ordered by.
-    pub sort: SortKey,
-    pub descending: bool,
-    /// Keep folders above files, whatever `sort` says.
-    pub folders_first: bool,
     pub show_hidden: bool,
     /// Reserved for F-22; stored for forward compatibility but not applied
     /// by `Command::SyncLens` yet.
@@ -75,9 +71,6 @@ impl Default for FolderView {
         Self {
             path: PathBuf::new(),
             title: LensTitle::Custom,
-            sort: SortKey::Name,
-            descending: false,
-            folders_first: false,
             show_hidden: false,
             include: Vec::new(),
             exclude: Vec::new(),
@@ -298,5 +291,17 @@ mod tests {
     fn a_lens_without_a_title_setting_loads_as_custom() {
         let view: FolderView = toml::from_str("path = 'C:/Temp'\n").unwrap();
         assert_eq!(view.title, LensTitle::Custom);
+    }
+
+    #[test]
+    fn a_lens_ignores_the_retired_sort_fields() {
+        // The order moved to `SpaceView.sort` (W14). Lenses are unreleased, so
+        // an old file's fields are dropped rather than migrated.
+        let view: FolderView = toml::from_str(
+            "path = 'C:/Temp'\nsort = 'size'\ndescending = true\nfolders_first = true\n",
+        )
+        .unwrap();
+        assert_eq!(view.path, PathBuf::from("C:/Temp"));
+        assert!(!view.show_hidden);
     }
 }
