@@ -573,6 +573,7 @@ mod tests {
             cell: deskspace_core::Size::new(100, 50),
             gap: 10,
             padding: 12,
+            header: 0,
         };
         let layout = deskspace_core::ViewLayout::new(
             deskspace_core::ViewMode::List,

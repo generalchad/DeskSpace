@@ -744,35 +744,6 @@ lens-only.
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
 
-- [ ] **W18. Details (core, app, platform).** **[needs human]**
-  - `ViewMode::Details` (digit 6): one row per item at full width, under
-    a header row that stays put while the rows scroll.
-  - `DETAILS_COLUMNS` in `settings/tables.rs`: Name (it takes the width
-    left over, down to a minimum), Date modified, Type, and Size
-    (right-aligned), each with its `SortKey` and an Explorer-measured
-    default width.
-  - A click on a header sorts by its column, and a second click on the
-    same one reverses, through the W14 path. The sorted column shows
-    Explorer's arrow.
-  - Text, made when the scene is built, never while painting:
-    - Platform helpers beside `item_facts`: `type_name(path, is_folder)`
-      (`SHGetFileInfoW` with `SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES`,
-      cached by extension, with no disk access), `format_date(secs)` (the
-      user's short date and time, `GetDateFormatEx` and
-      `GetTimeFormatEx`, as Explorer shows them), and `format_kb(bytes)`
-      (`StrFormatKBSize`, "1,234 KB"). A folder's size is blank.
-    - The app formats and passes the text into `space_scene`, which stays
-      pure. `ItemVisual` gains a `///` field for the column texts, empty
-      outside Details.
-  - Hover and selection fill the whole row. F2's box sits in the Name
-    column.
-  - Tests: row layout under the header; a header hit maps to its column;
-    a second click reverses; the type-name cache key.
-  - **[needs human]** check: a folder in Details beside the same folder
-    in Explorer's Details: the same columns, values, alignment, date, and
-    size format; header clicks sort and reverse; 100 % and 150 %; light
-    and dark.
-
 - [ ] **W19. The status bar (core, app, platform).** **[needs human]**
   - Core: `SpaceView.status_bar: bool`, off by default.
     `Space::content_rect` leaves `STATUS_BAR_HEIGHT` (measure Explorer's;
@@ -2163,6 +2134,7 @@ each id is in `archive/TASKS-done.md`.
 | W15 (D15) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
 | W16 (D15) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
 | W17 (D15) | List on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, columns filling top to bottom and running left to right, the wheel scrolling sideways, Home/End/PageUp/PageDown and the arrow keys moving along the columns, and the scroll indicator along the bottom; click, Ctrl and Shift click, the marquee, and type-to-select hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Check the W16 row again in List. |
+| W18 (D15) | A folder in Details beside the same folder in Explorer's Details: the same columns (Name, Date modified, Type, Size), values, alignment, date, and size format; Name takes the width left over; header clicks sort and reverse and the arrow follows; the header stays put while rows scroll; hover and selection fill the row and F2's box sits in Name; 100 % and 150 %; light and dark. |
 
 ## Found while working
 

@@ -1,10 +1,10 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout, ViewMode};
 
 use deskspace_platform::{
-    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
+    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
 };
 
 use super::drag::Drag;
@@ -267,6 +267,39 @@ impl App {
         }
     }
 
+    /// If `point` is in a Details header, sorts space `id` by that column and
+    /// returns true. A click on the column already sorted reverses it, as
+    /// Explorer does.
+    fn details_header_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        let content = space.content_rect();
+        if space.view().mode != ViewMode::Details || !content.contains(point) {
+            return false;
+        }
+        let Some(layout) = self.view_layout(id) else {
+            return false;
+        };
+        let Some(details) = crate::scene::details_view(
+            space,
+            &layout,
+            content.width,
+            self.layout_for(id).padding,
+            space_dpi(id.0),
+        ) else {
+            return false;
+        };
+        let local = Point::new(point.x - content.x, point.y - content.y);
+        let Some(index) = crate::scene::details_header_column_at(&details, local) else {
+            return false;
+        };
+        let rule = crate::scene::details_rule_after(space.view().sort, index);
+        let at = space.rect().origin();
+        self.sort_space(ui, id, rule, at);
+        true
+    }
+
     pub(super) fn begin_interaction(
         &mut self,
         ui: &mut Ui,
@@ -275,6 +308,13 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a Details header sorts by its column, through the same
+        // sort path as the menu (W18).
+        if let Surface::Space(id) = surface
+            && self.details_header_click(ui, id, point)
+        {
+            return;
+        }
         // A click on an item's check box either toggles that item in the
         // selection (auto-check-select) or the independent tick set, and moves
         // the highlight to it.

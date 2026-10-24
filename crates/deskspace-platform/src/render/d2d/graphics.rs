@@ -31,6 +31,10 @@ pub(super) struct Graphics {
     /// The same sizes for an inline cell's single left-aligned line (W16).
     pub(super) inline_label_format: IDWriteTextFormat,
     pub(super) inline_label_formats: HashMap<u8, IDWriteTextFormat>,
+    /// The Details row and header text (W18): one left-aligned and one
+    /// right-aligned line, centered vertically.
+    pub(super) details_format: IDWriteTextFormat,
+    pub(super) details_right_format: IDWriteTextFormat,
     pub(super) glyph_format: Option<IDWriteTextFormat>,
     /// The zoom pop-up's percentage, and its button text (centered both ways).
     pub(super) zoom_percent_format: IDWriteTextFormat,
@@ -141,6 +145,23 @@ impl Graphics {
                 inline_label_formats.insert(scale, format);
             }
 
+            // A Details row and header are single, vertically centered lines;
+            // values can be left or right aligned (W18).
+            let details_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            details_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            details_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            details_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            let details_sign = dwrite.CreateEllipsisTrimmingSign(&details_format)?;
+            details_format.SetTrimming(&character_trimming(), &details_sign)?;
+            let details_right_format =
+                make_format(&dwrite, text_family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
+            details_right_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            details_right_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING)?;
+            details_right_format.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)?;
+            let details_right_sign = dwrite.CreateEllipsisTrimmingSign(&details_right_format)?;
+            details_right_format.SetTrimming(&character_trimming(), &details_right_sign)?;
+
             let glyph_format = match glyph_family {
                 Some(family) => {
                     let format = make_format(&dwrite, family, DWRITE_FONT_WEIGHT_NORMAL, 12.0)?;
@@ -180,6 +201,8 @@ impl Graphics {
                 label_formats,
                 inline_label_format,
                 inline_label_formats,
+                details_format,
+                details_right_format,
                 glyph_format,
                 zoom_percent_format,
                 zoom_label_format,
@@ -210,6 +233,7 @@ impl Graphics {
         let (formats, fallback) = match layout {
             ItemLayout::Grid => (&self.label_formats, &self.label_format),
             ItemLayout::Inline => (&self.inline_label_formats, &self.inline_label_format),
+            ItemLayout::Details => return self.details_format.clone(),
         };
         formats.get(&rounded).unwrap_or(fallback).clone()
     }

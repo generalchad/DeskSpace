@@ -38,6 +38,7 @@ pub(super) unsafe fn draw_item(
     scene: &SpaceScene,
     item: &ItemVisual,
     label: &[u16],
+    cells: &[Vec<u16>],
     icon: Option<&ID2D1Bitmap>,
     edit: Option<&[u16]>,
 ) {
@@ -49,6 +50,8 @@ pub(super) unsafe fn draw_item(
     let cell = to_rect_f(item.rect);
     let metrics = scene.metrics;
     let inline = scene.item_layout == ItemLayout::Inline;
+    let details = scene.item_layout == ItemLayout::Details;
+    let beside_icon = inline || details;
     let icon_size = metrics.icon_size as f32;
     let icon_pad = metrics.icon_top as f32;
     let highlight = match item.state {
@@ -80,7 +83,7 @@ pub(super) unsafe fn draw_item(
         // The grid centers the icon over its label; an inline cell puts the
         // check box, then the icon, then one label line, all vertically
         // centered (W16).
-        let (icon_left, icon_top) = if inline {
+        let (icon_left, icon_top) = if beside_icon {
             let left = cell.left
                 + (metrics.inline_inset + metrics.check_box_size + metrics.inline_gap) as f32;
             let top = cell.top + ((cell.bottom - cell.top - icon_size) / 2.0).round();
@@ -110,7 +113,7 @@ pub(super) unsafe fn draw_item(
             && (scene.check_boxes_persistent || item.checked || item.hovered);
         if scene.show_check_boxes && show_box {
             let margin = metrics.check_box_margin as f32;
-            let check_box = if inline {
+            let check_box = if beside_icon {
                 CheckBoxRect {
                     left: cell.left + metrics.inline_inset as f32,
                     top: cell.top
@@ -132,7 +135,22 @@ pub(super) unsafe fn draw_item(
             / 100.0;
         let line_height = LABEL_LINE_HEIGHT * scale;
         let center_y = (cell.top + cell.bottom) / 2.0;
-        let (label_left, label_top, label_right, lines) = if inline {
+        let (label_left, label_top, label_right, lines) = if details {
+            let name = scene
+                .details
+                .as_ref()
+                .and_then(|details| details.columns.first());
+            let right = name.map_or(cell.right - metrics.inline_inset as f32, |column| {
+                column.rect.right() as f32 - scene.details.as_ref().map_or(0, |d| d.cell_pad) as f32
+            });
+            let top = (center_y - line_height / 2.0).round();
+            (
+                icon_left + icon_size + metrics.inline_gap as f32,
+                top,
+                right,
+                1.0,
+            )
+        } else if inline {
             // One line beside the icon, vertically centered and ellipsized.
             let top = (center_y - line_height / 2.0).round();
             (
@@ -151,7 +169,11 @@ pub(super) unsafe fn draw_item(
         };
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            let format = graphics.item_label_format_for(scene.label_size, scene.item_layout);
+            let format = if details {
+                graphics.details_format.clone()
+            } else {
+                graphics.item_label_format_for(scene.label_size, scene.item_layout)
+            };
             if let (Some(buffer), Some((_, text_edit))) = (edit, &scene.editing_item) {
                 // Explorer's rename box wraps the whole name and grows downward
                 // over the items below it, so lay it out in the label's width
@@ -178,6 +200,31 @@ pub(super) unsafe fn draw_item(
                     label,
                     &format,
                     label_rect,
+                    item.label_color.unwrap_or(scene.item_text).fade(alpha),
+                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+                );
+            }
+        }
+
+        // Details: the other columns' text, in their header rects (W18).
+        if details && let Some(details_view) = &scene.details {
+            for (column, text) in details_view.columns.iter().skip(1).zip(cells) {
+                let format = match column.align {
+                    ColumnAlign::Left => graphics.details_format.clone(),
+                    ColumnAlign::Right => graphics.details_right_format.clone(),
+                };
+                let pad = details_view.cell_pad as f32;
+                draw_text(
+                    target,
+                    brush,
+                    text,
+                    &format,
+                    rect_f(
+                        column.rect.x as f32 + pad,
+                        cell.top,
+                        column.rect.right() as f32 - pad,
+                        cell.bottom,
+                    ),
                     item.label_color.unwrap_or(scene.item_text).fade(alpha),
                     scene.text_shadow.map(|shadow| shadow.fade(alpha)),
                 );

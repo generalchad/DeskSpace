@@ -49,13 +49,14 @@ pub(super) const PRESETS: [(Preset, &str); 2] = [
 ];
 
 /// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
-pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 6] = [
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 7] = [
     (ViewMode::Icons, "Settings icon size", None),
     (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
     (ViewMode::LargeIcons, "Large icons", Some(2)),
     (ViewMode::MediumIcons, "Medium icons", Some(3)),
     (ViewMode::SmallIcons, "Small icons", Some(4)),
     (ViewMode::List, "List", Some(5)),
+    (ViewMode::Details, "Details", Some(6)),
 ];
 
 /// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
@@ -75,6 +76,48 @@ pub const SORT_KEYS: [(SortKey, &str); 4] = [
     (SortKey::Kind, "Type"),
     (SortKey::Size, "Size"),
 ];
+
+/// Explorer's Details columns in display order (W18): its header label, the
+/// sort key a click on the header uses, its default width at 96 DPI, and how
+/// its values align. Name takes the width left over, down to
+/// `NAME_MIN_WIDTH`. Widths are provisional until W18's on-screen check
+/// measures Explorer's own.
+pub struct DetailsColumn {
+    pub label: &'static str,
+    pub key: SortKey,
+    pub width: i32,
+    pub align: ColumnAlign,
+}
+
+pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
+    DetailsColumn {
+        label: "Name",
+        key: SortKey::Name,
+        width: 0,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Date modified",
+        key: SortKey::Modified,
+        width: 130,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Type",
+        key: SortKey::Kind,
+        width: 100,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Size",
+        key: SortKey::Size,
+        width: 80,
+        align: ColumnAlign::Right,
+    },
+];
+
+/// The narrowest Name column, so a small space keeps a readable name.
+pub const NAME_MIN_WIDTH: i32 = 120;
 
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![

@@ -3706,6 +3706,35 @@ until I5-I6 all land, so no partial build hides the desktop.
     wheel and the keys scrolling sideways, and the indicator along the
     bottom.
 
+- [x] **W18. Details (core, app, platform).** **[needs human]**
+  - `ViewMode::Details` (digit 6): one row per item at full width, under
+    a header row that stays put while the rows scroll.
+  - `DETAILS_COLUMNS` in `settings/tables.rs`: Name (it takes the width
+    left over, down to a minimum), Date modified, Type, and Size
+    (right-aligned), each with its `SortKey` and an Explorer-measured
+    default width.
+  - A click on a header sorts by its column, and a second click on the
+    same one reverses, through the W14 path. The sorted column shows
+    Explorer's arrow.
+  - Text, made when the scene is built, never while painting:
+    - Platform helpers beside `item_facts`: `type_name(path, is_folder)`
+      (`SHGetFileInfoW` with `SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES`,
+      cached by extension, with no disk access), `format_date(secs)` (the
+      user's short date and time, `GetDateFormatEx` and
+      `GetTimeFormatEx`, as Explorer shows them), and `format_kb(bytes)`
+      (`StrFormatKBSize`, "1,234 KB"). A folder's size is blank.
+    - The app formats and passes the text into `space_scene`, which stays
+      pure. `ItemVisual` gains a `///` field for the column texts, empty
+      outside Details.
+  - Hover and selection fill the whole row. F2's box sits in the Name
+    column.
+  - Tests: row layout under the header; a header hit maps to its column;
+    a second click reverses; the type-name cache key.
+  - **[needs human]** check: a folder in Details beside the same folder
+    in Explorer's Details: the same columns, values, alignment, date, and
+    size format; header clicks sort and reverse; 100 % and 150 %; light
+    and dark.
+
 - [x] **W9. A lens's folder icon in its title bar (the "new visual"
   recipe).** **[needs human]**
   - `render/scene.rs` `SpaceScene`: `title_icon: Option<Icon>`, `None` by

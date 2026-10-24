@@ -47,10 +47,10 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
     DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_MEASURING_MODE_NATURAL,
     DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_RANGE,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
-    DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
-    IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
+    IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET};
@@ -70,7 +70,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
-use crate::render::scene::{ItemLayout, ItemState, ItemVisual, SpaceScene};
+use crate::render::scene::{ColumnAlign, ItemLayout, ItemState, ItemVisual, SpaceScene};
 use crate::render::transition::TransitionFrame;
 
 use bitmap::to_icon;
@@ -98,6 +98,10 @@ const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
+/// Segoe Fluent Icons / Segoe MDL2 Assets "ChevronUp" and "ChevronDown", the
+/// sorted Details header's arrow.
+const SORT_UP_GLYPH: &[u16] = &[0xE70E];
+const SORT_DOWN_GLYPH: &[u16] = &[0xE70D];
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -147,6 +151,10 @@ pub struct PreparedScene {
     /// The item id and rename buffer while `scene.editing_item` is set.
     edit_item: Option<(u64, Vec<u16>)>,
     labels: Vec<Vec<u16>>,
+    /// Each item's Details cells after Name, encoded once.
+    cells: Vec<Vec<Vec<u16>>>,
+    /// The Details header labels, encoded once.
+    header: Vec<Vec<u16>>,
     /// `scene.placeholder`, encoded once.
     placeholder: Option<Vec<u16>>,
 }
@@ -167,6 +175,27 @@ impl PreparedScene {
             .iter()
             .map(|item| item.label.encode_utf16().collect())
             .collect();
+        let cells = scene
+            .items
+            .iter()
+            .map(|item| {
+                item.cells
+                    .iter()
+                    .map(|cell| cell.encode_utf16().collect())
+                    .collect()
+            })
+            .collect();
+        let header = scene
+            .details
+            .as_ref()
+            .map(|details| {
+                details
+                    .columns
+                    .iter()
+                    .map(|column| column.label.encode_utf16().collect())
+                    .collect()
+            })
+            .unwrap_or_default();
         let placeholder = scene
             .placeholder
             .as_ref()
@@ -177,6 +206,8 @@ impl PreparedScene {
             edit,
             edit_item,
             labels,
+            cells,
+            header,
             placeholder,
         }
     }
@@ -469,11 +500,17 @@ impl Painter {
             }
 
             // A chrome-less layer (the desktop layer) draws its items from the
-            // top; a space leaves room for the title bar.
+            // top; a space leaves room for the title bar. Details leaves the
+            // fixed header row above the items (W18).
             let content_top = if scene.chrome { title_height } else { 0.0 };
-            if !scene.folded && height > content_top {
+            let header_height = scene
+                .details
+                .as_ref()
+                .map_or(0.0, |details| details.header_height as f32);
+            let items_top = content_top + header_height;
+            if !scene.folded && height > items_top {
                 target.PushAxisAlignedClip(
-                    &rect_f(0.0, content_top, width, height),
+                    &rect_f(0.0, items_top, width, height),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
@@ -483,7 +520,7 @@ impl Painter {
                         brush,
                         text,
                         &ctx.graphics.placeholder_format,
-                        inset(rect_f(0.0, content_top, width, height), PLACEHOLDER_INSET),
+                        inset(rect_f(0.0, items_top, width, height), PLACEHOLDER_INSET),
                         scene.item_text.fade(PLACEHOLDER_ALPHA),
                         scene
                             .text_shadow
@@ -500,6 +537,9 @@ impl Painter {
                     );
                 }
                 target.PopAxisAlignedClip();
+                if scene.details.is_some() {
+                    self.draw_details_header(ctx, prepared, width, content_top);
+                }
                 if scene.chrome
                     && let Some(thumb) = scene.scroll_thumb
                 {
@@ -630,10 +670,77 @@ impl Painter {
         }
     }
 
+    /// Draws the Details header row at `top`: each column's label, Explorer's
+    /// sort arrow on the sorted column, and a rule along its bottom (W18).
+    unsafe fn draw_details_header(
+        &self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        width: f32,
+        top: f32,
+    ) {
+        let Some(details) = prepared.scene.details.as_ref() else {
+            return;
+        };
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        let height = details.header_height as f32;
+        let pad = details.cell_pad as f32;
+        let bottom = top + height;
+        // SAFETY: caller is inside BeginDraw/EndDraw.
+        unsafe {
+            brush.SetColor(&color_f(scene.item_text.fade(80)));
+            target.DrawLine(
+                Vector2::new(0.0, bottom - 0.5),
+                Vector2::new(width, bottom - 0.5),
+                brush,
+                1.0,
+                None,
+            );
+            for (index, (column, label)) in details.columns.iter().zip(&prepared.header).enumerate()
+            {
+                let mut right = column.rect.right() as f32 - pad;
+                if let Some((_, up)) = details.sorted.filter(|(sorted, _)| *sorted == index)
+                    && let Some(format) = &graphics.glyph_format
+                {
+                    let glyph_width = height * 0.6;
+                    brush.SetColor(&color_f(scene.item_text.fade(200)));
+                    target.DrawText(
+                        if up { SORT_UP_GLYPH } else { SORT_DOWN_GLYPH },
+                        format,
+                        &rect_f(right - glyph_width, top, right, bottom),
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                    right -= glyph_width;
+                }
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &graphics.details_format,
+                    rect_f(column.rect.x as f32 + pad, top, right, bottom),
+                    scene.item_text.fade(190),
+                    scene.text_shadow,
+                );
+            }
+        }
+    }
+
     unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
         let scene = &prepared.scene;
         let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
-        for (item, label) in scene.items.iter().zip(&prepared.labels) {
+        for ((item, label), cells) in scene
+            .items
+            .iter()
+            .zip(&prepared.labels)
+            .zip(&prepared.cells)
+        {
             if Some(item.id) == editing {
                 continue;
             }
@@ -642,18 +749,19 @@ impl Painter {
                 .as_ref()
                 .and_then(|icon| self.bitmap_for(ctx.target, icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe { draw_item(ctx, scene, item, label, bitmap.as_ref(), None) };
+            unsafe { draw_item(ctx, scene, item, label, cells, bitmap.as_ref(), None) };
         }
         // The rename box grows over the items below it, as Explorer's does, so
         // draw the item being renamed last.
         let Some((id, buffer)) = &prepared.edit_item else {
             return;
         };
-        let Some((item, label)) = scene
+        let Some(((item, label), cells)) = scene
             .items
             .iter()
             .zip(&prepared.labels)
-            .find(|(item, _)| item.id == *id)
+            .zip(&prepared.cells)
+            .find(|((item, _), _)| item.id == *id)
         else {
             return;
         };
@@ -668,6 +776,7 @@ impl Painter {
                 scene,
                 item,
                 label,
+                cells,
                 bitmap.as_ref(),
                 Some(buffer.as_slice()),
             )
@@ -817,6 +926,11 @@ pub(crate) fn render_items(
             item.checked = false;
             item.cut = false;
             let label: Vec<u16> = item.label.encode_utf16().collect();
+            let cells: Vec<Vec<u16>> = item
+                .cells
+                .iter()
+                .map(|cell| cell.encode_utf16().collect())
+                .collect();
             let icon = item.icon.as_ref().and_then(|icon| {
                 target
                     .CreateBitmap(
@@ -830,7 +944,7 @@ pub(crate) fn render_items(
                     )
                     .ok()
             });
-            draw_item(ctx, &scene, &item, &label, icon.as_ref(), None);
+            draw_item(ctx, &scene, &item, &label, &cells, icon.as_ref(), None);
         }
         target.EndDraw(None, None).ok()?;
         drop(target);

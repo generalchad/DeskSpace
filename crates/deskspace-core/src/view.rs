@@ -37,8 +37,8 @@ impl SpaceView {
 }
 
 /// Explorer's views (D15). `Icons` follows the look's icon size; the fixed icon
-/// views set it for the space. `SmallIcons` and `List` place items by their
-/// order, in inline cells, rather than on the icon grid.
+/// views set it for the space. `SmallIcons`, `List`, and `Details` place items
+/// by their order, in inline cells, rather than on the icon grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewMode {
@@ -56,6 +56,8 @@ pub enum ViewMode {
     /// 16 px at 96 DPI, in columns that fill top to bottom and scroll
     /// sideways (W17).
     List,
+    /// One row per item at full width, under a header row (W18).
+    Details,
 }
 
 impl ViewMode {
@@ -67,7 +69,7 @@ impl ViewMode {
             Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
             Self::LargeIcons => Some(LARGE_ICON_PX),
             Self::MediumIcons => Some(MEDIUM_ICON_PX),
-            Self::SmallIcons | Self::List => None,
+            Self::SmallIcons | Self::List | Self::Details => None,
         }
     }
 
@@ -78,14 +80,14 @@ impl ViewMode {
             Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
             Self::LargeIcons => Some(LARGE_ICON_PX),
             Self::MediumIcons => Some(MEDIUM_ICON_PX),
-            Self::SmallIcons | Self::List => Some(SMALL_ICON_PX),
+            Self::SmallIcons | Self::List | Self::Details => Some(SMALL_ICON_PX),
         }
     }
 
     /// Whether the view places items by their order instead of on the icon
     /// grid, so it never writes `Item.position` (D15, W16).
     pub fn places_by_order(self) -> bool {
-        matches!(self, Self::SmallIcons | Self::List)
+        matches!(self, Self::SmallIcons | Self::List | Self::Details)
     }
 }
 
@@ -119,8 +121,10 @@ mod tests {
         assert_eq!(ViewMode::MediumIcons.icon_px(), Some(48));
         assert_eq!(ViewMode::SmallIcons.icon_px(), None);
         assert_eq!(ViewMode::List.icon_px(), None);
+        assert_eq!(ViewMode::Details.icon_px(), None);
         assert_eq!(ViewMode::SmallIcons.item_icon_px(), Some(16));
         assert_eq!(ViewMode::List.item_icon_px(), Some(16));
+        assert_eq!(ViewMode::Details.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Icons.item_icon_px(), None);
     }
 
@@ -128,6 +132,7 @@ mod tests {
     fn only_the_inline_views_place_items_by_order() {
         assert!(ViewMode::SmallIcons.places_by_order());
         assert!(ViewMode::List.places_by_order());
+        assert!(ViewMode::Details.places_by_order());
         for mode in [
             ViewMode::Icons,
             ViewMode::ExtraLargeIcons,

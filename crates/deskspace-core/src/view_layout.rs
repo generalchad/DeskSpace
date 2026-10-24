@@ -30,6 +30,10 @@ const LIST_COLUMN_WIDTH: i32 = 200;
 const LIST_CELL_HEIGHT: i32 = 22;
 /// The space between inline cells, horizontally and vertically.
 const INLINE_GAP: i32 = 2;
+/// Explorer's Details row and header heights at 96 DPI. Provisional until
+/// W18's on-screen check measures Explorer's own.
+const DETAILS_ROW_HEIGHT: i32 = 22;
+pub const DETAILS_HEADER_HEIGHT: i32 = 25;
 
 /// Which way a view's content flows when it does not fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +62,8 @@ impl Flow {
             | ViewMode::ExtraLargeIcons
             | ViewMode::LargeIcons
             | ViewMode::MediumIcons
-            | ViewMode::SmallIcons => Self::Rows,
+            | ViewMode::SmallIcons
+            | ViewMode::Details => Self::Rows,
         }
     }
 
@@ -73,12 +78,16 @@ impl Flow {
 /// The cell geometry a view places items in, in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewMetrics {
-    /// The cell each item occupies.
+    /// The cell each item occupies. Details fills the content width, so only
+    /// its height is a cell side there.
     pub cell: Size,
     /// The space between cells, on both axes.
     pub gap: i32,
     /// The edge padding inside the content area.
     pub padding: i32,
+    /// The fixed header row above the items; 0 for every view but Details
+    /// (W18).
+    pub header: i32,
 }
 
 impl ViewMetrics {
@@ -86,19 +95,31 @@ impl ViewMetrics {
     /// An icon view hands off to `grid` as it is; an order-placed view uses its
     /// own inline cell, scaled for the display rather than the look.
     pub fn for_view(mode: ViewMode, grid: GridSpec, display_scale: f32) -> Self {
+        let scale = display_scale.max(0.1);
+        let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+        if mode == ViewMode::Details {
+            // Rows touch, as Explorer's Details rows do; the width is the
+            // content width, worked out by the layout.
+            return Self {
+                cell: Size::new(1, scaled(DETAILS_ROW_HEIGHT)),
+                gap: 0,
+                padding: grid.padding,
+                header: scaled(DETAILS_HEADER_HEIGHT),
+            };
+        }
         if let Some((width, height)) = inline_cell(mode) {
-            let scale = display_scale.max(0.1);
-            let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
             Self {
                 cell: Size::new(scaled(width), scaled(height)),
                 gap: scaled(INLINE_GAP),
                 padding: grid.padding,
+                header: 0,
             }
         } else {
             Self {
                 cell: grid.cell(),
                 gap: grid.gap,
                 padding: grid.padding,
+                header: 0,
             }
         }
     }
@@ -110,16 +131,19 @@ impl ViewMetrics {
             cell: grid.cell(),
             gap: grid.gap,
             padding: grid.padding,
+            header: 0,
         }
     }
 }
 
 /// The order-placed views' inline cells at 96 DPI (`width`, `height`), or
-/// `None` for an icon view, which uses the look's grid.
+/// `None` for an icon view, which uses the look's grid. Details ignores the
+/// width: each row fills the content, and only its height is a cell side.
 fn inline_cell(mode: ViewMode) -> Option<(i32, i32)> {
     match mode {
         ViewMode::SmallIcons => Some((SMALL_ICON_CELL_WIDTH, SMALL_ICON_CELL_HEIGHT)),
         ViewMode::List => Some((LIST_COLUMN_WIDTH, LIST_CELL_HEIGHT)),
+        ViewMode::Details => Some((1, DETAILS_ROW_HEIGHT)),
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -161,10 +185,24 @@ impl ViewLayout {
     }
 
     /// The cell side across the flow: a row's width, or a column's height.
+    /// Details fills the content width, so its row is as wide as the content
+    /// inside the padding.
     fn cross_cell(&self) -> i32 {
+        if self.mode == ViewMode::Details {
+            return (self.cross_len() - self.metrics.padding * 2).max(1);
+        }
         match self.flow() {
             Flow::Rows => self.metrics.cell.width,
             Flow::Columns => self.metrics.cell.height,
+        }
+    }
+
+    /// The fixed header row's height above the items (Details only, W18).
+    pub fn header_height(&self) -> i32 {
+        if self.mode == ViewMode::Details {
+            self.metrics.header
+        } else {
+            0
         }
     }
 
@@ -220,8 +258,12 @@ impl ViewLayout {
         };
         Rect::new(
             self.metrics.padding + x,
-            self.metrics.padding + y,
-            self.metrics.cell.width,
+            self.header_height() + self.metrics.padding + y,
+            if self.mode == ViewMode::Details {
+                self.cross_cell()
+            } else {
+                self.metrics.cell.width
+            },
             self.metrics.cell.height,
         )
     }
@@ -261,7 +303,10 @@ impl ViewLayout {
             return 0;
         }
         let lines = self.line_count() as i32;
-        self.metrics.padding * 2 + lines * self.line_cell() + (lines - 1) * self.metrics.gap
+        self.header_height()
+            + self.metrics.padding * 2
+            + lines * self.line_cell()
+            + (lines - 1) * self.metrics.gap
     }
 
     /// How far the content can scroll in a content area `content` long.
@@ -289,7 +334,7 @@ impl ViewLayout {
             Flow::Rows => (point.y, point.x),
             Flow::Columns => (point.x, point.y),
         };
-        let line = line - self.metrics.padding;
+        let line = line - self.header_height() - self.metrics.padding;
         let cross = cross - self.metrics.padding;
         if line < 0 || cross < 0 {
             return None;
@@ -316,7 +361,8 @@ impl ViewLayout {
         let cross_count = self.cross_count();
         let cross = ((cross - self.metrics.padding).max(0) / self.cross_step())
             .clamp(0, cross_count.saturating_sub(1) as i32);
-        let line = ((line - self.metrics.padding).max(0) / self.line_step()).max(0);
+        let line =
+            ((line - self.header_height() - self.metrics.padding).max(0) / self.line_step()).max(0);
         Some((line as usize * cross_count + cross as usize).min(self.count - 1))
     }
 
@@ -329,9 +375,11 @@ impl ViewLayout {
             return 0..0;
         }
         let lines = self.line_count();
-        let first_line = ((scroll - self.metrics.padding).max(0) / self.line_step()) as usize;
-        let last_line =
-            ((scroll + viewport - self.metrics.padding).max(0) / self.line_step()) as usize;
+        let header = self.header_height();
+        let first_line =
+            ((scroll - header - self.metrics.padding).max(0) / self.line_step()) as usize;
+        let last_line = ((scroll + viewport - header - self.metrics.padding).max(0)
+            / self.line_step()) as usize;
         if first_line >= lines {
             return self.count..self.count;
         }
@@ -369,6 +417,7 @@ mod tests {
             cell: Size::new(100, 50),
             gap: 10,
             padding: 12,
+            header: 0,
         }
     }
 
@@ -515,6 +564,59 @@ mod tests {
             ViewMetrics::for_grid(grid)
         );
         assert_eq!(crate::view::SMALL_ICON_PX, 16);
+    }
+
+    #[test]
+    fn details_rows_run_full_width_under_a_fixed_header() {
+        let grid = GridSpec::default();
+        let padding = grid.padding;
+        let metrics = ViewMetrics::for_view(ViewMode::Details, grid, 1.0);
+        let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 5, metrics);
+        assert_eq!(layout.header_height(), DETAILS_HEADER_HEIGHT);
+        assert_eq!(layout.cross_count(), 1);
+        assert_eq!(layout.axis(), ScrollAxis::Vertical);
+        assert_eq!(layout.scroll_step(), DETAILS_ROW_HEIGHT);
+        let row = layout.rect(0);
+        assert_eq!(
+            row,
+            Rect::new(
+                padding,
+                DETAILS_HEADER_HEIGHT + padding,
+                360 - padding * 2,
+                DETAILS_ROW_HEIGHT
+            )
+        );
+        assert_eq!(layout.rect(1).y, row.y + DETAILS_ROW_HEIGHT);
+        assert_eq!(
+            layout.extent(),
+            DETAILS_HEADER_HEIGHT + padding * 2 + 5 * DETAILS_ROW_HEIGHT
+        );
+        // The header row itself holds no item.
+        assert_eq!(layout.index_at(Point::new(row.center().x, 5)), None);
+        assert_eq!(layout.index_at(layout.rect(2).center()), Some(2));
+    }
+
+    #[test]
+    fn details_scale_their_rows_and_header_with_the_display() {
+        let base = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0);
+        let large = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.5);
+        assert_eq!((base.header, base.cell.height), (25, 22));
+        assert_eq!((large.header, large.cell.height), (38, 33));
+    }
+
+    #[test]
+    fn details_scroll_below_the_header_and_still_show_the_first_rows() {
+        let metrics = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0);
+        let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 20, metrics);
+        assert_eq!(
+            layout.visible(0, Size::new(360, 100)),
+            0..3,
+            "rows from under the header"
+        );
+        let scrolled = layout.visible(100, Size::new(360, 100));
+        assert!(scrolled.start > 0);
+        assert_eq!(scrolled.start, 2);
+        assert!(scrolled.end > scrolled.start);
     }
 
     #[test]

@@ -17,7 +17,8 @@ use deskspace_platform::{
 };
 
 use crate::scene::{
-    SurfaceLook, ViewState, desktop_layer_scene, layer_style, space_scene, space_style,
+    SurfaceLook, ViewState, desktop_layer_scene, details_cells, layer_style,
+    space_scene_with_details, space_style,
 };
 use crate::settings::view_for_digit;
 use crate::storage::path_key;
@@ -666,7 +667,10 @@ impl App {
             metrics: self.metrics_for(id),
             scale: space_dpi(id.0),
         };
-        let mut scene = space_scene(space, look, view, &mut self.icons);
+        let mut details = |item: &Item| details_cells(item);
+        let row_cells = (space.view().mode == ViewMode::Details)
+            .then_some(&mut details as &mut dyn FnMut(&Item) -> Vec<String>);
+        let mut scene = space_scene_with_details(space, look, view, row_cells, &mut self.icons);
         if let Some(session) = self
             .edit
             .session()

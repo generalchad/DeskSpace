@@ -3,11 +3,14 @@ use deskspace_core::theme::LABEL_SIZE_RANGE;
 use deskspace_core::view_layout::{ScrollAxis, ViewLayout, ViewMetrics};
 use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
-    Space, Theme, ViewMode,
+    SortKey, SortRule, Space, Theme, ViewMode,
 };
 use deskspace_platform::{
-    DropInto, IconCache, ItemLayout, ItemMetrics, ItemState, ItemVisual, SpaceScene, SpaceStyle,
+    DetailsColumnVisual, DetailsView, DropInto, IconCache, ItemLayout, ItemMetrics, ItemState,
+    ItemVisual, SpaceScene, SpaceStyle, format_date, format_kb, type_name,
 };
+
+use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -15,6 +18,11 @@ const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
 /// A lens's title icon is the shell's 16 px folder icon at 96 DPI, scaled for
 /// the display like the title bar.
 const TITLE_ICON_SIZE: f32 = 16.0;
+/// The gap between a Details column's text and its divider, at 96 DPI.
+const DETAILS_CELL_PAD: i32 = 6;
+
+/// The app's Details row text: one item in, its column texts out.
+pub type DetailsCellText<'a> = &'a mut dyn FnMut(&Item) -> Vec<String>;
 /// Below this tint alpha the backdrop shows through so much that labels need
 /// a shadow to stay readable on busy wallpapers.
 const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
@@ -103,6 +111,19 @@ pub fn space_scene(
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
+    space_scene_with_details(space, look, view, None, icons)
+}
+
+/// `space_scene` with Details row texts. `details_cells` supplies one row's
+/// column texts, made by the app (the shell and the clock are not available
+/// here) and only for the rows the scene carries.
+pub fn space_scene_with_details(
+    space: &Space,
+    look: SurfaceLook,
+    view: ViewState,
+    mut details_cells: Option<DetailsCellText<'_>>,
+    icons: &mut IconCache,
+) -> SpaceScene {
     let SurfaceLook {
         theme,
         palette,
@@ -130,6 +151,10 @@ pub fn space_scene(
             if !rect.intersects(content_area) {
                 continue;
             }
+            let cells = match details_cells.as_deref_mut() {
+                Some(cells) if space.view().mode == ViewMode::Details => cells(item),
+                _ => Vec::new(),
+            };
             items.push(ItemVisual {
                 id: item.id.0,
                 rect,
@@ -154,6 +179,7 @@ pub fn space_scene(
                 },
                 cut: view.cut.contains(&item.id),
                 label_color: compressed_label(item, view.show_compressed_color),
+                cells,
             });
         }
         items
@@ -202,6 +228,7 @@ pub fn space_scene(
             .filter(|_| view.folder_unavailable)
             .map(|view| format!("Folder not available\n{}", view.path.display())),
         focused_item: view.focused.map(|id| id.0),
+        details: details_view(space, &view_layout, content.width, layout.padding, scale),
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -283,6 +310,7 @@ pub fn desktop_layer_scene(
             checked: view.checked.contains(&item.id),
             cut: view.cut.contains(&item.id),
             label_color: compressed_label(item, view.show_compressed_color),
+            cells: Vec::new(),
         })
         .collect();
 
@@ -319,6 +347,7 @@ pub fn desktop_layer_scene(
         drop_into: DropInto::Space,
         placeholder: None,
         focused_item: view.focused.map(|id| id.0),
+        details: None,
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -367,6 +396,7 @@ pub fn desktop_layer_drag_scene(
                 checked: false,
                 cut: false,
                 label_color: None,
+                cells: Vec::new(),
             })
         })
         .collect();
@@ -409,6 +439,7 @@ pub fn drag_scene(
                 checked: false,
                 cut: false,
                 label_color: None,
+                cells: Vec::new(),
             })
         })
         .collect();
@@ -420,11 +451,126 @@ pub fn drag_scene(
 pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
     match mode {
         ViewMode::SmallIcons | ViewMode::List => ItemLayout::Inline,
+        ViewMode::Details => ItemLayout::Details,
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
         | ViewMode::MediumIcons => ItemLayout::Grid,
     }
+}
+
+/// The Details header for `space`: its columns and which one is sorted, or
+/// `None` in any other view. Column rects are relative to the content area.
+pub(crate) fn details_view(
+    space: &Space,
+    layout: &ViewLayout,
+    content_width: i32,
+    padding: i32,
+    scale: f32,
+) -> Option<DetailsView> {
+    if space.view().mode != ViewMode::Details {
+        return None;
+    }
+    Some(DetailsView {
+        header_height: layout.header_height(),
+        cell_pad: (DETAILS_CELL_PAD as f32 * scale).round().max(1.0) as i32,
+        columns: details_columns(content_width, padding, layout.header_height(), scale),
+        sorted: details_sorted(space.view().sort),
+    })
+}
+
+/// Explorer's Details columns laid out across `content_width`: Name takes the
+/// width left over, down to `NAME_MIN_WIDTH`, and the rest keep their default
+/// widths. Rects are relative to the content area.
+pub(crate) fn details_columns(
+    content_width: i32,
+    padding: i32,
+    header_height: i32,
+    scale: f32,
+) -> Vec<DetailsColumnVisual> {
+    let scale = scale.max(0.1);
+    let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+    let fixed: i32 = DETAILS_COLUMNS
+        .iter()
+        .skip(1)
+        .map(|column| scaled(column.width))
+        .sum();
+    let name_width = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
+    let mut x = padding;
+    DETAILS_COLUMNS
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            let width = if index == 0 {
+                name_width
+            } else {
+                scaled(column.width)
+            };
+            let visual = DetailsColumnVisual {
+                rect: Rect::new(x, 0, width, header_height),
+                label: column.label.to_owned(),
+                align: column.align,
+            };
+            x += width;
+            visual
+        })
+        .collect()
+}
+
+/// The column whose header shows Explorer's arrow, and whether it points up.
+fn details_sorted(rule: SortRule) -> Option<(usize, bool)> {
+    DETAILS_COLUMNS
+        .iter()
+        .position(|column| column.key == rule.key)
+        .map(|index| (index, !rule.descending))
+}
+
+/// The Details column whose header contains `point`, relative to the content
+/// area. `None` below the header row.
+pub(crate) fn details_header_column_at(view: &DetailsView, point: Point) -> Option<usize> {
+    view.columns
+        .iter()
+        .position(|column| column.rect.contains(point))
+}
+
+/// The sort rule after a click on Details column `index`: clicking the sorted
+/// column reverses it, and any other column becomes the key in ascending
+/// order, as Explorer does.
+pub(crate) fn details_rule_after(rule: SortRule, index: usize) -> SortRule {
+    let key = DETAILS_COLUMNS[index].key;
+    if rule.key == key {
+        SortRule {
+            descending: !rule.descending,
+            ..rule
+        }
+    } else {
+        SortRule {
+            key,
+            descending: false,
+            ..rule
+        }
+    }
+}
+
+/// The text of one Details row for the columns after Name, in
+/// `DETAILS_COLUMNS` order. It reads the item's facts only, never the disk.
+pub(crate) fn details_cells(item: &Item) -> Vec<String> {
+    DETAILS_COLUMNS
+        .iter()
+        .skip(1)
+        .map(|column| match column.key {
+            SortKey::Modified => item.modified.map(format_date).unwrap_or_default(),
+            SortKey::Kind => {
+                type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default()
+            }
+            SortKey::Size => item
+                .size
+                .filter(|_| item.kind != ItemKind::Folder)
+                .map(format_kb)
+                .unwrap_or_default(),
+            SortKey::Name => String::new(),
+        })
+        .collect()
 }
 
 /// The item's display label. Explorer never shows a shortcut's extension, even
@@ -760,6 +906,149 @@ mod tests {
             );
         }
         desktop.space(id).unwrap().clone()
+    }
+
+    /// A space in Details view holding one item, sized like a lens.
+    fn details_space() -> Space {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Details", Rect::new(0, 0, 360, 200));
+        crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(ViewMode::Details),
+            },
+        );
+        desktop.space(id).unwrap().clone()
+    }
+
+    #[test]
+    fn details_draws_its_header_rows_and_column_text() {
+        let subject = details_space();
+        let theme = Theme::default();
+        let mut cells = |_: &Item| vec!["10/24/2026".into(), "Text Document".into(), "1 KB".into()];
+        let scene = space_scene_with_details(
+            &subject,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            Some(&mut cells),
+            &mut IconCache::new(),
+        );
+        let details = scene
+            .details
+            .as_ref()
+            .expect("a Details scene has a header");
+        assert_eq!(
+            details
+                .columns
+                .iter()
+                .map(|column| column.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Name", "Date modified", "Type", "Size"]
+        );
+        assert_eq!(
+            details.columns[3].align,
+            deskspace_platform::ColumnAlign::Right
+        );
+        assert!(details.columns[0].rect.right() <= details.columns[1].rect.x);
+        assert_eq!(
+            scene.items[0].cells,
+            ["10/24/2026", "Text Document", "1 KB"]
+        );
+        // The first row sits under the header.
+        assert_eq!(
+            scene.items[0].rect.y,
+            subject.title_height + details.header_height + GridSpec::default().padding
+        );
+        // No other view carries a header.
+        let plain = space_scene(
+            &space(),
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(plain.details.is_none());
+    }
+
+    #[test]
+    fn a_details_header_click_maps_to_its_column_and_reverses() {
+        let space = details_space();
+        let layout = ViewLayout::for_space(
+            &space,
+            ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0),
+        );
+        let view = details_view(
+            &space,
+            &layout,
+            space.content_rect().width,
+            GridSpec::default().padding,
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            details_header_column_at(&view, view.columns[0].rect.center()),
+            Some(0)
+        );
+        assert_eq!(
+            details_header_column_at(&view, view.columns[1].rect.center()),
+            Some(1)
+        );
+        assert_eq!(
+            details_header_column_at(&view, Point::new(10, view.header_height + 5)),
+            None,
+            "below the header no column is hit"
+        );
+
+        let rule = SortRule::default();
+        let reversed = details_rule_after(rule, 0);
+        assert_eq!(
+            reversed,
+            SortRule {
+                key: SortKey::Name,
+                descending: true,
+                folders_first: false,
+            }
+        );
+        assert_eq!(details_rule_after(reversed, 0), rule);
+        let by_size = details_rule_after(reversed, 3);
+        assert_eq!(by_size.key, SortKey::Size);
+        assert!(!by_size.descending);
+    }
+
+    #[test]
+    fn the_sorted_details_column_shows_its_arrow() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Details", Rect::new(0, 0, 360, 200));
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView {
+                    mode: ViewMode::Details,
+                    sort: SortRule {
+                        key: SortKey::Size,
+                        descending: true,
+                        folders_first: false,
+                    },
+                    ..deskspace_core::SpaceView::default()
+                },
+            },
+        );
+        let space = desktop.space(id).unwrap();
+        let layout = ViewLayout::for_space(
+            space,
+            ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0),
+        );
+        let view = details_view(
+            space,
+            &layout,
+            space.content_rect().width,
+            GridSpec::default().padding,
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(view.sorted, Some((3, false)), "Size, pointing down");
     }
 
     #[test]

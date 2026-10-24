@@ -148,7 +148,7 @@ impl App {
     /// Applies a Sort by choice (D15). A normal space sorts once and keeps the
     /// rule; a lens keeps the rule and lists its folder again, so the new
     /// order applies now rather than at the next change.
-    fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, rule: SortRule, at: Point) {
+    pub(super) fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, rule: SortRule, at: Point) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };

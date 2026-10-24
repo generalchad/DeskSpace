@@ -95,6 +95,9 @@ pub struct SpaceScene {
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,
+    /// The Details header and its columns, set only in Details (W18). The
+    /// header stays put while the rows scroll beneath it.
+    pub details: Option<DetailsView>,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,
@@ -136,6 +139,42 @@ pub enum ItemLayout {
     Grid,
     /// One row of a list: the icon at the left and one label line beside it.
     Inline,
+    /// One Details row: the icon at the left, the name beside it, then the
+    /// other column texts (W18).
+    Details,
+}
+
+/// The Details header and its columns (W18). Rects are relative to the content
+/// area's top-left corner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsView {
+    /// The header row's height; the rows scroll beneath it.
+    pub header_height: i32,
+    /// The gap between a column's text and its edges.
+    pub cell_pad: i32,
+    /// One per column, in display order. Name is first, takes the width left
+    /// over, and always shows.
+    pub columns: Vec<DetailsColumnVisual>,
+    /// The column whose header shows Explorer's sort arrow, and whether it
+    /// points up (ascending).
+    pub sorted: Option<(usize, bool)>,
+}
+
+/// One Details column's header rect, label, and value alignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsColumnVisual {
+    /// The column's x range, relative to the content area, and the header row.
+    pub rect: Rect,
+    pub label: String,
+    pub align: ColumnAlign,
+}
+
+/// How a Details column's values sit in their cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColumnAlign {
+    #[default]
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -168,4 +207,7 @@ pub struct ItemVisual {
     /// An override for the label color (Explorer's compressed/encrypted
     /// colors); `None` uses the scene's item text color.
     pub label_color: Option<Color>,
+    /// The text of each Details column after Name, in column order; empty
+    /// outside Details (W18). Made by the app before the scene is built.
+    pub cells: Vec<String>,
 }

@@ -172,9 +172,12 @@ rect, the content extent, the scroll axis, and the visible range from the
 mode, the content size, the item count, and the cell metrics. The icon views
 hand it the grid; Small icons (W16) and List (W17) use an inline cell (a 16 px
 icon and one label line beside it). Small icons wraps the cells into rows and
-scrolls down; List fills a column top to bottom and scrolls sideways. Neither
-writes `Item.position`, so a hand arrangement returns when the space goes back
-to an icon view. Hit tests, the marquee, keyboard navigation, the drag drop
+scrolls down; List fills a column top to bottom and scrolls sideways. Details
+(W18) gives every item a full-width row under a fixed header whose columns
+sort by the space's `SortRule`; the app formats its column text when it builds
+the scene, so painting never asks the shell or the clock. None of the
+order-placed views writes `Item.position`, so a hand arrangement returns when
+the space goes back to an icon view. Hit tests, the marquee, keyboard navigation, the drag drop
 index, and the scroll indicator all read the same layout. `FolderEntry` is what
 the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts

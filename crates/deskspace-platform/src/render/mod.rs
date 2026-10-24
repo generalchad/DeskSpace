@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
-pub use scene::{DropInto, ItemLayout, ItemState, ItemVisual, SpaceScene, SpaceStyle};
+pub use scene::{
+    ColumnAlign, DetailsColumnVisual, DetailsView, DropInto, ItemLayout, ItemState, ItemVisual,
+    SpaceScene, SpaceStyle,
+};
 pub use transition::{Geometry, Mask, Play, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;
 
@@ -77,7 +80,7 @@ pub fn item_check_box(cell: Rect, metrics: ItemMetrics, layout: ItemLayout) -> R
                 cell.y + metrics.icon_top + metrics.check_box_margin,
             )
         }
-        ItemLayout::Inline => (
+        ItemLayout::Inline | ItemLayout::Details => (
             cell.x + metrics.inline_inset + metrics.check_box_margin,
             cell.y + (cell.height - metrics.check_box_size) / 2,
         ),
