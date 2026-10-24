@@ -3706,3 +3706,24 @@ until I5-I6 all land, so no partial build hides the desktop.
     wheel and the keys scrolling sideways, and the indicator along the
     bottom.
 
+- [x] **W9. A lens's folder icon in its title bar (the "new visual"
+  recipe).** **[needs human]**
+  - `render/scene.rs` `SpaceScene`: `title_icon: Option<Icon>`, `None` by
+    default.
+  - `scene.rs` `space_scene`: a lens gets its folder's shell icon at the
+    small size (16 px at 96 DPI, scaled), fetched the way item icons are.
+    An unavailable folder gets the generic folder icon. Ask the shell
+    for it with `SHGFI_USEFILEATTRIBUTES` and `FILE_ATTRIBUTE_DIRECTORY`,
+    so a missing folder is never touched. A normal space gets `None`.
+  - `render/d2d/`: draw the icon left of the title, centered in the title
+    bar, and move the title text right by the icon and a gap. An inline
+    title rename moves the same way. If the app turns a click in the
+    title into a caret position, shift that too.
+  - Test: copy `the_settings_highlight_reaches_the_scene`. A lens's scene
+    has a title icon, and a normal space's has none.
+  - **[needs human]** check: lenses on Downloads, on Documents, and on a
+    plain folder show each folder's own icon. Rename the folder away, and
+    the generic folder icon shows. F2 on the title starts the rename box
+    after the icon. The same folded, at 100 % and 150 %, on every
+    backdrop. A normal space's title bar is unchanged.
+

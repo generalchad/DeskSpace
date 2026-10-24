@@ -555,7 +555,7 @@ impl Painter {
     }
 
     unsafe fn draw_title(
-        &self,
+        &mut self,
         ctx: DrawContext,
         prepared: &PreparedScene,
         width: f32,
@@ -567,19 +567,51 @@ impl Painter {
             brush,
         } = ctx;
         let scene = &prepared.scene;
+        let icon = scene
+            .title_icon
+            .as_ref()
+            .and_then(|icon| self.bitmap_for(target, icon));
+        let icon_width = scene
+            .title_icon
+            .as_ref()
+            .map_or(0.0, |icon| icon.width() as f32);
+        // The gap between icon and text follows the icon, so it scales with the
+        // display like the title bar.
+        let title_left = TITLE_INSET
+            + if icon_width > 0.0 {
+                icon_width * 1.25
+            } else {
+                0.0
+            };
         let lock_width = if scene.locked { title_height } else { 0.0 };
-        let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
+        let text_right = (width - TITLE_INSET - lock_width).max(title_left);
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
+            if let (Some(bitmap), Some(icon)) = (icon, &scene.title_icon) {
+                let icon_height = icon.height() as f32;
+                let top = ((title_height - icon_height) / 2.0).round();
+                target.DrawBitmap(
+                    &bitmap,
+                    Some(&rect_f(
+                        TITLE_INSET,
+                        top,
+                        TITLE_INSET + icon_width,
+                        top + icon_height,
+                    )),
+                    1.0,
+                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
+            }
             if scene.editing.is_some() {
-                draw_edit_title(ctx, prepared, TITLE_INSET, text_right, title_height);
+                draw_edit_title(ctx, prepared, title_left, text_right, title_height);
             } else {
                 draw_text(
                     target,
                     brush,
                     &prepared.title,
                     &graphics.title_format,
-                    rect_f(TITLE_INSET, 0.0, text_right, title_height),
+                    rect_f(title_left, 0.0, text_right, title_height),
                     scene.title_text,
                     scene.text_shadow,
                 );
@@ -682,9 +714,13 @@ impl Painter {
         }
         self.icons.retain(|id, _| {
             scene
-                .items
-                .iter()
-                .any(|item| item.icon.as_ref().is_some_and(|icon| icon.id() == *id))
+                .title_icon
+                .as_ref()
+                .is_some_and(|icon| icon.id() == *id)
+                || scene
+                    .items
+                    .iter()
+                    .any(|item| item.icon.as_ref().is_some_and(|icon| icon.id() == *id))
         });
     }
 

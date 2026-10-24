@@ -744,27 +744,6 @@ lens-only.
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
 
-- [ ] **W9. A lens's folder icon in its title bar (the "new visual"
-  recipe).** **[needs human]**
-  - `render/scene.rs` `SpaceScene`: `title_icon: Option<Icon>`, `None` by
-    default.
-  - `scene.rs` `space_scene`: a lens gets its folder's shell icon at the
-    small size (16 px at 96 DPI, scaled), fetched the way item icons are.
-    An unavailable folder gets the generic folder icon. Ask the shell
-    for it with `SHGFI_USEFILEATTRIBUTES` and `FILE_ATTRIBUTE_DIRECTORY`,
-    so a missing folder is never touched. A normal space gets `None`.
-  - `render/d2d/`: draw the icon left of the title, centered in the title
-    bar, and move the title text right by the icon and a gap. An inline
-    title rename moves the same way. If the app turns a click in the
-    title into a caret position, shift that too.
-  - Test: copy `the_settings_highlight_reaches_the_scene`. A lens's scene
-    has a title icon, and a normal space's has none.
-  - **[needs human]** check: lenses on Downloads, on Documents, and on a
-    plain folder show each folder's own icon. Rename the folder away, and
-    the generic folder icon shows. F2 on the title starts the rename box
-    after the icon. The same folded, at 100 % and 150 %, on every
-    backdrop. A normal space's title bar is unchanged.
-
 - [ ] **W18. Details (core, app, platform).** **[needs human]**
   - `ViewMode::Details` (digit 6): one row per item at full width, under
     a header row that stays put while the rows scroll.
@@ -2177,6 +2156,7 @@ each id is in `archive/TASKS-done.md`.
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
 | T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | W8 (D15) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
+| W9 (D15) | Lenses on Downloads, Documents, and a plain folder show each folder's own icon left of the title; rename the folder away and the generic folder icon shows; F2's rename box starts after the icon; the same folded, at 100 % and 150 %, on every backdrop; a normal space's title bar is unchanged. |
 | W11 (D15) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
 | W12 (D15) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
 | W13 (D15) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |

@@ -190,6 +190,8 @@ folder, or inside it, is kept but never watched, and counts as unavailable
 (`ItemStore::allows_lens`).
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
+A lens's title bar shows its folder's own shell icon, or the generic folder
+icon while the folder is unavailable; a normal space's title bar shows none.
 Deleting a lens always asks and only unlists it: its folder and files stay,
 it is no longer watched, and `stored_paths` and `release_item` never touch its
 files.

@@ -12,6 +12,9 @@ use deskspace_platform::{
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
 const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
+/// A lens's title icon is the shell's 16 px folder icon at 96 DPI, scaled for
+/// the display like the title bar.
+const TITLE_ICON_SIZE: f32 = 16.0;
 /// Below this tint alpha the backdrop shows through so much that labels need
 /// a shadow to stay readable on busy wallpapers.
 const TEXT_SHADOW_BELOW_ALPHA: u8 = 64;
@@ -168,6 +171,8 @@ pub fn space_scene(
     SpaceScene {
         chrome: true,
         title: space.title().to_owned(),
+        title_icon: title_icon_request(space, view.folder_unavailable, scale)
+            .and_then(|(path, size, available)| icons.folder_icon(path, size, available)),
         title_height: space.title_height,
         tint,
         title_fill: palette.title_fill,
@@ -214,6 +219,23 @@ pub fn space_scene(
             theme.effective_corner_radius() as i32,
         ),
     }
+}
+
+/// What a lens's title bar asks the icon cache for: the folder's path, the
+/// small title size, and whether the folder is available. Pure, so the scene
+/// test needs no shell.
+fn title_icon_request(
+    space: &Space,
+    unavailable: bool,
+    scale: f32,
+) -> Option<(&std::path::Path, i32, bool)> {
+    space.folder_view().map(|folder| {
+        (
+            folder.path.as_path(),
+            (TITLE_ICON_SIZE * scale).round() as i32,
+            !unavailable,
+        )
+    })
 }
 
 /// Builds the draw list for the chrome-less desktop layer (ROADMAP D7). A
@@ -274,6 +296,7 @@ pub fn desktop_layer_scene(
     SpaceScene {
         chrome: false,
         title: String::new(),
+        title_icon: None,
         title_height: 0,
         tint: Color::TRANSPARENT,
         title_fill: Color::TRANSPARENT,
@@ -886,6 +909,34 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn only_a_lens_asks_for_a_title_icon() {
+        let mut desktop = Desktop::new();
+        let folder = "C:/Users/me/Downloads";
+        let lens =
+            crate::fixtures::create_lens(&mut desktop, "Lens", Rect::new(0, 0, 240, 120), folder);
+        let lens = desktop.space(lens).unwrap();
+        assert_eq!(
+            title_icon_request(lens, false, 1.0),
+            Some((std::path::Path::new(folder), 16, true))
+        );
+        assert_eq!(
+            title_icon_request(lens, true, 1.5),
+            Some((std::path::Path::new(folder), 24, false)),
+            "an unavailable folder gets the generic icon, scaled"
+        );
+        assert_eq!(title_icon_request(&space(), false, 1.0), None);
+
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space(),
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(scene.title_icon.is_none());
     }
 
     #[test]

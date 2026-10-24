@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{DeleteObject, HBITMAP};
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL};
 use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
     IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHFILEINFOW,
     SHGFI_ADDOVERLAYS, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_LINKOVERLAY, SHGFI_OVERLAYINDEX,
-    SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE, SHIL_JUMBO, SHIL_LARGE, SHIL_SMALL,
-    SIIGBF_ICONONLY,
+    SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE, SHIL_JUMBO,
+    SHIL_LARGE, SHIL_SMALL, SIIGBF_ICONONLY,
 };
 use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
 use windows::core::{Interface, PCWSTR};
@@ -21,8 +21,23 @@ use crate::render::Icon;
 use crate::render::d2d::{decode_bitmap, decode_icon};
 use crate::win32::shell_items::shell_path;
 
-/// One icon: a path, the pixel size it was rendered at, and the overlay size.
-type Key = (PathBuf, i32, u8);
+/// What a cached icon was rendered for, so two uses of one path never share
+/// the wrong pixels: an item with the shell's overlays, or a lens title's
+/// folder icon (whose availability decides the fallback).
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+enum IconKind {
+    Item {
+        overlay_size: u8,
+    },
+    /// A folder's icon for a lens title bar, with whether the folder could be
+    /// listed.
+    Folder {
+        available: bool,
+    },
+}
+
+/// One icon: a path, the pixel size it was rendered at, and what it is for.
+type Key = (PathBuf, i32, IconKind);
 
 /// Icons decoded per path, pixel size, and overlay size, bounded by a
 /// least-recently-used limit. Evicting is always safe: scenes hold their own
@@ -63,12 +78,25 @@ impl IconCache {
     /// The icon for `path` rendered at `size` pixels square, with the shell's
     /// overlay drawn at `overlay_size` percent of that.
     pub fn icon_for(&mut self, path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
-        let key = (path.to_path_buf(), size, overlay_size);
+        let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
         if let Some(icon) = self.touch(&key) {
             return Some(icon);
         }
         let icon = load_icon(path, size, overlay_size)?;
-        self.insert(path.to_path_buf(), size, overlay_size, icon.clone());
+        self.insert(key, icon.clone());
+        Some(icon)
+    }
+
+    /// The icon for a lens's folder, drawn `size` pixels square in a title bar.
+    /// An available folder uses its own shell icon; an unavailable one gets
+    /// the shell's generic folder icon without touching the disk.
+    pub fn folder_icon(&mut self, path: &Path, size: i32, available: bool) -> Option<Icon> {
+        let key = (path.to_path_buf(), size, IconKind::Folder { available });
+        if let Some(icon) = self.touch(&key) {
+            return Some(icon);
+        }
+        let icon = load_folder_icon(path, size.clamp(1, 1024) as u32, available)?;
+        self.insert(key, icon.clone());
         Some(icon)
     }
 
@@ -103,14 +131,13 @@ impl IconCache {
         Some(entry.icon.clone())
     }
 
-    fn insert(&mut self, path: PathBuf, size: i32, overlay_size: u8, icon: Icon) {
+    fn insert(&mut self, key: Key, icon: Icon) {
         self.clock += 1;
         if self.entries.len() >= self.capacity
             && let Some((_, oldest)) = self.by_age.pop_first()
         {
             self.entries.remove(&oldest);
         }
-        let key = (path, size, overlay_size);
         self.by_age.insert(self.clock, key.clone());
         self.entries.insert(
             key,
@@ -140,6 +167,44 @@ fn load_icon(path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
     match overlay_index(path).and_then(|overlay| load_overlay_image(overlay, size, overlay_size)) {
         Some(overlay) => Some(composite_overlay(&base, &overlay)),
         None => Some(base),
+    }
+}
+
+/// A lens title's folder icon: the folder's own shell icon when it can be
+/// listed, else the generic one. Sized by `resample`, so the title bar gets a
+/// crisp icon at any DPI.
+fn load_folder_icon(path: &Path, size: u32, available: bool) -> Option<Icon> {
+    let base = available
+        .then(|| load_base_icon(path, size))
+        .flatten()
+        .or_else(load_generic_folder_icon)?;
+    Some(resample(&base, size))
+}
+
+/// The shell's generic folder icon, read from the file attributes rather than
+/// from the disk: `SHGFI_USEFILEATTRIBUTES` makes `SHGetFileInfoW` trust
+/// `FILE_ATTRIBUTE_DIRECTORY`, so a folder that is gone is never touched.
+/// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
+fn load_generic_folder_icon() -> Option<Icon> {
+    let wide = shell_path(Path::new("folder"));
+    let mut info = SHFILEINFOW::default();
+    let flags = SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES;
+    // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure. The
+    // returned HICON is ours and destroyed after its pixels are copied out.
+    unsafe {
+        let result = SHGetFileInfoW(
+            PCWSTR(wide.as_ptr()),
+            FILE_ATTRIBUTE_DIRECTORY,
+            Some(&mut info),
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            flags,
+        );
+        if result == 0 || info.hIcon.is_invalid() {
+            return None;
+        }
+        let icon = decode_icon(info.hIcon);
+        let _ = DestroyIcon(info.hIcon);
+        icon
     }
 }
 
@@ -381,17 +446,17 @@ mod tests {
     }
 
     fn key(path: &str) -> Key {
-        (PathBuf::from(path), 32, 80)
+        (PathBuf::from(path), 32, IconKind::Item { overlay_size: 80 })
     }
 
     #[test]
     fn evicts_the_least_recently_used_icon() {
         let mut cache = IconCache::with_capacity(2);
-        cache.insert("a".into(), 32, 80, icon());
-        cache.insert("b".into(), 32, 80, icon());
+        cache.insert(key("a"), icon());
+        cache.insert(key("b"), icon());
         // Touch "a" so "b" becomes the oldest.
         assert!(cache.touch(&key("a")).is_some());
-        cache.insert("c".into(), 32, 80, icon());
+        cache.insert(key("c"), icon());
         assert_eq!(cache.len(), 2);
         assert!(cache.entries.contains_key(&key("a")));
         assert!(!cache.entries.contains_key(&key("b")));
@@ -400,11 +465,11 @@ mod tests {
     #[test]
     fn a_hit_protects_the_icon_from_the_next_eviction() {
         let mut cache = IconCache::with_capacity(2);
-        cache.insert("a".into(), 32, 80, icon());
-        cache.insert("b".into(), 32, 80, icon());
+        cache.insert(key("a"), icon());
+        cache.insert(key("b"), icon());
         // A hit on the newest still moves its age, so the oldest is evicted.
         assert!(cache.touch(&key("b")).is_some());
-        cache.insert("c".into(), 32, 80, icon());
+        cache.insert(key("c"), icon());
         assert_eq!(cache.len(), 2);
         assert!(cache.entries.contains_key(&key("b")));
         assert!(cache.entries.contains_key(&key("c")));
@@ -415,10 +480,13 @@ mod tests {
     #[test]
     fn invalidate_forgets_every_variant_of_a_path() {
         let mut cache = IconCache::new();
-        cache.insert("a".into(), 32, 80, icon());
-        cache.insert("a".into(), 48, 80, icon());
-        cache.insert("a".into(), 32, 60, icon());
-        cache.insert("b".into(), 32, 80, icon());
+        cache.insert(key("a"), icon());
+        cache.insert((PathBuf::from("a"), 48, key("a").2), icon());
+        cache.insert(
+            (PathBuf::from("a"), 32, IconKind::Folder { available: true }),
+            icon(),
+        );
+        cache.insert(key("b"), icon());
         cache.invalidate(Path::new("a"));
         assert_eq!(cache.len(), 1);
         assert!(cache.entries.contains_key(&key("b")));
@@ -428,8 +496,8 @@ mod tests {
     fn evicted_icons_stay_usable_by_their_holders() {
         let mut cache = IconCache::with_capacity(1);
         let held = icon();
-        cache.insert("a".into(), 32, 80, held.clone());
-        cache.insert("b".into(), 32, 80, icon());
+        cache.insert(key("a"), held.clone());
+        cache.insert(key("b"), icon());
         assert_eq!(held.pixels().len(), 4);
     }
 
@@ -500,6 +568,27 @@ mod tests {
         let alpha = |x: usize, y: usize| scaled.pixels()[(y * 4 + x) * 4 + 3];
         assert_eq!((alpha(0, 3), alpha(1, 2)), (255, 255));
         assert_eq!((alpha(2, 2), alpha(1, 1), alpha(3, 0)), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_folder_title_icon_loads_available_and_unavailable() {
+        // SAFETY: the shell APIs below need COM; this thread lives for the
+        // test, so the apartment is released with the test process.
+        let _ = unsafe {
+            windows::Win32::System::Com::CoInitializeEx(
+                None,
+                windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+            )
+        };
+        let missing = Path::new("C:/nowhere/DeskSpace title icon test");
+        assert!(load_generic_folder_icon().is_some());
+        let mut cache = IconCache::new();
+        // An available folder uses its own icon; an unavailable one the
+        // generic icon; the two never share a cache entry.
+        assert!(cache.folder_icon(&std::env::temp_dir(), 16, true).is_some());
+        assert!(cache.folder_icon(missing, 16, true).is_some());
+        assert!(cache.folder_icon(missing, 16, false).is_some());
+        assert_eq!(cache.len(), 3);
     }
 
     #[test]

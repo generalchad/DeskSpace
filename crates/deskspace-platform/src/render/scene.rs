@@ -52,6 +52,10 @@ pub struct SpaceScene {
     /// layer sets it false, so its items fill the whole window.
     pub chrome: bool,
     pub title: String,
+    /// The small folder icon drawn left of the title text. A lens shows its
+    /// folder's shell icon (the generic folder while the folder is
+    /// unavailable); every other space shows none.
+    pub title_icon: Option<Icon>,
     pub title_height: i32,
     pub tint: Color,
     pub title_fill: Color,
