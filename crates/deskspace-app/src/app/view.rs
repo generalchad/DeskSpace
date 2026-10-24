@@ -673,8 +673,11 @@ impl App {
             scale: space_dpi(id.0),
         };
         let mut details = |item: &Item| view_cells(space.view().mode, item);
-        let row_cells = (matches!(space.view().mode, ViewMode::Details | ViewMode::Tiles))
-            .then_some(&mut details as &mut dyn FnMut(&Item) -> Vec<String>);
+        let row_cells = (matches!(
+            space.view().mode,
+            ViewMode::Details | ViewMode::Tiles | ViewMode::Content
+        ))
+        .then_some(&mut details as &mut dyn FnMut(&Item) -> Vec<String>);
         let mut scene = space_scene_with_details(space, look, view, row_cells, &mut self.icons);
         if let Some(session) = self
             .edit

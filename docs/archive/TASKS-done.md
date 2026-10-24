@@ -3821,3 +3821,10 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: the layout's rects and extent.
   - **[needs human]** check: beside Explorer's Tiles on the same folder,
     at 100 % and 150 %, in light and dark.
+
+- [x] **W22. Content (app, platform).** **[needs human]**
+  - `ViewMode::Content` (digit 8): one row per item, with Explorer's
+    separator line between rows. The icon is on the left, with the name
+    and the type beside it; "Date modified: …" and "Size: …" are on the
+    right. The text and layout come as for W21.
+  - Tests and check: as W21, against Explorer's Content.

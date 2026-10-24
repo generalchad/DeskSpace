@@ -233,7 +233,7 @@ impl Graphics {
         let (formats, fallback) = match layout {
             ItemLayout::Grid => (&self.label_formats, &self.label_format),
             ItemLayout::Inline => (&self.inline_label_formats, &self.inline_label_format),
-            ItemLayout::Details | ItemLayout::Tiles => {
+            ItemLayout::Details | ItemLayout::Tiles | ItemLayout::Content => {
                 return self.details_format.clone();
             }
         };

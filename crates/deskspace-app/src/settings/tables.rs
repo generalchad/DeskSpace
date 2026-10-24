@@ -49,7 +49,7 @@ pub(super) const PRESETS: [(Preset, &str); 2] = [
 ];
 
 /// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
-pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 8] = [
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 9] = [
     (ViewMode::Icons, "Settings icon size", None),
     (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
     (ViewMode::LargeIcons, "Large icons", Some(2)),
@@ -58,6 +58,7 @@ pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 8] = [
     (ViewMode::List, "List", Some(5)),
     (ViewMode::Details, "Details", Some(6)),
     (ViewMode::Tiles, "Tiles", Some(7)),
+    (ViewMode::Content, "Content", Some(8)),
 ];
 
 /// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit

@@ -744,13 +744,6 @@ lens-only.
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
 
-- [ ] **W22. Content (app, platform).** **[needs human]**
-  - `ViewMode::Content` (digit 8): one row per item, with Explorer's
-    separator line between rows. The icon is on the left, with the name
-    and the type beside it; "Date modified: …" and "Size: …" are on the
-    right. The text and layout come as for W21.
-  - Tests and check: as W21, against Explorer's Content.
-
 - [ ] **W23. The Lenses page: defaults for new lenses (config, app).**
   - `deskspace-config` `WindowSettings.new_lens: NewLens { view:
     SpaceView, title: LensTitle, show_hidden: bool }`, with
@@ -2073,6 +2066,7 @@ each id is in `archive/TASKS-done.md`.
 | W18 (D15) | A folder in Details beside the same folder in Explorer's Details: the same columns (Name, Date modified, Type, Size), values, alignment, date, and size format; Name takes the width left over; header clicks sort and reverse and the arrow follows; the header stays put while rows scroll; hover and selection fill the row and F2's box sits in Name; 100 % and 150 %; light and dark. |
 | W19 (D15) | A new lens has the status bar and a new space does not; View ▸ Status bar toggles it; the counts follow a click, Ctrl+A, and the marquee, and the size shows for files only; both buttons switch the view and show which is on, and their tips read as Explorer's; folded, the bar is gone; every backdrop at 100 % and 150 %, light and dark. |
 | W21 (D15) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
+| W22 (D15) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 
 ## Found while working
 

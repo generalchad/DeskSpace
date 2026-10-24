@@ -34,10 +34,11 @@ const INLINE_GAP: i32 = 2;
 /// W18's on-screen check measures Explorer's own.
 const DETAILS_ROW_HEIGHT: i32 = 22;
 pub const DETAILS_HEADER_HEIGHT: i32 = 25;
-/// Explorer's Tiles cell at 96 DPI (W21). Provisional until its on-screen
-/// check measures Explorer's own.
+/// Explorer's Tiles cell and Content row at 96 DPI (W21, W22). Provisional
+/// until their on-screen checks measure Explorer's own.
 const TILE_WIDTH: i32 = 210;
 const TILE_HEIGHT: i32 = 60;
+const CONTENT_ROW_HEIGHT: i32 = 32;
 
 /// Which way a view's content flows when it does not fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +69,8 @@ impl Flow {
             | ViewMode::MediumIcons
             | ViewMode::SmallIcons
             | ViewMode::Details
-            | ViewMode::Tiles => Self::Rows,
+            | ViewMode::Tiles
+            | ViewMode::Content => Self::Rows,
         }
     }
 
@@ -102,14 +104,25 @@ impl ViewMetrics {
     pub fn for_view(mode: ViewMode, grid: GridSpec, display_scale: f32) -> Self {
         let scale = display_scale.max(0.1);
         let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-        if mode == ViewMode::Details {
-            // Rows touch, as Explorer's Details rows do; the width is the
-            // content width, worked out by the layout.
+        if mode == ViewMode::Details || mode == ViewMode::Content {
+            // Rows touch, as Explorer's do; the width is the content width,
+            // worked out by the layout.
             return Self {
-                cell: Size::new(1, scaled(DETAILS_ROW_HEIGHT)),
+                cell: Size::new(
+                    1,
+                    scaled(if mode == ViewMode::Details {
+                        DETAILS_ROW_HEIGHT
+                    } else {
+                        CONTENT_ROW_HEIGHT
+                    }),
+                ),
                 gap: 0,
                 padding: grid.padding,
-                header: scaled(DETAILS_HEADER_HEIGHT),
+                header: if mode == ViewMode::Details {
+                    scaled(DETAILS_HEADER_HEIGHT)
+                } else {
+                    0
+                },
             };
         }
         if let Some((width, height)) = inline_cell(mode) {
@@ -150,6 +163,7 @@ fn inline_cell(mode: ViewMode) -> Option<(i32, i32)> {
         ViewMode::List => Some((LIST_COLUMN_WIDTH, LIST_CELL_HEIGHT)),
         ViewMode::Details => Some((1, DETAILS_ROW_HEIGHT)),
         ViewMode::Tiles => Some((TILE_WIDTH, TILE_HEIGHT)),
+        ViewMode::Content => Some((1, CONTENT_ROW_HEIGHT)),
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -194,7 +208,7 @@ impl ViewLayout {
     /// Details fills the content width, so its row is as wide as the content
     /// inside the padding.
     fn cross_cell(&self) -> i32 {
-        if self.mode == ViewMode::Details {
+        if matches!(self.mode, ViewMode::Details | ViewMode::Content) {
             return (self.cross_len() - self.metrics.padding * 2).max(1);
         }
         match self.flow() {
@@ -265,7 +279,7 @@ impl ViewLayout {
         Rect::new(
             self.metrics.padding + x,
             self.header_height() + self.metrics.padding + y,
-            if self.mode == ViewMode::Details {
+            if matches!(self.mode, ViewMode::Details | ViewMode::Content) {
                 self.cross_cell()
             } else {
                 self.metrics.cell.width
@@ -636,6 +650,17 @@ mod tests {
         assert_eq!(layout.rect(1).x, 12 + 212);
         assert_eq!(layout.rect(2).y, 12 + 62);
         assert_eq!(layout.extent(), 12 * 2 + 3 * 60 + 2 * 2);
+    }
+
+    #[test]
+    fn content_rows_fill_the_width_and_touch() {
+        let metrics = ViewMetrics::for_view(ViewMode::Content, GridSpec::default(), 1.0);
+        let layout = ViewLayout::new(ViewMode::Content, Size::new(360, 200), 3, metrics);
+        assert_eq!(layout.header_height(), 0);
+        assert_eq!(layout.cross_count(), 1);
+        assert_eq!(layout.rect(0), Rect::new(12, 12, 336, 32));
+        assert_eq!(layout.rect(1).y, 44);
+        assert_eq!(layout.extent(), 12 * 2 + 3 * 32);
     }
 
     #[test]

@@ -63,6 +63,8 @@ pub enum ViewMode {
     Details,
     /// 48 px icons in wrapping tiles with three lines beside them (W21).
     Tiles,
+    /// One row per item with a separator and its details on the right (W22).
+    Content,
 }
 
 impl ViewMode {
@@ -74,7 +76,7 @@ impl ViewMode {
             Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
             Self::LargeIcons => Some(LARGE_ICON_PX),
             Self::MediumIcons => Some(MEDIUM_ICON_PX),
-            Self::SmallIcons | Self::List | Self::Details | Self::Tiles => None,
+            Self::SmallIcons | Self::List | Self::Details | Self::Tiles | Self::Content => None,
         }
     }
 
@@ -85,7 +87,7 @@ impl ViewMode {
             Self::ExtraLargeIcons => Some(EXTRA_LARGE_ICON_PX),
             Self::LargeIcons => Some(LARGE_ICON_PX),
             Self::MediumIcons => Some(MEDIUM_ICON_PX),
-            Self::SmallIcons | Self::List | Self::Details => Some(SMALL_ICON_PX),
+            Self::SmallIcons | Self::List | Self::Details | Self::Content => Some(SMALL_ICON_PX),
             Self::Tiles => Some(TILE_ICON_PX),
         }
     }
@@ -95,7 +97,7 @@ impl ViewMode {
     pub fn places_by_order(self) -> bool {
         matches!(
             self,
-            Self::SmallIcons | Self::List | Self::Details | Self::Tiles
+            Self::SmallIcons | Self::List | Self::Details | Self::Tiles | Self::Content
         )
     }
 }
@@ -137,7 +139,9 @@ mod tests {
         assert_eq!(ViewMode::List.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Details.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Tiles.item_icon_px(), Some(48));
+        assert_eq!(ViewMode::Content.item_icon_px(), Some(16));
         assert_eq!(ViewMode::Tiles.icon_px(), None);
+        assert_eq!(ViewMode::Content.icon_px(), None);
         assert_eq!(ViewMode::Icons.item_icon_px(), None);
     }
 
@@ -147,6 +151,7 @@ mod tests {
         assert!(ViewMode::List.places_by_order());
         assert!(ViewMode::Details.places_by_order());
         assert!(ViewMode::Tiles.places_by_order());
+        assert!(ViewMode::Content.places_by_order());
         for mode in [
             ViewMode::Icons,
             ViewMode::ExtraLargeIcons,

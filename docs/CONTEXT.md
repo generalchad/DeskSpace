@@ -178,7 +178,9 @@ sort by the space's `SortRule`; the app formats its column text when it builds
 the scene, so painting never asks the shell or the clock. None of the
 order-placed views writes `Item.position`, so a hand arrangement returns when
 the space goes back to an icon view. Tiles (W21) wraps 48 px icons with three
-lines beside each (name, type, size). `SpaceView.status_bar` adds Explorer's
+lines beside each (name, type, size), and Content (W22) puts one item on each
+full-width row with its labelled date and size on the right and a separator
+between rows. `SpaceView.status_bar` adds Explorer's
 status bar along the bottom edge (W19): the item and selection counts and the
 selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and

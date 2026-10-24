@@ -148,6 +148,9 @@ pub enum ItemLayout {
     Details,
     /// One tile: a 48 px icon at the left and three lines beside it (W21).
     Tiles,
+    /// One content row: the icon and name at the left, details at the right,
+    /// with a separator between rows (W22).
+    Content,
 }
 
 /// The Details header and its columns (W18). Rects are relative to the content

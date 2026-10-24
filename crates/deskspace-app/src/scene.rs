@@ -464,6 +464,7 @@ pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
         ViewMode::SmallIcons | ViewMode::List => ItemLayout::Inline,
         ViewMode::Details => ItemLayout::Details,
         ViewMode::Tiles => ItemLayout::Tiles,
+        ViewMode::Content => ItemLayout::Content,
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -731,6 +732,7 @@ pub(crate) fn view_cells(mode: ViewMode, item: &Item) -> Vec<String> {
     match mode {
         ViewMode::Details => details_cells(item),
         ViewMode::Tiles => tile_cells(item),
+        ViewMode::Content => content_cells(item),
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -749,6 +751,17 @@ fn tile_cells(item: &Item) -> Vec<String> {
         .map(format_kb)
         .unwrap_or_default();
     vec![type_name, size]
+}
+
+/// A content row's right-hand texts, labelled as Explorer labels them (W22).
+fn content_cells(item: &Item) -> Vec<String> {
+    let date = item.modified.map(format_date).unwrap_or_default();
+    let size = item
+        .size
+        .filter(|_| item.kind != ItemKind::Folder)
+        .map(format_kb)
+        .unwrap_or_default();
+    vec![format!("Date modified: {date}"), format!("Size: {size}")]
 }
 
 /// The item's display label. Explorer never shows a shortcut's extension, even
@@ -1535,6 +1548,37 @@ mod tests {
         assert_eq!(scene.items[0].rect.width, 210);
         assert_eq!(scene.items[0].cells.len(), 2, "type and size");
         assert!(scene.details.is_none(), "tiles have no header");
+    }
+
+    #[test]
+    fn content_rows_show_labelled_details_and_fill_the_width() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Content", Rect::new(0, 0, 360, 240));
+        crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(ViewMode::Content),
+            },
+        );
+        let space = desktop.space(id).unwrap();
+        let theme = Theme::default();
+        let mut cells = |item: &Item| view_cells(ViewMode::Content, item);
+        let scene = space_scene_with_details(
+            space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            Some(&mut cells),
+            &mut IconCache::new(),
+        );
+        assert_eq!(scene.item_layout, ItemLayout::Content);
+        assert_eq!(
+            scene.items[0].rect.width,
+            space.content_rect().width - GridSpec::default().padding * 2
+        );
+        assert!(scene.items[0].cells[0].starts_with("Date modified: "));
+        assert!(scene.items[0].cells[1].starts_with("Size: "));
     }
 
     #[test]

@@ -52,6 +52,7 @@ pub(super) unsafe fn draw_item(
     let inline = scene.item_layout == ItemLayout::Inline;
     let details = scene.item_layout == ItemLayout::Details;
     let tiles = scene.item_layout == ItemLayout::Tiles;
+    let content = scene.item_layout == ItemLayout::Content;
     let beside_icon = !matches!(scene.item_layout, ItemLayout::Grid);
     let icon_size = metrics.icon_size as f32;
     let icon_pad = metrics.icon_top as f32;
@@ -137,6 +138,14 @@ pub(super) unsafe fn draw_item(
         let line_height = LABEL_LINE_HEIGHT * scale;
         let center_y = (cell.top + cell.bottom) / 2.0;
         let name_left = icon_left + icon_size + metrics.inline_gap as f32;
+        // A content row keeps a right-hand area for its labelled details; the
+        // width follows the icon size, so it scales with the display (W22).
+        let meta_left = if content {
+            (cell.right - (360.0 * icon_size / 16.0))
+                .max(cell.left + (cell.right - cell.left) * 0.4)
+        } else {
+            cell.right
+        };
         let (label_left, label_top, label_right, lines) = if details {
             let name = scene
                 .details
@@ -155,6 +164,9 @@ pub(super) unsafe fn draw_item(
                 cell.right - metrics.inline_inset as f32,
                 1.0,
             )
+        } else if content {
+            let top = (center_y - line_height / 2.0).round();
+            (name_left, top, meta_left - metrics.inline_gap as f32, 1.0)
         } else if inline {
             // One line beside the icon, vertically centered and ellipsized.
             let top = (center_y - line_height / 2.0).round();
@@ -174,7 +186,7 @@ pub(super) unsafe fn draw_item(
         };
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            let format = if details || tiles {
+            let format = if details || tiles || content {
                 graphics.details_format.clone()
             } else {
                 graphics.item_label_format_for(scene.label_size, scene.item_layout)
@@ -255,6 +267,37 @@ pub(super) unsafe fn draw_item(
                     scene.text_shadow.map(|shadow| shadow.fade(alpha)),
                 );
             }
+        }
+
+        // Content: the labelled details on the right, and the separator that
+        // runs under the row (W22).
+        if content {
+            let mid = meta_left + (cell.right - meta_left) / 2.0;
+            let inset = metrics.inline_inset as f32;
+            for (index, text) in cells.iter().enumerate().take(2) {
+                let (left, right) = if index == 0 {
+                    (meta_left, mid - inset)
+                } else {
+                    (mid, cell.right - inset)
+                };
+                draw_text(
+                    target,
+                    brush,
+                    text,
+                    &graphics.details_right_format,
+                    rect_f(left, cell.top, right, cell.bottom),
+                    scene.item_text.fade(170),
+                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+                );
+            }
+            brush.SetColor(&color_f(scene.item_text.fade(40)));
+            target.DrawLine(
+                Vector2::new(cell.left, cell.bottom - 0.5),
+                Vector2::new(cell.right, cell.bottom - 0.5),
+                brush,
+                1.0,
+                None,
+            );
         }
 
         // A dotted rectangle marks the item with keyboard focus, as Explorer

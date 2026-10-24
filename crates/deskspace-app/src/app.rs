@@ -177,6 +177,8 @@ enum MenuId {
     StatusBar = 69,
     /// Tiles (W21).
     ViewTiles = 70,
+    /// Content (W22).
+    ViewContent = 71,
     /// The Sort by submenu's keys (D15).
     SortByName = 59,
     SortByModified = 60,
@@ -190,7 +192,7 @@ enum MenuId {
 }
 
 impl MenuId {
-    const ALL: [Self; 51] = [
+    const ALL: [Self; 52] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -242,6 +244,7 @@ impl MenuId {
         Self::ViewDetails,
         Self::StatusBar,
         Self::ViewTiles,
+        Self::ViewContent,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -306,7 +309,7 @@ const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
 ];
 
 /// The View submenu's choices: one per view, in `VIEW_MODES` order.
-const VIEW_PRESETS: [(MenuId, ViewMode); 8] = [
+const VIEW_PRESETS: [(MenuId, ViewMode); 9] = [
     (MenuId::ViewIcons, ViewMode::Icons),
     (MenuId::ViewExtraLargeIcons, ViewMode::ExtraLargeIcons),
     (MenuId::ViewLargeIcons, ViewMode::LargeIcons),
@@ -315,6 +318,7 @@ const VIEW_PRESETS: [(MenuId, ViewMode); 8] = [
     (MenuId::ViewList, ViewMode::List),
     (MenuId::ViewDetails, ViewMode::Details),
     (MenuId::ViewTiles, ViewMode::Tiles),
+    (MenuId::ViewContent, ViewMode::Content),
 ];
 
 /// The event id the platform gives the chrome-less desktop layer window
