@@ -155,6 +155,8 @@ pub struct PreparedScene {
     cells: Vec<Vec<Vec<u16>>>,
     /// The Details header labels, encoded once.
     header: Vec<Vec<u16>>,
+    /// The status bar's segments joined with Explorer's gaps, encoded once.
+    status_segments: Vec<u16>,
     /// `scene.placeholder`, encoded once.
     placeholder: Option<Vec<u16>>,
 }
@@ -200,6 +202,11 @@ impl PreparedScene {
             .placeholder
             .as_ref()
             .map(|text| text.encode_utf16().collect());
+        let status_segments = scene
+            .status
+            .as_ref()
+            .map(|status| status.segments.join("   ").encode_utf16().collect())
+            .unwrap_or_default();
         Self {
             scene,
             title,
@@ -208,6 +215,7 @@ impl PreparedScene {
             labels,
             cells,
             header,
+            status_segments,
             placeholder,
         }
     }
@@ -507,10 +515,15 @@ impl Painter {
                 .details
                 .as_ref()
                 .map_or(0.0, |details| details.header_height as f32);
+            let status_height = scene
+                .status
+                .as_ref()
+                .map_or(0.0, |status| status.height as f32);
             let items_top = content_top + header_height;
-            if !scene.folded && height > items_top {
+            let content_bottom = (height - status_height).max(items_top);
+            if !scene.folded && content_bottom > items_top {
                 target.PushAxisAlignedClip(
-                    &rect_f(0.0, items_top, width, height),
+                    &rect_f(0.0, items_top, width, content_bottom),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
@@ -520,7 +533,10 @@ impl Painter {
                         brush,
                         text,
                         &ctx.graphics.placeholder_format,
-                        inset(rect_f(0.0, items_top, width, height), PLACEHOLDER_INSET),
+                        inset(
+                            rect_f(0.0, items_top, width, content_bottom),
+                            PLACEHOLDER_INSET,
+                        ),
                         scene.item_text.fade(PLACEHOLDER_ALPHA),
                         scene
                             .text_shadow
@@ -553,6 +569,10 @@ impl Painter {
                         scene.item_text.fade(SCROLL_THUMB_ALPHA),
                     );
                 }
+            }
+
+            if let Some(status) = &scene.status {
+                self.draw_status(ctx, prepared, status);
             }
 
             if let Some(border) = frame.border
@@ -728,6 +748,81 @@ impl Painter {
                     scene.item_text.fade(190),
                     scene.text_shadow,
                 );
+            }
+        }
+    }
+
+    /// Draws Explorer's status bar: the counts on the left and the view
+    /// buttons on the right, with the space's current view marked (W19).
+    unsafe fn draw_status(
+        &self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        status: &crate::render::scene::StatusBar,
+    ) {
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        let rect = to_rect_f(status.rect);
+        let height = rect.bottom - rect.top;
+        let pad = (height * 0.25).round();
+        let text_right = status
+            .buttons
+            .first()
+            .map_or(rect.right - pad, |button| button.rect.x as f32 - pad);
+        // SAFETY: caller is inside BeginDraw/EndDraw.
+        unsafe {
+            brush.SetColor(&color_f(scene.item_text.fade(60)));
+            target.DrawLine(
+                Vector2::new(rect.left, rect.top + 0.5),
+                Vector2::new(rect.right, rect.top + 0.5),
+                brush,
+                1.0,
+                None,
+            );
+            draw_text(
+                target,
+                brush,
+                &prepared.status_segments,
+                &graphics.details_format,
+                rect_f(rect.left + pad, rect.top, text_right, rect.bottom),
+                scene.item_text.fade(200),
+                scene.text_shadow,
+            );
+            for button in &status.buttons {
+                let button_rect = to_rect_f(button.rect);
+                if button.checked || button.hovered {
+                    let radius = (button_rect.bottom - button_rect.top) * 0.2;
+                    fill_rounded(
+                        target,
+                        brush,
+                        button_rect,
+                        radius,
+                        if button.hovered {
+                            scene.hover_fill
+                        } else {
+                            scene.selected_fill
+                        },
+                    );
+                }
+                if let Some(format) = &graphics.glyph_format {
+                    brush.SetColor(&color_f(scene.item_text.fade(if button.checked {
+                        255
+                    } else {
+                        200
+                    })));
+                    target.DrawText(
+                        button.glyph,
+                        format,
+                        &button_rect,
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                }
             }
         }
     }

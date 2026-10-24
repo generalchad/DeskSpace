@@ -364,8 +364,15 @@ impl App {
             Some(MenuId::SpaceSettings) => self.open_settings_with(ui, Some(id)),
             Some(MenuId::AddFiles) => self.add_files(ui, id, at),
             Some(choice) => {
-                // A view choice changes only this space's layout.
-                if let Some((_, mode)) = VIEW_PRESETS.iter().find(|(preset, _)| *preset == choice) {
+                if choice == MenuId::StatusBar {
+                    let next = SpaceView {
+                        status_bar: !view.status_bar,
+                        ..view
+                    };
+                    self.set_space_view(ui, id, next, at);
+                } else if let Some((_, mode)) =
+                    VIEW_PRESETS.iter().find(|(preset, _)| *preset == choice)
+                {
                     self.set_space_view(ui, id, SpaceView::with_mode(*mode), at);
                 } else if let Some(view) = lens_view
                     .as_ref()
@@ -549,6 +556,10 @@ impl App {
             size,
             path: folder,
             locked: self.config.window.new_space_locked,
+            view: SpaceView {
+                status_bar: true,
+                ..SpaceView::default()
+            },
         };
         let id = self.show_new_space(ui, command, origin)?;
         self.sync_watches(ui);
@@ -714,7 +725,7 @@ fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
 /// The "View" submenu: one radio item per icon view, checking the space's
 /// current mode.
 fn space_view_menu(space: &Space) -> MenuEntry {
-    let entries = VIEW_PRESETS
+    let mut entries: Vec<MenuEntry> = VIEW_PRESETS
         .iter()
         .map(|(id, mode)| {
             let label = VIEW_MODES
@@ -724,6 +735,10 @@ fn space_view_menu(space: &Space) -> MenuEntry {
             menu_item(*id, label).checked(space.view().mode == *mode)
         })
         .collect();
+    entries.extend([
+        MenuEntry::Separator,
+        menu_item(MenuId::StatusBar, "Status bar").checked(space.view().status_bar),
+    ]);
     MenuEntry::submenu("View", entries)
 }
 
@@ -908,7 +923,11 @@ mod tests {
         );
         let entries = view_entries(desktop.space(id).unwrap());
         let checks = item_checks(&entries);
-        assert_eq!(checks.len(), VIEW_PRESETS.len());
+        assert_eq!(
+            checks.len(),
+            VIEW_PRESETS.len() + 1,
+            "the views and the Status bar toggle"
+        );
         assert_eq!(
             checks.iter().filter(|(_, checked)| *checked).count(),
             1,
@@ -928,13 +947,9 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            labels,
-            VIEW_MODES
-                .iter()
-                .map(|(_, label, _)| *label)
-                .collect::<Vec<&str>>()
-        );
+        let mut expected: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
+        expected.push("Status bar");
+        assert_eq!(labels, expected);
     }
 
     #[test]

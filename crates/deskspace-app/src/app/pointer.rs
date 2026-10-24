@@ -1,11 +1,13 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout, ViewMode};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, SpaceView, ViewLayout, ViewMode};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
 };
+
+use crate::settings::STATUS_BUTTONS;
 
 use super::drag::Drag;
 use super::files::ShortcutSource;
@@ -79,6 +81,8 @@ pub(super) struct PointerState {
     /// own menu on the next right release.
     pub(super) right_dragged: bool,
     pub(super) hovered: Option<(Surface, ItemId)>,
+    /// The status-bar view button the pointer is over, and its surface (W19).
+    pub(super) status_hover: Option<(Surface, usize)>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
@@ -231,12 +235,24 @@ impl App {
             SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
+                let mut repaint = false;
                 if self
                     .pointer
                     .hovered
                     .is_some_and(|(owner, _)| owner == surface)
                 {
                     self.pointer.hovered = None;
+                    repaint = true;
+                }
+                if self
+                    .pointer
+                    .status_hover
+                    .is_some_and(|(owner, _)| owner == surface)
+                {
+                    self.pointer.status_hover = None;
+                    repaint = true;
+                }
+                if repaint {
                     self.refresh_surface(ui, surface);
                 }
             }
@@ -265,6 +281,24 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// If `point` is on a status-bar view button, switches the space to that
+    /// view and returns true (W19).
+    fn status_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        let Some(index) = crate::scene::status_button_at(space, point) else {
+            return false;
+        };
+        let Some(button) = STATUS_BUTTONS.get(index) else {
+            return false;
+        };
+        let mode = button.mode;
+        let at = space.rect().origin();
+        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        true
     }
 
     /// If `point` is in a Details header, sorts space `id` by that column and
@@ -308,6 +342,13 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a status-bar view button switches this space's view
+        // (W19).
+        if let Surface::Space(id) = surface
+            && self.status_button_clicked(ui, id, point)
+        {
+            return;
+        }
         // A click on a Details header sorts by its column, through the same
         // sort path as the menu (W18).
         if let Surface::Space(id) = surface
@@ -491,17 +532,30 @@ impl App {
         let hovered = self
             .surface_item_at(surface, point)
             .map(|item| (surface, item));
-        if hovered == self.pointer.hovered {
+        let status_hover = match (surface, hovered) {
+            (Surface::Space(id), None) => self
+                .config
+                .desktop
+                .space(id)
+                .and_then(|space| crate::scene::status_button_at(space, point))
+                .map(|index| (surface, index)),
+            _ => None,
+        };
+        if hovered == self.pointer.hovered && status_hover == self.pointer.status_hover {
             return;
         }
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
+        let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         Self::clear_timer(ui, Timer::InfoTip);
-        if hovered.is_some() {
+        if hovered.is_some() || status_hover.is_some() {
             Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
         }
         if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
+            self.refresh_surface(ui, owner);
+        }
+        if let Some((owner, _)) = previous_status.filter(|(owner, _)| *owner != surface) {
             self.refresh_surface(ui, owner);
         }
         self.refresh_surface(ui, surface);

@@ -1,5 +1,6 @@
 use deskspace_core::geometry::Rect;
 use deskspace_core::theme::{Backdrop, Color, EditColors};
+use deskspace_core::view::ViewMode;
 
 use crate::edit::TextEdit;
 
@@ -98,6 +99,9 @@ pub struct SpaceScene {
     /// The Details header and its columns, set only in Details (W18). The
     /// header stays put while the rows scroll beneath it.
     pub details: Option<DetailsView>,
+    /// Explorer's status bar along the bottom edge, while the space shows one
+    /// (W19).
+    pub status: Option<StatusBar>,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,
@@ -175,6 +179,32 @@ pub enum ColumnAlign {
     #[default]
     Left,
     Right,
+}
+
+/// Explorer's status bar (W19): the item counts on the left and its view
+/// buttons on the right.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusBar {
+    /// The bar's height and its rect in window coordinates.
+    pub height: i32,
+    pub rect: Rect,
+    /// The counts, in order: items, selection, then the selected size.
+    pub segments: Vec<String>,
+    pub buttons: Vec<StatusButtonVisual>,
+}
+
+/// One view button at the right of the status bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusButtonVisual {
+    /// The button's rect in window coordinates.
+    pub rect: Rect,
+    /// The view the button switches to.
+    pub mode: ViewMode,
+    /// The Segoe Fluent Icons / Segoe MDL2 Assets glyph, from the app's table.
+    pub glyph: &'static [u16],
+    /// Whether the space is already in this view.
+    pub checked: bool,
+    pub hovered: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -177,7 +177,12 @@ scrolls down; List fills a column top to bottom and scrolls sideways. Details
 sort by the space's `SortRule`; the app formats its column text when it builds
 the scene, so painting never asks the shell or the clock. None of the
 order-placed views writes `Item.position`, so a hand arrangement returns when
-the space goes back to an icon view. Hit tests, the marquee, keyboard navigation, the drag drop
+the space goes back to an icon view. `SpaceView.status_bar` adds Explorer's
+status bar along the bottom edge (W19): the item and selection counts and the
+selected files' size on the left, and the Details and Large icons buttons on
+the right. It is chrome, so `Space::content_rect` leaves its height out and
+layout, scrolling, and hit tests shrink with it. It is off for new spaces and
+on for new lenses. Hit tests, the marquee, keyboard navigation, the drag drop
 index, and the scroll indicator all read the same layout. `FolderEntry` is what
 the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts

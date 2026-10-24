@@ -173,6 +173,8 @@ enum MenuId {
     ViewList = 67,
     /// Details (W18): full-width rows under a header.
     ViewDetails = 68,
+    /// The View submenu's "Status bar" toggle (W19).
+    StatusBar = 69,
     /// The Sort by submenu's keys (D15).
     SortByName = 59,
     SortByModified = 60,
@@ -186,7 +188,7 @@ enum MenuId {
 }
 
 impl MenuId {
-    const ALL: [Self; 49] = [
+    const ALL: [Self; 50] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -236,6 +238,7 @@ impl MenuId {
         Self::ViewSmallIcons,
         Self::ViewList,
         Self::ViewDetails,
+        Self::StatusBar,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

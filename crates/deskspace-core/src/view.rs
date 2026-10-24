@@ -18,6 +18,9 @@ pub struct SpaceView {
     /// Whether the space re-sorts its items whenever they change, holding the
     /// rule. A lens always does; a normal space only when this is set (D15).
     pub keep_sorted: bool,
+    /// Whether the space shows Explorer's status bar along its bottom edge
+    /// with the item counts and view buttons (W19).
+    pub status_bar: bool,
 }
 
 impl SpaceView {
@@ -172,6 +175,7 @@ mod tests {
             !view.keep_sorted,
             "a space does not hold its sort by default"
         );
+        assert!(!view.status_bar, "the status bar starts off (W19)");
     }
 
     #[test]
@@ -223,6 +227,19 @@ mod tests {
         assert!(text.contains("keep_sorted"), "the choice shows in the file");
         let back: Space = toml::from_str(&text).unwrap();
         assert!(back.view().keep_sorted);
+    }
+
+    #[test]
+    fn a_status_bar_survives_a_round_trip() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
+        space.view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        let text = toml::to_string(&space).unwrap();
+        assert!(text.contains("status_bar"));
+        let back: Space = toml::from_str(&text).unwrap();
+        assert!(back.view().status_bar);
     }
 
     #[test]

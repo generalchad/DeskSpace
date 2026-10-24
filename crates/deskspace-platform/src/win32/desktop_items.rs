@@ -20,10 +20,10 @@ use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Time::FileTimeToSystemTime;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Profile, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT,
-    SHCNE_CREATE, SHCNE_DELETE, SHCNF_FLUSHNOWAIT, SHCNF_PATHW, SHChangeNotify,
-    SHCreateItemFromParsingName, SHCreateItemWithParent, SHFILEINFOW, SHGFI_TYPENAME,
-    SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetKnownFolderPath, SIGDN_FILESYSPATH,
-    SIGDN_NORMALDISPLAY, SVGIO_ALLVIEW, StrFormatKBSizeW,
+    SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT, SHCNE_CREATE, SHCNE_DELETE, SHCNF_FLUSHNOWAIT,
+    SHCNF_PATHW, SHChangeNotify, SHCreateItemFromParsingName, SHCreateItemWithParent, SHFILEINFOW,
+    SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetKnownFolderPath,
+    SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY, SVGIO_ALLVIEW, StrFormatByteSizeEx, StrFormatKBSizeW,
 };
 use windows::core::{GUID, Interface, PCWSTR};
 
@@ -289,6 +289,23 @@ pub fn format_kb(bytes: u64) -> String {
         .unwrap_or_default()
 }
 
+/// Explorer's status-bar size for `bytes`: "1.20 MB", through the shell's own
+/// formatter so the units and decimals match.
+pub fn format_bytes(bytes: u64) -> String {
+    let mut buffer = [0u16; 32];
+    // SAFETY: `buffer` is a valid writable wide buffer.
+    unsafe {
+        StrFormatByteSizeEx(
+            bytes,
+            SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT,
+            &mut buffer,
+        )
+    }
+    .ok()
+    .map(|()| wide_text(&buffer))
+    .unwrap_or_default()
+}
+
 /// Whether Explorer would list this file, given its hidden and protected
 /// operating-system file settings.
 fn listed_by_explorer(path: &Path, display: &ShellDisplay) -> bool {
@@ -428,6 +445,22 @@ mod tests {
         assert!(keep_attributes("h.txt", hidden, &shown));
         assert!(!keep_attributes("s.txt", system, &hidden_off));
         assert!(keep_attributes("s.txt", system, &shown));
+    }
+
+    #[test]
+    fn a_status_size_uses_the_shell_formatter() {
+        let mut buffer = [0u16; 260];
+        // SAFETY: a valid writable wide buffer.
+        let result = unsafe {
+            StrFormatByteSizeEx(
+                2048,
+                SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT,
+                &mut buffer,
+            )
+        };
+        assert!(result.is_ok(), "{result:?}");
+        assert!(!wide_text(&buffer).is_empty(), "{result:?}");
+        assert!(format_bytes(2048).ends_with("KB"));
     }
 
     #[test]

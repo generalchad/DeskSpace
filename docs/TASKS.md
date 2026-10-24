@@ -744,47 +744,6 @@ lens-only.
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
 
-- [ ] **W19. The status bar (core, app, platform).** **[needs human]**
-  - Core: `SpaceView.status_bar: bool`, off by default.
-    `Space::content_rect` leaves `STATUS_BAR_HEIGHT` (measure Explorer's;
-    scale it as `title_height` is) at the bottom while it is on and the
-    space is unfolded. Layout, scrolling, and hit tests then shrink with
-    no other change.
-  - `CreateLens` gains `view: SpaceView`. The app passes a view with the
-    status bar on (D15), and W23 turns that into a setting. New normal
-    spaces keep the default.
-  - `SpaceScene.status: Option<StatusBar>`, with the left `segments` and
-    the right `buttons` (rect, glyph, checked, hovered). The app builds
-    it:
-    - A pure `status_segments(count, selected, selected_bytes:
-      Option<u64>) -> Vec<String>`: "1 item" or "12 items", then "1 item
-      selected" or "3 items selected", then the size. The size shows only
-      when every selected item is a file with a known size, as in
-      Explorer. The size comes from a platform `format_bytes`
-      (`StrFormatByteSizeEx`, "1.20 MB"). Draw the segments with Windows
-      11 Explorer's separators.
-    - `STATUS_BUTTONS`: Details and Large icons, each a mode, a glyph,
-      and Explorer's tip: "Displays information about each item in the
-      window." and "Displays items by using large thumbnails." Build the
-      shortcut part of each tip, "(Ctrl+Shift+6)", from the mode's
-      `VIEW_MODES` digit.
-    - An unavailable lens shows no segments, but keeps its buttons.
-  - `app/pointer.rs`: a click on a button dispatches `SetSpaceView`. The
-    hit test is pure and uses the same rects the scene carries. Hover
-    highlights a button and shows its tip through `info_tip`. The current
-    mode's button is drawn checked.
-  - Menu: View ▸ "Status bar", a check entry under the modes.
-  - Tests: the segments for 0, 1, and many items, with and without a
-    selection; the size only when all selected are files; `content_rect`
-    shrinks; the button hit test; serde default; `CreateLens` keeps its
-    view.
-  - **[needs human]** check: a new lens has the bar, and a new space does
-    not. The menu toggles it. The counts follow a click, Ctrl+A, and the
-    marquee; the size shows for files only. Both buttons switch the view
-    and show which is on, and their tips read as Explorer's. Folded, the
-    bar is gone. Check every backdrop (the text is as legible as the
-    labels), at 100 % and 150 %, in light and dark.
-
 - [ ] **W20. The View page (app).**
   - Every space's scope lists `page::VIEW`, always enabled, like
     Shortcuts. It has a View choice (`VIEW_MODES`) and a Status bar
@@ -2135,6 +2094,7 @@ each id is in `archive/TASKS-done.md`.
 | W16 (D15) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
 | W17 (D15) | List on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, columns filling top to bottom and running left to right, the wheel scrolling sideways, Home/End/PageUp/PageDown and the arrow keys moving along the columns, and the scroll indicator along the bottom; click, Ctrl and Shift click, the marquee, and type-to-select hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Check the W16 row again in List. |
 | W18 (D15) | A folder in Details beside the same folder in Explorer's Details: the same columns (Name, Date modified, Type, Size), values, alignment, date, and size format; Name takes the width left over; header clicks sort and reverse and the arrow follows; the header stays put while rows scroll; hover and selection fill the row and F2's box sits in Name; 100 % and 150 %; light and dark. |
+| W19 (D15) | A new lens has the status bar and a new space does not; View ▸ Status bar toggles it; the counts follow a click, Ctrl+A, and the marquee, and the size shows for files only; both buttons switch the view and show which is on, and their tips read as Explorer's; folded, the bar is gone; every backdrop at 100 % and 150 %, light and dark. |
 
 ## Found while working
 

@@ -119,6 +119,32 @@ pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
 /// The narrowest Name column, so a small space keeps a readable name.
 pub const NAME_MIN_WIDTH: i32 = 120;
 
+/// A view button in Explorer's status bar (W19): the view it switches to, its
+/// glyph, and Explorer's tip. The tip gains its Ctrl+Shift digit from
+/// `VIEW_MODES`.
+pub struct StatusButton {
+    pub mode: ViewMode,
+    pub glyph: &'static [u16],
+    pub tip: &'static str,
+}
+
+/// Explorer's two status-bar view buttons, Details and Large icons. The glyphs
+/// are Segoe Fluent Icons / Segoe MDL2 Assets "BulletedList" and "ViewAll",
+/// which both fonts have.
+/// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+pub const STATUS_BUTTONS: [StatusButton; 2] = [
+    StatusButton {
+        mode: ViewMode::Details,
+        glyph: &[0xE8FD],
+        tip: "Displays information about each item in the window.",
+    },
+    StatusButton {
+        mode: ViewMode::LargeIcons,
+        glyph: &[0xE8A9],
+        tip: "Displays items by using large thumbnails.",
+    },
+];
+
 pub(super) fn corner_marks() -> Vec<SliderMark> {
     vec![
         SliderMark::new(corner::SQUARE.into(), "Square"),

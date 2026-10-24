@@ -3756,3 +3756,45 @@ until I5-I6 all land, so no partial build hides the desktop.
     after the icon. The same folded, at 100 % and 150 %, on every
     backdrop. A normal space's title bar is unchanged.
 
+
+- [x] **W19. The status bar (core, app, platform).** **[needs human]**
+  - Core: `SpaceView.status_bar: bool`, off by default.
+    `Space::content_rect` leaves `STATUS_BAR_HEIGHT` (measure Explorer's;
+    scale it as `title_height` is) at the bottom while it is on and the
+    space is unfolded. Layout, scrolling, and hit tests then shrink with
+    no other change.
+  - `CreateLens` gains `view: SpaceView`. The app passes a view with the
+    status bar on (D15), and W23 turns that into a setting. New normal
+    spaces keep the default.
+  - `SpaceScene.status: Option<StatusBar>`, with the left `segments` and
+    the right `buttons` (rect, glyph, checked, hovered). The app builds
+    it:
+    - A pure `status_segments(count, selected, selected_bytes:
+      Option<u64>) -> Vec<String>`: "1 item" or "12 items", then "1 item
+      selected" or "3 items selected", then the size. The size shows only
+      when every selected item is a file with a known size, as in
+      Explorer. The size comes from a platform `format_bytes`
+      (`StrFormatByteSizeEx`, "1.20 MB"). Draw the segments with Windows
+      11 Explorer's separators.
+    - `STATUS_BUTTONS`: Details and Large icons, each a mode, a glyph,
+      and Explorer's tip: "Displays information about each item in the
+      window." and "Displays items by using large thumbnails." Build the
+      shortcut part of each tip, "(Ctrl+Shift+6)", from the mode's
+      `VIEW_MODES` digit.
+    - An unavailable lens shows no segments, but keeps its buttons.
+  - `app/pointer.rs`: a click on a button dispatches `SetSpaceView`. The
+    hit test is pure and uses the same rects the scene carries. Hover
+    highlights a button and shows its tip through `info_tip`. The current
+    mode's button is drawn checked.
+  - Menu: View ▸ "Status bar", a check entry under the modes.
+  - Tests: the segments for 0, 1, and many items, with and without a
+    selection; the size only when all selected are files; `content_rect`
+    shrinks; the button hit test; serde default; `CreateLens` keeps its
+    view.
+  - **[needs human]** check: a new lens has the bar, and a new space does
+    not. The menu toggles it. The counts follow a click, Ctrl+A, and the
+    marquee; the size shows for files only. Both buttons switch the view
+    and show which is on, and their tips read as Explorer's. Folded, the
+    bar is gone. Check every backdrop (the text is as legible as the
+    labels), at 100 % and 150 %, in light and dark.
+

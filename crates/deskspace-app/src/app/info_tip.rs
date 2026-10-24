@@ -3,13 +3,25 @@
 use deskspace_core::geometry::Point;
 use deskspace_platform::Ui;
 
-use super::{App, Timer};
+use super::{App, Surface, Timer};
 
 impl App {
     /// Shows the info tip for the hovered item, once the pointer has rested on
-    /// it, as Explorer does.
+    /// it, as Explorer does. A status-bar button shows its own tip instead
+    /// (W19).
     pub(super) fn show_info_tip(&mut self, ui: &mut Ui) {
         Self::clear_timer(ui, Timer::InfoTip);
+        if let Some((Surface::Space(id), index)) = self.pointer.status_hover
+            && let Some(space) = self.config.desktop.space(id)
+            && let (Some(text), Some(rect)) = (
+                crate::scene::status_tip(index),
+                crate::scene::status_button_rect(space, index),
+            )
+        {
+            let origin = space.rect().origin();
+            ui.show_text_tip(&text, Point::new(origin.x + rect.x, origin.y + rect.y));
+            return;
+        }
         let Some((surface, item)) = self.pointer.hovered() else {
             return;
         };

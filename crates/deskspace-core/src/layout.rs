@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Size};
-use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, Space};
+use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, STATUS_BAR_HEIGHT, Space};
 
 /// The bounds grid `gap` and `padding` are clamped to, in logical pixels.
 pub const GAP_RANGE: (i32, i32) = (0, 24);
@@ -252,8 +252,17 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     let width = spec.padding * 2
         + spec.columns.max(1) * spec.cell_width
         + (spec.columns.max(1) - 1) * spec.gap;
-    let height =
-        spec.title_height + spec.padding * 2 + rows * spec.cell_height + (rows - 1) * spec.gap;
+    let status = if space.view().status_bar {
+        (STATUS_BAR_HEIGHT as f32 * spec.title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).round()
+            as i32
+    } else {
+        0
+    };
+    let height = spec.title_height
+        + status
+        + spec.padding * 2
+        + rows * spec.cell_height
+        + (rows - 1) * spec.gap;
     space.rect.width = width;
     space.rect.height = height;
     position_items(space, spec);

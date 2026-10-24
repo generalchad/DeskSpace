@@ -9,6 +9,9 @@ use crate::theme::{Color, Theme};
 use crate::view::SpaceView;
 
 pub const DEFAULT_TITLE_HEIGHT: i32 = 28;
+/// Explorer's status bar height at 100 %, in pixels. Provisional until W19's
+/// on-screen check measures Explorer's own; it scales with the title bar.
+pub const STATUS_BAR_HEIGHT: i32 = 24;
 
 /// A space's own look: every look-related setting (the theme, plus the grid's
 /// icon spacing and edge padding). It starts as a copy of the global settings
@@ -287,8 +290,18 @@ impl Space {
             self.rect.x,
             self.rect.y + self.title_height,
             self.rect.width,
-            (self.rect.height - self.title_height).max(0),
+            (self.rect.height - self.title_height - self.status_bar_height()).max(0),
         )
+    }
+
+    /// The status bar's height, scaled with the title bar (so a zoom leaves it
+    /// alone), or 0 while the view hides it or the space is folded.
+    pub fn status_bar_height(&self) -> i32 {
+        if self.folded || !self.view.status_bar {
+            return 0;
+        }
+        (STATUS_BAR_HEIGHT as f32 * self.title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).round()
+            as i32
     }
 
     /// The edges a resize grabbed at `point` would move. Corners are wider
@@ -422,6 +435,22 @@ mod tests {
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
         );
         assert!(space.content_rect().is_empty());
+    }
+
+    #[test]
+    fn a_status_bar_can_shrink_the_content_area() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 200, 200));
+        let full = space.content_rect();
+        space.view = crate::SpaceView {
+            status_bar: true,
+            ..crate::SpaceView::default()
+        };
+        let with_bar = space.content_rect();
+        assert_eq!(full.height - with_bar.height, space.status_bar_height());
+        assert!(space.status_bar_height() > 0);
+        space.folded = true;
+        assert_eq!(space.status_bar_height(), 0, "folded hides the bar");
+        assert_eq!(space.content_rect().height, 0);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use deskspace_core::item::ItemKind;
+use deskspace_core::space::DEFAULT_TITLE_HEIGHT;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
 use deskspace_core::view_layout::{ScrollAxis, ViewLayout, ViewMetrics};
 use deskspace_core::{
@@ -7,10 +8,11 @@ use deskspace_core::{
 };
 use deskspace_platform::{
     DetailsColumnVisual, DetailsView, DropInto, IconCache, ItemLayout, ItemMetrics, ItemState,
-    ItemVisual, SpaceScene, SpaceStyle, format_date, format_kb, type_name,
+    ItemVisual, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual, format_bytes, format_date,
+    format_kb, type_name,
 };
 
-use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH};
+use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -20,6 +22,11 @@ const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
 const TITLE_ICON_SIZE: f32 = 16.0;
 /// The gap between a Details column's text and its divider, at 96 DPI.
 const DETAILS_CELL_PAD: i32 = 6;
+/// Explorer's status-bar button size, gap, and edge inset at 96 DPI.
+/// Provisional until W19's on-screen check measures Explorer's own.
+const STATUS_BUTTON_SIZE: i32 = 22;
+const STATUS_BUTTON_GAP: i32 = 2;
+const STATUS_BAR_INSET: i32 = 4;
 
 /// The app's Details row text: one item in, its column texts out.
 pub type DetailsCellText<'a> = &'a mut dyn FnMut(&Item) -> Vec<String>;
@@ -75,6 +82,8 @@ pub struct ViewState {
     /// A lens whose folder cannot be listed (missing, or refused because it
     /// is DeskSpace's storage): the scene says so in place of items.
     pub folder_unavailable: bool,
+    /// The status-bar view button the pointer is over, if any (W19).
+    pub hovered_status: Option<usize>,
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -229,6 +238,7 @@ pub fn space_scene_with_details(
             .map(|view| format!("Folder not available\n{}", view.path.display())),
         focused_item: view.focused.map(|id| id.0),
         details: details_view(space, &view_layout, content.width, layout.padding, scale),
+        status: status_bar(space, &view),
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -348,6 +358,7 @@ pub fn desktop_layer_scene(
         placeholder: None,
         focused_item: view.focused.map(|id| id.0),
         details: None,
+        status: None,
         editing: None,
         editing_item: None,
         edit: palette.edit,
@@ -573,6 +584,145 @@ pub(crate) fn details_cells(item: &Item) -> Vec<String> {
         .collect()
 }
 
+/// The status bar for `space`, or `None` while it is off or folded. Its
+/// segments read the space's items and selection; an unavailable lens keeps
+/// only the buttons, as Explorer does for a folder it cannot open (W19).
+fn status_bar(space: &Space, view: &ViewState) -> Option<StatusBar> {
+    let height = space.status_bar_height();
+    if height <= 0 {
+        return None;
+    }
+    let rect = Rect::new(0, space.rect().height - height, space.rect().width, height);
+    let segments = if view.folder_unavailable {
+        Vec::new()
+    } else {
+        let selected: Vec<&Item> = view
+            .selected
+            .iter()
+            .filter_map(|id| space.items().iter().find(|item| item.id == *id))
+            .collect();
+        status_segments(
+            space.items().len(),
+            selected.len(),
+            selected_bytes(&selected),
+        )
+    };
+    Some(StatusBar {
+        height,
+        rect,
+        segments,
+        buttons: status_buttons(
+            rect,
+            space.title_height,
+            space.view().mode,
+            view.hovered_status,
+        ),
+    })
+}
+
+/// Explorer's status segments: the item count, then the selection, then the
+/// selected files' size when every selected item is a file with a known size.
+pub(crate) fn status_segments(
+    count: usize,
+    selected: usize,
+    selected_bytes: Option<u64>,
+) -> Vec<String> {
+    let mut segments = vec![format!("{count} item{}", if count == 1 { "" } else { "s" })];
+    if selected > 0 {
+        segments.push(format!(
+            "{selected} item{} selected",
+            if selected == 1 { "" } else { "s" }
+        ));
+    }
+    if let Some(bytes) = selected_bytes {
+        segments.push(format_bytes(bytes));
+    }
+    segments
+}
+
+/// The selected items' total size, or `None` unless every one is a file with
+/// a known size (so a folder or an unreadable path hides it).
+pub(crate) fn selected_bytes(selected: &[&Item]) -> Option<u64> {
+    if selected.is_empty()
+        || selected
+            .iter()
+            .any(|item| item.kind == ItemKind::Folder || item.size.is_none())
+    {
+        return None;
+    }
+    Some(selected.iter().filter_map(|item| item.size).sum())
+}
+
+/// The view buttons at the right of status bar `rect`, from `STATUS_BUTTONS`.
+fn status_buttons(
+    rect: Rect,
+    title_height: i32,
+    mode: ViewMode,
+    hovered: Option<usize>,
+) -> Vec<StatusButtonVisual> {
+    let scale = (title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).max(0.1);
+    let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+    let size = scaled(STATUS_BUTTON_SIZE);
+    let gap = scaled(STATUS_BUTTON_GAP);
+    let inset = scaled(STATUS_BAR_INSET);
+    let count = STATUS_BUTTONS.len() as i32;
+    let mut x = rect.right() - inset - count * size - (count - 1) * gap;
+    let y = rect.y + (rect.height - size) / 2;
+    STATUS_BUTTONS
+        .iter()
+        .enumerate()
+        .map(|(index, button)| {
+            let visual = StatusButtonVisual {
+                rect: Rect::new(x, y, size, size),
+                mode: button.mode,
+                glyph: button.glyph,
+                checked: button.mode == mode,
+                hovered: hovered == Some(index),
+            };
+            x += size + gap;
+            visual
+        })
+        .collect()
+}
+
+/// The status button at `point` (desktop coordinates) on `space`, if any.
+pub(crate) fn status_button_at(space: &Space, point: Point) -> Option<usize> {
+    (0..STATUS_BUTTONS.len()).find(|index| {
+        status_button_rect(space, *index).is_some_and(|rect| {
+            rect.contains(Point::new(
+                point.x - space.rect().x,
+                point.y - space.rect().y,
+            ))
+        })
+    })
+}
+
+/// The rect of status button `index` on `space`, in window coordinates.
+pub(crate) fn status_button_rect(space: &Space, index: usize) -> Option<Rect> {
+    let height = space.status_bar_height();
+    if height <= 0 {
+        return None;
+    }
+    let rect = Rect::new(0, space.rect().height - height, space.rect().width, height);
+    status_buttons(rect, space.title_height, space.view().mode, None)
+        .get(index)
+        .map(|button| button.rect)
+}
+
+/// Explorer's tip for status button `index`, with its view's Ctrl+Shift
+/// digit when it has one.
+pub(crate) fn status_tip(index: usize) -> Option<String> {
+    let button = STATUS_BUTTONS.get(index)?;
+    let digit = VIEW_MODES
+        .iter()
+        .find(|(mode, ..)| *mode == button.mode)
+        .and_then(|(.., digit)| *digit);
+    Some(match digit {
+        Some(digit) => format!("{} (Ctrl+Shift+{digit})", button.tip),
+        None => button.tip.to_owned(),
+    })
+}
+
 /// The item's display label. Explorer never shows a shortcut's extension, even
 /// when "File name extensions" is on, so only real files can gain one; both
 /// forms come from the path, so toggling the option is reflected live and a
@@ -644,18 +794,20 @@ fn scroll_thumb(
     if space.folded() {
         return None;
     }
-    let content = space.content_rect().size();
-    let viewport = layout.viewport(content);
-    let max_scroll = layout.max_scroll(content);
+    let content = space.content_rect();
+    let viewport = layout.viewport(content.size());
+    let max_scroll = layout.max_scroll(content.size());
     if max_scroll == 0 {
         return None;
     }
     let extent = layout.extent();
     let end_margin = thumb_end_margin(corner_radius);
+    // The bar stops at the content's bottom, which the status bar may raise.
+    let content_bottom = content.bottom() - space.rect().y;
     match layout.axis() {
         ScrollAxis::Vertical => {
             let track_top = space.title_height + SCROLL_THUMB_MARGIN;
-            let track_height = viewport - SCROLL_THUMB_MARGIN - end_margin;
+            let track_height = content_bottom - end_margin - track_top;
             if track_height <= 0 {
                 return None;
             }
@@ -684,7 +836,7 @@ fn scroll_thumb(
             let offset = travel * scroll.clamp(0, max_scroll) / max_scroll;
             Some(Rect::new(
                 track_left + offset,
-                space.rect().height - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
+                content_bottom - SCROLL_THUMB_MARGIN - SCROLL_THUMB_WIDTH,
                 thumb_width,
                 SCROLL_THUMB_WIDTH,
             ))
@@ -1198,6 +1350,147 @@ mod tests {
         );
         assert!(scene.highlight);
         assert!(!ViewState::default().highlight);
+    }
+
+    #[test]
+    fn status_segments_read_explorers_words() {
+        assert_eq!(status_segments(0, 0, None), ["0 items"]);
+        assert_eq!(status_segments(1, 0, None), ["1 item"]);
+        assert_eq!(status_segments(12, 0, None), ["12 items"]);
+        assert_eq!(
+            status_segments(12, 1, None),
+            ["12 items", "1 item selected"]
+        );
+        let sized = status_segments(12, 3, Some(2048));
+        assert_eq!(sized.len(), 3);
+        assert!(sized[2].ends_with("KB"), "{}", sized[2]);
+    }
+
+    #[test]
+    fn the_selected_size_shows_only_for_files_with_sizes() {
+        let file = Item::new(
+            ItemId(1),
+            "C:/missing/a.txt",
+            ItemFacts {
+                size: Some(1024),
+                ..ItemFacts::default()
+            },
+        );
+        let folder = Item::new(
+            ItemId(2),
+            "C:/missing/b",
+            ItemFacts {
+                is_folder: true,
+                ..ItemFacts::default()
+            },
+        );
+        let unknown = Item::new(ItemId(3), "C:/missing/c.txt", ItemFacts::default());
+        assert_eq!(selected_bytes(&[&file]), Some(1024));
+        assert_eq!(selected_bytes(&[&file, &folder]), None);
+        assert_eq!(selected_bytes(&[&file, &unknown]), None);
+        assert_eq!(selected_bytes(&[]), None);
+    }
+
+    #[test]
+    fn a_status_bar_carries_its_buttons_and_hits_them() {
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(100, 100, 320, 240),
+            "C:/Users/me/Downloads",
+        );
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let scene = space_scene(
+            desktop.space(lens).unwrap(),
+            surface_look(&theme, &palette),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        let status = scene.status.expect("a new lens shows its status bar");
+        assert_eq!(status.buttons.len(), 2);
+        assert_eq!(status.rect.y + status.rect.height, 240);
+        assert_eq!(
+            status.buttons.iter().map(|b| b.mode).collect::<Vec<_>>(),
+            [ViewMode::Details, ViewMode::LargeIcons]
+        );
+        assert!(!status.buttons.iter().any(|button| button.checked));
+
+        // The model side agrees on where each button is.
+        let space = desktop.space(lens).unwrap();
+        for (index, button) in status.buttons.iter().enumerate() {
+            let at = Point::new(
+                space.rect().x + button.rect.x + button.rect.width / 2,
+                space.rect().y + button.rect.y + button.rect.height / 2,
+            );
+            assert_eq!(status_button_at(space, at), Some(index));
+        }
+        assert_eq!(
+            status_button_at(space, Point::new(space.rect().x + 5, space.rect().y + 5)),
+            None
+        );
+        assert!(status_tip(0).unwrap().contains("Ctrl+Shift+6"));
+        assert!(status_tip(1).unwrap().contains("Ctrl+Shift+2"));
+
+        // The large-icons button is checked once the view is Large icons.
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id: lens,
+                view: deskspace_core::SpaceView {
+                    mode: ViewMode::LargeIcons,
+                    status_bar: true,
+                    ..deskspace_core::SpaceView::default()
+                },
+            },
+        );
+        let scene = space_scene(
+            desktop.space(lens).unwrap(),
+            surface_look(&theme, &palette),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        let status = scene.status.unwrap();
+        assert!(!status.buttons[0].checked);
+        assert!(status.buttons[1].checked);
+    }
+
+    #[test]
+    fn an_unavailable_lens_keeps_its_status_buttons() {
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 320, 240),
+            "C:/Users/me/Downloads",
+        );
+        let theme = Theme::default();
+        let scene = space_scene(
+            desktop.space(lens).unwrap(),
+            surface_look(&theme, &theme.palette(true)),
+            ViewState {
+                folder_unavailable: true,
+                ..ViewState::default()
+            },
+            &mut IconCache::new(),
+        );
+        let status = scene.status.unwrap();
+        assert!(status.segments.is_empty());
+        assert_eq!(status.buttons.len(), 2);
+    }
+
+    #[test]
+    fn a_space_without_its_status_bar_has_none() {
+        let space = space();
+        let theme = Theme::default();
+        let scene = space_scene(
+            &space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(scene.status.is_none());
     }
 
     #[test]

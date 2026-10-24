@@ -37,13 +37,15 @@ pub enum Command {
         locked: bool,
     },
     /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
-    /// `path` is only stored; `SyncLens` fills the items.
+    /// `path` is only stored; `SyncLens` fills the items. `view` is the new
+    /// lens's view settings (W19, W23).
     CreateLens {
         title: String,
         at: Point,
         size: Size,
         path: PathBuf,
         locked: bool,
+        view: SpaceView,
     },
     /// Rebinds a lens to `path`, sets its title text, and clears its listed
     /// items until the next `SyncLens`.
@@ -268,7 +270,15 @@ impl Desktop {
                 size,
                 path,
                 locked,
-            } => self.apply_create_lens(title, at, size, path, locked, bounds),
+                view,
+            } => self.apply_create_lens(
+                title,
+                Rect::new(at.x, at.y, size.width, size.height),
+                path,
+                locked,
+                view,
+                bounds,
+            ),
             Command::SetLensFolder { id, path, title } => {
                 self.apply_set_lens_folder(id, path, title)
             }
@@ -1395,6 +1405,7 @@ mod tests {
                         size: Size::new(100, 100),
                         path: "C:/missing".into(),
                         locked: false,
+                        view: crate::SpaceView::default(),
                     },
                     bounds()
                 )

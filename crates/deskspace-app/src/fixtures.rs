@@ -37,6 +37,10 @@ pub fn create_lens(desktop: &mut Desktop, title: &str, rect: Rect, path: &str) -
             size: rect.size(),
             path: path.into(),
             locked: false,
+            view: deskspace_core::SpaceView {
+                status_bar: true,
+                ..deskspace_core::SpaceView::default()
+            },
         },
     );
     id

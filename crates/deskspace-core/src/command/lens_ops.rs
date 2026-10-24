@@ -5,23 +5,24 @@ use std::path::PathBuf;
 
 use super::CommandOutcome;
 use crate::desktop::Desktop;
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::Rect;
 use crate::id::SpaceId;
 use crate::item::Item;
 use crate::layout::{GridSpec, arrange_space, clamp_to_bounds};
 use crate::source::{FolderEntry, FolderView, LensTitle, SpaceSource};
+use crate::view::SpaceView;
 
 impl Desktop {
     pub(super) fn apply_create_lens(
         &mut self,
         title: String,
-        at: Point,
-        size: Size,
+        rect: Rect,
         path: PathBuf,
         locked: bool,
+        view: SpaceView,
         bounds: Rect,
     ) -> CommandOutcome {
-        let rect = clamp_to_bounds(Rect::new(at.x, at.y, size.width, size.height), bounds);
+        let rect = clamp_to_bounds(rect, bounds);
         let id = self.add_space(title, rect);
         if let Some(space) = self.space_mut(id) {
             space.source = SpaceSource::Folder(FolderView {
@@ -30,6 +31,7 @@ impl Desktop {
                 ..FolderView::default()
             });
             space.locked = locked;
+            space.view = view;
         }
         CommandOutcome::Applied
     }
@@ -138,6 +140,7 @@ impl Desktop {
 mod tests {
     use super::*;
     use crate::command::{Command, CommandOutcome};
+    use crate::geometry::{Point, Size};
     use crate::item::{ItemFacts, ItemKind, SortKey};
     use crate::sort::SortRule;
 
@@ -155,6 +158,7 @@ mod tests {
                         size: Size::new(240, 120),
                         path: path.into(),
                         locked: false,
+                        view: SpaceView::default(),
                     },
                     bounds(),
                 )
@@ -261,12 +265,39 @@ mod tests {
                 size: Size::new(240, 120),
                 path: "C:/folder".into(),
                 locked: true,
+                view: SpaceView::default(),
             },
             bounds(),
         );
         let rect = desktop.space(desktop.spaces()[0].id).unwrap().rect();
         assert!(rect.x + rect.width <= bounds().width);
         assert!(rect.y + rect.height <= bounds().height);
+    }
+
+    #[test]
+    fn creating_a_lens_keeps_its_view() {
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        let view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::CreateLens {
+                        title: "Lens".into(),
+                        at: Point::new(10, 10),
+                        size: Size::new(240, 120),
+                        path: "C:/folder".into(),
+                        locked: false,
+                        view,
+                    },
+                    bounds(),
+                )
+                .is_applied()
+        );
+        assert_eq!(desktop.space(id).unwrap().view(), view);
     }
 
     #[test]

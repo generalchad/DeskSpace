@@ -244,6 +244,11 @@ impl App {
                 Surface::Space(id) => self.unavailable_lenses.contains(&id),
                 Surface::Desktop => false,
             },
+            hovered_status: self
+                .pointer
+                .status_hover
+                .filter(|(owner, _)| *owner == surface)
+                .map(|(_, index)| index),
         }
     }
 

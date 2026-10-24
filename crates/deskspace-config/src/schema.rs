@@ -715,6 +715,7 @@ show_border = true
                         size: Size::new(240, 120),
                         path: "C:/Docs".into(),
                         locked: false,
+                        view: deskspace_core::SpaceView::default(),
                     },
                     bounds(),
                 )
