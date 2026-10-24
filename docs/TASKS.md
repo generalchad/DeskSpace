@@ -744,19 +744,6 @@ lens-only.
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
 
-- [ ] **W20. The View page (app).**
-  - Every space's scope lists `page::VIEW`, always enabled, like
-    Shortcuts. It has a View choice (`VIEW_MODES`) and a Status bar
-    toggle. Under a "Sort" heading come Sort by (`SORT_KEYS`), Order
-    (Ascending, Descending), Folders first, and Keep sorted (on and grey
-    for a lens). Each edit becomes `SetSpaceView` and previews.
-  - `SpaceSnapshot` gains the view, and Cancel restores it.
-  - Built for Global too, so the form keeps its shape, but not listed
-    there.
-  - Tests: `every_editable_space_field_has_a_handler` covers the page;
-    Cancel restores the view; Keep sorted is grey for a lens.
-  - Done when: also `CONTEXT.md` section 6 names the page.
-
 - [ ] **W21. Tiles (app, platform).** **[needs human]**
   - `ViewMode::Tiles` (digit 7): tiles in rows that wrap, each a 48 px
     icon at the left and three lines beside it (name, type, size; the

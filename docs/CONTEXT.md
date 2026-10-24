@@ -979,16 +979,19 @@ in `ui.rs`. What spans them:
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but Shortcuts and Lens; a space lists the five look pages, which show
+  page but View, Shortcuts and Lens; a space lists the five look pages, which
+  show
   its values (from Global until customized) greyed unless the header's
-  "Customize this space" switch is on, and its always-enabled Shortcuts page.
+  "Customize this space" switch is on, its always-enabled View page (the view
+  mode, the status bar, and the sort rule, which preview through
+  `SetSpaceView`), and its always-enabled Shortcuts page.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
   preview through `SetLensTitle`), and Show hidden files, which previews
   through `SetLensView`. Global edits write `Config` directly; a space's edits
   become `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors
   page's reset becomes "Match global appearance". Cancel restores each space's
-  `SpaceSnapshot` (its look, a lens's view, and its title); a space menu edit
+  `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit
   made while the window is open goes into that snapshot, because the menu
   commits at once. These also commit at once, so Cancel does not undo them:
   - the Lens page's "Change folder…", which writes the new path into the

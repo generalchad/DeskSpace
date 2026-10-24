@@ -4,7 +4,7 @@ use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
     LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
-    corner_marks,
+    VIEW_ORDERS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -369,6 +369,50 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
                 "New spaces otherwise follow the Global appearance and layout. \
                  A locked space keeps its size and scrolls instead of growing.",
             ),
+        ],
+    }
+}
+
+/// A space's View page (W20): its view mode, status bar, and sort rule. Built
+/// for every scope so the form keeps its shape, but only a space lists it.
+pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
+    let view = space.map_or_else(SpaceView::default, Space::view);
+    let modes: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
+    let mode = VIEW_MODES
+        .iter()
+        .position(|(candidate, ..)| *candidate == view.mode)
+        .unwrap_or(0);
+    let lens = space.is_some_and(Space::is_lens);
+    SettingsPage {
+        title: "View".into(),
+        fields: vec![
+            Field::heading(field::VIEW_HEADING, "View"),
+            Field::choice(field::VIEW_MODE, "Show as", &modes, mode),
+            Field::toggle(field::VIEW_STATUS_BAR, "Status bar", view.status_bar),
+            Field::heading(field::VIEW_SORT_HEADING, "Sort"),
+            Field::choice(
+                field::VIEW_SORT_KEY,
+                "Sort by",
+                &labels(&SORT_KEYS),
+                index_of(&SORT_KEYS, view.sort.key),
+            ),
+            Field::choice(
+                field::VIEW_ORDER,
+                "Order",
+                &VIEW_ORDERS,
+                usize::from(view.sort.descending),
+            ),
+            Field::toggle(
+                field::VIEW_FOLDERS_FIRST,
+                "Folders first",
+                view.sort.folders_first,
+            ),
+            Field::toggle(
+                field::VIEW_KEEP_SORTED,
+                "Keep sorted",
+                view.keep_sorted || lens,
+            )
+            .enabled(!lens),
         ],
     }
 }

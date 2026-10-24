@@ -3798,3 +3798,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     bar is gone. Check every backdrop (the text is as legible as the
     labels), at 100 % and 150 %, in light and dark.
 
+
+- [x] **W20. The View page (app).**
+  - Every space's scope lists `page::VIEW`, always enabled, like
+    Shortcuts. It has a View choice (`VIEW_MODES`) and a Status bar
+    toggle. Under a "Sort" heading come Sort by (`SORT_KEYS`), Order
+    (Ascending, Descending), Folders first, and Keep sorted (on and grey
+    for a lens). Each edit becomes `SetSpaceView` and previews.
+  - `SpaceSnapshot` gains the view, and Cancel restores it.
+  - Built for Global too, so the form keeps its shape, but not listed
+    there.
+  - Tests: `every_editable_space_field_has_a_handler` covers the page;
+    Cancel restores the view; Keep sorted is grey for a lens.
+  - Done when: also `CONTEXT.md` section 6 names the page.

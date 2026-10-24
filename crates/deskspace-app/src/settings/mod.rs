@@ -38,7 +38,7 @@ use deskspace_core::theme::{
 };
 use deskspace_core::{
     Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
-    SortKey, Space, SpaceId, SpaceLook, Theme, ThemeMode, ViewMode,
+    SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
 };
 use deskspace_platform::{
     ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
@@ -48,7 +48,7 @@ use deskspace_platform::{
 
 use pages::{
     about_page, animation_pages, general_page, hotkeys_page, lens_page, look_pages,
-    new_spaces_page, shortcuts_page,
+    new_spaces_page, shortcuts_page, view_page,
 };
 
 /// How many pages hold look settings (Appearance through Advanced).
@@ -127,18 +127,18 @@ impl ScopeKind {
 }
 
 /// The pages the categories pane lists for `scope`, in order: every Global
-/// page for Global, the animation pages last, or a space's look pages and its
-/// Shortcuts page; a lens also lists its Lens page.
+/// page for Global, the animation pages last, or a space's look pages, its
+/// View page, and its Shortcuts page; a lens also lists its Lens page.
 pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
     match scope {
         ScopeKind::Global => (0..=page::ABOUT)
             .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
             .collect(),
         ScopeKind::Space => (0..LOOK_PAGE_COUNT)
-            .chain(std::iter::once(page::SHORTCUTS))
+            .chain([page::VIEW, page::SHORTCUTS])
             .collect(),
         ScopeKind::Lens => (0..LOOK_PAGE_COUNT)
-            .chain([page::SHORTCUTS, page::LENS])
+            .chain([page::VIEW, page::SHORTCUTS, page::LENS])
             .collect(),
     }
 }
@@ -215,6 +215,8 @@ pub fn build_form(
         &config.window.animations,
         system_animations,
     ));
+    debug_assert_eq!(pages.len(), page::VIEW);
+    pages.push(view_page(space));
 
     let listed = listed_pages(kind);
     let selected = listed
@@ -228,8 +230,10 @@ pub fn build_form(
     };
     // The animation pages get a group of their own, after the rest, so the
     // flattened entries keep `listed`'s order and `selected` stays valid.
-    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) =
-        listed.iter().partition(|&&index| index < page::ANIMATIONS);
+    let animations = page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len();
+    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) = listed
+        .iter()
+        .partition(|&&index| !animations.contains(&index));
     let mut groups = vec![SettingsNavGroup {
         title: String::new(),
         entries: settings_pages.iter().map(entry).collect(),
@@ -469,6 +473,19 @@ mod tests {
                     field.label
                 );
             }
+        }
+        let view = &pages[page::VIEW];
+        assert_eq!(view.title, "View");
+        for field in &view.fields {
+            let Some(value) = edit_value(&field.kind) else {
+                continue;
+            };
+            assert!(
+                space_edit(&config, &mut session, field.id, value, true, Path::new("")).is_some(),
+                "view field {} ({:?}) has no arm in `view_edit`",
+                field.id,
+                field.label
+            );
         }
     }
 
@@ -781,7 +798,14 @@ mod tests {
             .collect();
         assert!(lens_pages.contains(&"Shortcuts"));
         assert!(lens_pages.contains(&"Lens"));
+        assert!(lens_pages.contains(&"View"));
         assert_eq!(lens_form.pages[page::LENS].title, "Lens");
+        let keep_sorted = lens_form.field(field::VIEW_KEEP_SORTED).unwrap();
+        assert!(
+            matches!(keep_sorted.kind, FieldKind::Toggle { on: true }),
+            "a lens always keeps its order"
+        );
+        assert!(!keep_sorted.enabled, "and cannot turn it off");
         assert!(matches!(
             &lens_form.field(field::LENS_SHOW_HIDDEN).unwrap().kind,
             FieldKind::Toggle { on: false }
@@ -800,6 +824,7 @@ mod tests {
             .map(|entry| entry.label.as_str())
             .collect();
         assert!(space_pages.contains(&"Shortcuts"));
+        assert!(space_pages.contains(&"View"));
         assert!(!space_pages.contains(&"Lens"));
         assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
         assert!(listed_pages(ScopeKind::Lens).contains(&page::LENS));
@@ -858,6 +883,7 @@ mod tests {
                 "Layout",
                 "Colors",
                 "Advanced",
+                "View",
                 "Shortcuts"
             ]
         );
@@ -867,10 +893,7 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(
-            form.pages.len(),
-            page::ANIMATIONS + tables::ANIMATION_PAGES.len()
-        );
+        assert_eq!(form.pages.len(), page::VIEW + 1);
     }
 
     fn animation_form(config: &Config, system_on: bool) -> SettingsForm {
@@ -991,11 +1014,13 @@ mod tests {
         assert!(listed_pages(ScopeKind::Space).contains(&page::SHORTCUTS));
         assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
 
-        // The sixth entry of a space is its Shortcuts page, which stays
-        // selected while the space is, is always enabled, and is left for
-        // Appearance when the scope returns to Global.
+        // The sixth entry of a space is its View page and the seventh its
+        // Shortcuts page, which stays selected while the space is, is always
+        // enabled, and is left for Appearance when the scope returns to Global.
         session.select_scope(Some(id), ScopeKind::Space);
         session.select_entry(5);
+        assert_eq!(session.page, page::VIEW);
+        session.select_entry(6);
         assert_eq!(session.page, page::SHORTCUTS);
         let form = build_form(
             &config,
@@ -1005,8 +1030,8 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
-        assert_eq!(form.nav.selected, 5);
-        assert_eq!(form.nav.page_of(5), Some(page::SHORTCUTS));
+        assert_eq!(form.nav.selected, 6);
+        assert_eq!(form.nav.page_of(6), Some(page::SHORTCUTS));
         assert!(form.field(field::SPACE_PREVIEW).unwrap().enabled);
         session.select_scope(None, ScopeKind::Global);
         assert_eq!(session.page, page::APPEARANCE);

@@ -8,15 +8,18 @@ use super::ids::page;
 use super::tables::HOTKEY_BINDINGS;
 use super::*;
 
-/// A space's customization and a lens's view, snapshotted so Cancel can
-/// restore them.
+/// A space's customization, its view, and a lens's folder view, snapshotted
+/// so Cancel can restore them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceSnapshot {
     pub id: SpaceId,
     pub title: String,
     pub custom: bool,
     pub look: Option<SpaceLook>,
-    pub view: Option<FolderView>,
+    /// The space's view settings (W20).
+    pub view: SpaceView,
+    /// A lens's folder view; `None` for a normal space.
+    pub folder: Option<FolderView>,
 }
 
 impl SpaceSnapshot {
@@ -26,7 +29,8 @@ impl SpaceSnapshot {
             title: space.title().to_owned(),
             custom: space.custom(),
             look: space.look().cloned(),
-            view: space.folder_view().cloned(),
+            view: space.view(),
+            folder: space.folder_view().cloned(),
         }
     }
 
@@ -39,16 +43,24 @@ impl SpaceSnapshot {
         }
     }
 
-    /// The command that puts a lens's view back, if it had one.
-    pub fn restore_view(&self) -> Option<Command> {
-        self.view
+    /// The command that puts the space's view settings back.
+    pub fn restore_view(&self) -> Command {
+        Command::SetSpaceView {
+            id: self.id,
+            view: self.view,
+        }
+    }
+
+    /// The command that puts a lens's folder view back, if it had one.
+    pub fn restore_folder(&self) -> Option<Command> {
+        self.folder
             .clone()
             .map(|view| Command::SetLensView { id: self.id, view })
     }
 
     /// The command that puts a lens's title mode and text back.
     pub fn restore_title(&self) -> Option<Command> {
-        let view = self.view.as_ref()?;
+        let view = self.folder.as_ref()?;
         Some(Command::SetLensTitle {
             id: self.id,
             title: view.title,
@@ -306,6 +318,26 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_restores_the_view() {
+        let (mut config, id) = config_with_space("Work");
+        let session = Session::new(&config);
+        let snapshot = session.saved_spaces[0].clone();
+        assert_eq!(snapshot.view, SpaceView::default());
+        let view = SpaceView {
+            mode: ViewMode::LargeIcons,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        apply(&mut config.desktop, Command::SetSpaceView { id, view });
+        assert_eq!(config.desktop.space(id).unwrap().view(), view);
+        apply(&mut config.desktop, snapshot.restore_view());
+        assert_eq!(
+            config.desktop.space(id).unwrap().view(),
+            SpaceView::default()
+        );
+    }
+
+    #[test]
     fn a_lens_snapshot_restores_its_view() {
         let mut config = Config::new();
         let lens = create_lens(
@@ -321,9 +353,9 @@ mod tests {
             .find(|snapshot| snapshot.id == lens)
             .unwrap()
             .clone();
-        assert!(!snapshot.view.as_ref().unwrap().show_hidden);
+        assert!(!snapshot.folder.as_ref().unwrap().show_hidden);
 
-        let mut view = snapshot.view.clone().unwrap();
+        let mut view = snapshot.folder.clone().unwrap();
         view.show_hidden = true;
         apply(&mut config.desktop, Command::SetLensView { id: lens, view });
         assert!(
@@ -336,7 +368,7 @@ mod tests {
                 .show_hidden
         );
 
-        apply(&mut config.desktop, snapshot.restore_view().unwrap());
+        apply(&mut config.desktop, snapshot.restore_folder().unwrap());
         assert!(
             !config
                 .desktop
@@ -414,11 +446,11 @@ mod tests {
             .find(|snapshot| snapshot.id == lens)
             .unwrap();
         assert_eq!(
-            kept.view.as_ref().unwrap().path.as_path(),
+            kept.folder.as_ref().unwrap().path.as_path(),
             Path::new("C:/Temp/lens-new")
         );
         assert_eq!(
-            old.view.as_ref().unwrap().path.as_path(),
+            old.folder.as_ref().unwrap().path.as_path(),
             Path::new("C:/Temp/lens-old"),
             "the snapshot taken at open had the old path"
         );

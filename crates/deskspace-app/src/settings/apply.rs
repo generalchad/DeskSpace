@@ -353,9 +353,50 @@ fn lens_edit(
     Some((space.id, command, effect))
 }
 
-/// The command for an edit on a space's page: a look field on a customized
-/// space, or a lens page's view or title field. `None` when the selected
-/// scope does not fit the field.
+/// The command for an edit on a space's View page (W20). It works on any
+/// space, customized or not, because a view is not part of the look. A lens
+/// cannot turn Keep sorted off, since it always holds its order.
+fn view_edit(
+    config: &Config,
+    session: &mut Session,
+    id: u32,
+    value: &FieldValue,
+) -> Option<(SpaceId, Command, Effect)> {
+    let space = scope_space(config, session)?;
+    let mut view = space.view();
+    match (id, value) {
+        (field::VIEW_MODE, FieldValue::Choice(index)) => {
+            view.mode = VIEW_MODES.get(*index)?.0;
+        }
+        (field::VIEW_STATUS_BAR, FieldValue::Toggle(on)) => view.status_bar = *on,
+        (field::VIEW_SORT_KEY, FieldValue::Choice(index)) => {
+            view.sort.key = SORT_KEYS.get(*index)?.0;
+        }
+        (field::VIEW_ORDER, FieldValue::Choice(index)) => match index {
+            0 => view.sort.descending = false,
+            1 => view.sort.descending = true,
+            _ => return None,
+        },
+        (field::VIEW_FOLDERS_FIRST, FieldValue::Toggle(on)) => view.sort.folders_first = *on,
+        (field::VIEW_KEEP_SORTED, FieldValue::Toggle(on)) => {
+            if space.is_lens() {
+                return None;
+            }
+            view.keep_sorted = *on;
+        }
+        _ => return None,
+    }
+    session.dirty = true;
+    Some((
+        space.id,
+        Command::SetSpaceView { id: space.id, view },
+        Effect::Layout,
+    ))
+}
+
+/// The command for an edit on a space's page: its View page, a look field on
+/// a customized space, or a lens page's view or title field. `None` when the
+/// selected scope does not fit the field.
 pub fn space_edit(
     config: &Config,
     session: &mut Session,
@@ -364,6 +405,9 @@ pub fn space_edit(
     system_dark: bool,
     profile: &Path,
 ) -> Option<(SpaceId, Command, Effect)> {
+    if let Some(edit) = view_edit(config, session, id, &value) {
+        return Some(edit);
+    }
     if let Some(edit) = lens_edit(config, session, id, &value, profile) {
         return Some(edit);
     }

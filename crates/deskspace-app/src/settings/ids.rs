@@ -113,6 +113,15 @@ pub mod field {
     pub const LENS_TITLE_HEADING: u32 = 113;
     pub const LENS_TITLE_MODE: u32 = 114;
     pub const LENS_TITLE_TEXT: u32 = 115;
+
+    pub const VIEW_HEADING: u32 = 116;
+    pub const VIEW_MODE: u32 = 117;
+    pub const VIEW_STATUS_BAR: u32 = 118;
+    pub const VIEW_SORT_HEADING: u32 = 119;
+    pub const VIEW_SORT_KEY: u32 = 120;
+    pub const VIEW_ORDER: u32 = 121;
+    pub const VIEW_FOLDERS_FIRST: u32 = 122;
+    pub const VIEW_KEEP_SORTED: u32 = 123;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,
@@ -127,4 +136,7 @@ pub mod page {
     pub const LENS: usize = 10;
     /// The first animation page; one per `ANIMATION_PAGES` row follows.
     pub const ANIMATIONS: usize = 11;
+    /// A space's View page (W20), built after the animation pages so no landed
+    /// page id moves; `listed_pages` puts it with the space's pages.
+    pub const VIEW: usize = 11 + crate::settings::tables::ANIMATION_PAGES.len();
 }

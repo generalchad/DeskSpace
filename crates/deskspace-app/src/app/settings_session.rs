@@ -353,17 +353,30 @@ impl App {
             &self.profile,
         );
         // Not `commit`: the edit is previewed now and saved by Apply.
-        if let Some((id, command, effect)) = edit
-            && self.dispatch(command, self.space_center(id)).is_applied()
-        {
-            match effect {
-                Effect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
-                Effect::Lens => {
-                    // A changed sort or filter needs a fresh listing.
+        if let Some((id, command, effect)) = edit {
+            let view_changed = matches!(&command, Command::SetSpaceView { .. });
+            if self.dispatch(command, self.space_center(id)).is_applied() {
+                if view_changed
+                    && self
+                        .config
+                        .desktop
+                        .space(id)
+                        .is_some_and(|space| space.is_lens())
+                {
+                    // A lens sorts and filters while listing, so it needs a
+                    // fresh listing for its new rule (W20).
                     ui.unwatch_folder(WatchKey::Space(id));
                     self.sync_watches(ui);
                 }
-                _ => self.schedule_preview(ui, Preview::restyle(id)),
+                match effect {
+                    Effect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
+                    Effect::Lens => {
+                        // A changed sort or filter needs a fresh listing.
+                        ui.unwatch_folder(WatchKey::Space(id));
+                        self.sync_watches(ui);
+                    }
+                    _ => self.schedule_preview(ui, Preview::restyle(id)),
+                }
             }
         }
         self.refresh_settings(ui);
@@ -493,17 +506,18 @@ impl App {
             let at = space.rect().center();
             // Not `commit`: a restored look needs a restyle and re-flow.
             let look_restored = self.dispatch(snapshot.restore(), at).is_applied();
-            let view_restored = snapshot
-                .restore_view()
+            let view_restored = self.dispatch(snapshot.restore_view(), at).is_applied();
+            let folder_restored = snapshot
+                .restore_folder()
                 .is_some_and(|command| self.dispatch(command, at).is_applied());
             let title_restored = snapshot
                 .restore_title()
                 .is_some_and(|command| self.dispatch(command, at).is_applied());
-            if look_restored || view_restored || title_restored {
+            if look_restored || view_restored || folder_restored || title_restored {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);
             }
-            if view_restored {
+            if folder_restored {
                 ui.unwatch_folder(WatchKey::Space(snapshot.id));
                 self.sync_watches(ui);
             }

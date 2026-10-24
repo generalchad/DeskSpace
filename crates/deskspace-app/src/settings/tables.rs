@@ -119,6 +119,9 @@ pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
 /// The narrowest Name column, so a small space keeps a readable name.
 pub const NAME_MIN_WIDTH: i32 = 120;
 
+/// Explorer's Sort by directions, in the View page's order (W20).
+pub const VIEW_ORDERS: [&str; 2] = ["Ascending", "Descending"];
+
 /// A view button in Explorer's status bar (W19): the view it switches to, its
 /// glyph, and Explorer's tip. The tip gains its Ctrl+Shift digit from
 /// `VIEW_MODES`.
