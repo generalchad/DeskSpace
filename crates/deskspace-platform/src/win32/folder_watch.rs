@@ -27,7 +27,7 @@ use windows::Win32::Storage::FileSystem::{
     OPEN_EXISTING, ReadDirectoryChangesW,
 };
 use windows::Win32::System::IO::{
-    CancelIoEx, CreateIoCompletionPort, GetOverlappedResult, GetQueuedCompletionStatus, OVERLAPPED,
+    CancelIoEx, CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED,
     PostQueuedCompletionStatus,
 };
 use windows::Win32::System::Threading::INFINITE;
@@ -52,6 +52,11 @@ const RETRY_MS: u64 = 5_000;
 /// Renaming a watched folder moves its handle with it, so the pending read may
 /// never fail and the lens would keep the old items.
 const CHECK_MS: u64 = 5_000;
+
+/// How long a stopping worker waits for its canceled reads to come back.
+/// Canceling a change read completes at once; this only bounds a broken one,
+/// and stays well under the console's ~5 s close deadline.
+const DRAIN_MS: u64 = 1_000;
 
 /// The change notifications the watch reports: files and folders added,
 /// removed, or renamed, and attribute changes such as a hidden flag.
@@ -132,6 +137,7 @@ impl FolderWatch {
                     additions: pending,
                     folders: HashMap::new(),
                     by_read: HashMap::new(),
+                    canceled: HashMap::new(),
                     next_read_key: FIRST_READ_KEY,
                     bursts: Bursts::default(),
                     start: Instant::now(),
@@ -285,9 +291,11 @@ struct Worker {
     target: HWND,
     message: u32,
     additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
-    folders: HashMap<usize, Box<Folder>>,
+    folders: HashMap<usize, Folder>,
     /// The slot behind each open read's completion key.
     by_read: HashMap<usize, usize>,
+    /// Canceled reads by completion key, kept until their packets arrive.
+    canceled: HashMap<usize, CanceledRead>,
     next_read_key: usize,
     bursts: Bursts,
     start: Instant,
@@ -330,9 +338,12 @@ impl Worker {
                 Ok(()) if key == ADD_KEY => self.add(transferred as usize),
                 Ok(()) if key == REMOVE_KEY => self.remove(transferred as usize),
                 Ok(()) if key == STOP_KEY => return Ok(()),
-                // Any other key is a folder's slot, registered with the port
-                // when the folder's first read started.
-                Ok(()) => self.completed(key, now),
+                // Any other key is a folder's read, registered with the port
+                // when the read's folder was opened. A read that failed or
+                // was canceled still sends its packet, as an error with the
+                // `OVERLAPPED` set.
+                Ok(()) => self.completed(key, Ok(()), now),
+                Err(error) if !overlapped.is_null() => self.completed(key, Err(error), now),
                 Err(error) if is_timeout(&error) => {}
                 Err(error) => return Err(error.into()),
             }
@@ -353,12 +364,12 @@ impl Worker {
             tracing::warn!(slot, "folder watch add had no path");
             return;
         };
-        let mut folder = Box::new(Folder {
+        let mut folder = Folder {
             path,
             listing,
             open: None,
             retry_at: None,
-        });
+        };
         let now = millis(self.start);
         let read_key = self.next_read_key;
         self.next_read_key += 1;
@@ -376,34 +387,50 @@ impl Worker {
                 FolderListing::Unavailable
             }
         };
-        if matches!(listing, FolderListing::Listed(_)) {
-            folder.retry_at = None;
-        } else {
+        let listed = matches!(listing, FolderListing::Listed(_));
+        folder.retry_at = (!listed).then_some(now + RETRY_MS);
+        self.folders.insert(slot, folder);
+        if !listed {
             // A listing that failed leaves the old handle watching a folder
             // that may be gone; reopen it on the retry to follow a rename back.
-            if let Some(key) = folder.close_open() {
-                self.by_read.remove(&key);
-            }
-            folder.retry_at = Some(now + RETRY_MS);
+            self.close_open(slot);
         }
-        self.folders.insert(slot, folder);
         self.bursts.add(slot);
         self.publish(slot, listing);
     }
 
-    /// Stops one folder's watch, canceling its pending read before the handle
-    /// and buffer are freed.
+    /// Stops one folder's watch.
     fn remove(&mut self, slot: usize) {
         self.bursts.remove(slot);
-        let closed = self.folders.remove(&slot).and_then(|folder| folder.close());
-        if let Some(key) = closed {
-            self.by_read.remove(&key);
+        self.close_open(slot);
+        self.folders.remove(&slot);
+    }
+
+    /// Closes `slot`'s handle, if it is open, and cancels its pending read.
+    /// The canceled read is kept until its packet arrives, because Windows
+    /// writes into its buffer and `OVERLAPPED` until then.
+    fn close_open(&mut self, slot: usize) {
+        let Some(open) = self
+            .folders
+            .get_mut(&slot)
+            .and_then(|folder| folder.open.take())
+        else {
+            return;
+        };
+        let read_key = open.read_key;
+        self.by_read.remove(&read_key);
+        if let Some(read) = open.close() {
+            self.canceled.insert(read_key, read);
         }
     }
 
     /// One folder's read finished: start the next read and extend its burst.
-    /// A failed read means the folder is gone; empty the lens and retry.
-    fn completed(&mut self, read_key: usize, now_ms: u64) {
+    /// A failed read means the folder is gone; empty the lens and retry. A
+    /// canceled read's packet only frees the read.
+    fn completed(&mut self, read_key: usize, read: windows::core::Result<()>, now_ms: u64) {
+        if self.canceled.remove(&read_key).is_some() {
+            return;
+        }
         let Some(&slot) = self.by_read.get(&read_key) else {
             return;
         };
@@ -418,7 +445,10 @@ impl Worker {
                 return;
             }
             open.pending = false;
-            match open.read_changes() {
+            match read
+                .map_err(PlatformError::from)
+                .and_then(|()| open.read_changes())
+            {
                 Ok(()) => false,
                 Err(error) => {
                     tracing::debug!(
@@ -431,13 +461,7 @@ impl Worker {
             }
         };
         if failed {
-            let closed = self
-                .folders
-                .get_mut(&slot)
-                .and_then(|folder| folder.close_open());
-            if let Some(key) = closed {
-                self.by_read.remove(&key);
-            }
+            self.close_open(slot);
             if let Some(folder) = self.folders.get_mut(&slot) {
                 folder.retry_at = Some(now_ms + RETRY_MS);
             }
@@ -451,22 +475,16 @@ impl Worker {
     /// Lists every folder whose burst is due and posts the result.
     fn post_due(&mut self, now_ms: u64) {
         for slot in self.bursts.take_due(now_ms) {
-            let outcome = self.folders.get_mut(&slot).map(|folder| {
-                let listing = folder.list();
-                if matches!(listing, FolderListing::Listed(_)) {
-                    folder.retry_at = None;
-                    (listing, None)
-                } else {
-                    folder.retry_at = Some(now_ms + RETRY_MS);
-                    (listing, folder.close_open())
-                }
-            });
-            if let Some((listing, closed)) = outcome {
-                if let Some(key) = closed {
-                    self.by_read.remove(&key);
-                }
-                self.publish(slot, listing);
+            let Some(folder) = self.folders.get_mut(&slot) else {
+                continue;
+            };
+            let listing = folder.list();
+            let listed = matches!(listing, FolderListing::Listed(_));
+            folder.retry_at = (!listed).then_some(now_ms + RETRY_MS);
+            if !listed {
+                self.close_open(slot);
             }
+            self.publish(slot, listing);
         }
     }
 
@@ -526,18 +544,9 @@ impl Worker {
                     }
                 }
             };
-            let close_key = if recovered.is_none() {
-                self.folders
-                    .get_mut(&slot)
-                    .and_then(|folder| folder.close_open())
-            } else {
-                None
-            };
-            if let Some(key) = close_key {
-                self.by_read.remove(&key);
-            }
-            if let Some(listing) = recovered {
-                self.publish(slot, listing);
+            match recovered {
+                Some(listing) => self.publish(slot, listing),
+                None => self.close_open(slot),
             }
         }
     }
@@ -581,13 +590,7 @@ impl Worker {
             if let Some(path) = path {
                 tracing::debug!(path = %path.display(), "watched folder moved or disappeared");
             }
-            if let Some(key) = self
-                .folders
-                .get_mut(&slot)
-                .and_then(|folder| folder.close_open())
-            {
-                self.by_read.remove(&key);
-            }
+            self.close_open(slot);
             if let Some(folder) = self.folders.get_mut(&slot) {
                 folder.retry_at = Some(now_ms + RETRY_MS);
             }
@@ -615,15 +618,65 @@ impl Worker {
     /// Stops every folder's read before the worker exits.
     fn close_all(&mut self) {
         self.bursts.clear();
-        self.by_read.clear();
-        for (_, folder) in self.folders.drain() {
-            folder.close();
+        let slots: Vec<usize> = self.folders.keys().copied().collect();
+        for slot in slots {
+            self.close_open(slot);
+        }
+        self.folders.clear();
+        self.drain_canceled();
+    }
+
+    /// Takes the canceled reads' packets off the port, so no read outlives
+    /// its buffer. A cancel completes at once, but this waits at most
+    /// `DRAIN_MS`; a read still out after that is leaked, never freed.
+    fn drain_canceled(&mut self) {
+        let start = Instant::now();
+        while !self.canceled.is_empty() {
+            let left = DRAIN_MS.saturating_sub(millis(start));
+            if left == 0 {
+                break;
+            }
+            let mut transferred = 0u32;
+            let mut key = 0usize;
+            let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
+            // SAFETY: `port` is live until `FolderWatch::stop` closes it after
+            // this thread ends; the returned `overlapped` is not dereferenced.
+            let waited = unsafe {
+                GetQueuedCompletionStatus(
+                    self.port,
+                    &mut transferred,
+                    &mut key,
+                    &mut overlapped,
+                    left as u32,
+                )
+            };
+            // A failed wait with no packet is a timeout or a closed port.
+            if waited.is_err() && overlapped.is_null() {
+                break;
+            }
+            self.canceled.remove(&key);
+        }
+        if !self.canceled.is_empty() {
+            tracing::warn!(
+                reads = self.canceled.len(),
+                "folder watch reads did not finish; leaking their buffers"
+            );
+            for (_, read) in self.canceled.drain() {
+                std::mem::forget(read);
+            }
         }
     }
 }
 
-/// One watched folder. Boxed so its buffer and `OVERLAPPED` stay at a stable
-/// address while Windows is reading into them.
+/// A canceled read's buffer and `OVERLAPPED`. Windows writes the read's result
+/// into the `OVERLAPPED` when its packet leaves the port, so both stay alive
+/// until then.
+struct CanceledRead {
+    _buffer: Vec<u8>,
+    _overlapped: Box<OVERLAPPED>,
+}
+
+/// One watched folder.
 struct Folder {
     path: PathBuf,
     listing: SharedListing,
@@ -640,15 +693,16 @@ impl Folder {
         if self.open.is_some() {
             return Ok(());
         }
-        // Store the buffer and `OVERLAPPED` before starting the read, so the
-        // read never points at a value that then moves.
         self.open = Some(open_folder(&self.path, port, read_key)?);
         let started = match self.open.as_mut() {
             Some(open) => open.read_changes(),
             None => Ok(()),
         };
         if let Err(error) = started {
-            self.close_open();
+            // No read started, so nothing is left to wait for.
+            if let Some(open) = self.open.take() {
+                let _ = open.close();
+            }
             return Err(error);
         }
         Ok(())
@@ -664,28 +718,18 @@ impl Folder {
             }
         }
     }
-
-    /// Cancels a pending read and closes the folder's handle, returning the
-    /// read's completion key.
-    fn close_open(&mut self) -> Option<usize> {
-        let open = self.open.take()?;
-        let read_key = open.read_key;
-        open.close();
-        Some(read_key)
-    }
-
-    /// Closes the folder, returning the read's completion key.
-    fn close(mut self) -> Option<usize> {
-        self.close_open()
-    }
 }
 
 /// One open folder handle and its pending change read.
+///
+/// The buffer and the `OVERLAPPED` live on the heap, so their addresses stay
+/// the ones Windows was given however this value moves: `CancelIoEx` finds a
+/// read by that address, and Windows writes the read's result there.
 struct OpenFolder {
     read_key: usize,
     directory: HANDLE,
     buffer: Vec<u8>,
-    overlapped: OVERLAPPED,
+    overlapped: Box<OVERLAPPED>,
     pending: bool,
 }
 
@@ -693,11 +737,11 @@ impl OpenFolder {
     /// Starts the next overlapped read. The records are ignored; the
     /// completion alone means "something changed".
     fn read_changes(&mut self) -> Result<(), PlatformError> {
-        self.overlapped = OVERLAPPED::default();
+        *self.overlapped = OVERLAPPED::default();
         // SAFETY: `directory` is open for overlapped I/O, `buffer` and
-        // `overlapped` outlive the request because the folder is boxed and
-        // lives until the read completes, and a synchronous success still
-        // queues a completion packet for the port.
+        // `overlapped` are heap allocations that live until the read's packet
+        // is taken off the port (`close` hands a pending read's to the
+        // worker), and a synchronous success still queues a packet.
         let started = unsafe {
             ReadDirectoryChangesW(
                 self.directory,
@@ -706,7 +750,7 @@ impl OpenFolder {
                 false,
                 filter(),
                 None,
-                Some(&mut self.overlapped),
+                Some(&mut *self.overlapped),
                 None,
             )
         };
@@ -723,24 +767,28 @@ impl OpenFolder {
         }
     }
 
-    /// Cancels a pending read, waits for it to finish, and closes the handle,
-    /// so Windows cannot write into freed memory.
-    fn close(self) {
+    /// Cancels a pending read and closes the handle. A canceled read is not
+    /// over until its packet leaves the port, which only the worker's wait
+    /// does, so waiting for it here would never end. Its buffer and
+    /// `OVERLAPPED` come back instead, for the worker to keep until then.
+    fn close(self) -> Option<CanceledRead> {
         if self.pending {
             // SAFETY: `directory` and `overlapped` are the live handle and
-            // request. Waiting for completion before the handles drop keeps
-            // the buffer valid for the whole read.
+            // request.
             unsafe {
-                let _ = CancelIoEx(self.directory, Some(&self.overlapped));
-                let mut transferred = 0;
-                let _ =
-                    GetOverlappedResult(self.directory, &self.overlapped, &mut transferred, true);
+                let _ = CancelIoEx(self.directory, Some(&*self.overlapped));
             }
         }
         // SAFETY: the handle was opened in `open_folder` and is closed once.
+        // Closing it with a read out is safe: the read still completes to the
+        // port.
         unsafe {
             let _ = CloseHandle(self.directory);
         }
+        self.pending.then_some(CanceledRead {
+            _buffer: self.buffer,
+            _overlapped: self.overlapped,
+        })
     }
 }
 
@@ -774,7 +822,7 @@ fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder,
         read_key,
         directory,
         buffer: vec![0u8; BUFFER_BYTES],
-        overlapped: OVERLAPPED::default(),
+        overlapped: Box::default(),
         pending: false,
     })
 }
@@ -941,5 +989,82 @@ mod tests {
         bursts.remove(2);
         assert_eq!(bursts.wait_ms(100), 50);
         assert_eq!(bursts.take_due(150), vec![1]);
+    }
+
+    /// A fresh, empty folder under the system temp folder, unique to `name`
+    /// and this process.
+    fn scratch_folder(name: &str) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("deskspace-watch-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    /// Waits up to 5 s for the worker's first listing of `slot`.
+    fn first_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if let Some((_, listing)) = watch.change_for_slot(slot) {
+                return Some(listing);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        None
+    }
+
+    /// Runs `body` on a thread and reports whether it finished within 10 s,
+    /// so a hung worker fails the test instead of stalling it.
+    fn finishes(body: impl FnOnce() + Send + 'static) -> bool {
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            body();
+            let _ = done.send(());
+        });
+        finished
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .is_ok()
+    }
+
+    /// A quiet folder's read is still out when the watch stops. Waiting for
+    /// that read used to hang the worker, and with it the app's exit.
+    #[test]
+    fn stopping_with_a_quiet_folder_watched_returns() {
+        let folder = scratch_folder("stop");
+        let path = folder.clone();
+        let stopped = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(WatchKey::Desktop, &path).unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(stopped, "stopping the watch did not return");
+    }
+
+    /// Pointing a key at another folder (Change folder…) cancels the old
+    /// folder's read, and the worker goes on to serve the new one.
+    #[test]
+    fn replacing_a_watch_keeps_the_worker_serving() {
+        let old = scratch_folder("replace-old");
+        let new = scratch_folder("replace-new");
+        let (old_path, new_path) = (old.clone(), new.clone());
+        let served = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(WatchKey::Desktop, &old_path).unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            watch.watch(WatchKey::Desktop, &new_path).unwrap();
+            assert!(matches!(
+                first_listing(&watch, FIRST_SLOT + 1),
+                Some(FolderListing::Listed(_))
+            ));
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&old);
+        let _ = std::fs::remove_dir_all(&new);
+        assert!(
+            served,
+            "the worker stopped serving after a watch was replaced"
+        );
     }
 }
