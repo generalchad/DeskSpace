@@ -373,47 +373,107 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
     }
 }
 
-/// A space's View page (W20): its view mode, status bar, and sort rule. Built
-/// for every scope so the form keeps its shape, but only a space lists it.
-pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
-    let view = space.map_or_else(SpaceView::default, Space::view);
+/// The field ids one page uses for the shared view and sort controls, so the
+/// View page and the Lenses defaults page build them with one function (W20,
+/// W23). `keep_sorted` is `None` on the defaults page, where a lens always
+/// keeps its order.
+struct ViewIds {
+    heading: u32,
+    mode: u32,
+    status_bar: u32,
+    sort_heading: u32,
+    sort: u32,
+    order: u32,
+    folders_first: u32,
+    keep_sorted: Option<u32>,
+}
+
+const VIEW_PAGE_IDS: ViewIds = ViewIds {
+    heading: field::VIEW_HEADING,
+    mode: field::VIEW_MODE,
+    status_bar: field::VIEW_STATUS_BAR,
+    sort_heading: field::VIEW_SORT_HEADING,
+    sort: field::VIEW_SORT_KEY,
+    order: field::VIEW_ORDER,
+    folders_first: field::VIEW_FOLDERS_FIRST,
+    keep_sorted: Some(field::VIEW_KEEP_SORTED),
+};
+
+const LENSES_PAGE_IDS: ViewIds = ViewIds {
+    heading: field::LENSES_VIEW_HEADING,
+    mode: field::LENSES_VIEW_MODE,
+    status_bar: field::LENSES_STATUS_BAR,
+    sort_heading: field::LENSES_SORT_HEADING,
+    sort: field::LENSES_SORT_KEY,
+    order: field::LENSES_ORDER,
+    folders_first: field::LENSES_FOLDERS_FIRST,
+    keep_sorted: None,
+};
+
+/// The view and sort controls shared by the View page and the Lenses defaults
+/// page. `lens` greys and ticks Keep sorted, as a lens always holds its order.
+fn view_fields(view: &SpaceView, ids: &ViewIds, lens: bool) -> Vec<Field> {
     let modes: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
     let mode = VIEW_MODES
         .iter()
         .position(|(candidate, ..)| *candidate == view.mode)
         .unwrap_or(0);
-    let lens = space.is_some_and(Space::is_lens);
+    let mut fields = vec![
+        Field::heading(ids.heading, "View"),
+        Field::choice(ids.mode, "Show as", &modes, mode),
+        Field::toggle(ids.status_bar, "Status bar", view.status_bar),
+        Field::heading(ids.sort_heading, "Sort"),
+        Field::choice(
+            ids.sort,
+            "Sort by",
+            &labels(&SORT_KEYS),
+            index_of(&SORT_KEYS, view.sort.key),
+        ),
+        Field::choice(
+            ids.order,
+            "Order",
+            &VIEW_ORDERS,
+            usize::from(view.sort.descending),
+        ),
+        Field::toggle(ids.folders_first, "Folders first", view.sort.folders_first),
+    ];
+    if let Some(id) = ids.keep_sorted {
+        fields.push(Field::toggle(id, "Keep sorted", view.keep_sorted || lens).enabled(!lens));
+    }
+    fields
+}
+
+/// A space's View page (W20): its view mode, status bar, and sort rule. Built
+/// for every scope so the form keeps its shape, but only a space lists it.
+pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
+    let view = space.map_or_else(SpaceView::default, Space::view);
     SettingsPage {
         title: "View".into(),
-        fields: vec![
-            Field::heading(field::VIEW_HEADING, "View"),
-            Field::choice(field::VIEW_MODE, "Show as", &modes, mode),
-            Field::toggle(field::VIEW_STATUS_BAR, "Status bar", view.status_bar),
-            Field::heading(field::VIEW_SORT_HEADING, "Sort"),
-            Field::choice(
-                field::VIEW_SORT_KEY,
-                "Sort by",
-                &labels(&SORT_KEYS),
-                index_of(&SORT_KEYS, view.sort.key),
-            ),
-            Field::choice(
-                field::VIEW_ORDER,
-                "Order",
-                &VIEW_ORDERS,
-                usize::from(view.sort.descending),
-            ),
-            Field::toggle(
-                field::VIEW_FOLDERS_FIRST,
-                "Folders first",
-                view.sort.folders_first,
-            ),
-            Field::toggle(
-                field::VIEW_KEEP_SORTED,
-                "Keep sorted",
-                view.keep_sorted || lens,
-            )
-            .enabled(!lens),
-        ],
+        fields: view_fields(&view, &VIEW_PAGE_IDS, space.is_some_and(Space::is_lens)),
+    }
+}
+
+/// Global's Lenses page (W23): the defaults a new lens starts with.
+pub(super) fn lenses_page(config: &Config) -> SettingsPage {
+    let defaults = config.window.new_lens;
+    let mut fields = view_fields(&defaults.view, &LENSES_PAGE_IDS, true);
+    fields.extend([
+        Field::heading(field::LENSES_TITLE_HEADING, "Lens"),
+        Field::toggle(
+            field::LENSES_SHOW_HIDDEN,
+            "Show hidden files",
+            defaults.show_hidden,
+        ),
+        Field::choice(
+            field::LENSES_TITLE_MODE,
+            "Show as",
+            &labels(&LENS_TITLES),
+            index_of(&LENS_TITLES, defaults.title),
+        ),
+    ]);
+    SettingsPage {
+        title: "Lenses".into(),
+        fields,
     }
 }
 

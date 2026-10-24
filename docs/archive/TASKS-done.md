@@ -3828,3 +3828,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     and the type beside it; "Date modified: …" and "Size: …" are on the
     right. The text and layout come as for W21.
   - Tests and check: as W21, against Explorer's Content.
+
+- [x] **W23. The Lenses page: defaults for new lenses (config, app).**
+  - `deskspace-config` `WindowSettings.new_lens: NewLens { view:
+    SpaceView, title: LensTitle, show_hidden: bool }`, with
+    `#[serde(default)]`. Its default has the status bar on, `FolderName`,
+    and the default sort.
+  - Global lists `page::LENSES` after New spaces. Its fields are View,
+    Status bar, Sort by, Order, Folders first, Show hidden files, and Show
+    as. Build the shared fields with the View page's builder (one
+    function given a `&SpaceView`, with the Lenses page's own field ids),
+    not a copy.
+  - `App::create_lens` reads `new_lens`, replacing W19's fixed view and
+    W11's fixed `FolderName`.
+  - Tests: the config's round trip and missing-field default; a new lens
+    gets the defaults.
+  - **[needs human]** check: change each default, and "New lens…" uses
+    it; existing lenses do not change.

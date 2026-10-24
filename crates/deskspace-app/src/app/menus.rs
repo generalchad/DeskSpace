@@ -1,9 +1,11 @@
 //! `App` menus: the tray, space, and item context menus (R1).
 
+use std::path::PathBuf;
+
 use deskspace_config::NEW_SPACE_SIZE_RANGE;
 use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
-use deskspace_core::source::{FolderView, LensTitle, lens_title};
+use deskspace_core::source::{FolderView, lens_title};
 use deskspace_core::{
     Command, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook, SpaceView, Theme,
 };
@@ -544,11 +546,7 @@ impl App {
             return None;
         }
         let (origin, size) = self.new_space_spot(at);
-        let view = FolderView {
-            path: folder.clone(),
-            title: LensTitle::FolderName,
-            ..FolderView::default()
-        };
+        let (view, space_view) = self.new_lens_settings(folder.clone());
         let title = lens_title(&view, "", &self.profile);
         let command = Command::CreateLens {
             title,
@@ -556,14 +554,27 @@ impl App {
             size,
             path: folder,
             locked: self.config.window.new_space_locked,
-            view: SpaceView {
-                status_bar: true,
-                ..SpaceView::default()
-            },
+            view: space_view,
         };
         let id = self.show_new_space(ui, command, origin)?;
         self.sync_watches(ui);
         Some(id)
+    }
+
+    /// The folder view and space view a new lens starts with, from the Lenses
+    /// page's defaults (W23). Pure, so the defaults are tested without a
+    /// folder dialog.
+    fn new_lens_settings(&self, path: PathBuf) -> (FolderView, SpaceView) {
+        let defaults = self.config.window.new_lens;
+        (
+            FolderView {
+                path,
+                title: defaults.title,
+                show_hidden: defaults.show_hidden,
+                ..FolderView::default()
+            },
+            defaults.view,
+        )
     }
 
     /// Why a lens cannot show DeskSpace's storage folder.
@@ -905,6 +916,27 @@ mod tests {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
         }
+    }
+
+    #[test]
+    fn a_new_lens_uses_the_configured_defaults() {
+        use deskspace_core::ViewMode;
+
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let defaults = &mut app.config.window.new_lens;
+        defaults.view.mode = ViewMode::LargeIcons;
+        defaults.view.status_bar = false;
+        defaults.view.sort.key = deskspace_core::SortKey::Size;
+        defaults.title = deskspace_core::LensTitle::FullPath;
+        defaults.show_hidden = true;
+
+        let (folder, space_view) = app.new_lens_settings("C:/Temp/lens-test".into());
+        assert_eq!(space_view.mode, ViewMode::LargeIcons);
+        assert!(!space_view.status_bar);
+        assert_eq!(space_view.sort.key, deskspace_core::SortKey::Size);
+        assert!(folder.show_hidden);
+        assert_eq!(folder.title, deskspace_core::LensTitle::FullPath);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use deskspace_core::animation::Animations;
-use deskspace_core::{Desktop, Theme};
+use deskspace_core::source::LensTitle;
+use deskspace_core::{Desktop, SpaceView, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -65,6 +66,34 @@ pub struct WindowSettings {
     pub skipped_version: Option<String>,
     /// What each kind of moment plays (ROADMAP D12), clamped on load.
     pub animations: Animations,
+    /// The defaults a new lens starts with (D15, W23).
+    pub new_lens: NewLens,
+}
+
+/// The defaults a new lens starts with: its view, how its title follows its
+/// folder, and whether it lists hidden files (W23).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NewLens {
+    /// The new lens's view settings. The default turns the status bar on.
+    pub view: SpaceView,
+    /// How the new lens's title follows its folder.
+    pub title: LensTitle,
+    /// Whether the new lens lists hidden files.
+    pub show_hidden: bool,
+}
+
+impl Default for NewLens {
+    fn default() -> Self {
+        Self {
+            view: SpaceView {
+                status_bar: true,
+                ..SpaceView::default()
+            },
+            title: LensTitle::FolderName,
+            show_hidden: false,
+        }
+    }
 }
 
 impl Default for WindowSettings {
@@ -85,6 +114,7 @@ impl Default for WindowSettings {
             last_update_check: None,
             skipped_version: None,
             animations: Animations::default(),
+            new_lens: NewLens::default(),
         }
     }
 }
@@ -163,6 +193,24 @@ mod tests {
         assert!(parsed.desktop.spaces().is_empty());
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(parsed.theme, Theme::default());
+    }
+
+    #[test]
+    fn new_lens_defaults_load_and_round_trip() {
+        let parsed: Config = toml::from_str("version = 2\n").unwrap();
+        assert!(parsed.window.new_lens.view.status_bar);
+        assert_eq!(parsed.window.new_lens.title, LensTitle::FolderName);
+        assert!(!parsed.window.new_lens.show_hidden);
+
+        let mut config = Config::new();
+        config.window.new_lens.view.mode = deskspace_core::ViewMode::LargeIcons;
+        config.window.new_lens.view.sort.key = SortKey::Size;
+        config.window.new_lens.view.sort.descending = true;
+        config.window.new_lens.title = LensTitle::FullPath;
+        config.window.new_lens.show_hidden = true;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back.window.new_lens, config.window.new_lens);
     }
 
     #[test]

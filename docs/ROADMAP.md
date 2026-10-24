@@ -649,12 +649,11 @@ Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **Lenses, M4 phases 4 and 5** (`TASKS.md` section W, "Where to
-   start"). Phases 2-3 were moved ahead of the list below on 2026-10-20
-   (maintainer) and built 2026-10-21; their on-screen checks are in
-   `TASKS.md` section V. Phase 4 (W8-W23, D15) completes v0.3. Phase 5
-   (W24-W43, D16) follows the release, except W24 and W25: they fix code
-   that runs today and go first.
+1. **Lenses, M4 phase 5** (`TASKS.md` section W, "Where to start").
+   Phases 1-4 are built (2026-10-21 to 2026-10-24); their on-screen checks
+   are in `TASKS.md` section V. Phase 4 (W8-W23, D15) completed v0.3.
+   Phase 5 (W24-W43, D16) follows, except W24 and W25: they fix code that
+   runs today and go first.
 2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
@@ -668,9 +667,8 @@ Section 5 lists what each has done.
    `TASKS.md` section T),
    ahead of the rest of M5. The composition spike (T1) runs alongside.
 
-Not next: mapping Explorer's list/details view mode (the rest of F-40). It
-needs DeskSpace to have list and details views first. Those arrive with
-M4 phase 4, and the check that closes F-40 is phase 5's W41.
+Not next: mapping Explorer's desktop view mode (the rest of F-40). DeskSpace
+now has all eight views; the check that closes F-40 is phase 5's W41.
 
 ## 5. Milestones
 
@@ -1057,9 +1055,9 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
-| F-07 | Lenses (folder portals) | M4 | Partial: lenses work end to end (M4 phases 1-3, W1-W7, 2026-10-21; on-screen checks in `TASKS.md` section V); views and a Lenses settings page are phase 4 |
+| F-07 | Lenses (folder portals) | M4 | Done: lenses work end to end and phase 4 added the views, sort rules, status bar, and lens settings (M4 phases 1-4, W1-W23, 2026-10-24); on-screen checks in `TASKS.md` section V |
 | F-08 | Lens sort rules | M4 | Done: one `SortRule`, Explorer's Sort by (W14), and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
-| F-09 | Lens show-as / icon size | M4 | Partial: show-as is done (W11), the extra-large, large, and medium icon views are in (W12), and Small icons and List are in (W16, W17); Details, Tiles, and Content come with W18-W22 (D15) |
+| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22); checks pending (`TASKS.md` section V) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
@@ -1067,7 +1065,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu, Explorer item menu, and the takeover desktop menu done (desktop menu check pending); lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; a pause-takeover entry is open, snapshot entries wait for M6 |
-| F-17 | Settings window | M3, M4 | Partial: a scopes/pages/page layout (New spaces: check pending); the Lens page is done, and View and Lenses pages are planned (D15, `TASKS.md` W20, W23) |
+| F-17 | Settings window | M3, M4 | Done: a scopes/pages/page layout and the Lens, View, and Lenses pages (W10, W20, W23); checks pending (`TASKS.md` section V) |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |

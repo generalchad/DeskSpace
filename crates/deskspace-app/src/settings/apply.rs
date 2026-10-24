@@ -227,6 +227,45 @@ pub fn apply_field(
                 config.window.new_space_locked = on;
                 Effect::Pending
             }
+            // The Lenses page's defaults (W23) apply to the next new lens.
+            (field::LENSES_VIEW_MODE, FieldValue::Choice(index)) => {
+                if let Some((mode, ..)) = VIEW_MODES.get(index) {
+                    config.window.new_lens.view.mode = *mode;
+                }
+                Effect::Pending
+            }
+            (field::LENSES_STATUS_BAR, FieldValue::Toggle(on)) => {
+                config.window.new_lens.view.status_bar = on;
+                Effect::Pending
+            }
+            (field::LENSES_SORT_KEY, FieldValue::Choice(index)) => {
+                if let Some((key, _)) = SORT_KEYS.get(index) {
+                    config.window.new_lens.view.sort.key = *key;
+                }
+                Effect::Pending
+            }
+            (field::LENSES_ORDER, FieldValue::Choice(index)) => {
+                match index {
+                    0 => config.window.new_lens.view.sort.descending = false,
+                    1 => config.window.new_lens.view.sort.descending = true,
+                    _ => {}
+                }
+                Effect::Pending
+            }
+            (field::LENSES_FOLDERS_FIRST, FieldValue::Toggle(on)) => {
+                config.window.new_lens.view.sort.folders_first = on;
+                Effect::Pending
+            }
+            (field::LENSES_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
+                config.window.new_lens.show_hidden = on;
+                Effect::Pending
+            }
+            (field::LENSES_TITLE_MODE, FieldValue::Choice(index)) => {
+                if let Some((title, _)) = LENS_TITLES.get(index) {
+                    config.window.new_lens.title = *title;
+                }
+                Effect::Pending
+            }
             // Animations play only on what comes next, so every edit waits
             // for Apply.
             (id, value) => {

@@ -12,15 +12,15 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section B (code health);
 - Q2-Q6;
 - section U, in order (U2 is pure and needs no screen);
-- section W phase 5, any time: W26 (a pure move), W24 and W25 (with a
-  reviewer), and W34, which needs W14; the rest once the phase 4 task each
+- section W phase 5: W26 (a pure move), W24 and W25 (with a
+  reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
 - section T, "Burn, upgraded": T24 now, then T25-T31 in order once
   `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D. Phase 4's next task is W18, which
-follows W17's List; pair with a reviewer on it.
+decision]** and everything in section D. Phase 4 is complete; its on-screen
+checks are in section V.
 
 ## How to work a task
 
@@ -589,10 +589,10 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
-Phases 1-3 are done: drops, pastes, shortcuts, deletes, and menus treat a
-lens as D3 says (W1-W7, archived). Phase 4 builds the views and the one sort
-rule (W9, W14-W23, ROADMAP D15), and phase 5 is W24-W43 (D16). New here?
-Read "Where to start" below before anything else in this section.
+Phases 1-4 are done: drops, pastes, shortcuts, deletes, and menus treat a
+lens as D3 says (W1-W7), and the views, sort rule, status bar, and lens
+settings are in (W9, W18-W23, ROADMAP D15). Phase 5 is W24-W43 (D16). New
+here? Read "Where to start" below before anything else in this section.
 
 ### Words used below
 
@@ -675,9 +675,9 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W17 are done (2026-10-21; W14, W15, and W16 on 2026-10-22,
-W17 on 2026-10-23) and archived; the earlier tasks' on-screen checks are in
-section V. The open work is phase 4 (W9, W18-W23) and phase 5 (W24-W43).
+W1-W8 and W10-W23 are done (2026-10-21; W14-W16 on 2026-10-22, W17 on
+2026-10-23, W9 and W18-W23 on 2026-10-24) and archived; their on-screen checks
+are in section V. The open work is phase 5 (W24-W43).
 
 1. Read, in this order: "How to work a task" (top of this file),
    `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
@@ -702,9 +702,9 @@ section V. The open work is phase 4 (W9, W18-W23) and phase 5 (W24-W43).
 
 | Level | Tasks | Open now |
 |-------|-------|----------|
-| First task: one idea, little Win32, no threads | W26 (a pure move), W8, W10, W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W11, W12, W13, W14, W15, W20, W23, W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W9, W16, W17, W18, W19, W21, W22, W24, W25, W31, W32, W37, W42, W43 | W9, W18, W24, W25 |
+| First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
+| Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
+| With a reviewer: layout, painting, threads, or file safety | W24, W25, W31, W32, W37, W42, W43 | W24, W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
@@ -743,23 +743,6 @@ lens-only.
   each one's name beside its constant:
   https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
   and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
-
-- [ ] **W23. The Lenses page: defaults for new lenses (config, app).**
-  - `deskspace-config` `WindowSettings.new_lens: NewLens { view:
-    SpaceView, title: LensTitle, show_hidden: bool }`, with
-    `#[serde(default)]`. Its default has the status bar on, `FolderName`,
-    and the default sort.
-  - Global lists `page::LENSES` after New spaces. Its fields are View,
-    Status bar, Sort by, Order, Folders first, Show hidden files, and Show
-    as. Build the shared fields with the View page's builder (one
-    function given a `&SpaceView`, with the Lenses page's own field ids),
-    not a copy.
-  - `App::create_lens` reads `new_lens`, replacing W19's fixed view and
-    W11's fixed `FolderName`.
-  - Tests: the config's round trip and missing-field default; a new lens
-    gets the defaults.
-  - **[needs human]** check: change each default, and "New lens…" uses
-    it; existing lenses do not change.
 
 ### Phase 5: lens and view extras (after v0.3)
 
@@ -2067,6 +2050,7 @@ each id is in `archive/TASKS-done.md`.
 | W19 (D15) | A new lens has the status bar and a new space does not; View ▸ Status bar toggles it; the counts follow a click, Ctrl+A, and the marquee, and the size shows for files only; both buttons switch the view and show which is on, and their tips read as Explorer's; folded, the bar is gone; every backdrop at 100 % and 150 %, light and dark. |
 | W21 (D15) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W22 (D15) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
+| W23 (D15) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 
 ## Found while working
 

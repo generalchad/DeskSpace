@@ -47,7 +47,7 @@ use deskspace_platform::{
 };
 
 use pages::{
-    about_page, animation_pages, general_page, hotkeys_page, lens_page, look_pages,
+    about_page, animation_pages, general_page, hotkeys_page, lens_page, lenses_page, look_pages,
     new_spaces_page, shortcuts_page, view_page,
 };
 
@@ -131,7 +131,9 @@ impl ScopeKind {
 /// View page, and its Shortcuts page; a lens also lists its Lens page.
 pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
     match scope {
-        ScopeKind::Global => (0..=page::ABOUT)
+        ScopeKind::Global => (0..=6)
+            .chain([page::LENSES])
+            .chain(7..=page::ABOUT)
             .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
             .collect(),
         ScopeKind::Space => (0..LOOK_PAGE_COUNT)
@@ -217,6 +219,8 @@ pub fn build_form(
     ));
     debug_assert_eq!(pages.len(), page::VIEW);
     pages.push(view_page(space));
+    debug_assert_eq!(pages.len(), page::LENSES);
+    pages.push(lenses_page(config));
 
     let listed = listed_pages(kind);
     let selected = listed
@@ -754,7 +758,8 @@ mod tests {
         assert_eq!(nav.selected_scope, 0);
         assert_eq!(
             nav.entries().count(),
-            page::ABOUT + 1 + tables::ANIMATION_PAGES.len()
+            page::ABOUT + 2 + tables::ANIMATION_PAGES.len(),
+            "every Global page, the Lenses page included"
         );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
@@ -893,7 +898,7 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(form.pages.len(), page::VIEW + 1);
+        assert_eq!(form.pages.len(), page::LENSES + 1);
     }
 
     fn animation_form(config: &Config, system_on: bool) -> SettingsForm {

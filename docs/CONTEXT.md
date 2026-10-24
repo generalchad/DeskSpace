@@ -185,7 +185,8 @@ status bar along the bottom edge (W19): the item and selection counts and the
 selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and
 layout, scrolling, and hit tests shrink with it. It is off for new spaces and
-on for new lenses. Hit tests, the marquee, keyboard navigation, the drag drop
+on for new lenses. A new lens takes its view, its title mode, and its
+hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`). Hit tests, the marquee, keyboard navigation, the drag drop
 index, and the scroll indicator all read the same layout. `FolderEntry` is what
 the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
@@ -982,7 +983,8 @@ in `ui.rs`. What spans them:
 - **The app's form** (`settings/`): the scopes are Global, then every space
   indented, dimmed while it follows Global. Each row shows its kind's glyph in
   the row's text color, so a dimmed row dims its glyph too. Global lists every
-  page but View, Shortcuts and Lens; a space lists the five look pages, which
+  page but View, Shortcuts and Lens, and adds a Lenses page after New spaces
+  for a new lens's defaults; a space lists the five look pages, which
   show
   its values (from Global until customized) greyed unless the header's
   "Customize this space" switch is on, its always-enabled View page (the view
