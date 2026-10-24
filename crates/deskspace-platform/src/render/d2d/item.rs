@@ -51,7 +51,8 @@ pub(super) unsafe fn draw_item(
     let metrics = scene.metrics;
     let inline = scene.item_layout == ItemLayout::Inline;
     let details = scene.item_layout == ItemLayout::Details;
-    let beside_icon = inline || details;
+    let tiles = scene.item_layout == ItemLayout::Tiles;
+    let beside_icon = !matches!(scene.item_layout, ItemLayout::Grid);
     let icon_size = metrics.icon_size as f32;
     let icon_pad = metrics.icon_top as f32;
     let highlight = match item.state {
@@ -135,6 +136,7 @@ pub(super) unsafe fn draw_item(
             / 100.0;
         let line_height = LABEL_LINE_HEIGHT * scale;
         let center_y = (cell.top + cell.bottom) / 2.0;
+        let name_left = icon_left + icon_size + metrics.inline_gap as f32;
         let (label_left, label_top, label_right, lines) = if details {
             let name = scene
                 .details
@@ -144,17 +146,20 @@ pub(super) unsafe fn draw_item(
                 column.rect.right() as f32 - scene.details.as_ref().map_or(0, |d| d.cell_pad) as f32
             });
             let top = (center_y - line_height / 2.0).round();
+            (name_left, top, right, 1.0)
+        } else if tiles {
+            let top = (center_y - line_height * 1.5).round();
             (
-                icon_left + icon_size + metrics.inline_gap as f32,
+                name_left,
                 top,
-                right,
+                cell.right - metrics.inline_inset as f32,
                 1.0,
             )
         } else if inline {
             // One line beside the icon, vertically centered and ellipsized.
             let top = (center_y - line_height / 2.0).round();
             (
-                icon_left + icon_size + metrics.inline_gap as f32,
+                name_left,
                 top,
                 cell.right - metrics.inline_inset as f32,
                 1.0,
@@ -169,7 +174,7 @@ pub(super) unsafe fn draw_item(
         };
         let label_bottom = (label_top + lines * line_height).min(cell.bottom);
         if label_bottom > label_top {
-            let format = if details {
+            let format = if details || tiles {
                 graphics.details_format.clone()
             } else {
                 graphics.item_label_format_for(scene.label_size, scene.item_layout)
@@ -226,6 +231,27 @@ pub(super) unsafe fn draw_item(
                         cell.bottom,
                     ),
                     item.label_color.unwrap_or(scene.item_text).fade(alpha),
+                    scene.text_shadow.map(|shadow| shadow.fade(alpha)),
+                );
+            }
+        }
+
+        // Tiles: the type and size, dimmed under the name (W21).
+        if tiles {
+            for (index, text) in cells.iter().enumerate().take(2) {
+                let top = label_top + (index as f32 + 1.0) * line_height;
+                draw_text(
+                    target,
+                    brush,
+                    text,
+                    &graphics.details_format,
+                    rect_f(
+                        name_left,
+                        top,
+                        cell.right - metrics.inline_inset as f32,
+                        top + line_height,
+                    ),
+                    scene.item_text.fade(150),
                     scene.text_shadow.map(|shadow| shadow.fade(alpha)),
                 );
             }

@@ -34,6 +34,10 @@ const INLINE_GAP: i32 = 2;
 /// W18's on-screen check measures Explorer's own.
 const DETAILS_ROW_HEIGHT: i32 = 22;
 pub const DETAILS_HEADER_HEIGHT: i32 = 25;
+/// Explorer's Tiles cell at 96 DPI (W21). Provisional until its on-screen
+/// check measures Explorer's own.
+const TILE_WIDTH: i32 = 210;
+const TILE_HEIGHT: i32 = 60;
 
 /// Which way a view's content flows when it does not fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +67,8 @@ impl Flow {
             | ViewMode::LargeIcons
             | ViewMode::MediumIcons
             | ViewMode::SmallIcons
-            | ViewMode::Details => Self::Rows,
+            | ViewMode::Details
+            | ViewMode::Tiles => Self::Rows,
         }
     }
 
@@ -144,6 +149,7 @@ fn inline_cell(mode: ViewMode) -> Option<(i32, i32)> {
         ViewMode::SmallIcons => Some((SMALL_ICON_CELL_WIDTH, SMALL_ICON_CELL_HEIGHT)),
         ViewMode::List => Some((LIST_COLUMN_WIDTH, LIST_CELL_HEIGHT)),
         ViewMode::Details => Some((1, DETAILS_ROW_HEIGHT)),
+        ViewMode::Tiles => Some((TILE_WIDTH, TILE_HEIGHT)),
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -617,6 +623,19 @@ mod tests {
         assert!(scrolled.start > 0);
         assert_eq!(scrolled.start, 2);
         assert!(scrolled.end > scrolled.start);
+    }
+
+    #[test]
+    fn tiles_wrap_into_rows_with_their_own_cell() {
+        let metrics = ViewMetrics::for_view(ViewMode::Tiles, GridSpec::default(), 1.0);
+        assert_eq!(metrics.cell, Size::new(210, 60));
+        let layout = ViewLayout::new(ViewMode::Tiles, Size::new(460, 300), 5, metrics);
+        assert_eq!(layout.axis(), ScrollAxis::Vertical);
+        assert_eq!(layout.cross_count(), 2);
+        assert_eq!(layout.rect(0).width, 210);
+        assert_eq!(layout.rect(1).x, 12 + 212);
+        assert_eq!(layout.rect(2).y, 12 + 62);
+        assert_eq!(layout.extent(), 12 * 2 + 3 * 60 + 2 * 2);
     }
 
     #[test]

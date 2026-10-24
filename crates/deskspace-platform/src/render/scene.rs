@@ -146,6 +146,8 @@ pub enum ItemLayout {
     /// One Details row: the icon at the left, the name beside it, then the
     /// other column texts (W18).
     Details,
+    /// One tile: a 48 px icon at the left and three lines beside it (W21).
+    Tiles,
 }
 
 /// The Details header and its columns (W18). Rects are relative to the content
@@ -237,7 +239,8 @@ pub struct ItemVisual {
     /// An override for the label color (Explorer's compressed/encrypted
     /// colors); `None` uses the scene's item text color.
     pub label_color: Option<Color>,
-    /// The text of each Details column after Name, in column order; empty
-    /// outside Details (W18). Made by the app before the scene is built.
+    /// The text for the view's secondary lines: Details column texts after
+    /// Name (W18), a tile's type and size (W21), or a content row's right-hand
+    /// texts (W22). Empty outside those views.
     pub cells: Vec<String>,
 }

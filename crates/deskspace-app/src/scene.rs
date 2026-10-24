@@ -161,8 +161,8 @@ pub fn space_scene_with_details(
                 continue;
             }
             let cells = match details_cells.as_deref_mut() {
-                Some(cells) if space.view().mode == ViewMode::Details => cells(item),
-                _ => Vec::new(),
+                Some(cells) => cells(item),
+                None => Vec::new(),
             };
             items.push(ItemVisual {
                 id: item.id.0,
@@ -463,6 +463,7 @@ pub(crate) fn item_layout(mode: ViewMode) -> ItemLayout {
     match mode {
         ViewMode::SmallIcons | ViewMode::List => ItemLayout::Inline,
         ViewMode::Details => ItemLayout::Details,
+        ViewMode::Tiles => ItemLayout::Tiles,
         ViewMode::Icons
         | ViewMode::ExtraLargeIcons
         | ViewMode::LargeIcons
@@ -721,6 +722,33 @@ pub(crate) fn status_tip(index: usize) -> Option<String> {
         Some(digit) => format!("{} (Ctrl+Shift+{digit})", button.tip),
         None => button.tip.to_owned(),
     })
+}
+
+/// The text for a view's secondary lines, made by the app when the scene is
+/// built: a Details row's columns after Name (W18), a tile's type and size
+/// (W21), or a content row's labelled details (W22).
+pub(crate) fn view_cells(mode: ViewMode, item: &Item) -> Vec<String> {
+    match mode {
+        ViewMode::Details => details_cells(item),
+        ViewMode::Tiles => tile_cells(item),
+        ViewMode::Icons
+        | ViewMode::ExtraLargeIcons
+        | ViewMode::LargeIcons
+        | ViewMode::MediumIcons
+        | ViewMode::SmallIcons
+        | ViewMode::List => Vec::new(),
+    }
+}
+
+/// A tile's second and third lines: its type and its size (W21).
+fn tile_cells(item: &Item) -> Vec<String> {
+    let type_name = type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default();
+    let size = item
+        .size
+        .filter(|_| item.kind != ItemKind::Folder)
+        .map(format_kb)
+        .unwrap_or_default();
+    vec![type_name, size]
 }
 
 /// The item's display label. Explorer never shows a shortcut's extension, even
@@ -1478,6 +1506,35 @@ mod tests {
         let status = scene.status.unwrap();
         assert!(status.segments.is_empty());
         assert_eq!(status.buttons.len(), 2);
+    }
+
+    #[test]
+    fn tiles_show_their_type_and_size_beside_a_48_px_icon() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_space(&mut desktop, "Tiles", Rect::new(0, 0, 460, 300));
+        crate::fixtures::add_item(&mut desktop, id, "C:/missing/report.txt");
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SetSpaceView {
+                id,
+                view: deskspace_core::SpaceView::with_mode(ViewMode::Tiles),
+            },
+        );
+        let space = desktop.space(id).unwrap();
+        let theme = Theme::default();
+        let mut cells = |item: &Item| view_cells(ViewMode::Tiles, item);
+        let scene = space_scene_with_details(
+            space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            Some(&mut cells),
+            &mut IconCache::new(),
+        );
+        assert_eq!(scene.item_layout, ItemLayout::Tiles);
+        assert_eq!(scene.metrics.icon_size, 48);
+        assert_eq!(scene.items[0].rect.width, 210);
+        assert_eq!(scene.items[0].cells.len(), 2, "type and size");
+        assert!(scene.details.is_none(), "tiles have no header");
     }
 
     #[test]

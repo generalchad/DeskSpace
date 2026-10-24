@@ -80,7 +80,7 @@ pub fn item_check_box(cell: Rect, metrics: ItemMetrics, layout: ItemLayout) -> R
                 cell.y + metrics.icon_top + metrics.check_box_margin,
             )
         }
-        ItemLayout::Inline | ItemLayout::Details => (
+        ItemLayout::Inline | ItemLayout::Details | ItemLayout::Tiles => (
             cell.x + metrics.inline_inset + metrics.check_box_margin,
             cell.y + (cell.height - metrics.check_box_size) / 2,
         ),

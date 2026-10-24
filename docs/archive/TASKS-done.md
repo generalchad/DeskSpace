@@ -3811,3 +3811,13 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Tests: `every_editable_space_field_has_a_handler` covers the page;
     Cancel restores the view; Keep sorted is grey for a lens.
   - Done when: also `CONTEXT.md` section 6 names the page.
+
+- [x] **W21. Tiles (app, platform).** **[needs human]**
+  - `ViewMode::Tiles` (digit 7): tiles in rows that wrap, each a 48 px
+    icon at the left and three lines beside it (name, type, size; the
+    second and third dimmed, as Explorer draws them). The text comes from
+    W18's helpers, and the layout from W16's. The tile size is measured
+    from Explorer.
+  - Tests: the layout's rects and extent.
+  - **[needs human]** check: beside Explorer's Tiles on the same folder,
+    at 100 % and 150 %, in light and dark.
