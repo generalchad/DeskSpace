@@ -1,0 +1,101 @@
+# TOOLS
+
+The tools this project uses and how to use them: agent tooling, scripts, the
+app's own diagnostics, and the recipes that found real bugs. `ENGINEERING.md`
+section 1 owns the gate commands (fmt, clippy, test); this file owns
+everything else. Add a tool here in the same commit that starts depending on
+it, and say what it is for, how to run it, and what it can break.
+
+Anything below that deletes or overwrites state falls under Directive 1 in
+`AGENTS.md`: ask first, every time.
+
+## 1. Agent tooling
+
+A bundled `rust` MCP server exposes the cargo workflow as tools. Prefer them
+over a raw shell, so the same flags (including `--locked`) apply everywhere.
+
+| Tool | Covers |
+|------|--------|
+| `cargo-build`, `cargo-check` | build and fast compile check |
+| `cargo-test` | tests (`workspace: true` runs every package) |
+| `cargo-clippy` | lint (`all_targets: true`; CI adds `-D warnings`) |
+| `cargo-fmt` | format (`check: true` verifies without writing) |
+| `cargo-deny-check` | dependency policy from `deny.toml` |
+| `cargo-machete` | find unused dependencies |
+| `cargo-add`, `cargo-remove` | edit `Cargo.toml` and refresh `Cargo.lock` |
+| `cargo-metadata`, `cargo-tree`, `workspace-info` | inspect the dependency graph |
+| `cargo-doc` | build rustdoc |
+| `rustc-explain`, `rustup-show`, `rustup-update` | error codes and toolchains |
+
+Other cargo subcommands (`clean`, `update`, `package`, `expand`, `hack`,
+`insta`, ...) appear as their own tools when a task needs them; install a
+missing one with its helper (`cargo-deny-install`, `cargo-hack-install`,
+`cargo-machete-install`). Because these tools pass `--locked`, keep
+`Cargo.lock` current when adding or updating dependencies. Release work
+(`RELEASING.md`; `TASKS.md` R10-R13) also uses `gh`, `actionlint`, and
+`cargo-packager` (the NSIS installer, installed with `cargo install`).
+
+## 2. Scripts
+
+`Get-Help ./scripts/<name>.ps1 -Full` is the reference for each script's
+switches; do not copy them here.
+
+| Script | Use it to | Careful |
+|--------|-----------|---------|
+| `scripts/dev.ps1` | Stop a running build, build, and run with a scratch config in `%TEMP%\deskspace-dev`; `-Check` runs the gates first | `-Fresh` deletes the scratch config and its stored items. Its own switches take one dash (`-OnTop`); `--OnTop` and `--on-top` work too, and other `--flags` go to the app |
+| `scripts/zorder.ps1` | List DeskSpace's windows with rects and z-order, and which window a click at each space's or taskbar's center reaches | Read-only. Run it while a space will not take clicks or drops |
+
+When you test a script's argument handling, copy it and stub its destructive
+and long-running steps (the build, the app launch, any `Remove-Item`) so it
+only prints what it would do. Never run a copy with the real steps in place.
+
+## 3. The app's own diagnostics
+
+- `--debug` opens the debug window: a live log console, the model, config,
+  windows, monitors, hooks, and simulators for Windows events (`TASKS.md`
+  section X). Prefer it to adding temporary logging.
+- `-v` and `-vv` (or `RUST_LOG`) raise the console log level. The debug window
+  has its own level.
+- `--config <scratch.toml>` keeps a run away from the real config. Always use
+  it when testing; `dev.ps1` does by default.
+
+## 4. Finding a hang or a missed shutdown
+
+Both recipes found a real bug (a shutdown that waited for a read only the
+waiting thread could complete); keep them exact.
+
+**Where is it stuck?** Read the stacks of the live process without touching
+it. WinDbg's `cdb` attaches non-invasively (`-pv`), so the app keeps running
+and nothing is paused or killed. Installing WinDbg is an install on the
+user's machine: ask first (`winget install --id Microsoft.WinDbg --exact`).
+
+```powershell
+cdbX64.exe -pv -p <pid> -y "srv*$env:LOCALAPPDATA\deskspace-symbols*https://msdl.microsoft.com/download/symbols;<repo>\target\debug" -lines -c ".symopt+ 0x40; ~*kc 25; qd"
+```
+
+A debug build's PDB in `target\debug` gives Rust frames with names. The UI
+thread parked in `NtUserGetMessage` is idle; one parked in
+`WaitForSingleObject`, `GetOverlappedResult`, or `JoinHandle::join` is the
+bug. Compare it with a worker thread's stack to see who waits on whom.
+
+**Does Ctrl+C exit?** Press it in a real console, or send it:
+
+- A process started by an agent shell inherits "ignore Ctrl+C". Start the
+  app from a fresh `pwsh` that first calls
+  `SetConsoleCtrlHandler(NULL, FALSE)`, and run the exe unpiped, the way
+  `dev.ps1` does (`& $exe @arguments`); a pipe makes PowerShell kill the
+  child itself, which proves nothing.
+- From another process, `FreeConsole`, `AttachConsole(<app pid>)`,
+  `SetConsoleCtrlHandler(NULL, TRUE)` (so the sender survives), then
+  `GenerateConsoleCtrlEvent(0, 0)` (Ctrl+C) or `(1, 0)` (Ctrl+Break).
+  Check the app exits within a second and that the config file's timestamp
+  moved (the close handler saved it).
+- `console.rs` posts `WM_CLOSE` and waits for the message loop; a timeout
+  there means the UI thread is stuck, not that the handler failed.
+
+**Driving a dialog or menu with no screen.** A posted `WM_RBUTTONDOWN` and
+`WM_RBUTTONUP` to a space opens its menu. An open popup is class `#32768`:
+read its items with `MN_GETHMENU` and `GetMenuString`, choose one with
+`MN_SELECTITEM` then Enter. A common file dialog's name box is the `Edit`
+with control id 1152 and OK is `WM_COMMAND` with id 1; UI Automation does not
+see these dialogs' controls reliably.

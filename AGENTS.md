@@ -24,6 +24,7 @@ remove. When unsure, it is destructive.
 
 1. `docs/ENGINEERING.md`: commands, gates, design priorities, architectural
    rules, comments, commits, and the Win32 gotchas. Read all of it.
+   `docs/TOOLS.md` lists the tools and scripts.
 2. `docs/CONTEXT.md`: architecture and current behavior. Read section 3, then
    only the sections your change touches.
 3. `docs/TASKS.md`: "How to work a task", the file map, and the recipes;
@@ -49,26 +50,7 @@ remove. When unsure, it is destructive.
 
 ## Tooling
 
-A bundled `rust` MCP server exposes the cargo workflow as tools. Prefer them
-over a raw shell, so the same flags (including `--locked`) apply everywhere.
-
-| Tool | Covers |
-|------|--------|
-| `cargo-build`, `cargo-check` | build and fast compile check |
-| `cargo-test` | tests (`workspace: true` runs every package) |
-| `cargo-clippy` | lint (`all_targets: true`; CI adds `-D warnings`) |
-| `cargo-fmt` | format (`check: true` verifies without writing) |
-| `cargo-deny-check` | dependency policy from `deny.toml` |
-| `cargo-machete` | find unused dependencies |
-| `cargo-add`, `cargo-remove` | edit `Cargo.toml` and refresh `Cargo.lock` |
-| `cargo-metadata`, `cargo-tree`, `workspace-info` | inspect the dependency graph |
-| `cargo-doc` | build rustdoc |
-| `rustc-explain`, `rustup-show`, `rustup-update` | error codes and toolchains |
-
-Other cargo subcommands (`clean`, `update`, `package`, `expand`, `hack`,
-`insta`, ...) appear as their own tools when a task needs them; install a
-missing one with its helper (`cargo-deny-install`, `cargo-hack-install`,
-`cargo-machete-install`). Because these tools pass `--locked`, keep
-`Cargo.lock` current when adding or updating dependencies. Release work
-(`RELEASING.md`; `TASKS.md` R10-R13) also uses `gh`, `actionlint`, and
-`cargo-packager` (the NSIS installer, installed with `cargo install`).
+`docs/TOOLS.md` lists the agent tools (the bundled `rust` MCP server, which
+passes `--locked`), the scripts, the app's own diagnostics, and the recipes
+for finding a hang or a missed shutdown. Prefer the MCP tools over a raw
+shell. Keep `Cargo.lock` current when adding or updating dependencies.

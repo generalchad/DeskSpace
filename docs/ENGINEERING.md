@@ -253,7 +253,8 @@ not own it links to it instead of copying it.
 |------|------|
 | Types, fields, defaults, ranges, variants, ids, timers, messages | The code, with `///` docs; the `ALL` lists and uniqueness tests guard ids |
 | Architecture, where code lives, non-obvious behavior, Windows quirks | `CONTEXT.md` |
-| Rules, commands, gotchas | This file |
+| Rules, gate commands, gotchas | This file |
+| Tools, scripts, diagnostics | `TOOLS.md` |
 | Decisions (`Dx`), milestones, feature status (`F-xx`) | `ROADMAP.md` |
 | Open work, recipes, on-screen checks | `TASKS.md` |
 | What a user sees and does | `README.md` |

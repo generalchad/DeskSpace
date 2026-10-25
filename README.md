@@ -213,6 +213,7 @@ show and the platform turns that into windows and pixels.
 | [`CONTEXT.md`](docs/CONTEXT.md) | Architecture and current behavior (authoritative) |
 | [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](docs/TASKS.md) | Open, one-commit work items and the on-screen check list |
+| [`TOOLS.md`](docs/TOOLS.md) | Agent tools, scripts, diagnostics, and how to find a hang |
 | [`docs/archive/`](docs/archive/) | Finished tasks and the progress log up to v0.2.0 (history) |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes in each release |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report bugs and contribute changes |
