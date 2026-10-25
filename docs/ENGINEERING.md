@@ -187,6 +187,13 @@ says why; the diff already shows what. Run the gates (section 1) first.
 
 ## 6. Gotchas
 
+- **Never wait on something only you can complete.** A canceled overlapped
+  read finishes only when its packet leaves the I/O completion port, and
+  only the worker's own wait takes it off. Waiting for it in
+  `GetOverlappedResult` on that same thread hung the folder watch, and with
+  it Ctrl+C and exit. Hand the buffer to the thread that receives the packet
+  and bound every wait. A hung exit looks like an ignored signal; read the
+  stacks first (`TOOLS.md` section 4).
 - **Spaces are never activated**, so anything that depends on activation does
   not work for them. `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic system
   backdrops) renders a flat color on inactive windows; the blur comes from
