@@ -767,7 +767,7 @@ v0.2.4 and ship in the next release. Section 5 lists what each has done.
    runs today and go first.
 2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
    the icon-set library, its cache, and the signed download are built
-   (S1-S4); S6-S8 and S13 are next, and S5 and S9-S12 need a screen.
+   (S1-S4, S6); S7, S8, and S13 are next, and S5 and S9-S12 need a screen.
 3. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.

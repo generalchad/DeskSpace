@@ -15,7 +15,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
-- section S, in order: S6, S7, S8, and S13; S5 and S9-S12 need a screen or
+- section S, in order: S7, S8, and S13; S5 and S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -104,6 +104,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
 | The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
+| Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
 
@@ -1160,7 +1161,7 @@ Rules for every S task:
    desktop (S10) or in the settings header (S12).
 5. **Glyphs are rasterized off the paint path.** A scene carries a finished
    `Icon`, as items do (S7); the painter only draws bitmaps. Rasterize
-   through `GlyphCache` (S6), never per frame.
+   through the `GlyphCache` S6 added, never per frame.
 6. Unless a task says otherwise, a name in `code` that does not exist yet
    is one the task creates.
 7. **One undo entry.** Changing an icon (S10, S11) records one entry
@@ -1196,34 +1197,6 @@ Rules for every S task:
     a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
     repository's "Latest" badge still points at the app. A second run fails
     at step 2.
-
-- [ ] **S6. Drawing a glyph (platform).**
-  - `render/glyph.rs` (pure): `svg_document(glyph: &Glyph, color: Color) ->
-    String` wraps the body in `<svg xmlns=".." viewBox="0 0 w h">`, writes
-    `color` as `#rrggbb` in place of every `currentColor` (Direct2D's SVG
-    support has no `currentColor`), and adds an `opacity` for a color that
-    is not opaque.
-  - `render/d2d/glyph.rs`: `rasterize(glyph, px, color) -> Result<Icon,
-    PlatformError>`. On the shared device (`create_device`), draw into a
-    `px` square target bitmap with `ID2D1DeviceContext5::CreateSvgDocument`
-    (from `SHCreateMemStream`) and `DrawSvgDocument`. Copy the result to a
-    CPU-readable bitmap, map it, and build an `Icon` (premultiplied BGRA,
-    as `Icon::new` wants). Without `ID2D1DeviceContext5` (Windows 10 before
-    1703) it fails, and callers show no icon. Cite the Microsoft Learn
-    pages for `CreateSvgDocument` and `DrawSvgDocument` beside the calls.
-  - `win32/glyphs.rs`: `GlyphCache`, copied from `IconCache`
-    (least-recently-used, 256 entries), keyed by `(glyph key, px, color)`.
-    `icon(&mut self, key, px, color, glyph: impl FnOnce() -> Option<Glyph>)
-    -> Option<Icon>` builds the glyph only on a miss. It logs a failure
-    once per key at `debug`. Re-export `GlyphCache` and `Glyph` from
-    `lib.rs`.
-  - Tests: `svg_document`'s wrapping, color, and opacity. `rasterize`
-    draws `M2 2h16v16H2z` in a 20-wide glyph at 20 px in red: the middle
-    pixel is opaque red and a corner is clear. It runs on WARP in CI, as
-    `create_device` falls back to it. The cache evicts the oldest entry
-    and keys on color.
-  - `CONTEXT.md` section 6, "Rendering": one bullet on glyphs. Add the new
-    modules to the module map.
 
 - [ ] **S7. Icons in the title bar (app, platform).** **[needs human]**
   - `render/scene.rs`: `SpaceScene.title_icon: Option<TitleIcon>`, with

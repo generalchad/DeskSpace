@@ -15,6 +15,7 @@ mod drag_image;
 mod edit;
 mod effects;
 mod geometry;
+mod glyph;
 mod graphics;
 mod item;
 mod prepared;
@@ -24,6 +25,7 @@ pub(crate) use badge::debug_badge;
 pub(crate) use bitmap::{decode_bitmap, decode_icon};
 pub(crate) use color_picker::ColorPickerPainter;
 pub(crate) use drag_image::render_items;
+pub(crate) use glyph::rasterize;
 pub use prepared::PreparedScene;
 pub(crate) use zoom_bar::ZoomBarPainter;
 

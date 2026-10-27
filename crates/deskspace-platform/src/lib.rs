@@ -7,6 +7,7 @@ mod ui;
 mod win32;
 
 pub use debug_console::format_line;
+pub use deskspace_core::Glyph;
 pub use edit::{EditKey, EditOutcome, MoveDir, TextEdit};
 pub use error::PlatformError;
 pub use input::{
@@ -47,6 +48,7 @@ pub use win32::display_settings::{
 pub use win32::dpi::{enable_per_monitor_awareness, monitor_dpi_at, scale_for};
 pub use win32::drag_image::DragImage;
 pub use win32::file_op::OnCollision;
+pub use win32::glyphs::GlyphCache;
 pub use win32::hotkey::{Hotkey, HotkeySpec, hotkey_id, parse as parse_hotkey};
 pub use win32::icons::IconCache;
 pub use win32::names::{same_name_ignoring_case, upper_name};

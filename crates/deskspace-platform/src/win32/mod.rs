@@ -27,6 +27,7 @@ mod flame_overlay;
 mod folder_list;
 mod folder_watch;
 mod frame_clock;
+pub(crate) mod glyphs;
 pub(crate) mod hotkey;
 pub(crate) mod icons;
 mod info_tip;

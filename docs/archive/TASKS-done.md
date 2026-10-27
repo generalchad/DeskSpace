@@ -4207,3 +4207,36 @@ until I5-I6 all land, so no partial build hides the desktop.
     desktop-hosted placement. Amended then, by the maintainer's decision:
     the setting is the black's own alpha, not the darkest pixel, so the
     theme field and D15 say so.
+
+
+- [x] **S6. Drawing a glyph (platform).**
+  - `render/glyph.rs` (pure): `svg_document(glyph: &Glyph, color: Color) ->
+    String` wraps the body in `<svg xmlns=".." viewBox="0 0 w h">`, writes
+    `color` as `#rrggbb` in place of every `currentColor` (Direct2D's SVG
+    support has no `currentColor`), and adds an `opacity` for a color that
+    is not opaque.
+  - `render/d2d/glyph.rs`: `rasterize(glyph, px, color) -> Result<Icon,
+    PlatformError>`. On the shared device (`create_device`), draw into a
+    `px` square target bitmap with `ID2D1DeviceContext5::CreateSvgDocument`
+    (from `SHCreateMemStream`) and `DrawSvgDocument`. Copy the result to a
+    CPU-readable bitmap, map it, and build an `Icon` (premultiplied BGRA,
+    as `Icon::new` wants). Without `ID2D1DeviceContext5` (Windows 10 before
+    1703) it fails, and callers show no icon. Cite the Microsoft Learn
+    pages for `CreateSvgDocument` and `DrawSvgDocument` beside the calls.
+  - `win32/glyphs.rs`: `GlyphCache`, copied from `IconCache`
+    (least-recently-used, 256 entries), keyed by `(glyph key, px, color)`.
+    `icon(&mut self, key, px, color, glyph: impl FnOnce() -> Option<Glyph>)
+    -> Option<Icon>` builds the glyph only on a miss. It logs a failure
+    once per key at `debug`. Re-export `GlyphCache` and `Glyph` from
+    `lib.rs`.
+  - Tests: `svg_document`'s wrapping, color, and opacity. `rasterize`
+    draws `M2 2h16v16H2z` in a 20-wide glyph at 20 px in red: the middle
+    pixel is opaque red and a corner is clear. It runs on WARP in CI, as
+    `create_device` falls back to it. The cache evicts the oldest entry
+    and keys on color.
+  - `CONTEXT.md` section 6, "Rendering": one bullet on glyphs. Add the new
+    modules to the module map.
+  - Done 2026-10-27. The document also sets the root's `fill` to the
+    color, so a body that names no paint still draws in it; the tests'
+    bodies are `<path d="..."/>` elements, since a body is SVG content,
+    not path data. The cache tests draw real glyphs through WARP.

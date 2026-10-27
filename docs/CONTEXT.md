@@ -447,15 +447,16 @@ app imports only from here), `input.rs` (`Event`, `SpaceEvent`,
 `CursorShape`), `edit.rs` (`TextEdit`), and `error.rs` (`PlatformError`).
 `render/`: `mod.rs` (`Icon`, `ItemMetrics`, check-box geometry), `scene.rs`
 (`SpaceScene`, `SpaceStyle`), `zoom_bar.rs` (`ZoomBar`, the zoom pop-up's
-pure layout and hit test), and `d2d/` (the painters). Everything with
-`unsafe` is under `win32/`:
+pure layout and hit test), `glyph.rs` (an icon-set glyph as an SVG
+document), and `d2d/` (the painters, including the glyph rasterizer).
+Everything with `unsafe` is under `win32/`:
 
 | Area | Modules |
 |------|---------|
 | Runtime and controller | `runtime`, `controller`, `tray`, `console`, `hotkey`, `outside_click` |
 | Windows | `window_class` and `window_state` (class registration and `GWLP_USERDATA` state; every window class uses both), `space_window`, `dwm`, `composition`, `drag_ghost`, `info_tip`, `menu`, `settings_window`, `debug_window`, `color_picker`, `dark_mode`, `dialog`, `app_picker`, `app_catalog`, `shortcut_dialog`, `zoom_bar` |
 | Input | `keyboard` (the low-level hook), `drop_target` |
-| Shell | `desktop_items`, `icons`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
+| Shell | `desktop_items`, `icons`, `glyphs`, `shell_items`, `shell_view`, `shell_selection`, `display_settings`, `clipboard`, `file_op`, `drag_image`, `folder_watch`, `shortcuts` |
 | Desktop takeover | `desktop_shell`, `desktop_icons`, `watchdog`, `desktop_entry` |
 | System | `system`, `dpi`, `autostart` |
 
@@ -951,6 +952,17 @@ one arm in `App::on_event`, whose match is exhaustive.
   (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
   through WIC (`d2d::decode_icon`, which applies a legacy icon's AND mask) and
   destroy it at once, so scenes never point at freed handles.
+- Icon-set glyphs (ROADMAP D16) become `Icon`s the same way. `render/glyph.rs`
+  wraps an Iconify body as an SVG document at the glyph's own viewBox, in the
+  title text's color: the root's `fill` plus a replacement of every
+  `currentColor` (Direct2D's SVG support has none), and the document's
+  `opacity` when the color is translucent. `d2d/glyph.rs::rasterize` draws it
+  with `ID2D1DeviceContext5::CreateSvgDocument` and `DrawSvgDocument` into a
+  target bitmap, copies that to a CPU-readable one, and returns an `Icon`. A
+  Windows without `ID2D1DeviceContext5` (10 before 1703) fails, so no icon
+  shows. `win32/glyphs.rs`, `GlyphCache`, keeps the results keyed by glyph,
+  pixel size, and color (256 entries, least-recently-used) and logs a failed
+  draw once per glyph at debug.
 - `Painter` draws on a `Canvas` (`d2d/canvas.rs`; premultiplied alpha, 96
   DPI so one DIP is one pixel) with a brush and a per-target bitmap cache
   keyed by `Icon::id`, pruned to the current scene's icons on every scene.
