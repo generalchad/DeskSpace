@@ -9,6 +9,10 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Added
 
+- A redesigned color picker: a color square with hue and opacity sliders,
+  hex, RGB, or HSL text, copy and paste, an eyedropper that samples any pixel
+  on screen, and recent colors that survive a restart and a settings Cancel.
+  On Windows 11 22H2 and later it is acrylic, as Explorer's own picker is.
 - Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and

@@ -1213,7 +1213,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending (`TASKS.md` V: L2; L1 findings) |
-| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done; check pending (`TASKS.md` V: F14) |
+| F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done, and redesigned after the mockup: acrylic, hue and opacity sliders, hex/RGB/HSL entry, copy and paste, an eyedropper, and recent colors; check pending (`TASKS.md` V: F14) |
 | F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
 | F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done: the space menu's submenu and a space's Settings page "Shortcuts" (a preview with an X per item and a + tile); checked on screen 2026-10-13 |
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
