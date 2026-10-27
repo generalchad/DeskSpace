@@ -148,8 +148,7 @@ impl App {
     }
 
     pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, surface: Surface, item: ItemId) {
-        let show_extensions =
-            self.surface_theme(surface).match_explorer() && self.system.shell().show_extensions;
+        let show_extensions = self.shows_extensions(surface);
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };

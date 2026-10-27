@@ -222,8 +222,7 @@ impl App {
             show_check_boxes: check_boxes != CheckBoxMode::Hidden,
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
             checked: self.selection.checked.clone(),
-            show_extensions: self.surface_match_explorer(surface)
-                && self.system.shell().show_extensions,
+            show_extensions: self.shows_extensions(surface),
             show_compressed_color: self.surface_match_explorer(surface)
                 && self.system.shell().show_compressed_color,
             cut: self.selection.cut.iter().copied().collect(),
@@ -679,6 +678,12 @@ impl App {
             Surface::Space(id) => self.refresh_space(ui, id),
             Surface::Desktop => self.refresh_desktop_layer(ui),
         }
+    }
+
+    /// Whether a surface's labels show filename extensions: Explorer's own
+    /// option, on a surface that mirrors Explorer's display.
+    pub(super) fn shows_extensions(&self, surface: Surface) -> bool {
+        self.surface_match_explorer(surface) && self.system.shell().show_extensions
     }
 
     /// Pushes the space's current geometry and draw list to its window.

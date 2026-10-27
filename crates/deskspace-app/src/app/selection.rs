@@ -237,8 +237,7 @@ impl App {
         };
         self.selection.typed.push(ch);
         Self::set_timer(ui, Timer::Type, TYPE_DELAY_MS);
-        let show_extensions =
-            self.surface_match_explorer(surface) && self.system.shell().show_extensions;
+        let show_extensions = self.shows_extensions(surface);
         let labels: Vec<String> = self
             .surface_items(surface)
             .iter()

@@ -4374,3 +4374,16 @@ until I5-I6 all land, so no partial build hides the desktop.
     asserts `None`. The settings gain "Icon" and "Icon downloads"
     with their tables and arms. The published set and key are what the
     on-screen check above still needs.
+
+
+- [x] **W26. One place decides whether a label shows its extension
+  (app).** Any time; before W28.
+  - `self.surface_match_explorer(surface) &&
+    self.system.shell().show_extensions` is written out in
+    `app/rename.rs`, `app/selection.rs`, `app/settings_session.rs`, and
+    `app/view.rs`. Move it into one `App::shows_extensions(surface)` in
+    `app/view.rs` and call that from all four. A pure move.
+  - Done when: `rg "show_extensions" crates/deskspace-app/src/app` finds
+    only the new method and its callers' use of its result.
+  - Done 2026-10-27: `shows_extensions` is in `app/view.rs`; the
+    rename, selection, settings-preview, and scene builders call it.

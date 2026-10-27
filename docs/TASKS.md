@@ -11,7 +11,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W26 (a pure move), W24 and W25 (with a
+- section W phase 5: W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
 - section S: S5 and S9-S12 need a screen or
@@ -864,16 +864,6 @@ interest. In phase 4 and 5 terms:
   - **[needs human]** check: a lens on a share whose server is off
     leaves the other spaces responsive at startup; a lens on a junction
     into the store shows "Folder not available".
-
-- [ ] **W26. One place decides whether a label shows its extension
-  (app).** Any time; before W28.
-  - `self.surface_match_explorer(surface) &&
-    self.system.shell().show_extensions` is written out in
-    `app/rename.rs`, `app/selection.rs`, `app/settings_session.rs`, and
-    `app/view.rs`. Move it into one `App::shows_extensions(surface)` in
-    `app/view.rs` and call that from all four. A pure move.
-  - Done when: `rg "show_extensions" crates/deskspace-app/src/app` finds
-    only the new method and its callers' use of its result.
 
 - [ ] **W27. The lens's path as a tip on its title (app).** **[needs
   human]** After: W9.

@@ -95,8 +95,7 @@ impl App {
             return SpacePreview::default();
         };
         let id = space.id;
-        let show_extensions =
-            self.surface_match_explorer(Surface::Space(id)) && self.system.shell().show_extensions;
+        let show_extensions = self.shows_extensions(Surface::Space(id));
         let overlay_size = space.theme(&self.config.theme).overlay_size;
         let title = space.title().to_owned();
         let entries: Vec<(PathBuf, String)> = space
