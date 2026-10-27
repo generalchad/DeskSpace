@@ -16,9 +16,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
 - section S, in order: S6, S7, S8, and S13; S5 and S9-S12 need a screen or
-  a reviewer;
-- section T, "Burn, upgraded": T24 now, then T25-T31 in order once
-  `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
+  a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D. Phase 4 is complete; its on-screen
@@ -1675,12 +1673,13 @@ T24-T33 make Burn read as fire rather than an orange wipe: it takes its
 time and kindles, spreads unevenly, smoulders, throws turbulent flames and
 ash, and looks the same at every DPI. One commit each, in order.
 
-- **When to start.** T24 can start now. T25-T33 build on three things
-  that are on `feat/color-picker-redesign` (as of `c1ad0f3`):
-  `render/noise.rs` (`RisingField`, `fractal`, `random`),
-  `win32/effect_overlay.rs` (`EffectOverlay`, `Art::Burn`, `Margins`),
-  and `Play::seed`. Wait until that branch is in `main`. Do not copy them
-  across by hand. If the names there have changed, stop and ask (rule 4).
+- **When to start.** Blocked: T24-T33 build on three things that are on
+  `feat/color-picker-redesign` (as of `c1ad0f3`) but not in `main`, because
+  only that branch's color picker was ported: `render/noise.rs`
+  (`RisingField`, `fractal`, `random`), `win32/effect_overlay.rs`
+  (`EffectOverlay`, `Art::Burn`, `Margins`), and `Play::seed`. Port that
+  groundwork as its own task first, or stop and ask; do not copy it across
+  by hand. Then T24 starts.
 - **Units.** "px" means pixels at 96 DPI. From T26 on, multiply every px
   constant by the window's scale (`dpi as f32 / 96.0`).
 - **Reversible.** Every frame stays a pure function of the progress, the
