@@ -1130,29 +1130,6 @@ interest. In phase 4 and 5 terms:
     button is gone at the root; Backspace in a rename edits the text and
     does not go back.
 
-- [ ] **W44. Undo for lens and view actions (app).** The undo work (U1-U7,
-  D11) and the lens work (D17, D18) met late, so no lens or view action
-  records an entry yet: `SetSpaceView` (the View menu, Ctrl+Shift+1..8, the
-  status bar's buttons), `SetLensView` (Sort by, Show hidden files, the Lens
-  page), `SetLensFolder` (Change folder…), `SetLensTitle`, and `CreateLens`
-  (New lens…) all reach the model through a bare `commit`.
-  - Record each as one entry through `App::record_effects` (the "new model
-    change" recipe), labelled as its menu names it ("Change view", "Sort
-    lens", "Change folder", "New lens"), and restart the watch after an
-    applied change as the menu already does. `CreateLens` in
-    `App::show_new_space` opens its entry; check it labels it "New lens" and
-    finishes it on failure.
-  - A restored lens must list its folder again: after an undo or redo that
-    restored one, `App::sync_watches`. The command itself is
-    `RestoreSpaces`, so nothing new is needed in core.
-  - Tests in `app/undo.rs` (copy the layout tests): each action records one
-    entry that undoes and redoes; a restored lens gets a watch; a change
-    that does not apply records nothing.
-  - **[needs human]** check: change a view, sort a lens, toggle its hidden
-    files, change its folder, and create a lens; each undoes and redoes from
-    Ctrl+Z / Ctrl+Y and both menus, and a lens brought back lists its folder
-    again.
-
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
@@ -2119,6 +2096,7 @@ each id is in `archive/TASKS-done.md`.
 | U5 (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
 | U6 (D11) | Recycle a file in Explorer, restore it through a test harness or `--verbose` log, and confirm it is back under its old name. |
 | U7 (D11) | Delete two items and undo (both return to the space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty the Recycle Bin between a delete and its undo: the undo says it can't and changes nothing. Shift+Delete leaves Undo as it was. |
+| W44 (D11) | Change a space's view (View menu, Ctrl+Shift+1..8, the status bar's buttons), sort a lens, toggle its hidden files, change its folder, and create a lens: each is one Undo entry named for it ("Undo Change view", "Undo Sort lens", "Undo Change lens view", "Undo Change folder", "Undo New lens"), Ctrl+Z and Ctrl+Y restore and reapply it from the menus too, and a lens brought back lists its folder again. |
 | W8 (D17) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
 | W9 (D17) | Lenses on Downloads, Documents, and a plain folder show each folder's own icon left of the title; rename the folder away and the generic folder icon shows; F2's rename box starts after the icon; the same folded, at 100 % and 150 %, on every backdrop; a normal space's title bar is unchanged. |
 | W11 (D17) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |

@@ -128,11 +128,24 @@ impl App {
         at: Point,
         lead: Vec<Effect>,
     ) -> Vec<Effect> {
+        self.record_outcome(label, command, at, lead).1
+    }
+
+    /// `record_effects`, also reporting whether the command applied, for a
+    /// caller that does something of its own when it did.
+    pub(super) fn record_outcome(
+        &mut self,
+        label: impl Into<String>,
+        command: Command,
+        at: Point,
+        lead: Vec<Effect>,
+    ) -> (bool, Vec<Effect>) {
         self.undo.begin(label);
         let touched = self.config.desktop.touched_by(&command);
         let outcome = self.dispatch(command, at);
         self.undo.finish(&self.config.desktop);
-        commit_effects(outcome, touched, lead)
+        let applied = outcome.is_applied();
+        (applied, commit_effects(outcome, touched, lead))
     }
 }
 

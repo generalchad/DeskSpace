@@ -3935,3 +3935,27 @@ until I5-I6 all land, so no partial build hides the desktop.
     gets the defaults.
   - **[needs human]** check: change each default, and "New lens…" uses
     it; existing lenses do not change.
+
+
+- [x] **W44. Undo for lens and view actions (app).** The undo work (U1-U7,
+  D11) and the lens work (D17, D18) met late, so no lens or view action
+  records an entry yet: `SetSpaceView` (the View menu, Ctrl+Shift+1..8, the
+  status bar's buttons), `SetLensView` (Sort by, Show hidden files, the Lens
+  page), `SetLensFolder` (Change folder…), `SetLensTitle`, and `CreateLens`
+  (New lens…) all reach the model through a bare `commit`.
+  - Record each as one entry through `App::record_effects` (the "new model
+    change" recipe), labelled as its menu names it ("Change view", "Sort
+    lens", "Change folder", "New lens"), and restart the watch after an
+    applied change as the menu already does. `CreateLens` in
+    `App::show_new_space` opens its entry; check it labels it "New lens" and
+    finishes it on failure.
+  - A restored lens must list its folder again: after an undo or redo that
+    restored one, `App::sync_watches`. The command itself is
+    `RestoreSpaces`, so nothing new is needed in core.
+  - Tests in `app/undo.rs` (copy the layout tests): each action records one
+    entry that undoes and redoes; a restored lens gets a watch; a change
+    that does not apply records nothing.
+  - **[needs human]** check: change a view, sort a lens, toggle its hidden
+    files, change its folder, and create a lens; each undoes and redoes from
+    Ctrl+Z / Ctrl+Y and both menus, and a lens brought back lists its folder
+    again.

@@ -624,6 +624,9 @@ impl App {
         if self.settings_ui.is_open() {
             self.refresh_settings(ui);
         }
+        // A restored lens lists its folder again; a removed one stops being
+        // watched.
+        self.sync_watches(ui);
         self.refresh_tray(ui);
         self.save(ui);
     }
@@ -648,10 +651,10 @@ mod tests {
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::geometry::Size;
-    use deskspace_core::{Command, Item, ItemId, Rect, ResizeEdges, SortKey};
+    use deskspace_core::{Command, Item, ItemId, Rect, ResizeEdges, SortKey, SpaceView, ViewMode};
     use deskspace_platform::FieldValue;
 
-    use crate::fixtures::{add_item, apply, create_space};
+    use crate::fixtures::{add_item, apply, create_lens, create_space};
     use crate::settings::{Session, field};
 
     use super::*;
@@ -1398,5 +1401,96 @@ mod tests {
         );
         assert!(app.config.desktop.space(space).unwrap().items().is_empty());
         assert!(!stored.exists());
+    }
+
+    #[test]
+    fn view_and_lens_changes_each_record_one_entry() {
+        let mut app = test_app();
+        let space = create_space(&mut app.config.desktop, "Work", sample_rect(16));
+
+        // A view change: one entry, undone and redone.
+        let (applied, _) = app.change_view(
+            space,
+            SpaceView::with_mode(ViewMode::LargeIcons),
+            Point::new(40, 40),
+            "Change view",
+        );
+        assert!(applied);
+        assert_eq!(app.undo.undo_label(), Some("Change view"));
+        assert_eq!(
+            app.config.desktop.space(space).unwrap().view().mode,
+            ViewMode::LargeIcons
+        );
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(
+            app.config.desktop.space(space).unwrap().view().mode,
+            ViewMode::Icons
+        );
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(
+            app.config.desktop.space(space).unwrap().view().mode,
+            ViewMode::LargeIcons
+        );
+
+        // A lens's folder-view edit: one entry that restores show_hidden.
+        let lens = create_lens(&mut app.config.desktop, "Docs", sample_rect(20), "C:/docs");
+        let mut folder_view = app
+            .config
+            .desktop
+            .space(lens)
+            .unwrap()
+            .folder_view()
+            .unwrap()
+            .clone();
+        folder_view.show_hidden = true;
+        let (applied, _) = app.change_lens_view(lens, folder_view, Point::new(60, 40));
+        assert!(applied);
+        assert_eq!(app.undo.undo_label(), Some("Change lens view"));
+        assert!(
+            app.config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .show_hidden
+        );
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert!(
+            !app.config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .show_hidden
+        );
+
+        // Change folder…: one entry that restores the old folder and title.
+        let (applied, _) = app.set_lens_folder(
+            lens,
+            PathBuf::from("C:/other"),
+            "Other".to_string(),
+            Point::new(60, 40),
+        );
+        assert!(applied);
+        assert_eq!(app.undo.undo_label(), Some("Change folder"));
+        assert_eq!(
+            app.config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .path,
+            PathBuf::from("C:/other")
+        );
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        let lens_space = app.config.desktop.space(lens).unwrap();
+        assert_eq!(
+            lens_space.folder_view().unwrap().path,
+            PathBuf::from("C:/docs")
+        );
+        assert_eq!(lens_space.title(), "Docs");
     }
 }

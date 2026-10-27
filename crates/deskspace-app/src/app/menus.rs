@@ -157,8 +157,9 @@ impl App {
         if space.is_lens() {
             let mut view = space.view();
             view.sort = rule;
-            self.set_space_view(ui, id, view, at);
-            self.restart_lens_watch(ui, id);
+            if self.set_space_view_labelled(ui, id, view, at, "Sort lens") {
+                self.restart_lens_watch(ui, id);
+            }
         } else {
             let effects = self.sort_space_items(id, rule, at);
             self.run(ui, effects);
@@ -240,34 +241,56 @@ impl App {
         let mut next = view;
         next.path = folder.clone();
         let title = lens_title(&next, &current, &self.profile);
-        if self
-            .commit(
-                ui,
-                Command::SetLensFolder {
-                    id,
-                    path: folder,
-                    title,
-                },
-                at,
-            )
-            .is_applied()
-        {
+        let (applied, effects) = self.set_lens_folder(id, folder, title, at);
+        self.run(ui, effects);
+        if applied {
             self.unavailable_lenses.remove(&id);
             self.sync_watches(ui);
             self.resnapshot_settings(ui, id);
         }
     }
 
-    /// Replaces lens `id`'s view and lists its folder again, so the new order
-    /// and the hidden-files choice apply now rather than at the next change.
+    /// The undo-recording half of Change folder…, without a `Ui`.
+    pub(super) fn set_lens_folder(
+        &mut self,
+        id: SpaceId,
+        path: PathBuf,
+        title: String,
+        at: Point,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(
+            "Change folder",
+            Command::SetLensFolder { id, path, title },
+            at,
+            Vec::new(),
+        )
+    }
+
+    /// Replaces lens `id`'s view as one undo entry and lists its folder again,
+    /// so the new order and the hidden-files choice apply now rather than at
+    /// the next change.
     fn set_lens_view(&mut self, ui: &mut Ui, id: SpaceId, view: FolderView, at: Point) {
-        if self
-            .commit(ui, Command::SetLensView { id, view }, at)
-            .is_applied()
-        {
+        let (applied, effects) = self.change_lens_view(id, view, at);
+        self.run(ui, effects);
+        if applied {
             self.restart_lens_watch(ui, id);
             self.resnapshot_settings(ui, id);
         }
+    }
+
+    /// The undo-recording half of a lens view change, without a `Ui`.
+    pub(super) fn change_lens_view(
+        &mut self,
+        id: SpaceId,
+        view: FolderView,
+        at: Point,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(
+            "Change lens view",
+            Command::SetLensView { id, view },
+            at,
+            Vec::new(),
+        )
     }
 
     /// Lists a lens's folder again by starting its watch over: a watch lists

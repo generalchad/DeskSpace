@@ -773,17 +773,42 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    /// Applies a view choice to space `id`, reflows that space alone, and
-    /// keeps an open settings window's snapshot. Shared by the View menu and
-    /// the Ctrl+Shift keys.
-    pub(super) fn set_space_view(&mut self, ui: &mut Ui, id: SpaceId, view: SpaceView, at: Point) {
-        if self
-            .commit(ui, Command::SetSpaceView { id, view }, at)
-            .is_applied()
-        {
+    /// Applies a view choice to space `id` as one undo entry named `label`,
+    /// reflows that space alone, and keeps an open settings window's
+    /// snapshot. Shared by the View menu, the Ctrl+Shift keys, and the status
+    /// bar's buttons.
+    pub(super) fn set_space_view_labelled(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        view: SpaceView,
+        at: Point,
+        label: &str,
+    ) -> bool {
+        let (applied, effects) = self.change_view(id, view, at, label);
+        self.run(ui, effects);
+        if applied {
             self.reflow_space(ui, id);
             self.resnapshot_settings(ui, id);
         }
+        applied
+    }
+
+    /// `set_space_view_labelled` under the name the menus show.
+    pub(super) fn set_space_view(&mut self, ui: &mut Ui, id: SpaceId, view: SpaceView, at: Point) {
+        self.set_space_view_labelled(ui, id, view, at, "Change view");
+    }
+
+    /// The undo-recording half of a view change, without a `Ui`, so tests can
+    /// check what an entry captures.
+    pub(super) fn change_view(
+        &mut self,
+        id: SpaceId,
+        view: SpaceView,
+        at: Point,
+        label: &str,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(label, Command::SetSpaceView { id, view }, at, Vec::new())
     }
 
     /// Ctrl+Shift+1 through 8 (W13): switches the current space to the view
