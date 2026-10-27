@@ -4313,3 +4313,64 @@ until I5-I6 all land, so no partial build hides the desktop.
     MIT text. The About note and `NOTICE` are tested against
     `ICON_SETS`; the note's on-screen height is a glance for the next
     pass through Settings > About.
+
+
+- [x] **S8. Consent, the download, and new spaces (config, app).**
+  **[needs human]**
+  - `deskspace-config/src/schema.rs`: `WindowSettings.icon_downloads:
+    IconDownloads { Ask (default), Allowed, Declined }` and
+    `new_space_icon: NewSpaceIcon { Automatic (default), None }`, with
+    `NewSpaceIcon::space_icon()`. Both snake_case enums.
+  - `app/space_icons.rs`: a pure `next_step(state, consent, asked) ->
+    IconStep { Nothing, Load, Ask, Fetch, Unavailable }`, where `asked`
+    means the prompt already showed this session. It is the one place that
+    decides to download, and only `Allowed` gives `Fetch` (S rule 2).
+    `App::need_icon_set(ui, spec)` acts on it.
+    - `Fetch`: a worker runs `fetch_signed(release_tag, file_name)`, then
+      `IconStore::save`, and wakes `ICONS_WAKE`. A failure becomes
+      `Failed`, logged at `warn`, and is tried again only at the next
+      start.
+    - `Ask`: arms `Timer::IconConsent` (the next free timer, 300 ms, so a
+      new space's animation starts and an OLE drop returns first). Its
+      handler shows `ui.choose` titled "Show icons on spaces?". The text
+      names the set's label, author, and license, says it is downloaded
+      once from DeskSpace's releases on GitHub and that nothing about you
+      or your files is sent, and points at Settings > General. The buttons
+      are "Download icons" and "No thanks"; save `Allowed` or `Declined`,
+      and Esc counts as "No thanks".
+  - Call `need_icon_set` where an icon is first needed: when a load finds
+    no file and a space uses the set, and after `open_new_space` makes an
+    `Automatic` space. `open_new_space` passes
+    `window.new_space_icon.space_icon()` to `CreateSpace`. `seed_space`
+    keeps `SpaceIcon::None`, so the first launch never asks.
+  - Settings (the new-global-setting recipe): an "Icon" choice on the New
+    spaces page (Automatic, No icon), and "Icon downloads" on the General
+    page (Ask first, Allowed, Never), with a note naming what is downloaded
+    and from where. Option tables go in `tables.rs`. In
+    `App::apply_settings`, a change to `Allowed` calls `need_icon_set` for
+    the sets in use.
+  - README: the privacy paragraph names the one-time icon download, which
+    asks first, beside the update check. Add the two settings to
+    `CONTEXT.md` section 5.
+  - Tests: `next_step` for every state, consent, and `asked` combination,
+    `Fetch` only with `Allowed`; the settings' serde defaults and old files
+    without the keys; each `apply_field` arm; a new space gets the
+    configured icon (through `fixtures.rs`); the seed space gets none.
+  - **[needs human]** check, with a scratch config, before the key exists:
+    New space opens a "Games"-titled space. The prompt appears once.
+    "Download icons" logs a `NotConfigured` failure and shows no icon, and
+    nothing else breaks. With S5 published and the key set: the same steps
+    download once, then every automatic space shows its icon. The next
+    start reads the cache with no network (check with `-Verbosity 1`).
+    "No thanks" never asks again until General is set back to "Ask first".
+    `-Fresh` first launch: no prompt.
+  - Done 2026-10-27. `next_step` is the one download decision, with a
+    5-by-3-by-2 test matrix in `space_icons.rs`. A load or download
+    result wakes the app; missing sets then ask or fetch, and one
+    shared channel carries both. The consent question waits 300 ms
+    (`Timer::IconConsent`), saves Allowed or Declined, and Esc counts
+    as No thanks. `create_new_space` builds its command in
+    `new_space_command`, tested through `fixtures.rs`; the seed space
+    asserts `None`. The settings gain "Icon" and "Icon downloads"
+    with their tables and arms. The published set and key are what the
+    on-screen check above still needs.

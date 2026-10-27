@@ -15,7 +15,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
-- section S, in order: S8; S5 and S9-S12 need a screen or
+- section S: S5 and S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -1198,56 +1198,6 @@ Rules for every S task:
     repository's "Latest" badge still points at the app. A second run fails
     at step 2.
 
-- [ ] **S8. Consent, the download, and new spaces (config, app).**
-  **[needs human]**
-  - `deskspace-config/src/schema.rs`: `WindowSettings.icon_downloads:
-    IconDownloads { Ask (default), Allowed, Declined }` and
-    `new_space_icon: NewSpaceIcon { Automatic (default), None }`, with
-    `NewSpaceIcon::space_icon()`. Both snake_case enums.
-  - `app/space_icons.rs`: a pure `next_step(state, consent, asked) ->
-    IconStep { Nothing, Load, Ask, Fetch, Unavailable }`, where `asked`
-    means the prompt already showed this session. It is the one place that
-    decides to download, and only `Allowed` gives `Fetch` (S rule 2).
-    `App::need_icon_set(ui, spec)` acts on it.
-    - `Fetch`: a worker runs `fetch_signed(release_tag, file_name)`, then
-      `IconStore::save`, and wakes `ICONS_WAKE`. A failure becomes
-      `Failed`, logged at `warn`, and is tried again only at the next
-      start.
-    - `Ask`: arms `Timer::IconConsent` (the next free timer, 300 ms, so a
-      new space's animation starts and an OLE drop returns first). Its
-      handler shows `ui.choose` titled "Show icons on spaces?". The text
-      names the set's label, author, and license, says it is downloaded
-      once from DeskSpace's releases on GitHub and that nothing about you
-      or your files is sent, and points at Settings > General. The buttons
-      are "Download icons" and "No thanks"; save `Allowed` or `Declined`,
-      and Esc counts as "No thanks".
-  - Call `need_icon_set` where an icon is first needed: when a load finds
-    no file and a space uses the set, and after `open_new_space` makes an
-    `Automatic` space. `open_new_space` passes
-    `window.new_space_icon.space_icon()` to `CreateSpace`. `seed_space`
-    keeps `SpaceIcon::None`, so the first launch never asks.
-  - Settings (the new-global-setting recipe): an "Icon" choice on the New
-    spaces page (Automatic, No icon), and "Icon downloads" on the General
-    page (Ask first, Allowed, Never), with a note naming what is downloaded
-    and from where. Option tables go in `tables.rs`. In
-    `App::apply_settings`, a change to `Allowed` calls `need_icon_set` for
-    the sets in use.
-  - README: the privacy paragraph names the one-time icon download, which
-    asks first, beside the update check. Add the two settings to
-    `CONTEXT.md` section 5.
-  - Tests: `next_step` for every state, consent, and `asked` combination,
-    `Fetch` only with `Allowed`; the settings' serde defaults and old files
-    without the keys; each `apply_field` arm; a new space gets the
-    configured icon (through `fixtures.rs`); the seed space gets none.
-  - **[needs human]** check, with a scratch config, before the key exists:
-    New space opens a "Games"-titled space. The prompt appears once.
-    "Download icons" logs a `NotConfigured` failure and shows no icon, and
-    nothing else breaks. With S5 published and the key set: the same steps
-    download once, then every automatic space shows its icon. The next
-    start reads the cache with no network (check with `-Verbosity 1`).
-    "No thanks" never asks again until General is set back to "Ask first".
-    `-Fresh` first launch: no prompt.
-
 - [ ] **S9. The icon picker (platform).** Lands in the same commit as S10,
   its first caller, which holds the on-screen check.
   - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
@@ -2317,6 +2267,7 @@ each id is in `archive/TASKS-done.md`.
 | W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
+| Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 
 ## Found while working
 

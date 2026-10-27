@@ -5,8 +5,8 @@ use super::ids::field;
 use super::session::Session;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
-    is_hotkey_field,
+    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
+    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
 use super::*;
 use super::{FieldEffect, scope_space};
@@ -226,6 +226,18 @@ pub fn apply_field(
             }
             (field::NEW_SPACE_LOCKED, FieldValue::Toggle(on)) => {
                 config.window.new_space_locked = on;
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_ICON, FieldValue::Choice(index)) => {
+                config.window.new_space_icon = NEW_SPACE_ICON_OPTIONS
+                    .get(index)
+                    .map_or(config.window.new_space_icon, |entry| entry.0);
+                FieldEffect::Pending
+            }
+            (field::ICON_DOWNLOADS, FieldValue::Choice(index)) => {
+                config.window.icon_downloads = ICON_DOWNLOAD_OPTIONS
+                    .get(index)
+                    .map_or(config.window.icon_downloads, |entry| entry.0);
                 FieldEffect::Pending
             }
             // The Lenses page's defaults (W23) apply to the next new lens.
@@ -548,6 +560,35 @@ mod tests {
             "C:/Temp/lens-test",
         );
         (config, id)
+    }
+
+    #[test]
+    fn icon_settings_take_their_choices() {
+        let (mut config, mut session) = setup();
+        apply_field(
+            &mut config,
+            &mut session,
+            field::NEW_SPACE_ICON,
+            FieldValue::Choice(1),
+            true,
+        );
+        assert_eq!(config.window.new_space_icon, NewSpaceIcon::None);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_DOWNLOADS,
+            FieldValue::Choice(1),
+            true,
+        );
+        assert_eq!(config.window.icon_downloads, IconDownloads::Allowed);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_DOWNLOADS,
+            FieldValue::Choice(2),
+            true,
+        );
+        assert_eq!(config.window.icon_downloads, IconDownloads::Declined);
     }
 
     #[test]

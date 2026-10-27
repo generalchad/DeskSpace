@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use deskspace_config::{Config, ConfigStore};
+use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
@@ -43,7 +43,7 @@ use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
-use space_icons::SpaceIcons;
+use space_icons::{IconStep, SpaceIcons};
 use undo::UndoStack;
 use update::UpdateState;
 pub(crate) use view::{LayerState, SystemLook, ViewCache};
@@ -61,6 +61,9 @@ const ICON_SIZE_WHEEL_STEP: i32 = 10;
 const UPDATE_WAKE: usize = 0;
 const UPDATE_DOWNLOADED_WAKE: usize = 1;
 const ICONS_WAKE: usize = 2;
+/// How long the icon consent question waits, so a new space's animation
+/// starts and an OLE drop returns first.
+const ICON_CONSENT_DELAY_MS: u32 = 300;
 /// The app's timers, delivered back as `Event::Timer` with the variant's
 /// value as the id. Never renumber one; a new timer takes the highest value
 /// plus one and joins `ALL`, and `App::on_timer`'s exhaustive match asks for
@@ -97,10 +100,12 @@ enum Timer {
     /// Looking for a rename Explorer started in its hidden desktop view
     /// (`app/rename.rs`).
     ExplorerRename = 13,
+    /// Showing the icon-download consent question (`app/space_icons.rs`).
+    IconConsent = 14,
 }
 
 impl Timer {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 14] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -114,6 +119,7 @@ impl Timer {
         Self::DebugLog,
         Self::DebugRefresh,
         Self::ExplorerRename,
+        Self::IconConsent,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -620,6 +626,57 @@ impl App {
         ui.clear_timer(timer as usize);
     }
 
+    /// Decides what to do about one icon set and does it: read the cache, ask
+    /// the user once, download it, or leave it. The one place a download is
+    /// decided (D16).
+    pub(super) fn need_icon_set(&mut self, ui: &mut Ui, spec: &'static IconSetSpec) {
+        let step = space_icons::next_step(
+            self.space_icons.state(spec.prefix),
+            self.config.window.icon_downloads,
+            self.space_icons.asked(),
+        );
+        match step {
+            IconStep::Nothing | IconStep::Unavailable => {}
+            IconStep::Load => self.space_icons.load(&self.store, ui, spec),
+            IconStep::Fetch => self.space_icons.fetch(&self.store, ui, spec),
+            IconStep::Ask => {
+                self.space_icons.set_pending(spec);
+                Self::set_timer(ui, Timer::IconConsent, ICON_CONSENT_DELAY_MS);
+            }
+        }
+    }
+
+    /// Asks whether DeskSpace may download the icon set once, and remembers
+    /// the answer. Esc counts as "No thanks".
+    fn ask_icon_consent(&mut self, ui: &mut Ui) {
+        let Some(spec) = self.space_icons.take_pending() else {
+            return;
+        };
+        let text = format!(
+            "Space icons come from {} by {}, {}. DeskSpace downloads that set once, from \
+             DeskSpace's releases on GitHub, and asks nothing else of you: nothing about you \
+             or your files is sent.\n\nYou can change this later in Settings > General.",
+            spec.label, spec.author, spec.license
+        );
+        let allowed = ui.choose(
+            "Show icons on spaces?",
+            &text,
+            &["Download icons", "No thanks"],
+            0,
+        ) == Some(0);
+        self.config.window.icon_downloads = if allowed {
+            IconDownloads::Allowed
+        } else {
+            IconDownloads::Declined
+        };
+        self.schedule_save(ui);
+        if allowed {
+            for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                self.need_icon_set(ui, spec);
+            }
+        }
+    }
+
     /// Runs the work of a timer that fired.
     fn on_timer(&mut self, ui: &mut Ui, timer: Timer) {
         match timer {
@@ -637,6 +694,7 @@ impl App {
             Timer::DebugLog => self.feed_debug_log(ui),
             Timer::DebugRefresh => self.refresh_debug(ui),
             Timer::ExplorerRename => self.poll_explorer_rename(ui),
+            Timer::IconConsent => self.ask_icon_consent(ui),
         }
     }
 
@@ -702,10 +760,11 @@ impl EventHandler for App {
                     self.open_settings(ui);
                 }
                 self.sync_update_schedule(ui);
-                // Read the title icons' sets off this thread; the wake
-                // repaints the spaces that use them.
-                self.space_icons
-                    .start(&self.store, ui, self.config.desktop.spaces());
+                // Read the title icons' sets off this thread; a missing set
+                // asks or downloads, and the wake repaints the spaces.
+                for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                    self.need_icon_set(ui, spec);
+                }
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
@@ -758,7 +817,11 @@ impl EventHandler for App {
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
             Event::Wake { id } if id == ICONS_WAKE => {
-                if self.space_icons.on_loaded() {
+                let (changed, missing) = self.space_icons.take_results();
+                for spec in missing {
+                    self.need_icon_set(ui, spec);
+                }
+                if changed {
                     self.repaint_spaces(ui);
                 }
             }

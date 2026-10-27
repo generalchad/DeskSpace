@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use deskspace_config::IconDownloads;
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{
@@ -443,6 +444,20 @@ impl App {
         });
         if update_check_changed {
             self.sync_update_schedule(ui);
+        }
+        let icon_consent_changed = self.settings_ui.session.as_ref().is_some_and(|session| {
+            session.saved_window.icon_downloads != self.config.window.icon_downloads
+        });
+        if icon_consent_changed {
+            // "Ask first" may show the question again, and "Allowed" fetches
+            // what the user just agreed to.
+            if self.config.window.icon_downloads == IconDownloads::Allowed {
+                for spec in super::SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                    self.need_icon_set(ui, spec);
+                }
+            } else {
+                self.space_icons.reset_asked();
+            }
         }
         self.save(ui);
         if let Some(session) = self.settings_ui.session.as_mut() {

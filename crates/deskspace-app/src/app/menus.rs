@@ -698,6 +698,9 @@ impl App {
     /// shows it, and returns its id.
     fn open_new_space(&mut self, ui: &mut Ui, origin: Point, size: Size) -> Option<SpaceId> {
         let id = self.create_new_space(origin, size)?;
+        if self.config.window.new_space_icon == deskspace_config::NewSpaceIcon::Automatic {
+            self.need_icon_set(ui, deskspace_config::default_set());
+        }
         if !self.visible {
             self.set_visible(ui, true);
         }
@@ -715,13 +718,7 @@ impl App {
             title.to_string()
         };
         let id = self.config.desktop.next_space_id();
-        let command = Command::CreateSpace {
-            title,
-            at: origin,
-            size,
-            locked: window.new_space_locked,
-            icon: deskspace_core::SpaceIcon::None,
-        };
+        let command = new_space_command(window, origin, size, title);
         self.undo.begin("New space");
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.
@@ -783,6 +780,23 @@ impl App {
 /// A menu entry for one of the app's menu ids.
 pub(super) fn menu_item(id: MenuId, label: impl Into<String>) -> MenuEntry {
     MenuEntry::item(id as u32, label)
+}
+
+/// The command a new space is made with, from the window's defaults: its
+/// title, place, size, lock, and the icon the New spaces page asks for.
+fn new_space_command(
+    window: &deskspace_config::WindowSettings,
+    origin: Point,
+    size: Size,
+    title: String,
+) -> Command {
+    Command::CreateSpace {
+        title,
+        at: origin,
+        size,
+        locked: window.new_space_locked,
+        icon: window.new_space_icon.space_icon(),
+    }
 }
 
 /// The default gutter around a new space, scaled for the monitor at `at`.
@@ -969,6 +983,41 @@ mod tests {
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::{Rect, SortKey};
+
+    #[test]
+    fn a_new_space_takes_the_configured_icon() {
+        use deskspace_config::NewSpaceIcon;
+        use deskspace_core::{Desktop, SpaceIcon};
+
+        let mut config = Config::new();
+        config.window.new_space_icon = NewSpaceIcon::Automatic;
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Games".to_owned(),
+            ),
+        );
+        assert_eq!(desktop.space(id).unwrap().icon(), &SpaceIcon::Automatic);
+
+        config.window.new_space_icon = NewSpaceIcon::None;
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Games".to_owned(),
+            ),
+        );
+        assert!(desktop.space(id).unwrap().icon().is_none());
+    }
 
     #[test]
     fn the_new_shortcut_menu_maps_each_entry_back() {

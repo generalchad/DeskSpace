@@ -767,7 +767,7 @@ v0.2.4 and ship in the next release. Section 5 lists what each has done.
    runs today and go first.
 2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
    the icon-set library, its cache, and the signed download are built
-   (S1-S4, S6, S7, S13); S8 is the last build step, and S5 and S9-S12 need a screen.
+   (S1-S4, S6-S8, S13); S5 and S9-S12 need a screen.
 3. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
@@ -1228,7 +1228,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, and the title icon are built (S1-S4, S6-S7); the picker and the download wiring follow (S5, S8-S12), decided in D16 |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S4, S6-S8, S13); the picker follows (S5, S9-S12), decided in D16 |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Open; decided in D18 (`TASKS.md` W29-W32) |
 | F-64 | Browse into subfolders inside a lens | M4 | Open; decided in D18 (`TASKS.md` W24, W25, W42, W43) |
 | F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |

@@ -27,7 +27,7 @@ pub use tables::{
 
 use std::path::Path;
 
-use deskspace_config::{Config, NEW_SPACE_SIZE_RANGE, WindowSettings};
+use deskspace_config::{Config, IconDownloads, NEW_SPACE_SIZE_RANGE, NewSpaceIcon, WindowSettings};
 use deskspace_core::animation::{
     Animations, DETAIL_RANGE, DURATION_MS_RANGE, Edge, Effect as AnimationEffect, EffectChoice,
     EffectOption, Kind, STAGGER_MS_RANGE, StartupOrder,

@@ -22,6 +22,19 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// Whether an icon set may be downloaded, in dropdown order.
+pub(super) const ICON_DOWNLOAD_OPTIONS: [(IconDownloads, &str); 3] = [
+    (IconDownloads::Ask, "Ask first"),
+    (IconDownloads::Allowed, "Allowed"),
+    (IconDownloads::Declined, "Never"),
+];
+
+/// The icon a new space starts with, in dropdown order.
+pub(super) const NEW_SPACE_ICON_OPTIONS: [(NewSpaceIcon, &str); 2] = [
+    (NewSpaceIcon::Automatic, "Automatic"),
+    (NewSpaceIcon::None, "No icon"),
+];
+
 /// How a lens's title follows its folder, in dropdown order (D17).
 pub(super) const LENS_TITLES: [(LensTitle, &str); 4] = [
     (LensTitle::FolderName, "Folder name"),

@@ -63,6 +63,7 @@ pub mod field {
     pub const FIT_TO_GRID: u32 = 63;
     pub const MARQUEE_COLOR: u32 = 64;
     pub const MARQUEE_BORDER: u32 = 65;
+    pub const NEW_SPACE_ICON: u32 = 138;
 
     pub const UPDATES_HEADING: u32 = 66;
     pub const CHECK_UPDATES: u32 = 67;
@@ -107,6 +108,8 @@ pub mod field {
     pub const SHADOW: u32 = 107;
     pub const SHADOW_SIZE: u32 = 108;
     pub const SHADOW_OPACITY: u32 = 109;
+    pub const ICON_DOWNLOADS: u32 = 139;
+    pub const ICON_DOWNLOADS_NOTE: u32 = 140;
 
     pub const LENS_HEADING: u32 = 110;
     pub const LENS_PATH: u32 = 111;

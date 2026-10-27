@@ -5,8 +5,8 @@ use deskspace_config::ICON_SETS;
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
-    VIEW_ORDERS, corner_marks,
+    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
+    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, VIEW_ORDERS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -311,6 +311,17 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 &labels(&MODES),
                 index_of(&MODES, config.theme.ui_mode),
             ),
+            Field::choice(
+                field::ICON_DOWNLOADS,
+                "Icon downloads",
+                &labels(&ICON_DOWNLOAD_OPTIONS),
+                index_of(&ICON_DOWNLOAD_OPTIONS, config.window.icon_downloads),
+            ),
+            Field::note(
+                field::ICON_DOWNLOADS_NOTE,
+                "Space icons come from an icon set downloaded once from DeskSpace's releases \
+                 on GitHub, and only after you agree. Nothing about you or your files is sent.",
+            ),
             Field::heading(field::UPDATES_HEADING, "Updates"),
             Field::toggle(
                 field::CHECK_UPDATES,
@@ -386,6 +397,12 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
                 field::NEW_SPACE_LOCKED,
                 "Start new spaces locked",
                 window.new_space_locked,
+            ),
+            Field::choice(
+                field::NEW_SPACE_ICON,
+                "Icon",
+                &labels(&NEW_SPACE_ICON_OPTIONS),
+                index_of(&NEW_SPACE_ICON_OPTIONS, window.new_space_icon),
             ),
             Field::note(
                 field::NEW_SPACES_NOTE,

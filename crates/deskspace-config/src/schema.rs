@@ -1,7 +1,7 @@
 use deskspace_core::animation::Animations;
 use deskspace_core::source::LensTitle;
 use deskspace_core::theme::RECENT_COLORS_LIMIT;
-use deskspace_core::{Color, Desktop, SpaceView, Theme};
+use deskspace_core::{Color, Desktop, SpaceIcon, SpaceView, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -54,6 +54,11 @@ pub struct WindowSettings {
     /// Whether a new space starts locked (kept at its size, scrolling instead
     /// of growing).
     pub new_space_locked: bool,
+    /// Whether DeskSpace may download an icon set, and whether the question
+    /// was asked. Nothing is fetched before the user agrees.
+    pub icon_downloads: IconDownloads,
+    /// The icon a new space starts with.
+    pub new_space_icon: NewSpaceIcon,
     /// Check for a newer release in the background, about once a day. Off by
     /// default: no network traffic happens unless the user turns this on or
     /// starts a check from the tray.
@@ -101,6 +106,41 @@ impl Default for NewLens {
     }
 }
 
+/// Whether DeskSpace may download an icon set, and whether it has asked yet.
+/// `Ask` is the default, so no download happens before the user agrees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IconDownloads {
+    /// Ask once before the first download (the default).
+    #[default]
+    Ask,
+    /// Download icon sets without asking again.
+    Allowed,
+    /// Never download icon sets.
+    Declined,
+}
+
+/// The icon a new space starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NewSpaceIcon {
+    /// Match an icon from the space's title (the default).
+    #[default]
+    Automatic,
+    /// No icon; the title starts where it always did.
+    None,
+}
+
+impl NewSpaceIcon {
+    /// The icon a space made with this setting gets.
+    pub fn space_icon(self) -> SpaceIcon {
+        match self {
+            Self::Automatic => SpaceIcon::Automatic,
+            Self::None => SpaceIcon::None,
+        }
+    }
+}
+
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
@@ -114,6 +154,8 @@ impl Default for WindowSettings {
             new_space_width: 240,
             new_space_height: 120,
             new_space_locked: false,
+            icon_downloads: IconDownloads::Ask,
+            new_space_icon: NewSpaceIcon::Automatic,
             check_for_updates: false,
             install_updates: false,
             last_update_check: None,
@@ -200,6 +242,29 @@ mod tests {
         assert!(parsed.desktop.spaces().is_empty());
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(parsed.theme, Theme::default());
+    }
+
+    #[test]
+    fn icon_settings_default_and_round_trip() {
+        let parsed: Config = toml::from_str("version = 2\n").unwrap();
+        assert_eq!(parsed.window.icon_downloads, IconDownloads::Ask);
+        assert_eq!(parsed.window.new_space_icon, NewSpaceIcon::Automatic);
+
+        let mut config = Config::new();
+        config.window.icon_downloads = IconDownloads::Declined;
+        config.window.new_space_icon = NewSpaceIcon::None;
+        let text = toml::to_string_pretty(&config).unwrap();
+        assert!(text.contains("icon_downloads = \"declined\""), "{text}");
+        assert!(text.contains("new_space_icon = \"none\""), "{text}");
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back.window.icon_downloads, IconDownloads::Declined);
+        assert_eq!(back.window.new_space_icon, NewSpaceIcon::None);
+    }
+
+    #[test]
+    fn a_new_space_icon_maps_to_the_space_icon() {
+        assert_eq!(NewSpaceIcon::Automatic.space_icon(), SpaceIcon::Automatic);
+        assert_eq!(NewSpaceIcon::None.space_icon(), SpaceIcon::None);
     }
 
     #[test]
@@ -713,8 +778,8 @@ mod tests {
     fn an_unreadable_space_icon_loads_as_none() {
         let text = toml::to_string_pretty(&config_with_icon(deskspace_core::SpaceIcon::Automatic))
             .unwrap()
-            .replace("icon = \"automatic\"", "icon = \"?\"");
-        assert!(text.contains("icon = \"?\""), "{text}");
+            .replace("\nicon = \"automatic\"", "\nicon = \"?\"");
+        assert!(text.contains("\nicon = \"?\""), "{text}");
         let parsed: Config = toml::from_str(&text).unwrap();
         assert!(parsed.desktop.spaces()[0].icon().is_none());
     }

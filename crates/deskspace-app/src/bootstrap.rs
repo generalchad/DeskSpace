@@ -201,6 +201,7 @@ mod tests {
             panic!("expected one space, got {}", desktop.spaces().len());
         };
         assert_eq!(space.title(), INITIAL_SPACE);
+        assert!(space.icon().is_none(), "the first launch never asks");
         assert_eq!(space.rect().origin(), INITIAL_RECT.origin());
         let seeded: Vec<(&str, ItemKind)> = space
             .items()

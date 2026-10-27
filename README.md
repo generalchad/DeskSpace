@@ -6,9 +6,10 @@ Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
 service, and most importantly: no tracking or telemetry. The only network
 access is the update check, which runs when you choose "Check for updates…" or,
-if you turn it on in Settings, about once a day. You can also let the installed
-version install updates on its own while you are away. It asks GitHub for the latest
-release and sends nothing about you or your files.
+if you turn it on in Settings, about once a day, and the space icons' one-time
+icon-set download, which asks first (Settings > General, "Icon downloads"). You
+can also let the installed version install updates on its own while you are
+away. Both ask GitHub and send nothing about you or your files.
 
 Spaces hold desktop items and shortcuts, and *lenses* show the live contents
 of a folder. Other planned features include

@@ -1,17 +1,21 @@
 //! A space's title icon (ROADMAP D16): which icon set it needs, loading that
-//! set off the main thread, and turning the icon's glyph into pixels.
+//! set off the main thread, asking before a download, and turning the icon's
+//! glyph into pixels.
 //!
-//! A set is loaded once, from the local icon cache (`IconStore`), on the first
-//! start that needs it. Automatic icons match against the default set's words
-//! and names; the match is memoized by title until that set changes. Nothing
-//! here touches the network: a missing set simply shows no icon (S8 adds the
-//! download).
+//! A set is read once from the local cache (`IconStore`) on the first start
+//! that needs it. If the cache has no file, `next_step` decides what happens
+//! next: with `IconDownloads::Ask` the user is asked once, `Allowed` downloads
+//! the signed set from DeskSpace's releases, and `Declined` leaves the icon
+//! off. Nothing here runs on the main thread but the decision.
+//!
+//! Automatic icons match against the default set's words and names; the match
+//! is memoized by title until that set changes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
-use deskspace_config::{ConfigStore, IconStore, default_set, icon_set};
+use deskspace_config::{ConfigStore, IconDownloads, IconSetSpec, IconStore, default_set, icon_set};
 use deskspace_core::icon_match::best_icon;
 #[cfg(test)]
 use deskspace_core::icon_set::Glyph;
@@ -24,37 +28,89 @@ use super::ICONS_WAKE;
 
 /// What one set's cache holds, or why it cannot be used.
 #[derive(Debug)]
-enum SetState {
-    /// A worker is reading it.
+pub(super) enum SetState {
+    /// A worker is reading or downloading it.
     Loading,
     Ready(Arc<IconSet>),
-    /// The cache has no file for it; S8 may download it.
+    /// The cache has no file for it.
     Missing,
     Failed(String),
 }
 
-/// What a load worker sends back: the set's prefix and what the store made of
-/// it.
-type LoadResult = (String, Result<Option<IconSet>, String>);
+/// What to do about a set, decided in one place (S rule 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum IconStep {
+    /// Already loading, ready, or waiting on an answer.
+    Nothing,
+    /// Read the cache.
+    Load,
+    /// Ask the user once this session.
+    Ask,
+    /// Download the signed set, which the user allowed.
+    Fetch,
+    /// No icon can be had this session.
+    Unavailable,
+}
+
+/// The next step for a set in `state`, with the user's consent and whether the
+/// question already showed. Only `Allowed` downloads; a failure waits for the
+/// next start.
+pub(super) fn next_step(state: Option<&SetState>, consent: IconDownloads, asked: bool) -> IconStep {
+    match state {
+        None => IconStep::Load,
+        Some(SetState::Loading | SetState::Ready(_)) => IconStep::Nothing,
+        Some(SetState::Failed(_)) => IconStep::Unavailable,
+        Some(SetState::Missing) => match consent {
+            IconDownloads::Allowed => IconStep::Fetch,
+            IconDownloads::Declined => IconStep::Unavailable,
+            IconDownloads::Ask if asked => IconStep::Nothing,
+            IconDownloads::Ask => IconStep::Ask,
+        },
+    }
+}
+
+/// What a load or download worker sends back: the set's prefix and what the
+/// store made of it.
+type WorkerResult = (String, Result<Option<IconSet>, String>);
 
 /// The app's title icons: the sets in use, their loaded forms, and the glyph
 /// cache the pictures come from.
-#[derive(Default)]
 pub(super) struct SpaceIcons {
     sets: HashMap<String, SetState>,
     glyphs: GlyphCache,
     /// Automatic matches by title, in the default set; `None` is a remembered
     /// miss. Cleared when the default set changes.
     automatic: HashMap<String, Option<String>>,
-    /// The workers' results, while any is running.
-    loading: Option<Receiver<LoadResult>>,
+    /// The workers' results. The sender is kept so a later download can use
+    /// the same wake.
+    sender: Sender<WorkerResult>,
+    results: Receiver<WorkerResult>,
+    /// The set whose consent question is waiting for an answer.
+    pending: Option<&'static IconSetSpec>,
+    /// Whether the consent question showed this session.
+    asked: bool,
+}
+
+impl Default for SpaceIcons {
+    fn default() -> Self {
+        let (sender, results) = channel();
+        Self {
+            sets: HashMap::new(),
+            glyphs: GlyphCache::new(),
+            automatic: HashMap::new(),
+            sender,
+            results,
+            pending: None,
+            asked: false,
+        }
+    }
 }
 
 impl SpaceIcons {
-    /// Starts loading every set the spaces need, one worker per set. A set
-    /// that is already known (loading, ready, missing, failed) is skipped, so
-    /// the second start is a no-op.
-    pub(super) fn start(&mut self, store: &ConfigStore, ui: &Ui, spaces: &[Space]) {
+    /// The sets the spaces need: each chosen set, and the default set when a
+    /// space matches its title automatically. Sorted and deduplicated by
+    /// prefix.
+    pub(super) fn sets_in_use(spaces: &[Space]) -> Vec<&'static IconSetSpec> {
         let mut wanted = Vec::new();
         for space in spaces {
             match space.icon() {
@@ -69,69 +125,93 @@ impl SpaceIcons {
         }
         wanted.sort_by_key(|spec| spec.prefix);
         wanted.dedup_by_key(|spec| spec.prefix);
-
-        let (sender, receiver) = channel();
-        let dir = store.icons_dir().to_path_buf();
-        let waker = ui.waker();
-        let mut started = false;
-        for spec in wanted {
-            if self.sets.contains_key(spec.prefix) {
-                continue;
-            }
-            self.sets.insert(spec.prefix.to_owned(), SetState::Loading);
-            started = true;
-            let sender = sender.clone();
-            let dir = dir.clone();
-            let waker = waker.clone();
-            std::thread::spawn(move || {
-                let result = IconStore::new(dir)
-                    .load(spec)
-                    .map_err(|error| error.to_string());
-                let _ = sender.send((spec.prefix.to_owned(), result));
-                waker.wake(ICONS_WAKE);
-            });
-        }
-        if started {
-            self.loading = Some(receiver);
-        }
+        wanted
     }
 
-    /// Takes in every finished load. Returns whether a set changed, so the
-    /// caller can repaint the spaces.
-    pub(super) fn on_loaded(&mut self) -> bool {
-        let Some(receiver) = self.loading.take() else {
-            return false;
-        };
+    /// What is known about `prefix`, for `next_step`.
+    pub(super) fn state(&self, prefix: &str) -> Option<&SetState> {
+        self.sets.get(prefix)
+    }
+
+    pub(super) fn asked(&self) -> bool {
+        self.asked
+    }
+
+    pub(super) fn set_pending(&mut self, spec: &'static IconSetSpec) {
+        self.asked = true;
+        self.pending = Some(spec);
+    }
+
+    /// Lets the question show again, after General is set back to "Ask first".
+    pub(super) fn reset_asked(&mut self) {
+        self.asked = false;
+    }
+
+    pub(super) fn take_pending(&mut self) -> Option<&'static IconSetSpec> {
+        self.pending.take()
+    }
+
+    /// Reads the cache for `spec` on a worker, then wakes the app.
+    pub(super) fn load(&mut self, store: &ConfigStore, ui: &Ui, spec: &'static IconSetSpec) {
+        self.sets.insert(spec.prefix.to_owned(), SetState::Loading);
+        let dir = store.icons_dir().to_path_buf();
+        let sender = self.sender.clone();
+        let waker = ui.waker();
+        std::thread::spawn(move || {
+            let result = IconStore::new(dir)
+                .load(spec)
+                .map_err(|error| error.to_string());
+            let _ = sender.send((spec.prefix.to_owned(), result));
+            waker.wake(ICONS_WAKE);
+        });
+    }
+
+    /// Downloads `spec`'s signed set and saves it on a worker, then wakes the
+    /// app. A failure is logged and becomes `Failed`, so it waits for the next
+    /// start.
+    pub(super) fn fetch(&mut self, store: &ConfigStore, ui: &Ui, spec: &'static IconSetSpec) {
+        self.sets.insert(spec.prefix.to_owned(), SetState::Loading);
+        let dir = store.icons_dir().to_path_buf();
+        let sender = self.sender.clone();
+        let waker = ui.waker();
+        std::thread::spawn(move || {
+            let store = IconStore::new(dir);
+            let result = deskspace_update::fetch_signed(&spec.release_tag(), &spec.file_name())
+                .map_err(|error| error.to_string())
+                .and_then(|bytes| store.save(spec, &bytes).map_err(|error| error.to_string()))
+                .map(Some);
+            let _ = sender.send((spec.prefix.to_owned(), result));
+            waker.wake(ICONS_WAKE);
+        });
+    }
+
+    /// Takes in every finished load or download. Returns whether a set
+    /// changed, and the sets that turned out missing, so the caller can ask or
+    /// fetch them.
+    pub(super) fn take_results(&mut self) -> (bool, Vec<&'static IconSetSpec>) {
         let mut changed = false;
-        let mut connected = true;
-        loop {
-            match receiver.try_recv() {
-                Ok((prefix, result)) => {
-                    if prefix == default_set().prefix {
-                        self.automatic.clear();
-                    }
-                    let state = match result {
-                        Ok(Some(set)) => SetState::Ready(Arc::new(set)),
-                        Ok(None) => SetState::Missing,
-                        Err(error) => SetState::Failed(error),
-                    };
-                    if let SetState::Failed(error) = &state {
-                        tracing::warn!(%error, set = prefix, "could not load an icon set");
-                    }
-                    self.sets.insert(prefix, state);
-                    changed = true;
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    connected = false;
-                    break;
-                }
+        let mut missing = Vec::new();
+        while let Ok((prefix, result)) = self.results.try_recv() {
+            if prefix == default_set().prefix {
+                self.automatic.clear();
             }
+            let state = match result {
+                Ok(Some(set)) => SetState::Ready(Arc::new(set)),
+                Ok(None) => SetState::Missing,
+                Err(error) => SetState::Failed(error),
+            };
+            if let SetState::Failed(error) = &state {
+                tracing::warn!(%error, set = prefix, "could not load an icon set");
+            }
+            if matches!(state, SetState::Missing)
+                && let Some(spec) = icon_set(&prefix)
+            {
+                missing.push(spec);
+            }
+            self.sets.insert(prefix, state);
+            changed = true;
         }
-        if connected {
-            self.loading = Some(receiver);
-        }
-        changed
+        (changed, missing)
     }
 
     /// The glyph `space` shows, or `None` for no icon, an unknown one, or a
@@ -274,5 +354,70 @@ mod tests {
             .sets
             .insert(default_set().prefix.to_owned(), SetState::Missing);
         assert!(empty.space_glyph(&chosen).is_none());
+    }
+
+    #[test]
+    fn sets_in_use_names_each_prefix_once() {
+        let mut desktop = deskspace_core::Desktop::new();
+        let automatic = crate::fixtures::create_space(
+            &mut desktop,
+            "Games",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            deskspace_core::Command::SetSpaceIcon {
+                id: automatic,
+                icon: SpaceIcon::Automatic,
+            },
+        );
+        let same = crate::fixtures::create_space(
+            &mut desktop,
+            "Photos",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            deskspace_core::Command::SetSpaceIcon {
+                id: same,
+                icon: SpaceIcon::Automatic,
+            },
+        );
+        let chosen_space = crate::fixtures::create_space(
+            &mut desktop,
+            "Mine",
+            deskspace_core::geometry::Rect::new(0, 0, 200, 120),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            deskspace_core::Command::SetSpaceIcon {
+                id: chosen_space,
+                icon: chosen("fluent:games-20-regular"),
+            },
+        );
+        let specs = SpaceIcons::sets_in_use(desktop.spaces());
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].prefix, default_set().prefix);
+    }
+
+    #[test]
+    fn only_allowed_fetches() {
+        use IconDownloads::{Allowed, Ask, Declined};
+        use IconStep::{Ask as AskStep, Fetch, Load, Nothing, Unavailable};
+        let missing = SetState::Missing;
+        let loading = SetState::Loading;
+        let ready = SetState::Ready(Arc::new(games()));
+        let failed = SetState::Failed("no".to_owned());
+
+        assert_eq!(next_step(None, Ask, false), Load);
+        assert_eq!(next_step(None, Allowed, false), Load);
+        assert_eq!(next_step(Some(&loading), Allowed, false), Nothing);
+        assert_eq!(next_step(Some(&ready), Ask, false), Nothing);
+        assert_eq!(next_step(Some(&failed), Allowed, false), Unavailable);
+
+        assert_eq!(next_step(Some(&missing), Allowed, false), Fetch);
+        assert_eq!(next_step(Some(&missing), Declined, false), Unavailable);
+        assert_eq!(next_step(Some(&missing), Ask, false), AskStep);
+        assert_eq!(next_step(Some(&missing), Ask, true), Nothing);
     }
 }

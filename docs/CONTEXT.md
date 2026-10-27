@@ -94,7 +94,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `files` | drops, delete, prune, `resync_desktop_layer` |
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
-  | `settings_session` | `SettingsUi`; opening, previewing, applying, and cancelling the settings window |
+  | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
@@ -415,6 +415,13 @@ default in `Default`.
   revision. The cache is trusted once written: only the download is
   verified, and a cached file that does not parse is deleted so the next
   need fetches it again.
+- `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
+  from the cache first, and only `Allowed` downloads a missing one (the
+  signed file). `Ask` shows one question a session and saves the answer;
+  `Declined` never downloads. `window.new_space_icon` is `Automatic` (match
+  the title) or `None`, and is what the New space path passes to
+  `CreateSpace`; the seeded first space is always `None`, so a first launch
+  never asks.
 - `load_or_default` returns defaults when no file exists. An unparsable file
   is copied to `deskspace.toml.unreadable-<millis>.bak` before falling back to
   defaults; a file from a newer version is loaded but first copied to
