@@ -9,6 +9,26 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Added
 
+- Lenses: a space that shows a folder's live contents. "New lens…" in a
+  space's menu, the tray, and the desktop menu asks for a folder and shows it;
+  files dropped, pasted, or added as shortcuts go into that folder, and
+  deleting a lens never touches it. A lens keeps its sort rule as files come
+  and go, has Open folder and Change folder… entries, and shows its folder's
+  icon and name in its title bar.
+- Explorer's eight views for every space: Extra large, Large, Medium, and
+  Small icons, List, Details, Tiles, and Content, from the View menu,
+  Ctrl+Shift+1..8, or the status bar's buttons. Details has Explorer's
+  columns and sortable headers, Tiles its type and size, and Content its
+  separators.
+- A status bar for a space, on for new lenses: Explorer's item counts, the
+  selected files' size, and its two view buttons. Settings > View toggles it.
+- Settings > Lens for a lens (folder, title, and hidden files), Settings >
+  View for every space (view, status bar, and sort rule), and Settings >
+  Lenses for the defaults a new lens starts with.
+- Sort by now has Explorer's shape: Name, Date modified, Type, and Size;
+  Ascending or Descending; Folders first; and Keep sorted, which holds a
+  space's order as items change.
+
 - Undo and redo for layout changes, file moves, item removal, space creation
   and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
   a space is current, and the space menu and the tray name the action ("Undo
