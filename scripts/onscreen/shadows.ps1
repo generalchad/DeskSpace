@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Checks which spaces cast a drawn shadow and where (ROADMAP D15, TASKS.md O2).
+    Checks which spaces cast a drawn shadow, where, and how dark (ROADMAP
+    D15, TASKS.md O2 and O3).
 
 .DESCRIPTION
     Runs DeskSpace on a scratch config and checks the shadow windows'
@@ -16,6 +17,14 @@
     - WindowFromPoint through the band beside and below the space, which must
       reach the backdrop rather than the shadow.
 
+    With -Pixels it also reads the drawn alpha over a white backdrop, for two
+    300 px Solid spaces per run: half the shadow_opacity beside the space and
+    three quarters below it (the drop), no pixel darker than the setting, both
+    falloffs reaching 0 by the reach, a 16 px corner thinner than a square
+    one, opacity 0 leaving the screen untouched, and a Solid space's centre
+    equal to its tint. Both runs show the backdrop through
+    Start-DeskSpace -BackdropColor, which puts it under the spaces.
+
     Which spaces cast one follows the code's rule: a chrome space that is not
     Clear, not hosted, and has show_shadow on. Under a composition backdrop
     (Windows 11 with "Transparency effects" on) DWM draws no shadow, so every
@@ -24,10 +33,16 @@
     11), so it gets a drawn one only at radius 0 and above 8; Windows 10 has
     no DWM rounding, so every radius gets one.
 
-    Run from the repository root: ./scripts/onscreen/shadows.ps1
+    The lock screen covers everything a check reads, so a locked workstation
+    is reported NOT COVERED and the script returns at once.
+
+    Run from the repository root: ./scripts/onscreen/shadows.ps1 [-Pixels]
 #>
 [CmdletBinding()]
-param()
+param(
+    # Also check the shadow's pixels (TASKS.md O3).
+    [switch]$Pixels
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -41,6 +56,13 @@ $EX_TOOLWINDOW = 0x00000080
 $BACKDROP_CLASS = 'DeskSpaceOnScreenBackdrop'
 $SHADOW_CLASS = 'DeskSpaceShadow'
 $SPACE_CLASS = 'DeskSpaceSpace'
+
+function Get-AlphaAt {
+    # Alpha of one pixel of a Get-ScreenPixels capture over the white backdrop.
+    param([psobject]$Pixels, [int]$X, [int]$Y)
+    $index = ($Y * $Pixels.Width + $X) * 4
+    1.0 - ($Pixels.Bgr[$index + 2] / 255.0)
+}
 
 function Get-Bit {
     param([long]$Value, [long]$Flag)
@@ -87,6 +109,8 @@ function New-SpaceBlock {
         [string]$Backdrop,
         [int]$Radius,
         [int]$ShadowSize = 0,
+        [string]$Tint = '',
+        [int]$Opacity = -1,
         [switch]$Plain
     )
     if ($Plain) {
@@ -100,6 +124,12 @@ user_sized = true
 "@
     }
     $theme = "backdrop = `"$Backdrop`", corner_radius = $Radius"
+    if ($Tint) {
+        $theme += ", custom_colors = true, tint = { $Tint }"
+    }
+    if ($Opacity -ge 0) {
+        $theme += ", shadow_opacity = $Opacity"
+    }
     if ($ShadowSize -gt 0) {
         $theme += ", shadow_size = $ShadowSize"
     }
@@ -121,6 +151,12 @@ function Get-WindowClassAt {
     $point.X = $X
     $point.Y = $Y
     [DeskSpaceOnScreen]::ClassOf([DeskSpaceOnScreen]::WindowFromPoint($point))
+}
+
+if ([DeskSpaceOnScreen]::IsWorkstationLocked()) {
+    Assert-Check 'the workstation is unlocked' $false 'the lock screen is up; unlock and rerun' -NotCovered
+    Complete-Checks
+    return
 }
 
 # Which side of D15 this machine checks: composition when Windows 11 has
@@ -181,8 +217,7 @@ $body += New-SpaceBlock $id 'size 16' 200 560 160 110 'solid' 16
 $id++
 
 try {
-    Start-DeskSpace -Config (New-ShadowConfig -Body $body) | Out-Null
-    Show-Backdrop -Color 'ffffff'
+    Start-DeskSpace -Config (New-ShadowConfig -Body $body) -BackdropColor 'ffffff' | Out-Null
     Start-Sleep -Milliseconds 400
 
     $windows = @(Get-DeskSpaceWindows)
@@ -304,7 +339,6 @@ try {
     }
     Assert-Check 'a customized shadow_size uses its own theme' $ok $detail
 } finally {
-    Stop-Backdrop
     Stop-DeskSpace
 }
 
@@ -370,4 +404,226 @@ try {
     Stop-DeskSpace
 }
 
+# O3: the shadow's pixels, over a white backdrop.
+if ($Pixels) {
+    $tint = 'r = 0, g = 0, b = 255, a = 255'
+    # Two 300 px spaces per run, far enough apart that no shadow touches the
+    # other's. A 300 px side keeps the corners (whose span is at most 2 *
+    # reach + radius, 136 px at 125 %) clear of the middle of each edge, so
+    # the side and bottom readings are a straight edge's.
+    $xPositions = @(80, 620)
+    $y = 120
+    $sideLength = 300
+    $sets = @(
+        @(@{ Size = 16; Opacity = 40; Radius = 8 }, @{ Size = 16; Opacity = 100; Radius = 8 }),
+        @(@{ Size = 48; Opacity = 40; Radius = 8 }, @{ Size = 48; Opacity = 100; Radius = 8 }),
+        @(@{ Size = 16; Opacity = 0; Radius = 8 }, @{ Size = 16; Opacity = 100; Radius = 0 }),
+        @(@{ Size = 16; Opacity = 100; Radius = 16 })
+    )
+
+    $darkWrong = [System.Collections.Generic.List[string]]::new()
+    $fadeWrong = [System.Collections.Generic.List[string]]::new()
+    $noneWrong = [System.Collections.Generic.List[string]]::new()
+    $insideWrong = [System.Collections.Generic.List[string]]::new()
+    $corner = @{}
+
+    foreach ($set in $sets) {
+        $body = ''
+        $id = 1
+        $cases = [System.Collections.Generic.List[object]]::new()
+        for ($index = 0; $index -lt $set.Count; $index++) {
+            $case = $set[$index]
+            $case.X = $xPositions[$index]
+            $case.Y = $y
+            $case.Title = "size $($case.Size), opacity $($case.Opacity), radius $($case.Radius)"
+            $body += New-SpaceBlock $id $case.Title $case.X $y $sideLength $sideLength `
+                'solid' $case.Radius $case.Size -Tint $tint -Opacity $case.Opacity
+            $cases.Add($case)
+            $id++
+        }
+
+        try {
+            Start-DeskSpace -Config (New-ShadowConfig -Body $body) -BackdropColor 'ffffff' | Out-Null
+            Start-Sleep -Milliseconds 300
+            $windows = @(Get-DeskSpaceWindows)
+            $spaces = @($windows | Where-Object {
+                    $_.Class -eq $SPACE_CLASS -and $_.Visible -and -not $_.Child
+                })
+            $shadows = @($windows | Where-Object { $_.Class -eq $SHADOW_CLASS -and $_.Visible })
+
+            foreach ($case in $cases) {
+                $space = $spaces | Where-Object {
+                    $_.Left -eq $case.X -and $_.Top -eq $case.Y -and $_.Width -eq $sideLength
+                } | Select-Object -First 1
+                if (-not $space) { $darkWrong.Add("${case.Title}: no space"); continue }
+                $reach = Get-Reach $case.Size $space.Dpi
+                $drop = [int][Math]::Floor($reach / 4)
+                $midX = [int](($space.Left + $space.Right) / 2)
+                $midY = [int](($space.Top + $space.Bottom) / 2)
+
+                if ($case.Opacity -eq 0) {
+                    # The window may exist so a later change can show it, but
+                    # it must be hidden and paint nothing.
+                    $below = [DeskSpaceOnScreen]::GetWindow($space.Handle, $GW_HWNDNEXT)
+                    if ([DeskSpaceOnScreen]::ClassOf($below) -eq $SHADOW_CLASS -and
+                        [DeskSpaceOnScreen]::IsWindowVisible($below)) {
+                        $noneWrong.Add("${case.Title}: a shadow shows")
+                    }
+                    $points = @(
+                        @(($space.Left - 1), $midY),
+                        @($midX, ($space.Top - 1)),
+                        @($midX, ($space.Bottom + 1))
+                    )
+                    foreach ($point in $points) {
+                        $one = Get-ScreenPixels -Rect ([pscustomobject]@{
+                                Left = $point[0]; Top = $point[1]; Width = 1; Height = 1
+                            })
+                        $pixel = Get-Pixel -Pixels $one -X 0 -Y 0
+                        if ($pixel.R -lt 250 -or $pixel.G -lt 250 -or $pixel.B -lt 250) {
+                            $noneWrong.Add(
+                                "${case.Title}: ($($point[0]),$($point[1])) is rgb($($pixel.R), $($pixel.G), $($pixel.B))"
+                            )
+                        }
+                    }
+                    continue
+                }
+
+                $shadowHandle = [DeskSpaceOnScreen]::GetWindow($space.Handle, $GW_HWNDNEXT)
+                $shadow = $shadows | Where-Object { $_.Handle -eq $shadowHandle } | Select-Object -First 1
+                if (-not $shadow) { $darkWrong.Add("${case.Title}: no shadow"); continue }
+
+                $capture = Get-ScreenPixels -Rect ([pscustomobject]@{
+                        Left = $shadow.Left; Top = $shadow.Top; Width = $shadow.Width; Height = $shadow.Height
+                    })
+                $localLeft = $space.Left - $shadow.Left
+                $localTop = $space.Top - $shadow.Top
+                $localRight = $localLeft + $space.Width
+                $localBottom = $localTop + $space.Height
+                $localMidX = [int](($localLeft + $localRight) / 2)
+                $localMidY = [int](($localTop + $localBottom) / 2)
+                $opacity = $case.Opacity / 100.0
+
+                # A straight edge shows half the blur beside the space; the
+                # drop lay a little of the box below it, so the bottom band
+                # peaks around three quarters of the setting.
+                $sideAlpha = Get-AlphaAt $capture ($localLeft - 1) $localMidY
+                if ([Math]::Abs($sideAlpha - 0.5 * $opacity) -gt 0.09) {
+                    $darkWrong.Add(
+                        "${case.Title}: beside the space $([Math]::Round($sideAlpha, 3)), " +
+                        "expected $([Math]::Round(0.5 * $opacity, 3))"
+                    )
+                }
+                $span = 2 * $reach + [int][Math]::Ceiling($case.Radius)
+                $bottomAlpha = 0.0
+                for ($x = $localLeft + $span; $x -lt $localRight - $span; $x++) {
+                    $bottomAlpha = [Math]::Max($bottomAlpha, (Get-AlphaAt $capture $x ($localBottom + 1)))
+                }
+                if ([Math]::Abs($bottomAlpha - 0.75 * $opacity) -gt 0.10) {
+                    $darkWrong.Add(
+                        "${case.Title}: below the space $([Math]::Round($bottomAlpha, 3)), " +
+                        "expected $([Math]::Round(0.75 * $opacity, 3))"
+                    )
+                }
+
+                # Nothing is darker than the setting: the backdrop is white
+                # everywhere the shadow has faded, so a darker pixel means
+                # another window or a shadow that did not fade.
+                $peak = 0.0
+                $peakX = -1
+                $peakY = -1
+                for ($py = 0; $py -lt $capture.Height; $py += 4) {
+                    for ($px = 0; $px -lt $capture.Width; $px += 4) {
+                        if ($px -ge $localLeft -and $px -lt $localRight -and
+                            $py -ge $localTop -and $py -lt $localBottom) { continue }
+                        $alpha = Get-AlphaAt $capture $px $py
+                        if ($alpha -gt $peak) {
+                            $peak = $alpha
+                            $peakX = $px
+                            $peakY = $py
+                        }
+                    }
+                }
+                if ($peak -gt $opacity + 0.02) {
+                    $darkWrong.Add(
+                        "${case.Title}: $([Math]::Round($peak, 3)) at ($peakX,$peakY) outside the space"
+                    )
+                }
+
+                # The falloff only goes one way, and it is gone by the edge.
+                $previous = 2.0
+                for ($x = $localLeft - 1; $x -ge 0; $x--) {
+                    $alpha = Get-AlphaAt $capture $x $localMidY
+                    if ($alpha -gt $previous + 0.005) {
+                        $fadeWrong.Add("${case.Title}: the left line rises at $x")
+                        break
+                    }
+                    $previous = $alpha
+                }
+                if ($previous -gt 0.02) {
+                    $fadeWrong.Add("${case.Title}: the left edge is $([Math]::Round($previous, 3))")
+                }
+                $previous = 2.0
+                for ($nextY = $localBottom; $nextY -lt $capture.Height; $nextY++) {
+                    $alpha = Get-AlphaAt $capture $localMidX $nextY
+                    if ($alpha -gt $previous + 0.005) {
+                        $fadeWrong.Add("${case.Title}: the bottom line rises at $nextY")
+                        break
+                    }
+                    $previous = $alpha
+                }
+                if ($previous -gt 0.02) {
+                    $fadeWrong.Add("${case.Title}: the bottom edge is $([Math]::Round($previous, 3))")
+                }
+
+                # Inside a Solid space nothing is darkened: the tint is the
+                # tint, not the shadow showing through a cut-out that misses.
+                $center = Get-ScreenPixels -Rect ([pscustomobject]@{
+                        Left = $midX; Top = $midY; Width = 1; Height = 1
+                    })
+                $pixel = Get-Pixel -Pixels $center -X 0 -Y 0
+                if ($pixel.R -gt 2 -or $pixel.G -gt 2 -or $pixel.B -lt 250) {
+                    $insideWrong.Add("${case.Title}: center is rgb($($pixel.R), $($pixel.G), $($pixel.B))")
+                }
+
+                # Where a 16 px corner's arc crosses the diagonal: a square
+                # corner's shadow is still there, a rounded one's is not.
+                if ($case.Opacity -eq 100) {
+                    $moved = [int][Math]::Round(16 * ($space.Dpi / 96.0) * (1 - 1 / [Math]::Sqrt(2)))
+                    $cornerX = $localLeft - $moved
+                    $cornerY = $localBottom + $drop + $moved
+                    if ($cornerX -ge 0 -and $cornerY -lt $capture.Height) {
+                        $corner[$case.Radius] = Get-AlphaAt $capture $cornerX $cornerY
+                    }
+                }
+            }
+        } finally {
+            Stop-DeskSpace
+        }
+    }
+
+    $darkDetail = if ($darkWrong.Count -eq 0) {
+        'half the opacity beside, three quarters below, nothing darker'
+    } else { $darkWrong -join '; ' }
+    Assert-Check 'each shadow is as dark as its opacity allows' ($darkWrong.Count -eq 0) $darkDetail
+    $fadeDetail = if ($fadeWrong.Count -eq 0) {
+        'both lines only fall and end at 0'
+    } else { $fadeWrong -join '; ' }
+    Assert-Check 'alpha never rises outward and ends at 0' ($fadeWrong.Count -eq 0) $fadeDetail
+    $noneDetail = if ($noneWrong.Count -eq 0) {
+        'the shadow window is hidden and the backdrop is untouched'
+    } else { $noneWrong -join '; ' }
+    Assert-Check 'opacity 0 casts no shadow and darkens nothing' ($noneWrong.Count -eq 0) $noneDetail
+    $insideDetail = if ($insideWrong.Count -eq 0) { 'the Solid tint is untouched' } else { $insideWrong -join '; ' }
+    Assert-Check 'the cut-out leaves a Solid space undarkened' ($insideWrong.Count -eq 0) $insideDetail
+
+    $cornerOk = $false
+    $cornerDetail = 'the 0 px and 16 px corners were not both measured'
+    if ($corner.ContainsKey(0) -and $corner.ContainsKey(16)) {
+        $square = $corner[0]
+        $round = $corner[16]
+        $cornerOk = $square -ge 0.015 -and $round -le $square / 2
+        $cornerDetail = "square $([Math]::Round($square, 3)), round $([Math]::Round($round, 3))"
+    }
+    Assert-Check 'a 16 px corner thins the shadow where a square one does not' $cornerOk $cornerDetail
+}
 Complete-Checks

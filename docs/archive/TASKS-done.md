@@ -4184,3 +4184,26 @@ until I5-I6 all land, so no partial build hides the desktop.
     reach matches its own theme.
   - Done when it exits 0 here with every case of this machine's half
     covered.
+- [x] **O3. Shadows: the pixels (D15).** `shadows.ps1 -Pixels` adds, over
+  a white backdrop, alpha read as `1 - R / 255` on lines out from the
+  middle of the left edge, the bottom edge, and the caster's bottom-left
+  corner:
+  - Beside the space a straight edge shows half the blur, so alpha is
+    within 0.09 of half `shadow_opacity`; the drop uncovers a band below,
+    where it is within 0.10 of three quarters. No pixel outside the space
+    is darker than the setting (`shadow_size` 16 and 48; opacity 0, 40,
+    and 100; at 125 %).
+  - Alpha never rises going outward, and is 0 by the reach.
+  - The band below is wider than the band above by the drop
+    (`ShadowLook::drop`).
+  - A 16 px corner thins the shadow where a square one does not: on the
+    diagonal from the caster's bottom-left corner, at `r * (1 - 1/sqrt(2))`
+    out, the 16 px alpha is at most half the square corner's.
+  - Inside a Solid space the pixels equal its tint: the cut-out leaves
+    the space undarkened.
+  - Opacity 0 hides the shadow window and leaves the backdrop untouched.
+  - Done 2026-10-27: exits 0 here. Section V keeps the animations, the
+    Settings page, the debug toggles, other DPIs, Windows 10, and the
+    desktop-hosted placement. Amended then, by the maintainer's decision:
+    the setting is the black's own alpha, not the darkest pixel, so the
+    theme field and D15 say so.

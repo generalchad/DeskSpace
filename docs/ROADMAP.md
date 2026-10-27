@@ -532,7 +532,11 @@ A native, lightweight, offline Windows desktop organizer that:
     have its own. "Show shadow" is on by default, so an upgrade gets back
     the shadow composition took away. That is a change on purpose
     (section 3). "Shadow size" is how far the blur reaches, in pixels at
-    96 DPI, and "Shadow opacity" how dark it is.
+    96 DPI, and "Shadow opacity" how strongly the black is laid down.
+    (Amended 2026-10-27, maintainer: the setting is the black's own alpha,
+    not the darkest pixel. The blur leaves its peak at about three quarters
+    of it below the space and half beside it; this is what shipped and what
+    O3 checks.)
   - *Animations:* the shadow follows the window's rect (Roll, Fly, CRT).
     It fades with any frame that leaves the window see-through.
   - *Debug window (amends D14):* a "Shadow settings" box edits the three

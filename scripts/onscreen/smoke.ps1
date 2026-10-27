@@ -41,8 +41,7 @@ user_sized = true
 '@
 
 try {
-    Start-DeskSpace -Config $config | Out-Null
-    Show-Backdrop -Color 'ffffff'
+    Start-DeskSpace -Config $config -BackdropColor 'ffffff' | Out-Null
     Start-Sleep -Milliseconds 400
 
     $spaces = @(Get-DeskSpaceWindows | Where-Object {
@@ -79,7 +78,6 @@ try {
         $white.R -ge 235 -and $white.G -ge 235 -and $white.B -ge 235
     ) "corner is rgb($($white.R), $($white.G), $($white.B))"
 } finally {
-    Stop-Backdrop
     Stop-DeskSpace
 }
 

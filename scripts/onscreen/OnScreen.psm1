@@ -81,8 +81,7 @@ public static class DeskSpaceOnScreen {
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h);
   [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr hdc);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern ushort RegisterClassW(ref WNDCLASSW c);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool UnregisterClassW(string name, IntPtr instance);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern ushort RegisterClassW(ref WNDCLASSW c);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr CreateWindowExW(
     uint exStyle, string className, string windowName, uint style,
     int x, int y, int width, int height,
@@ -131,10 +130,44 @@ public static class DeskSpaceOnScreen {
     return seen.ToArray();
   }
 
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowW(string className, string windowName);
+
+  // The lock screen's backstop window exists only while the workstation is
+  // locked, when no check can see the desktop.
+  public static bool IsWorkstationLocked() {
+    return FindWindowW("LockScreenBackstopFrame", null) != IntPtr.Zero;
+  }
+
   public static string ClassOf(IntPtr h) {
     var text = new StringBuilder(256);
     GetClassNameW(h, text, 256);
     return text.ToString();
+  }
+
+  // The backdrop's brush and window procedure live here, in C# statics, so
+  // they survive a PowerShell module reload: the window class is registered
+  // once per process and must never point at a collected delegate.
+  public static IntPtr BackdropBrush = IntPtr.Zero;
+  static readonly WndProc backdropProc = BackdropWndProc;
+
+  public static IntPtr BackdropProcPtr() {
+    return Marshal.GetFunctionPointerForDelegate(backdropProc);
+  }
+
+  static IntPtr BackdropWndProc(IntPtr h, uint msg, IntPtr w, IntPtr l) {
+    if (msg == 0x000F) {
+      PAINTSTRUCT ps;
+      IntPtr dc = BeginPaint(h, out ps);
+      RECT r;
+      GetClientRect(h, out r);
+      FillRect(dc, ref r, BackdropBrush);
+      EndPaint(h, ref ps);
+      return IntPtr.Zero;
+    }
+    if (msg == 0x0014) {
+      return (IntPtr)1;
+    }
+    return DefWindowProcW(h, msg, w, l);
   }
 }
 "@
@@ -150,37 +183,15 @@ $script:WS_VISIBLE = [uint32]268435456
 $script:WS_EX_NOACTIVATE = [uint32]134217728
 $script:WS_EX_TOOLWINDOW = [uint32]128
 $script:SW_SHOWNOACTIVATE = 4
-$script:WM_PAINT = 0x000F
-$script:WM_ERASEBKGND = 0x0014
 $script:SRCCOPY_CAPTUREBLT = 0x40CC0020 # SRCCOPY | CAPTUREBLT
 $script:SPACE_CLASS = 'DeskSpaceSpace'
 $script:BACKDROP_CLASS = 'DeskSpaceOnScreenBackdrop'
 $script:BACKDROP_TITLE = 'DeskSpace on-screen backdrop'
 
-# The running instance, its scratch folder, and the backdrop's state.
+# The running instance and the backdrop's window.
 $script:Instance = $null
 $script:Backdrop = $null
-$script:BackdropBrush = [IntPtr]::Zero
-$script:BackdropClassRegistered = $false
 $script:Checks = [System.Collections.Generic.List[object]]::new()
-
-# Resident with the module: a collected delegate would crash the window procedure.
-$script:BackdropWndProc = [DeskSpaceOnScreen+WndProc] {
-    param([IntPtr]$hWnd, [uint32]$msg, [IntPtr]$wParam, [IntPtr]$lParam)
-    if ($msg -eq $script:WM_PAINT) {
-        $paint = New-Object DeskSpaceOnScreen+PAINTSTRUCT
-        $hdc = [DeskSpaceOnScreen]::BeginPaint($hWnd, [ref]$paint)
-        $rect = New-Object DeskSpaceOnScreen+RECT
-        [void][DeskSpaceOnScreen]::GetClientRect($hWnd, [ref]$rect)
-        [void][DeskSpaceOnScreen]::FillRect($hdc, [ref]$rect, $script:BackdropBrush)
-        [void][DeskSpaceOnScreen]::EndPaint($hWnd, [ref]$paint)
-        return [IntPtr]::Zero
-    }
-    if ($msg -eq $script:WM_ERASEBKGND) {
-        return [IntPtr]1
-    }
-    [DeskSpaceOnScreen]::DefWindowProcW($hWnd, $msg, $wParam, $lParam)
-}
 
 # A check whose branch this machine does not select is reported, never passed.
 function Assert-Check {
@@ -298,9 +309,18 @@ function Show-Backdrop {
         The `--on-top` spaces draw above it, so a check can read the space's
         own pixels against a known color. One backdrop is live at a time;
         Stop-Backdrop removes it.
+
+        The backdrop is topmost and covers the primary monitor, so other
+        applications cannot show through where a shadow is measured. A
+        topmost window created after the spaces would cover them, so show
+        the backdrop first: Start-DeskSpace's `-BackdropColor` does that in
+        the right order, and calling this while DeskSpace runs is refused.
     #>
     param([Parameter(Mandatory)][string]$Color)
 
+    if ($script:Instance) {
+        throw 'DeskSpace is running; pass -BackdropColor to Start-DeskSpace so the backdrop is created before the spaces.'
+    }
     if ($script:Backdrop) { Stop-Backdrop }
 
     # Best effort: the coordinates and pixels agree only when this process
@@ -309,21 +329,24 @@ function Show-Backdrop {
     [void][DeskSpaceOnScreen]::SetProcessDpiAwarenessContext([IntPtr](-4))
 
     $instance = [DeskSpaceOnScreen]::GetModuleHandleW($null)
-    if (-not $script:BackdropClassRegistered) {
-        $class = New-Object DeskSpaceOnScreen+WNDCLASSW
-        $class.style = 0
-        $class.lpfnWndProc = [System.Runtime.InteropServices.Marshal]::GetFunctionPointerForDelegate($script:BackdropWndProc)
-        $class.hInstance = $instance
-        $class.hbrBackground = [IntPtr]::Zero
-        $class.lpszClassName = $script:BACKDROP_CLASS
-        $atom = [DeskSpaceOnScreen]::RegisterClassW([ref]$class)
-        if ($atom -eq 0) {
-            throw "could not register $($script:BACKDROP_CLASS)"
+    $class = New-Object DeskSpaceOnScreen+WNDCLASSW
+    $class.style = 0
+    $class.lpfnWndProc = [DeskSpaceOnScreen]::BackdropProcPtr()
+    $class.hInstance = $instance
+    $class.hbrBackground = [IntPtr]::Zero
+    $class.lpszClassName = $script:BACKDROP_CLASS
+    $atom = [DeskSpaceOnScreen]::RegisterClassW([ref]$class)
+    if ($atom -eq 0) {
+        # 1410: the class is already registered in this process, which
+        # happens when a second run imports the module again. Its procedure
+        # is the C# one above, so it is the same class.
+        $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        if ($code -ne 1410) {
+            throw "could not register $($script:BACKDROP_CLASS) (error $code)"
         }
-        $script:BackdropClassRegistered = $true
     }
 
-    $script:BackdropBrush = [DeskSpaceOnScreen]::CreateSolidBrush((ConvertTo-ColorRef $Color))
+    [DeskSpaceOnScreen]::BackdropBrush = [DeskSpaceOnScreen]::CreateSolidBrush((ConvertTo-ColorRef $Color))
     $width = [DeskSpaceOnScreen]::GetSystemMetrics(0)
     $height = [DeskSpaceOnScreen]::GetSystemMetrics(1)
     if ($width -le 0 -or $height -le 0) {
@@ -331,7 +354,7 @@ function Show-Backdrop {
     }
 
     $style = [uint32]($script:WS_POPUP -bor $script:WS_VISIBLE)
-    $exStyle = [uint32]($script:WS_EX_NOACTIVATE -bor $script:WS_EX_TOOLWINDOW)
+    $exStyle = [uint32]($script:WS_EX_NOACTIVATE -bor $script:WS_EX_TOOLWINDOW -bor $script:WS_EX_TOPMOST)
     $window = [DeskSpaceOnScreen]::CreateWindowExW(
         $exStyle, $script:BACKDROP_CLASS, $script:BACKDROP_TITLE, $style,
         0, 0, $width, $height,
@@ -352,9 +375,9 @@ function Stop-Backdrop {
         [void][DeskSpaceOnScreen]::DestroyWindow($script:Backdrop)
         $script:Backdrop = $null
     }
-    if ($script:BackdropBrush -ne [IntPtr]::Zero) {
-        [void][DeskSpaceOnScreen]::DeleteObject($script:BackdropBrush)
-        $script:BackdropBrush = [IntPtr]::Zero
+    if ([DeskSpaceOnScreen]::BackdropBrush -ne [IntPtr]::Zero) {
+        [void][DeskSpaceOnScreen]::DeleteObject([DeskSpaceOnScreen]::BackdropBrush)
+        [DeskSpaceOnScreen]::BackdropBrush = [IntPtr]::Zero
     }
 }
 
@@ -370,10 +393,17 @@ function Start-DeskSpace {
         desktop is untouched. Returns once every space window is visible and
         its rect has held still for 500 ms. Stop-DeskSpace ends it and removes
         the folder.
+
+        `-BackdropColor` shows a plain window of that color under the spaces
+        before they start, so pixel checks read the shadow against a known
+        color rather than the desktop. The backdrop goes away with the
+        instance.
     #>
     param(
         [Parameter(Mandatory)][string]$Config,
         [int]$TimeoutSeconds = 30,
+        # A plain backdrop color ("RRGGBB" or "#RRGGBB") behind the spaces.
+        [string]$BackdropColor = '',
         # Extra app flags, after `--config`, `--on-top`, and `--no-icons`.
         [string[]]$AppArgs = @()
     )
@@ -394,6 +424,9 @@ function Start-DeskSpace {
         $Config = Get-Content -Raw $Config
     }
     Set-Content -Path $configPath -Value $Config -Encoding utf8 -NoNewline
+
+    # Before the spaces: a topmost window made later would cover them.
+    if ($BackdropColor) { Show-Backdrop -Color $BackdropColor }
 
     $process = Start-Process -FilePath $exe -PassThru -ArgumentList (@(
         '--config', $configPath, '--on-top', '--no-icons'
@@ -435,7 +468,9 @@ function Stop-DeskSpace {
     <#
     .SYNOPSIS
         Ends the instance Start-DeskSpace made and deletes its scratch folder.
+        The backdrop goes too, even when no instance ever started.
     #>
+    Stop-Backdrop
     if (-not $script:Instance) { return }
     try {
         if (-not $script:Instance.Process.HasExited) {

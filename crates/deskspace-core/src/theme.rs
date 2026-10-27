@@ -267,7 +267,7 @@ pub const SHADOW_SIZE_RANGE: (u8, u8) = (2, 48);
 pub const SHADOW_SIZE_DEFAULT: u8 = 16;
 /// The bounds a shadow's opacity is clamped to, in percent.
 pub const SHADOW_OPACITY_RANGE: (u8, u8) = (0, 100);
-/// A shadow's default opacity, at its darkest.
+/// A shadow's default strength, as a percentage of black.
 pub const SHADOW_OPACITY_DEFAULT: u8 = 35;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,7 +305,9 @@ pub struct Theme {
     /// How far the shadow's blur reaches past the space, in pixels at 96
     /// DPI, scaled with the monitor.
     pub shadow_size: u8,
-    /// The shadow's opacity at its darkest, in percent.
+    /// How strongly the shadow is laid down, in percent of black. The blur
+    /// softens its peak to about three quarters of this below the space and
+    /// half beside it.
     pub shadow_opacity: u8,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
