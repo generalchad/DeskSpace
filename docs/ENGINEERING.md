@@ -30,6 +30,7 @@ links the `windows` crate under `cfg(windows)`.
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release`; the checklist is in `RELEASING.md` |
 | Dev loop | `./scripts/dev.ps1` (below) |
+| On-screen checks | `./scripts/onscreen/smoke.ps1` (it imports `scripts/onscreen/OnScreen.psm1`; `TASKS.md` section O) |
 
 `scripts/dev.ps1` stops any DeskSpace running from `target\` (the running
 executable is locked), builds, and runs the app with a scratch config at

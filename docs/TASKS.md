@@ -44,7 +44,9 @@ checks are in section V.
    the task, verbatim, to the end of `archive/TASKS-done.md`.
 8. **[needs human]** tasks need an on-screen check you cannot do. Implement,
    list exactly what to check in the commit body, add a one-row summary to
-   section V, and archive the task as in rule 7. Anything only a human can
+   section V, and archive the task as in rule 7. Run any `scripts/onscreen/`
+   check that covers part of it first, and cut what it covers from the row,
+   as section O's rules say. Anything only a human can
    record (for example L1's findings) stays here until it is recorded.
 
 ## File map
@@ -2250,35 +2252,6 @@ backdrop window, never a Windows setting. A check whose branch this
 machine's settings do not select (Transparency effects on or off, a 150 %
 monitor) is reported as **not covered**, never passed.
 
-- [ ] **O1. The harness (scripts).**
-  - `scripts/onscreen/OnScreen.psm1`, one module every check imports:
-    - the P/Invoke class from `zorder.ps1`, moved here, plus
-      `GetDpiForWindow`, `GetDC`/`BitBlt` (`CAPTUREBLT`), and
-      `CreateDIBSection`; `zorder.ps1` imports it, and its output is
-      unchanged.
-    - `Start-DeskSpace -Config <toml>`: builds with `./scripts/dev.ps1
-      -NoRun`, writes the TOML to a fresh folder under `%TEMP%`, starts
-      `deskspace.exe --config <it> --on-top --no-icons`, and returns once
-      every space window is visible and its rect has held still for 500 ms.
-      Configs set Startup to None, so nothing animates.
-    - `Stop-DeskSpace`: ends that process and deletes the folder.
-    - `Show-Backdrop -Color <rgb>`: a borderless, non-topmost window of one
-      color over the primary monitor, under the `--on-top` spaces.
-    - `Get-DeskSpaceWindows`: each window of the process with its class,
-      handle, rect, extended style, DPI, and z-order index.
-    - `Get-ScreenPixels -Rect <r>`: the composed screen there, as BGR.
-    - `Assert-Check <name> <bool> <detail>` and `Complete-Checks`: print a
-      PASS / FAIL / NOT COVERED table and exit non-zero on any FAIL.
-  - `scripts/onscreen/smoke.ps1`: one Solid space with an opaque red tint
-    over a white backdrop. The capture reads red at the space's center and
-    white well away from it.
-  - **Stop and ask** if the smoke check cannot read the space's pixels
-    with `BitBlt` (composition content missing from the capture). The
-    fallback, `Windows.Graphics.Capture`, is a design change.
-  - `ENGINEERING.md` section 1 lists `scripts/onscreen/`, and `TASKS.md`
-    rule 8 says to run any `onscreen` script that covers a check before
-    handing what is left to a human.
-  - Done when `smoke.ps1` exits 0 here and `zorder.ps1` prints what it did.
 - [ ] **O2. Shadows: which windows, where (D15).**
   `scripts/onscreen/shadows.ps1`, structure only, no pixels. It reads
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency`

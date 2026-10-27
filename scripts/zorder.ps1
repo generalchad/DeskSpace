@@ -23,26 +23,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-Add-Type @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class DeskSpaceZOrder {
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
-  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
-  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll")] public static extern IntPtr GetWindowLongPtrW(IntPtr h, int i);
-  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
-  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint f);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  public static string ClassOf(IntPtr h) { var s = new StringBuilder(256); GetClassNameW(h, s, 256); return s.ToString(); }
-}
-"@
+Import-Module (Join-Path $PSScriptRoot 'onscreen/OnScreen.psm1') -Force
 
 # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindow
 $GW_HWNDNEXT = 2
@@ -59,52 +40,52 @@ if ($deskSpace.Count -eq 0) {
 }
 
 function Get-Rect([IntPtr]$Window) {
-    $rect = New-Object DeskSpaceZOrder+RECT
-    [void][DeskSpaceZOrder]::GetWindowRect($Window, [ref]$rect)
+    $rect = New-Object DeskSpaceOnScreen+RECT
+    [void][DeskSpaceOnScreen]::GetWindowRect($Window, [ref]$rect)
     $rect
 }
 
 function Format-Window([IntPtr]$Window) {
     $rect = Get-Rect $Window
     $processId = 0
-    [void][DeskSpaceZOrder]::GetWindowThreadProcessId($Window, [ref]$processId)
+    [void][DeskSpaceOnScreen]::GetWindowThreadProcessId($Window, [ref]$processId)
     $process = (Get-Process -Id $processId -ErrorAction SilentlyContinue).ProcessName
-    $exStyle = [DeskSpaceZOrder]::GetWindowLongPtrW($Window, $GWL_EXSTYLE).ToInt64()
+    $exStyle = [DeskSpaceOnScreen]::GetWindowLongPtrW($Window, $GWL_EXSTYLE).ToInt64()
     $topmost = [int](($exStyle -band $WS_EX_TOPMOST) -ne 0)
     '{0,-10} {1,-24} {2,-12} topmost={3} rect=({4},{5})-({6},{7})' -f `
-        ('0x{0:X}' -f $Window.ToInt64()), [DeskSpaceZOrder]::ClassOf($Window), $process,
+        ('0x{0:X}' -f $Window.ToInt64()), [DeskSpaceOnScreen]::ClassOf($Window), $process,
         $topmost, $rect.L, $rect.T, $rect.R, $rect.B
 }
 
 '--- z-order, top first ---'
 $targets = @()
-$window = [DeskSpaceZOrder]::GetTopWindow([IntPtr]::Zero)
+$window = [DeskSpaceOnScreen]::GetTopWindow([IntPtr]::Zero)
 $index = 0
 while ($window -ne [IntPtr]::Zero) {
-    $class = [DeskSpaceZOrder]::ClassOf($window)
+    $class = [DeskSpaceOnScreen]::ClassOf($window)
     $owner = 0
-    [void][DeskSpaceZOrder]::GetWindowThreadProcessId($window, [ref]$owner)
+    [void][DeskSpaceOnScreen]::GetWindowThreadProcessId($window, [ref]$owner)
     $listed = $class -match $shellClasses -or $deskSpace -contains $owner
-    if ($listed -and [DeskSpaceZOrder]::IsWindowVisible($window)) {
+    if ($listed -and [DeskSpaceOnScreen]::IsWindowVisible($window)) {
         '#{0,-4} {1}' -f $index, (Format-Window $window)
         if ($class -match $hitTested) {
             $targets += , @($class, $window)
         }
     }
-    $window = [DeskSpaceZOrder]::GetWindow($window, $GW_HWNDNEXT)
+    $window = [DeskSpaceOnScreen]::GetWindow($window, $GW_HWNDNEXT)
     $index++
 }
 
 '--- what a click at each center reaches ---'
 foreach ($target in $targets) {
     $rect = Get-Rect $target[1]
-    $point = New-Object DeskSpaceZOrder+POINT
+    $point = New-Object DeskSpaceOnScreen+POINT
     $point.X = [int](($rect.L + $rect.R) / 2)
     $point.Y = [int](($rect.T + $rect.B) / 2)
-    $hit = [DeskSpaceZOrder]::GetAncestor([DeskSpaceZOrder]::WindowFromPoint($point), $GA_ROOT)
+    $hit = [DeskSpaceOnScreen]::GetAncestor([DeskSpaceOnScreen]::WindowFromPoint($point), $GA_ROOT)
     '{0} 0x{1:X} at ({2},{3}) -> {4}' -f $target[0], $target[1].ToInt64(), $point.X, $point.Y,
         (Format-Window $hit)
 }
 
 '--- foreground ---'
-Format-Window ([DeskSpaceZOrder]::GetForegroundWindow())
+Format-Window ([DeskSpaceOnScreen]::GetForegroundWindow())
