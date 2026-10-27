@@ -7,8 +7,8 @@ plan, the `D`-numbered decisions, and feature status.
 ## 1. What DeskSpace is
 
 A free and open-source desktop space organizer for Windows. It groups desktop
-items into movable containers ("spaces") and, eventually, mirrors folders as
-live "lenses" (comparable tools call these Folder Portals), with folding,
+items into movable containers ("spaces") and mirrors folders as live "lenses"
+(comparable tools call these Folder Portals), with folding,
 auto-hide, and per-space appearance control. The long-term goal is
 feature-for-feature parity with comparable tools while staying native,
 lightweight, and offline. The tree is an early but usable framework, not a
