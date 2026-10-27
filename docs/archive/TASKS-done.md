@@ -4160,3 +4160,27 @@ until I5-I6 all land, so no partial build hides the desktop.
     rule 8 says to run any `onscreen` script that covers a check before
     handing what is left to a human.
   - Done when `smoke.ps1` exits 0 here and `zorder.ps1` prints what it did.
+
+
+- [x] **O2. Shadows: which windows, where (D15).**
+  `scripts/onscreen/shadows.ps1`, structure only, no pixels. It reads
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency`
+  and runs the matching half of the D15 row. Cases: Acrylic, Blur, Solid,
+  and Clear at radius 0, 4, 8, and 16; `--placement desktop-bottom`; and
+  `--takeover-layer`. For each:
+  - Exactly one visible `DeskSpaceShadow` per space that should cast one
+    (the row's rules), and none for Clear, desktop placement, and the
+    layer; with `show_shadow = false`, none at all.
+  - The shadow is the next window below its space
+    (`GetWindow(space, GW_HWNDNEXT)`).
+  - Its extended style has `WS_EX_LAYERED`, `WS_EX_TRANSPARENT`,
+    `WS_EX_NOACTIVATE`, and `WS_EX_TOOLWINDOW`.
+  - Its rect is `ShadowLook::rect` of the space's rect (`render/shadow.rs`),
+    with the reach scaled to the window's DPI the way
+    `space_window::sync_shadow` scales it. Read both; do not guess.
+  - `WindowFromPoint` at the middle of the band left of the space, and of
+    the band below it, reaches the backdrop, not the shadow.
+  - Two spaces, one customized with `shadow_size = 40`: each shadow's
+    reach matches its own theme.
+  - Done when it exits 0 here with every case of this machine's half
+    covered.

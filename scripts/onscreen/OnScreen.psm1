@@ -108,6 +108,28 @@ public static class DeskSpaceOnScreen {
   [DllImport("gdi32.dll", SetLastError = true)] public static extern int GetDIBits(
     IntPtr hdc, IntPtr bitmap, uint start, uint lines, IntPtr bits, ref BITMAPINFO info, uint usage);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandleW(string name);
+  [DllImport("user32.dll")] public static extern IntPtr GetDesktopWindow();
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc callback, IntPtr param);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr param);
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr param);
+
+  // Every window of `pid`: top-level ones first, then hosted children.
+  public static IntPtr[] WindowsOfProcess(uint pid) {
+    var seen = new System.Collections.Generic.List<IntPtr>();
+    EnumWindows(delegate(IntPtr h, IntPtr p) {
+      uint owner;
+      GetWindowThreadProcessId(h, out owner);
+      if (owner == pid) { seen.Add(h); }
+      return true;
+    }, IntPtr.Zero);
+    EnumChildWindows(GetDesktopWindow(), delegate(IntPtr h, IntPtr p) {
+      uint owner;
+      GetWindowThreadProcessId(h, out owner);
+      if (owner == pid && !seen.Contains(h)) { seen.Add(h); }
+      return true;
+    }, IntPtr.Zero);
+    return seen.ToArray();
+  }
 
   public static string ClassOf(IntPtr h) {
     var text = new StringBuilder(256);
@@ -119,8 +141,10 @@ public static class DeskSpaceOnScreen {
 
 # https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindow
 $script:GW_HWNDNEXT = 2
+$script:GWL_STYLE = -16
 $script:GWL_EXSTYLE = -20
 $script:WS_EX_TOPMOST = 0x8
+$script:WS_CHILD = [uint32]1073741824
 $script:WS_POPUP = [uint32]2147483648
 $script:WS_VISIBLE = [uint32]268435456
 $script:WS_EX_NOACTIVATE = [uint32]134217728
@@ -208,43 +232,59 @@ function ConvertTo-ColorRef {
     [uint32]($r -bor ($g -shl 8) -bor ($b -shl 16))
 }
 
+function New-WindowInfo {
+    param([IntPtr]$Handle, [int]$Index)
+    $rect = New-Object DeskSpaceOnScreen+RECT
+    [void][DeskSpaceOnScreen]::GetWindowRect($Handle, [ref]$rect)
+    $style = [DeskSpaceOnScreen]::GetWindowLongPtrW($Handle, $script:GWL_STYLE).ToInt64()
+    $exStyle = [DeskSpaceOnScreen]::GetWindowLongPtrW($Handle, $script:GWL_EXSTYLE).ToInt64()
+    [pscustomobject]@{
+        Class   = [DeskSpaceOnScreen]::ClassOf($Handle)
+        Handle  = $Handle
+        Visible = [DeskSpaceOnScreen]::IsWindowVisible($Handle)
+        Left    = $rect.L
+        Top     = $rect.T
+        Right   = $rect.R
+        Bottom  = $rect.B
+        Width   = $rect.R - $rect.L
+        Height  = $rect.B - $rect.T
+        Style   = $style
+        Child   = ($style -band $script:WS_CHILD) -ne 0
+        ExStyle = $exStyle
+        Topmost = ($exStyle -band $script:WS_EX_TOPMOST) -ne 0
+        Dpi     = [DeskSpaceOnScreen]::GetDpiForWindow($Handle)
+        Z       = $Index
+    }
+}
+
 function Get-DeskSpaceWindows {
     <#
     .SYNOPSIS
-        Every top-level window of the running DeskSpace, top of the z-order first.
+        Every window of the running DeskSpace: top-level ones in z-order, then
+        any hosted children. `Z` is -1 for a child.
     #>
     if (-not $script:Instance) {
         throw 'DeskSpace is not running; call Start-DeskSpace first.'
     }
     $pidOfInterest = [uint32]$script:Instance.Process.Id
     $windows = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[IntPtr]]::new()
     $window = [DeskSpaceOnScreen]::GetTopWindow([IntPtr]::Zero)
     $index = 0
     while ($window -ne [IntPtr]::Zero) {
         $owner = [uint32]0
         [void][DeskSpaceOnScreen]::GetWindowThreadProcessId($window, [ref]$owner)
         if ($owner -eq $pidOfInterest) {
-            $rect = New-Object DeskSpaceOnScreen+RECT
-            [void][DeskSpaceOnScreen]::GetWindowRect($window, [ref]$rect)
-            $exStyle = [DeskSpaceOnScreen]::GetWindowLongPtrW($window, $script:GWL_EXSTYLE).ToInt64()
-            $windows.Add([pscustomobject]@{
-                Class   = [DeskSpaceOnScreen]::ClassOf($window)
-                Handle  = $window
-                Visible = [DeskSpaceOnScreen]::IsWindowVisible($window)
-                Left    = $rect.L
-                Top     = $rect.T
-                Right   = $rect.R
-                Bottom  = $rect.B
-                Width   = $rect.R - $rect.L
-                Height  = $rect.B - $rect.T
-                ExStyle = $exStyle
-                Topmost = ($exStyle -band $script:WS_EX_TOPMOST) -ne 0
-                Dpi     = [DeskSpaceOnScreen]::GetDpiForWindow($window)
-                Z       = $index
-            })
+            $windows.Add((New-WindowInfo $window $index))
+            [void]$seen.Add($window)
         }
         $window = [DeskSpaceOnScreen]::GetWindow($window, $script:GW_HWNDNEXT)
         $index++
+    }
+    foreach ($handle in [DeskSpaceOnScreen]::WindowsOfProcess($pidOfInterest)) {
+        if (-not $seen.Contains($handle)) {
+            $windows.Add((New-WindowInfo $handle -1))
+        }
     }
     $windows
 }
@@ -333,7 +373,9 @@ function Start-DeskSpace {
     #>
     param(
         [Parameter(Mandatory)][string]$Config,
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 30,
+        # Extra app flags, after `--config`, `--on-top`, and `--no-icons`.
+        [string[]]$AppArgs = @()
     )
 
     if ($script:Instance) { Stop-DeskSpace }
@@ -353,9 +395,9 @@ function Start-DeskSpace {
     }
     Set-Content -Path $configPath -Value $Config -Encoding utf8 -NoNewline
 
-    $process = Start-Process -FilePath $exe -PassThru -ArgumentList @(
+    $process = Start-Process -FilePath $exe -PassThru -ArgumentList (@(
         '--config', $configPath, '--on-top', '--no-icons'
-    )
+    ) + $AppArgs)
     $script:Instance = [pscustomobject]@{
         Process    = $process
         Folder     = $folder

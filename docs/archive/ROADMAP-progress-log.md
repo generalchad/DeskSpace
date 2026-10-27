@@ -510,3 +510,17 @@ Moved from the section V rows, which now list only what is left to check.
   monitors stayed behind other windows, the spaces sat on top, and other
   apps took clicks (maintainer; the window styles of the running instance,
   read with `GetWindowLongW`, showed only the spaces as `WS_EX_TOPMOST`).
+
+### 2026-10-27: drawn shadows, the structure (O2)
+
+`scripts/onscreen/shadows.ps1` passed here on the composition path (Windows
+11, "Transparency effects" on): Acrylic, Blur, Solid, and Clear at radii 0,
+4, 8, and 16, with exactly one visible `DeskSpaceShadow` per space that
+should cast one; each directly below its space; each with `ShadowLook::rect`
+at the space's DPI, including a space with its own `shadow_size` of 40
+beside the global 16; each layered, click-through, never activated, and a
+tool window; and the bands beside and below each space reach the backdrop.
+The desktop layer cast none, and `show_shadow = false` cast none. Not
+covered: the desktop-hosted placement (this session had no desktop host),
+the pixels (O3), animations, the Settings preview, the debug toggles,
+Windows 10, and 150 %.

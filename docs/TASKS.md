@@ -2252,28 +2252,6 @@ backdrop window, never a Windows setting. A check whose branch this
 machine's settings do not select (Transparency effects on or off, a 150 %
 monitor) is reported as **not covered**, never passed.
 
-- [ ] **O2. Shadows: which windows, where (D15).**
-  `scripts/onscreen/shadows.ps1`, structure only, no pixels. It reads
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency`
-  and runs the matching half of the D15 row. Cases: Acrylic, Blur, Solid,
-  and Clear at radius 0, 4, 8, and 16; `--placement desktop-bottom`; and
-  `--takeover-layer`. For each:
-  - Exactly one visible `DeskSpaceShadow` per space that should cast one
-    (the row's rules), and none for Clear, desktop placement, and the
-    layer; with `show_shadow = false`, none at all.
-  - The shadow is the next window below its space
-    (`GetWindow(space, GW_HWNDNEXT)`).
-  - Its extended style has `WS_EX_LAYERED`, `WS_EX_TRANSPARENT`,
-    `WS_EX_NOACTIVATE`, and `WS_EX_TOOLWINDOW`.
-  - Its rect is `ShadowLook::rect` of the space's rect (`render/shadow.rs`),
-    with the reach scaled to the window's DPI the way
-    `space_window::sync_shadow` scales it. Read both; do not guess.
-  - `WindowFromPoint` at the middle of the band left of the space, and of
-    the band below it, reaches the backdrop, not the shadow.
-  - Two spaces, one customized with `shadow_size = 40`: each shadow's
-    reach matches its own theme.
-  - Done when it exits 0 here with every case of this machine's half
-    covered.
 - [ ] **O3. Shadows: the pixels (D15).** `shadows.ps1 -Pixels` adds, over
   a white backdrop, alpha read as `1 - R / 255` on lines out from the
   middle of the left edge, the bottom edge, and the top-left corner's
@@ -2326,7 +2304,7 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
-| Drawn shadows (D15) | Windows 11 with "Transparency effects" on (composition spaces), at 100 % and 150 %, on Acrylic, Blur, and Solid at Square, 4 px, 8 px, and 16 px corners: each space casts a soft shadow that follows its rounded corners and lets clicks pass through to the desktop and apps underneath; Clear, `--placement desktop-*`, and the desktop layer cast none; with "Transparency effects" off, Solid at 16 px gets a drawn shadow while 0/4/8 px keep DWM's own shadow. Roll, Fly, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade the shadow out to nothing with no ghost box left. Settings > Appearance: "Show shadow" turns the shadow off and greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live, per-space customization keeps its own shadow, and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each shadow window, "Hide every shadow" hides them for the session without changing the config, the "Shadow settings" box edits and saves the three settings at once (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` directly below its space. |
+| Drawn shadows (D15) | Windows 11 with "Transparency effects" on, at 100 % and 150 %, on Acrylic, Blur, and Solid at Square, 4 px, 8 px, and 16 px corners: each shadow is soft and follows the space's rounded corners. On a machine with a desktop host, `--placement desktop-*` casts none (O2 could not cover that here). With "Transparency effects" off, Solid at 16 px shows a drawn shadow while 4 and 8 px keep DWM's own. Roll, Fly, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade it out to nothing with no ghost box left. Settings > Appearance: "Show shadow" greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each one, "Hide every shadow" hides them for the session, the "Shadow settings" box edits and saves the three settings (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` below its space. The structure (one per space, z-order, rect, ex-styles, click-through, Clear/desktop/layer, show_shadow off, and a per-space size) passed O2 on 2026-10-27 (`archive/ROADMAP-progress-log.md`). |
 | Animation refactor | The 2026-10-19 animation and painter refactors change no pixels, so check that everything looks as before, at 100 % and 150 %, on Acrylic and Solid: every effect on hide, show, Delete, and Fold, and Gradient, Roll, and Fly from each edge (Automatic: Roll and Gradient from the top, Fly to the nearest edge); Pixelate, Dissolve, and Burn at detail 1 and 10; the debug window's preview on one space and on all, pressed twice mid-way, its Kind box named Startup, Delete, Fold, and slow motion; exit plays every space out in reverse reading order. Items, labels, check boxes, the focus rectangle, the rename box, the lock glyph, and the settings highlight sit where they did; the drag image, the debug badge on the window icon, and the zoom pop-up look as before. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
 | Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
