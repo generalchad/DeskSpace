@@ -1,5 +1,7 @@
 //! The settings pages: how the configuration becomes the form's pages.
 
+use deskspace_config::ICON_SETS;
+
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
@@ -535,6 +537,7 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
                 field::ABOUT_LICENSE,
                 "Copyright 2026 Timothy W. Brown. Licensed under the Apache License 2.0.",
             ),
+            Field::note(field::ABOUT_ICONS, icons_note()),
             Field::read_only_text(
                 field::CONFIG_PATH,
                 "Configuration file",
@@ -542,6 +545,21 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
             ),
         ],
     }
+}
+
+/// One line per icon set: its label, author, and license. A single note
+/// whatever the number of sets, so adding a set never adds a field id.
+fn icons_note() -> String {
+    ICON_SETS
+        .iter()
+        .map(|set| {
+            format!(
+                "Icons: {} by {}, {} License.",
+                set.label, set.author, set.license
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The note atop every animation page: why the page is grey when Windows'

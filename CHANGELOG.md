@@ -17,6 +17,7 @@ Notable changes to DeskSpace, newest first. The format follows
   in the config (`icon = "fluent:games"`) or matched from its title
   (`icon = "automatic"`). The icon takes the title's color, so it follows a
   dark and light switch, and a space without one keeps its old title bar.
+  Settings > About credits the icon sets.
 - Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and

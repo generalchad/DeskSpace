@@ -41,6 +41,7 @@ pub mod field {
     pub const ABOUT_SUMMARY: u32 = 31;
     pub const ABOUT_LICENSE: u32 = 32;
     pub const CONFIG_PATH: u32 = 33;
+    pub const ABOUT_ICONS: u32 = 137;
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;

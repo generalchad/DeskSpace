@@ -4296,3 +4296,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     and the glyph resolution (chosen, automatic, none, missing); the
     scene-to-painter wiring is what the on-screen check above proves,
     since the app cannot build an `Icon` without the shell or COM.
+
+
+- [x] **S13. Credits (app, docs).**
+  - `settings/pages.rs` `about_page`: one `Field::note` (`ABOUT_ICONS`, the
+    next free id) with a line per `ICON_SETS` row: "Icons: `label` by
+    `author`, `license` License." One field whatever the number of sets,
+    so a pack is never a new id.
+  - `NOTICE`: the Fluent UI System Icons copyright line and MIT license
+    text, under a heading naming the set and its upstream URL.
+  - Tests: the About page lists every row; `NOTICE` names every row's label
+    (read it as `deskspace-update`'s tests read `release.yml`).
+  - Done 2026-10-27. The note is one `Field::note` with one line per
+    `ICON_SETS` row, so a new set never takes a new id; `NOTICE` has
+    the Fluent UI System Icons heading, upstream URL, copyright, and
+    MIT text. The About note and `NOTICE` are tested against
+    `ICON_SETS`; the note's on-screen height is a glance for the next
+    pass through Settings > About.

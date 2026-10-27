@@ -15,7 +15,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
-- section S, in order: S8 and S13; S5 and S9-S12 need a screen or
+- section S, in order: S8; S5 and S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -1376,16 +1376,6 @@ Rules for every S task:
     pane, and on the desktop. Cancel afterwards keeps both changes.
     Global's header does not edit.
 
-- [ ] **S13. Credits (app, docs).**
-  - `settings/pages.rs` `about_page`: one `Field::note` (`ABOUT_ICONS`, the
-    next free id) with a line per `ICON_SETS` row: "Icons: `label` by
-    `author`, `license` License." One field whatever the number of sets,
-    so a pack is never a new id.
-  - `NOTICE`: the Fluent UI System Icons copyright line and MIT license
-    text, under a heading naming the set and its upstream URL.
-  - Tests: the About page lists every row; `NOTICE` names every row's label
-    (read it as `deskspace-update`'s tests read `release.yml`).
-
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
@@ -2408,5 +2398,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   Suggested: read `hidden` in `IconData` and leave hidden icons out of
   `IconSet::names` (search and matching) while still drawing a saved one.
 - `@iconify-json/fluent`'s `icons.json` has no `info` block (it is in
-  `info.json`), so the trimmed set's `info` is empty. Credits come from the
-  `ICON_SETS` row (S13), so nothing reads it yet.
+  `info.json`), so the trimmed set's `info` is empty. The credits come
+  from the `ICON_SETS` row, which the About note and `NOTICE` use.
+

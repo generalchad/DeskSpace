@@ -1228,4 +1228,35 @@ mod tests {
         session.select_scope(Some(SpaceId(999)), ScopeKind::Space);
         assert_eq!(scope_index(&config, &session), 0, "a deleted space");
     }
+
+    #[test]
+    fn the_about_page_names_every_icon_set() {
+        let (config, session) = setup();
+        let form = form(&config, &session);
+        let note = form.field(field::ABOUT_ICONS).expect("the icons note");
+        assert!(matches!(note.kind, FieldKind::Note), "{:?}", note.kind);
+        for set in deskspace_config::ICON_SETS {
+            assert!(
+                note.label.contains(set.label),
+                "{}: {}",
+                set.label,
+                note.label
+            );
+            assert!(note.label.contains(set.author), "{}", set.author);
+            assert!(note.label.contains(set.license), "{}", set.license);
+        }
+    }
+
+    #[test]
+    fn the_notice_names_every_icon_set() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../NOTICE");
+        let notice = std::fs::read_to_string(&path).expect("NOTICE");
+        for set in deskspace_config::ICON_SETS {
+            assert!(
+                notice.contains(set.label),
+                "NOTICE is missing {}",
+                set.label
+            );
+        }
+    }
 }
