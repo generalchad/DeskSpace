@@ -7,6 +7,39 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Undo and redo for layout changes, file moves, item removal, space creation
+  and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
+  a space is current, and the space menu and the tray name the action ("Undo
+  Move 3 items"). Undo and redo last for the session. Shift+Delete and edits
+  in the settings window are not undone.
+- Drawn shadows on Windows 11: DeskSpace draws each space's shadow, so it
+  follows the space's corners and fades with an animation where Windows casts
+  none. Settings > Appearance adds "Show shadow" (on by default), "Shadow
+  size", and "Shadow opacity".
+- A border thickness, a border color (the Windows accent or a custom color),
+  and its own opacity in Settings > Appearance and Settings > Colors.
+- With the desktop takeover on, a loose desktop icon renames in place, as an
+  item in a space does.
+
+### Changed
+
+- The window border is white in dark mode and black in light mode, as
+  Explorer's borders are. "Use Windows accent color" now colors the selection
+  only, unless "Border color" is set to the Windows accent.
+
+### Fixed
+
+- With the desktop takeover on: a taskbar that ended up under the desktop
+  layer takes clicks again; Delete removes loose desktop icons; New › Folder
+  opens a visible rename box; and an icon updates when its file changes in
+  place, without a restart.
+- A right drag shows DeskSpace's drag image rather than the shell's, and each
+  entry in the right-drop menu is greyed when the source cannot do it.
+- The settings window's selection follows a change to the Windows accent
+  color.
+
 ## [0.2.4] - 2026-10-18
 
 ### Added
