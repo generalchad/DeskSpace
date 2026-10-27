@@ -12,11 +12,13 @@ const ORGANIZATION: &str = "DeskSpace";
 const APPLICATION: &str = "DeskSpace";
 const FILE_NAME: &str = "deskspace.toml";
 const STORAGE_DIR: &str = "storage";
+const ICONS_DIR: &str = "icons";
 
 #[derive(Debug, Clone)]
 pub struct ConfigStore {
     path: PathBuf,
     storage: PathBuf,
+    icons: PathBuf,
 }
 
 impl ConfigStore {
@@ -29,18 +31,22 @@ impl ConfigStore {
         Ok(Self {
             path: dirs.config_dir().join(FILE_NAME),
             storage: dirs.data_local_dir().join(STORAGE_DIR),
+            icons: dirs.data_local_dir().join(ICONS_DIR),
         })
     }
 
-    /// An explicit configuration file. Its space storage sits beside it, so
-    /// a scratch configuration never touches the real storage folder.
+    /// An explicit configuration file. Its space storage and icon cache sit
+    /// beside it, so a scratch configuration never touches the real ones.
     pub fn with_path(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
-        let storage = path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(STORAGE_DIR);
-        Self { path, storage }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let storage = parent.join(STORAGE_DIR);
+        let icons = parent.join(ICONS_DIR);
+        Self {
+            path,
+            storage,
+            icons,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -50,6 +56,12 @@ impl ConfigStore {
     /// Where files dropped into spaces are moved (ROADMAP D3).
     pub fn storage_dir(&self) -> &Path {
         &self.storage
+    }
+
+    /// Where downloaded icon sets are cached (`IconStore`). Local AppData, as
+    /// the storage is: a cache does not roam.
+    pub fn icons_dir(&self) -> &Path {
+        &self.icons
     }
 
     pub fn exists(&self) -> bool {
@@ -173,6 +185,12 @@ mod tests {
     }
 
     #[test]
+    fn explicit_configs_keep_the_icon_cache_beside_them() {
+        let store = ConfigStore::with_path("C:/scratch/deskspace.toml");
+        assert_eq!(store.icons_dir(), Path::new("C:/scratch/icons"));
+    }
+
+    #[test]
     fn save_then_load_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let store = ConfigStore::with_path(dir.path().join("deskspace.toml"));
@@ -182,6 +200,7 @@ mod tests {
             at: deskspace_core::Point::ZERO,
             size: deskspace_core::Size::new(100, 100),
             locked: false,
+            icon: deskspace_core::SpaceIcon::None,
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());

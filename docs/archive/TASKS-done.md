@@ -3959,3 +3959,173 @@ until I5-I6 all land, so no partial build hides the desktop.
     files, change its folder, and create a lens; each undoes and redoes from
     Ctrl+Z / Ctrl+Y and both menus, and a lens brought back lists its folder
     again.
+- [x] **S1. The model (core).**
+  - `deskspace-core/src/icon.rs`: `IconRef { set: String, name: String }`
+    and `SpaceIcon { None (default), Automatic, Chosen(IconRef) }`, both
+    `Debug, Clone, PartialEq, Eq`. `IconRef::parse("fluent:games")` accepts
+    a prefix and a name of lowercase ASCII letters, digits, and hyphens (the
+    Iconify name rule), split at the one `:`; `Display` writes it back.
+  - `SpaceIcon` saves as a string, via `#[serde(from = "String", into =
+    "String")]`: `"automatic"`, or `"<set>:<name>"`. Any other string loads
+    as `None` instead of failing the file (ENGINEERING rule 3). Document
+    that on the type.
+  - `Space.icon: SpaceIcon`, `#[serde(default, skip_serializing_if =
+    "SpaceIcon::is_none")]`, `pub(crate)` with an `icon()` accessor, like
+    `locked`. Missing means `None`, so every existing space keeps no icon.
+  - `Command::SetSpaceIcon { id, icon }`: `Applied`, or `NotFound`. A locked
+    space still takes it, as `RenameSpace` does. Its `touched_by` arm joins
+    `RenameSpace`'s.
+  - `Command::CreateSpace` gains `icon: SpaceIcon`, set on the new space.
+    Every caller passes `SpaceIcon::None` for now (S8 passes the New spaces
+    default); the compiler lists them.
+  - Tests: core, `parse` and `Display` round trip, bad strings rejected,
+    and `SetSpaceIcon`'s two outcomes (copy the `RenameSpace` tests).
+    Config, in `schema.rs`'s tests (core has no format crate): a space with
+    each `SpaceIcon` survives a TOML save and load, a space without the key
+    loads as `None` and writes none, and `icon = "?"` loads as `None`.
+  - `CONTEXT.md` section 4, "Space": one sentence saying a space stores a
+    reference to its icon, not the picture, resolved when it is drawn (S7).
+
+- [x] **S2. Icon sets and matching (core, pure).**
+  - `deskspace-core/src/icon_set.rs`: the subset of the Iconify JSON
+    format DeskSpace reads
+    (<https://iconify.design/docs/types/iconify-json.html>; cite it on the
+    type), `Serialize` and `Deserialize`, camelCase:
+    `IconSet { prefix, info: IconSetInfo, icons: BTreeMap<String,
+    IconData>, aliases: BTreeMap<String, IconAlias>, width, height }`, where
+    `IconData { body, width, height }` (both optional, falling back to the
+    set's, which default to 16 as the format says), `IconAlias { parent,
+    rotate, h_flip, v_flip }`, and `IconSetInfo { name, author: { name, url
+    }, license: { title, spdx, url } }`, all `#[serde(default)]`. Unknown
+    keys are ignored.
+  - `Glyph { key: String, body: String, width: u32, height: u32 }` (`key`
+    is `"<prefix>:<name>"`) and `IconSet::glyph(name) -> Option<Glyph>`. It
+    follows aliases to their icon, at most 8 steps so a cycle ends, and
+    refuses an alias with a rotation or a flip, which DeskSpace does not
+    draw. `IconSet::names()` lists icons and plain aliases.
+  - `deskspace-core/src/icon_match.rs`, the D16 matching. Words are the
+    title in lowercase, split on every character that is not alphanumeric,
+    dropping words shorter than 3 letters and those in `STOP_WORDS` ("the",
+    "and", "for", "new", "space", "stuff", "misc", "other").
+    Each word also tries a singular form: "-ies" to "-y", "-es" after s, x,
+    ch, or sh, else a trailing "s" on a word longer than 3 letters.
+    - `best_icon<'a>(title, set: &'a IconSet, words: &'a [(&str, &str)])
+      -> Option<&'a str>` scores each word, as written and singular: 100 a
+      curated `words` row for the word, 95 for its singular, 80 an icon or
+      plain alias named exactly the word, 75 its singular, 60 an icon whose
+      first hyphen-separated part is the word or its singular. A curated
+      row whose icon the set lacks is skipped. The highest score wins; ties
+      go to the earlier word in the title, then the shorter name, then
+      alphabetical order. No candidate, no icon. Aliases resolve to their
+      icon's name.
+    - `search<'a>(query, set, words) -> Vec<&'a str>` for the picker. The
+      query is split as above, but with no stop words or minimum length.
+      An icon matches when every query word is a prefix of one of its
+      hyphen-separated name parts or an alias's, or a curated row maps the
+      word to it. Curated hits come first, then icons with a part equal to
+      a query word, then the rest, each group alphabetical, with no
+      duplicates. An empty query lists every icon alphabetically.
+  - Tests, on small sets built in the test: aliases resolve, a cycle and a
+    transformed alias give `None`, sizes fall back to the set's; each score
+    level wins over the one below it; ties break as stated; stop words and
+    short words never match; "Libraries", "Boxes", and "Games" reach
+    "library", "box", and "game"; "New space" gives `None`; every `search`
+    ordering rule.
+
+- [x] **S3. Icon sets, the cache, and the trimmer (config).** Needs network
+  once, to fetch the upstream set; stop and ask if you have none.
+  - `cargo-add` `serde_json` to `deskspace-config` (it is already in
+    `Cargo.lock` through the updater, so `cargo deny` sees nothing new).
+  - `deskspace-config/src/icons.rs`:
+    - `IconSetSpec { prefix, label, author, license, upstream,
+      upstream_version, keep_suffix, revision, words }`, all `&'static`
+      except `revision: u32`, and `pub const ICON_SETS: &[IconSetSpec]`
+      with one row: prefix `fluent`, label "Fluent UI System Icons", author
+      "Microsoft Corporation", license "MIT", upstream
+      `@iconify-json/fluent` at the newest version on npm today
+      (`https://registry.npmjs.org/@iconify-json/fluent/latest` says which),
+      `keep_suffix` `-20-regular` (one-color outlines, as Windows 11's own
+      title-bar glyphs are), revision 1, and `FLUENT_WORDS`. Add
+      `icon_set(prefix)`, `default_set()` (the first row), `file_name()`
+      (`fluent-r1.json`), and `release_tag()` (`icons-fluent-r1`).
+    - `FLUENT_WORDS: &[(&str, &str)]`, English words to icon names, for
+      common space titles. Start from: apps, games, work, office, school,
+      study, homework, photos, pictures, videos, movies, music, podcasts,
+      documents, downloads, projects, code, tools, utilities, design, art,
+      notes, books, finance, money, bills, taxes, shopping, travel, health,
+      fitness, recipes, home, family, kids, social, chat, mail, calendar,
+      web, links, favorites, cloud, backup, archive, temp, important,
+      todo, ideas, research, science, sports, weather, maps, news,
+      security, network, server, database, terminal, scripts, writing,
+      presentations, spreadsheets, clients, meetings. Pick each target by
+      searching the names file. Leave out a word the set already names
+      exactly, which matching finds on its own.
+    - `IconStore`, made by `ConfigStore::icons_dir()`, which is
+      `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or an `icons` folder
+      beside an explicit config, as `storage_dir()` does, so a scratch
+      config has its own cache. `load(spec) -> Result<Option<IconSet>,
+      ConfigError>`: `None` when the file is missing; a file that does not
+      parse, or whose `prefix` is not the row's, is deleted and returned as
+      an error, so the next need fetches it again. `save(spec, bytes)`
+      parses first, writes a sibling `.tmp` and renames it (as
+      `ConfigStore::save` does), then deletes this prefix's other revisions.
+      The cache is trusted once written: only the download is verified
+      (S4).
+    - `trim(upstream: IconSet, spec) -> IconSet`: keeps the icons whose name
+      ends with `keep_suffix`, with the suffix removed, and the aliases that
+      end with it, have no transform, and point at a kept icon. It keeps
+      `info` and sets `prefix`. A width and height every kept icon shares
+      move to the set level. `missing_names(set, shipped: &str) ->
+      Vec<String>` lists the shipped names the set lacks.
+  - `crates/deskspace-config/examples/icon_set.rs`, the glue:
+    - `trim <prefix> <upstream icons.json> <out dir>` writes
+      `<out dir>/<file_name>` as compact JSON. `BTreeMap` keeps the order,
+      so the same input gives the same bytes. It exits non-zero, listing
+      them, if any name in `assets/icons/<prefix>-names.txt` is missing,
+      then rewrites that file: every name, sorted, one per line.
+    - `spec <prefix>` prints `tag=`, `file=`, and `upstream=<package>@
+      <version>` lines, for the workflow (S5).
+  - Fetch the upstream package from `https://registry.npmjs.org/
+    @iconify-json/fluent/-/fluent-<version>.tgz`, extract `package/
+    icons.json` into your scratchpad, run `trim`, and commit the new
+    `assets/icons/fluent-names.txt` (not the set itself). Put the icon and
+    alias counts in the commit body.
+  - Tests: a small Iconify file parses, unknown keys and all; `trim` keeps,
+    renames, and drops exactly as stated; `missing_names`; `IconStore` round
+    trip in a temp dir, a corrupt file deleted, older revisions pruned, and
+    a scratch config's `icons_dir()` beside it. For every row: its names
+    file is sorted with no duplicates, every `words` target is in it, its
+    words are single lowercase words with no duplicates, and prefixes are
+    unique.
+  - `CONTEXT.md` section 5: one bullet on `icons_dir()` and that the cache
+    is trusted once written.
+
+- [x] **S4. Signed downloads (update).**
+  - `deskspace-update/src/lib.rs`: `pub fn fetch_signed(tag, file) ->
+    Result<Vec<u8>, UpdateError>`. It downloads `{ASSETS_URL}/{tag}/{file}`
+    and `{file}.sig`, where `ASSETS_URL` is
+    `https://github.com/generalchad/DeskSpace/releases/download`, then
+    verifies them against `UPDATE_PUBKEY`. Without a key it is
+    `NotConfigured`, as `check` is. Use a blocking `reqwest` client with a
+    30 s timeout and a `DeskSpace/<version>` user agent. Refuse a body over
+    `MAX_ASSET_BYTES` (32 MiB), by its `Content-Length` and while reading,
+    so a bad server cannot fill memory. Blocking: the doc says to call it
+    on a worker thread.
+  - `fn verify(data, signature, pubkey) -> Result<(), UpdateError>`:
+    base64-decode the key and the `.sig` text, then `minisign-verify`'s
+    `PublicKey::decode`, `Signature::decode`, and `verify(.., true)`. That is
+    exactly what `cargo-packager-updater` 0.2.3 does in its
+    `verify_signature`; cite it (crates.io source, `src/lib.rs`), so one key
+    and one `cargo packager signer sign` serve both. New `UpdateError`
+    variants `Fetch(String)` and `Signature(String)`.
+  - `cargo-add` `reqwest` (no default features; `blocking` and
+    `native-tls`, as the updater uses), `minisign-verify`, and `base64` at
+    their locked versions. `cargo-deny-check` must pass with no new crates.
+  - Update the crate doc: the app also fetches icon sets, only when the
+    user has agreed (D16).
+  - Tests, with no network: generate a throwaway key with
+    `cargo packager signer generate` (no password), sign a small file, and
+    commit the public key, the file, and its `.sig` under
+    `crates/deskspace-update/tests/fixtures/` (never the private key). A good
+    signature verifies; a changed byte, another key, and garbage base64
+    each fail with an error, not a panic.

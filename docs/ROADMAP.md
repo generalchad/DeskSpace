@@ -131,7 +131,8 @@ A native, lightweight, offline Windows desktop organizer that:
     page is off by default, with no first-run prompt. When it is on, the app
     checks about a minute after start and then every 24 h while running. A
     manual "Check for updates" tray entry is always available. No network
-    traffic happens unless the user starts it or opts in.
+    traffic happens unless the user starts it or opts in; the icon
+    download (D16) asks first.
   - *Apply:* prompt, then restart. The prompt shows the version and notes
     and offers Update / Later / Skip this version. Update downloads,
     installs, and restarts DeskSpace with the same config. Later asks again
@@ -539,6 +540,72 @@ A native, lightweight, offline Windows desktop organizer that:
     animation settings box does. Two session-only toggles outline every
     shadow window and hide every shadow, and the Windows table lists the
     shadow windows.
+- **D16. Space icons (2026-10-18, maintainer).** Decides F-62. A space can
+  show an icon to the left of its title, picked from its name or chosen by
+  the user.
+  - *Library:* Fluent UI System Icons (Microsoft, MIT), the one-color set
+    Windows 11's own icons come from, drawn in the title's color so it
+    follows the theme. The Segoe Fluent Icons font was ruled out: it is
+    only on Windows 11, has no keywords, and its terms do not cover
+    shipping it. Sets are read in the Iconify JSON format, which every
+    candidate set is published in, so more sets can become a user's choice
+    later (the colorful Fluent System Color Icons and Fluent Emoji Flat
+    first, then Lucide, Phosphor, Tabler, or Material Symbols) with no new
+    loader. Each set's license and author show on Settings > About, and
+    `NOTICE` names the sets DeskSpace offers.
+  - *Packs (amended 2026-10-18, maintainer: scaffold for more packs soon):*
+    every set is one row of a table (prefix, upstream package and version,
+    the size and style kept, a revision, its curated words, its credits),
+    and everything else (the cache, the download, the picker, the saved
+    names) is keyed by the set's prefix. Adding a pack is a row plus its
+    published file; no code names Fluent outside its row. The picker shows
+    a choice of set once there are two.
+  - *Delivery:* downloaded on first use, not bundled. A script trims the
+    pinned upstream set to one size and style and publishes it as an asset
+    of DeskSpace's own GitHub release, signed with the updater's minisign
+    key (D6). DeskSpace fetches it the first time an icon is needed (a new
+    space with an automatic icon, or the picker opening), verifies it, and
+    keeps it under `%LocalAppData%`; a release that needs a newer set
+    fetches it once. Offline or on a failed check, spaces show no icon and
+    the picker says why; nothing else waits on it.
+  - *Consent (amended 2026-10-18, maintainer):* D6's promise holds: no
+    network traffic unless the user starts it or opts in. The first time
+    an icon is needed, DeskSpace asks once whether to download the icons
+    from GitHub, and saves the answer (allowed or declined); the General
+    page can change it. The first-run seed space starts with no icon, so
+    the very first launch never asks. Declined, spaces show no icon and
+    the picker says so.
+  - *Matching:* pure and unit-tested, outside the platform. The space's
+    title is split into words and scored against a curated table of
+    English words to icon names ("games", "work", "photos", "school"), then
+    against the set's own names and aliases. The best score wins; ties
+    break by a fixed order; below a threshold, no icon. Other languages
+    follow M9.
+  - *Model:* each space stores its icon as automatic, none, or a chosen
+    set and name, a `#[serde(default)]` field changed through a `Command`.
+    Icon names are saved, so a set's trimmed copy never renames or drops
+    one it has shipped. The match runs again when an automatic space is
+    renamed; a chosen icon never changes by itself.
+  - *Existing spaces:* default to no icon, so nothing changes under current
+    users. New spaces start automatic; the New spaces page gets an "Icon"
+    choice (Automatic or None).
+  - *Changing it:* while the title is being renamed, the icon becomes a
+    button that opens an icon picker: a search box, a grid, and Automatic
+    and None. The picker is its own activated window, as the color picker
+    is, since spaces never take keys. A space's Settings page has the same
+    picker beside its title.
+  - *Interaction (amended 2026-10-18, maintainer):* changing the icon is
+    part of renaming. Outside a rename the icon is display only: no hover,
+    no cursor change, no click, and no menu entry. Once a rename starts,
+    the icon (or a placeholder, for a space with none) becomes a button,
+    and one click opens the picker; the rename stays open behind it. The
+    picker's choice applies at once.
+  - *Settings (amended 2026-10-18, maintainer):* a space's header pairs its
+    icon with its name, as the space does on the desktop, and the scopes
+    pane shows each space's icon beside its name. Double-clicking the
+    header's name renames the space inline; during that rename the icon
+    becomes the same button. Both apply at once, as a desktop rename does,
+    so the window's Cancel does not undo them.
 - **D17. Views, sort rules, and lens settings (2026-10-21, maintainer).**
   Decides M4 phase 4 (F-08, F-09, F-17's Lenses page, F-31's kept rule).
   - *Telling a lens from a space:* each row of the settings window's
@@ -681,9 +748,10 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
 **In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
-F-52, and entries that wait on later milestones or design), and M4 (phases 1-4
-are done, the last completing v0.3; phase 5 follows in v0.4 or a v0.3.x).
-Undo (D11, `TASKS.md` section U) and drawn shadows (D15) have landed since
+F-52, and entries that wait on later milestones or design), M4 (phases 1-4
+are done, the last completing v0.3; phase 5 follows in v0.4 or a v0.3.x), and
+M5's space icons (S1-S4 are built; the title icon and the picker follow).
+Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-4) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order:**
@@ -693,15 +761,18 @@ v0.2.4 and ship in the next release. Section 5 lists what each has done.
    are in `TASKS.md` section V. Phase 4 (W8-W23, D17) completed v0.3.
    Phase 5 (W24-W43, D18) follows, except W24 and W25: they fix code that
    runs today and go first.
-2. **L1's on-screen findings** (`TASKS.md` section L): record what each
+2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
+   the icon-set library, its cache, and the signed download are built
+   (S1-S4); S6-S8 and S13 are next, and S5 and S9-S12 need a screen.
+3. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
+4. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
    the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
    built-but-unchecked behaviors before more work builds on them.
-4. **Release dry run on clean machines** (R12) and **code signing** (R10),
+5. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+6. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce and Scroll (T19, T20) are ready, and Magic
    lamp (T21) awaits a decision. The composition spike (T1) runs alongside.
 
@@ -852,7 +923,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     storage check moves off the UI thread.
   - Browse into subfolders inside the lens, with a back control (F-64).
     Until then, subfolders open in Explorer.
-  - Group by (F-62); Details columns: choose, resize, reorder, and Date
+  - Group by (F-65); Details columns: choose, resize, reorder, and Date
     created (F-63).
   - Lens filters (part of F-22), per-space file name extensions, compact
     view, the path tip, Ctrl+wheel through the views, and the default
@@ -889,6 +960,12 @@ Remaining:
      are limited to DWM's radii.
    - First check that a host backdrop renders on windows that are never
      activated.
+7. Space icons: an icon left of each space's title, matched from its name
+   or chosen in a picker from the rename box or the space's settings, from
+   a downloaded Fluent icon set (F-62, D16). Build it with or after F-28,
+   which reworks the same title bar. Partial: the model, the library, the
+   cache, and the signed download are built (S1-S4); the title icon, the
+   picker, and the settings follow (S5-S13).
 
 Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
@@ -1147,9 +1224,10 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, and the signed download are built (S1-S4); the title icon and the picker follow (S5-S13), decided in D16 |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Open; decided in D18 (`TASKS.md` W29-W32) |
 | F-64 | Browse into subfolders inside a lens | M4 | Open; decided in D18 (`TASKS.md` W24, W25, W42, W43) |
+| F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
 
 
 ## 8. Open questions

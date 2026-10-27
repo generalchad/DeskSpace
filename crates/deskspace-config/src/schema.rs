@@ -647,6 +647,54 @@ mod tests {
         assert!(parsed.desktop.layer().items().is_empty());
     }
 
+    fn config_with_icon(icon: deskspace_core::SpaceIcon) -> Config {
+        let mut config = Config::new();
+        let create = deskspace_core::Command::CreateSpace {
+            title: "Games".to_owned(),
+            at: Point::new(10, 20),
+            size: deskspace_core::Size::new(300, 200),
+            locked: false,
+            icon,
+        };
+        let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
+        assert!(config.desktop.apply(create, bounds).is_applied());
+        config
+    }
+
+    #[test]
+    fn a_space_icon_survives_a_toml_save_and_load() {
+        use deskspace_core::{IconRef, SpaceIcon};
+        let chosen = SpaceIcon::Chosen(IconRef::parse("fluent:games").unwrap());
+        for icon in [SpaceIcon::Automatic, chosen] {
+            let text = toml::to_string_pretty(&config_with_icon(icon.clone())).unwrap();
+            let parsed: Config = toml::from_str(&text).unwrap();
+            assert_eq!(parsed.desktop.spaces()[0].icon(), &icon);
+        }
+    }
+
+    #[test]
+    fn a_space_without_an_icon_loads_and_writes_none() {
+        let text =
+            toml::to_string_pretty(&config_with_icon(deskspace_core::SpaceIcon::None)).unwrap();
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.trim_start().starts_with("icon ="))
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.desktop.spaces()[0].icon().is_none());
+    }
+
+    #[test]
+    fn an_unreadable_space_icon_loads_as_none() {
+        let text = toml::to_string_pretty(&config_with_icon(deskspace_core::SpaceIcon::Automatic))
+            .unwrap()
+            .replace("icon = \"automatic\"", "icon = \"?\"");
+        assert!(text.contains("icon = \"?\""), "{text}");
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.desktop.spaces()[0].icon().is_none());
+    }
+
     #[test]
     fn a_theme_without_border_settings_keeps_the_old_border() {
         let text = format!(
@@ -718,6 +766,7 @@ show_border = true
             at: Point::new(10, 20),
             size: deskspace_core::Size::new(300, 200),
             locked: false,
+            icon: deskspace_core::SpaceIcon::None,
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());
@@ -756,6 +805,7 @@ show_border = true
                         at: Point::ZERO,
                         size: Size::new(240, 120),
                         locked: false,
+                        icon: deskspace_core::SpaceIcon::None,
                     },
                     bounds(),
                 )

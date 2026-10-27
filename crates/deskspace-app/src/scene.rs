@@ -909,6 +909,7 @@ mod tests {
                 at: Point::new(500, 300),
                 size: Size::new(240, 200),
                 locked: false,
+                icon: deskspace_core::SpaceIcon::None,
             },
         );
         apply(
@@ -1083,6 +1084,7 @@ mod tests {
                 at: Point::ZERO,
                 size: Size::new(240, 200),
                 locked: false,
+                icon: deskspace_core::SpaceIcon::None,
             },
         );
         apply(&mut desktop, Command::KeepSize { id });
@@ -1823,6 +1825,7 @@ mod tests {
                 at: Point::ZERO,
                 size: Size::new(240, 200),
                 locked: false,
+                icon: deskspace_core::SpaceIcon::None,
             },
         );
         apply(&mut desktop, Command::KeepSize { id });

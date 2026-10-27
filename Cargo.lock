@@ -274,6 +274,7 @@ dependencies = [
  "deskspace-core",
  "directories",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "toml",
@@ -304,7 +305,10 @@ dependencies = [
 name = "deskspace-update"
 version = "0.2.4"
 dependencies = [
+ "base64 0.22.1",
  "cargo-packager-updater",
+ "minisign-verify",
+ "reqwest",
  "thiserror 2.0.21",
 ]
 

@@ -720,6 +720,7 @@ impl App {
             at: origin,
             size,
             locked: window.new_space_locked,
+            icon: deskspace_core::SpaceIcon::None,
         };
         self.undo.begin("New space");
         // Not `commit`: a new space needs a window (`sync_windows`), not a

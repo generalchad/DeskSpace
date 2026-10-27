@@ -248,6 +248,7 @@ mod tests {
                 at: Point::ZERO,
                 size: Size::new(240, 120),
                 locked: false,
+                icon: crate::icon::SpaceIcon::None,
             },
             bounds(),
         );
@@ -445,6 +446,7 @@ mod tests {
                 at: Point::ZERO,
                 size: Size::new(240, 120),
                 locked: false,
+                icon: crate::icon::SpaceIcon::None,
             },
             bounds(),
         );
@@ -605,6 +607,7 @@ mod tests {
                 at: Point::ZERO,
                 size: Size::new(240, 120),
                 locked: false,
+                icon: crate::icon::SpaceIcon::None,
             },
             bounds(),
         );
@@ -671,6 +674,7 @@ mod tests {
                 at: Point::new(400, 0),
                 size: Size::new(240, 120),
                 locked: false,
+                icon: crate::icon::SpaceIcon::None,
             },
             bounds(),
         );

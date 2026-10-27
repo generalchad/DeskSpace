@@ -15,6 +15,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
+- section S, in order: S6, S7, S8, and S13; S5 and S9-S12 need a screen or
+  a reviewer;
 - section T, "Burn, upgraded": T24 now, then T25-T31 in order once
   `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
@@ -1130,6 +1132,334 @@ interest. In phase 4 and 5 terms:
     button is gone at the root; Backspace in a rename edits the text and
     does not go back.
 
+## S. Space icons (ROADMAP D16, F-62)
+
+Read D16 first, amendments included; it is the spec. Do the tasks in order,
+one commit each. M5 item 7 says to build this with or after F-28 (title bar
+style), which has no tasks yet. These tasks build on today's title bar, and
+`title_icon_rect` (S7) is the one place the icon's geometry lives, so
+whichever lands second keeps the other working.
+
+Rules for every S task:
+
+1. **Packs are rows.** Every icon set is one `IconSetSpec` row in
+   `ICON_SETS` (S3). The cache, the download, the picker, and the saved
+   names are keyed by the row's `prefix`. No code outside the Fluent row and
+   its tests names Fluent; reach a set through `ICON_SETS`,
+   `icon_set(prefix)`, or `default_set()`.
+2. **The network only after consent.** The one way to download a set is
+   `deskspace_update::fetch_signed` (S4), started from the app's
+   `IconStep::Fetch` (S8), which only an `Allowed` consent produces. Never
+   call the network from anywhere else.
+3. **Saved names never change.** A user's config stores `<prefix>:<name>`.
+   `assets/icons/<prefix>-names.txt` lists every name a set has shipped; the
+   trimmer (S3) refuses to drop one, and tests check the curated words
+   against it.
+4. **Display only, outside a rename.** The icon has no hit test, hover,
+   cursor, or click except while its space's title is being renamed, on the
+   desktop (S10) or in the settings header (S12).
+5. **Glyphs are rasterized off the paint path.** A scene carries a finished
+   `Icon`, as items do (S7); the painter only draws bitmaps. Rasterize
+   through `GlyphCache` (S6), never per frame.
+6. Unless a task says otherwise, a name in `code` that does not exist yet
+   is one the task creates.
+7. **One undo entry.** Changing an icon (S10, S11) records one entry
+   through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
+   the old icon back; `SetSpaceIcon` is already in `touched_by`.
+
+- [ ] **S5. Publishing an icon set (ci).** **[needs human]**
+  - `.github/workflows/icons.yml`, `workflow_dispatch` with a `prefix`
+    input (default `fluent`), on `windows-latest`, copying `release.yml`'s
+    toolchain and `cargo install cargo-packager` steps:
+    1. `cargo run -p deskspace-config --example icon_set -- spec <prefix>`
+       into `$GITHUB_OUTPUT`.
+    2. Fail if `gh release view <tag>` finds the release. A published set is
+       never replaced, because shipped builds pin its revision.
+    3. Download and extract the upstream package, run `trim`, then `git diff
+       --exit-code assets/icons`. The commit that bumped the row must
+       already carry its names file.
+    4. Sign the file with `cargo packager signer sign`, using
+       `CARGO_PACKAGER_SIGN_PRIVATE_KEY` from `DESKSPACE_MINISIGN_KEY`. Stop
+       with a clear error while the secret is empty.
+    5. `gh release create <tag> <file> <file>.sig --prerelease
+       --latest=false`, titled "Icon set: `label` r`revision`", with notes
+       naming the upstream package and saying it is not an app release.
+       It must be a pre-release: the update feed reads
+       `releases/latest/download/latest.json`, which a newer full release
+       would take over.
+  - `RELEASING.md`: a short "Publishing an icon set" section. To add or
+    update a set, bump or add its row, run the example's `trim`, commit the
+    row and names file, then run the workflow. Never delete an `icons-*`
+    release. `actionlint` must pass.
+  - **[needs human]** check (maintainer, once `DESKSPACE_MINISIGN_KEY` and
+    `UPDATE_PUBKEY` are set): run the workflow for `fluent`. The release is
+    a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
+    repository's "Latest" badge still points at the app. A second run fails
+    at step 2.
+
+- [ ] **S6. Drawing a glyph (platform).**
+  - `render/glyph.rs` (pure): `svg_document(glyph: &Glyph, color: Color) ->
+    String` wraps the body in `<svg xmlns=".." viewBox="0 0 w h">`, writes
+    `color` as `#rrggbb` in place of every `currentColor` (Direct2D's SVG
+    support has no `currentColor`), and adds an `opacity` for a color that
+    is not opaque.
+  - `render/d2d/glyph.rs`: `rasterize(glyph, px, color) -> Result<Icon,
+    PlatformError>`. On the shared device (`create_device`), draw into a
+    `px` square target bitmap with `ID2D1DeviceContext5::CreateSvgDocument`
+    (from `SHCreateMemStream`) and `DrawSvgDocument`. Copy the result to a
+    CPU-readable bitmap, map it, and build an `Icon` (premultiplied BGRA,
+    as `Icon::new` wants). Without `ID2D1DeviceContext5` (Windows 10 before
+    1703) it fails, and callers show no icon. Cite the Microsoft Learn
+    pages for `CreateSvgDocument` and `DrawSvgDocument` beside the calls.
+  - `win32/glyphs.rs`: `GlyphCache`, copied from `IconCache`
+    (least-recently-used, 256 entries), keyed by `(glyph key, px, color)`.
+    `icon(&mut self, key, px, color, glyph: impl FnOnce() -> Option<Glyph>)
+    -> Option<Icon>` builds the glyph only on a miss. It logs a failure
+    once per key at `debug`. Re-export `GlyphCache` and `Glyph` from
+    `lib.rs`.
+  - Tests: `svg_document`'s wrapping, color, and opacity. `rasterize`
+    draws `M2 2h16v16H2z` in a 20-wide glyph at 20 px in red: the middle
+    pixel is opaque red and a corner is clear. It runs on WARP in CI, as
+    `create_device` falls back to it. The cache evicts the oldest entry
+    and keys on color.
+  - `CONTEXT.md` section 6, "Rendering": one bullet on glyphs. Add the new
+    modules to the module map.
+
+- [ ] **S7. Icons in the title bar (app, platform).** **[needs human]**
+  - `render/scene.rs`: `SpaceScene.title_icon: Option<TitleIcon>`, with
+    `TitleIcon { rect: Rect, image: Option<Icon> }` in window-local pixels;
+    default `None` (the visual-in-a-space recipe).
+  - `deskspace-app/src/scene.rs`: pure `title_icon_rect(title_height) ->
+    Rect`, a square `TITLE_ICON_SIZE` (16) by `TITLE_ICON_INSET` (10) at 96
+    DPI and a 28 px title, scaled by `title_height / DEFAULT_TITLE_HEIGHT`,
+    centered vertically. `space_scene` fills `title_icon` when the space
+    resolves to a picture; the desktop layer never does.
+  - `deskspace-app/src/app/space_icons.rs`, a new `app/` module (add it to
+    `CONTEXT.md` section 3's table): `SpaceIcons` on `App`, with per-prefix
+    state (`Loading`, `Ready(Arc<IconSet>)`, `Missing`, `Failed(String)`),
+    a `GlyphCache`, and a memo of automatic matches by title, cleared when
+    a set changes.
+    - On `Event::Started`, a worker thread runs `IconStore::load` for the
+      sets in use (`Automatic` uses `default_set()`), as the update checks
+      do. It wakes the app with `ICONS_WAKE` (the next free wake id beside
+      `UPDATE_WAKE`), which refreshes the spaces showing that set. No
+      network here; S8 adds the download.
+    - `App::space_glyph(space) -> Option<Glyph>`: `Chosen` gives its name
+      in its set; `Automatic` gives `best_icon` in `default_set()` with the
+      row's words; then `IconSet::glyph`, when that set is `Ready`.
+      `App::space_icon(space, color, title_height) -> Option<Icon>` puts it
+      through the cache, at the rect's size, in the space's `title_text`
+      color. `refresh_space` passes that to the scene.
+  - Painter: move `draw_title` and `LOCK_GLYPH` into a new
+    `render/d2d/title.rs`, so `d2d/mod.rs` stays under 800 lines. Draw the
+    image at its rect with `bitmap_for`, and start the title text (and the
+    rename box) `TITLE_ICON_GAP` (6 px, scaled the same way) after the
+    rect. The per-target bitmap cache is pruned to the scene's icons, so
+    count the title icon among them.
+  - Tests: `title_icon_rect` at 28 and 42 px; a space with
+    `Chosen`, with `Automatic` and a matching title, and with `None` gives
+    the scene a rect or none (copy
+    `the_settings_highlight_reaches_the_scene`); the layer's scene has
+    none.
+  - **[needs human]** check: with a scratch config, make the cache by hand
+    (S3's example: `trim fluent <upstream icons.json>
+    %TEMP%\deskspace-dev\icons`). Then set `icon = "fluent:games"` on one
+    space and `icon = "automatic"` on spaces titled "Games", "Photos", and
+    "Stuff". The first three show their icons left of the title, in the
+    title's color, and follow a dark and light switch. "Stuff" and spaces
+    without the key show none and look as before. Hovering or clicking the
+    icon does what the title bar does. Check at 100 % and 150 %, on every
+    backdrop, and with a lock. With the cache deleted, nothing shows and
+    nothing fails.
+
+- [ ] **S8. Consent, the download, and new spaces (config, app).**
+  **[needs human]**
+  - `deskspace-config/src/schema.rs`: `WindowSettings.icon_downloads:
+    IconDownloads { Ask (default), Allowed, Declined }` and
+    `new_space_icon: NewSpaceIcon { Automatic (default), None }`, with
+    `NewSpaceIcon::space_icon()`. Both snake_case enums.
+  - `app/space_icons.rs`: a pure `next_step(state, consent, asked) ->
+    IconStep { Nothing, Load, Ask, Fetch, Unavailable }`, where `asked`
+    means the prompt already showed this session. It is the one place that
+    decides to download, and only `Allowed` gives `Fetch` (S rule 2).
+    `App::need_icon_set(ui, spec)` acts on it.
+    - `Fetch`: a worker runs `fetch_signed(release_tag, file_name)`, then
+      `IconStore::save`, and wakes `ICONS_WAKE`. A failure becomes
+      `Failed`, logged at `warn`, and is tried again only at the next
+      start.
+    - `Ask`: arms `Timer::IconConsent` (the next free timer, 300 ms, so a
+      new space's animation starts and an OLE drop returns first). Its
+      handler shows `ui.choose` titled "Show icons on spaces?". The text
+      names the set's label, author, and license, says it is downloaded
+      once from DeskSpace's releases on GitHub and that nothing about you
+      or your files is sent, and points at Settings > General. The buttons
+      are "Download icons" and "No thanks"; save `Allowed` or `Declined`,
+      and Esc counts as "No thanks".
+  - Call `need_icon_set` where an icon is first needed: when a load finds
+    no file and a space uses the set, and after `open_new_space` makes an
+    `Automatic` space. `open_new_space` passes
+    `window.new_space_icon.space_icon()` to `CreateSpace`. `seed_space`
+    keeps `SpaceIcon::None`, so the first launch never asks.
+  - Settings (the new-global-setting recipe): an "Icon" choice on the New
+    spaces page (Automatic, No icon), and "Icon downloads" on the General
+    page (Ask first, Allowed, Never), with a note naming what is downloaded
+    and from where. Option tables go in `tables.rs`. In
+    `App::apply_settings`, a change to `Allowed` calls `need_icon_set` for
+    the sets in use.
+  - README: the privacy paragraph names the one-time icon download, which
+    asks first, beside the update check. Add the two settings to
+    `CONTEXT.md` section 5.
+  - Tests: `next_step` for every state, consent, and `asked` combination,
+    `Fetch` only with `Allowed`; the settings' serde defaults and old files
+    without the keys; each `apply_field` arm; a new space gets the
+    configured icon (through `fixtures.rs`); the seed space gets none.
+  - **[needs human]** check, with a scratch config, before the key exists:
+    New space opens a "Games"-titled space. The prompt appears once.
+    "Download icons" logs a `NotConfigured` failure and shows no icon, and
+    nothing else breaks. With S5 published and the key set: the same steps
+    download once, then every automatic space shows its icon. The next
+    start reads the cache with no network (check with `-Verbosity 1`).
+    "No thanks" never asks again until General is set back to "Ask first".
+    `-Fresh` first launch: no prompt.
+
+- [ ] **S9. The icon picker (platform).** Lands in the same commit as S10,
+  its first caller, which holds the on-screen check.
+  - `win32/icon_picker.rs`, a modal window copied from `app_picker.rs`
+    (owner, disabled-owner loop, dark mode, DPI). At the top, a set
+    dropdown, shown only when the request has more than one set (D16's
+    packs scaffold), and a search box (cue "Search icons") that filters as
+    you type through `deskspace_core::icon_match::search`. Below them, a
+    note line (`request.note` or the chosen set's), and an `LVS_ICON` list
+    view with `LVS_OWNERDATA`, so a set of thousands opens at once. It
+    labels each cell with the name, hyphens as spaces, and fills images
+    on demand (`LVN_GETDISPINFOW`) from a `GlyphCache` at 32 px, scaled, in
+    the window's text color. At the bottom, "Automatic", "No icon",
+    Cancel, and OK. OK is the default and enabled while a cell is
+    selected; Enter or a double-click on a cell is OK.
+  - `Ui::pick_icon(&IconPickerRequest) -> Option<IconChoice>` in
+    `runtime/ui_chrome.rs`, beside `pick_apps`: `IconPickerRequest<'a> {
+    title, sets: Vec<PickerSet<'a>>, current: Option<&IconRef> }`, with
+    `PickerSet { prefix, label, set: Option<&IconSet>, words, note:
+    Option<&str> }` (a set not ready has `None` and a note saying why), and
+    `IconChoice { Automatic, None, Icon(IconRef) }`. Its owner is the
+    settings window when open, else the controller, as `pick_apps`'s is.
+    It opens on `current`, selected and scrolled to.
+  - `win32/outside_click.rs` `is_outside`: a press on the picker is not
+    outside, as one on a popup menu is not, so a rename behind it stays
+    open (S10).
+  - Tests, pure: the cell label from a name; which cell the request opens
+    on; the dropdown shown only for two or more sets.
+
+- [ ] **S10. Changing the icon while renaming (app, platform).** Includes
+  S9; one commit, tick and archive both. **[needs human]**
+  - `TitleIcon` gains `button: bool` and `hovered: bool`. While the space's
+    title is being renamed, `space_scene` always sets `title_icon`, with
+    `button: true`. The image is the space's icon or `None`, which the
+    painter draws as a placeholder: a rounded outline in the title color
+    at reduced alpha, with Segoe Fluent's "Add" glyph (`E710`). A hovered
+    button gets the item hover fill behind it. Outside a rename nothing
+    changes (S rule 4).
+  - `CursorShape::Hand` (`IDC_HAND`; map it beside the others), shown
+    while the pointer is over the button during a rename.
+    `PointerState` tracks the hover so the scene can draw it.
+  - `app/pointer.rs` `on_space_event`, before the click commits the rename:
+    a left press inside the button of the title being renamed opens the
+    picker and returns, leaving the rename open. Add the check as one
+    named method (`title_icon_pressed`), so B24 can still move the preamble.
+  - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
+    off (`ui.capture_text_input(false)`) so the picker's search box gets
+    keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
+    state as each set's note ("Downloading the iconsΓÇª", "Icon downloads
+    are off. Turn them on in Settings > General.", or the failure). Then
+    `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
+    at once (`self.commit`) and refreshes the space; the rename goes on,
+    and Esc later cancels only the text. If the set is not ready and
+    consent is `Allowed` or `Ask`, call `need_icon_set` first (it decides through `next_step`, S rule 2); when the
+    download is still running, remember the space (`pending_picker`) and
+    open the picker from `ICONS_WAKE` if that rename is still open.
+  - `CONTEXT.md` section 8 (rename) and README Controls: during a rename,
+    click the icon to change it.
+  - Tests: the scene shows the button only while renaming, and the
+    placeholder for a space without an icon; `title_icon_pressed` hits only
+    the button of the space being renamed; the request's notes for each
+    state.
+  - **[needs human]** check, on the desktop at 100 % and 150 %: outside a
+    rename, the icon shows no hand and a click does what the title bar
+    does. F2 on a space, then hover the icon: hand and hover fill. A click
+    opens the picker in front, with the rename still showing behind it.
+    Search "pho", pick an icon, then OK: the icon changes at once, and you
+    can type more of the name and press Enter. Esc in the picker changes
+    nothing. "Automatic" and "No icon" work; a space without an icon shows
+    the placeholder. Clicking in the picker never ends the rename. With
+    downloads declined, the picker opens with the note and its two
+    buttons.
+
+- [ ] **S11. Icons in the settings window (platform, app).** **[needs
+  human]**
+  - `ui.rs`: `SettingsScope.icon: Option<Glyph>` and `SettingsHeader.icon:
+    Option<Glyph>`, owned so the form stays plain data. The settings window
+    rasterizes them through a `GlyphCache` in its state, in its own text
+    color and DPI. `settings/mod.rs` `build_form` takes the glyphs by space
+    (a `&BTreeMap<SpaceId, Glyph>` that `settings_session.rs` builds from
+    `App::space_glyph`, the S7 lookup before rasterizing), so `settings/`
+    stays pure.
+  - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
+    s(16), left of the label, after the indent, dimmed with dimmed rows.
+  - Header: put the new code in a new `settings_window/header.rs`, so it
+    does not collide with B14 or B26. An owner-drawn `BUTTON` of s(20)
+    square at `title_x` draws the icon. It stays disabled, and so takes no
+    click or Tab stop, until S12. The title moves right by s(20) + s(8)
+    while there is an icon, and `apply_header` shows, hides, and moves
+    both. Global has no icon.
+  - Tests: `build_form` gives each space scope and the header the glyph it
+    was handed, and Global none.
+  - **[needs human]** check: in light and dark, at 100 % and 150 %, spaces
+    with icons show them in the scopes pane and the header, aligned with
+    the text; spaces without show nothing, laid out as before; a dimmed
+    scope's icon is dimmed; the header icon takes no click.
+
+- [ ] **S12. Renaming in the settings header (platform, app).** **[needs
+  human]** After S10 and S11.
+  - `SettingsHeader.renamable: bool` (true for a space scope). In
+    `settings_window/header.rs`, double-clicking the title (`SS_NOTIFY`,
+    `STN_DBLCLK`) puts an edit over it with the text selected and focused.
+    The edit answers `WM_GETDLGCODE` with `DLGC_WANTALLKEYS`, so Enter and
+    Esc reach it rather than the window's OK and Cancel. Enter, or focus
+    leaving for anything but the icon button or the picker, raises
+    `SettingsEvent::HeaderRenamed { title }`; Esc ends the edit and
+    changes nothing.
+  - While the edit is open, the header's icon button is enabled and shown,
+    with the placeholder when the space has none (S10's look). A click
+    raises `SettingsEvent::HeaderIconPressed`. `apply_header` updates the
+    icon and the label without closing an open edit.
+  - App, `on_settings_event`: `HeaderRenamed` commits `RenameSpace` at once,
+    through the same helper the desktop rename's commit uses (extract it
+    from `finish_rename` if it is inline), ignoring an empty or unchanged
+    title. `HeaderIconPressed` calls `pick_space_icon` (S10); the picker is
+    owned by the settings window. Neither goes into `SpaceSnapshot`, so
+    Cancel leaves both (D16), and add them to `CONTEXT.md`'s "these also
+    commit at once" list.
+  - Tests: both events reach their `Command`; an empty or unchanged title
+    commits nothing; a rename made this way survives settings Cancel.
+  - **[needs human]** check: on a space's page, double-click the name: an
+    edit opens with the name selected. Type, then Enter: the header, the
+    scopes pane, and the space on the desktop show the new name, and the
+    window stays open. Esc in the edit keeps the old name and the window
+    open. During the edit, click the icon: the picker opens over the
+    settings window, and a choice shows at once in the header, the scopes
+    pane, and on the desktop. Cancel afterwards keeps both changes.
+    Global's header does not edit.
+
+- [ ] **S13. Credits (app, docs).**
+  - `settings/pages.rs` `about_page`: one `Field::note` (`ABOUT_ICONS`, the
+    next free id) with a line per `ICON_SETS` row: "Icons: `label` by
+    `author`, `license` License." One field whatever the number of sets,
+    so a pack is never a new id.
+  - `NOTICE`: the Fluent UI System Icons copyright line and MIT license
+    text, under a heading naming the set and its upstream URL.
+  - Tests: the About page lists every row; `NOTICE` names every row's label
+    (read it as `deskspace-update`'s tests read `release.yml`).
+
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
@@ -2184,3 +2514,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   nothing, because an order-placed view keeps the space's size. Decide
   whether it should fit the content extent (and what width) as the view tasks
   continue.
+
+- `deskspace-config/src/icons.rs` `trim`: Iconify marks deprecated icons
+  `"hidden": true` (48 of the 2887 kept Fluent icons in 1.2.60). DeskSpace
+  does not read the flag, so they are matched and listed like any icon.
+  Suggested: read `hidden` in `IconData` and leave hidden icons out of
+  `IconSet::names` (search and matching) while still drawing a saved one.
+- `@iconify-json/fluent`'s `icons.json` has no `info` block (it is in
+  `info.json`), so the trimmed set's `info` is empty. Credits come from the
+  `ICON_SETS` row (S13), so nothing reads it yet.
