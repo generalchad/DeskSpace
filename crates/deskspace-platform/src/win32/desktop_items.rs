@@ -1,23 +1,31 @@
 //! Reading the desktop's items and their positions through the shell,
 //! with a folder-walk fallback.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
 use deskspace_core::item::ItemFacts;
+use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
+use windows::Win32::Globalization::{
+    DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_FORMAT_FLAGS,
+};
 use windows::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_ENCRYPTED, FILE_ATTRIBUTE_HIDDEN,
-    FILE_ATTRIBUTE_SYSTEM,
+    FILE_ATTRIBUTE_COMPRESSED, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_ENCRYPTED,
+    FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_SYSTEM, FileTimeToLocalFileTime,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::Time::FileTimeToSystemTime;
 use windows::Win32::UI::Shell::{
-    FOLDERID_Desktop, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT, SHCNE_CREATE,
-    SHCNE_DELETE, SHCNF_FLUSHNOWAIT, SHCNF_PATHW, SHChangeNotify, SHCreateItemFromParsingName,
-    SHCreateItemWithParent, SHGetKnownFolderPath, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
-    SVGIO_ALLVIEW,
+    FOLDERID_Desktop, FOLDERID_Profile, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT,
+    SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT, SHCNE_CREATE, SHCNE_DELETE, SHCNF_FLUSHNOWAIT,
+    SHCNF_PATHW, SHChangeNotify, SHCreateItemFromParsingName, SHCreateItemWithParent, SHFILEINFOW,
+    SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetKnownFolderPath,
+    SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY, SVGIO_ALLVIEW, StrFormatByteSizeEx, StrFormatKBSizeW,
 };
-use windows::core::{Interface, PCWSTR};
+use windows::core::{GUID, Interface, PCWSTR};
 
 use crate::error::PlatformError;
 use crate::win32::display_settings::{ShellDisplay, desktop_display};
@@ -143,6 +151,162 @@ pub fn item_facts(path: &Path) -> ItemFacts {
     }
 }
 
+thread_local! {
+    /// Process state: `type_name`'s answer per extension, because Explorer's
+    /// type name is stable for the life of the process and `SHGetFileInfoW` is
+    /// far too slow to run once per visible Details row. Never cleared.
+    static TYPE_NAMES: RefCell<HashMap<String, Option<String>>> = RefCell::new(HashMap::new());
+}
+
+/// Explorer's type name for `path`, for example "Text Document" or
+/// "File folder", read from its extension and attributes and never from the
+/// disk. Cached by extension, so a folder of a thousand `.txt` files asks the
+/// shell once.
+pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
+    let key = type_name_key(path, is_folder);
+    if let Some(cached) = TYPE_NAMES.with(|names| names.borrow().get(&key).cloned()) {
+        return cached;
+    }
+    let name = load_type_name(path, is_folder);
+    TYPE_NAMES.with(|names| names.borrow_mut().insert(key, name.clone()));
+    name
+}
+
+/// The key `type_name` caches under: the lowercased extension, or a marker for
+/// folders, which all share the shell's "File folder".
+fn type_name_key(path: &Path, is_folder: bool) -> String {
+    if is_folder {
+        return "<folder>".to_string();
+    }
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default()
+}
+
+fn load_type_name(path: &Path, is_folder: bool) -> Option<String> {
+    let wide = wide(&path.to_string_lossy().replace('/', "\\"));
+    let attributes = if is_folder {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
+    let mut info = SHFILEINFOW::default();
+    let flags = SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES;
+    // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure.
+    // USEFILEATTRIBUTES makes the call read `attributes` instead of the path.
+    // https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
+    let result = unsafe {
+        SHGetFileInfoW(
+            PCWSTR(wide.as_ptr()),
+            attributes,
+            Some(&mut info),
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            flags,
+        )
+    };
+    if result == 0 {
+        return None;
+    }
+    Some(wide_text(&info.szTypeName)).filter(|name| !name.is_empty())
+}
+
+/// `text` up to its first NUL.
+fn wide_text(text: &[u16]) -> String {
+    let end = text
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(text.len());
+    String::from_utf16_lossy(&text[..end])
+}
+
+/// Explorer's Details date and time for `seconds` since the Unix epoch, in the
+/// user's short date and time formats.
+pub fn format_date(seconds: u64) -> String {
+    // 100-nanosecond intervals between 1601-01-01 and 1970-01-01.
+    const EPOCH_OFFSET: u64 = 11_644_473_600;
+    let filetime = (seconds + EPOCH_OFFSET) * 10_000_000;
+    let utc = FILETIME {
+        dwLowDateTime: filetime as u32,
+        dwHighDateTime: (filetime >> 32) as u32,
+    };
+    let mut local = FILETIME::default();
+    let mut system = SYSTEMTIME::default();
+    // SAFETY: both `FILETIME`s and `system` are valid; the calls fill outputs.
+    unsafe {
+        if FileTimeToLocalFileTime(&utc, &mut local).is_err()
+            || FileTimeToSystemTime(&local, &mut system).is_err()
+        {
+            return String::new();
+        }
+    }
+    // SAFETY: `system` is a live SYSTEMTIME and the calls only fill `buffer`.
+    let date = system_text(|buffer| unsafe {
+        GetDateFormatEx(
+            PCWSTR::null(),
+            DATE_SHORTDATE,
+            Some(std::ptr::from_ref(&system)),
+            PCWSTR::null(),
+            Some(buffer),
+            PCWSTR::null(),
+        )
+    });
+    // SAFETY: as above, with the user's time format.
+    let time = system_text(|buffer| unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_FORMAT_FLAGS(0),
+            Some(std::ptr::from_ref(&system)),
+            PCWSTR::null(),
+            Some(buffer),
+        )
+    });
+    match (date.is_empty(), time.is_empty()) {
+        (false, false) => format!("{date} {time}"),
+        (false, true) => date,
+        (true, false) => time,
+        (true, true) => String::new(),
+    }
+}
+
+/// Runs a formatting call that writes into a wide buffer and returns the text
+/// it wrote, or an empty string.
+fn system_text(format: impl FnOnce(&mut [u16]) -> i32) -> String {
+    let mut buffer = [0u16; 128];
+    let length = format(&mut buffer);
+    if length <= 0 {
+        return String::new();
+    }
+    wide_text(&buffer[..(length as usize).min(buffer.len())])
+}
+
+/// Explorer's Details size for `bytes`: "1,234 KB", through the shell's own
+/// formatter so the units and separators match.
+pub fn format_kb(bytes: u64) -> String {
+    let mut buffer = [0u16; 32];
+    // SAFETY: `buffer` is a valid writable wide buffer; the returned pointer
+    // points into it.
+    unsafe { StrFormatKBSizeW(bytes.min(i64::MAX as u64) as i64, &mut buffer).to_string() }
+        .unwrap_or_default()
+}
+
+/// Explorer's status-bar size for `bytes`: "1.20 MB", through the shell's own
+/// formatter so the units and decimals match.
+pub fn format_bytes(bytes: u64) -> String {
+    let mut buffer = [0u16; 32];
+    // SAFETY: `buffer` is a valid writable wide buffer.
+    unsafe {
+        StrFormatByteSizeEx(
+            bytes,
+            SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT,
+            &mut buffer,
+        )
+    }
+    .ok()
+    .map(|()| wide_text(&buffer))
+    .unwrap_or_default()
+}
+
 /// Whether Explorer would list this file, given its hidden and protected
 /// operating-system file settings.
 fn listed_by_explorer(path: &Path, display: &ShellDisplay) -> bool {
@@ -210,13 +374,22 @@ fn fallback_label(path: &Path) -> String {
 
 /// The current user's Desktop folder.
 pub fn desktop_directory() -> Result<PathBuf, PlatformError> {
+    known_folder(&FOLDERID_Desktop, "desktop path")
+}
+
+/// The current user's profile folder (`C:\Users\me`).
+pub fn profile_directory() -> Result<PathBuf, PlatformError> {
+    known_folder(&FOLDERID_Profile, "profile path")
+}
+
+fn known_folder(id: &GUID, name: &'static str) -> Result<PathBuf, PlatformError> {
     // SAFETY: the returned string is copied before it is freed with the
     // allocator the shell documents for it (CoTaskMemFree).
     unsafe {
-        let raw = SHGetKnownFolderPath(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)?;
+        let raw = SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, None)?;
         let result = raw.to_string().map(PathBuf::from);
         CoTaskMemFree(Some(raw.0 as *const core::ffi::c_void));
-        result.map_err(|_| PlatformError::InvalidFormat("desktop path"))
+        result.map_err(|_| PlatformError::InvalidFormat(name))
     }
 }
 
@@ -273,6 +446,45 @@ mod tests {
         assert!(keep_attributes("h.txt", hidden, &shown));
         assert!(!keep_attributes("s.txt", system, &hidden_off));
         assert!(keep_attributes("s.txt", system, &shown));
+    }
+
+    #[test]
+    fn a_status_size_uses_the_shell_formatter() {
+        let mut buffer = [0u16; 260];
+        // SAFETY: a valid writable wide buffer.
+        let result = unsafe {
+            StrFormatByteSizeEx(
+                2048,
+                SFBS_FLAGS_ROUND_TO_NEAREST_DISPLAYED_DIGIT,
+                &mut buffer,
+            )
+        };
+        assert!(result.is_ok(), "{result:?}");
+        assert!(!wide_text(&buffer).is_empty(), "{result:?}");
+        // The unit follows the machine's locale and Windows build ("KiB" on
+        // newer ones), so compare with the raw call instead of a unit.
+        assert_eq!(format_bytes(2048), wide_text(&buffer));
+    }
+
+    #[test]
+    fn the_type_name_cache_key_folds_case_and_marks_folders() {
+        assert_eq!(type_name_key(Path::new("a.TXT"), false), "txt");
+        assert_eq!(type_name_key(Path::new("b.txt"), false), "txt");
+        assert_eq!(type_name_key(Path::new("no-extension"), false), "");
+        assert_eq!(type_name_key(Path::new("archive.zip"), true), "<folder>");
+    }
+
+    #[test]
+    fn a_kilobyte_size_carries_its_unit() {
+        let text = format_kb(1_234 * 1024);
+        // The unit itself follows the locale and Windows build ("KB", "KiB"),
+        // so require a number and something after it rather than a unit.
+        assert!(text.chars().any(|c| c.is_ascii_digit()), "{text}");
+        assert!(
+            text.chars()
+                .any(|c| !c.is_ascii_digit() && !c.is_whitespace()),
+            "{text}"
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@
 //! touches the file. Names are never overwritten: a clash gets " (2)", " (3)",
 //! and so on, like Explorer.
 
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,21 @@ impl ItemStore {
             .is_some_and(|parent| same_path(parent, &self.root))
     }
 
+    /// Whether a lens may watch `folder`. Every space shares the store, and
+    /// deleting a space moves its files out of it, so a lens on the store or
+    /// inside it would list files that other spaces own. A folder that merely
+    /// contains the store is fine.
+    pub fn allows_lens(&self, folder: &Path) -> bool {
+        let (folder, root) = match (
+            std::fs::canonicalize(folder),
+            std::fs::canonicalize(&self.root),
+        ) {
+            (Ok(folder), Ok(root)) => (folder, root),
+            _ => (folder.to_path_buf(), self.root.clone()),
+        };
+        !is_inside(&folder, &root)
+    }
+
     /// Moves `path` into the store and returns its new path. Items already
     /// stored are returned unchanged.
     pub fn adopt(&self, path: &Path) -> Result<PathBuf, StoreError> {
@@ -67,7 +83,6 @@ impl ItemStore {
     pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
         move_into(path, folder)
     }
-
     /// Moves `from` to the exact `to` path when either end is in the store.
     /// Used by undo and redo after `UndoEntry` has verified `from` exists and
     /// `to` is free, so the restored path matches the space snapshot even when
@@ -93,30 +108,40 @@ impl ItemStore {
             }),
         }
     }
-
-    /// A path in the store for `file_name` that does not exist yet, applying
-    /// Explorer's " (n)" clash suffix. The file is not created; the caller
-    /// writes it. Used for shortcuts created for dropped shell items.
-    pub fn unique_path(&self, file_name: &str) -> PathBuf {
-        unique_destination(&self.root, Path::new(file_name))
-    }
 }
 
-/// Whether two paths name the same file. Windows paths differ by case and by
-/// 8.3 short names (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report
-/// either form, so compare canonicalized paths when the file exists and fall
-/// back to a case-insensitive string compare otherwise. Exact equality is the
-/// common case and avoids the filesystem.
+/// Whether two paths name the same file, comparing `path_key`s. Exact equality
+/// is the common case and avoids the filesystem.
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
-    if a == b {
-        return true;
+    a == b || path_key(a) == path_key(b)
+}
+
+/// The key two paths share when they name the same file.
+///
+/// Windows paths differ by case, by separator, and by 8.3 short names
+/// (`TIMOTH~1` vs `TimothyWBrown`), and the shell can report any form, so a
+/// path that exists is keyed by its canonical path and one that does not by
+/// its text, folded to uppercase the way Windows compares names and with `\`
+/// separators. Keying many paths once (`App::item_index`) costs one filesystem
+/// call each, where comparing every pair would cost two per pair.
+pub(crate) fn path_key(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
     }
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy()),
-    }
+    let text = path.to_string_lossy().replace('/', "\\");
+    PathBuf::from(deskspace_platform::upper_name(OsStr::new(&text)))
+}
+
+/// Whether `path` is `root` or lies below it, comparing whole components by
+/// the same rule Windows uses for names. Unlike a string-prefix test,
+/// `...\DeskSpace.App` is not inside `...\DeskSpace`.
+pub(crate) fn is_inside(path: &Path, root: &Path) -> bool {
+    let mut path = path.components();
+    root.components().all(|root| {
+        path.next().is_some_and(|part| {
+            deskspace_platform::same_name_ignoring_case(part.as_os_str(), root.as_os_str())
+        })
+    })
 }
 
 fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
@@ -138,7 +163,7 @@ fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
 
 /// `folder/name`, or `folder/stem (n).ext` with the smallest `n >= 2` that
 /// does not exist yet.
-fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
+pub(crate) fn unique_destination(folder: &Path, name: &Path) -> PathBuf {
     let first = folder.join(name);
     if !first.exists() {
         return first;
@@ -184,6 +209,39 @@ mod tests {
     fn same_path_tolerates_case_for_missing_files() {
         assert!(same_path(Path::new("C:/A/B.txt"), Path::new("c:/a/b.TXT")));
         assert!(!same_path(Path::new("C:/a"), Path::new("C:/b")));
+    }
+
+    #[test]
+    fn names_compare_the_way_windows_does() {
+        assert!(same_path(
+            Path::new("C:/Nowhere/É.txt"),
+            Path::new("C:/nowhere/é.TXT")
+        ));
+        assert!(!same_path(
+            Path::new("C:/Nowhere/ß.txt"),
+            Path::new("C:/nowhere/SS.txt")
+        ));
+        assert!(is_inside(
+            Path::new(r"C:\Users\Émile\file.txt"),
+            Path::new(r"C:\users\émile")
+        ));
+    }
+
+    #[test]
+    fn path_key_folds_case_and_separators_for_missing_files() {
+        let key = path_key(Path::new("C:/Nowhere/Report.TXT"));
+        assert_eq!(key, path_key(Path::new(r"c:\nowhere\report.txt")));
+        assert_ne!(key, path_key(Path::new(r"c:\nowhere\other.txt")));
+    }
+
+    #[test]
+    fn two_spellings_of_an_existing_file_share_a_key() {
+        let scratch = Scratch::new("path-key");
+        let file = scratch.0.join("Report.txt");
+        std::fs::write(&file, "x").unwrap();
+        let other = scratch.0.join("report.TXT");
+        let other = other.to_string_lossy().replace('\\', "/");
+        assert_eq!(path_key(&file), path_key(Path::new(&other)));
     }
 
     #[test]
@@ -247,12 +305,10 @@ mod tests {
         let scratch = Scratch::new("unique");
         let store = ItemStore::new(scratch.0.join("storage"));
         std::fs::create_dir_all(store.root()).unwrap();
-        assert_eq!(store.unique_path("App.lnk"), store.root().join("App.lnk"));
+        let unique = |name: &str| unique_destination(store.root(), Path::new(name));
+        assert_eq!(unique("App.lnk"), store.root().join("App.lnk"));
         std::fs::write(store.root().join("App.lnk"), "x").unwrap();
-        assert_eq!(
-            store.unique_path("App.lnk"),
-            store.root().join("App (2).lnk")
-        );
+        assert_eq!(unique("App.lnk"), store.root().join("App (2).lnk"));
     }
 
     #[test]
@@ -285,15 +341,33 @@ mod tests {
         ));
     }
 
-    /// Whether `path` is `root` or lies below it, comparing whole components
-    /// case-insensitively as Windows paths do. Unlike a string-prefix test,
-    /// `...\DeskSpace.App` is not inside `...\DeskSpace`.
-    fn is_inside(path: &Path, root: &Path) -> bool {
-        let mut path = path.components();
-        root.components().all(|root| {
-            path.next()
-                .is_some_and(|part| part.as_os_str().eq_ignore_ascii_case(root.as_os_str()))
-        })
+    #[test]
+    fn a_lens_may_not_watch_the_store_or_anything_inside_it() {
+        let scratch = Scratch::new("lens");
+        let root = scratch.0.join("storage");
+        let store = ItemStore::new(&root);
+        for dir in [
+            root.join("child/grandchild"),
+            scratch.0.join("storage-old"),
+            scratch.0.join("elsewhere"),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        assert!(!store.allows_lens(&root));
+        assert!(!store.allows_lens(&root.join("child")));
+        assert!(!store.allows_lens(&root.join("child/grandchild")));
+        let shouted = scratch.0.join("STORAGE");
+        assert!(!store.allows_lens(&shouted), "same folder, other case");
+        assert!(store.allows_lens(&scratch.0.join("storage-old")));
+        assert!(store.allows_lens(&scratch.0.join("elsewhere")));
+        assert!(store.allows_lens(&scratch.0), "the root's parent");
+    }
+
+    #[test]
+    fn a_missing_store_still_refuses_its_own_path() {
+        let store = ItemStore::new("C:/nowhere/storage");
+        assert!(!store.allows_lens(Path::new("c:/NOWHERE/storage/sub")));
+        assert!(store.allows_lens(Path::new("C:/nowhere")));
     }
 
     #[test]

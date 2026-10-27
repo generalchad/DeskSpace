@@ -105,6 +105,16 @@ impl Ui {
         unsafe { crate::win32::dialog::pick_files(owner, title) }
     }
 
+    /// Opens the standard "Select folder" dialog titled `title` and returns the
+    /// folder the user picked, or `None` when they cancelled. Blocks in a
+    /// modal loop; other events are queued meanwhile.
+    pub fn pick_folder(&mut self, title: &str) -> Option<std::path::PathBuf> {
+        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))?;
+        // SAFETY: `owner` is a live window owned by this thread, and the dialog
+        // is modal for the duration of the call.
+        unsafe { crate::win32::dialog::pick_folder(owner, title) }
+    }
+
     /// Shows a popup menu at `at` (screen coordinates) and returns the chosen
     /// entry id. Blocks in a modal loop; other events are queued meanwhile.
     pub fn popup_menu(&mut self, entries: &[MenuEntry], at: Point) -> Option<u32> {

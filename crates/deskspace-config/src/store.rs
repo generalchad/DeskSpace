@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -132,8 +133,15 @@ impl ConfigStore {
         }
         let text = Self::serialize(config)?;
         let temp = self.path.with_extension("toml.tmp");
-        std::fs::write(&temp, text.as_bytes())
+        let mut file =
+            std::fs::File::create(&temp).map_err(|source| ConfigError::io(temp.clone(), source))?;
+        file.write_all(text.as_bytes())
             .map_err(|source| ConfigError::io(temp.clone(), source))?;
+        // A rename can reach the disk before the data it points at, so without
+        // the flush a power cut after a save could leave an empty config.
+        file.sync_all()
+            .map_err(|source| ConfigError::io(temp.clone(), source))?;
+        drop(file);
         std::fs::rename(&temp, &self.path)
             .map_err(|source| ConfigError::io(self.path.clone(), source))?;
         Ok(())
@@ -181,6 +189,29 @@ mod tests {
         assert!(store.exists());
         let loaded = store.load().unwrap();
         assert_eq!(loaded.desktop.spaces()[0].title(), "F");
+    }
+
+    /// A destination that cannot be replaced (a read-only file, as `attrib +r`
+    /// leaves it) fails the rename: the old file stays and the temp is left for
+    /// inspection.
+    #[test]
+    fn a_failed_rename_keeps_the_old_config_and_leaves_the_temp() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ConfigStore::with_path(dir.path().join("deskspace.toml"));
+        store.save(&Config::new()).unwrap();
+        let before = std::fs::read(store.path()).unwrap();
+
+        let mut permissions = std::fs::metadata(store.path()).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(store.path(), permissions).unwrap();
+
+        let mut config = Config::new();
+        config.version = 99;
+        assert!(store.save(&config).is_err());
+
+        assert_eq!(std::fs::read(store.path()).unwrap(), before);
+        assert!(store.load().is_ok());
+        assert!(dir.path().join("deskspace.toml.tmp").is_file());
     }
 
     #[test]

@@ -7,15 +7,32 @@ use std::time::SystemTime;
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
-    CustomShortcut, DropAction, ShellItem, Ui, create_custom_shortcut, create_shortcut,
-    desktop_directory, item_facts, notify_moved,
+    CustomShortcut, DropAction, OnCollision, ShellItem, Ui, create_custom_shortcut,
+    create_shortcut, desktop_directory, item_facts, notify_moved,
 };
 
 use super::undo::{
     FileChange, copy_items_label, delete_items_label, move_items_label, new_shortcuts_label,
 };
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::ItemStore;
+use crate::storage::{ItemStore, is_inside, path_key, same_path, unique_destination};
+
+/// The dropped `paths` worth handing to the shell for `folder`, in order. A
+/// path already directly in `folder`, `folder` itself, and any folder that
+/// contains `folder` are left out: the first would not change, and the others
+/// cannot move into themselves.
+fn paths_to_transfer(paths: &[PathBuf], folder: &Path) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| {
+            let already_there = path
+                .parent()
+                .is_some_and(|parent| same_path(parent, folder));
+            !already_there && !same_path(path, folder) && !is_inside(folder, path)
+        })
+        .cloned()
+        .collect()
+}
 
 /// Where a deleted space's stored files go. Items listed in place are only
 /// unlisted either way.
@@ -78,6 +95,12 @@ impl App {
         paths: Vec<PathBuf>,
         action: DropAction,
     ) {
+        // A lens shows a real folder (ROADMAP D3): the files go there through
+        // the shell, never into the store or the lens's item list.
+        if let Some(folder) = self.lens_folder(target) {
+            self.drop_into_lens(ui, folder, paths, action);
+            return;
+        }
         let touched = match action {
             DropAction::Move => self.move_or_keep_dropped(target, at, paths, true),
             DropAction::KeepInPlace => self.move_or_keep_dropped(target, at, paths, false),
@@ -145,6 +168,8 @@ impl App {
         move_into_store: bool,
     ) -> HashSet<SpaceId> {
         self.undo.begin(move_items_label(paths.len()));
+        let index = self.item_index();
+        let mut handled = HashSet::new();
         let mut touched = HashSet::from([target]);
         let mut count = 0usize;
         for path in paths {
@@ -155,8 +180,14 @@ impl App {
                 tracing::warn!(path = %path.display(), "dropped file does not exist; ignored");
                 continue;
             }
-            let command = match self.find_item_by_file(&path) {
-                Some(item) => {
+            let key = path_key(&path);
+            // The same file can arrive twice, in two spellings. The index does
+            // not see an item added below, so handle each key once.
+            if !handled.insert(key.clone()) {
+                continue;
+            }
+            let command = match index.get(&key) {
+                Some(&item) => {
                     match self.config.desktop.space_containing(item) {
                         Some(source) if source == target => continue,
                         Some(source) => {
@@ -227,8 +258,60 @@ impl App {
         touched
     }
 
+    /// The folder space `id` shows, or `None` for a normal space. Drops and
+    /// pastes ask it first: a lens takes its files by the shell, not as items.
+    pub(super) fn lens_folder(&self, id: SpaceId) -> Option<PathBuf> {
+        let space = self.config.desktop.space(id)?;
+        space.folder_view().map(|view| view.path.clone())
+    }
+
+    /// Moves or copies dropped `paths` into a lens's `folder` with the shell's
+    /// file operation, which asks before replacing a file. The lens's watch
+    /// lists the new files; the normal spaces that listed the moved ones are
+    /// pruned.
+    pub(super) fn drop_into_lens(
+        &mut self,
+        ui: &mut Ui,
+        folder: PathBuf,
+        paths: Vec<PathBuf>,
+        action: DropAction,
+    ) {
+        if !folder.is_dir() {
+            tracing::warn!(folder = %folder.display(), "lens folder is missing; drop ignored");
+            return;
+        }
+        if !self.storage.allows_lens(&folder) {
+            return;
+        }
+        let index = self.item_index();
+        let listing_spaces: HashSet<SpaceId> = paths
+            .iter()
+            .filter_map(|path| index.get(&path_key(path)))
+            .filter_map(|item| self.config.desktop.space_containing(*item))
+            .collect();
+        let paths = paths_to_transfer(&paths, &folder);
+        if paths.is_empty() {
+            return;
+        }
+        let move_items = match action {
+            DropAction::Move => true,
+            DropAction::Copy => false,
+            // Keeping a file in place means nothing for a folder. The platform
+            // never offers it over a lens (W3c); the arm keeps the match total.
+            DropAction::KeepInPlace => {
+                tracing::debug!("keep-in-place drop on a lens ignored");
+                return;
+            }
+        };
+        ui.transfer_files(&paths, &folder, move_items, OnCollision::Ask);
+        for id in listing_spaces {
+            self.prune_missing(ui, id);
+        }
+    }
+
     /// Creates a shortcut in the store for each source and lists it in
-    /// `target`: shell items dropped on a space (a Start-menu or taskbar app,
+    /// `target`, or, for a lens, writes it into the lens's folder, where its
+    /// watch lists it: shell items dropped on a space (a Start-menu or taskbar app,
     /// or an Alt-drag; F-50), apps picked from the Applications folder, and
     /// custom shortcuts (F-53). Explorer writes a `.lnk` when a shell item is
     /// dropped on a folder, and the store is the space's folder, so the
@@ -258,19 +341,33 @@ impl App {
         at: Point,
         sources: Vec<ShortcutSource>,
     ) -> bool {
-        let root = self.storage.root();
-        if let Err(error) = std::fs::create_dir_all(root) {
-            tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
-            return false;
-        }
+        let lens = self.lens_folder(target);
+        let destination = match &lens {
+            Some(folder) if !folder.is_dir() || !self.storage.allows_lens(folder) => {
+                tracing::warn!(folder = %folder.display(), "lens folder is unavailable; no shortcut written");
+                return false;
+            }
+            Some(folder) => folder.clone(),
+            None => {
+                let root = self.storage.root();
+                if let Err(error) = std::fs::create_dir_all(root) {
+                    tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
+                    return false;
+                }
+                root.to_path_buf()
+            }
+        };
         self.undo.begin(new_shortcuts_label(sources.len()));
         let mut count = 0usize;
         for source in sources {
-            match self.write_shortcut(&source) {
+            match write_shortcut(&destination, &source) {
                 Ok(path) => {
-                    tracing::info!(name = source.name(), path = %path.display(), "created a shortcut in the store");
+                    tracing::info!(name = source.name(), path = %path.display(), "created a shortcut");
                     self.undo
                         .note_file(FileChange::Created { path: path.clone() });
+                    if lens.is_some() {
+                        continue;
+                    }
                     // Not `commit`: one of several commands, refreshed once below.
                     if self
                         .dispatch(
@@ -296,32 +393,6 @@ impl App {
         }
         self.undo.finish(&self.config.desktop);
         true
-    }
-
-    /// Writes one shortcut into the store under a clash-free name and returns
-    /// its path: a copy of a dropped shortcut file, a new `.lnk` to a shell
-    /// item, or the `.lnk` or `.url` a custom shortcut describes.
-    fn write_shortcut(&self, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
-        match source {
-            ShortcutSource::Shell(item) => {
-                if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
-                    let path = self.storage.unique_path(&link_copy_name(link, &item.name));
-                    std::fs::copy(link, &path)?;
-                    return Ok(path);
-                }
-                let path = self
-                    .storage
-                    .unique_path(&shortcut_file_name(&item.name, "lnk"));
-                create_shortcut(item, &path)?;
-                Ok(path)
-            }
-            ShortcutSource::Custom(shortcut) => {
-                let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
-                let path = self.storage.unique_path(&name);
-                create_custom_shortcut(shortcut, &path)?;
-                Ok(path)
-            }
-        }
     }
 
     /// Re-reads the shell's loose desktop items and reconciles the layer. Used
@@ -370,7 +441,12 @@ impl App {
             tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
             return None;
         }
-        let created = ui.transfer_files(std::slice::from_ref(&path), root, false)?;
+        let created = ui.transfer_files(
+            std::slice::from_ref(&path),
+            root,
+            false,
+            OnCollision::Rename,
+        )?;
         let placed = created.into_iter().next()?;
         if placed.exists() {
             self.undo.note_file(FileChange::Created {
@@ -388,7 +464,13 @@ impl App {
         let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
             return false;
         };
-        if self.storage.contains(&path) && path.exists() {
+        let in_lens = self
+            .config
+            .desktop
+            .space_containing(id)
+            .and_then(|space| self.config.desktop.space(space))
+            .is_some_and(Space::is_lens);
+        if !in_lens && self.storage.contains(&path) && path.exists() {
             let resolved;
             let desktop = match desktop_override {
                 Some(dir) => dir,
@@ -543,11 +625,15 @@ impl App {
         else {
             return;
         };
-        let stored = self.storage.contains(&path);
-        if !ui.confirm("Delete item", &delete_item_question(&label, stored)) {
+        let recycles = self
+            .config
+            .desktop
+            .space(space)
+            .is_some_and(|space| recycles_on_delete(space, &self.storage, &path));
+        if !ui.confirm("Delete item", &delete_item_question(&label, recycles)) {
             return;
         }
-        if !self.remove_space_item_at(space, index, |file| {
+        if !self.remove_space_item_at(space, index, recycles, |file| {
             ui.delete_files(std::slice::from_ref(&file.to_path_buf()), false);
         }) {
             return;
@@ -562,6 +648,7 @@ impl App {
         &mut self,
         space: SpaceId,
         index: usize,
+        recycles: bool,
         delete_file: impl FnOnce(&Path),
     ) -> bool {
         let Some((item, path)) = self
@@ -573,9 +660,8 @@ impl App {
         else {
             return false;
         };
-        let stored = self.storage.contains(&path);
         self.undo.begin(delete_items_label(1));
-        if stored && path.exists() {
+        if recycles && path.exists() {
             let at = SystemTime::now();
             delete_file(&path);
             if path.exists() {
@@ -660,7 +746,7 @@ impl App {
             let question = format!(
                 "Delete the space \"{}\"?\n\n{}",
                 space.title(),
-                delete_consequence(space.items().len(), stored)
+                delete_consequence(space, stored)
             );
             if !ui.confirm("Delete space", &question) {
                 return;
@@ -704,6 +790,7 @@ impl App {
             return;
         }
         self.undo.finish(&self.config.desktop);
+        self.sync_watches(ui);
         self.sync_windows(ui);
         self.save(ui);
     }
@@ -748,13 +835,18 @@ impl App {
         }
         self.pointer.clear_hover_on(Surface::Space(id));
         self.view_cache.forget(id);
+        // A deleted lens's folder stops being watched; its files stay.
+        self.unavailable_lenses.remove(&id);
         true
     }
 }
 
 /// The stored files of `space` that still exist: what Delete all spaces
-/// sends to the Recycle Bin.
+/// sends to the Recycle Bin. A lens has none: its files are its folder's.
 pub(super) fn stored_paths(space: &Space, storage: &ItemStore) -> Vec<PathBuf> {
+    if space.is_lens() {
+        return Vec::new();
+    }
     space
         .items()
         .iter()
@@ -763,16 +855,48 @@ pub(super) fn stored_paths(space: &Space, storage: &ItemStore) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Whether deleting the item at `path` from `space` recycles its file: a lens
+/// item (its folder is the real thing, so the next sync would bring it back)
+/// and a stored file do; an item listed in place is only unlisted.
+fn recycles_on_delete(space: &Space, store: &ItemStore, path: &Path) -> bool {
+    space.is_lens() || store.contains(path)
+}
+
 /// The confirmation for deleting one item, saying what happens to its file:
-/// a stored file goes to the Recycle Bin, an item shown in place keeps its
-/// file where it is.
-fn delete_item_question(label: &str, stored: bool) -> String {
-    let consequence = if stored {
+/// a file that `recycles` goes to the Recycle Bin, an item shown in place
+/// keeps its file where it is.
+fn delete_item_question(label: &str, recycles: bool) -> String {
+    let consequence = if recycles {
         "It will be moved to the Recycle Bin."
     } else {
         "It will be removed from this space. The file itself stays where it is."
     };
     format!("Delete \u{201C}{label}\u{201D}?\n\n{consequence}")
+}
+
+/// Writes one shortcut into `folder` under a clash-free name and returns its
+/// path: a copy of a dropped shortcut file, a new `.lnk` to a shell item, or
+/// the `.lnk` or `.url` a custom shortcut describes.
+fn write_shortcut(folder: &Path, source: &ShortcutSource) -> anyhow::Result<PathBuf> {
+    match source {
+        ShortcutSource::Shell(item) => {
+            if let Some(link) = item.path.as_deref().filter(|path| is_link_file(path)) {
+                let path = unique_destination(folder, Path::new(&link_copy_name(link, &item.name)));
+                std::fs::copy(link, &path)?;
+                return Ok(path);
+            }
+            let name = shortcut_file_name(&item.name, "lnk");
+            let path = unique_destination(folder, Path::new(&name));
+            create_shortcut(item, &path)?;
+            Ok(path)
+        }
+        ShortcutSource::Custom(shortcut) => {
+            let name = shortcut_file_name(&shortcut.name, shortcut.target.extension());
+            let path = unique_destination(folder, Path::new(&name));
+            create_custom_shortcut(shortcut, &path)?;
+            Ok(path)
+        }
+    }
 }
 
 /// Whether `path` is a shortcut file (`.lnk` or `.url`, in any case), which a
@@ -841,6 +965,76 @@ impl ShortcutSource {
 mod tests {
     use super::*;
 
+    fn paths(list: &[&str]) -> Vec<PathBuf> {
+        list.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn a_dropped_shortcut_is_copied_into_the_folder_under_a_free_name() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-write-shortcut-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let (from, to) = (root.join("from"), root.join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        let link = from.join("App.lnk");
+        std::fs::write(&link, "x").unwrap();
+        let source = ShortcutSource::Shell(ShellItem {
+            name: "App".to_owned(),
+            path: Some(link),
+            id_list: Vec::new(),
+        });
+        let first = write_shortcut(&to, &source).unwrap();
+        let second = write_shortcut(&to, &source).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(first, to.join("App.lnk"));
+        assert_eq!(second, to.join("App (2).lnk"));
+    }
+
+    #[test]
+    fn a_file_already_in_the_folder_is_not_transferred() {
+        let kept = paths_to_transfer(
+            &paths(&["C:/Lens/a.txt", "c:/lens/b.txt"]),
+            Path::new("C:/Lens"),
+        );
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn the_folder_itself_is_not_transferred() {
+        let kept = paths_to_transfer(&paths(&["C:/Lens"]), Path::new("C:/lens"));
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn a_folder_containing_the_target_is_not_transferred() {
+        let kept = paths_to_transfer(
+            &paths(&["C:/Users", "C:/Users/me"]),
+            Path::new("C:/Users/me/Lens"),
+        );
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn a_mixed_drop_keeps_only_the_valid_paths_in_order() {
+        let kept = paths_to_transfer(
+            &paths(&[
+                "C:/Other/z.txt",
+                "C:/Lens/a.txt",
+                "C:/Users",
+                "C:/Other/b.txt",
+                "C:/Users/me/Lens",
+            ]),
+            Path::new("C:/Users/me/Lens"),
+        );
+        assert_eq!(
+            kept,
+            paths(&["C:/Other/z.txt", "C:/Lens/a.txt", "C:/Other/b.txt"])
+        );
+    }
+
     #[test]
     fn shortcut_names_make_illegal_characters_safe() {
         assert_eq!(shortcut_file_name("Minesweeper", "lnk"), "Minesweeper.lnk");
@@ -862,6 +1056,61 @@ mod tests {
         let in_place = delete_item_question("Notes", false);
         assert!(in_place.contains("stays where it is"));
         assert!(!in_place.contains("Recycle Bin"));
+    }
+
+    #[test]
+    fn a_lens_item_and_a_stored_file_are_recycled_but_an_item_in_place_is_not() {
+        let root = std::env::temp_dir().join("deskspace-recycles-test-storage");
+        let store = ItemStore::new(&root);
+        let mut desktop = deskspace_core::Desktop::default();
+        let bounds = deskspace_core::Rect::new(0, 0, 300, 200);
+        let normal = crate::fixtures::create_space(&mut desktop, "S", bounds);
+        let lens = crate::fixtures::create_lens(&mut desktop, "L", bounds, "C:/elsewhere");
+        let stored = root.join("a.txt");
+        let in_place = Path::new("C:/elsewhere/b.txt");
+        let normal = desktop.space(normal).unwrap();
+        let lens = desktop.space(lens).unwrap();
+        assert!(recycles_on_delete(normal, &store, &stored));
+        assert!(!recycles_on_delete(normal, &store, in_place));
+        assert!(recycles_on_delete(lens, &store, in_place));
+    }
+
+    #[test]
+    fn a_lens_on_the_store_has_no_stored_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "deskspace-lens-stored-paths-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+        let mut desktop = deskspace_core::Desktop::default();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "L",
+            deskspace_core::Rect::new(0, 0, 300, 200),
+            &root.to_string_lossy(),
+        );
+        crate::fixtures::apply(
+            &mut desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![deskspace_core::source::FolderEntry {
+                    path: file,
+                    label: String::new(),
+                    kind: deskspace_core::item::ItemKind::Other,
+                    size: None,
+                    modified: None,
+                    hidden: false,
+                }],
+            },
+        );
+        let space = desktop.space(lens).unwrap();
+        assert_eq!(space.items().len(), 1);
+        let paths = stored_paths(space, &ItemStore::new(&root));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(paths.is_empty());
     }
 
     #[test]

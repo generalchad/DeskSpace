@@ -2,35 +2,70 @@
 //! a revert needs to reflow or restyle.
 
 use deskspace_core::Rect;
+use deskspace_core::source::FolderView;
 
 use super::ids::page;
 use super::tables::HOTKEY_BINDINGS;
 use super::*;
 
-/// A space's customization, snapshotted so Cancel can restore it.
+/// A space's customization, its view, and a lens's folder view, snapshotted
+/// so Cancel can restore them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceSnapshot {
     pub id: SpaceId,
+    pub title: String,
     pub custom: bool,
     pub look: Option<SpaceLook>,
+    /// The space's view settings (W20).
+    pub view: SpaceView,
+    /// A lens's folder view; `None` for a normal space.
+    pub folder: Option<FolderView>,
 }
 
 impl SpaceSnapshot {
     pub fn of(space: &Space) -> Self {
         Self {
             id: space.id,
+            title: space.title().to_owned(),
             custom: space.custom(),
             look: space.look().cloned(),
+            view: space.view(),
+            folder: space.folder_view().cloned(),
         }
     }
 
-    /// The command that puts the space back the way it was.
+    /// The command that puts the space's look back.
     pub fn restore(&self) -> Command {
         Command::SetSpaceLook {
             id: self.id,
             custom: self.custom,
             look: self.look.clone(),
         }
+    }
+
+    /// The command that puts the space's view settings back.
+    pub fn restore_view(&self) -> Command {
+        Command::SetSpaceView {
+            id: self.id,
+            view: self.view,
+        }
+    }
+
+    /// The command that puts a lens's folder view back, if it had one.
+    pub fn restore_folder(&self) -> Option<Command> {
+        self.folder
+            .clone()
+            .map(|view| Command::SetLensView { id: self.id, view })
+    }
+
+    /// The command that puts a lens's title mode and text back.
+    pub fn restore_title(&self) -> Option<Command> {
+        let view = self.folder.as_ref()?;
+        Some(Command::SetLensTitle {
+            id: self.id,
+            title: view.title,
+            text: self.title.clone(),
+        })
     }
 }
 
@@ -48,6 +83,9 @@ pub struct Session {
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
+    /// The kind of the selected scope, so its page list is known without
+    /// looking the space up again.
+    pub scope_kind: ScopeKind,
     /// The selected page, an index into the form's pages (`page::*`).
     pub page: usize,
     /// Every space's customization when the window opened or was last
@@ -73,6 +111,7 @@ impl Session {
             hotkey_errors: Default::default(),
             dirty: false,
             scope: None,
+            scope_kind: ScopeKind::Global,
             page: page::APPEARANCE,
             saved_spaces: snapshot_spaces(config),
             pinned: Vec::new(),
@@ -114,19 +153,20 @@ impl Session {
         }
     }
 
-    /// Switches to `scope`. A page the new scope does not list (a Global-only
-    /// page for a space, a space's Shortcuts page for Global) moves back to
-    /// the first one.
-    pub fn select_scope(&mut self, scope: Option<SpaceId>) {
+    /// Switches to `scope` of `kind`. A page the new scope does not list (a
+    /// Global-only page for a space, a lens page for a normal space) moves
+    /// back to the first one.
+    pub fn select_scope(&mut self, scope: Option<SpaceId>, kind: ScopeKind) {
         self.scope = scope;
-        if !listed_pages(scope).contains(&self.page) {
+        self.scope_kind = kind;
+        if !listed_pages(kind).contains(&self.page) {
             self.page = page::APPEARANCE;
         }
     }
 
     /// Selects the `entry`-th page the categories pane lists for the scope.
     pub fn select_entry(&mut self, entry: usize) {
-        if let Some(page) = listed_pages(self.scope).get(entry) {
+        if let Some(page) = listed_pages(self.scope_kind).get(entry) {
             self.page = *page;
         }
     }
@@ -137,6 +177,7 @@ impl Session {
     pub fn forget_space(&mut self, id: SpaceId) {
         if self.scope == Some(id) {
             self.scope = None;
+            self.scope_kind = ScopeKind::Global;
         }
         self.saved_spaces.retain(|snapshot| snapshot.id != id);
     }
@@ -173,8 +214,9 @@ pub fn needs_restyle(saved: &Session, config: &Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{apply, create_space};
+    use crate::fixtures::{apply, create_lens, create_space};
     use deskspace_core::Rect;
+    use std::path::Path;
 
     fn setup() -> (Config, Session) {
         let config = Config::new();
@@ -276,10 +318,149 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_restores_the_view() {
+        let (mut config, id) = config_with_space("Work");
+        let session = Session::new(&config);
+        let snapshot = session.saved_spaces[0].clone();
+        assert_eq!(snapshot.view, SpaceView::default());
+        let view = SpaceView {
+            mode: ViewMode::LargeIcons,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        apply(&mut config.desktop, Command::SetSpaceView { id, view });
+        assert_eq!(config.desktop.space(id).unwrap().view(), view);
+        apply(&mut config.desktop, snapshot.restore_view());
+        assert_eq!(
+            config.desktop.space(id).unwrap().view(),
+            SpaceView::default()
+        );
+    }
+
+    #[test]
+    fn a_lens_snapshot_restores_its_view() {
+        let mut config = Config::new();
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(0, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let session = Session::new(&config);
+        let snapshot = session
+            .saved_spaces
+            .iter()
+            .find(|snapshot| snapshot.id == lens)
+            .unwrap()
+            .clone();
+        assert!(!snapshot.folder.as_ref().unwrap().show_hidden);
+
+        let mut view = snapshot.folder.clone().unwrap();
+        view.show_hidden = true;
+        apply(&mut config.desktop, Command::SetLensView { id: lens, view });
+        assert!(
+            config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .show_hidden
+        );
+
+        apply(&mut config.desktop, snapshot.restore_folder().unwrap());
+        assert!(
+            !config
+                .desktop
+                .space(lens)
+                .unwrap()
+                .folder_view()
+                .unwrap()
+                .show_hidden
+        );
+    }
+
+    #[test]
+    fn a_lens_snapshot_restores_its_title() {
+        let mut config = Config::new();
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(0, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let session = Session::new(&config);
+        let snapshot = session
+            .saved_spaces
+            .iter()
+            .find(|snapshot| snapshot.id == lens)
+            .unwrap()
+            .clone();
+        assert_eq!(snapshot.title, "Downloads");
+
+        apply(
+            &mut config.desktop,
+            Command::SetLensTitle {
+                id: lens,
+                title: LensTitle::Custom,
+                text: "Mine".into(),
+            },
+        );
+        assert_eq!(config.desktop.space(lens).unwrap().title(), "Mine");
+
+        apply(&mut config.desktop, snapshot.restore_title().unwrap());
+        let space = config.desktop.space(lens).unwrap();
+        assert_eq!(space.title(), "Downloads");
+        assert_eq!(space.folder_view().unwrap().title, LensTitle::FolderName);
+    }
+
+    #[test]
+    fn a_menu_folder_change_is_kept_in_the_snapshot() {
+        let mut config = Config::new();
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(0, 0, 200, 200),
+            "C:/Temp/lens-old",
+        );
+        let mut session = Session::new(&config);
+        let old = session
+            .saved_spaces
+            .iter()
+            .find(|snapshot| snapshot.id == lens)
+            .unwrap()
+            .clone();
+
+        apply(
+            &mut config.desktop,
+            Command::SetLensFolder {
+                id: lens,
+                path: "C:/Temp/lens-new".into(),
+                title: "Downloads".into(),
+            },
+        );
+        session.resnapshot(config.desktop.space(lens).unwrap());
+        let kept = session
+            .saved_spaces
+            .iter()
+            .find(|snapshot| snapshot.id == lens)
+            .unwrap();
+        assert_eq!(
+            kept.folder.as_ref().unwrap().path.as_path(),
+            Path::new("C:/Temp/lens-new")
+        );
+        assert_eq!(
+            old.folder.as_ref().unwrap().path.as_path(),
+            Path::new("C:/Temp/lens-old"),
+            "the snapshot taken at open had the old path"
+        );
+    }
+
+    #[test]
     fn forgetting_a_deleted_space_returns_to_global() {
         let (config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         assert_eq!(session.saved_spaces.len(), 1);
         session.forget_space(id);
         assert_eq!(session.scope, None);

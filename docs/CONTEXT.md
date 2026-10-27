@@ -151,10 +151,62 @@ on custom colors, taking the other color from the palette shown at the time.
 
 Helpers: `title_bar()`, `visible_rect()` (the title bar when folded, else
 `rect`; used for window size and hit-testing), `content_rect()` (empty when
-folded), `item_at(point, cell, scroll)`, `content_extent` / `max_scroll`,
-`resize_edges_at(point, border) -> ResizeEdges` (none when locked or
+folded), `resize_edges_at(point, border) -> ResizeEdges` (none when locked or
 folded; corners twice as wide as edges), item lookup/insert/remove, and
-`set_position`.
+`set_position`. Item geometry (hit rects, the scroll extent, and the visible
+range) comes from `ViewLayout`, not the space.
+
+`Space.source` (`source.rs`) says what fills the space. `SpaceSource::Items`
+is the default and holds the space's own items, as before. `SpaceSource::Folder`
+makes it a lens (ROADMAP D3, M4): the `FolderView` holds the bound path, the
+hidden and filter settings, and says how the title follows the folder
+(`LensTitle`); `Space.title` is the text every reader shows, computed by the
+app when the folder or the title setting changes. A space also holds a `view`
+(`SpaceView`, `view.rs`): its layout mode, its sort rule, and whether it keeps
+that order as items come and go (D17), apart from `look`, so a normal space and
+a lens share them. `Space::keeps_sorted()` is true for a lens always and for a
+normal space whose view asks; such a space re-sorts after an item is added,
+moved in, or renamed, and when the choice is turned on, and it refuses a
+manual rearrangement. `ViewLayout` (`view_layout.rs`) derives every item's
+rect, the content extent, the scroll axis, and the visible range from the
+mode, the content size, the item count, and the cell metrics. The icon views
+hand it the grid; Small icons (W16) and List (W17) use an inline cell (a 16 px
+icon and one label line beside it). Small icons wraps the cells into rows and
+scrolls down; List fills a column top to bottom and scrolls sideways. Details
+(W18) gives every item a full-width row under a fixed header whose columns
+sort by the space's `SortRule`; the app formats its column text when it builds
+the scene, so painting never asks the shell or the clock. None of the
+order-placed views writes `Item.position`, so a hand arrangement returns when
+the space goes back to an icon view. Tiles (W21) wraps 48 px icons with three
+lines beside each (name, type, size), and Content (W22) puts one item on each
+full-width row with its labelled date and size on the right and a separator
+between rows. `SpaceView.status_bar` adds Explorer's
+status bar along the bottom edge (W19): the item and selection counts and the
+selected files' size on the left, and the Details and Large icons buttons on
+the right. It is chrome, so `Space::content_rect` leaves its height out and
+layout, scrolling, and hit tests shrink with it. It is off for new spaces and
+on for new lenses. A new lens takes its view, its title mode, and its
+hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`). Hit tests, the marquee, keyboard navigation, the drag drop
+index, and the scroll indicator all read the same layout. `FolderEntry` is what
+the platform reads from the folder.
+A lens's items are a live cache: the watch worker lists the folder and posts
+`Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
+filters hidden entries, sorts by the space's `SortRule`, and reconciles by
+path so an `ItemId` survives a refresh. They are never written to the config,
+and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
+`MoveItem` into a lens are `Rejected`; file changes there are shell
+operations: a drop on a lens moves
+(or copies) the files into its folder with `Ui::transfer_files` and
+`OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
+folder, or inside it, is kept but never watched, and counts as unavailable
+(`ItemStore::allows_lens`).
+An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
+and its path in place of items (`SpaceScene::placeholder`).
+A lens's title bar shows its folder's own shell icon, or the generic folder
+icon while the folder is unavailable; a normal space's title bar shows none.
+Deleting a lens always asks and only unlists it: its folder and files stay,
+it is no longer watched, and `stored_paths` and `release_item` never touch its
+files.
 
 ### Desktop and desktop layer
 
@@ -183,7 +235,9 @@ every space lays out on.
 - `arrange_space` resizes the space to fit its items (unless locked or
   user-sized) and calls `position_items`, which lays items on the grid in
   content-relative cells: `columns` wide normally, `columns_for(width)` wide
-  for user-sized spaces. It stamps `grid.title_height` onto the space, so a
+  for user-sized spaces. A view that places items by order (Small icons and
+  List) does
+  neither: it keeps the space's size and `Item.position` (D17). It stamps `grid.title_height` onto the space, so a
   scale change reaches the title even for user-sized spaces. It does nothing
   for a locked space; `Command::Reflow` handles those (title height and
   positions only, size kept).
@@ -223,12 +277,12 @@ bounds) -> CommandOutcome` (`Applied | NotFound | Rejected`;
 `is_applied()` is the usual check), where `layout` is the effective grid and
 `bounds` the work area of the monitor nearest the action (`work_area_at`).
 `command/mod.rs` holds the types and a dispatch `match` whose every arm calls
-a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`, and
-`layer_ops.rs` hold those by what they change, `sort.rs` the `SortSpace`
-ordering, and `mod.rs` the shared helpers `with_space` (run a change on a
-space or report `NotFound`), `rearrange`, and `close_gap`. The variants and
-their fields are documented on `Command`; the rules below are the ones a
-variant's doc cannot show.
+a private `Desktop::apply_<variant>`; `space_ops.rs`, `item_ops.rs`,
+`lens_ops.rs`, and `layer_ops.rs` hold those by what they change, and `mod.rs`
+the shared helpers `with_space` (run a
+change on a space or report `NotFound`), `rearrange`, and `close_gap`. The
+variants and their fields are documented on `Command`; the rules below are the
+ones a variant's doc cannot show.
 
 - `CreateSpace { title, at, size, locked }` clamps to the work area (no
   snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
@@ -243,13 +297,27 @@ variant's doc cannot show.
   space's size and re-flows its columns, as an Explorer window does. Settings
   Cancel lets the spaces its preview pinned fit their items again
   (`Session::pinned`).
-- `SortSpace { id, key: SortKey, descending }` sorts by `Name`
-  (case-insensitive), `Kind` (folders, files, shortcuts, drives, other),
-  `Size`, or `Modified`.
+- `SortSpace { id, rule: SortRule }` sorts by the rule's key (name, type,
+  size, or modified), direction, and folders-first, and keeps the rule as the
+  space's own; a lens uses the same rule in `SyncLens`.
+- `CreateLens { title, at, size, path, locked }` clamps like `CreateSpace` and
+  starts the lens with a default `FolderView` whose title mode is
+  `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets its title
+  text, and clears its items until the next sync; `SetLensTitle { id, title,
+  text }` sets how the title follows the folder (D17); `SetLensView { id,
+  view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
+  listed items by path, keeping ids, filtering hidden entries unless the view
+  shows them, and sorting by the space's `SortRule` (natural names, so
+  `file2` comes before `file10`; folders first when asked). The include/exclude
+  filters are stored for F-22 but not applied.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
   edits pass `custom: true`, and Cancel uses it to restore a snapshot.
+- `SetSpaceView { id, view: SpaceView }` sets a space's view (D17): its icon
+  mode, sort rule, and keep-sorted choice, apart from the look. The app
+  reflows that space and saves, and lists a lens's folder again when its rule
+  changes. Every space has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
   applying the layout, and changes nothing if any item id would clash.
@@ -327,13 +395,17 @@ default in `Default`.
   `modified`, `compressed`, and `encrypted` default, so a partial table fills
   in defaults instead of failing the file. Unknown keys (for example the
   removed `background_alpha`) are ignored.
+- A space saves its `source`; a lens's items are omitted because they are a
+  live view of its folder (`Space`'s `Serialize`). On load `Config::migrate`
+  drops any items a hand-edited file listed under a lens, and the next
+  `SyncLens` fills them again.
 - `ConfigStore` resolves its paths through `directories::ProjectDirs`
   (`%APPDATA%\DeskSpace\DeskSpace\config\deskspace.toml`) or takes an explicit
   path. `storage_dir()`, where dropped files are moved, is
   `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\storage`, or a `storage` folder
   beside an explicit config file, so scratch configs never touch real
-  storage. `save` writes a sibling `*.toml.tmp` and renames it, so a crash
-  never truncates the config.
+  storage. `save` writes a sibling `*.toml.tmp`, flushes it to disk, and
+  renames it, so a crash or a power cut never truncates the config.
 - `load_or_default` returns defaults when no file exists. An unparsable file
   is copied to `deskspace.toml.unreadable-<millis>.bak` before falling back to
   defaults; a file from a newer version is loaded but first copied to
@@ -638,7 +710,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   each axis joins separately: a corner grab that moves on one axis resizes
   only that axis.
 - `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
-  checked without uncovering the desktop.
+  checked without uncovering the desktop. It never applies to the desktop
+  layer: a topmost window spanning every monitor would take every click.
 
 ### Drops (`win32/drop_target.rs`)
 
@@ -660,6 +733,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   `right_drop_effect` reports what each entry means to the source; an entry
   is greyed when the source refuses that effect. A drag carrying neither files nor shell items reports
   `DROPEFFECT_NONE`.
+- What a drop lands in comes from the scene (`SpaceScene::drop_into`, read
+  by `space_window::drop_into`): `DropInto::Folder` for a lens. Over a lens a
+  file drop with Shift is refused, a `COPY`-only source becomes `Copy`, and
+  the right-drop menu greys "Show here without moving", because a folder
+  cannot list a file kept elsewhere.
 - As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
   Alt is held and the source allows a link, or when the source offers neither
   `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is an
@@ -840,14 +918,20 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
   `SpaceScene` carries everything a space draws: chrome, title, resolved
-  colors, item metrics, and the visible `ItemVisual`s in window-local
-  coordinates. `SpaceStyle` carries the window-level attributes. Both are
-  documented field by field in `render/scene.rs`. A new visual is one
+  colors, item metrics, `item_layout`, and the visible `ItemVisual`s in
+  window-local coordinates. `SpaceStyle` carries the window-level attributes.
+  Both are documented field by field in `render/scene.rs`. A new visual is one
   `SpaceScene` field, filled in
   `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
   for window-level attributes only (it re-applies DWM state).
-- The app scrolls by offsetting item rects and includes only items that
-  intersect the content area; the renderer clips items below the title bar.
+- `item_layout` tells the painter how a cell places its icon and label: the
+  grid centers the icon over a wrapped label below it; `Inline` (Small icons
+  and List) puts the check box, the icon, and one left-aligned ellipsized label
+  line in a row, all vertically centered. The check-box hit test takes the
+  same layout, so the painted box and the clickable box always agree.
+- The app scrolls by offsetting the rects `ViewLayout` gives, along the axis
+  the layout reports, and includes only the lines its `visible` range names;
+  the renderer clips items to the content area.
   Scenes are pushed only on change, and the window stores a `PreparedScene`
   with strings pre-encoded to UTF-16, so painting does not allocate.
   `chrome: false` (the desktop layer) draws no title bar or border and fills
@@ -896,16 +980,16 @@ one arm in `App::on_event`, whose match is exhaustive.
   glowing, charred, scorched, whole), written into two smooth cell
   bitmaps: the contents' opacity mask and the marks over it.
   Its flames rise past the frame, where the space's own window would put
-  blur behind them, so they are drawn on an overlay (`win32/overlay.rs`:
-  what an effect draws beside the space's window, chosen per effect,
-  made when the effect starts, following the space if it moves, and
-  dropped when it ends). The flames' overlay is `win32/flame_overlay.rs`:
-  a layered, click-through window owned by the space window (so it stays
-  above it and dies with it). Owning does not keep it directly above the
-  space: shown as made, it sat over every app, so it is shown in the slot
-  right above the space (`space_window::window_above`). `render/flames.rs`
-  (pure) stands tongues on the burning edge and shades them on the CPU
-  into its DIB section each frame.
+  blur behind them, so they are drawn on an overlay (`win32/overlay.rs`: what
+  an effect draws beside the space's window, chosen per effect, made when the
+  effect starts, following the space if it moves, and dropped when it ends).
+  The flames' overlay is `win32/flame_overlay.rs`: a layered, click-through
+  window owned by the space window (so it stays above it and dies with it),
+  placed directly above it when made (`place_above_owner`: Windows puts a new
+  owned window at the top of the non-topmost band) and shown in that slot
+  again whenever it shows if the space moved (`space_window::window_above`).
+  `render/flames.rs` (pure) stands tongues on the burning edge and shades them
+  on the CPU into its DIB section each frame.
 - The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
   `WS_POPUP` with the space material (`dwm::apply_style` from the global
   look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so
@@ -941,15 +1025,26 @@ in `ui.rs`. What spans them:
   (`SpaceScene::highlight`, cleared by `Timer::Highlight`). Selecting another
   space moves it; Cancel, OK, and closing the window clear it.
 - **The app's form** (`settings/`): the scopes are Global, then every space
-  indented, dimmed while it follows Global. Global lists every page but
-  Shortcuts; a space lists the five look pages, which show its values (from
-  Global until customized) greyed unless the header's "Customize this space"
-  switch is on, and its always-enabled Shortcuts page. Global edits write
-  `Config` directly; a space's edits become `SetSpaceLook` commands, the
-  switch `CustomizeSpace`, and the Colors page's reset becomes "Match global
-  appearance". Cancel restores each space's `SpaceSnapshot`; a space menu edit
+  indented, dimmed while it follows Global. Each row shows its kind's glyph in
+  the row's text color, so a dimmed row dims its glyph too. Global lists every
+  page but View, Shortcuts and Lens, and adds a Lenses page after New spaces
+  for a new lens's defaults; a space lists the five look pages, which
+  show
+  its values (from Global until customized) greyed unless the header's
+  "Customize this space" switch is on, its always-enabled View page (the view
+  mode, the status bar, and the sort rule, which preview through
+  `SetSpaceView`), and its always-enabled Shortcuts page.
+  A lens also lists a Lens page: its folder (or "Folder not available"), Open
+  folder and Change folder…, its Title (Show as and a custom title, which
+  preview through `SetLensTitle`), and Show hidden files, which previews
+  through `SetLensView`. Global edits write `Config` directly; a space's edits
+  become `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors
+  page's reset becomes "Match global appearance". Cancel restores each space's
+  `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit
   made while the window is open goes into that snapshot, because the menu
   commits at once. These also commit at once, so Cancel does not undo them:
+  - the Lens page's "Change folder…", which writes the new path into the
+    snapshot so Cancel keeps it;
   - the Shortcuts page's X deletes an item after a confirmation
     (`App::delete_space_item`: a stored file goes to the Recycle Bin, an item
     listed in place is only unlisted; ROADMAP D3), and its + offers the New
@@ -987,15 +1082,23 @@ in `ui.rs`. What spans them:
 
 ### Desktop shell, shell items, DPI, hotkeys
 
-- `folder_watch.rs` watches a folder off the UI thread
-  (`ReadDirectoryChangesW`, overlapped I/O on one worker thread) and posts
-  `FOLDER_CHANGE` when its contents change, debounced by up to 150 ms (the
-  pure `Coalescer`) so a multi-file copy wakes the app once. `Ui::watch_folder`
-  starts or replaces the single watch (idempotent for the same path) and
-  `Ui::unwatch_folder` stops it; the controller raises
-  `Event::FolderChanged`. M2 watches the Desktop folder while the layer is
-  drawn (a change makes the app re-enumerate and `SyncDesktop`); M4 phase 2
-  reuses the watcher for a lens's folder.
+- `folder_watch.rs` watches folders off the UI thread with one worker for
+  every watch, on an I/O completion port. A watch is keyed by `WatchKey`
+  (`Desktop`, or a lens's `Space(id)`); `ReadDirectoryChangesW` reports into
+  the port, and the worker lists the folder itself with `folder_list.rs`, so
+  the UI thread does no IO. Changes are debounced per folder by up to 150 ms
+  (the pure `Coalescer`) so a multi-file copy wakes the app once. A folder
+  that is missing or cannot be read posts `FolderListing::Unavailable` and is
+  tried again every 5 s on the worker. An open folder's path is checked on the
+  same cadence: renaming a watched folder moves its handle with it, so the
+  pending read may never fail. `Ui::watch_folder(key, path)` adds or
+  replaces that key's watch (idempotent for the same path) and
+  `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
+  watch's slot in `wParam`; the worker leaves the listing in a shared slot,
+  and the controller raises `Event::FolderChanged { key, listing }`. M2
+  watches the Desktop folder while the layer is drawn (a change makes the app
+  re-enumerate and `SyncDesktop`) and ignores the listing; M4 uses it for a
+  lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the
@@ -1131,10 +1234,10 @@ in `ui.rs`. What spans them:
   display" preset it changes the desktop's own icon size (8 px a notch,
   16-256 px), as Ctrl+wheel on the desktop does, and the matching spaces
   follow (ROADMAP D9); under Custom it changes the global icon size (10 % a
-  notch). A space with its own Custom look keeps its icon size. Every space
-  keeps its size and re-flows its icons into more or fewer columns (scrolling
-  when they no longer fit), as an Explorer window does; "Fit to contents"
-  sizes it to its items again.
+  notch). A space with its own Custom look or a fixed icon view keeps its
+  icon size. Every space keeps its size and re-flows its icons into more or
+  fewer columns (scrolling when they no longer fit), as an Explorer window
+  does; "Fit to contents" sizes it to its items again.
 - Every zoom shows the zoom pop-up at the top center of the monitor under the
   pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
   icons" is 100 %), zoom out and in (one notch each), and Reset (back to
@@ -1148,21 +1251,46 @@ in `ui.rs`. What spans them:
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
   (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
   Fold/Unfold, Rename, Lock position, Fit to contents (resized, unlocked spaces
-  only); New shortcut ▸, Add files…, Appearance ▸, Sort by ▸; Delete space
-  (asks first unless the space is empty); New space; Settings…, Hide/Show
-  spaces, Exit DeskSpace.
+  only); New shortcut…, Add files…, Appearance…, View…, Sort by…; Delete space
+  (asks first unless the space is empty); New space, New lens…; Settings…,
+  Hide/Show spaces, Exit DeskSpace.
+- A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
+  folder `ItemStore::allows_lens` refuses gets a message instead) after the
+  first group. Its Sort by… checks the space's rule and keeps it as files come
+  and go (`SetSpaceView`), and adds Show hidden files (`SetLensView`). Folders
+  first is part of the rule for both kinds. A sort or hidden-files change
+  starts the lens's watch again, so the folder is listed afresh in the new
+  order.
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
+- New lens… (`App::create_lens`), under New space in the space menu, the
+  tray, and the desktop layer's menu (`new_entries`), asks for a folder
+  (`Ui::pick_folder`), refuses DeskSpace's storage folder with a message,
+  and opens a `CreateLens` where New space would put a space, titled with
+  the folder's name. It then starts the lens's watch (`sync_watches`).
 - **Appearance ▸** sets a tint-opacity preset (100/80/60/40/20 %), an icon size
   (Small 75, Medium 100, Large 150, Extra large 200 %), or a custom tint or
   text color. Each customizes the space, starting from what it shows now; "Use
   global appearance" (greyed unless customized) makes it follow Global again
   (keeping its look for later), and "Space settings…" opens the settings
-  window on that space. **Sort by ▸** reorders items by name (A–Z or Z–A),
-  type, size (smallest or largest), or date (oldest or newest). The three
-  submenus are built from tables in `app.rs` (`OPACITY_PRESETS`,
-  `ICON_SIZE_PRESETS`, `SORT_PRESETS`).
+  window on that space. **View ▸** picks "Settings icon size" (the look's
+  size), Extra large, Large, Medium, Small icons, or List; the three large
+  views set that space's icon size at 256, 96, or 48 px at 96 DPI and leave it
+  out of Ctrl+wheel and Match Explorer, while Small icons (W16) and List (W17)
+  draw 16 px icons in inline cells. Small icons wraps the cells into rows and
+  scrolls down; List fills a column top to bottom and scrolls sideways, wheel
+  included. **Sort by ▸** is Explorer's folder menu:
+  Name, Date modified, Type, and Size as radio items, then Ascending and
+  Descending, then Folders first and Keep sorted, then, on a lens, Show
+  hidden files. Keep sorted is checked and greyed on a lens. A key
+  keeps the direction, a direction keeps the key, and Folders first toggles,
+  all through one `SortRule`. A normal space sorts once with the new rule, or
+  holds the order once Keep sorted is on; a lens always holds it and lists its
+  folder again. The menus are built from tables:
+  `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
+  in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
+  words in `SORT_KEYS` in `settings/tables.rs`.
 - **New shortcut ▸** (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in `app.rs`, also
   enabled on a locked space): "From installed apps…", a picker listing every
   app in the Applications folder (Store apps included) with a check box per
@@ -1176,7 +1304,9 @@ in `ui.rs`. What spans them:
   target is reported in the dialog. A web address becomes a `.url`,
   everything else a `.lnk` (a copied `.lnk` or `.url` is duplicated into the
   store). All three end in `App::add_shortcuts`, which writes into the space
-  storage and lists the shortcuts at the end of the space. The same choices
+  storage and lists the shortcuts at the end of the space; for a lens it
+  writes them into the lens's folder and lists nothing, since the watch does.
+  The same choices
   open from the + tile on a space's Settings page "Shortcuts", whose preview
   also deletes an item from its X (after asking).
 - **Add files…** (F-55) picks files in the standard Open dialog
@@ -1185,10 +1315,10 @@ in `ui.rs`. What spans them:
   ROADMAP D3), so a picked file is relocated exactly like a dragged one.
   Cancelling adds nothing.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Undo and Redo, Settings…, Hide/Show spaces, New space, Check for
-  updates… (or "Restart to update to X" once an automatic update is
-  downloaded), and Exit DeskSpace, and, with `--debug`, Debug…. A space
-  created from the tray goes to the center of the work area, and creating a
+  offers Undo and Redo, Settings., Hide/Show spaces, New space, New lens.,
+  Check for updates. (or "Restart to update to X" once an automatic update is
+  downloaded), and Exit DeskSpace, and, with `--debug`, Debug.. A space
+  created from the tray opens on the monitor of the pointer, and creating a
   space while spaces are hidden shows them.
 
 **Settings**
@@ -1248,7 +1378,7 @@ in `ui.rs`. What spans them:
   multi-selection keeps the selection. Loose items on the desktop layer
   rename the same ways. Rest the pointer on an item for Explorer's info tip.
 - Right-click an empty spot of the desktop layer (or press the Menu key with
-  nothing selected there) for "New space", "DeskSpace settings…", and
+  nothing selected there) for "New space", "New lens…", "DeskSpace settings…", and
   Hide/Show spaces above Explorer's own desktop background menu
   (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
   that menu would be unreachable. A shell command re-syncs the layer, and
@@ -1272,7 +1402,8 @@ in `ui.rs`. What spans them:
 - Drag an item within its space to rearrange it (`ReorderItem`); dragging one
   member of a multi-selection moves the whole block (`ReorderItems`). The
   selection's drag image follows the pointer and every member's slot fades;
-  the new order sticks until a Sort by reorders it.
+  the new order sticks until a Sort by reorders it. A space that keeps sorted
+  (a lens, or Keep sorted on) refuses the rearrangement and keeps its order.
 - Drag an item out: into a folder or app like an Explorer item, onto another
   space to move it there, or onto the desktop to take it out of the space.
   With takeover on, a drop on the desktop instead opens a new space at the
@@ -1310,13 +1441,16 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
+- Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
+  Medium, or Small icons, List, Details, Tiles, or Content, the way the View
+  menu does.
 - With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
   (passing through to Explorer when no space is current); typing selects the
   next item whose label starts with
   the typed letters (the buffer clears after about a second); Home, End,
-  PageUp, and PageDown scroll the space to the top, the bottom, or one page;
-  and the arrow keys move the selection across the grid (Shift extends, Ctrl
-  moves the dotted focus rectangle only).
+  PageUp, and PageDown scroll the space to the start, the end, or one page
+  along its view's axis; and the arrow keys move the selection across the
+  cells (Shift extends, Ctrl moves the dotted focus rectangle only).
 
 **Hotkeys and the command line**
 
@@ -1380,11 +1514,12 @@ section numbers stable.
   live switch, because recreating every space window would drop the blur.
   Top-level, the default, is the only placement with blur.
 - **The icon cache is invalidated only after shell menu commands, renames,
-  and a desktop-layer sync.** Its key includes the pixel and overlay size, so
-  an icon-size or DPI change reloads, and `sync_desktop_layer` forgets a loose
-  item whose modification time changed. Nothing watches the files in spaces,
-  so one whose icon changed in place keeps the old one. Lens watchers will
-  need to invalidate.
+  a desktop-layer sync, and a lens listing.** Its key includes the pixel and
+  overlay size, so an icon-size or DPI change reloads, and
+  `sync_desktop_layer` forgets a loose item whose modification time changed.
+  A lens listing invalidates every entry whose `modified` changed. Nothing
+  watches the files in spaces, so one whose icon changed in place keeps the
+  old one.
 - **The scroll indicator is display-only.** Spaces scroll with the wheel,
   Home/End/PageUp/PageDown, and by keeping a keyboard-selected item in view,
   but the indicator cannot be dragged, and wheel events need Windows' "scroll

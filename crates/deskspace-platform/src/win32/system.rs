@@ -288,9 +288,8 @@ pub(crate) fn message_logfont(dpi: u32) -> LOGFONTW {
 
 /// A symbol font (`Segoe Fluent Icons`, or `Segoe MDL2 Assets` on older
 /// Windows) at the message font's size, for glyphs such as the check mark and
-/// the eyedropper. Returns a null font when neither is installed. Callers
-/// should still check a glyph exists (`glyph_present`) before drawing it,
-/// because not every symbol is in both fonts.
+/// the eyedropper. Returns a null font when neither is installed. Draw only
+/// code points that both faces have; not every symbol is in both.
 pub(crate) fn glyph_font(dpi: u32) -> HFONT {
     let height = message_logfont(dpi).lfHeight;
     for face in [w!("Segoe Fluent Icons"), w!("Segoe MDL2 Assets")] {

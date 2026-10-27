@@ -11,6 +11,14 @@ pub struct PreparedScene {
     /// The item id and rename buffer while `scene.editing_item` is set.
     pub(super) edit_item: Option<(u64, Vec<u16>)>,
     pub(super) labels: Vec<Vec<u16>>,
+    /// Each item's Details cells after Name, encoded once.
+    pub(super) cells: Vec<Vec<Vec<u16>>>,
+    /// The Details header labels, encoded once.
+    pub(super) header: Vec<Vec<u16>>,
+    /// The status bar's segments joined with Explorer's gaps, encoded once.
+    pub(super) status_segments: Vec<u16>,
+    /// `scene.placeholder`, encoded once.
+    pub(super) placeholder: Option<Vec<u16>>,
 }
 
 impl PreparedScene {
@@ -29,12 +37,46 @@ impl PreparedScene {
             .iter()
             .map(|item| item.label.encode_utf16().collect())
             .collect();
+        let cells = scene
+            .items
+            .iter()
+            .map(|item| {
+                item.cells
+                    .iter()
+                    .map(|cell| cell.encode_utf16().collect())
+                    .collect()
+            })
+            .collect();
+        let header = scene
+            .details
+            .as_ref()
+            .map(|details| {
+                details
+                    .columns
+                    .iter()
+                    .map(|column| column.label.encode_utf16().collect())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let status_segments = scene
+            .status
+            .as_ref()
+            .map(|status| status.segments.join("   ").encode_utf16().collect())
+            .unwrap_or_default();
+        let placeholder = scene
+            .placeholder
+            .as_ref()
+            .map(|text| text.encode_utf16().collect());
         Self {
             scene,
             title,
             edit,
             edit_item,
             labels,
+            cells,
+            header,
+            status_segments,
+            placeholder,
         }
     }
 

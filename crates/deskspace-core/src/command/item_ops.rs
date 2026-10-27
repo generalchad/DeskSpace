@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::CommandOutcome;
+use super::{CommandOutcome, hold_kept_order};
 use crate::desktop::Desktop;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
@@ -16,8 +16,11 @@ impl Desktop {
         facts: ItemFacts,
         layout: GridSpec,
     ) -> CommandOutcome {
-        if self.space(space).is_none() {
-            return CommandOutcome::NotFound;
+        match self.space(space) {
+            None => return CommandOutcome::NotFound,
+            // A lens mirrors its folder; a new item is a file operation there.
+            Some(target) if target.is_lens() => return CommandOutcome::Rejected,
+            Some(_) => {}
         }
         let item = Item::new(self.take_item_id(), path, facts);
         self.add_item(space, item);
@@ -40,10 +43,21 @@ impl Desktop {
         target: SpaceId,
         layout: GridSpec,
     ) -> CommandOutcome {
-        if self.item(id).is_none() || self.space(target).is_none() {
+        if self.item(id).is_none() {
             return CommandOutcome::NotFound;
         }
+        let Some(target_space) = self.space(target) else {
+            return CommandOutcome::NotFound;
+        };
+        // A lens is a view of its folder: moving an item into or out of it is a
+        // file move through the shell, not a model change (ROADMAP D3).
+        if target_space.is_lens() {
+            return CommandOutcome::Rejected;
+        }
         let source = self.space_containing(id);
+        if source.is_some_and(|source| self.space(source).is_some_and(|space| space.is_lens())) {
+            return CommandOutcome::Rejected;
+        }
         if !self.move_item(id, target) {
             return CommandOutcome::Rejected;
         }
@@ -64,6 +78,9 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
+            if space.keeps_sorted() {
+                return CommandOutcome::Rejected;
+            }
             let Some(current) = space.items.iter().position(|item| item.id == id) else {
                 return CommandOutcome::NotFound;
             };
@@ -94,6 +111,9 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
+            if space.keeps_sorted() {
+                return CommandOutcome::Rejected;
+            }
             let moving: Vec<Item> = space
                 .items
                 .extract_if(.., |item| ids.contains(&item.id))
@@ -113,6 +133,7 @@ impl Desktop {
         id: ItemId,
         path: PathBuf,
         label: String,
+        layout: GridSpec,
     ) -> CommandOutcome {
         let Some(source) = self.space_containing(id) else {
             return CommandOutcome::NotFound;
@@ -123,6 +144,10 @@ impl Desktop {
             };
             item.path = path;
             item.label = label;
+            // A rename can change where a kept sort puts the item.
+            if hold_kept_order(space) {
+                position_items(space, layout);
+            }
             CommandOutcome::Applied
         })
     }

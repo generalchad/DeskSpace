@@ -3,7 +3,8 @@
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, MODES, PRESETS, STARTUP_ORDERS, corner_marks,
+    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
+    VIEW_ORDERS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -393,6 +394,110 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
     }
 }
 
+/// The field ids one page uses for the shared view and sort controls, so the
+/// View page and the Lenses defaults page build them with one function (W20,
+/// W23). `keep_sorted` is `None` on the defaults page, where a lens always
+/// keeps its order.
+struct ViewIds {
+    heading: u32,
+    mode: u32,
+    status_bar: u32,
+    sort_heading: u32,
+    sort: u32,
+    order: u32,
+    folders_first: u32,
+    keep_sorted: Option<u32>,
+}
+
+const VIEW_PAGE_IDS: ViewIds = ViewIds {
+    heading: field::VIEW_HEADING,
+    mode: field::VIEW_MODE,
+    status_bar: field::VIEW_STATUS_BAR,
+    sort_heading: field::VIEW_SORT_HEADING,
+    sort: field::VIEW_SORT_KEY,
+    order: field::VIEW_ORDER,
+    folders_first: field::VIEW_FOLDERS_FIRST,
+    keep_sorted: Some(field::VIEW_KEEP_SORTED),
+};
+
+const LENSES_PAGE_IDS: ViewIds = ViewIds {
+    heading: field::LENSES_VIEW_HEADING,
+    mode: field::LENSES_VIEW_MODE,
+    status_bar: field::LENSES_STATUS_BAR,
+    sort_heading: field::LENSES_SORT_HEADING,
+    sort: field::LENSES_SORT_KEY,
+    order: field::LENSES_ORDER,
+    folders_first: field::LENSES_FOLDERS_FIRST,
+    keep_sorted: None,
+};
+
+/// The view and sort controls shared by the View page and the Lenses defaults
+/// page. `lens` greys and ticks Keep sorted, as a lens always holds its order.
+fn view_fields(view: &SpaceView, ids: &ViewIds, lens: bool) -> Vec<Field> {
+    let modes: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
+    let mode = VIEW_MODES
+        .iter()
+        .position(|(candidate, ..)| *candidate == view.mode)
+        .unwrap_or(0);
+    let mut fields = vec![
+        Field::heading(ids.heading, "View"),
+        Field::choice(ids.mode, "Show as", &modes, mode),
+        Field::toggle(ids.status_bar, "Status bar", view.status_bar),
+        Field::heading(ids.sort_heading, "Sort"),
+        Field::choice(
+            ids.sort,
+            "Sort by",
+            &labels(&SORT_KEYS),
+            index_of(&SORT_KEYS, view.sort.key),
+        ),
+        Field::choice(
+            ids.order,
+            "Order",
+            &VIEW_ORDERS,
+            usize::from(view.sort.descending),
+        ),
+        Field::toggle(ids.folders_first, "Folders first", view.sort.folders_first),
+    ];
+    if let Some(id) = ids.keep_sorted {
+        fields.push(Field::toggle(id, "Keep sorted", view.keep_sorted || lens).enabled(!lens));
+    }
+    fields
+}
+
+/// A space's View page (W20): its view mode, status bar, and sort rule. Built
+/// for every scope so the form keeps its shape, but only a space lists it.
+pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
+    let view = space.map_or_else(SpaceView::default, Space::view);
+    SettingsPage {
+        title: "View".into(),
+        fields: view_fields(&view, &VIEW_PAGE_IDS, space.is_some_and(Space::is_lens)),
+    }
+}
+
+/// Global's Lenses page (W23): the defaults a new lens starts with.
+pub(super) fn lenses_page(config: &Config) -> SettingsPage {
+    let defaults = config.window.new_lens;
+    let mut fields = view_fields(&defaults.view, &LENSES_PAGE_IDS, true);
+    fields.extend([
+        Field::heading(field::LENSES_TITLE_HEADING, "Lens"),
+        Field::toggle(
+            field::LENSES_SHOW_HIDDEN,
+            "Show hidden files",
+            defaults.show_hidden,
+        ),
+        Field::choice(
+            field::LENSES_TITLE_MODE,
+            "Show as",
+            &labels(&LENS_TITLES),
+            index_of(&LENS_TITLES, defaults.title),
+        ),
+    ]);
+    SettingsPage {
+        title: "Lenses".into(),
+        fields,
+    }
+}
+
 pub(super) fn hotkeys_page(session: &Session) -> SettingsPage {
     let mut fields = vec![Field::heading(field::HOTKEYS_HEADING, "Global hotkeys")];
     for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
@@ -553,6 +658,45 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
     SettingsPage {
         title: page.title.into(),
         fields,
+    }
+}
+
+/// A lens's Lens page: its folder, the buttons that act on it, and the
+/// hidden-files toggle. Built for every scope so the form keeps its shape;
+/// only a lens lists it.
+pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage {
+    let view = space.and_then(Space::folder_view);
+    let path = view.map(|view| view.path.display().to_string());
+    let folder = match (path, available) {
+        (Some(path), true) => path,
+        (Some(path), false) => format!("Folder not available\n{path}"),
+        (None, _) => String::new(),
+    };
+    let title = view.map_or(LensTitle::Custom, |view| view.title);
+    let custom_text = space.map_or("", |space| space.title());
+    SettingsPage {
+        title: "Lens".into(),
+        fields: vec![
+            Field::heading(field::LENS_HEADING, "Folder"),
+            Field::note(field::LENS_PATH, folder),
+            Field::button(field::LENS_OPEN, "", "Open folder"),
+            Field::button(field::LENS_CHANGE, "", "Change folder\u{2026}"),
+            Field::heading(field::LENS_TITLE_HEADING, "Title"),
+            Field::choice(
+                field::LENS_TITLE_MODE,
+                "Show as",
+                &labels(&LENS_TITLES),
+                index_of(&LENS_TITLES, title),
+            ),
+            Field::text(field::LENS_TITLE_TEXT, "Custom title", custom_text)
+                .enabled(title == LensTitle::Custom),
+            Field::heading(field::LENS_CONTENTS_HEADING, "Contents"),
+            Field::toggle(
+                field::LENS_SHOW_HIDDEN,
+                "Show hidden files",
+                view.is_some_and(|view| view.show_hidden),
+            ),
+        ],
     }
 }
 

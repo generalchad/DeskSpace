@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Size};
-use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, Space};
+use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, STATUS_BAR_HEIGHT, Space};
 
 /// The bounds grid `gap` and `padding` are clamped to, in logical pixels.
 pub const GAP_RANGE: (i32, i32) = (0, 24);
@@ -106,8 +106,7 @@ impl GridSpec {
 
     /// How many cell columns fit in a space `width` pixels wide (at least 1).
     pub fn columns_for(&self, width: i32) -> i32 {
-        let step = (self.cell_width + self.gap).max(1);
-        ((width - self.padding * 2 + self.gap) / step).max(1)
+        columns_for(width, self.cell_width, self.gap, self.padding)
     }
 
     /// The width that holds `columns` whole columns with equal edge padding.
@@ -223,8 +222,17 @@ pub fn fit_rect_height(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect 
     }
 }
 
+/// How many cells of `cell` px with `gap` and `padding` fit along `length`
+/// (at least 1). Shared by the icon grid and the order-placed views, which use
+/// it on the width or the height according to their flow.
+pub(crate) fn columns_for(length: i32, cell: i32, gap: i32, padding: i32) -> i32 {
+    let step = (cell + gap).max(1);
+    ((length - padding * 2 + gap) / step).max(1)
+}
+
 /// Sizes the space to fit its items (unless the user sized it) and lays the
-/// items out. Locked spaces are left alone.
+/// items out. Locked spaces are left alone, and a view that places items by
+/// order keeps the space's size and `Item.position` (D17).
 pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     if space.locked {
         return;
@@ -232,6 +240,9 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     // The title height follows the grid even for user-sized spaces, so an icon
     // or DPI change reaches every space.
     space.title_height = spec.title_height;
+    if space.view().mode.places_by_order() {
+        return;
+    }
     if space.user_sized {
         position_items(space, spec);
         return;
@@ -241,8 +252,17 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     let width = spec.padding * 2
         + spec.columns.max(1) * spec.cell_width
         + (spec.columns.max(1) - 1) * spec.gap;
-    let height =
-        spec.title_height + spec.padding * 2 + rows * spec.cell_height + (rows - 1) * spec.gap;
+    let status = if space.view().status_bar {
+        (STATUS_BAR_HEIGHT as f32 * spec.title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).round()
+            as i32
+    } else {
+        0
+    };
+    let height = spec.title_height
+        + status
+        + spec.padding * 2
+        + rows * spec.cell_height
+        + (rows - 1) * spec.gap;
     space.rect.width = width;
     space.rect.height = height;
     position_items(space, spec);
@@ -250,8 +270,12 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
 
 /// Places items on the grid. Positions are relative to the space's content
 /// area, so moving the space never has to touch its items. User-sized spaces
-/// use as many columns as their width allows; others use `spec.columns`.
+/// use as many columns as their width allows; others use `spec.columns`. A view
+/// that places items by order leaves the positions alone (D17).
 pub fn position_items(space: &mut Space, spec: GridSpec) {
+    if space.view().mode.places_by_order() {
+        return;
+    }
     let columns = if space.user_sized {
         spec.columns_for(space.rect.width)
     } else {

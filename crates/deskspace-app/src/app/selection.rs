@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 
-use deskspace_core::geometry::Point;
 use deskspace_core::{ItemId, Rect, SpaceId};
 use deskspace_platform::{CheckBoxMode, NavDir, NavKey, Ui};
 
@@ -203,12 +202,15 @@ impl App {
         let Some(Surface::Space(id)) = self.selection.surface else {
             return;
         };
-        let layout = self.layout_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let max = space.max_scroll(layout.cell(), layout.padding);
-        let page = space.content_rect().height.max(1);
+        let Some(layout) = self.view_layout(id) else {
+            return;
+        };
+        let content = space.content_rect();
+        let max = layout.max_scroll(content.size());
+        let page = layout.viewport(content.size()).max(1);
         let current = self.scroll_of(id);
         let offset = match key {
             ScrollKey::Home => 0,
@@ -269,16 +271,10 @@ impl App {
         let Some(surface) = self.selection.surface else {
             return;
         };
-        let layout = self.surface_layout(surface);
-        let cells: Vec<Point> = self
-            .surface_items(surface)
-            .iter()
-            .map(|item| {
-                Point::new(
-                    item.position.x + layout.cell_width / 2,
-                    item.position.y + layout.cell_height / 2,
-                )
-            })
+        let cells: Vec<Rect> = self
+            .surface_cells(surface)
+            .into_iter()
+            .map(|(_, rect)| rect)
             .collect();
         let current = self
             .selection
@@ -322,26 +318,20 @@ impl App {
     /// Brings the item at `index` (in the space's order) into the content area
     /// by adjusting the scroll offset.
     pub(super) fn scroll_item_into_view(&mut self, id: SpaceId, index: usize) {
-        let layout = self.layout_for(id);
+        let Some(layout) = self.view_layout(id) else {
+            return;
+        };
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let Some(item) = space.items().get(index) else {
+        if index >= space.items().len() {
             return;
-        };
-        let content_height = space.content_rect().height;
-        let max = space.max_scroll(layout.cell(), layout.padding);
+        }
+        let content = space.content_rect().size();
         let scroll = self.view_cache.scroll_of(id);
-        let top = item.position.y;
-        let bottom = top + layout.cell_height;
-        let offset = if top - scroll < 0 {
-            top
-        } else if bottom - scroll > content_height {
-            bottom - content_height
-        } else {
-            return;
-        };
-        self.view_cache.set_scroll(id, offset.clamp(0, max));
+        if let Some(offset) = layout.scroll_to_show(index, scroll, content) {
+            self.view_cache.set_scroll(id, offset);
+        }
     }
 
     /// Selects every item between the anchor and `item` in the space's order,
@@ -410,18 +400,19 @@ pub(super) fn marquee_selection(
     selection
 }
 
-/// The index of the item nearest `current` in `dir`, from cell centers.
+/// The index of the item nearest `current` in `dir`, from cell rects.
 /// Candidates must lie strictly in that direction; the smallest primary-axis
 /// distance wins, breaking ties by the cross-axis distance. `None` at the edge
 /// of the grid.
-fn next_in_direction(cells: &[Point], current: usize, dir: NavDir) -> Option<usize> {
-    let origin = cells.get(current)?;
+fn next_in_direction(cells: &[Rect], current: usize, dir: NavDir) -> Option<usize> {
+    let origin = cells.get(current)?.center();
     let mut best: Option<(i32, i32, usize)> = None;
     for (index, cell) in cells.iter().enumerate() {
         if index == current {
             continue;
         }
-        let (dx, dy) = (cell.x - origin.x, cell.y - origin.y);
+        let center = cell.center();
+        let (dx, dy) = (center.x - origin.x, center.y - origin.y);
         let (primary, cross) = match dir {
             NavDir::Left if dx < 0 => (-dx, dy.abs()),
             NavDir::Right if dx > 0 => (dx, dy.abs()),
@@ -531,10 +522,10 @@ mod tests {
     fn navigation_picks_the_nearest_aligned_item() {
         // A 2x2 grid of cell centers: 0 1 / 2 3.
         let cells = [
-            Point::new(0, 0),
-            Point::new(100, 0),
-            Point::new(0, 100),
-            Point::new(100, 100),
+            Rect::new(-50, -50, 100, 100),
+            Rect::new(50, -50, 100, 100),
+            Rect::new(-50, 50, 100, 100),
+            Rect::new(50, 50, 100, 100),
         ];
         assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(1));
         assert_eq!(next_in_direction(&cells, 1, NavDir::Left), Some(0));
@@ -552,13 +543,53 @@ mod tests {
     #[test]
     fn navigation_prefers_the_aligned_neighbor() {
         let cells = [
-            Point::new(0, 0),    // 0
-            Point::new(100, 40), // 1: diagonal to the right
-            Point::new(100, 0),  // 2: aligned to the right
+            Rect::new(-50, -50, 100, 100), // 0: center (0, 0)
+            Rect::new(50, -10, 100, 100),  // 1: diagonal to the right
+            Rect::new(50, -50, 100, 100),  // 2: aligned to the right
         ];
         assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(2));
         // Both are below, but 1 is nearer vertically than 2.
         assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(1));
+    }
+
+    #[test]
+    fn arrows_follow_a_view_layouts_rows_and_columns() {
+        let mode = deskspace_core::ViewMode::SmallIcons;
+        let metrics =
+            deskspace_core::ViewMetrics::for_view(mode, deskspace_core::GridSpec::default(), 1.0);
+        let layout =
+            deskspace_core::ViewLayout::new(mode, deskspace_core::Size::new(640, 400), 7, metrics);
+        let cells: Vec<Rect> = (0..7).map(|index| layout.rect(index)).collect();
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Right), Some(1));
+        assert_eq!(next_in_direction(&cells, 2, NavDir::Right), None);
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Down), Some(4));
+        assert_eq!(next_in_direction(&cells, 4, NavDir::Up), Some(1));
+        assert_eq!(next_in_direction(&cells, 6, NavDir::Up), Some(3));
+    }
+
+    #[test]
+    fn arrows_move_down_a_list_column_and_right_to_the_next() {
+        let metrics = deskspace_core::ViewMetrics {
+            cell: deskspace_core::Size::new(100, 50),
+            gap: 10,
+            padding: 12,
+            header: 0,
+        };
+        let layout = deskspace_core::ViewLayout::new(
+            deskspace_core::ViewMode::List,
+            deskspace_core::Size::new(360, 160),
+            7,
+            metrics,
+        );
+        let cells: Vec<Rect> = (0..7).map(|index| layout.rect(index)).collect();
+        // Two rows per column: 0 1 | 2 3 | 4 5 | 6.
+        assert_eq!(next_in_direction(&cells, 0, NavDir::Down), Some(1));
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Down), None);
+        assert_eq!(next_in_direction(&cells, 1, NavDir::Right), Some(3));
+        assert_eq!(next_in_direction(&cells, 3, NavDir::Right), Some(5));
+        assert_eq!(next_in_direction(&cells, 4, NavDir::Left), Some(2));
+        assert_eq!(next_in_direction(&cells, 5, NavDir::Left), Some(3));
+        assert_eq!(next_in_direction(&cells, 6, NavDir::Left), Some(4));
     }
 
     #[test]

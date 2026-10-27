@@ -11,10 +11,16 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - section O, in order (on-screen checks by script);
-- Q2-Q6.
+- Q2-Q6;
+- section W phase 5: W26 (a pure move), W24 and W25 (with a
+  reviewer), and W34 now that W14 has landed; the rest once the task each
+  one names has landed;
+- section T, "Burn, upgraded": T24 now, then T25-T31 in order once
+  `feat/color-picker-redesign` is in `main` (T28 with a reviewer).
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D.
+decision]** and everything in section D. Phase 4 is complete; its on-screen
+checks are in section V.
 
 ## How to work a task
 
@@ -47,15 +53,18 @@ Where each kind of code lives. Paths are under `crates/`.
 
 | To change... | Look in |
 |--------------|---------|
-| The model (spaces, items, the desktop layer) | `deskspace-core/src/{space,item,desktop,desktop_layer}.rs` |
-| A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `layer_ops.rs`) |
+| The model (spaces, items, views, the desktop layer) | `deskspace-core/src/{space,view,item,desktop,desktop_layer}.rs` |
+| Item ordering, both kinds | `deskspace-core/src/sort.rs` (`SortRule`) |
+| A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `lens_ops.rs`, `layer_ops.rs`) |
+| A lens's folder view and entries | `deskspace-core/src/source.rs` (`SpaceSource`, `FolderView`, `FolderEntry`) |
 | Grid, sizes, snapping | `deskspace-core/src/layout.rs` (`GridSpec`, `arrange_space`) |
+| Where each item sits in the current view, the scroll extent, and hit rects | `deskspace-core/src/view_layout.rs` (`ViewLayout`, `ViewMetrics`) |
 | A look setting or color | `deskspace-core/src/theme.rs` (`Theme`, `Palette`, `*_RANGE`) |
 | A non-look setting, config load/migrate | `deskspace-config/src/schema.rs` (`WindowSettings`, `Config::migrate`) |
 | Config file paths and atomic save | `deskspace-config/src/store.rs` |
 | CLI flags | `deskspace-app/src/cli.rs` |
 | Startup before the window loop | `deskspace-app/src/bootstrap.rs` |
-| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`) |
+| Handling an `Event`; timer and menu ids; preset tables | `deskspace-app/src/app.rs` (`on_event`, `MenuId`, `*_PRESETS`, `SORT_MENU_IDS`) |
 | Saving, dispatching a `Command` | `deskspace-app/src/app/persist.rs` |
 | Undo and redo stack, applying entries | `deskspace-app/src/app/undo.rs` |
 | An `Effect` a pure decision returns, and `App::run` that carries it out (R17) | `deskspace-app/src/app/effect.rs` |
@@ -213,7 +222,9 @@ matching on `Surface` at the call site.
 ## B. Code health (any contributor)
 
 Each is a behavior-preserving refactor: the test count only grows, and no
-user-visible change is expected. Do them in any order.
+user-visible change is expected. Do them in any order. The exceptions are
+B32-B36, from a review on 2026-10-21: they fix performance and correctness,
+and B33 and B36 change behavior on purpose, as each says.
 
 - [ ] **B13. One child-control helper.** `win32/dialog.rs` `control` and
   `win32/settings_window/build.rs` `Builder::control` are near-copies, both
@@ -297,6 +308,69 @@ user-visible change is expected. Do them in any order.
   them. Do it after B14 (same file). Pure move. Done when: no function in
   either file is over about 80 lines. **[needs human]** check: the settings
   window opens, switches scopes and pages, and previews as before.
+
+- [ ] **B31. Test only the crates a change affects (scripts).**
+  - Why: `cargo test --workspace` runs every crate's tests. A change to
+    `deskspace-config` can only break `config` and `app`, the crates that
+    depend on it, so while working the rest can be skipped. Cargo has no
+    built-in way to do this. `ENGINEERING.md` section 3 already names
+    the switch this task adds.
+  - `scripts/dev.ps1`: add a `-Changed` switch. Without `-Check` it does
+    nothing. With `-Check`, the test step runs `cargo test --locked -p
+    <crate> ...` for the affected crates only; fmt and clippy are
+    unchanged. Add an example to the script's comment-based help.
+  - Which crates are affected. Write each step as its own small
+    PowerShell function, so each can be read and tried alone:
+    1. **Changed files:** `git diff --name-only main...HEAD`, plus `git
+       diff --name-only HEAD` (uncommitted), plus untracked files from
+       `git ls-files --others --exclude-standard`. Add a `-Base` parameter
+       for the branch to compare with, default `main`.
+    2. **Changed crates:** a file under `crates/<dir>/` belongs to the
+       package in that folder. Read the package names from `cargo
+       metadata --format-version 1 --no-deps --locked` (each package's
+       `manifest_path`), never from a list in the script, so a new crate
+       needs no edit. A change to `Cargo.toml`, `Cargo.lock`,
+       `rust-toolchain.toml`, or anything under `.cargo/` affects every
+       crate. Any other file (docs, scripts, workflows) affects none.
+    3. **Dependents:** from the same metadata, a crate's dependencies
+       are its `dependencies` entries that have a `path`. Repeat until
+       nothing new is added: every crate that depends on an affected
+       crate is affected too.
+    4. If nothing is affected, print "No crate changed; no tests to
+       run." and skip the test step.
+  - Print the affected crates before testing, so the user sees what was
+    skipped.
+  - `ENGINEERING.md` section 1: add the switch to the list after `-Check`.
+  - Done when: these runs print the expected crates (try each, then
+    undo the change):
+    - edit a comment in `deskspace-app`: `deskspace-app` only;
+    - in `deskspace-config`: `deskspace-config`, `deskspace-app`;
+    - in `deskspace-core`: all five;
+    - in `docs/TASKS.md` only: none;
+    - in `Cargo.toml`: all five.
+
+    No unit tests: the repository has no PowerShell test framework, and
+    adding one is out of scope.
+
+- [ ] **B33. Load icons off the UI thread (platform, app).**
+  **[needs decision]**: the worker and event below are a proposal.
+  - Why: `IconCache::icon_for` loads a missing icon synchronously while
+    `space_scene` builds a scene, through the shell's image factory. A
+    lens on a slow or network folder, or the first scroll through a big
+    one, stalls every space until each icon is loaded. Explorer draws a
+    generic icon at once and fills the real one in later.
+  - Proposal: `icon_for` returns the cached icon, or a generic one for
+    the item's `ItemKind` and queues the path. One worker thread (COM
+    initialized as STA, as the image factory needs) loads queued icons
+    and posts a `WM_APP` message (next free id) that becomes
+    `Event::IconsLoaded { paths }`. The app refreshes only the spaces
+    that list those paths. The queue drops paths that scrolled out of
+    view before the worker reaches them.
+  - Pure parts to test: the queue (dedupes, keeps the newest request per
+    path, drops a path that is no longer wanted) and which spaces a
+    loaded path refreshes.
+  - **[needs human]** check: a lens on a folder of a few thousand images
+    scrolls without stalls, and its icons fill in.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
@@ -417,6 +491,667 @@ undo or redo either applies a whole entry or, when the entry is stale,
 changes nothing and says so.
 
 All of U1-U7 are done; what still awaits a check is in section V.
+
+## W. Lenses (ROADMAP M4 phases 2-5, D3, D17, D18, F-07)
+
+### What you are building
+
+A *lens* is a space that shows the contents of a real folder, live. If a
+file is added to `C:\Users\me\Downloads` in Explorer, a lens on that
+folder shows it a moment later. A lens is only a view: DeskSpace never
+moves, copies, or deletes a lens's files on its own. Read ROADMAP D3 (the
+rules for files) and M4 (the plan) before you start; both are short.
+
+The model already exists (phase 1; `CONTEXT.md` section 4). In code a lens
+is a `Space` whose `source` is `SpaceSource::Folder(FolderView)`. There is
+no separate `Lens` type (D5). Four `Command`s change a lens:
+
+- `CreateLens` makes one.
+- `SetLensFolder` points it at another folder.
+- `SetLensView` changes its hidden and filter settings; `SetSpaceView`,
+  which every space has, changes its sort rule.
+- `SyncLens { id, entries }` replaces its items with a fresh listing of
+  the folder. Nothing adds items to a lens one by one: `AddItem` and
+  `MoveItem` into a lens return `Rejected`.
+
+Phases 1-4 are done: drops, pastes, shortcuts, deletes, and menus treat a
+lens as D3 says (W1-W7), and the views, sort rule, status bar, and lens
+settings are in (W9, W18-W23, ROADMAP D17). Phase 5 is W24-W43 (D18). New
+here? Read "Where to start" below before anything else in this section.
+
+### Words used below
+
+- **Watch.** Windows' `ReadDirectoryChangesW` tells us that something in a
+  folder changed. It does not say what the folder now holds, so after a
+  change we list the folder again.
+- **Debounce.** Copying 200 files fires 200 changes. We wait until the
+  folder has been quiet for 150 ms and then react once. `Coalescer` in
+  `win32/folder_watch.rs` already does this. It is pure and tested, so
+  read it and its tests first.
+- **Worker thread.** Any thread that is not the UI thread. A slow folder,
+  such as a network drive or a folder of 50,000 files, must never freeze
+  the spaces, so watching and listing run on a worker. A worker cannot
+  touch windows. It posts a message (`PostMessageW`) to the controller
+  window, and the UI thread turns that message into an `Event` for the
+  app.
+- **I/O completion port.** A Windows queue that many file handles report
+  into, and that one thread waits on with `GetQueuedCompletionStatus`.
+  Each handle is registered with a number, its *completion key*, so when a
+  result arrives you know which folder it belongs to. You can also put
+  your own packets on the queue with `PostQueuedCompletionStatus`. That is
+  how the UI thread tells the worker to add a folder, remove one, or stop.
+  Overview:
+  https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
+- **Shell file operation.** `IFileOperation` is the engine behind
+  Explorer's copy, move, and delete. It shows Explorer's progress and
+  conflict dialogs and records a step Explorer can undo.
+  `win32/file_op.rs` wraps it.
+
+### Before you start
+
+- One commit per task ("How to work a task" above). W1-W7 went in order
+  for safety: no menu could create a lens until drops and deletes were
+  safe, so no user could lose a file while the work was half done. Keep
+  that habit. A task that touches files lands complete, or not at all.
+- To get a lens to work on, run the app with a scratch config
+  (`./scripts/dev.ps1 -OnTop`; `ENGINEERING.md` section 1) and use "New
+  lens…" from the space or tray menu, on a throwaway folder. Never point a
+  test lens at a folder you care about: Delete in a lens recycles real
+  files. The section V rows that say "hand-made" mean one written into the
+  config instead. Exit the app, add this to
+  `%TEMP%\deskspace-dev\deskspace.toml`, and run the app again. Use an
+  `id` no other space has:
+
+  ```toml
+  [[desktop.spaces]]
+  id = 90
+  title = "Lens test"
+  rect = { x = 100, y = 100, width = 320, height = 240 }
+  source = { folder = { path = "C:/Temp/lens-test" } }
+  ```
+
+- `cargo test` cannot run a watch or open a dialog. Put every decision you
+  can into a small pure function and test that, and keep the Win32 calls
+  thin. Each task names its pure functions.
+- Decided (2026-10-20, maintainer): one worker thread serves every watch,
+  each watch has a key, and the worker lists the folder itself. Do not
+  redesign this inside a task. If it seems wrong, stop and ask.
+- Decided (2026-10-21, maintainer), for W3a-W4:
+  - A drop on a lens moves; "Copy here" copies. Both go through the
+    shell with Explorer's Replace or Skip dialog. Keep-in-place (Shift)
+    means nothing on a lens, so it is refused.
+  - Paste and new shortcuts on a lens put their files in the lens's
+    folder, exactly as a drop does.
+  - A lens item dropped or pasted on a normal space is an ordinary file
+    to that space: it moves into storage like a file from Explorer.
+  - There is one shell transfer function with a collision rule, not a
+    second copy of it.
+  - A lens whose folder is DeskSpace's storage folder, or inside it, is
+    kept in the config but never watched, and shows as unavailable.
+
+### Where a test cannot reach
+
+`App` methods that take `&mut Ui` cannot run in `cargo test`, because a
+`Ui` needs real windows. So every task below pulls its decision into a
+small function that takes plain data (a `&Space`, a `&Path`, a
+`DROPEFFECT`) and tests that. The method that takes the `Ui` only calls
+it. If you find yourself wanting to test a `Ui` method, stop and look for
+the decision inside it.
+
+### Where to start
+
+W1-W8 and W10-W23 are done (2026-10-21; W14-W16 on 2026-10-22, W17 on
+2026-10-23, W9 and W18-W23 on 2026-10-24) and archived; their on-screen checks
+are in section V. The open work is phase 5 (W24-W43).
+
+1. Read, in this order: "How to work a task" (top of this file),
+   `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
+   section 4 ("Space"), then ROADMAP D3, D17, and, for a phase 5 task,
+   D18.
+2. Read the phase's opening rules, then the task. A phase 5 task also
+   means reading "Interleaving", "Performance", and "Safety and
+   security" under phase 5. They bind phase 4 too.
+3. Pick a task from the table below. "Open now" means nothing it waits
+   for is still open (2026-10-21). Otherwise wait until every task it
+   waits for has been ticked and archived. Those are the tasks in its
+   "After:" line, or, for W9-W23, the ones phase 4's first rule names. A
+   ticked box means a task is done; "Open now" goes stale, so trust the
+   boxes.
+4. Find the code with the file map at the top of this file. For lenses
+   the rows to know are "A lens's folder view and entries" (core), "A
+   model mutation" (`command/lens_ops.rs`), and `app/lens.rs` (watches
+   and listings), plus `app/menus.rs` for the lens menu.
+5. Before you commit, run the gates. Tick the box and move the task to
+   `archive/TASKS-done.md` in the same commit. For a **[needs human]**
+   task, add its section V row (rule 8).
+
+| Level | Tasks | Open now |
+|-------|-------|----------|
+| First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
+| Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
+| With a reviewer: layout, painting, threads, or file safety | W24, W25, W31, W32, W37, W42, W43 | W24, W25 |
+| Maintainer only: an on-screen record | W41 | W41 |
+
+"With a reviewer" means: agree the plan with a reviewer before writing
+code, and have the same reviewer read the diff. W42 is the hardest task left
+in the section. W24 and W25 fix code that runs today, so they go first among
+the reviewer tasks.
+
+### Phase 4: views, sort rules, and lens settings
+
+Read ROADMAP D17 first; it is the spec. Most of phase 4 is for every
+space, not only lenses. A view, a status bar, and a sort rule work the
+same on both kinds. Only the folder, the title, and hidden files are
+lens-only.
+
+- One commit each. W8-W11 are small and stand apart from the views: W9
+  needs nothing, W10 needs W8, and W11 needs W10. W12-W23 build the
+  views on each other, so take them in order.
+- Each task adds a type, variant, or field in the same commit as its
+  first caller, never ahead of it with `#[expect(dead_code)]`. So
+  `ViewMode` grows one variant per view task, and the task that draws a
+  view adds it.
+- Tables carry the design, so a new view is one row:
+  - `VIEW_MODES` (`settings/tables.rs`, added in W12): one row per view,
+    with its mode, its Explorer label, and its Ctrl+Shift digit. The
+    View ▸ menu, the keys, the View page, and the status bar's tips all
+    read it.
+  - `SORT_KEYS` (W14): the Sort by keys in Explorer's order and words.
+  - `DETAILS_COLUMNS` (W18) and `STATUS_BUTTONS` (W19).
+- Explorer is the reference for every look and word. Where a task says
+  "as Explorer", open the same folder in Explorer beside the space, at
+  100 % and 150 %, and match it. Record any measured size as a named
+  constant in 96-DPI pixels, with a comment saying it was measured, and
+  when.
+- Glyphs come from Segoe Fluent Icons on Windows 11 and Segoe MDL2
+  Assets on Windows 10. Use only code points both fonts have, and write
+  each one's name beside its constant:
+  https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+  and https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-ui-symbol-font.
+
+### Phase 5: lens and view extras (after v0.3)
+
+Read ROADMAP D18 first; it is the spec, and it builds on D17. Phase 5
+ships after v0.3, so no task here blocks the lens release. The phase 4
+rules above (first callers, the tables, Explorer as the reference, the
+glyph fonts) hold here too.
+
+- W24-W26 fix or tidy code that exists today. Take them any time, even
+  before phase 4; W24 and W25 are worth doing first.
+- Every other task names the phase 4 task it needs ("After: W18").
+  Within those limits, take them in any order, but read "Interleaving"
+  below before running two at once.
+
+#### Interleaving
+
+Two kinds. **Work interleaving**: tasks that edit the same code, so
+running two at once makes them collide. **Runtime interleaving**: events
+that can arrive in an order the code does not expect.
+
+Work that collides when run in parallel:
+
+- **`SpaceView` fields.** W12, W14, W15, W19, W28, W30, W33, and W36
+  each add a field and a serde-default test. Two branches add fields
+  side by side; resolve a merge by keeping both, in task order.
+- **"Next free" ids.** Menu ids (W12, W14, W15, W19, W28, W30, W33, W38),
+  `field::` ids (W10, W11, W20, W23, W28, W33, W35, W38, W40), and page
+  ids. Two branches that each take the "next free" value end up with the
+  same id, and git merges that without a conflict. The uniqueness tests
+  (`field_ids_are_unique`, the `MenuId::ALL` test) catch it after a
+  rebase; take a new id then. Never renumber an id that has landed.
+- **`view_layout.rs`** (W16) grows in W17, W18, W21, W22, W33 (compact),
+  and W37 (groups). Run those one at a time; each changes the metrics
+  every view shares.
+- **`DETAILS_COLUMNS`** is created in W18 and changed in W29-W32. Run
+  them in order.
+- **Label text.** W26 merges the four copies of the extension rule.
+  W28 then changes that one place. Taking W28 before W26 means editing
+  four places, so don't.
+- **The lens's folder.** After W42, file operations read the folder a
+  lens *shows*, through one `App::lens_folder`. A task that lands after
+  W42 and reads `FolderView.path` must say which one it means. W10 and
+  W11 mean the lens's own folder on purpose.
+- **Creation signatures.** W19 and W23 change `CreateLens`, and W40
+  changes `CreateSpace`. Rebase whichever lands second.
+- **Other sections:**
+  - J (tabs): J2 pages through the icon grid. After W16 it must page
+    through the view layout instead; if J2 starts first, stop and ask.
+  - U (undo): U3 lists the actions to record. If U3 has landed, wrap
+    each new action in `begin`/`finish` (`SetSpaceView`, `SetLensTitle`,
+    a column resize on release, not per move). If it has not, add the
+    new actions to U3's list. Browsing and folding a group are session
+    state and record nothing.
+  - B14 and B26 rework `settings_window/build.rs`, where W8 adds a font.
+    Do B14 first, or keep W8's edit inside one function.
+  - R14 (table-driven settings fields) would rewrite the pages W10, W20,
+    W23, W35, and W38 build. Do not start R14 while those are open.
+  - Section K: `win32/space_window.rs` is already over the 800-line
+    guideline. Put new hit tests and paint code in `app/pointer.rs` and
+    `render/d2d/`, not there.
+  - T (animations): the title icon (W9), status bar (W19), headers (W18,
+    W37), and Back button (W43) paint through the normal paint path, so
+    animations snapshot them for free. Each task's check includes one
+    Startup effect.
+
+Runtime orders the code must survive:
+
+- **A listing for a folder the lens no longer shows.** The watch worker
+  posts a listing as a message, so it can arrive after Change folder…
+  or (after W42) a step into a subfolder. W24 makes a listing carry the
+  folder it read, and the app drops a stale one. Until W24 lands, a
+  stale listing can briefly list the old folder's files in the lens.
+- **Message pumps inside a call.** `transfer_files`, `pick_folder`, and
+  `alert` pump messages. A listing, a settings event, or a delete can run
+  inside them. Hold no runtime borrow across them (`ENGINEERING.md`
+  section 6, Re-entrancy). Afterwards, look the space up again: it may
+  have been deleted, or (after W42) it may show another folder. Change
+  folder… from the Lens page is the case to test.
+- **An item or space that vanishes between two events.** A listing can
+  remove the item under a rename, a drag, a hover tip, or a column drag.
+  Anything that holds an `ItemId`, a group, or a column between events
+  checks that it still exists and cancels quietly if it does not.
+- **Settings window and menu at once.** A menu edit made while the
+  settings window is open goes into the window's snapshot (`CONTEXT.md`
+  section 6, Native UI). Every new `SpaceView` field follows that rule
+  (W20 sets it up), so Cancel never undoes a menu edit.
+- **The current space.** The keyboard hook decides to consume a key, and
+  the app handles it later; the current space can change in between. The
+  app looks the current space up when it handles the key, never earlier.
+- **Bursts.** Column-resize drags, Ctrl+wheel, and typing in a filter
+  field fire many events. Re-lay out per event, but save once, through
+  the existing debounced `schedule_save`.
+
+#### Performance
+
+The bar is bare-metal: a 50,000-file lens scrolls, selects, and resizes
+with no hitch. `ENGINEERING.md` sections 2-4 have the general rules;
+these are the ones phase 4 and 5 code most often breaks.
+
+- **Layout is arithmetic.** An order-placed view finds the rect for index
+  `i`, and the indices visible in a scroll window, by arithmetic, not by
+  walking every item. Groups (W37) keep prefix sums of group sizes and
+  binary-search them. Nothing costs O(items) per mouse move or wheel
+  notch.
+- **Text is made once.** Type names (cached by extension), dates, sizes,
+  and group names are formatted when a scene is built, and only for the
+  items the scene carries (the visible ones). Painting allocates nothing;
+  `PreparedScene` already encodes strings to UTF-16 once.
+- **No IO the listing did not already do.** Dates, sizes, and attributes
+  come from the `FindFirstFileExW` record the worker reads. Hover tips,
+  titles, and status text read the model. Nothing calls the disk on the
+  UI thread per item or per event; W25 removes the one place that calls
+  it per lens.
+- **Measure what could be slow.** A task that touches `SyncLens`,
+  sorting, filtering, or grouping times it on 50,000 entries with a
+  release build and records the dated result in its commit body. Over
+  8 ms (half a 60 Hz frame) on the UI thread means stop and ask before
+  merging.
+
+#### Safety and security
+
+`SECURITY.md` names file handling and parsing as the areas of most
+interest. In phase 4 and 5 terms:
+
+- **No file outside the user's intent.** A file operation acts only on
+  items the user can see and selected: filtered-out and folded items
+  are never selected (D18). It goes into the folder the lens shows,
+  inside its own folder, which passes the storage check on its final
+  path (W25).
+- **Never follow a shortcut while browsing.** Only an entry the listing
+  marks a directory is browsable. A `.lnk` to a folder opens as today.
+- **No regular expressions.** A pattern from the config cannot make
+  matching slow: the matcher (W34) is linear, its inputs are capped, and
+  there is no regex crate to audit.
+- **Every config value is untrusted.** Hand-edited files reach every
+  new field, so clamp ranges, cap list lengths, drop duplicates, and ignore
+  unknown names (`#[serde(other)]` on an unknown variant), so one bad
+  value never fails the whole config load. Each new field gets a test
+  that loads a hostile value.
+- **No new dependency** without `cargo deny check all`, and none is
+  expected in this phase.
+
+#### Phase 5 tasks
+
+- [ ] **W24. A listing carries the folder it read (platform, app).**
+  Any time.
+  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
+    keeps its key when a lens changes folder. So a listing posted for the
+    old folder, still in the queue when Change folder… runs, is applied
+    to the new one. W42 makes this happen on every step into a
+    subfolder.
+  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
+    the worker listed (or found unavailable). `win32/folder_watch.rs`
+    fills it from the watch's own record.
+  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
+    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
+    dropped with a `debug!` line. The desktop layer's listing gets the
+    same check against the Desktop folder.
+  - Tests: the pure check (same path, another case, other slashes,
+    another folder); the controller decode keeps the path.
+  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
+    listing names its folder.
+
+- [ ] **W25. The storage check runs off the UI thread (platform, app).**
+  Any time.
+  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
+    lens's folder and on the store, on the UI thread. `sync_watches`
+    calls it twice for every lens, through `desired_watches` and
+    `refused_lenses`, each time the watches are reconciled. On an
+    unreachable network share, `canonicalize` can block until the SMB
+    timeout, freezing every space. It is also the only junction guard,
+    so it must not simply be dropped.
+  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
+    it.
+  - `win32/folder_watch.rs`: when the worker opens a watched folder's
+    handle, it asks for the handle's final path
+    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
+    refuses a folder that is the store or inside it. It posts the refusal
+    as a new `FolderListing::Refused`. That costs no extra IO, since the
+    handle is already open. The store root is passed in when the watch
+    starts.
+  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
+    `allows_lens`; a `Refused` listing marks the lens unavailable, as
+    `refused_lenses` does today. `allows_lens` stays only where a user
+    has just picked a folder (New lens…, Change folder…), and it
+    compares against the stored root.
+  - Tests: a pure `inside_store(final_path, root)` (without case, with
+    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
+    `Refused` into an unavailable lens. One platform test makes a
+    junction into a temp "store" with `cmd /c mklink /J`, which needs no
+    admin rights, and expects `Refused`.
+  - **[needs human]** check: a lens on a share whose server is off
+    leaves the other spaces responsive at startup; a lens on a junction
+    into the store shows "Folder not available".
+
+- [ ] **W26. One place decides whether a label shows its extension
+  (app).** Any time; before W28.
+  - `self.surface_match_explorer(surface) &&
+    self.system.shell().show_extensions` is written out in
+    `app/rename.rs`, `app/selection.rs`, `app/settings_session.rs`, and
+    `app/view.rs`. Move it into one `App::shows_extensions(surface)` in
+    `app/view.rs` and call that from all four. A pure move.
+  - Done when: `rg "show_extensions" crates/deskspace-app/src/app` finds
+    only the new method and its callers' use of its result.
+
+- [ ] **W27. The lens's path as a tip on its title (app).** **[needs
+  human]** After: W9.
+  - Hovering a lens's title shows its full path through the existing
+    hover tip (`app/info_tip.rs`). An unavailable lens adds "Folder not
+    available". After W42, it shows the folder on display. The text
+    comes from the model; no disk access.
+  - A pure `title_tip(space, unavailable) -> Option<String>`; `None` for
+    a normal space. Hovering the title of a normal space shows no tip, as
+    today.
+  - Tests: the tip for a lens, an unavailable lens, and a normal space.
+  - **[needs human]** check: the tip appears after the usual delay and
+    leaves with the pointer; it does not cover the title while you are
+    renaming.
+
+- [ ] **W28. File name extensions per space (core, app).** **[needs
+  human]** After: W20, W26.
+  - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
+    `Automatic` is the default (D18). `App::shows_extensions` (W26) reads
+    it first and falls back to today's rule for `Automatic`.
+  - View ▸ "File name extensions": a check entry showing what the space
+    shows now. Choosing it sets `Show` or `Hide`. The View page offers all
+    three in a choice.
+  - Rename already selects the name without its extension when one
+    shows; check that it still does.
+  - Tests: each value under both presets; the menu check follows the
+    effective value.
+  - **[needs human]** check: Show and Hide on a normal space and a lens,
+    Automatic under Match Explorer with Explorer's setting on and off;
+    F2 selects only the name part.
+
+- [ ] **W29. Date created (core, platform, app).** After: W18.
+  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
+    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
+    record it already has; `item_facts` reads it from the metadata call it
+    already makes. No new IO.
+  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
+    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
+    user show it.
+  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
+
+- [ ] **W30. Choose the Details columns (core, app).** **[needs
+  human]** After: W29.
+  - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
+    Option<u16> }>`, in display order; the default is Name, Date
+    modified, Type, Size. `Column` has `#[serde(other)] Unknown`. A pure
+    `ColumnSpec::sanitize(list)` runs on load and after every edit: it
+    drops unknown and repeated ids, keeps Name first, caps the list at
+    `Column::ALL.len()`, and clamps widths to `COLUMN_WIDTH_RANGE`.
+  - A right-click on the header opens Explorer's header menu: a check
+    entry per column, with Name grey and on. Explorer's "Size all columns
+    to fit" needs text measurement, so leave it out and add a **Found
+    while working** line.
+  - Tests: `sanitize` on hostile lists (unknown ids, Name missing or
+    last, repeats, zero and huge widths, a thousand entries); the menu
+    checks the columns shown.
+  - **[needs human]** check: show and hide each column on a lens and a
+    space; the choice survives a restart; Name cannot be hidden.
+
+- [ ] **W31. Resize the Details columns (app).** **[needs human]**
+  After: W30.
+  - Dragging a header divider sets that column's `width` (Name keeps the
+    rest). The pointer shows the resize cursor over a divider. Each move
+    re-lays out the visible rows (arithmetic, see Performance); the
+    `SetSpaceView` is committed and saved once, on release. Esc during
+    the drag puts the width back.
+  - A pure `divider_at(x, columns, scale) -> Option<usize>` with a hit
+    slop scaled for DPI.
+  - Tests: `divider_at` at each edge and in between; widths clamp.
+  - **[needs human]** check: resize each column at 100 % and 150 %;
+    smooth on a 50,000-file lens; Esc cancels; a listing that arrives
+    mid-drag does not end it.
+
+- [ ] **W32. Reorder the Details columns (app).** **[needs human]**
+  After: W31.
+  - Dragging a header (not its divider) moves the column, with an
+    insertion mark between headers. Name stays first (D18). Committed on
+    release, as W31.
+  - A pure `column_drop_index(x, columns) -> usize`.
+  - Tests: drop indices, and that Name never moves.
+  - **[needs human]** check: reorder at 100 % and 150 %; Esc cancels; a
+    click without a drag still sorts.
+
+- [ ] **W33. Compact view (core, app).** **[needs human]** After: W22.
+  - `SpaceView.compact: bool`, off by default. The order-placed views
+    (Small icons, List, Details, Tiles, Content) take their row and cell
+    padding from one metrics struct in `view_layout.rs`, which has a
+    compact variant measured from Explorer's Compact view. The icon
+    views are unchanged (D18).
+  - View ▸ "Compact view" (a check entry) and a View page toggle.
+  - Tests: compact rows are shorter in each order-placed view and the
+    same in the icon views.
+  - **[needs human]** check: against Explorer's Compact view in each
+    view, at 100 % and 150 %.
+
+- [ ] **W34. Lens filters: the matcher (core).** After: W14.
+  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
+    &str) -> bool` for `*` and `?`, without case, in time linear in the
+    two lengths (the greedy matcher that remembers the last `*`; cite
+    its source beside it). Compare by `char`, folding with
+    `to_lowercase` per char; no allocation per call.
+  - `FolderView.include` and `exclude` (already reserved): caps
+    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
+    `FolderView::clamped` on load and on edit. An empty pattern is
+    dropped.
+  - `SyncLens` applies them (D18): "Show only" to files, "Hide" to every
+    entry, both by name only, never by full path.
+  - Tests: the matcher on the usual cases and on hostile ones (thousands
+    of `*`, a 260-char pattern against a 260-char name, which must stay
+    fast in a debug test), non-ASCII names, case; `SyncLens` with each
+    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
+    (see Performance).
+
+- [ ] **W35. Lens filters on the Lens page (app).** **[needs human]**
+  After: W10, W34.
+  - A "Filter" heading with two text fields, "Show only" and "Hide",
+    each a `;`-separated list (`*.pdf; *.docx`). A pure
+    `parse_patterns(text) -> Vec<String>` trims spaces and drops
+    empties; `format_patterns` writes it back. Edits preview and Cancel
+    undoes them (W10's snapshot).
+  - A lens whose filters hide every entry shows "No items match the
+    filter" in `SpaceScene::placeholder`, so it never looks broken.
+  - Changing a filter re-filters the listing the app already has; it
+    does not re-list the folder.
+  - Tests: `parse_patterns` round trip; the placeholder.
+  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
+    `*.tmp`; a filter that matches nothing shows the message; typing
+    quickly in the field stays smooth on a 50,000-file lens.
+
+- [ ] **W36. Group by: the groups (core, app).** After: W15, W18.
+  - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
+    }>`. `Space::order_is_fixed()` replaces W15's reorder check: it is
+    true while the space keeps sorted *or* is grouped, and
+    `ReorderItem` reads it (D18).
+  - App, pure: `groups(items, group_by, facts) -> Vec<Group { name,
+    range }>` over items already sorted by the sort rule, with each
+    group's items kept together. Group names follow Explorer, and the
+    implementer checks each one on screen:
+    - Name: letter ranges (for example "A - H", "I - P", "Q - Z") and
+      "0 - 9";
+    - Type: the W18 type name;
+    - Size: Explorer's buckets, from Empty and Tiny through Gigantic;
+    - Date modified: Today, Yesterday, Earlier this week, Last week,
+      Earlier this month, Last month, Earlier this year, A long time ago.
+      Pass the local date in, never read the clock inside.
+  - Tests: each key's groups and order, both directions; date buckets
+    across a week, month, and year boundary; an empty space has no
+    groups; `order_is_fixed`.
+
+- [ ] **W37. Group by: headers and folding (core, app, platform).**
+  **[needs human]** After: W36, W17.
+  - `view_layout.rs`: a header row before each group, in every view
+    (an icon view places grouped items by order, as D18 says). Prefix
+    sums and binary search keep a scroll window O(log groups)
+    (Performance).
+  - Painting: Explorer's header (name, count, a chevron, and a rule to
+    the edge).
+  - A click on a header folds or unfolds it. The fold state is per space
+    in `ViewCache` (session only). Folding drops the group's items from
+    the selection; Ctrl+A, the marquee, and the arrow keys skip folded
+    items (D18).
+  - Tests: layout with folded and open groups; the visible-window lookup
+    against a brute-force walk on random group sizes; folding clears the
+    selection; Ctrl+A skips folded items.
+  - **[needs human]** check: group a 50,000-file lens by Type and scroll
+    fast; fold and unfold; Ctrl+A then Delete after folding a group:
+    the question counts only visible items.
+
+- [ ] **W38. Group by: the menu and the settings (app).** After: W37,
+  W23.
+  - Group by ▸ beside Sort by ▸, as Explorer: (None), then the keys from
+    `SORT_KEYS`, then Ascending and Descending. Rows on the View page
+    and the Lenses defaults page, through the shared builder.
+  - Tests: the menu checks the current grouping; the page fields have
+    handlers.
+
+- [ ] **W39. Ctrl+wheel through the views (app).** **[needs human]**
+  After: W22.
+  - A pure `step_view(mode, steps: i32) -> ViewMode`. It walks
+    `VIEW_MODES` in menu order, stops at the ends, and returns
+    `ViewMode::Icons` unchanged (D18). `app/zoom.rs` calls it first for a
+    space whose mode is not `Icons`, and on a step dispatches
+    `SetSpaceView` and shows no pop-up. Ctrl+Plus and Ctrl+Minus step the
+    same way; Ctrl+0 sets `Icons`.
+  - Tests: steps both ways, the ends, `Icons` unchanged, a big wheel
+    delta that is more than one notch.
+  - **[needs human]** check: Ctrl+wheel on a space in Large icons walks
+    to Content and back and stops; a space on "Settings icon size" zooms
+    as before (the F13 row still passes).
+
+- [ ] **W40. The default view for new spaces (config, app).** After:
+  W23.
+  - `WindowSettings.new_space_view: SpaceView`, defaulting to
+    `SpaceView::default()`, so nothing changes until the user changes it.
+    `CreateSpace` takes a `view`, as `CreateLens` does since W19. Fields
+    on the New spaces page, through W23's shared builder.
+  - Tests: the config's missing-field default; a new space gets the
+    setting.
+
+- [ ] **W41. Close F-40: the desktop's view modes (docs).** **[needs
+  human]** After: W12.
+  - Check (maintainer): on Windows 10 and 11, the desktop's View menu
+    offers only Large, Medium, and Small icons. In Small icons, are the
+    desktop's labels below or beside the icon? Record it beside
+    `display_settings.rs`'s `FVM_SMALLICON` branch.
+  - If the labels sit below, nothing changes: the default view already
+    follows the desktop's size. Close F-40 in ROADMAP. If they sit
+    beside, add a task to show a matching space as Small icons under
+    Match Explorer.
+  - Done when: the finding is recorded and F-40 is closed or has its
+    task.
+
+- [ ] **W42. Browse into a subfolder (app).** **[needs human]** After:
+  W24, W25.
+  - `App` keeps, per lens, the folder shown below its own one: session
+    state, a relative path, empty by default. `App::lens_folder(id)`
+    joins the two. A pure `browse_into(root, shown, entry) ->
+    Option<PathBuf>` refuses anything that is not a directory entry of
+    the folder shown, refuses a shortcut, and refuses a result that does
+    not stay inside `root` (D18).
+  - Every app read of `FolderView.path` that means "where the files go"
+    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
+    writer's lens path, delete, Open folder, and `desired_watches`.
+    List each switched site in the commit body; leave W10 and W11's
+    reads alone.
+  - Double-clicking a directory in a lens browses into it. That empties
+    the selection, re-points the lens's watch (W24 drops the old
+    listing), and scrolls to the top. The title bar shows `Root › Sub ›
+    Sub2`, clipped from the left when too long, from a pure
+    `browse_title`.
+  - Change folder…, a restart, and deleting the lens forget the folder
+    shown.
+  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
+    `..` in it, a different case); `browse_title`; each switched site
+    reads the folder shown.
+  - **[needs human]** check: browse two levels down in a Downloads
+    lens; drop, paste, New shortcut, and Delete there all act on the
+    subfolder; deleting the subfolder in Explorer while it is shown shows
+    "Folder not available"; a junction to DeskSpace's store inside the
+    lens shows unavailable when browsed into (W25).
+
+- [ ] **W43. Back and Up (app, platform).** **[needs human]** After:
+  W42.
+  - A Back button at the left of the title bar, before the folder icon,
+    only while a lens shows a subfolder (a `SpaceScene` field, the "new
+    visual" recipe). Clicking it shows the parent. So do Alt+Left,
+    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
+    only while a space is current), and the mouse's back button
+    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
+    do nothing, and Backspace passes on to type-to-select as today.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: the parent of each depth; nothing above the root; the keys'
+    `keys_for_*` rows.
+  - **[needs human]** check: each way back at 100 % and 150 %; the
+    button is gone at the root; Backspace in a rename edits the text and
+    does not go back.
+
+- [ ] **W44. Undo for lens and view actions (app).** The undo work (U1-U7,
+  D11) and the lens work (D17, D18) met late, so no lens or view action
+  records an entry yet: `SetSpaceView` (the View menu, Ctrl+Shift+1..8, the
+  status bar's buttons), `SetLensView` (Sort by, Show hidden files, the Lens
+  page), `SetLensFolder` (Change folder…), `SetLensTitle`, and `CreateLens`
+  (New lens…) all reach the model through a bare `commit`.
+  - Record each as one entry through `App::record_effects` (the "new model
+    change" recipe), labelled as its menu names it ("Change view", "Sort
+    lens", "Change folder", "New lens"), and restart the watch after an
+    applied change as the menu already does. `CreateLens` in
+    `App::show_new_space` opens its entry; check it labels it "New lens" and
+    finishes it on failure.
+  - A restored lens must list its folder again: after an undo or redo that
+    restored one, `App::sync_watches`. The command itself is
+    `RestoreSpaces`, so nothing new is needed in core.
+  - Tests in `app/undo.rs` (copy the layout tests): each action records one
+    entry that undoes and redoes; a restored lens gets a watch; a change
+    that does not apply records nothing.
+  - **[needs human]** check: change a view, sort a lens, toggle its hidden
+    files, change its folder, and create a lens; each undoes and redoes from
+    Ctrl+Z / Ctrl+Y and both menus, and a lens brought back lists its folder
+    again.
 
 ## T. Animations (ROADMAP D12, D13, F-33)
 
@@ -599,6 +1334,330 @@ same way:
     turns it around; no overlay window is left after it ends, after a
     delete, or after quitting mid-way.
 
+### Burn, upgraded (D12, amended 2026-10-22)
+
+T24-T33 make Burn read as fire rather than an orange wipe: it takes its
+time and kindles, spreads unevenly, smoulders, throws turbulent flames and
+ash, and looks the same at every DPI. One commit each, in order.
+
+- **When to start.** T24 can start now. T25-T33 build on three things
+  that are on `feat/color-picker-redesign` (as of `c1ad0f3`):
+  `render/noise.rs` (`RisingField`, `fractal`, `random`),
+  `win32/effect_overlay.rs` (`EffectOverlay`, `Art::Burn`, `Margins`),
+  and `Play::seed`. Wait until that branch is in `main`. Do not copy them
+  across by hand. If the names there have changed, stop and ask (rule 4).
+- **Units.** "px" means pixels at 96 DPI. From T26 on, multiply every px
+  constant by the window's scale (`dpi as f32 / 96.0`).
+- **Reversible.** Every frame stays a pure function of the progress, the
+  seed, and the clock. The clock only drives flicker and never moves the
+  front, so reversing mid-burn still retraces the same edge.
+- **On-screen checks.** Each task marked **[needs human]** appends its
+  check to the Burn row in section V (`T17, T18 (D12)`) and adds its id
+  to that row's first column, instead of adding a new row.
+- **Burn's smoke.** If Burn's smoke (`render/burn_smoke.rs`) has landed,
+  keep the overlay's drawing order: smoke, then flames, then ash.
+
+- [ ] **T24. Each effect sets its own pace (core, app, platform).**
+  **[needs human]**
+  - Why: D12 (amended 2026-10-22). At the default 250 ms, Burn is over
+    before its flames read. Smoothstep, the one curve every effect uses
+    (`ease` in `render/transition.rs`), slows at both ends, while a fire
+    catches slowly and then races. An effect's pace belongs in its
+    `EFFECTS` row, so Burn needs no `if`.
+  - `deskspace-core/src/animation.rs`:
+    - `pub enum Curve { Smooth, Kindle }`, with a `///` doc on each, and
+      `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's smoothstep;
+      move `ease` and its comment here. `Kindle` is `1 - (1 - u)²`, where
+      `u` is how much of the space is shown. An out (u from 1 to 0)
+      starts slowly and ends fast; an in starts fast and settles.
+    - `pub struct Pace { pub stretch_percent: u16, pub curve: Curve }`,
+      `pub const PACE_NORMAL: Pace` (100, `Smooth`), `pub const
+      PACE_STRETCH_RANGE: (u16, u16) = (50, 300)`, and `pub fn
+      stretch(self, duration: Duration) -> Duration`.
+    - `EffectSpec` gains `pace: Pace`, and `effect()` takes it as a fourth
+      argument. Every row gets `PACE_NORMAL` except Burn, which gets
+      `Pace { stretch_percent: 200, curve: Curve::Kindle }`.
+  - `render/transition.rs`: `Transition::frame` applies
+    `self.play.effect.spec().pace.curve` where it now calls `ease`.
+    Delete `ease`.
+  - `deskspace-app/src/app/animation.rs`: `play_for` stretches the chosen
+    duration (`spec().pace.stretch`) before `tweak.slow`. The exit
+    stagger (`exit_delays`) already uses `play.duration`, so it then
+    allows for the stretch with no further change.
+  - The settings page does not change: the Duration control still shows
+    the chosen time.
+  - Tests:
+    - core: every row's stretch is within `PACE_STRETCH_RANGE`; every
+      curve is 0 at 0 and 1 at 1, and never decreases over 101 even
+      samples; `Kindle.apply(0.9)` is above 0.98 (a burn barely moves in
+      its first tenth).
+    - app: `play_for` gives Burn at 250 ms a 500 ms play and Roll at
+      250 ms a 250 ms one. With Burn on Startup at 1000 ms and ten
+      spaces, the last one still ends within `EXIT_LIMIT` (copy the
+      existing exit test).
+  - `CONTEXT.md` section 4, "Animations": one sentence saying an effect's
+    row also sets its pace.
+  - **[needs human]** check: Burn at 250 ms plays for about half a
+    second, catching slowly and then racing to the end; un-burning starts
+    fast and settles; every other effect looks and times as before.
+
+- [ ] **T25. One seeded Burn field per play (platform).**
+  **[needs human]**
+  - Why: every burn has the same shape, because the noise has no seed.
+    At exit, same-sized spaces burn identically one after another. The
+    painter (`Effects::burn` in `render/d2d/effects.rs`) and the overlay
+    (`Art::Burn`) also each build a `BurnField`, and they agree only
+    because both happen to compute the same columns and rows.
+  - `render/noise.rs`: `fractal` and `RisingField::new` take `seed: u32`.
+    Mix it into the lattice hash as the octave is mixed in:
+    `^ seed.wrapping_mul(0x27D4_EB2F)`. Seed 0 must give exactly today's
+    values; callers other than Burn pass 0.
+  - `render/burn.rs`: `BurnField::for_space(size: (f32, f32), detail: u8,
+    seed: u32) -> Self` becomes the only public constructor (`new` goes
+    private). It is the one place the cell grid is worked out from a size
+    in pixels. The painter passes its `size`, and the overlay passes
+    `(rect.width as f32, rect.height as f32)`.
+  - `Mask::Burn` gains `seed: u32`, filled from `play.seed` in the Burn
+    arm of `frame` (as `Mask::Smoke` does). The painter's rebuild check
+    (`fits` in `Effects::burn`) compares the seed too. `Art::Burn` takes
+    the seed from the `Play` it is made for.
+  - Tests:
+    - noise: seed 0 gives the values it gave before; pin three values
+      in a test before changing the hash.
+    - burn: two seeds give different fields; one seed twice gives equal
+      fields; `for_space((301.0, 199.0), 5, 1)` has the cols and rows the
+      painter and the overlay used to compute.
+  - **[needs human]** check: at exit, two spaces of the same size burn
+    along different edges; one space burns differently each time it is
+    hidden; reversing mid-burn still un-burns along the same edge.
+
+- [ ] **T26. Burn scales with DPI (platform).** **[needs human]**
+  - Why: `burn::CELL` (3), the overlay `Margins`, and the flame sizes
+    (`HEIGHT_RANGE`, 18 to 60) are physical pixels. At 150 % the flames
+    are two-thirds the size and the edge looks finer.
+  - `Geometry` (`render/transition.rs`) gains `dpi: u32`, and
+    `for_visibility` and `for_fold` take it. Every call in
+    `win32/space_animation.rs` passes `window_dpi(window)`
+    (`win32/dpi.rs`). `Mask::Burn` gains `dpi: u32`, filled from
+    `geometry.dpi`.
+  - `render/burn.rs` stays free of Win32. Add `pub fn cell_px(dpi: u32) ->
+    u32`, which is `(CELL * dpi + 48) / 96` and at least 1. `for_space`
+    takes `dpi` and uses it for the grid.
+  - `render/flames.rs`: `pub fn margins(dpi: u32) -> (u32, u32)` (side,
+    top) replaces the `MARGIN_SIDE` and `MARGIN_TOP` constants; the
+    overlay builds its `Margins` from it. `tongues` takes `scale: f32` and
+    multiplies `HEIGHT_RANGE`, the sway, and the ember sizes by it.
+  - Tests: `cell_px` is 3, 5 (rounded from 4.5), and 6 at 96, 144, and 192
+    DPI; a 600 × 400 px field at 192 DPI has half the columns it has at
+    96; tongues at scale 2 are twice as tall for the same bases (scale
+    the bases' rows too); `margins(144)` is 1.5 times `margins(96)`,
+    rounded.
+  - **[needs human]** check: on a 150 % and a 200 % monitor, Burn looks
+    the same as at 100 %, only bigger: the edge is as ragged relative to
+    the space, and the flames are as tall relative to the title bar.
+
+- [ ] **T27. The field owns its bands (platform; refactor).**
+  - Why: `GLOW`, `CHAR`, and `SCORCH` are global field units, so their
+    width in pixels depends on the noise and on the space's height. T28
+    gives each field its own bands; this task moves the code first, with
+    no visible change.
+  - `Mask::Burn` carries `gone: f32` (0 to 1) instead of `front`. The
+    free `front(gone)` and `stage(above)` become methods:
+    `BurnField::front(&self, gone)` and `BurnField::stage(&self, col, row,
+    front)`. The field stores `bands: Bands { glow, char, scorch }` (field
+    units), set by `for_space` to today's constants, which then go.
+  - `TransitionFrame`'s checks against the front (`front <= -burn::BANDS`
+    in `covers_window`, and `front >= 1.0` in the tests) become
+    `gone <= 0.0` and `gone >= 1.0`. `fill_burn`, `flame_bases`, and
+    `Art::Burn` take the front from the field.
+  - Tests: today's `burn.rs` tests, rewritten against a field, pass
+    unchanged in meaning. No new behavior, so no on-screen check; say so
+    in the commit body.
+
+- [ ] **T28. Burn spreads like fire (platform).** **[needs human]**
+  - Why: a threshold sweeping through noise moves at one speed along a
+    blobby edge. Fire catches unevenly, climbs faster than it spreads,
+    runs up in fingers, and burns holes that join the main front.
+  - `render/burn.rs`: a cell's value becomes when the fire reaches it,
+    scaled to 0 to 1. Leave the stages, `cell_pixels`, and the painter as
+    they are.
+    - **Coarse grid.** Solve on a grid of `cols.div_ceil(4)` by
+      `rows.div_ceil(4)` nodes, so a full-HD space stays cheap.
+    - **Speed** of a node: `SPEED_MIN + (SPEED_MAX - SPEED_MIN) *
+      fractal(..)`, with the seeded `noise::fractal` at today's lattice
+      for the detail. `SPEED_MIN` is 0.35 and `SPEED_MAX` is 1.0.
+    - **Steps.** A step to each of the 8 neighbours costs
+      `length / (speed(to) * climb)`. `length` is 1 for the four sides
+      and √2 for the diagonals. `climb` is `CLIMB_UP` (1.8) toward
+      row 0, 1.0 level, and `CLIMB_DOWN` (0.45) away from it.
+    - **Sources.** Each bottom-row node starts at `BOTTOM_STAGGER`
+      (0.2) × node rows × `noise::random(seed, col)`. Spot fires add
+      `(nodes / SPOT_AREA).min(SPOTS_MAX)` sources (`SPOT_AREA` 600
+      nodes, `SPOTS_MAX` 3). They sit at seeded nodes in the lower 60 %
+      of rows and the middle 80 % of columns, and each starts at
+      `SPOT_DELAY` (0.3) × node rows.
+    - **Solve** with Dijkstra's algorithm: `std::collections::BinaryHeap`
+      over `Reverse` of an `f32` wrapper ordered by `total_cmp`. Cite
+      https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm beside it.
+    - **Cell values.** A cell takes the coarse arrival at its position
+      (bilinear, as `RisingField::value_at` samples), divided by the
+      largest arrival. Then add `EDGE_RAG` (0.015) × (fine
+      `noise::fractal` − 0.5), so the edge stays ragged like paper, and
+      clamp the result to 0 to 1.
+    - **Bands from pixels.** The field keeps `units_per_cell` (1 / the
+      largest arrival, divided by 4 for the coarse grid). `for_space`
+      sets each band to `px / cell_px(dpi) * units_per_cell` from
+      `GLOW_PX` 3, `CHAR_PX` 5, and `SCORCH_PX` 12.
+  - `for_space` logs how long it took at `debug`. Both the painter and
+    the overlay build the field, so in a release build a 1920 × 1080
+    space at 100 % must build in under 3 ms. Put the timing in the
+    commit body.
+  - Tests: values stay within 0 to 1; the row means rise from the bottom
+    up (keep the test); a pure `step_cost(length, speed, climb)` costs
+    less up than level, and less level than down; a 300 × 300-node field with
+    seed 1 has a column where a higher cell burns before a lower one (a
+    hole); the median glow thickness, in pixels, of a 100 px and a
+    400 px tall field differs by less than a factor of two.
+  - **[needs human]** check: the bottom catches unevenly; the fire runs
+    up in fingers; on a large space, a hole or two opens in the middle
+    and joins the main front; the glowing edge is a similarly thin line
+    on small and large spaces; Detail still coarsens it; startup and
+    exit with many spaces do not stutter.
+
+- [ ] **T29. Turbulent flames (platform).** **[needs human]**
+  - Why: today's flames are identical teardrops every `SPACING` cells,
+    swaying on one sine, and overlapping fire keeps the brighter channel
+    (`brightest`) instead of adding up.
+  - `render/flames.rs`:
+    - **Sizes.** `tongues` takes the seed. Each tongue's height is
+      multiplied by `0.6 + 0.7 * noise::random(seed, col)`.
+    - **Turbulence.** In `paint_tongue`, multiply the heat by
+      `0.45 + 1.1 * n` and clamp it to 0 to 1. `n` is one octave of the
+      noise in `render/noise.rs` (make `value_noise` `pub(crate)`),
+      sampled at `px / (tongue.width * 0.6)` across and `(py + time *
+      RISE_PX_PER_S * scale) / (tongue.height * 0.3)` down, so the
+      pattern scrolls upward. `RISE_PX_PER_S` is 120. Keep the 0.02 cut.
+    - **Additive light.** Replace `brightest` with `add`: each byte of
+      the two premultiplied pixels added and capped at 255. This keeps
+      the pixels premultiplied (each channel ≤ alpha stays true).
+    - **Sparks** take their phase from the seed instead of the index
+      alone.
+  - In a release build, a frame of flames for a 1200 × 900 space shades
+    in under 4 ms. Measure it, log it at `trace`, and put the timing in
+    the commit body.
+  - Tests: keep today's; the same seed and time give identical pixels,
+    and two times differ; `add` of two half-alpha pixels is brighter
+    than either and stays premultiplied; two seeds give different tongue
+    heights for the same bases.
+  - **[needs human]** check: the flames lick and break up at the tips;
+    neighbours differ in size; where flames cross they glow brighter; no
+    regular comb of tongues; still no box around them.
+
+- [ ] **T30. A glow that lives (platform).** **[needs human]**
+  - Why: the glowing edge is a fixed colour ramp, the char is flat, and
+    the paper ahead gets no light from the fire.
+  - Clock: `frame` (`render/transition.rs`) takes `time: f32`, the
+    animation clock in seconds that the flames already use
+    (`now().as_secs_f32()` in `space_animation.rs`). `Mask::Burn` carries
+    it. Only Burn reads it. Flames and glow then flicker together.
+  - `render/burn.rs`:
+    - `cell_pixels(stage)` becomes `cell_pixels(stage, shimmer)`.
+      `shimmer` is `0.5 + 0.5 * sin(time * rate + phase)`, where `phase`
+      comes from `noise::random(seed, cell index)` × 2π. Work it out only
+      for cells in a band; Whole and Gone cells skip it.
+    - Burning: brightness × `(0.82 + 0.18 * shimmer)`, rate 13.
+    - `Stage::Charred` gains `along` (0 at the glow, 1 at the scorch).
+      Ember cells, those with `noise::random(seed ^ EMBER_SALT, index)`
+      below 0.1, lay ember colour (255, 110, 30) over the char at alpha
+      `(1 - along)^1.5 * (0.4 + 0.6 * shimmer)`, rate 5. `EMBER_SALT` is
+      a named constant.
+    - A new `Stage::Lit(near)` follows `Scorched`, `LIGHT_PX` (24) deep.
+      `near` is 1 next to the scorch and 0 at untouched paper. It lays
+      premultiplied (255, 150, 60) at alpha `near² * 48 * (0.75 + 0.25 *
+      shimmer)`. The light band counts toward the field's bands, so at
+      gone 0 nothing is lit.
+  - `fill_burn` (`render/d2d/effects.rs`) passes the clock; the marks
+    bitmap is already rewritten every frame, so nothing else changes in
+    the painter.
+  - Tests: Whole and Gone pixels are as before; at one time, ember cells
+    near the glow are brighter than other char cells; Lit's alpha is at
+    most 48 and 0 at its far edge; Burning pixels differ between two
+    times but stay opaque; every pixel stays premultiplied.
+  - **[needs human]** check: the edge shimmers; embers wink in the char
+    and die out toward the scorch; warm light on the paper just ahead of
+    the edge flickers with the flames; at rest after a show, no tint is
+    left on the space.
+
+- [ ] **T31. Ash (platform).** **[needs human]**
+  - Why: burned-away paper just disappears. Black flakes lifting off
+    the edge sell the fire.
+  - Pure, in a new `render/ash.rs`:
+    - **Flake cells.** `for_space` picks them once: the cells with
+      `noise::random(seed ^ ASH_SALT, index)` below `ASH_SHARE` (0.008).
+      They are stored on `BurnField`.
+    - **`ash::flakes(field, front, time, scale, out: &mut Vec<Flake>)`.**
+      A flake lives while `0 < front - value < ASH_LIFE` (0.12 field
+      units). Its `life` is `(front - value) / ASH_LIFE`. Life depends
+      on the front, not the clock, so un-burning brings the flakes back
+      down into the paper.
+    - **Position.** A flake starts at its cell's centre in overlay
+      pixels and rises `life * ASH_RISE_PX` (90) × scale. It drifts
+      sideways by `sin(time * 1.7 + phase) * 10 * scale * life`.
+    - **Shape.** An ellipse `3 * scale` px tall and
+      `3 * scale * |cos(angle)| + 0.5` px wide, so it tumbles.
+      `angle = time * spin + phase`, where `spin` (−4 to 4 rad/s) and
+      `phase` come from the flake's seeded random.
+    - **Colour.** (22, 18, 16) at alpha `(1 - life)^0.7 * 230`. While
+      `life < 0.25` it has a 1 px rim of `fire(0.6)`; make `fire`
+      `pub(crate)`.
+    - **`ash::paint`.** Source-over onto the premultiplied pixels:
+      `out = src + dst * (1 - src.alpha)`.
+  - `Art::Burn` paints the ash after the flames. Flakes that leave the
+    overlay are skipped.
+  - Tests: no flakes at gone 0; a flake is higher at a larger front for
+    the same time; the same inputs give the same flakes; `paint` keeps
+    pixels premultiplied and never writes outside the buffer.
+  - **[needs human]** check: black flakes, some with glowing rims,
+    tumble up off the burning edge and fade; reversing mid-burn sinks
+    them back in; no flake is left on screen after the burn ends.
+
+- [ ] **T32. Flames on the GPU on Windows 11 (platform).** **[needs
+  decision]**: whether a click-through overlay can show composition
+  content. Proposed below; a maintainer decides after step 1, then the
+  task is **[needs human]** and goes to a junior paired with a reviewer.
+  It comes after T29-T31, whose CPU look is the reference.
+  - Why: the CPU shades every overlay pixel each 15 ms tick (about 4.7 MB
+    for a 1200 × 900 space) and then calls `UpdateLayeredWindow`. It
+    cannot afford bloom.
+  - **Step 1, spike.** Make the overlay with `WS_EX_LAYERED |
+    WS_EX_TRANSPARENT | WS_EX_NOREDIRECTIONBITMAP` and a composition
+    target (copy the tree setup from `win32/composition.rs`). Clicks must
+    pass through it: run `scripts/zorder.ps1` over a burning space. If
+    they do not, record that in D12 and delete this task and T33.
+  - **Step 2, draw on the GPU.** On the composition path, `Art::Burn` draws
+    into a composition drawing surface with Direct2D instead of
+    `flames::paint`. Each tongue is a teardrop path, filled with a
+    seeded 256 × 256 noise bitmap (made once per play) through a bitmap
+    brush that scrolls up at `RISE_PX_PER_S`. The heat ramp is applied
+    by `CLSID_D2D1TableTransfer`, and flames blend with
+    `D2D1_PRIMITIVE_BLEND_ADD`.
+  - **Step 3, bloom.** The flame layer is drawn a second time, under itself,
+    through `CLSID_D2D1GaussianBlur` (standard deviation 6 × scale) at
+    60 % opacity.
+  - **Step 4, fallback.** Windows 10 and the accent path keep today's CPU
+    overlay. Both paths share `flames::tongues`, so the layout tests
+    cover both.
+
+- [ ] **T33. Heat haze (platform).** **[needs decision]**: after T32,
+  and only on composition spaces, because their painter draws through an
+  `ID2D1DeviceContext` (`SurfaceCanvas`). The plain `ID2D1HwndRenderTarget`
+  has no effects, so other spaces would play without haze. Proposed: the
+  painter draws the space's contents through `CLSID_D2D1DisplacementMap`.
+  The map is a scrolling noise bitmap, strongest `HAZE_PX` (20) above the
+  burning edge and gone beyond 60 px. The scale is 4 × scale px, so the
+  paper shimmers above the fire. Decide whether a look that differs by
+  path is acceptable, then this is **[needs human]**.
+
 ## X. The debug window (ROADMAP D14, F-61)
 
 Every planned task here is done (`archive/TASKS-done.md`); what remains
@@ -681,11 +1740,12 @@ Rules for every K task:
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.
 
-- [ ] **K8. Split `win32/space_window.rs`.** About 1,025 lines of non-test
-  code (measured 2026-10-19), past the guideline since T12. Turn it into
+- [ ] **K8. Split `win32/space_window.rs`.** About 1,200 lines of non-test
+  code (measured 2026-10-27), past the guideline since T12. Turn it into
   `win32/space_window/mod.rs` plus:
-  - `zorder.rs`: the z-order pinning (`on_window_pos_changing`,
-    `insert_after`, `window_above`, `set_on_top`) with their tests.
+  - `zorder.rs`: the z-order pinning (`set_on_top`,
+    `on_window_pos_changing`, `insert_after`, `window_above`) with their
+    tests.
   - `mouse.rs`: the mouse handlers (`on_mouse_move`, `on_mouse_leave`,
     `on_mouse_wheel`, `on_button_down`, `on_button_up`) and their helpers
     (`to_desktop`, `Modifiers`, `modifiers`, `button_for`, the `MK_*`
@@ -693,6 +1753,8 @@ Rules for every K task:
   - `frame.rs`: `Frame` and `update_region`, with their tests.
   - `mod.rs` keeps `SpaceState`, `Backing`, creation, the `set_*` and
     `show*` functions, `paint`, `with_state`, and the window procedure.
+  - Done when: `mod.rs` is under about 800 lines of non-test code and the
+    K rules above hold.
 
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
@@ -924,6 +1986,26 @@ monitor) is reported as **not covered**, never passed.
     Windows 10, and any DPI not covered) and log the cut, dated, as the V
     rules say.
 
+- **R20. Test the app without Win32 (`ENGINEERING.md` section 3).**
+  `deskspace-platform` is about 55 % of the code (2026-10-21) and holds two
+  things: the data the app hands it (`SpaceScene`, `Event`, `SettingsForm`,
+  `MenuEntry`, `Transition` and the effect math, `TextEdit`), which is
+  pure, and the Win32 code that turns that data into windows. The app's
+  tests are nearly all pure, yet they compile the `windows` crate, and
+  any platform change re-tests the app. Design the split and settle:
+  - a crate below `deskspace-platform` for the pure data and math (for
+    example `deskspace-ui`), and exactly what moves into it;
+  - how the app reaches the platform without naming the concrete `Ui`
+    struct: a trait the platform implements, or more of R17's `Effect`,
+    where a pure decision returns what to do and one place runs it;
+  - the free functions the app calls directly today (`item_facts`,
+    `desktop_directory`, `notify_moved`, ...): which go behind the same
+    seam;
+  - the order of the work, so each step is a pure move (the section K
+    rules) and the gates pass after each.
+
+  Then split it into one-commit tasks here.
+
 ## V. Awaiting on-screen check
 
 Built and unit-tested, but not yet confirmed on screen (the R7 list). Check
@@ -982,6 +2064,16 @@ each id is in `archive/TASKS-done.md`.
 | Right-drop greying | Right-drag onto a space from a source that offers only copy (a file on a read-only share or a zip's contents): "Move here" is greyed, "Copy here" and "Show here without moving" work; from Explorer every entry is enabled. |
 | H5, H4 (F-46) | Panes, hairlines, dimmed rows, and keyboard movement in both modes; a space is greyed until customized, then edits apply to it alone and Cancel restores; the switch off and on restores custom values; a menu edit with the window open survives Cancel; an old config with per-space `icon_size`/`tint` opens customized; the highlight outline is visible on Clear and Solid, and on Acrylic with Windows corners (border on and off, 100 % and 150 %) its corners are round, following the window's |
 | I8 | With takeover on, creating, renaming, and deleting a desktop file updates the layer within about 150 ms; so does editing one in place whose icon is its content (save a new picture over a desktop `.png`, or re-point a desktop shortcut to another app), with no restart. |
+| W2 (F-07) | With the hand-made lens in section W, create, rename, and delete files in its folder in Explorer: the lens follows within about 150 ms. Rename the folder away: the lens empties. Rename it back: it fills again within 5 s. |
+| W3b (F-07) | Drop files from Explorer and from a normal space onto a lens (hand-made, section W): they land in its folder, and the normal space no longer lists its file. Drop a file whose name is already there: Explorer's Replace or Skip dialog appears. Ctrl+Z in Explorer undoes the move. A right drop, "Copy here": the original stays. "Add files…" on a lens moves the files into its folder. Regression: a clashing drop on a normal space still gets " (2)" and no dialog. |
+| W3c (F-07) | Shift-drag a file from Explorer onto a hand-made lens (section W): the cursor shows "no" and nothing moves. Right-drag onto a lens: "Show here without moving" is grey. On a normal space, Shift and the right-drop menu behave as before. |
+| W3d (F-07) | Drag an item from a hand-made lens (section W) onto a normal space: the file leaves the lens's folder, the space lists it, and the lens no longer shows it. Delete that space: the file goes to the desktop, not back to the folder (D3). |
+| W3e (F-07) | In Explorer, copy a file and paste it on a hand-made lens (section W; click it, then Ctrl+V): a copy lands in the folder. Cut and paste: it moves. Cut an item from a normal space and paste it on a lens: it moves into the folder and leaves the space. A paste on a normal space works as before. |
+| W3f (F-07) | Drop a Start-menu app on a hand-made lens (section W): a working `.lnk` is in the folder and the lens shows it. "New shortcut ▸ Paste shortcut" and the custom shortcut dialog on a lens do the same. On a normal space, shortcuts work as before. |
+| W3g (F-07) | Select an item on a hand-made lens (section W) and press Delete: the file is in the Recycle Bin and the lens drops it. On the settings window's Shortcuts page, the X on a lens item says the file goes to the Recycle Bin, and it does. |
+| W5 (F-07) | Point a lens at a throwaway folder, then rename the folder away: "Folder not available" and the path show, centered in the lens, in a faded label color; a long path wraps inside the lens. Rename it back: the items return within 5 s and the text goes. |
+| W6 (F-07) | Right-click a hand-made lens (section W): Open folder opens it in Explorer; Change folder… picks another folder and the lens follows it, and picking DeskSpace's storage folder shows a message and changes nothing. Sort by has Explorer's shape (Name, Date modified, Type, Size; Ascending and Descending; Folders first) and checks the current key and direction; each choice reorders the lens at once, and Show hidden files toggles and applies at once. After a restart the sort rule (key, direction, folders first) and the hidden-files setting are still set. A normal space's Sort by looks the same, and a key choice sorts it once. |
+| W7 (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
 | Menu at the click | With takeover on and "Auto arrange" off, right-click an empty spot far from other icons: Paste (after copying a file) and New › Text Document each put the new icon at the click, not in the next free slot; a space's item menu commands (Open, Properties, Delete) work as before. If Explorer ignores the point, record it here. |
@@ -1021,17 +2113,35 @@ each id is in `archive/TASKS-done.md`.
 | Flat material | Fade, Pixelate, Gradient, Dissolve, and Burn on hide, show, and delete (and in the debug preview) on Acrylic, Blur, and Solid spaces with a border, with Windows' "Transparency effects" off and on: no outline stays around the fading space, and it comes back once a show ends; with the switch off, no dark box either, the dark fill coming back only once a show ends; with it on, see the T13 row; Roll, Fly, and CRT look as before. |
 | T12 (D12) | Windows 11 with "Transparency effects" on: the log says "spaces use composition"; the R3 list passes unchanged with each backdrop (Acrylic and Blur blurred, Clear and Solid not), at 100 % and 150 %, corners and border as before, and the T8 row still passes, the blur stepping on and off as today. With the switch off at startup, the log names it and spaces look as before T12. Windows 10, `--placement desktop-*`, and `--click-through` change nothing. Idle CPU and GPU no higher than before. |
 | T13 (D12) | Windows 11 confirmed 2026-10-18 (maintainer). Still to check: on Windows 10 the blur still steps; idle GPU no higher than before. |
-| T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
+| T17, T18 (D12) | Burn on Startup (hide, show, a new space, startup, exit) and on Delete, on each backdrop at 100 % and 150 %: the space burns from the bottom up along a ragged edge that glows, chars, and scorches ahead of itself, like paper; flames lick up from the edge and past the top and sides of the frame with no box or blur around them, and never show over another application (cover the space with a window and they stay behind it), while with `--on-top` they follow the space above other windows; Detail changes how ragged the edge is; reversing mid-burn (the hotkey twice) un-burns it; no flame window is left behind after it ends, after a delete, or after quitting mid-burn; a desktop-hosted space burns without flames. |
 | U3 (D11) | Space menu and tray menu list Undo and Redo at the top, greyed when empty and named for the top action ("Undo Move space", "Redo Move space"); moving, resizing, reordering, sorting, fitting, locking, folding, renaming, creating, and deleting an empty space each undo and redo from both menus. |
 | U4 (D11) | Ctrl+Z after a space move puts it back, Ctrl+Y moves it again; with no space current, Ctrl+Z on the desktop still undoes an Explorer rename. |
 | U5 (D11) | Drop a file into a space and undo (it is back where it was); delete a space with stored files, undo, then redo; rename an item and undo. |
 | U6 (D11) | Recycle a file in Explorer, restore it through a test harness or `--verbose` log, and confirm it is back under its old name. |
 | U7 (D11) | Delete two items and undo (both return to the space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty the Recycle Bin between a delete and its undo: the undo says it can't and changes nothing. Shift+Delete leaves Undo as it was. |
+| W8 (D17) | In light and dark mode, at 100 % and 150 %, on Windows 11 and 10: every scopes row shows its kind's glyph (Global, a space, a lens), the labels line up, a dimmed row's glyph is dimmed, and the selection covers the glyph. |
+| W9 (D17) | Lenses on Downloads, Documents, and a plain folder show each folder's own icon left of the title; rename the folder away and the generic folder icon shows; F2's rename box starts after the icon; the same folded, at 100 % and 150 %, on every backdrop; a normal space's title bar is unchanged. |
+| W11 (D17) | On a lens in the user's profile: each "Show as" entry retitles it at once, and Cancel puts the title back; Change folder… retitles it under Folder name and keeps a custom title; F2 on the title, then the Lens page shows Custom. |
+| W12 (D17) | Each View ▸ entry resizes only that space, on a normal space and a lens. "Settings icon size" gives back the look's size. Ctrl+wheel does not move a space with a fixed size. The view survives a restart. |
+| W13 (D17) | After clicking a space, Ctrl+Shift+1, 2, and 3 change it to Extra large, Large, and Medium icons; Ctrl+Shift+4 through 8 change nothing yet; with Explorer in front, Explorer's own Ctrl+Shift+1 still works. |
+| W15 (D17) | Turning Sort by ▸ Keep sorted on sorts the space at once. With it on, a dropped file lands in order and a renamed item moves to its place; a drag inside does not rearrange, while a drag out still moves the file. Turned off, the space rearranges freely again and keeps the order it had. On a lens the entry is checked and greyed, and its order holds. |
+| W16 (D17) | Small icons on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, rows wrapping and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, and type-to-select all hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Back in Medium icons, the hand arrangement is as it was. |
+| W17 (D17) | List on a space and on a lens, at 100 % and 150 %: 16 px icons with one label line beside them, columns filling top to bottom and running left to right, the wheel scrolling sideways, Home/End/PageUp/PageDown and the arrow keys moving along the columns, and the scroll indicator along the bottom; click, Ctrl and Shift click, the marquee, and type-to-select hit the inline cells; F2's box sits over the label; drag out works, and a drag to rearrange reorders a normal space (not one kept sorted). Check the W16 row again in List. |
+| W18 (D17) | A folder in Details beside the same folder in Explorer's Details: the same columns (Name, Date modified, Type, Size), values, alignment, date, and size format; Name takes the width left over; header clicks sort and reverse and the arrow follows; the header stays put while rows scroll; hover and selection fill the row and F2's box sits in Name; 100 % and 150 %; light and dark. |
+| W19 (D17) | A new lens has the status bar and a new space does not; View ▸ Status bar toggles it; the counts follow a click, Ctrl+A, and the marquee, and the size shows for files only; both buttons switch the view and show which is on, and their tips read as Explorer's; folded, the bar is gone; every backdrop at 100 % and 150 %, light and dark. |
+| W21 (D17) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
+| W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
+| W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
+- Code comments cite task ids and dates in about 143 places, such as
+  `(W3c)` or `T12` (review, 2026-10-21). Ids are decoded only through
+  `TASKS.md` and its archive, and they age as tasks are archived.
+  Suggested, for the maintainer to decide: keep the why in the comment
+  and the id in the commit message, and stop adding ids to new comments.
 
 - `app/undo.rs` `reverse_files`: the checks run first, but a file step can
   still fail midway (the Recycle Bin emptied of one of two deleted items),
@@ -1046,3 +2156,53 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   no keyboard support (not a Tab stop; its X and + are mouse-only).
   Suggested task: arrow-key focus, Delete for the X, and Enter on the +
   tile (ROADMAP M7 accessibility).
+- Code comments cite task ids and dates in about 143 places, such as
+  `(W3c)` or `T12` (review, 2026-10-21). Ids are decoded only through
+  `TASKS.md` and its archive, and they age as tasks are archived.
+  Suggested, for the maintainer to decide: keep the why in the comment
+  and the id in the commit message, and stop adding ids to new comments.
+- `deskspace-platform` tests: the crate's tests take about 16 s
+  (2026-10-21), while every other crate's take under 0.1 s. The time
+  goes to tests that call the real shell. Run alone,
+  `win32::app_catalog::tests::a_background_refresh_fills_the_cache` takes
+  about 3 s more than an empty test. Suggested task: find what each slow
+  test waits for, and test the decision on plain data instead, keeping
+  at most one real-shell check per module.
+- **Readability, W12:** the task calls `LargeIcons` "a 96 px cell", but this
+  codebase's grid cell is twice the base 48 px icon (a 96 px cell at 100 %),
+  so a fixed 96 px icon gets a 192 px cell. The task/word should say "icon",
+  or the fixed views need their own cell rule. Noted while implementing W12.
+- **API consistency:** `Space::view()` returns `SpaceView` by value while
+  `source()` and `look()` return references; harmless because `SpaceView` is
+  `Copy`, but surprising beside its siblings. Suggested task: return
+  `&SpaceView` or document the value return.
+- **app/view.rs:** `base_layout` now takes a `fixed_icon: bool` beside
+  `theme`, `grid`, `scale`, and `title_scale`. The call sites are still
+  readable, but a small `LayoutScale` (fixed view vs look) would make the
+  fixed-vs-look choice harder to misread when W14 adds more view fields.
+- **view.rs:** `SpaceView::with_mode` gives the default sort rule, so a View
+  menu choice or a Ctrl+Shift digit resets a space's sort rule and its Keep
+  sorted choice (W14, W15), though D17 says a space keeps its last rule.
+  Suggested: build the new view from the current one and change only the
+  mode, if that is what D17 means.
+- **W16 Small icons:** the inline cell is 200 × 22 px at 96 DPI, with a 2 px
+  gap, because those are plausible Explorer values but have not been measured
+  on screen. Confirm them (and the row height at a larger label size, which
+  the cell does not follow yet) during W16's check, then fix the constants in
+  `view_layout.rs` and record the measurement.
+- **W17 List:** `LIST_COLUMN_WIDTH` (200 px) and `LIST_CELL_HEIGHT` (22 px)
+  are the same provisional values as Small icons, not measured. Confirm them
+  during W17's check and record the measurement.
+- **W17 List labels:** each label is ellipsized at the column's right edge, as
+  W17 asks; Explorer instead sizes a column to the longest label in the folder
+  (up to a limit). Measuring the labels is left for later.
+- **Docs, D17 vs W16:** D17 calls Small icons one of the "four icon views"
+  and says only List, Details, Tiles, and Content place items by order, while
+  W16 (and W12's note) puts Small icons' labels beside the icon in inline
+  cells, so it now places items by order. W16 was followed. Suggested: amend
+  D17 to say the three large icon views keep the grid and Small icons is an
+  order-placed inline view with a fixed 16 px icon.
+- **W16 Fit to contents:** on a space in Small icons the command changes
+  nothing, because an order-placed view keeps the space's size. Decide
+  whether it should fit the content extent (and what width) as the view tasks
+  continue.

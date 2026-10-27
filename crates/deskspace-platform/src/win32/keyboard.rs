@@ -18,10 +18,11 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VIRTUAL_KEY,
-    VK_0, VK_A, VK_ADD, VK_APPS, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
-    VK_ESCAPE, VK_F2, VK_F5, VK_F10, VK_HOME, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
-    VK_NEXT, VK_NUMPAD0, VK_OEM_MINUS, VK_OEM_PLUS, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU,
-    VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP, VK_V, VK_X, VK_Y, VK_Z,
+    VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_A, VK_ADD, VK_APPS, VK_BACK, VK_C,
+    VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F2, VK_F5, VK_F10, VK_HOME,
+    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_NUMPAD0, VK_OEM_MINUS, VK_OEM_PLUS,
+    VK_PRIOR, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SUBTRACT, VK_UP,
+    VK_V, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GA_ROOT, GetAncestor, GetForegroundWindow, HHOOK, KBDLLHOOKSTRUCT,
@@ -47,6 +48,15 @@ pub(crate) const SEL_ZOOM_OUT: usize = 10;
 pub(crate) const SEL_ZOOM_RESET: usize = 11;
 pub(crate) const SEL_UNDO: usize = 12;
 pub(crate) const SEL_REDO: usize = 13;
+/// Ctrl+Shift+1 through 8: Explorer's view keys.
+pub(crate) const SEL_VIEW_1: usize = 14;
+pub(crate) const SEL_VIEW_2: usize = 15;
+pub(crate) const SEL_VIEW_3: usize = 16;
+pub(crate) const SEL_VIEW_4: usize = 17;
+pub(crate) const SEL_VIEW_5: usize = 18;
+pub(crate) const SEL_VIEW_6: usize = 19;
+pub(crate) const SEL_VIEW_7: usize = 20;
+pub(crate) const SEL_VIEW_8: usize = 21;
 
 /// Direction codes packed into `NAV_KEY`'s wParam low bits.
 pub(crate) const NAV_LEFT: usize = 0;
@@ -309,7 +319,7 @@ fn watched_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
         return Some((messages::PROPERTIES_KEY, 0));
     }
     if mods.ctrl {
-        return watched_ctrl_key(vk, watch);
+        return watched_ctrl_key(vk, mods, watch);
     }
     if watch.selection && is_key(vk, VK_RETURN) {
         return Some((messages::SELECTION_KEY, SEL_OPEN));
@@ -347,9 +357,16 @@ fn watched_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
 }
 
 /// `watched_key` for a key pressed with Ctrl.
-fn watched_ctrl_key(vk: u32, watch: Watch) -> Option<(u32, usize)> {
+fn watched_ctrl_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
     if is_key(vk, VK_A) {
         return Some((messages::SELECT_ALL_KEY, 0));
+    }
+    // Explorer's views, Ctrl+Shift+1 through 8; they need a current space.
+    if watch.paste
+        && mods.shift
+        && let Some(view) = view_key(vk)
+    {
+        return Some((messages::SELECTION_KEY, view));
     }
     let clipboard = if watch.selection && is_key(vk, VK_C) {
         Some(ACTION_COPY)
@@ -592,7 +609,21 @@ pub(crate) fn clipboard_action(action: usize) -> Option<ClipboardAction> {
     })
 }
 
-/// Decodes a posted `SELECTION_KEY` wParam into a selection key.
+/// The `SEL_VIEW_*` code for Ctrl+Shift+1 through 8, Explorer's view keys.
+fn view_key(vk: u32) -> Option<usize> {
+    Some(match vk {
+        v if v == VK_1.0 as u32 => SEL_VIEW_1,
+        v if v == VK_2.0 as u32 => SEL_VIEW_2,
+        v if v == VK_3.0 as u32 => SEL_VIEW_3,
+        v if v == VK_4.0 as u32 => SEL_VIEW_4,
+        v if v == VK_5.0 as u32 => SEL_VIEW_5,
+        v if v == VK_6.0 as u32 => SEL_VIEW_6,
+        v if v == VK_7.0 as u32 => SEL_VIEW_7,
+        v if v == VK_8.0 as u32 => SEL_VIEW_8,
+        _ => return None,
+    })
+}
+
 /// The zoom a key pressed with Ctrl asks for, as browsers and Explorer
 /// windows map it: Plus (the `=`/`+` key or the keypad's) zooms in, Minus
 /// zooms out, and 0 resets.
@@ -608,6 +639,7 @@ fn zoom_key(vk: u32) -> Option<usize> {
     }
 }
 
+/// Decodes a posted `SELECTION_KEY` wParam into a selection key.
 pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
     Some(match action {
         SEL_OPEN => SelectionKey::Open,
@@ -624,6 +656,14 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_ZOOM_RESET => SelectionKey::ZoomReset,
         SEL_UNDO => SelectionKey::Undo,
         SEL_REDO => SelectionKey::Redo,
+        SEL_VIEW_1 => SelectionKey::View(1),
+        SEL_VIEW_2 => SelectionKey::View(2),
+        SEL_VIEW_3 => SelectionKey::View(3),
+        SEL_VIEW_4 => SelectionKey::View(4),
+        SEL_VIEW_5 => SelectionKey::View(5),
+        SEL_VIEW_6 => SelectionKey::View(6),
+        SEL_VIEW_7 => SelectionKey::View(7),
+        SEL_VIEW_8 => SelectionKey::View(8),
         _ => return None,
     })
 }
@@ -766,6 +806,9 @@ mod tests {
         assert_eq!(selection_key(SEL_ZOOM_RESET), Some(SelectionKey::ZoomReset));
         assert_eq!(selection_key(SEL_UNDO), Some(SelectionKey::Undo));
         assert_eq!(selection_key(SEL_REDO), Some(SelectionKey::Redo));
+        assert_eq!(selection_key(SEL_VIEW_1), Some(SelectionKey::View(1)));
+        assert_eq!(selection_key(SEL_VIEW_5), Some(SelectionKey::View(5)));
+        assert_eq!(selection_key(SEL_VIEW_8), Some(SelectionKey::View(8)));
         assert_eq!(selection_key(99), None);
     }
 
@@ -830,6 +873,11 @@ mod tests {
     };
     const CTRL: Mods = Mods {
         ctrl: true,
+        ..PLAIN
+    };
+    const CTRL_SHIFT: Mods = Mods {
+        ctrl: true,
+        shift: true,
         ..PLAIN
     };
     const SHIFT: Mods = Mods {
@@ -934,6 +982,14 @@ mod tests {
                 (VK_END, PLAIN, sel(SEL_END)),
                 (VK_PRIOR, PLAIN, sel(SEL_PAGE_UP)),
                 (VK_NEXT, PLAIN, sel(SEL_PAGE_DOWN)),
+                (VK_1, CTRL_SHIFT, sel(SEL_VIEW_1)),
+                (VK_2, CTRL_SHIFT, sel(SEL_VIEW_2)),
+                (VK_3, CTRL_SHIFT, sel(SEL_VIEW_3)),
+                (VK_4, CTRL_SHIFT, sel(SEL_VIEW_4)),
+                (VK_5, CTRL_SHIFT, sel(SEL_VIEW_5)),
+                (VK_6, CTRL_SHIFT, sel(SEL_VIEW_6)),
+                (VK_7, CTRL_SHIFT, sel(SEL_VIEW_7)),
+                (VK_8, CTRL_SHIFT, sel(SEL_VIEW_8)),
             ],
             &[PASTE],
             &[SELECTION, NO_WATCH],
@@ -949,7 +1005,14 @@ mod tests {
             // Ctrl, Alt, and Shift combinations the table does not name.
             assert_eq!(watched_key(VK_F2.0 as u32, CTRL, watch), None);
             assert_eq!(watched_key(VK_F10.0 as u32, PLAIN, watch), None);
+            // The view keys need Shift as well as Ctrl.
+            assert_eq!(watched_key(VK_2.0 as u32, CTRL, watch), None);
         }
+        assert_eq!(
+            watched_key(VK_2.0 as u32, CTRL_SHIFT, NO_WATCH),
+            None,
+            "a view key needs a current space"
+        );
     }
 
     #[test]

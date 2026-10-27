@@ -54,10 +54,10 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
     DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_MEASURING_MODE_NATURAL,
     DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_RANGE,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
-    DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
-    IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
+    IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::{DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET};
@@ -77,7 +77,7 @@ use windows_numerics::{Matrix3x2, Vector2};
 use crate::edit::TextEdit;
 use crate::error::PlatformError;
 use crate::render::Icon;
-use crate::render::scene::{ItemState, ItemVisual, SpaceScene};
+use crate::render::scene::{ColumnAlign, ItemState, ItemVisual, SpaceScene};
 use crate::render::transition::{Content, TransitionFrame};
 
 use bitmap::to_icon;
@@ -94,6 +94,10 @@ use item::{draw_item, draw_marquee};
 const TITLE_INSET: f32 = 12.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
+/// The placeholder text's alpha factor: about 60 % of the label color.
+const PLACEHOLDER_ALPHA: u8 = 153;
+/// Space kept between the placeholder text and the item area's edges.
+const PLACEHOLDER_INSET: f32 = 12.0;
 /// Opacity of an item's slot while the item itself is dragged.
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
@@ -111,6 +115,10 @@ const LOCK_MARGIN: f32 = 4.0;
 /// inside the frame and its width.
 const HIGHLIGHT_GAP: f32 = 1.5;
 const HIGHLIGHT_WIDTH: f32 = 2.0;
+/// Segoe Fluent Icons / Segoe MDL2 Assets "ChevronUp" and "ChevronDown", the
+/// sorted Details header's arrow.
+const SORT_UP_GLYPH: &[u16] = &[0xE70E];
+const SORT_DOWN_GLYPH: &[u16] = &[0xE70D];
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -177,13 +185,22 @@ struct TitleLayout {
 }
 
 impl TitleLayout {
-    /// The layout of a title bar `width` by `height`.
-    fn new(width: f32, height: f32, locked: bool) -> Self {
+    /// The layout of a title bar `width` by `height`, with a title icon
+    /// `icon_width` wide at its left (0 when the space has none).
+    fn new(width: f32, height: f32, locked: bool, icon_width: f32) -> Self {
         let lock_width = if locked { height } else { 0.0 };
-        let text_right = (width - TITLE_INSET - lock_width).max(TITLE_INSET);
+        // The gap between icon and text follows the icon, so it scales with
+        // the display like the title bar.
+        let left = TITLE_INSET
+            + if icon_width > 0.0 {
+                icon_width * 1.25
+            } else {
+                0.0
+            };
+        let text_right = (width - TITLE_INSET - lock_width).max(left);
         let lock_right = width - LOCK_MARGIN;
         Self {
-            text: rect_f(TITLE_INSET, 0.0, text_right, height),
+            text: rect_f(left, 0.0, text_right, height),
             lock: locked.then(|| rect_f(lock_right - lock_width, 0.0, lock_right, height)),
         }
     }
@@ -521,14 +538,41 @@ impl Painter {
             }
 
             // A chrome-less layer (the desktop layer) draws its items from the
-            // top; a space leaves room for the title bar.
+            // top; a space leaves room for the title bar. Details leaves the
+            // fixed header row above the items (W18).
             let content_top = if scene.chrome { title_height } else { 0.0 };
-            if !scene.folded && height > content_top {
+            let header_height = scene
+                .details
+                .as_ref()
+                .map_or(0.0, |details| details.header_height as f32);
+            let status_height = scene
+                .status
+                .as_ref()
+                .map_or(0.0, |status| status.height as f32);
+            let items_top = content_top + header_height;
+            let content_bottom = (height - status_height).max(items_top);
+            if !scene.folded && content_bottom > items_top {
                 target.PushAxisAlignedClip(
-                    &rect_f(0.0, content_top, width, height),
+                    &rect_f(0.0, items_top, width, content_bottom),
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
+                if let Some(text) = &prepared.placeholder {
+                    draw_text(
+                        target,
+                        brush,
+                        text,
+                        &ctx.graphics.placeholder_format,
+                        inset(
+                            rect_f(0.0, items_top, width, content_bottom),
+                            PLACEHOLDER_INSET,
+                        ),
+                        scene.item_text.fade(PLACEHOLDER_ALPHA),
+                        scene
+                            .text_shadow
+                            .map(|shadow| shadow.fade(PLACEHOLDER_ALPHA)),
+                    );
+                }
                 if let Some(marquee) = scene.marquee {
                     draw_marquee(
                         target,
@@ -539,6 +583,9 @@ impl Painter {
                     );
                 }
                 target.PopAxisAlignedClip();
+                if scene.details.is_some() {
+                    self.draw_details_header(ctx, prepared, width, content_top);
+                }
                 if scene.chrome
                     && let Some(thumb) = scene.scroll_thumb
                 {
@@ -552,6 +599,10 @@ impl Painter {
                         scene.item_text.fade(SCROLL_THUMB_ALPHA),
                     );
                 }
+            }
+
+            if let Some(status) = &scene.status {
+                self.draw_status(ctx, prepared, status);
             }
 
             if let Some(border) = frame.border
@@ -594,7 +645,7 @@ impl Painter {
     }
 
     unsafe fn draw_title(
-        &self,
+        &mut self,
         ctx: DrawContext,
         prepared: &PreparedScene,
         width: f32,
@@ -606,10 +657,34 @@ impl Painter {
             brush,
         } = ctx;
         let scene = &prepared.scene;
-        let layout = TitleLayout::new(width, title_height, scene.locked);
+        let icon = scene
+            .title_icon
+            .as_ref()
+            .and_then(|icon| self.bitmap_for(target, icon));
+        let icon_width = scene
+            .title_icon
+            .as_ref()
+            .map_or(0.0, |icon| icon.width() as f32);
+        let layout = TitleLayout::new(width, title_height, scene.locked, icon_width);
         let text = layout.text;
         // SAFETY: caller is inside BeginDraw/EndDraw.
         unsafe {
+            if let (Some(bitmap), Some(icon)) = (icon, &scene.title_icon) {
+                let icon_height = icon.height() as f32;
+                let top = ((title_height - icon_height) / 2.0).round();
+                target.DrawBitmap(
+                    &bitmap,
+                    Some(&rect_f(
+                        TITLE_INSET,
+                        top,
+                        TITLE_INSET + icon_width,
+                        top + icon_height,
+                    )),
+                    1.0,
+                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
+            }
             if scene.editing.is_some() {
                 draw_edit_title(ctx, prepared, text.left, text.right, title_height);
             } else {
@@ -637,10 +712,152 @@ impl Painter {
         }
     }
 
+    /// Draws the Details header row at `top`: each column's label, Explorer's
+    /// sort arrow on the sorted column, and a rule along its bottom (W18).
+    unsafe fn draw_details_header(
+        &self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        width: f32,
+        top: f32,
+    ) {
+        let Some(details) = prepared.scene.details.as_ref() else {
+            return;
+        };
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        let height = details.header_height as f32;
+        let pad = details.cell_pad as f32;
+        let bottom = top + height;
+        // SAFETY: caller is inside BeginDraw/EndDraw.
+        unsafe {
+            brush.SetColor(&color_f(scene.item_text.fade(80)));
+            target.DrawLine(
+                Vector2::new(0.0, bottom - 0.5),
+                Vector2::new(width, bottom - 0.5),
+                brush,
+                1.0,
+                None,
+            );
+            for (index, (column, label)) in details.columns.iter().zip(&prepared.header).enumerate()
+            {
+                let mut right = column.rect.right() as f32 - pad;
+                if let Some((_, up)) = details.sorted.filter(|(sorted, _)| *sorted == index)
+                    && let Some(format) = &graphics.glyph_format
+                {
+                    let glyph_width = height * 0.6;
+                    brush.SetColor(&color_f(scene.item_text.fade(200)));
+                    target.DrawText(
+                        if up { SORT_UP_GLYPH } else { SORT_DOWN_GLYPH },
+                        format,
+                        &rect_f(right - glyph_width, top, right, bottom),
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                    right -= glyph_width;
+                }
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &graphics.details_format,
+                    rect_f(column.rect.x as f32 + pad, top, right, bottom),
+                    scene.item_text.fade(190),
+                    scene.text_shadow,
+                );
+            }
+        }
+    }
+
+    /// Draws Explorer's status bar: the counts on the left and the view
+    /// buttons on the right, with the space's current view marked (W19).
+    unsafe fn draw_status(
+        &self,
+        ctx: DrawContext,
+        prepared: &PreparedScene,
+        status: &crate::render::scene::StatusBar,
+    ) {
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        let rect = to_rect_f(status.rect);
+        let height = rect.bottom - rect.top;
+        let pad = (height * 0.25).round();
+        let text_right = status
+            .buttons
+            .first()
+            .map_or(rect.right - pad, |button| button.rect.x as f32 - pad);
+        // SAFETY: caller is inside BeginDraw/EndDraw.
+        unsafe {
+            brush.SetColor(&color_f(scene.item_text.fade(60)));
+            target.DrawLine(
+                Vector2::new(rect.left, rect.top + 0.5),
+                Vector2::new(rect.right, rect.top + 0.5),
+                brush,
+                1.0,
+                None,
+            );
+            draw_text(
+                target,
+                brush,
+                &prepared.status_segments,
+                &graphics.details_format,
+                rect_f(rect.left + pad, rect.top, text_right, rect.bottom),
+                scene.item_text.fade(200),
+                scene.text_shadow,
+            );
+            for button in &status.buttons {
+                let button_rect = to_rect_f(button.rect);
+                if button.checked || button.hovered {
+                    let radius = (button_rect.bottom - button_rect.top) * 0.2;
+                    fill_rounded(
+                        target,
+                        brush,
+                        button_rect,
+                        radius,
+                        if button.hovered {
+                            scene.hover_fill
+                        } else {
+                            scene.selected_fill
+                        },
+                    );
+                }
+                if let Some(format) = &graphics.glyph_format {
+                    brush.SetColor(&color_f(scene.item_text.fade(if button.checked {
+                        255
+                    } else {
+                        200
+                    })));
+                    target.DrawText(
+                        button.glyph,
+                        format,
+                        &button_rect,
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                }
+            }
+        }
+    }
+
     unsafe fn draw_items(&mut self, ctx: DrawContext, prepared: &PreparedScene) {
         let scene = &prepared.scene;
         let editing = prepared.edit_item.as_ref().map(|(id, _)| *id);
-        for (item, label) in scene.items.iter().zip(&prepared.labels) {
+        for ((item, label), cells) in scene
+            .items
+            .iter()
+            .zip(&prepared.labels)
+            .zip(&prepared.cells)
+        {
             if Some(item.id) == editing {
                 continue;
             }
@@ -649,18 +866,19 @@ impl Painter {
                 .as_ref()
                 .and_then(|icon| self.bitmap_for(ctx.target, icon));
             // SAFETY: caller is inside BeginDraw/EndDraw.
-            unsafe { draw_item(ctx, scene, item, label, bitmap.as_ref(), None) };
+            unsafe { draw_item(ctx, scene, item, label, cells, bitmap.as_ref(), None) };
         }
         // The rename box grows over the items below it, as Explorer's does, so
         // draw the item being renamed last.
         let Some((id, buffer)) = &prepared.edit_item else {
             return;
         };
-        let Some((item, label)) = scene
+        let Some(((item, label), cells)) = scene
             .items
             .iter()
             .zip(&prepared.labels)
-            .find(|(item, _)| item.id == *id)
+            .zip(&prepared.cells)
+            .find(|((item, _), _)| item.id == *id)
         else {
             return;
         };
@@ -675,6 +893,7 @@ impl Painter {
                 scene,
                 item,
                 label,
+                cells,
                 bitmap.as_ref(),
                 Some(buffer.as_slice()),
             )
@@ -699,9 +918,13 @@ impl Painter {
         }
         self.icons.retain(|id, _| {
             scene
-                .items
-                .iter()
-                .any(|item| item.icon.as_ref().is_some_and(|icon| icon.id() == *id))
+                .title_icon
+                .as_ref()
+                .is_some_and(|icon| icon.id() == *id)
+                || scene
+                    .items
+                    .iter()
+                    .any(|item| item.icon.as_ref().is_some_and(|icon| icon.id() == *id))
         });
     }
 
@@ -741,7 +964,7 @@ mod tests {
 
     #[test]
     fn an_unlocked_title_spans_the_bar_inside_its_insets() {
-        let layout = TitleLayout::new(240.0, 28.0, false);
+        let layout = TitleLayout::new(240.0, 28.0, false, 0.0);
         assert_eq!(
             layout.text,
             rect_f(TITLE_INSET, 0.0, 240.0 - TITLE_INSET, 28.0)
@@ -751,7 +974,7 @@ mod tests {
 
     #[test]
     fn a_locked_title_leaves_a_square_for_the_lock_at_the_right() {
-        let layout = TitleLayout::new(240.0, 28.0, true);
+        let layout = TitleLayout::new(240.0, 28.0, true, 0.0);
         let lock = layout.lock.expect("a lock");
         assert_eq!(lock.right, 240.0 - LOCK_MARGIN);
         assert_eq!(lock.right - lock.left, 28.0, "square");
@@ -760,7 +983,7 @@ mod tests {
 
     #[test]
     fn a_narrow_title_never_turns_inside_out() {
-        let layout = TitleLayout::new(20.0, 28.0, true);
+        let layout = TitleLayout::new(20.0, 28.0, true, 0.0);
         assert!(layout.text.right >= layout.text.left);
     }
 }

@@ -2,6 +2,7 @@
 //! drag out, clipboard, file operations, and info tips.
 
 use super::*;
+use crate::win32::file_op::OnCollision;
 
 impl Ui {
     /// Opens `path` with its default verb, as a double-click in Explorer does.
@@ -116,9 +117,10 @@ impl Ui {
         paths: &[PathBuf],
         destination: &Path,
         move_items: bool,
+        on_collision: OnCollision,
     ) -> Option<Vec<PathBuf>> {
         let owner = with_runtime(|runtime| runtime.controller);
-        match file_op::transfer(owner, paths, destination, move_items) {
+        match file_op::transfer(owner, paths, destination, move_items, on_collision) {
             Ok(created) => Some(created),
             Err(error) => {
                 tracing::warn!(%error, dest = %destination.display(), "file operation failed");
@@ -170,6 +172,13 @@ impl Ui {
     /// Shows Explorer's info tip for `path` near `at` (desktop coordinates).
     /// Reused across hovers; call `hide_info_tip` when the pointer leaves.
     pub fn show_info_tip(&mut self, path: &Path, at: Point) {
+        let text = info_tip::describe(path);
+        self.show_text_tip(&text, at);
+    }
+
+    /// Shows `text` as an info tip near `at` (desktop coordinates), reusing
+    /// the one tip window.
+    pub fn show_text_tip(&mut self, text: &str, at: Point) {
         let Some(owner) = with_runtime(|runtime| runtime.controller) else {
             return;
         };
@@ -184,10 +193,9 @@ impl Ui {
                 }
             }
         }
-        let text = info_tip::describe(path);
         let at = desktop_to_screen(at);
         let point = POINT { x: at.x, y: at.y };
-        self.with_info_tip(|tip| tip.show(&text, point));
+        self.with_info_tip(|tip| tip.show(text, point));
     }
 
     /// Hides the info tip, if one is shown.

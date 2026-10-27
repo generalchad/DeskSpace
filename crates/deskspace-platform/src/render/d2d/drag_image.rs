@@ -69,11 +69,16 @@ pub(crate) fn render_items(
             item.checked = false;
             item.cut = false;
             let label: Vec<u16> = item.label.encode_utf16().collect();
+            let cells: Vec<Vec<u16>> = item
+                .cells
+                .iter()
+                .map(|cell| cell.encode_utf16().collect())
+                .collect();
             let icon = item
                 .icon
                 .as_ref()
                 .and_then(|icon| upload_icon(&target, icon));
-            draw_item(ctx, &scene, &item, &label, icon.as_ref(), None);
+            draw_item(ctx, &scene, &item, &label, &cells, icon.as_ref(), None);
         }
         target.EndDraw(None, None).ok()?;
         drop(target);

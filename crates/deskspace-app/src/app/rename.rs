@@ -214,6 +214,7 @@ impl App {
                     if !title.is_empty() && title != session.original {
                         let effects = self.rename_space(id, title);
                         self.run(ui, effects);
+                        self.resnapshot_settings(ui, id);
                     }
                 }
             }

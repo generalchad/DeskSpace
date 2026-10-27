@@ -170,36 +170,23 @@ impl Ui {
     /// the space window and painter. Idempotent: calling it again does nothing.
     /// It is a `WS_CHILD` of the desktop host when one is in use and top-level
     /// otherwise, so it sits behind the spaces (a top-level space always
-    /// places itself directly above it).
+    /// places itself directly above it). It is never topmost, even with
+    /// `--on-top` (`SpaceWindowOptions::desktop_layer`).
     pub fn create_desktop_layer(
         &mut self,
         rect: Rect,
         style: SpaceStyle,
     ) -> Result<(), PlatformError> {
-        let Some((host, click_through, on_top, exists)) = with_runtime(|runtime| {
-            (
-                runtime.host,
-                runtime.click_through,
-                runtime.on_top,
-                runtime.layer.is_some(),
-            )
-        }) else {
+        let Some((host, click_through, exists)) =
+            with_runtime(|runtime| (runtime.host, runtime.click_through, runtime.layer.is_some()))
+        else {
             return Err(PlatformError::NotRunning);
         };
         if exists {
             return Ok(());
         }
-        let options = space_window::SpaceWindowOptions {
-            id: 0,
-            rect,
-            style,
-            host,
-            click_through,
-            on_top,
-            visible: true,
-            // The layer never animates, so it keeps the accent blur (T12).
-            composition: false,
-        };
+        let options =
+            space_window::SpaceWindowOptions::desktop_layer(rect, style, host, click_through);
         let hwnd = space_window::create(options)?;
         // A new child goes above its siblings, so a hosted layer made after
         // the hosted spaces (takeover turned on from Settings) would cover

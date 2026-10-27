@@ -32,6 +32,13 @@
     ./scripts/dev.ps1 -Fresh --debug
     Open the debug window. Arguments the script does not know go to
     DeskSpace, with or without a `--` before them.
+
+.EXAMPLE
+    ./scripts/dev.ps1 --OnTop --Debug
+    The same switches and flags in either spelling, in any order: a `--Name`
+    that names one of this script's switches sets it (`--OnTop`, `--on-top`),
+    any other `--PascalCase` flag reaches DeskSpace as `--kebab-case`, and
+    -Debug opens the debug window like `--debug`.
 #>
 # No positional binding: a bare app flag such as `--debug` would otherwise
 # bind to -Verbosity, the first non-switch parameter, and fail as an int.
@@ -62,6 +69,32 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Accept switches written the app's way, and app flags written PowerShell's
+# way, so `--OnTop` and `--Debug` work as `-OnTop` and `--debug` do. Done
+# first, because switches such as -Release and -Check change the build.
+$scriptSwitches = 'Release', 'Fresh', 'RealConfig', 'OnTop', 'Settings', 'NoIcons', 'Check', 'NoRun'
+$passThrough = @()
+foreach ($arg in $AppArgs) {
+    if ($arg -eq '--') { continue }
+    if ($arg -match '^--([A-Za-z][A-Za-z-]*)$') {
+        $name = $Matches[1]
+        # -eq ignores case, so `--ontop` and `--on-top` both find OnTop.
+        $switch = $scriptSwitches | Where-Object { $_ -eq ($name -replace '-', '') }
+        if ($switch) {
+            Set-Variable -Name $switch -Value ([switch]$true)
+            continue
+        }
+        $arg = '--' + ($name -creplace '(?<=[a-z0-9])([A-Z])', '-$1').ToLowerInvariant()
+    }
+    $passThrough += $arg
+}
+# -Debug is PowerShell's own common parameter (from CmdletBinding); without
+# this it would be taken silently and DeskSpace would never see it.
+if ($PSBoundParameters.ContainsKey('Debug') -and $passThrough -notcontains '--debug') {
+    $passThrough += '--debug'
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $profileDir = if ($Release) { 'release' } else { 'debug' }
 $exe = Join-Path $root "target\$profileDir\deskspace.exe"
@@ -115,7 +148,7 @@ try {
     if ($Settings) { $arguments += '--settings' }
     if ($NoIcons) { $arguments += '--no-icons' }
     if ($Verbosity -gt 0) { $arguments += '-' + ('v' * $Verbosity) }
-    if ($AppArgs) { $arguments += $AppArgs | Where-Object { $_ -ne '--' } }
+    $arguments += $passThrough
 
     $configLabel = if ($RealConfig) { 'real config' } else { $scratchConfig }
     Write-Host "Running DeskSpace ($profileDir, $configLabel). Ctrl+C or tray > Exit to stop." -ForegroundColor Green

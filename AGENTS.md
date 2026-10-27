@@ -7,6 +7,19 @@ contributors start at `CONTRIBUTING.md`.
 DeskSpace is a free and open-source desktop space organizer for Windows,
 written in Rust with native Win32. It builds only on Windows.
 
+## Directive 1: ask before anything destructive
+
+Every destructive action waits for the user's explicit go-ahead in the
+conversation, every time. Destructive means anything that deletes, overwrites,
+moves, or empties files or folders you did not create in this session, or
+that cannot be undone: `Remove-Item`, `rm`, `git reset --hard`,
+`git checkout -- <file>` over someone's edits, `git push --force`, emptying
+the Recycle Bin, and running a script or a copy of one with a flag that
+deletes (`dev.ps1 -Fresh` wipes `%TEMP%\deskspace-dev`, the maintainer's dev
+config and stored items). Say what will be lost, then wait. Approval covers
+that one action, not the next. Scratch files you made yourself are yours to
+remove. When unsure, it is destructive.
+
 ## Read first
 
 1. `docs/ENGINEERING.md`: commands, gates, design priorities, architectural

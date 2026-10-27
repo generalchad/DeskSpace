@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
 
-use deskspace_platform::{DragImage, Ui, drag_threshold, virtual_desktop_rect};
+use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_desktop_rect};
 
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
@@ -291,6 +291,7 @@ impl App {
                     palette: &palette,
                     layout,
                     metrics,
+                    scale: space_dpi(id.0),
                 };
                 drag_scene(entry, ids, look, view, &mut self.icons)
             }
@@ -303,6 +304,7 @@ impl App {
                     palette: &palette,
                     layout,
                     metrics,
+                    scale: 1.0,
                 },
                 view,
                 &mut self.icons,
@@ -319,8 +321,9 @@ impl App {
         }
     }
 
-    /// Places the dragged item in the grid slot under `point`, reflowing the
-    /// space. Used while an item is dragged within its own space.
+    /// Places the dragged item in the slot under `point`, reflowing the space.
+    /// Used while an item is dragged within its own space. A space that keeps
+    /// sorted never rearranges (D17); a drag out still works.
     pub(super) fn reorder_item_at(
         &mut self,
         ui: &mut Ui,
@@ -334,25 +337,23 @@ impl App {
     }
 
     pub(super) fn reorder_item_step(&mut self, space: SpaceId, item: ItemId, point: Point) -> bool {
-        let layout = self.layout_for(space);
+        if self
+            .config
+            .desktop
+            .space(space)
+            .is_some_and(|space| space.keeps_sorted())
+        {
+            return false;
+        }
+        let Some(layout) = self.view_layout(space) else {
+            return false;
+        };
         let moving = self.drag_items(item);
         let target = self.config.desktop.space(space).and_then(|space| {
             let content = space.content_rect();
-            let columns = if space.user_sized() {
-                layout.columns_for(space.rect().width)
-            } else {
-                layout.columns
-            }
-            .max(1);
-            let step_x = layout.cell_width + layout.gap;
-            let step_y = layout.cell_height + layout.gap;
-            let column = ((point.x - content.x - layout.padding) / step_x).clamp(0, columns - 1);
-            let row = ((point.y - content.y - layout.padding) / step_y).max(0);
-            let count = space.items().len();
-            if count == 0 {
-                return None;
-            }
-            let index = ((row * columns + column) as usize).min(count - 1);
+            let point = Point::new(point.x - content.x, point.y - content.y);
+            let local = layout.layout_point(point, self.scroll_of(space.id));
+            let index = layout.drop_index(local)?;
             let current = space.items().iter().position(|entry| entry.id == item)?;
             Some((index, current))
         });

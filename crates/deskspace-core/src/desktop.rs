@@ -231,6 +231,17 @@ impl Desktop {
             space.look = space.look.take().map(SpaceLook::clamped);
         }
     }
+
+    /// Drops items a hand-edited file listed for a lens. Lens items are a live
+    /// view of the folder and are never persisted (M4), so the next sync fills
+    /// them again.
+    pub fn clear_lens_items(&mut self) {
+        for space in &mut self.spaces {
+            if space.is_lens() {
+                space.items.clear();
+            }
+        }
+    }
 }
 
 #[cfg(test)]

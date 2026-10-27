@@ -13,7 +13,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
-pub use scene::{ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle};
+pub use scene::{
+    ColumnAlign, DetailsColumnVisual, DetailsView, DropInto, ItemLayout, ItemState, ItemVisual,
+    ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual,
+};
 pub use transition::{Content, Geometry, Mask, Play, Side, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;
 
@@ -31,6 +34,11 @@ pub const ITEM_CHECK_BOX_SIZE: i32 = 13;
 pub const ITEM_CHECK_BOX_MARGIN: i32 = 1;
 /// Slack around the drawn box that still counts as a click on it.
 const ITEM_CHECK_BOX_SLACK: i32 = 2;
+/// Inline cell (Small icons, and List later) at the base size: the inset from
+/// the cell's left edge and the gap after the icon. The check box sits in the
+/// inset, the icon after it, and the label after the icon (W16).
+const INLINE_INSET: i32 = 4;
+const INLINE_GAP: i32 = 4;
 
 /// Item sizes scaled for DPI and the icon-size setting. The painter and the
 /// app's hit tests share these so they always agree.
@@ -42,6 +50,9 @@ pub struct ItemMetrics {
     pub label_gap: i32,
     pub check_box_size: i32,
     pub check_box_margin: i32,
+    /// The inline cell's left inset and the gap after its icon.
+    pub inline_inset: i32,
+    pub inline_gap: i32,
 }
 
 impl ItemMetrics {
@@ -55,26 +66,35 @@ impl ItemMetrics {
             label_gap: scaled(ITEM_LABEL_GAP),
             check_box_size: scaled(ITEM_CHECK_BOX_SIZE),
             check_box_margin: scaled(ITEM_CHECK_BOX_MARGIN),
+            inline_inset: scaled(INLINE_INSET),
+            inline_gap: scaled(INLINE_GAP),
         }
     }
 }
 
 /// The check box's rectangle inside an item cell, in the same coordinate
 /// system as the cell. Matches where the painter draws it.
-pub fn item_check_box(cell: Rect, metrics: ItemMetrics) -> Rect {
-    let icon_left = cell.x + (cell.width - metrics.icon_size) / 2;
-    Rect::new(
-        icon_left + metrics.check_box_margin,
-        cell.y + metrics.icon_top + metrics.check_box_margin,
-        metrics.check_box_size,
-        metrics.check_box_size,
-    )
+pub fn item_check_box(cell: Rect, metrics: ItemMetrics, layout: ItemLayout) -> Rect {
+    let (left, top) = match layout {
+        ItemLayout::Grid => {
+            let icon_left = cell.x + (cell.width - metrics.icon_size) / 2;
+            (
+                icon_left + metrics.check_box_margin,
+                cell.y + metrics.icon_top + metrics.check_box_margin,
+            )
+        }
+        ItemLayout::Inline | ItemLayout::Details | ItemLayout::Tiles | ItemLayout::Content => (
+            cell.x + metrics.inline_inset + metrics.check_box_margin,
+            cell.y + (cell.height - metrics.check_box_size) / 2,
+        ),
+    };
+    Rect::new(left, top, metrics.check_box_size, metrics.check_box_size)
 }
 
 /// The region that counts as a click on the check box: the drawn box plus a
 /// little slack, so a near miss still toggles it.
-pub fn item_check_box_hit(cell: Rect, metrics: ItemMetrics) -> Rect {
-    let drawn = item_check_box(cell, metrics);
+pub fn item_check_box_hit(cell: Rect, metrics: ItemMetrics, layout: ItemLayout) -> Rect {
+    let drawn = item_check_box(cell, metrics, layout);
     let slack = (ITEM_CHECK_BOX_SLACK as f32
         * (metrics.check_box_size as f32 / ITEM_CHECK_BOX_SIZE as f32))
         .round() as i32;
@@ -157,7 +177,7 @@ mod tests {
     fn check_box_sits_at_the_icon_corner() {
         let cell = Rect::new(100, 200, 96, 104);
         let metrics = ItemMetrics::for_scale(1.0);
-        let checkbox = item_check_box(cell, metrics);
+        let checkbox = item_check_box(cell, metrics, ItemLayout::Grid);
         assert_eq!(
             checkbox.x,
             100 + (96 - ITEM_ICON_SIZE) / 2 + ITEM_CHECK_BOX_MARGIN
@@ -168,15 +188,30 @@ mod tests {
     }
 
     #[test]
+    fn an_inline_check_box_sits_at_the_left_edge() {
+        let cell = Rect::new(100, 200, 200, 22);
+        let metrics = ItemMetrics::for_scale(1.0);
+        let checkbox = item_check_box(cell, metrics, ItemLayout::Inline);
+        assert_eq!(
+            checkbox.x,
+            100 + metrics.inline_inset + ITEM_CHECK_BOX_MARGIN
+        );
+        assert_eq!(checkbox.y, 200 + (22 - ITEM_CHECK_BOX_SIZE) / 2);
+        assert_eq!(checkbox.width, ITEM_CHECK_BOX_SIZE);
+        let hit = item_check_box_hit(cell, metrics, ItemLayout::Inline);
+        assert_eq!(hit.center(), checkbox.center());
+    }
+
+    #[test]
     fn metrics_and_check_box_scale_together() {
         let cell = Rect::new(0, 0, 144, 156);
         let metrics = ItemMetrics::for_scale(1.5);
         assert_eq!(metrics.icon_size, ITEM_ICON_SIZE * 3 / 2);
         assert_eq!(metrics.check_box_size, 20);
-        let checkbox = item_check_box(cell, metrics);
+        let checkbox = item_check_box(cell, metrics, ItemLayout::Grid);
         assert_eq!(checkbox.width, metrics.check_box_size);
         // The hit region is always at least the drawn box.
-        let hit = item_check_box_hit(cell, metrics);
+        let hit = item_check_box_hit(cell, metrics, ItemLayout::Grid);
         assert!(hit.width >= checkbox.width);
     }
 }

@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, Space, SpaceId};
-use deskspace_platform::{Ui, notify_moved};
+use deskspace_platform::{OnCollision, Ui, notify_moved};
 
 use crate::storage::StoreError;
 
@@ -497,9 +497,12 @@ impl App {
                 ) else {
                     return false;
                 };
-                let Some(moved) =
-                    ui.transfer_files(std::slice::from_ref(&from.to_path_buf()), parent, true)
-                else {
+                let Some(moved) = ui.transfer_files(
+                    std::slice::from_ref(&from.to_path_buf()),
+                    parent,
+                    true,
+                    OnCollision::Rename,
+                ) else {
                     return false;
                 };
                 let Some(landed) = moved.into_iter().next() else {
@@ -956,7 +959,15 @@ mod tests {
         assert_eq!(order(&app), vec![second, first]);
 
         // Sort space descending by name (`b.txt` before `a.txt`).
-        app.sort_space_items(id, SortKey::Name, true, Point::new(100, 100));
+        app.sort_space_items(
+            id,
+            deskspace_core::SortRule {
+                key: SortKey::Name,
+                descending: true,
+                folders_first: false,
+            },
+            Point::new(100, 100),
+        );
         assert_eq!(app.undo.undo_label(), Some("Sort space"));
         assert_eq!(order(&app), vec![first, second]);
         assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
@@ -1217,7 +1228,7 @@ mod tests {
         // A settings-window edit on the space dispatches without an open undo
         // entry, so it records nothing and makes the earlier entry stale.
         let mut session = Session::new(&app.config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), crate::settings::ScopeKind::Space);
         let customize = crate::settings::customize_space(&app.config, &mut session, true).unwrap();
         assert!(app.dispatch(customize, Point::new(50, 50)).is_applied());
         let (_, command, _) = crate::settings::space_edit(
@@ -1226,6 +1237,7 @@ mod tests {
             field::TINT_OPACITY,
             FieldValue::Slider(60),
             false,
+            &app.profile,
         )
         .unwrap();
         assert!(app.dispatch(command, Point::new(50, 50)).is_applied());
@@ -1339,7 +1351,7 @@ mod tests {
         let in_place = desktop_dir.join("keep.txt");
         std::fs::write(&in_place, "keep").unwrap();
         app.move_or_keep_dropped(space, Point::new(50, 50), vec![in_place.clone()], false);
-        assert!(app.remove_space_item_at(space, 2, |_| unreachable!("not stored")));
+        assert!(app.remove_space_item_at(space, 2, false, |_| unreachable!("not stored")));
         assert_eq!(app.undo.undo_label(), Some("Delete item"));
         assert!(in_place.exists());
         assert_eq!(app.config.desktop.space(space).unwrap().items().len(), 2);

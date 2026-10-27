@@ -20,7 +20,8 @@ pub use apply::{
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
-    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, STARTUP_ORDERS,
+    AnimationPage, DETAILS_COLUMNS, EDGES, HOTKEY_BINDINGS, HotkeyAction, NAME_MIN_WIDTH,
+    SORT_KEYS, STARTUP_ORDERS, STATUS_BUTTONS, VIEW_MODES, view_for_digit,
     windows_animation_settings_uri,
 };
 
@@ -38,17 +39,18 @@ use deskspace_core::theme::{
     TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, Palette, Preset, Space, SpaceId,
-    SpaceLook, Theme, ThemeMode,
+    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
+    SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
 };
 use deskspace_platform::{
-    Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav, SettingsNavEntry,
-    SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark, SpacePreview,
+    ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
+    SettingsNavEntry, SettingsNavGroup, SettingsPage, SettingsScope, SettingsSwitch, SliderMark,
+    SpacePreview,
 };
 
 use pages::{
-    about_page, animation_pages, general_page, hotkeys_page, look_pages, new_spaces_page,
-    shortcuts_page,
+    about_page, animation_pages, general_page, hotkeys_page, lens_page, lenses_page, look_pages,
+    new_spaces_page, shortcuts_page, view_page,
 };
 
 /// How many pages hold look settings (Appearance through Advanced).
@@ -93,16 +95,54 @@ pub fn scope_at(config: &Config, index: usize) -> Option<SpaceId> {
         .map(|space| space.id)
 }
 
+/// The kind of thing a settings scope edits: Global, an ordinary space, or a
+/// lens. The scopes pane draws each kind's glyph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeKind {
+    Global,
+    Space,
+    Lens,
+}
+
+impl ScopeKind {
+    /// The kind of `space`, or Global for `None`.
+    pub fn of(space: Option<&Space>) -> Self {
+        match space {
+            None => Self::Global,
+            Some(space) if space.is_lens() => Self::Lens,
+            Some(_) => Self::Space,
+        }
+    }
+
+    /// The glyph drawn before the scope's label. These code points are in
+    /// both Segoe Fluent Icons and Segoe MDL2 Assets.
+    pub fn glyph(self) -> char {
+        match self {
+            // "Settings" (MDL2 calls it "Setting").
+            Self::Global => '\u{E713}',
+            // "GridView".
+            Self::Space => '\u{F0E2}',
+            // "Folder".
+            Self::Lens => '\u{E8B7}',
+        }
+    }
+}
+
 /// The pages the categories pane lists for `scope`, in order: every Global
-/// page for Global (`None`), the animation pages last, or a space's look
-/// pages and its Shortcuts page.
-pub fn listed_pages(scope: Option<SpaceId>) -> Vec<usize> {
+/// page for Global, the animation pages last, or a space's look pages, its
+/// View page, and its Shortcuts page; a lens also lists its Lens page.
+pub fn listed_pages(scope: ScopeKind) -> Vec<usize> {
     match scope {
-        None => (0..=page::ABOUT)
+        ScopeKind::Global => (0..=6)
+            .chain([page::LENSES])
+            .chain(7..=page::ABOUT)
             .chain(page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len())
             .collect(),
-        Some(_) => (0..LOOK_PAGE_COUNT)
-            .chain(std::iter::once(page::SHORTCUTS))
+        ScopeKind::Space => (0..LOOK_PAGE_COUNT)
+            .chain([page::VIEW, page::SHORTCUTS])
+            .collect(),
+        ScopeKind::Lens => (0..LOOK_PAGE_COUNT)
+            .chain([page::VIEW, page::SHORTCUTS, page::LENS])
             .collect(),
     }
 }
@@ -130,8 +170,9 @@ fn over(base: Color, top: Color) -> Color {
 }
 
 /// Builds the settings form. `preview` is what the Shortcuts page shows for
-/// the selected space (it is built for every scope, so the form keeps its
-/// shape; Global never lists the page).
+/// the selected space and whether its folder is available (both pages are
+/// built for every scope, so the form keeps its shape; Global never lists
+/// them).
 pub fn build_form(
     config: &Config,
     session: &Session,
@@ -141,6 +182,8 @@ pub fn build_form(
     preview: SpacePreview,
 ) -> SettingsForm {
     let space = scope_space(config, session);
+    let kind = ScopeKind::of(space);
+    let lens_available = preview.available;
     let global = &config.theme;
     // A space shows what it is drawn with: its own look while customized,
     // else the global values, greyed until the switch is turned on.
@@ -170,13 +213,18 @@ pub fn build_form(
     pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
     pages.push(shortcuts_page(preview));
+    pages.push(lens_page(space, lens_available));
     debug_assert_eq!(pages.len(), page::ANIMATIONS);
     pages.extend(animation_pages(
         &config.window.animations,
         system_animations,
     ));
+    debug_assert_eq!(pages.len(), page::VIEW);
+    pages.push(view_page(space));
+    debug_assert_eq!(pages.len(), page::LENSES);
+    pages.push(lenses_page(config));
 
-    let listed = listed_pages(space.map(|space| space.id));
+    let listed = listed_pages(kind);
     let selected = listed
         .iter()
         .position(|page| *page == session.page)
@@ -188,8 +236,10 @@ pub fn build_form(
     };
     // The animation pages get a group of their own, after the rest, so the
     // flattened entries keep `listed`'s order and `selected` stays valid.
-    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) =
-        listed.iter().partition(|&&index| index < page::ANIMATIONS);
+    let animations = page::ANIMATIONS..page::ANIMATIONS + tables::ANIMATION_PAGES.len();
+    let (settings_pages, animation_pages): (Vec<usize>, Vec<usize>) = listed
+        .iter()
+        .partition(|&&index| !animations.contains(&index));
     let mut groups = vec![SettingsNavGroup {
         title: String::new(),
         entries: settings_pages.iter().map(entry).collect(),
@@ -203,11 +253,13 @@ pub fn build_form(
 
     let mut scopes = vec![SettingsScope {
         label: "Global".into(),
+        glyph: Some(ScopeKind::Global.glyph()),
         indent: false,
         dimmed: false,
     }];
     scopes.extend(config.desktop.spaces().iter().map(|space| SettingsScope {
         label: space.title().to_owned(),
+        glyph: Some(ScopeKind::of(Some(space)).glyph()),
         indent: true,
         dimmed: !space.custom(),
     }));
@@ -261,6 +313,10 @@ pub enum ButtonAction {
     FitToContents,
     /// The General page's "Check for updates now".
     CheckForUpdates,
+    /// The Lens page's "Open folder".
+    OpenLensFolder,
+    /// The Lens page's "Change folder…".
+    ChangeLensFolder,
     /// An animation page's "Open Windows animation settings", which opens
     /// the page holding Windows' "Animation effects" switch.
     OpenWindowsAnimationSettings,
@@ -272,6 +328,8 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
         field::RESET => Some(ButtonAction::ResetAppearance),
         field::FIT_CONTENTS => Some(ButtonAction::FitToContents),
         field::CHECK_UPDATES_NOW => Some(ButtonAction::CheckForUpdates),
+        field::LENS_OPEN => Some(ButtonAction::OpenLensFolder),
+        field::LENS_CHANGE => Some(ButtonAction::ChangeLensFolder),
         id if tables::ANIMATION_PAGES
             .iter()
             .any(|page| page.open_settings == id) =>
@@ -290,6 +348,8 @@ pub enum FieldEffect {
     Appearance,
     /// The grid changed; re-flow and repaint.
     Layout,
+    /// The lens's view changed; list its folder again.
+    Lens,
     /// Only pending (unapplied) settings changed.
     Pending,
 }
@@ -297,7 +357,7 @@ pub enum FieldEffect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{apply, create_space};
+    use crate::fixtures::{apply, create_lens, create_space};
     use deskspace_core::Rect;
     use deskspace_platform::FieldKind;
 
@@ -374,8 +434,10 @@ mod tests {
     #[test]
     fn every_editable_global_field_has_a_handler() {
         let (config, session) = setup();
-        for page in form(&config, &session).pages {
-            for field in page.fields {
+        let form = form(&config, &session);
+        for index in listed_pages(ScopeKind::Global) {
+            let page = &form.pages[index];
+            for field in &page.fields {
                 let Some(value) = edit_value(&field.kind) else {
                     continue;
                 };
@@ -402,7 +464,7 @@ mod tests {
             Command::CustomizeSpace { id, on: true, seed },
         );
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         let pages = form(&config, &session).pages;
         for page in pages.iter().take(LOOK_PAGE_COUNT) {
             for field in &page.fields {
@@ -410,12 +472,26 @@ mod tests {
                     continue;
                 };
                 assert!(
-                    space_edit(&config, &mut session, field.id, value, true).is_some(),
+                    space_edit(&config, &mut session, field.id, value, true, Path::new(""))
+                        .is_some(),
                     "look field {} ({:?}) has no arm in `apply_look_field`",
                     field.id,
                     field.label
                 );
             }
+        }
+        let view = &pages[page::VIEW];
+        assert_eq!(view.title, "View");
+        for field in &view.fields {
+            let Some(value) = edit_value(&field.kind) else {
+                continue;
+            };
+            assert!(
+                space_edit(&config, &mut session, field.id, value, true, Path::new("")).is_some(),
+                "view field {} ({:?}) has no arm in `view_edit`",
+                field.id,
+                field.label
+            );
         }
     }
 
@@ -635,6 +711,12 @@ mod tests {
     fn global_lists_every_space_dimmed_until_customized() {
         let (mut config, _) = config_with_space("Work");
         let games = create_space(&mut config.desktop, "Games", Rect::new(0, 0, 200, 200));
+        let _lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(400, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
         let seed = SpaceLook::from_global(&config.theme, &config.desktop.layout);
         apply(
             &mut config.desktop,
@@ -654,23 +736,32 @@ mod tests {
             SpacePreview::default(),
         );
         let nav = nav(&form);
-        let scopes: Vec<(&str, bool, bool)> = nav
+        let scopes: Vec<(&str, Option<char>, bool, bool)> = nav
             .scopes
             .iter()
-            .map(|scope| (scope.label.as_str(), scope.indent, scope.dimmed))
+            .map(|scope| {
+                (
+                    scope.label.as_str(),
+                    scope.glyph,
+                    scope.indent,
+                    scope.dimmed,
+                )
+            })
             .collect();
         assert_eq!(
             scopes,
             [
-                ("Global", false, false),
-                ("Work", true, true),
-                ("Games", true, false)
+                ("Global", Some('\u{E713}'), false, false),
+                ("Work", Some('\u{F0E2}'), true, true),
+                ("Games", Some('\u{F0E2}'), true, false),
+                ("Downloads", Some('\u{E8B7}'), true, true),
             ]
         );
         assert_eq!(nav.selected_scope, 0);
         assert_eq!(
             nav.entries().count(),
-            page::ABOUT + 1 + tables::ANIMATION_PAGES.len()
+            page::ABOUT + 2 + tables::ANIMATION_PAGES.len(),
+            "every Global page, the Lenses page included"
         );
         let header = nav.header.as_ref().unwrap();
         assert_eq!(header.title, "Global settings");
@@ -679,11 +770,106 @@ mod tests {
     }
 
     #[test]
+    fn scope_kinds_have_their_own_glyphs() {
+        let (mut config, work) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(200, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        assert_eq!(ScopeKind::of(None), ScopeKind::Global);
+        assert_eq!(ScopeKind::of(config.desktop.space(work)), ScopeKind::Space);
+        assert_eq!(ScopeKind::of(config.desktop.space(lens)), ScopeKind::Lens);
+        assert_eq!(ScopeKind::Global.glyph(), '\u{E713}');
+        assert_eq!(ScopeKind::Space.glyph(), '\u{F0E2}');
+        assert_eq!(ScopeKind::Lens.glyph(), '\u{E8B7}');
+    }
+
+    #[test]
+    fn a_lens_lists_the_lens_page_and_a_space_does_not() {
+        let (mut config, space) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(300, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let lens_form = form(&config, &session);
+        let lens_pages: Vec<&str> = lens_form
+            .nav
+            .entries()
+            .map(|entry| entry.label.as_str())
+            .collect();
+        assert!(lens_pages.contains(&"Shortcuts"));
+        assert!(lens_pages.contains(&"Lens"));
+        assert!(lens_pages.contains(&"View"));
+        assert_eq!(lens_form.pages[page::LENS].title, "Lens");
+        let keep_sorted = lens_form.field(field::VIEW_KEEP_SORTED).unwrap();
+        assert!(
+            matches!(keep_sorted.kind, FieldKind::Toggle { on: true }),
+            "a lens always keeps its order"
+        );
+        assert!(!keep_sorted.enabled, "and cannot turn it off");
+        assert!(matches!(
+            &lens_form.field(field::LENS_SHOW_HIDDEN).unwrap().kind,
+            FieldKind::Toggle { on: false }
+        ));
+        assert!(matches!(
+            &lens_form.field(field::LENS_TITLE_MODE).unwrap().kind,
+            FieldKind::Choice { selected: 0, .. }
+        ));
+        assert!(!lens_form.field(field::LENS_TITLE_TEXT).unwrap().enabled);
+
+        session.select_scope(Some(space), ScopeKind::Space);
+        let space_form = form(&config, &session);
+        let space_pages: Vec<&str> = space_form
+            .nav
+            .entries()
+            .map(|entry| entry.label.as_str())
+            .collect();
+        assert!(space_pages.contains(&"Shortcuts"));
+        assert!(space_pages.contains(&"View"));
+        assert!(!space_pages.contains(&"Lens"));
+        assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
+        assert!(listed_pages(ScopeKind::Lens).contains(&page::LENS));
+    }
+
+    #[test]
+    fn the_lens_page_says_when_the_folder_is_unavailable() {
+        let (mut config, _) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(300, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+
+        let preview = SpacePreview {
+            available: false,
+            ..SpacePreview::default()
+        };
+        let unavailable = build_form(&config, &session, true, true, Path::new("x"), preview);
+        let note = &unavailable.field(field::LENS_PATH).unwrap().label;
+        assert!(note.starts_with("Folder not available"));
+        assert!(note.contains("lens-test"));
+
+        let available = form(&config, &session);
+        let note = &available.field(field::LENS_PATH).unwrap().label;
+        assert!(!note.contains("Folder not available"));
+        assert!(note.contains("lens-test"));
+    }
+
+    #[test]
     fn a_space_shows_only_look_pages_and_a_customize_switch() {
         let (config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
         session.page = page::ABOUT;
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         assert_eq!(session.page, page::APPEARANCE, "About is Global only");
         let form = build_form(
             &config,
@@ -704,6 +890,7 @@ mod tests {
                 "Layout",
                 "Colors",
                 "Advanced",
+                "View",
                 "Shortcuts"
             ]
         );
@@ -713,10 +900,7 @@ mod tests {
         let button = nav.header.as_ref().unwrap().button.as_ref().unwrap();
         assert_eq!(button.label, "Delete space");
         // The page shape never changes: General and About are still built.
-        assert_eq!(
-            form.pages.len(),
-            page::ANIMATIONS + tables::ANIMATION_PAGES.len()
-        );
+        assert_eq!(form.pages.len(), page::LENSES + 1);
     }
 
     fn animation_form(config: &Config, system_on: bool) -> SettingsForm {
@@ -833,14 +1017,17 @@ mod tests {
     fn only_a_space_lists_its_shortcuts_page() {
         let (config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
-        assert!(!listed_pages(None).contains(&page::SHORTCUTS));
-        assert!(listed_pages(Some(id)).contains(&page::SHORTCUTS));
+        assert!(!listed_pages(ScopeKind::Global).contains(&page::SHORTCUTS));
+        assert!(listed_pages(ScopeKind::Space).contains(&page::SHORTCUTS));
+        assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
 
-        // The sixth entry of a space is its Shortcuts page, which stays
-        // selected while the space is, is always enabled, and is left for
-        // Appearance when the scope returns to Global.
-        session.select_scope(Some(id));
+        // The sixth entry of a space is its View page and the seventh its
+        // Shortcuts page, which stays selected while the space is, is always
+        // enabled, and is left for Appearance when the scope returns to Global.
+        session.select_scope(Some(id), ScopeKind::Space);
         session.select_entry(5);
+        assert_eq!(session.page, page::VIEW);
+        session.select_entry(6);
         assert_eq!(session.page, page::SHORTCUTS);
         let form = build_form(
             &config,
@@ -850,10 +1037,10 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
-        assert_eq!(form.nav.selected, 5);
-        assert_eq!(form.nav.page_of(5), Some(page::SHORTCUTS));
+        assert_eq!(form.nav.selected, 6);
+        assert_eq!(form.nav.page_of(6), Some(page::SHORTCUTS));
         assert!(form.field(field::SPACE_PREVIEW).unwrap().enabled);
-        session.select_scope(None);
+        session.select_scope(None, ScopeKind::Global);
         assert_eq!(session.page, page::APPEARANCE);
     }
 
@@ -887,7 +1074,7 @@ mod tests {
             },
         );
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
 
         let form = build_form(
             &config,
@@ -922,7 +1109,7 @@ mod tests {
     fn a_space_offers_fit_to_contents_on_the_layout_page() {
         let (mut config, id) = config_with_space("Work");
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
 
         // An auto-sized space already fits, so the button is present but grey.
         let form = build_form(
@@ -986,9 +1173,16 @@ mod tests {
     #[test]
     fn the_form_shape_is_stable_across_scopes() {
         // The settings window diffs a new form onto the live controls and
-        // panics if the page shape changes, so Global and a space must build
-        // the same pages and fields (selecting a space must not add a field).
-        let (config, id) = config_with_space("Work");
+        // panics if the page shape changes, so Global, a space, and a lens
+        // must build the same pages and fields (selecting a scope must not
+        // add a field).
+        let (mut config, id) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(300, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
         let global = build_form(
             &config,
             &Session::new(&config),
@@ -998,7 +1192,7 @@ mod tests {
             SpacePreview::default(),
         );
         let mut session = Session::new(&config);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         let space = build_form(
             &config,
             &session,
@@ -1007,7 +1201,18 @@ mod tests {
             Path::new("x"),
             SpacePreview::default(),
         );
+        let mut lens_session = Session::new(&config);
+        lens_session.select_scope(Some(lens), ScopeKind::Lens);
+        let lens_form = build_form(
+            &config,
+            &lens_session,
+            true,
+            true,
+            Path::new("x"),
+            SpacePreview::default(),
+        );
         assert!(global.same_shape(&space));
+        assert!(global.same_shape(&lens_form));
     }
 
     #[test]
@@ -1018,9 +1223,9 @@ mod tests {
         assert_eq!(scope_at(&config, 2), None);
         let mut session = Session::new(&config);
         assert_eq!(scope_index(&config, &session), 0);
-        session.select_scope(Some(id));
+        session.select_scope(Some(id), ScopeKind::Space);
         assert_eq!(scope_index(&config, &session), 1);
-        session.select_scope(Some(SpaceId(999)));
+        session.select_scope(Some(SpaceId(999)), ScopeKind::Space);
         assert_eq!(scope_index(&config, &session), 0, "a deleted space");
     }
 }

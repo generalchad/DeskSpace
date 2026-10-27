@@ -10,8 +10,8 @@ if you turn it on in Settings, about once a day. You can also let the installed
 version install updates on its own while you are away. It asks GitHub for the latest
 release and sends nothing about you or your files.
 
-Spaces currently hold desktop items and shortcuts. Next up are *lenses*:
-spaces that show the live contents of a folder. Other planned features include
+Spaces hold desktop items and shortcuts, and *lenses* show the live contents
+of a folder. Other planned features include
 auto-hiding, multiple pages, and saved layouts; see
 [`ROADMAP.md`](docs/ROADMAP.md) for the full plan.
 
@@ -107,17 +107,30 @@ help inspect the look and the desktop layer.
 - Double-click a space title bar to fold or unfold it (animated; Settings >
   Animations > Fold sets the speed). Right-click a space for
   undo, redo, fold, rename, lock, fit to contents, new shortcut, appearance,
-  sort, delete, new space, settings, hide/show spaces, and exit. "New shortcut"
+  sort, delete, new space, new lens, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
   web address, pastes a shortcut to what you copied in Explorer ("Paste
   shortcut"), or moves files you pick ("Add files…"). In Settings, a space's
   "Shortcuts" page shows a preview of the space: click an item's ✕ to delete
   it, or the + tile to add a shortcut.
+- "New lens…" (in a space's menu, the tray menu, and the desktop menu) asks
+  for a folder and opens a lens on it: a space that shows what is in the
+  folder and follows changes made in Explorer. Dropping, pasting, or adding
+  files or shortcuts on a lens puts them in its folder (Explorer asks before
+  replacing a file, and "Copy here" copies); deleting an item from a lens
+  sends its file to the Recycle Bin. Deleting a lens leaves the folder and
+  its files where they are. Right-click a lens to open its folder, change
+  it, or choose its order and show hidden files.
+- "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
+  Type, and Size, then Ascending or Descending, then Folders first and Keep
+  sorted. A normal space sorts once, or holds the order as items come and go
+  once Keep sorted is on; a lens always holds it. "Folders first" stands in
+  both directions.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
-  rearrange it in a space, or out to another space, a folder, an app, or the
-  desktop.
+  rearrange it in a space (not one that keeps sorted), or out to another space,
+  a folder, an app, or the desktop.
 - Double-click an item to open it; right-click for Explorer's context menu,
   with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
   and dragging an item onto the desktop takes it out of the space (with the
@@ -125,8 +138,8 @@ help inspect the look and the desktop layer.
   item again (slowly) to rename it.
 - With the desktop takeover on, right-click an empty spot of the desktop for
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
-  Windows 11 the one "Show more options" opens) with New space, DeskSpace
-  settings, and hide/show spaces on top.
+  Windows 11 the one "Show more options" opens) with New space, New lens,
+  DeskSpace settings, and hide/show spaces on top.
 - `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items, and `Ctrl+Z` /
   `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
@@ -135,7 +148,9 @@ help inspect the look and the desktop layer.
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
-  icons larger and smaller, and `Ctrl+0` resets them to 100 %.
+  icons larger and smaller, `Ctrl+0` resets them to 100 %, and `Ctrl+Shift+1`
+  through `Ctrl+Shift+8` pick Extra large, Large, Medium, or Small icons, List,
+  Details, Tiles, or Content.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.

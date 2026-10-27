@@ -65,7 +65,11 @@ A native, lightweight, offline Windows desktop organizer that:
     duplicate data on their own, whatever the folder's size. Dropping files
     onto a lens is a move into the bound folder that the user starts. It uses
     the shell's `IFileOperation`, so the standard conflict dialogs appear and
-    Explorer can undo it.
+    Explorer can undo it. Amended 2026-10-21: a "Copy here" drop copies,
+    keep-in-place (Shift) is refused, and paste and new shortcuts land in
+    the folder the same way. A lens item dropped on a normal space is an
+    ordinary file there and moves into the store. A lens never binds the
+    store or a folder inside it.
   - *Normal spaces* hold individual items. Dropping an item into a normal
     space moves that one item into a managed store. It is an atomic rename on
     the same volume, so nothing is duplicated and no extra disk space is used.
@@ -319,7 +323,12 @@ A native, lightweight, offline Windows desktop organizer that:
     up along a ragged front, charring ahead of a glowing edge, with flames
     licking up around its frame; the flames rise past the space, so they
     are drawn on a click-through overlay window above it, since the
-    space's own window carries the blur over its whole rect). Black hole (the space swallowed by a hole that
+    space's own window carries the blur over its whole rect; amended
+    2026-10-22, maintainer: the fire spreads unevenly, from the bottom
+    and a few spots, climbing faster than it spreads, with embers
+    smouldering in the char, warm light ahead of the edge, turbulent
+    flames, and ash lifting off; it looks the same at every DPI and
+    differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
     opens on the desktop) is planned after composition (T14). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
@@ -345,7 +354,14 @@ A native, lightweight, offline Windows desktop organizer that:
     and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
     chosen effect does not use is greyed, so each page keeps its shape. The
     controls live in a Global-only Animations group of pages, one per kind,
-    so no page grows too tall for a 1080-pixel display. Defaults: Roll at
+    so no page grows too tall for a 1080-pixel display. Each effect sets
+    its own pace (amended 2026-10-22, maintainer): its row stretches the
+    chosen duration and picks its progress curve, so an effect that needs
+    longer, or a different rhythm, is one value in its row, not a special
+    case. Burn plays at twice the chosen duration on a curve that catches
+    slowly and then races, so 250 ms burns in half a second. This changes
+    how Burn plays for anyone already using it, on purpose (section 3,
+    "never break users"). Defaults: Roll at
     250 ms for Startup and Fold; startup one after another at 50 ms;
     Delete the same as Startup. An upgrade starts
     animating; this change is on purpose (section 3, "never break users").
@@ -523,6 +539,114 @@ A native, lightweight, offline Windows desktop organizer that:
     animation settings box does. Two session-only toggles outline every
     shadow window and hide every shadow, and the Windows table lists the
     shadow windows.
+- **D17. Views, sort rules, and lens settings (2026-10-21, maintainer).**
+  Decides M4 phase 4 (F-08, F-09, F-17's Lenses page, F-31's kept rule).
+  - *Telling a lens from a space:* each row of the settings window's
+    scopes pane gets a glyph for its kind (Global, space, lens), from
+    Segoe Fluent Icons (Segoe MDL2 Assets on Windows 10), so it follows
+    DPI and dark mode. On the desktop, a lens's title bar shows its
+    folder's own shell icon, so a lens on Downloads shows the Downloads
+    icon. A normal space's title bar is unchanged.
+  - *Views belong to every space,* not only lenses. Normal-space items
+    carry the same facts (size, type, date), and a lens-only path in the
+    renderer would be the special case rule 2 forbids. The views are
+    Explorer's eight (Extra large, Large, Medium, and Small icons, List,
+    Details, Tiles, Content), with Explorer's Ctrl+Shift+1..8. A view is
+    per space, as Explorer keeps one per folder, so it lives in `Space`,
+    not `SpaceLook`, as tabs do (J1). The default view, "Settings icon
+    size", is today's: the look's icon size, Ctrl+wheel, and Match
+    Explorer (D9) as before. The four icon views set a fixed size for that
+    space (256, 96, 48, and 16 px at 96 DPI), which Ctrl+wheel leaves
+    alone, as it leaves a customized Custom look alone. List, Details,
+    Tiles, and Content place items by their order and never write
+    `Item.position`, so switching back to an icon view restores a hand
+    arrangement.
+  - *One sort rule for both kinds:* `SortRule { key, descending,
+    folders_first }`. A space keeps its last rule, and "Keep sorted"
+    decides whether it holds as items come and go. A lens is always kept
+    sorted, since its items have no saved positions. Dragging to rearrange
+    a kept-sorted space is refused, as Explorer refuses it in a sorted
+    folder. Sort by ▸ takes Explorer's folder shape: the keys as radio
+    items, then Ascending and Descending, then Folders first and Keep
+    sorted (checked and grey on a lens).
+  - *The status bar* is per-space chrome too, not a look setting. A look
+    setting cannot be on for lenses and off for spaces while both follow
+    Global. It shows Explorer's segments ("12 items", "3 items
+    selected", and the selected files' size) on the left. On the right
+    it has Explorer's two view buttons: Details (Ctrl+Shift+6), "Displays
+    information about each item in the window", and Large icons
+    (Ctrl+Shift+2), "Displays items by using large thumbnails". It is off
+    for new spaces and on for new lenses, from the Lenses defaults page.
+    Spaces that exist before it lands keep it off.
+  - *A lens's title* follows its label setting: the folder's name (the
+    default for a new lens), its path from the user's profile folder
+    (`C:\Users\me\Documents\Work` shows as `Documents\Work`, and a folder
+    outside the profile shows its full path), the full path, or custom
+    text. Renaming the title by hand (F2, or the Lens page) makes it
+    custom. A lens that predates the setting loads as custom, so its
+    title does not change under the user.
+  - *Settings pages:* every space lists a View page (the view, the status
+    bar, and the sort rule), always enabled like Shortcuts, because
+    views are not part of the look. A lens also lists a Lens page (its
+    folder, its title, and hidden files). Global gains a Lenses page that
+    holds the defaults for new lenses. View and Lens edits preview, and
+    Cancel undoes them. Change folder… commits at once, as the menu
+    does.
+  - Lenses are unreleased (2026-10-21), so `FolderView`'s sort fields may
+    move into `SortRule` without a migration.
+  - Work items: `TASKS.md` section W, phase 4 (W8-W23).
+
+- **D18. Lens and view extras, M4 phase 5 (2026-10-21, maintainer).**
+  Builds on D17 and ships after v0.3 (section 6), so it never holds up
+  the lens release.
+  - *Browsing into subfolders:* double-clicking a real folder in a lens
+    shows that folder in place, as Explorer does. A shortcut to a folder
+    still opens as today, because a shortcut can point anywhere. A Back
+    button in the title bar, Alt+Left, Backspace, Alt+Up, and the mouse's
+    back button go to the parent. A lens never goes above its own folder.
+    The folder shown is session state: a restart, or Change folder…,
+    returns to the lens's folder. The title bar shows `Root › Sub`; the
+    scopes pane and the settings window keep the lens's own title.
+    Every file operation (drop, paste, new shortcut, delete) acts on the
+    folder shown, and the storage-folder rule (D3) applies to every folder
+    shown, through its final path, so a junction cannot lead into the
+    store.
+  - *Group by,* for every space, with Explorer's keys and group names.
+    A grouped space places items by group and order, and dragging to
+    rearrange is refused, as for Keep sorted. Folded groups are session
+    state. An item in a folded group cannot be selected: Ctrl+A and the
+    marquee skip it, and folding a group drops its items from the
+    selection, so a delete never acts on files the user cannot see.
+  - *Ctrl+wheel through the views:* on a space set to one of Explorer's
+    views, Ctrl+wheel and Ctrl+Plus/Minus step through them in the View
+    menu's order and stop at the ends; Ctrl+0 returns to "Settings icon
+    size". The zoom pop-up does not show for a view step. A space on the
+    default view zooms exactly as D9 says.
+  - *Lens filters:* "Show only" and "Hide" lists of `*` and `?` wildcards,
+    separated by `;`, matched without case against names only. "Show
+    only" applies to files, so folders stay browsable. "Hide" applies to
+    both. No regular expressions: a hand-written matcher is linear in time
+    and adds no dependency. Pattern count and length are capped, and
+    clamped when the config loads. A lens whose filters hide everything
+    says so in its placeholder.
+  - *File name extensions* per space: Automatic (today's rule: Explorer's
+    setting under Match Explorer, else hidden), Show, or Hide.
+  - *Details columns:* Name is always first and always shown. Explorer's
+    header menu chooses the others; dragging a divider resizes and
+    dragging a header reorders. Widths and order are kept per space.
+    Date created joins as a column and a sort key. It comes from the same
+    listing record as the other dates, at no extra IO.
+  - *Compact view* per space, as Explorer's. It tightens the views that
+    place items by order. The icon views keep the Layout page's spacing,
+    so there is one spacing control per view.
+  - *The lens's path as a tip* on hovering its title, read from the
+    model and never from the disk.
+  - *The default view for new spaces* goes on the New spaces page; its
+    default is today's view.
+  - *The rest of F-40:* Explorer's desktop offers only icon views, which
+    the default view already follows. A check confirms this, then F-40
+    closes.
+  - Work items: `TASKS.md` section W, phase 5 (W24-W43).
 
 ## 3. Guiding principles
 
@@ -556,28 +680,33 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
-**In progress:** M2 (only the stored-file watch remains) and M3 (desktop
-verbs, F-52, and entries that wait on later milestones or design). Undo (D11,
-`TASKS.md` section U) and drawn shadows (D15) have landed since v0.2.4 and
-ship in the next release. Section 5 lists what each milestone has done.
+**In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
+F-52, and entries that wait on later milestones or design), and M4 (phases 1-4
+are done, the last completing v0.3; phase 5 follows in v0.4 or a v0.3.x).
+Undo (D11, `TASKS.md` section U) and drawn shadows (D15) have landed since
+v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **L1's on-screen findings** (`TASKS.md` section L): record what each
+1. **Lenses, M4 phase 5** (`TASKS.md` section W, "Where to start").
+   Phases 1-4 are built (2026-10-21 to 2026-10-24); their on-screen checks
+   are in `TASKS.md` section V. Phase 4 (W8-W23, D17) completed v0.3.
+   Phase 5 (W24-W43, D18) follows, except W24 and W25: they fix code that
+   runs today and go first.
+2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-2. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
+3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
    the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
    built-but-unchecked behaviors before more work builds on them.
-3. **Release dry run on clean machines** (R12) and **code signing** (R10),
+4. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce and Scroll (T19, T20) are ready, and Magic
    lamp (T21) awaits a decision. The composition spike (T1) runs alongside.
 
-Not next: mapping Explorer's list/details view mode (the rest of F-40). It
-needs DeskSpace to have list and details views first, and those arrive with
-M4 phase 4.
+Not next: mapping Explorer's desktop view mode (the rest of F-40). DeskSpace
+now has all eight views; the check that closes F-40 is phase 5's W41.
 
 ## 5. Milestones
 
@@ -665,49 +794,70 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Wheel scrolling with an indicator.
   - Scenes carry only the visible items.
   - An LRU-bounded `IconCache` (F-03).
-- **Phase 1 - core model.**
+- **Phase 1 - core model. [done]**
   - A source on each space:
     `Space.source: SpaceSource { Items, Folder(FolderView) }`, with
     `#[serde(default)]`.
-  - The view settings: `FolderView { path, sort, descending, folders_first,
-    show_hidden, include, exclude }`.
+  - The view settings: `FolderView { path, show_hidden, include, exclude }`,
+    and `SpaceView { mode, sort }` since W14.
   - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
     label, kind, size, modified, hidden }`.
   - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
-    `SyncLens { id, entries }`. `SyncLens` filters, sorts in natural order, and
-    reconciles by path, so `ItemId`s survive refreshes.
+    `SyncLens { id, entries }`. `SyncLens` filters, sorts by the space's
+    `SortRule`, and reconciles by path, so `ItemId`s survive refreshes.
   - `AddItem` / `MoveItem` into a lens are `Rejected`.
   - Lens items are not persisted (F-07, F-08).
-- **Phase 2 - platform.**
+- **Phase 2 - platform. [done]**
   - Folder listing with `FindFirstFileExW`.
   - A watcher (shared with M2) using `ReadDirectoryChangesW`:
-    - debounced (about 100 ms);
-    - a full rescan off the UI thread, then a `WM_APP` wake posted to the
-      controller.
-  - `Event::Folder { Snapshot | Unavailable }`, with a periodic retry.
+    - keyed, so the Desktop folder and every lens are watched at once, all
+      on one worker thread (an I/O completion port; decided 2026-10-20);
+    - debounced (150 ms);
+    - a full rescan on the worker, never the UI thread, then a `WM_APP`
+      wake posted to the controller.
+  - `Event::FolderChanged { key, listing: Listed | Unavailable }`, with a
+    periodic retry on the worker.
   - New `Ui` calls:
-    - `Ui::watch_folder`;
+    - `Ui::watch_folder(key, path)` and `unwatch_folder(key)`;
     - `pick_folder` (`IFileOpenDialog`);
-    - `move_into_folder` (`IFileOperation` with undo). It pumps messages, so
-      no runtime borrow may be held across it.
-- **Phase 3 - app.**
-  - "New lens..." in the space and tray menus.
+    - `transfer_files` with `OnCollision::Ask` (`IFileOperation` with undo
+      and Explorer's Replace or Skip dialog). It pumps messages, so no
+      runtime borrow may be held across it.
+- **Phase 3 - app. [done]**
+  - "New lens..." in the space, tray, and desktop layer menus.
   - Drops onto a lens move files into its folder. Items already there are
     skipped, and a folder cannot be dropped into itself.
-  - A lens menu: Open folder, Change folder..., Sort by, Folders first, and
-    Show hidden files.
+  - A lens menu: Open folder, Change folder..., and Sort by, which holds
+    Folders first and Show hidden files.
   - A placeholder when the folder is unavailable.
   - Deleting a lens removes only the view; its folder and the files in it
     are never deleted or moved (D3). The delete confirmation says so.
   - Double-click to open already works through `Ui::open_path`.
-- **Phase 4 - views and kept sort rules.**
-  - List and details views and icon sizes (F-09). Map Explorer's
-    `FOLDERVIEWMODE` onto these views under "Match Explorer" (the rest of
-    F-40).
-  - A kept sort rule for lenses and normal spaces (F-08, F-31).
-  - A Lenses settings page with defaults (F-17).
-- **Later.** Browse into subfolders inside the lens, with a back control (as
-  comparable tools do). Until then, subfolders open in Explorer.
+- **Phase 4 - views and kept sort rules** (decided in D17; `TASKS.md` W8-W23).
+  - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
+    lens's title bar.
+  - Explorer's eight views and icon sizes, for every space (F-09), and
+    their Ctrl+Shift+1..8 keys. Map Explorer's `FOLDERVIEWMODE` onto these
+    views under "Match Explorer" (the rest of F-40).
+  - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
+    shape (F-08, F-31).
+  - Explorer's status bar: item and selection counts, the Details and
+    Large icons buttons.
+  - A lens's title from its folder name, profile path, full path, or
+    custom text.
+  - A View page for every space, a Lens page for each lens, and a Global
+    Lenses page with defaults (F-17).
+- **Phase 5 - extras, after v0.3** (decided in D18; `TASKS.md` W24-W43).
+  - Two fixes first: a listing carries the folder it read, and the
+    storage check moves off the UI thread.
+  - Browse into subfolders inside the lens, with a back control (F-64).
+    Until then, subfolders open in Explorer.
+  - Group by (F-62); Details columns: choose, resize, reorder, and Date
+    created (F-63).
+  - Lens filters (part of F-22), per-space file name extensions, compact
+    view, the path tip, Ctrl+wheel through the views, and the default
+    view for new spaces.
+  - Close F-40 after its desktop check.
 
 Exit criteria: creating, renaming, or deleting a file in a lens's folder
 updates the lens within about 150 ms, and the sort and view settings persist.
@@ -916,7 +1066,8 @@ catalog.
   of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
   stored-file watch, the desktop verbs) ships in a v0.2.x release or with
   v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
-- **v0.3 "Lenses"**: M4.
+- **v0.3 "Lenses"**: M4 phases 0-4. Phase 5 (D18) follows in a v0.3.x
+  release or with v0.4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
@@ -941,9 +1092,9 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
-| F-07 | Lenses (folder portals) | M4 | Open |
-| F-08 | Lens sort rules | M4 | Open |
-| F-09 | Lens show-as / icon size | M4 | Open |
+| F-07 | Lenses (folder portals) | M4 | Done: lenses work end to end and phase 4 added the views, sort rules, status bar, and lens settings (M4 phases 1-4, W1-W23, 2026-10-24); on-screen checks in `TASKS.md` section V |
+| F-08 | Lens sort rules | M4 | Done: one `SortRule`, Explorer's Sort by (W14), and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
+| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22); checks pending (`TASKS.md` section V) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
@@ -951,12 +1102,12 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-14 | Right-click context menu | M2 (basic), M3 (full) | Space menu, Explorer item menu, and the takeover desktop menu done (desktop menu check pending); lens and arrange entries open |
 | F-15 | Snap to grid / auto-arrange | Core | Done |
 | F-16 | System tray | M3 | Done; a pause-takeover entry is open, snapshot entries wait for M6 |
-| F-17 | Settings window | M3, M4 | Partial: 9 pages in a scopes/pages/page layout (New spaces: check pending); Lenses page open |
+| F-17 | Settings window | M3, M4 | Done: a scopes/pages/page layout and the Lens, View, and Lenses pages (W10, W20, W23); checks pending (`TASKS.md` section V) |
 | F-18 | Hotkeys | M3 | Done; check pending (Hotkeys page binds show/hide, new space, and settings) |
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |
-| F-22 | Exclude rules / filters | M7 | Open |
+| F-22 | Exclude rules / filters | M7 | Open; lens filters planned in M4 phase 5 (D18, `TASKS.md` W34, W35) |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color and drawn shadows (D15) built 2026-10-19, check pending (`TASKS.md` section V, "Border settings", "Drawn shadows") |
 | F-25 | Icon size | M3 | Done (50-200 %, jumbo icons, per-monitor DPI, per space; Ctrl+wheel per D9); check pending (`TASKS.md` V: F13, Display) |
@@ -965,7 +1116,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-28 | Title bar style | M5 | Open |
 | F-29 | Windows accent color | M3 | Done; check pending |
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
-| F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
+| F-31 | Sort items in normal spaces | M3, M4 | Done: Explorer's Sort by (W14) and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
 | F-32 | Hover opacity | M5 | Open |
 | F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce and Scroll ready and Magic lamp awaiting a decision (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
@@ -974,7 +1125,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
-| F-40 | Explorer icon size and view mode | M2, M4 | Icon size done; view mode waits for M4 phase 4 views |
+| F-40 | Explorer icon size and view mode | M2, M4 | Icon size done; view mode waits for M4 phase 4 views, then closes after a desktop check (D18, `TASKS.md` W41) |
 | F-41 | Independent item check boxes | M2 | Done; check pending |
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
@@ -996,6 +1147,9 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
+| F-62 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
+| F-63 | Details columns: choose, resize, reorder, Date created | M4 | Open; decided in D18 (`TASKS.md` W29-W32) |
+| F-64 | Browse into subfolders inside a lens | M4 | Open; decided in D18 (`TASKS.md` W24, W25, W42, W43) |
 
 
 ## 8. Open questions
@@ -1022,8 +1176,7 @@ Resolve each one during the milestone that raises it.
    - Proposed, awaiting the maintainer: Fluent, embedded, with a test that
      every key the code uses has English text.
 
-Every other question raised so far is answered by a decision in section 2
-(D2, D3, D6-D9, D11-D13).
+Every other question raised so far is answered by a decision in section 2.
 
 ## 9. Risks
 

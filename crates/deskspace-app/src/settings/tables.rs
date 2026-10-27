@@ -22,6 +22,14 @@ pub(super) const LABEL_SHADOW_OPTIONS: [(LabelShadow, &str); 3] = [
     (LabelShadow::Off, "Never"),
 ];
 
+/// How a lens's title follows its folder, in dropdown order (D17).
+pub(super) const LENS_TITLES: [(LensTitle, &str); 4] = [
+    (LensTitle::FolderName, "Folder name"),
+    (LensTitle::ProfilePath, "Path from your user folder"),
+    (LensTitle::FullPath, "Full path"),
+    (LensTitle::Custom, "Custom"),
+];
+
 /// Where the border's color comes from, in dropdown order.
 pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
     (
@@ -38,6 +46,108 @@ pub(super) const BORDER_SOURCES: [(BorderSource, &str); 3] = [
 pub(super) const PRESETS: [(Preset, &str); 2] = [
     (Preset::MatchExplorer, "Match Explorer's display"),
     (Preset::Custom, "Custom"),
+];
+
+/// Explorer's views in menu order, with the Ctrl+Shift digit W13 adds.
+pub const VIEW_MODES: [(ViewMode, &str, Option<u8>); 9] = [
+    (ViewMode::Icons, "Settings icon size", None),
+    (ViewMode::ExtraLargeIcons, "Extra large icons", Some(1)),
+    (ViewMode::LargeIcons, "Large icons", Some(2)),
+    (ViewMode::MediumIcons, "Medium icons", Some(3)),
+    (ViewMode::SmallIcons, "Small icons", Some(4)),
+    (ViewMode::List, "List", Some(5)),
+    (ViewMode::Details, "Details", Some(6)),
+    (ViewMode::Tiles, "Tiles", Some(7)),
+    (ViewMode::Content, "Content", Some(8)),
+];
+
+/// The view Explorer's Ctrl+Shift digit chooses (W13), or `None` for a digit
+/// no view carries yet.
+pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
+    VIEW_MODES
+        .iter()
+        .find(|(.., shortcut)| *shortcut == Some(digit))
+        .map(|(mode, ..)| *mode)
+}
+
+/// Explorer's Sort by keys, in its order and words (D17). The Sort by menu,
+/// the View page, and the Lenses defaults page read it.
+pub const SORT_KEYS: [(SortKey, &str); 4] = [
+    (SortKey::Name, "Name"),
+    (SortKey::Modified, "Date modified"),
+    (SortKey::Kind, "Type"),
+    (SortKey::Size, "Size"),
+];
+
+/// Explorer's Details columns in display order (W18): its header label, the
+/// sort key a click on the header uses, its default width at 96 DPI, and how
+/// its values align. Name takes the width left over, down to
+/// `NAME_MIN_WIDTH`. Widths are provisional until W18's on-screen check
+/// measures Explorer's own.
+pub struct DetailsColumn {
+    pub label: &'static str,
+    pub key: SortKey,
+    pub width: i32,
+    pub align: ColumnAlign,
+}
+
+pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
+    DetailsColumn {
+        label: "Name",
+        key: SortKey::Name,
+        width: 0,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Date modified",
+        key: SortKey::Modified,
+        width: 130,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Type",
+        key: SortKey::Kind,
+        width: 100,
+        align: ColumnAlign::Left,
+    },
+    DetailsColumn {
+        label: "Size",
+        key: SortKey::Size,
+        width: 80,
+        align: ColumnAlign::Right,
+    },
+];
+
+/// The narrowest Name column, so a small space keeps a readable name.
+pub const NAME_MIN_WIDTH: i32 = 120;
+
+/// Explorer's Sort by directions, in the View page's order (W20).
+pub const VIEW_ORDERS: [&str; 2] = ["Ascending", "Descending"];
+
+/// A view button in Explorer's status bar (W19): the view it switches to, its
+/// glyph, and Explorer's tip. The tip gains its Ctrl+Shift digit from
+/// `VIEW_MODES`.
+pub struct StatusButton {
+    pub mode: ViewMode,
+    pub glyph: &'static [u16],
+    pub tip: &'static str,
+}
+
+/// Explorer's two status-bar view buttons, Details and Large icons. The glyphs
+/// are Segoe Fluent Icons / Segoe MDL2 Assets "BulletedList" and "ViewAll",
+/// which both fonts have.
+/// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+pub const STATUS_BUTTONS: [StatusButton; 2] = [
+    StatusButton {
+        mode: ViewMode::Details,
+        glyph: &[0xE8FD],
+        tip: "Displays information about each item in the window.",
+    },
+    StatusButton {
+        mode: ViewMode::LargeIcons,
+        glyph: &[0xE8A9],
+        tip: "Displays items by using large thumbnails.",
+    },
 ];
 
 pub(super) fn corner_marks() -> Vec<SliderMark> {
@@ -291,6 +401,22 @@ mod tests {
         for (slot, binding) in HOTKEY_BINDINGS.iter().enumerate() {
             assert_eq!(binding.text(&window), format!("Ctrl+F{}", slot + 1));
         }
+    }
+
+    #[test]
+    fn each_view_shortcut_digit_names_one_view() {
+        assert_eq!(view_for_digit(1), Some(ViewMode::ExtraLargeIcons));
+        assert_eq!(view_for_digit(2), Some(ViewMode::LargeIcons));
+        assert_eq!(view_for_digit(3), Some(ViewMode::MediumIcons));
+        assert_eq!(view_for_digit(4), Some(ViewMode::SmallIcons));
+        assert_eq!(view_for_digit(5), Some(ViewMode::List));
+        assert_eq!(view_for_digit(0), None);
+
+        let mut digits: Vec<u8> = VIEW_MODES.iter().filter_map(|(.., digit)| *digit).collect();
+        let count = digits.len();
+        digits.sort_unstable();
+        digits.dedup();
+        assert_eq!(digits.len(), count, "one view per shortcut digit");
     }
 
     #[test]

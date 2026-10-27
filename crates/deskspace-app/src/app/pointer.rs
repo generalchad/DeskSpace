@@ -1,11 +1,13 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, SpaceView, ViewLayout, ViewMode};
 
 use deskspace_platform::{
-    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
+    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
 };
+
+use crate::settings::STATUS_BUTTONS;
 
 use super::drag::Drag;
 use super::files::ShortcutSource;
@@ -79,6 +81,8 @@ pub(super) struct PointerState {
     /// own menu on the next right release.
     pub(super) right_dragged: bool,
     pub(super) hovered: Option<(Surface, ItemId)>,
+    /// The status-bar view button the pointer is over, and its surface (W19).
+    pub(super) status_hover: Option<(Surface, usize)>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
@@ -231,12 +235,24 @@ impl App {
             SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
+                let mut repaint = false;
                 if self
                     .pointer
                     .hovered
                     .is_some_and(|(owner, _)| owner == surface)
                 {
                     self.pointer.hovered = None;
+                    repaint = true;
+                }
+                if self
+                    .pointer
+                    .status_hover
+                    .is_some_and(|(owner, _)| owner == surface)
+                {
+                    self.pointer.status_hover = None;
+                    repaint = true;
+                }
+                if repaint {
                     self.refresh_surface(ui, surface);
                 }
             }
@@ -267,6 +283,57 @@ impl App {
         }
     }
 
+    /// If `point` is on a status-bar view button, switches the space to that
+    /// view and returns true (W19).
+    fn status_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        let Some(index) = crate::scene::status_button_at(space, point) else {
+            return false;
+        };
+        let Some(button) = STATUS_BUTTONS.get(index) else {
+            return false;
+        };
+        let mode = button.mode;
+        let at = space.rect().origin();
+        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        true
+    }
+
+    /// If `point` is in a Details header, sorts space `id` by that column and
+    /// returns true. A click on the column already sorted reverses it, as
+    /// Explorer does.
+    fn details_header_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        let content = space.content_rect();
+        if space.view().mode != ViewMode::Details || !content.contains(point) {
+            return false;
+        }
+        let Some(layout) = self.view_layout(id) else {
+            return false;
+        };
+        let Some(details) = crate::scene::details_view(
+            space,
+            &layout,
+            content.width,
+            self.layout_for(id).padding,
+            space_dpi(id.0),
+        ) else {
+            return false;
+        };
+        let local = Point::new(point.x - content.x, point.y - content.y);
+        let Some(index) = crate::scene::details_header_column_at(&details, local) else {
+            return false;
+        };
+        let rule = crate::scene::details_rule_after(space.view().sort, index);
+        let at = space.rect().origin();
+        self.sort_space(ui, id, rule, at);
+        true
+    }
+
     pub(super) fn begin_interaction(
         &mut self,
         ui: &mut Ui,
@@ -275,6 +342,20 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a status-bar view button switches this space's view
+        // (W19).
+        if let Surface::Space(id) = surface
+            && self.status_button_clicked(ui, id, point)
+        {
+            return;
+        }
+        // A click on a Details header sorts by its column, through the same
+        // sort path as the menu (W18).
+        if let Surface::Space(id) = surface
+            && self.details_header_click(ui, id, point)
+        {
+            return;
+        }
         // A click on an item's check box either toggles that item in the
         // selection (auto-check-select) or the independent tick set, and moves
         // the highlight to it.
@@ -430,11 +511,13 @@ impl App {
     }
 
     pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
-        let layout = self.layout_for(id);
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let max = space.max_scroll(layout.cell(), layout.padding);
+        let Some(layout) = self.view_layout(id) else {
+            return;
+        };
+        let max = layout.max_scroll(space.content_rect().size());
         let current = self.scroll_of(id);
         let next = (current - delta * layout.scroll_step() / WHEEL_DELTA).clamp(0, max);
         if next == current {
@@ -453,38 +536,48 @@ impl App {
         let hovered = self
             .surface_item_at(surface, point)
             .map(|item| (surface, item));
-        if hovered == self.pointer.hovered {
+        let status_hover = match (surface, hovered) {
+            (Surface::Space(id), None) => self
+                .config
+                .desktop
+                .space(id)
+                .and_then(|space| crate::scene::status_button_at(space, point))
+                .map(|index| (surface, index)),
+            _ => None,
+        };
+        if hovered == self.pointer.hovered && status_hover == self.pointer.status_hover {
             return;
         }
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
+        let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         Self::clear_timer(ui, Timer::InfoTip);
-        if hovered.is_some() {
+        if hovered.is_some() || status_hover.is_some() {
             Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
         }
         if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
+            self.refresh_surface(ui, owner);
+        }
+        if let Some((owner, _)) = previous_status.filter(|(owner, _)| *owner != surface) {
             self.refresh_surface(ui, owner);
         }
         self.refresh_surface(ui, surface);
     }
 
     pub(super) fn double_click(&mut self, ui: &mut Ui, surface: Surface, point: Point) {
-        let layout = self.surface_layout(surface);
         let target = match surface {
-            Surface::Space(id) => {
-                self.config
-                    .desktop
-                    .space(id)
-                    .map_or(DoubleClickTarget::Nothing, |space| {
-                        double_click_target(
-                            space,
-                            layout.cell(),
-                            self.surface_scroll(surface),
-                            point,
-                        )
-                    })
-            }
+            Surface::Space(id) => match self.view_layout(id) {
+                Some(layout) => {
+                    self.config
+                        .desktop
+                        .space(id)
+                        .map_or(DoubleClickTarget::Nothing, |space| {
+                            double_click_target(space, &layout, self.surface_scroll(surface), point)
+                        })
+                }
+                None => DoubleClickTarget::Nothing,
+            },
             Surface::Desktop => self
                 .surface_item_at(surface, point)
                 .map_or(DoubleClickTarget::Nothing, DoubleClickTarget::Item),
@@ -583,13 +676,24 @@ enum DoubleClickTarget {
     Nothing,
 }
 
-fn double_click_target(space: &Space, cell: Size, scroll: i32, point: Point) -> DoubleClickTarget {
+fn double_click_target(
+    space: &Space,
+    layout: &ViewLayout,
+    scroll: i32,
+    point: Point,
+) -> DoubleClickTarget {
     if space.title_bar().contains(point) {
         DoubleClickTarget::TitleBar
-    } else if let Some(item) = space.item_at(point, cell, scroll) {
-        DoubleClickTarget::Item(item)
     } else {
-        DoubleClickTarget::Nothing
+        let content = space.content_rect();
+        let local =
+            layout.layout_point(Point::new(point.x - content.x, point.y - content.y), scroll);
+        layout
+            .index_at(local)
+            .and_then(|index| space.items().get(index))
+            .map_or(DoubleClickTarget::Nothing, |item| {
+                DoubleClickTarget::Item(item.id)
+            })
     }
 }
 
@@ -599,6 +703,7 @@ mod tests {
     use deskspace_core::ItemFacts;
 
     use deskspace_core::GridSpec;
+    use deskspace_core::view_layout::ViewMetrics;
 
     #[test]
     fn a_second_click_on_the_only_selected_item_renames() {
@@ -741,13 +846,13 @@ mod tests {
 
     #[test]
     fn double_click_rolls_on_the_title_and_opens_items() {
-        let layout = GridSpec::default();
+        let grid = GridSpec::default();
         let mut space = Space::new(SpaceId(1), "S", Rect::new(100, 100, 240, 400));
         let mut item = deskspace_core::Item::new(ItemId(7), "C:/a.lnk", ItemFacts::default());
         item.position = Point::new(12, 12);
         space.push_item(item);
-        let target =
-            |x, y, scroll| double_click_target(&space, layout.cell(), scroll, Point::new(x, y));
+        let layout = ViewLayout::for_space(&space, ViewMetrics::for_grid(grid));
+        let target = |x, y, scroll| double_click_target(&space, &layout, scroll, Point::new(x, y));
         let in_item = (100 + 12 + 10, 100 + space.title_height + 12 + 10);
 
         assert_eq!(target(150, 110, 0), DoubleClickTarget::TitleBar);

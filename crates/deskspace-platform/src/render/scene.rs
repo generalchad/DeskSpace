@@ -1,5 +1,6 @@
 use deskspace_core::geometry::Rect;
 use deskspace_core::theme::{Backdrop, Color, EditColors};
+use deskspace_core::view::ViewMode;
 
 use crate::edit::TextEdit;
 
@@ -46,6 +47,17 @@ impl SpaceStyle {
     }
 }
 
+/// What a drop on a window lands in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DropInto {
+    /// A space's own list of items, which can list a file where it is.
+    #[default]
+    Space,
+    /// A real folder (a lens), which only holds the files moved or copied
+    /// into it.
+    Folder,
+}
+
 /// Everything drawn inside one space window. Coordinates are relative to the
 /// window's client area.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +66,10 @@ pub struct SpaceScene {
     /// layer sets it false, so its items fill the whole window.
     pub chrome: bool,
     pub title: String,
+    /// The small folder icon drawn left of the title text. A lens shows its
+    /// folder's shell icon (the generic folder while the folder is
+    /// unavailable); every other space shows none.
+    pub title_icon: Option<Icon>,
     pub title_height: i32,
     pub tint: Color,
     pub title_fill: Color,
@@ -83,9 +99,22 @@ pub struct SpaceScene {
     /// Draws a highlight outline just inside the frame, following the corner
     /// radius, to point out the space selected in the settings window.
     pub highlight: bool,
+    /// What a drop on this window lands in, which decides the modifiers and
+    /// menu entries the drop target offers.
+    pub drop_into: DropInto,
+    /// Text drawn centered in the item area in place of items, in the label
+    /// color at about 60 % opacity; a lens whose folder is unavailable says
+    /// so here. `None` draws nothing.
+    pub placeholder: Option<String>,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,
+    /// The Details header and its columns, set only in Details (W18). The
+    /// header stays put while the rows scroll beneath it.
+    pub details: Option<DetailsView>,
+    /// Explorer's status bar along the bottom edge, while the space shows one
+    /// (W19).
+    pub status: Option<StatusBar>,
     /// While set, the painter draws this text in the title bar instead of
     /// `title`, with the selection highlight and a caret.
     pub editing: Option<TextEdit>,
@@ -100,6 +129,9 @@ pub struct SpaceScene {
     /// Scaled item sizes (icon, label gap, check box) the painter draws with;
     /// the app's hit tests use the same metrics.
     pub metrics: ItemMetrics,
+    /// How each item cell places its icon and label (W16). The painter's icon,
+    /// label, and rename-box positions and the check-box hit test both read it.
+    pub item_layout: ItemLayout,
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
@@ -114,6 +146,83 @@ pub struct SpaceScene {
     pub marquee: Option<Rect>,
     /// The scroll position indicator, when the content overflows.
     pub scroll_thumb: Option<Rect>,
+}
+
+/// How an item cell places its icon and label (W16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ItemLayout {
+    /// The icon grid: the icon centered at the top, with its label below it.
+    #[default]
+    Grid,
+    /// One row of a list: the icon at the left and one label line beside it.
+    Inline,
+    /// One Details row: the icon at the left, the name beside it, then the
+    /// other column texts (W18).
+    Details,
+    /// One tile: a 48 px icon at the left and three lines beside it (W21).
+    Tiles,
+    /// One content row: the icon and name at the left, details at the right,
+    /// with a separator between rows (W22).
+    Content,
+}
+
+/// The Details header and its columns (W18). Rects are relative to the content
+/// area's top-left corner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsView {
+    /// The header row's height; the rows scroll beneath it.
+    pub header_height: i32,
+    /// The gap between a column's text and its edges.
+    pub cell_pad: i32,
+    /// One per column, in display order. Name is first, takes the width left
+    /// over, and always shows.
+    pub columns: Vec<DetailsColumnVisual>,
+    /// The column whose header shows Explorer's sort arrow, and whether it
+    /// points up (ascending).
+    pub sorted: Option<(usize, bool)>,
+}
+
+/// One Details column's header rect, label, and value alignment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetailsColumnVisual {
+    /// The column's x range, relative to the content area, and the header row.
+    pub rect: Rect,
+    pub label: String,
+    pub align: ColumnAlign,
+}
+
+/// How a Details column's values sit in their cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColumnAlign {
+    #[default]
+    Left,
+    Right,
+}
+
+/// Explorer's status bar (W19): the item counts on the left and its view
+/// buttons on the right.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusBar {
+    /// The bar's height and its rect in window coordinates.
+    pub height: i32,
+    pub rect: Rect,
+    /// The counts, in order: items, selection, then the selected size.
+    pub segments: Vec<String>,
+    pub buttons: Vec<StatusButtonVisual>,
+}
+
+/// One view button at the right of the status bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusButtonVisual {
+    /// The button's rect in window coordinates.
+    pub rect: Rect,
+    /// The view the button switches to.
+    pub mode: ViewMode,
+    /// The Segoe Fluent Icons / Segoe MDL2 Assets glyph, from the app's table.
+    pub glyph: &'static [u16],
+    /// Whether the space is already in this view.
+    pub checked: bool,
+    pub hovered: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -146,4 +255,8 @@ pub struct ItemVisual {
     /// An override for the label color (Explorer's compressed/encrypted
     /// colors); `None` uses the scene's item text color.
     pub label_color: Option<Color>,
+    /// The text for the view's secondary lines: Details column texts after
+    /// Name (W18), a tile's type and size (W21), or a content row's right-hand
+    /// texts (W22). Empty outside those views.
+    pub cells: Vec<String>,
 }

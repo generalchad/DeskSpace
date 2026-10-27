@@ -83,7 +83,7 @@ pub enum DragEffect {
 /// `path` as a NUL-terminated wide string with backslash separators. The
 /// shell's parsing name APIs reject forward slashes ("The parameter is
 /// incorrect"), and hand-edited or older configs can contain them.
-fn shell_path(path: &Path) -> Vec<u16> {
+pub(crate) fn shell_path(path: &Path) -> Vec<u16> {
     wide(&path.to_string_lossy().replace('/', "\\"))
 }
 

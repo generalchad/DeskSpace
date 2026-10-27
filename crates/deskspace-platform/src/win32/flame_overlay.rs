@@ -3,8 +3,9 @@
 //! whole rect, so they are drawn on a window of their own: layered with
 //! per-pixel alpha, click-through, never activated, and owned by the space
 //! window, which keeps it above the space and destroys it with it. It is
-//! shown directly above the space (`insert_after`), and lives as long as one
-//! Burn plays (`space_animation`).
+//! placed directly above the space when made (`place_above_owner`) and again
+//! whenever it shows (`insert_after`), and lives as long as one Burn plays
+//! (`space_animation`).
 
 use deskspace_core::geometry::Rect;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
@@ -15,10 +16,11 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_STYLE, GetWindowLongW, HWND_TOP,
-    IsWindowVisible, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
-    SetWindowPos, ULW_ALPHA, UpdateLayeredWindow, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, GW_HWNDPREV, GWL_EXSTYLE, GWL_STYLE, GetWindow,
+    GetWindowLongW, HWND_TOP, HWND_TOPMOST, IsWindowVisible, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ULW_ALPHA, UpdateLayeredWindow,
+    WINDOW_EX_STYLE, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -81,6 +83,7 @@ impl FlameOverlay {
                 None,
             )
             .ok()?;
+            place_above_owner(hwnd, owner);
             let info = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -235,6 +238,53 @@ impl Drop for FlameOverlay {
     }
 }
 
+/// Places `window` directly above `owner`, in the owner's z-order band.
+///
+/// Ownership keeps an overlay above its owner but does not put it there:
+/// Windows creates a new owned popup at the top of the non-topmost band, so
+/// Burn's flames drew over every application (seen 2026-10-22). A topmost
+/// owner (`--on-top`) needs a topmost overlay, or it would land below the
+/// space it belongs to.
+fn place_above_owner(window: HWND, owner: HWND) {
+    // SAFETY: both are live windows, `owner` from `create` and `window` just
+    // made on this thread. None of these calls sends a message.
+    unsafe {
+        let owner_topmost = is_topmost(owner);
+        // `SetWindowPos` inserts `window` below the window named here
+        // (`hWndInsertAfter` precedes it in the z-order), so the slot above
+        // the owner is the window above it now.
+        let above = GetWindow(owner, GW_HWNDPREV)
+            .ok()
+            .filter(|above| is_topmost(*above) == owner_topmost);
+        let insert_after = match (above, owner_topmost) {
+            (Some(above), _) => above,
+            (None, true) => HWND_TOPMOST,
+            (None, false) => HWND_TOP,
+        };
+        if let Err(error) = SetWindowPos(
+            window,
+            Some(insert_after),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        ) {
+            tracing::debug!(%error, "the flames could not be placed above their space");
+        }
+    }
+}
+
+/// Whether `window` sits in the topmost band.
+///
+/// # Safety
+/// `window` is a live window.
+fn is_topmost(window: HWND) -> bool {
+    // SAFETY: a plain style query on a live window.
+    let style = unsafe { GetWindowLongW(window, GWL_EXSTYLE) } as u32;
+    WINDOW_EX_STYLE(style).contains(WS_EX_TOPMOST)
+}
+
 unsafe extern "system" fn wndproc(
     window: HWND,
     message: u32,
@@ -247,6 +297,12 @@ unsafe extern "system" fn wndproc(
 
 #[cfg(test)]
 mod tests {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SetWindowPos, WINDOW_EX_STYLE, WS_POPUP,
+    };
+    use windows::core::w;
+
     use super::*;
 
     fn window(id: usize) -> HWND {
@@ -274,5 +330,47 @@ mod tests {
         assert_eq!((moved.x, moved.y), (origin.x + 50, origin.y - 20));
         assert_eq!(same, size, "a moved space keeps its overlay's size");
         assert_ne!(placement(Rect::new(300, 200, 100, 160)).1, size);
+    }
+
+    #[test]
+    fn the_overlay_starts_directly_above_its_owner() {
+        // SAFETY: windows made on this thread and destroyed before it ends.
+        unsafe {
+            let owner = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("Static"),
+                w!("flame test owner"),
+                WS_POPUP,
+                -30000,
+                -30000,
+                100,
+                100,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("an owner window");
+            // A space is pinned at the bottom, where Windows' placement for a
+            // new owned popup is most obviously wrong.
+            let _ = SetWindowPos(
+                owner,
+                Some(HWND_BOTTOM),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+            let flames = FlameOverlay::create(owner, Rect::new(-30000, -30000, 80, 60), 3)
+                .expect("an overlay window");
+            assert_eq!(
+                GetWindow(owner, GW_HWNDPREV).ok(),
+                Some(flames.hwnd),
+                "the flames sit directly above the space they burn"
+            );
+            drop(flames);
+            let _ = DestroyWindow(owner);
+        }
     }
 }
