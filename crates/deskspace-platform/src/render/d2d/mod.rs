@@ -19,6 +19,7 @@ mod glyph;
 mod graphics;
 mod item;
 mod prepared;
+mod title;
 mod zoom_bar;
 
 pub(crate) use badge::debug_badge;
@@ -86,7 +87,6 @@ use crate::render::transition::{Content, TransitionFrame};
 
 use bitmap::to_icon;
 use canvas::{Canvas, HwndCanvas, SurfaceCanvas};
-use edit::draw_edit_title;
 use effects::Effects;
 use geometry::{
     PIXEL_DPI, PREMULTIPLIED_BGRA, bitmap_properties, color_f, draw_text, fill_rounded, inset,
@@ -95,7 +95,6 @@ use geometry::{
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
 
-const TITLE_INSET: f32 = 12.0;
 const LABEL_LINE_HEIGHT: f32 = 16.0;
 const SCROLL_THUMB_ALPHA: u8 = 110;
 /// The placeholder text's alpha factor: about 60 % of the label color.
@@ -109,12 +108,6 @@ const CUT_ALPHA: u8 = 110;
 /// CRT's bright line at full glow: a cool white, slightly translucent so the
 /// line still reads as light over the contents.
 const CRT_GLOW: Color = Color::rgba(0xF0, 0xF6, 0xFF, 0xE6);
-/// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
-/// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
-const LOCK_GLYPH: &[u16] = &[0xE72E];
-/// The lock glyph's alpha, and its gap from the title bar's right edge.
-const LOCK_ALPHA: u8 = 170;
-const LOCK_MARGIN: f32 = 4.0;
 /// The outline marking the space selected in the settings window: its gap
 /// inside the frame and its width.
 const HIGHLIGHT_GAP: f32 = 1.5;
@@ -176,38 +169,6 @@ struct FrameResources {
     pixelated: Option<(ID2D1Bitmap, D2D_RECT_F)>,
     /// Burn's glow, char, and scorch, laid over the contents.
     burn_marks: Option<ID2D1Bitmap>,
-}
-
-/// Where a title bar's parts go, in the space's coordinates. Pure, so the
-/// layout is tested apart from the drawing.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct TitleLayout {
-    /// The title text's box, or the rename box's.
-    text: D2D_RECT_F,
-    /// The lock glyph's square at the right, when the space is locked.
-    lock: Option<D2D_RECT_F>,
-}
-
-impl TitleLayout {
-    /// The layout of a title bar `width` by `height`, with a title icon
-    /// `icon_width` wide at its left (0 when the space has none).
-    fn new(width: f32, height: f32, locked: bool, icon_width: f32) -> Self {
-        let lock_width = if locked { height } else { 0.0 };
-        // The gap between icon and text follows the icon, so it scales with
-        // the display like the title bar.
-        let left = TITLE_INSET
-            + if icon_width > 0.0 {
-                icon_width * 1.25
-            } else {
-                0.0
-            };
-        let text_right = (width - TITLE_INSET - lock_width).max(left);
-        let lock_right = width - LOCK_MARGIN;
-        Self {
-            text: rect_f(left, 0.0, text_right, height),
-            lock: locked.then(|| rect_f(lock_right - lock_width, 0.0, lock_right, height)),
-        }
-    }
 }
 
 /// Clears `target` for a new frame: to the opaque tint on a window with no
@@ -538,7 +499,7 @@ impl Painter {
                 );
                 fill_rounded(target, brush, whole, radius, scene.title_fill);
                 target.PopAxisAlignedClip();
-                self.draw_title(ctx, prepared, width, title_height);
+                title::draw_title(self, ctx, prepared, width, title_height);
             }
 
             // A chrome-less layer (the desktop layer) draws its items from the
@@ -643,74 +604,6 @@ impl Painter {
                     brush,
                     HIGHLIGHT_WIDTH,
                     None,
-                );
-            }
-        }
-    }
-
-    unsafe fn draw_title(
-        &mut self,
-        ctx: DrawContext,
-        prepared: &PreparedScene,
-        width: f32,
-        title_height: f32,
-    ) {
-        let DrawContext {
-            graphics,
-            target,
-            brush,
-        } = ctx;
-        let scene = &prepared.scene;
-        let icon = scene
-            .title_icon
-            .as_ref()
-            .and_then(|icon| self.bitmap_for(target, icon));
-        let icon_width = scene
-            .title_icon
-            .as_ref()
-            .map_or(0.0, |icon| icon.width() as f32);
-        let layout = TitleLayout::new(width, title_height, scene.locked, icon_width);
-        let text = layout.text;
-        // SAFETY: caller is inside BeginDraw/EndDraw.
-        unsafe {
-            if let (Some(bitmap), Some(icon)) = (icon, &scene.title_icon) {
-                let icon_height = icon.height() as f32;
-                let top = ((title_height - icon_height) / 2.0).round();
-                target.DrawBitmap(
-                    &bitmap,
-                    Some(&rect_f(
-                        TITLE_INSET,
-                        top,
-                        TITLE_INSET + icon_width,
-                        top + icon_height,
-                    )),
-                    1.0,
-                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                    None,
-                );
-            }
-            if scene.editing.is_some() {
-                draw_edit_title(ctx, prepared, text.left, text.right, title_height);
-            } else {
-                draw_text(
-                    target,
-                    brush,
-                    &prepared.title,
-                    &graphics.title_format,
-                    text,
-                    scene.title_text,
-                    scene.text_shadow,
-                );
-            }
-            if let (Some(lock), Some(format)) = (layout.lock, &graphics.glyph_format) {
-                brush.SetColor(&color_f(scene.title_text.fade(LOCK_ALPHA)));
-                target.DrawText(
-                    LOCK_GLYPH,
-                    format,
-                    &lock,
-                    brush,
-                    D2D1_DRAW_TEXT_OPTIONS_NONE,
-                    DWRITE_MEASURING_MODE_NATURAL,
                 );
             }
         }
@@ -905,7 +798,11 @@ impl Painter {
     }
 
     /// `icon` on the GPU, uploaded through `target` the first time.
-    fn bitmap_for(&mut self, target: &ID2D1RenderTarget, icon: &Icon) -> Option<ID2D1Bitmap> {
+    pub(super) fn bitmap_for(
+        &mut self,
+        target: &ID2D1RenderTarget,
+        icon: &Icon,
+    ) -> Option<ID2D1Bitmap> {
         if let Some(bitmap) = self.icons.get(&icon.id()) {
             return Some(bitmap.clone());
         }
@@ -924,6 +821,7 @@ impl Painter {
             scene
                 .title_icon
                 .as_ref()
+                .and_then(|title| title.image.as_ref())
                 .is_some_and(|icon| icon.id() == *id)
                 || scene
                     .items
@@ -960,34 +858,4 @@ pub(crate) struct PaintFrame {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BorderStroke {
     pub width: f32,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_unlocked_title_spans_the_bar_inside_its_insets() {
-        let layout = TitleLayout::new(240.0, 28.0, false, 0.0);
-        assert_eq!(
-            layout.text,
-            rect_f(TITLE_INSET, 0.0, 240.0 - TITLE_INSET, 28.0)
-        );
-        assert_eq!(layout.lock, None);
-    }
-
-    #[test]
-    fn a_locked_title_leaves_a_square_for_the_lock_at_the_right() {
-        let layout = TitleLayout::new(240.0, 28.0, true, 0.0);
-        let lock = layout.lock.expect("a lock");
-        assert_eq!(lock.right, 240.0 - LOCK_MARGIN);
-        assert_eq!(lock.right - lock.left, 28.0, "square");
-        assert_eq!(layout.text.right, 240.0 - TITLE_INSET - 28.0);
-    }
-
-    #[test]
-    fn a_narrow_title_never_turns_inside_out() {
-        let layout = TitleLayout::new(20.0, 28.0, true, 0.0);
-        assert!(layout.text.right >= layout.text.left);
-    }
 }

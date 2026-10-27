@@ -98,6 +98,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
+  | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, and the glyph cache (D16) |
   | `debug` | the debug window's panel and actions, and the log console's feed (ROADMAP D14) |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
@@ -963,6 +964,11 @@ one arm in `App::on_event`, whose match is exhaustive.
   shows. `win32/glyphs.rs`, `GlyphCache`, keeps the results keyed by glyph,
   pixel size, and color (256 entries, least-recently-used) and logs a failed
   draw once per glyph at debug.
+- The title bar (`d2d/title.rs`) draws the scene's `TitleIcon` at its
+  window-local rect, a lens's folder icon or a space's glyph, then the title
+  text or rename box a gap after it, scaled with the bar, and the lock glyph.
+  Without an icon the text starts at `TITLE_INSET`, so a space without one
+  looks as it did.
 - `Painter` draws on a `Canvas` (`d2d/canvas.rs`; premultiplied alpha, 96
   DPI so one DIP is one pixel) with a brush and a per-target bitmap cache
   keyed by `Icon::id`, pruned to the current scene's icons on every scene.

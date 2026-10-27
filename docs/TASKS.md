@@ -15,7 +15,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
-- section S, in order: S7, S8, and S13; S5 and S9-S12 need a screen or
+- section S, in order: S8 and S13; S5 and S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -1198,53 +1198,6 @@ Rules for every S task:
     repository's "Latest" badge still points at the app. A second run fails
     at step 2.
 
-- [ ] **S7. Icons in the title bar (app, platform).** **[needs human]**
-  - `render/scene.rs`: `SpaceScene.title_icon: Option<TitleIcon>`, with
-    `TitleIcon { rect: Rect, image: Option<Icon> }` in window-local pixels;
-    default `None` (the visual-in-a-space recipe).
-  - `deskspace-app/src/scene.rs`: pure `title_icon_rect(title_height) ->
-    Rect`, a square `TITLE_ICON_SIZE` (16) by `TITLE_ICON_INSET` (10) at 96
-    DPI and a 28 px title, scaled by `title_height / DEFAULT_TITLE_HEIGHT`,
-    centered vertically. `space_scene` fills `title_icon` when the space
-    resolves to a picture; the desktop layer never does.
-  - `deskspace-app/src/app/space_icons.rs`, a new `app/` module (add it to
-    `CONTEXT.md` section 3's table): `SpaceIcons` on `App`, with per-prefix
-    state (`Loading`, `Ready(Arc<IconSet>)`, `Missing`, `Failed(String)`),
-    a `GlyphCache`, and a memo of automatic matches by title, cleared when
-    a set changes.
-    - On `Event::Started`, a worker thread runs `IconStore::load` for the
-      sets in use (`Automatic` uses `default_set()`), as the update checks
-      do. It wakes the app with `ICONS_WAKE` (the next free wake id beside
-      `UPDATE_WAKE`), which refreshes the spaces showing that set. No
-      network here; S8 adds the download.
-    - `App::space_glyph(space) -> Option<Glyph>`: `Chosen` gives its name
-      in its set; `Automatic` gives `best_icon` in `default_set()` with the
-      row's words; then `IconSet::glyph`, when that set is `Ready`.
-      `App::space_icon(space, color, title_height) -> Option<Icon>` puts it
-      through the cache, at the rect's size, in the space's `title_text`
-      color. `refresh_space` passes that to the scene.
-  - Painter: move `draw_title` and `LOCK_GLYPH` into a new
-    `render/d2d/title.rs`, so `d2d/mod.rs` stays under 800 lines. Draw the
-    image at its rect with `bitmap_for`, and start the title text (and the
-    rename box) `TITLE_ICON_GAP` (6 px, scaled the same way) after the
-    rect. The per-target bitmap cache is pruned to the scene's icons, so
-    count the title icon among them.
-  - Tests: `title_icon_rect` at 28 and 42 px; a space with
-    `Chosen`, with `Automatic` and a matching title, and with `None` gives
-    the scene a rect or none (copy
-    `the_settings_highlight_reaches_the_scene`); the layer's scene has
-    none.
-  - **[needs human]** check: with a scratch config, make the cache by hand
-    (S3's example: `trim fluent <upstream icons.json>
-    %TEMP%\deskspace-dev\icons`). Then set `icon = "fluent:games"` on one
-    space and `icon = "automatic"` on spaces titled "Games", "Photos", and
-    "Stuff". The first three show their icons left of the title, in the
-    title's color, and follow a dark and light switch. "Stuff" and spaces
-    without the key show none and look as before. Hovering or clicking the
-    icon does what the title bar does. Check at 100 % and 150 %, on every
-    backdrop, and with a lock. With the cache deleted, nothing shows and
-    nothing fails.
-
 - [ ] **S8. Consent, the download, and new spaces (config, app).**
   **[needs human]**
   - `deskspace-config/src/schema.rs`: `WindowSettings.icon_downloads:
@@ -2373,6 +2326,7 @@ each id is in `archive/TASKS-done.md`.
 | W21 (D17) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
+| Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 
 ## Found while working
 

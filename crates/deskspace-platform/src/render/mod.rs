@@ -17,7 +17,7 @@ pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
 pub use scene::{
     ColumnAlign, DetailsColumnVisual, DetailsView, DropInto, ItemLayout, ItemState, ItemVisual,
-    ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual,
+    ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual, TitleIcon,
 };
 pub use transition::{Content, Geometry, Mask, Play, Side, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;

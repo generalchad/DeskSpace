@@ -13,6 +13,10 @@ Notable changes to DeskSpace, newest first. The format follows
   hex, RGB, or HSL text, copy and paste, an eyedropper that samples any pixel
   on screen, and recent colors that survive a restart and a settings Cancel.
   On Windows 11 22H2 and later it is acrylic, as Explorer's own picker is.
+- Space icons: a space can show a Fluent UI glyph left of its title, named
+  in the config (`icon = "fluent:games"`) or matched from its title
+  (`icon = "automatic"`). The icon takes the title's color, so it follows a
+  dark and light switch, and a space without one keeps its old title bar.
 - Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and

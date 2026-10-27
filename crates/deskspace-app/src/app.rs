@@ -29,6 +29,7 @@ mod pointer;
 mod rename;
 mod selection;
 mod settings_session;
+mod space_icons;
 mod undo;
 mod update;
 mod view;
@@ -42,6 +43,7 @@ use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
+use space_icons::SpaceIcons;
 use undo::UndoStack;
 use update::UpdateState;
 pub(crate) use view::{LayerState, SystemLook, ViewCache};
@@ -54,10 +56,11 @@ const RESIZE_BORDER: i32 = 6;
 const WHEEL_DELTA: i32 = 120;
 /// Icon-size percent changed by one Ctrl+wheel notch.
 const ICON_SIZE_WHEEL_STEP: i32 = 10;
-/// Wake ids passed to `Ui::waker` by the update worker threads: the check
-/// result, then the download result.
+/// Wake ids passed to `Ui::waker` by the worker threads: the update check
+/// result, the download result, then an icon set that finished loading.
 const UPDATE_WAKE: usize = 0;
 const UPDATE_DOWNLOADED_WAKE: usize = 1;
+const ICONS_WAKE: usize = 2;
 /// The app's timers, delivered back as `Event::Timer` with the variant's
 /// value as the id. Never renumber one; a new timer takes the highest value
 /// plus one and joins `ALL`, and `App::on_timer`'s exhaustive match asks for
@@ -491,6 +494,8 @@ pub struct App {
     pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
+    /// The title icons' sets and glyphs (`app/space_icons.rs`).
+    space_icons: SpaceIcons,
     /// The debug window's state, only with `--debug` (`app/debug/`).
     pub(crate) debug: Option<DebugTools>,
     /// Slow motion and ignoring Windows' animation switch, set only from the
@@ -526,6 +531,7 @@ impl App {
             open_settings_on_start: open_settings,
             layer: LayerState::default(),
             update: UpdateState::default(),
+            space_icons: SpaceIcons::default(),
             debug: None,
             animation_tweak: AnimationTweak::default(),
             undo: UndoStack::default(),
@@ -696,6 +702,10 @@ impl EventHandler for App {
                     self.open_settings(ui);
                 }
                 self.sync_update_schedule(ui);
+                // Read the title icons' sets off this thread; the wake
+                // repaints the spaces that use them.
+                self.space_icons
+                    .start(&self.store, ui, self.config.desktop.spaces());
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
@@ -747,6 +757,11 @@ impl EventHandler for App {
             // Worker threads hand their result back through the waker.
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
+            Event::Wake { id } if id == ICONS_WAKE => {
+                if self.space_icons.on_loaded() {
+                    self.repaint_spaces(ui);
+                }
+            }
             Event::Wake { .. } => {}
             Event::Zoom(action) => self.zoom(ui, action),
             Event::RecentColors(colors) => {

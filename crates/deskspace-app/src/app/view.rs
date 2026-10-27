@@ -701,7 +701,11 @@ impl App {
             ViewMode::Details | ViewMode::Tiles | ViewMode::Content
         ))
         .then_some(&mut details as &mut dyn FnMut(&Item) -> Vec<String>);
-        let mut scene = space_scene_with_details(space, look, view, row_cells, &mut self.icons);
+        let title_icon = self
+            .space_icons
+            .space_icon(space, palette.title_text, space.title_height);
+        let mut scene =
+            space_scene_with_details(space, look, view, row_cells, &mut self.icons, title_icon);
         let rect = space.visible_rect();
         self.show_edit(&mut scene, Surface::Space(id));
         ui.set_space_rect(id.0, rect);
@@ -879,6 +883,21 @@ impl App {
     pub(super) fn refresh_spaces(&mut self, ui: &mut Ui) {
         self.refresh_shell_display(ui);
         self.relayout_all(ui);
+    }
+
+    /// Repaints every space without re-reading the shell (for example after a
+    /// title icon's set finished loading).
+    pub(super) fn repaint_spaces(&mut self, ui: &mut Ui) {
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        for id in ids {
+            self.refresh_space(ui, id);
+        }
     }
 }
 

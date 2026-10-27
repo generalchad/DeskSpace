@@ -47,6 +47,16 @@ impl SpaceStyle {
     }
 }
 
+/// A space's title icon: the picture drawn left of the title, at `rect` in
+/// window-local pixels. `image` stays `None` while the picture is not ready
+/// (for example while a set loads), so the title keeps its room and does not
+/// jump when the picture arrives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitleIcon {
+    pub rect: Rect,
+    pub image: Option<Icon>,
+}
+
 /// What a drop on a window lands in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DropInto {
@@ -66,10 +76,10 @@ pub struct SpaceScene {
     /// layer sets it false, so its items fill the whole window.
     pub chrome: bool,
     pub title: String,
-    /// The small folder icon drawn left of the title text. A lens shows its
-    /// folder's shell icon (the generic folder while the folder is
-    /// unavailable); every other space shows none.
-    pub title_icon: Option<Icon>,
+    /// The small icon drawn left of the title text, if the space has one. A
+    /// lens shows its folder's shell icon; another space shows the glyph its
+    /// icon setting resolves to.
+    pub title_icon: Option<TitleIcon>,
     pub title_height: i32,
     pub tint: Color,
     pub title_fill: Color,

@@ -7,9 +7,9 @@ use deskspace_core::{
     SortKey, SortRule, Space, Theme, ViewMode,
 };
 use deskspace_platform::{
-    DetailsColumnVisual, DetailsView, DropInto, IconCache, ItemLayout, ItemMetrics, ItemState,
-    ItemVisual, ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual, format_date,
-    format_kb, type_name,
+    DetailsColumnVisual, DetailsView, DropInto, Icon, IconCache, ItemLayout, ItemMetrics,
+    ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual,
+    TitleIcon, format_date, format_kb, type_name,
 };
 
 use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES};
@@ -17,9 +17,10 @@ use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODE
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
 const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
-/// A lens's title icon is the shell's 16 px folder icon at 96 DPI, scaled for
-/// the display like the title bar.
-const TITLE_ICON_SIZE: f32 = 16.0;
+/// A title icon is a 16 px square 10 px from the left edge at 96 DPI, scaled
+/// with the title bar like the title text.
+const TITLE_ICON_SIZE: i32 = 16;
+const TITLE_ICON_INSET: i32 = 10;
 /// The gap between a Details column's text and its divider, at 96 DPI.
 const DETAILS_CELL_PAD: i32 = 6;
 /// Explorer's status-bar button size, gap, and edge inset at 96 DPI.
@@ -125,18 +126,21 @@ pub fn space_scene(
     view: ViewState,
     icons: &mut IconCache,
 ) -> SpaceScene {
-    space_scene_with_details(space, look, view, None, icons)
+    space_scene_with_details(space, look, view, None, icons, None)
 }
 
 /// `space_scene` with Details row texts. `details_cells` supplies one row's
 /// column texts, made by the app (the shell and the clock are not available
-/// here) and only for the rows the scene carries.
+/// here) and only for the rows the scene carries. `glyph` is the space's
+/// title icon, already rasterized by the app; `None` falls back to a lens's
+/// folder icon.
 pub fn space_scene_with_details(
     space: &Space,
     look: SurfaceLook,
     view: ViewState,
     mut details_cells: Option<DetailsCellText<'_>>,
     icons: &mut IconCache,
+    glyph: Option<Icon>,
 ) -> SpaceScene {
     let SurfaceLook {
         theme,
@@ -211,8 +215,21 @@ pub fn space_scene_with_details(
     SpaceScene {
         chrome: true,
         title: space.title().to_owned(),
-        title_icon: title_icon_request(space, view.folder_unavailable, scale)
-            .and_then(|(path, size, available)| icons.folder_icon(path, size, available)),
+        title_icon: {
+            let rect = title_icon_rect(space.title_height);
+            match glyph {
+                Some(image) => Some(TitleIcon {
+                    rect,
+                    image: Some(image),
+                }),
+                None => title_icon_request(space, view.folder_unavailable)
+                    .and_then(|(path, available)| icons.folder_icon(path, rect.width, available))
+                    .map(|image| TitleIcon {
+                        rect,
+                        image: Some(image),
+                    }),
+            }
+        },
         title_height: space.title_height,
         tint,
         title_fill: palette.title_fill,
@@ -263,21 +280,22 @@ pub fn space_scene_with_details(
     }
 }
 
-/// What a lens's title bar asks the icon cache for: the folder's path, the
-/// small title size, and whether the folder is available. Pure, so the scene
-/// test needs no shell.
-fn title_icon_request(
-    space: &Space,
-    unavailable: bool,
-    scale: f32,
-) -> Option<(&std::path::Path, i32, bool)> {
-    space.folder_view().map(|folder| {
-        (
-            folder.path.as_path(),
-            (TITLE_ICON_SIZE * scale).round() as i32,
-            !unavailable,
-        )
-    })
+/// Where a space's title icon goes in a space `title_height` pixels tall: a
+/// square `TITLE_ICON_SIZE` at 96 DPI, `TITLE_ICON_INSET` from the left edge,
+/// centered vertically, both scaled by `title_height / DEFAULT_TITLE_HEIGHT`.
+pub fn title_icon_rect(title_height: i32) -> Rect {
+    let scale = title_height as f32 / DEFAULT_TITLE_HEIGHT as f32;
+    let size = ((TITLE_ICON_SIZE as f32) * scale).round().max(1.0) as i32;
+    let inset = ((TITLE_ICON_INSET as f32) * scale).round() as i32;
+    Rect::new(inset, ((title_height - size) / 2).max(0), size, size)
+}
+
+/// What a lens's title bar asks the icon cache for: the folder's path and
+/// whether the folder is available. Pure, so the scene test needs no shell.
+fn title_icon_request(space: &Space, unavailable: bool) -> Option<(&std::path::Path, bool)> {
+    space
+        .folder_view()
+        .map(|folder| (folder.path.as_path(), !unavailable))
 }
 
 /// Builds the draw list for the chrome-less desktop layer (ROADMAP D7). A
@@ -1134,6 +1152,7 @@ mod tests {
             ViewState::default(),
             Some(&mut cells),
             &mut IconCache::new(),
+            None,
         );
         let details = scene
             .details
@@ -1549,6 +1568,7 @@ mod tests {
             ViewState::default(),
             Some(&mut cells),
             &mut IconCache::new(),
+            None,
         );
         assert_eq!(scene.item_layout, ItemLayout::Tiles);
         assert_eq!(scene.metrics.icon_size, 48);
@@ -1578,6 +1598,7 @@ mod tests {
             ViewState::default(),
             Some(&mut cells),
             &mut IconCache::new(),
+            None,
         );
         assert_eq!(scene.item_layout, ItemLayout::Content);
         assert_eq!(
@@ -1609,15 +1630,15 @@ mod tests {
             crate::fixtures::create_lens(&mut desktop, "Lens", Rect::new(0, 0, 240, 120), folder);
         let lens = desktop.space(lens).unwrap();
         assert_eq!(
-            title_icon_request(lens, false, 1.0),
-            Some((std::path::Path::new(folder), 16, true))
+            title_icon_request(lens, false),
+            Some((std::path::Path::new(folder), true))
         );
         assert_eq!(
-            title_icon_request(lens, true, 1.5),
-            Some((std::path::Path::new(folder), 24, false)),
-            "an unavailable folder gets the generic icon, scaled"
+            title_icon_request(lens, true),
+            Some((std::path::Path::new(folder), false)),
+            "an unavailable folder gets the generic icon"
         );
-        assert_eq!(title_icon_request(&space(), false, 1.0), None);
+        assert_eq!(title_icon_request(&space(), false), None);
 
         let theme = Theme::default();
         let scene = space_scene(
@@ -1627,6 +1648,36 @@ mod tests {
             &mut IconCache::new(),
         );
         assert!(scene.title_icon.is_none());
+    }
+
+    #[test]
+    fn a_title_icon_is_a_scaled_square_inside_the_bar() {
+        assert_eq!(title_icon_rect(28), Rect::new(10, 6, 16, 16));
+        assert_eq!(title_icon_rect(42), Rect::new(15, 9, 24, 24), "scaled");
+    }
+
+    #[test]
+    fn a_space_and_the_layer_without_a_glyph_have_no_title_icon() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let space = space();
+
+        let bare = space_scene(
+            &space,
+            surface_look(&theme, &palette),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(bare.title_icon.is_none());
+
+        let layer = desktop_layer_scene(
+            &DesktopLayer::default(),
+            Point::new(0, 0),
+            surface_look(&theme, &palette),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(layer.title_icon.is_none(), "the layer never shows one");
     }
 
     #[test]
