@@ -2,7 +2,7 @@
 
 DeskSpace's architecture and current behavior; read it before making changes.
 `ENGINEERING.md` has the workflow and engineering rules, `ROADMAP.md` the
-plan, decisions (D1-D9), and feature status.
+plan, the `D`-numbered decisions, and feature status.
 
 ## 1. What DeskSpace is
 

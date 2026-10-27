@@ -549,30 +549,31 @@ A native, lightweight, offline Windows desktop organizer that:
 ## 4. Where we are
 
 **Released:** v0.2.0 (2026-10-13, the first public release), v0.2.1 (in-app
-update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), and
-v0.2.3 (the space menu's Add files, F-55, and the right-button drag, F-36).
-Takeover ships opt-in (D8, D9).
+update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), v0.2.3
+(the space menu's Add files, F-55, and the right-button drag, F-36), and
+v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
+(D8, D9).
 
 **Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
 
-**In progress:** M2 (undo and the stored-file watch remain) and M3 (desktop
-verbs, F-52, and entries that wait on later milestones or design). Section 5
-lists what each has done.
+**In progress:** M2 (only the stored-file watch remains) and M3 (desktop
+verbs, F-52, and entries that wait on later milestones or design). Undo (D11,
+`TASKS.md` section U) and drawn shadows (D15) have landed since v0.2.4 and
+ship in the next release. Section 5 lists what each milestone has done.
 
 **Next, in order:**
 
 1. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-2. **On-screen verification pass** (`TASKS.md` section V, R7). Confirm the
+2. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
+   the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
    built-but-unchecked behaviors before more work builds on them.
 3. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-4. **M2 undo** for layout changes, file moves, and space deletion (D11;
-   `TASKS.md` section U).
-5. **Animations** and graceful startup and exit (M5 item 5, D12, D13;
-   `TASKS.md` section T),
-   ahead of the rest of M5. The composition spike (T1) runs alongside.
+4. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+   `TASKS.md` section T): Bounce and Scroll (T19, T20) are ready, and Magic
+   lamp (T21) awaits a decision. The composition spike (T1) runs alongside.
 
 Not next: mapping Explorer's list/details view mode (the rest of F-40). It
 needs DeskSpace to have list and details views first, and those arrive with
@@ -611,9 +612,8 @@ drag's G5a-G5c (check pending).
 Remaining:
 1. **Watch stored files.** Only the Desktop folder is watched; a change to a
    stored file made outside DeskSpace is noticed only by an item action or at
-   startup. Lenses will reuse the same watcher (M4 phase 2).
-2. **Undo** for layout changes, file moves, item removal, and space
-   deletion (D11). F-02's "delete with undo" depends on it.
+   startup. Lenses will reuse the same watcher (M4 phase 2). No task covers
+   it yet; it is scoped with M4 phase 2.
 
 Exit criteria:
 - With DeskSpace running, Explorer's icon layer is gone and the desktop items
@@ -912,10 +912,10 @@ catalog.
 
 ## 6. Release mapping
 
-- **v0.2 "Take the desktop"** (v0.2.0-v0.2.3, section 4): M0, M1, and most
-  of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (undo,
-  the desktop verbs) ships in a v0.2.x release or with v0.3, as the
-  maintainer decides.
+- **v0.2 "Take the desktop"** (v0.2.0-v0.2.4, section 4): M0, M1, and most
+  of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
+  stored-file watch, the desktop verbs) ships in a v0.2.x release or with
+  v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
 - **v0.3 "Lenses"**: M4.
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
@@ -967,7 +967,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | One-off sort done; kept rule open (with F-08) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Open; decided in D12 (`TASKS.md` section T); Bounce, Scroll, and Magic lamp planned (T19-T21) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce and Scroll ready and Magic lamp awaiting a decision (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
