@@ -10,7 +10,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- section O, in order (on-screen checks by script);
 - Q2-Q6;
 - section W phase 5: W26 (a pure move), W24 and W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
