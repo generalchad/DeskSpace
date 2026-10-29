@@ -373,6 +373,28 @@ and B33 and B36 change behavior on purpose, as each says.
   - **[needs human]** check: a lens on a folder of a few thousand images
     scrolls without stalls, and its icons fill in.
 
+- [ ] **B37. Refresh a big lens off the UI thread (core, app).**
+  **[needs decision]**: the split below is a proposal.
+  - Why: `Command::SyncLens` filters, reconciles, sorts, and lays out
+    every entry on the UI thread. On 50,000 entries in a release build it
+    took 44-46 ms with no filters and 62-65 ms with 32 typical filter
+    patterns, and 309 ms with 32 patterns built so each is tried in full
+    (2026-10-29, `time_a_filtered_sync_of_fifty_thousand_entries` in
+    `command/lens_ops.rs`). The Performance rule in section W allows 8 ms.
+    Accepted for W34 by the maintainer on that date, with this task to
+    follow.
+  - Proposal: the watch worker already lists the folder off the UI
+    thread; let it also filter and sort the listing with the view's
+    rules, passed in with the watch (as W25 passes the store), so
+    `SyncLens` only reconciles ids and places items. A filter or sort
+    change re-sorts the listing the app keeps, on a worker, not on the
+    UI thread. Where the split falls between core and platform needs a
+    decision.
+  - Measure with the timing test above before and after; record both.
+  - Done when: `SyncLens` on 50,000 entries stays under 8 ms on the UI
+    thread with 32 patterns, and a lens of that size refreshes without a
+    visible hitch (**[needs human]**).
+
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
 `settings/mod.rs` `build_form` (about 105). They are long because a field is
