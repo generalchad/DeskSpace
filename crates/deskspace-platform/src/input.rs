@@ -80,6 +80,10 @@ pub enum FolderListing {
     Listed(Vec<FolderEntry>),
     /// The folder is missing or cannot be read; the worker keeps retrying.
     Unavailable,
+    /// The folder resolves to DeskSpace's storage folder or inside it, for
+    /// example through a junction, so it is not watched. The worker retries
+    /// it like a missing folder.
+    Refused,
 }
 
 /// Input on a space window. Coordinates are desktop coordinates (the

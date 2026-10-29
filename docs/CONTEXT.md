@@ -201,8 +201,12 @@ and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 operations: a drop on a lens moves
 (or copies) the files into its folder with `Ui::transfer_files` and
 `OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
-folder, or inside it, is kept but never watched, and counts as unavailable
-(`ItemStore::allows_lens`).
+folder, or inside it, is kept but never watched, and counts as unavailable:
+the folder watch refuses it by its final path, so a junction into the store
+is caught too, and the UI thread resolves no lens path to decide it. A
+folder the user picks or writes into (New lens…, Change folder…, a drop,
+New shortcut) is also checked on the spot (`ItemStore::allows_lens`),
+against the store's final path resolved once at startup.
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
 A lens's title bar shows its folder's own shell icon, or the generic folder
@@ -1130,7 +1134,13 @@ in `ui.rs`. What spans them:
   that is missing or cannot be read posts `FolderListing::Unavailable` and is
   tried again every 5 s on the worker. An open folder's path is checked on the
   same cadence: renaming a watched folder moves its handle with it, so the
-  pending read may never fail. `Ui::watch_folder(key, path)` adds or
+  pending read may never fail. Each time the worker opens a folder it asks
+  for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
+  that is the store or inside it, posting `FolderListing::Refused`; the
+  check needs no extra IO, since the handle is open. `is_inside` compares
+  paths for it and for the app: whole components, without case, and a drive
+  or share alike with or without the `\\?\` prefix. A refused folder is
+  retried like a missing one. `Ui::watch_folder(key, path, store)` adds or
   replaces that key's watch (idempotent for the same path) and
   `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
   watch's slot in `wParam`; the worker leaves the listing in a shared slot,

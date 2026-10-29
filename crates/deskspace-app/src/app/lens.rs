@@ -6,10 +6,9 @@ use std::path::{Path, PathBuf};
 
 use deskspace_core::source::FolderEntry;
 use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory};
+use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
 use super::App;
-use crate::storage::is_inside;
 
 impl App {
     /// Brings the folder watches in line with the model: the Desktop folder
@@ -26,26 +25,16 @@ impl App {
         } else {
             None
         };
-        for id in self.refused_lenses() {
-            if self.unavailable_lenses.insert(id) {
-                let folder = self
-                    .config
-                    .desktop
-                    .space(id)
-                    .and_then(|space| space.folder_view())
-                    .map(|view| view.path.display().to_string());
-                tracing::warn!(space = %id, ?folder, "lens folder is DeskSpace's storage; not watching it");
-                self.refresh_space(ui, id);
-            }
-        }
         let wanted = self.desired_watches(desktop);
         for key in ui.watched_folders() {
             if !wanted.contains_key(&key) {
                 ui.unwatch_folder(key);
             }
         }
+        // The worker refuses a folder that resolves to the store, off this
+        // thread: resolving a path can block on an unreachable share.
         for (key, path) in wanted {
-            ui.watch_folder(key, &path);
+            ui.watch_folder(key, &path, self.storage.final_root());
         }
     }
 
@@ -57,29 +46,11 @@ impl App {
             wanted.insert(WatchKey::Desktop, directory);
         }
         for space in self.config.desktop.spaces() {
-            if let Some(view) = space.folder_view()
-                && self.storage.allows_lens(&view.path)
-            {
+            if let Some(view) = space.folder_view() {
                 wanted.insert(WatchKey::Space(space.id), view.path.clone());
             }
         }
         wanted
-    }
-
-    /// The lenses on the storage folder or inside it. They stay in the config
-    /// but are never watched.
-    fn refused_lenses(&self) -> Vec<SpaceId> {
-        self.config
-            .desktop
-            .spaces()
-            .iter()
-            .filter(|space| {
-                space
-                    .folder_view()
-                    .is_some_and(|view| !self.storage.allows_lens(&view.path))
-            })
-            .map(|space| space.id)
-            .collect()
     }
 
     /// Reconciles the desktop layer after the Desktop folder changed. The
@@ -116,28 +87,39 @@ impl App {
             );
             return;
         }
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
+        let entries = self.take_listing(id, listing);
+        self.sync_lens(ui, id, entries);
+    }
+
+    /// Notes what `listing` says about lens `id` (whether its folder is
+    /// available, and which icons went stale) and returns the entries the lens
+    /// holds now.
+    fn take_listing(&mut self, id: SpaceId, listing: FolderListing) -> Vec<FolderEntry> {
         match listing {
             FolderListing::Listed(entries) => {
                 // The icon cache keeps an icon until it is told to drop it, so
                 // a file rewritten in place would keep its old icon.
-                let changed: Vec<PathBuf> = entries
-                    .iter()
-                    .filter(|entry| {
-                        space
-                            .items()
+                let changed: Vec<PathBuf> = self
+                    .config
+                    .desktop
+                    .space(id)
+                    .map(|space| {
+                        entries
                             .iter()
-                            .any(|item| item.path == entry.path && item.modified != entry.modified)
+                            .filter(|entry| {
+                                space.items().iter().any(|item| {
+                                    item.path == entry.path && item.modified != entry.modified
+                                })
+                            })
+                            .map(|entry| entry.path.clone())
+                            .collect()
                     })
-                    .map(|entry| entry.path.clone())
-                    .collect();
+                    .unwrap_or_default();
                 for path in changed {
                     self.icons.invalidate(&path);
                 }
                 self.unavailable_lenses.remove(&id);
-                self.sync_lens(ui, id, entries);
+                entries
             }
             FolderListing::Unavailable => {
                 self.unavailable_lenses.insert(id);
@@ -146,7 +128,12 @@ impl App {
                     unavailable = self.unavailable_lenses.len(),
                     "lens folder is unavailable"
                 );
-                self.sync_lens(ui, id, Vec::new());
+                Vec::new()
+            }
+            FolderListing::Refused => {
+                self.unavailable_lenses.insert(id);
+                tracing::warn!(space = %id, "lens folder is DeskSpace's storage; not watching it");
+                Vec::new()
             }
         }
     }
@@ -247,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn a_lens_on_the_storage_folder_is_refused_and_not_watched() {
+    fn a_lens_on_the_storage_folder_is_left_to_the_worker_to_refuse() {
         let mut app = app();
         let root = app.storage.root().to_string_lossy().into_owned();
         let lens = fixtures::create_lens(
@@ -256,8 +243,32 @@ mod tests {
             Rect::new(0, 0, 240, 120),
             &root,
         );
-        assert_eq!(app.refused_lenses(), vec![lens]);
-        assert!(app.desired_watches(None).is_empty());
+        // Checking the folder here would resolve it on the UI thread.
+        assert!(
+            app.desired_watches(None)
+                .contains_key(&WatchKey::Space(lens))
+        );
+    }
+
+    #[test]
+    fn a_refused_listing_shows_the_lens_unavailable_and_empty() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        assert!(app.take_listing(lens, FolderListing::Refused).is_empty());
+        assert!(app.unavailable_lenses.contains(&lens));
+        assert!(
+            app.take_listing(lens, FolderListing::Listed(Vec::new()))
+                .is_empty()
+        );
+        assert!(
+            !app.unavailable_lenses.contains(&lens),
+            "a later listing makes it available again"
+        );
     }
 
     #[test]

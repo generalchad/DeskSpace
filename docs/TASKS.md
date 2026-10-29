@@ -11,9 +11,9 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W25 (with a
-  reviewer), and W34 now that W14 has landed; the rest once the task each
-  one names has landed;
+- section W phase 5: W42 (with a
+  reviewer) now that W24 and W25 have landed, and W34 now that W14 has
+  landed; the rest once the task each one names has landed;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
 
@@ -631,13 +631,12 @@ are in section V. The open work is phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W25, W31, W32, W37, W42, W43 | W25 |
+| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37, W42, W43 | W42 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
 code, and have the same reviewer read the diff. W42 is the hardest task left
-in the section. W25 fixes code that runs today, so it goes first among
-the reviewer tasks.
+in the section.
 
 ### Phase 4: views, sort rules, and lens settings
 
@@ -678,8 +677,6 @@ ships after v0.3, so no task here blocks the lens release. The phase 4
 rules above (first callers, the tables, Explorer as the reference, the
 glyph fonts) hold here too.
 
-- W24-W26 fix or tidy code that exists today. Take them any time, even
-  before phase 4; W24 and W25 are worth doing first.
 - Every other task names the phase 4 task it needs ("After: W18").
   Within those limits, take them in any order, but read "Interleaving"
   below before running two at once.
@@ -781,8 +778,8 @@ these are the ones phase 4 and 5 code most often breaks.
 - **No IO the listing did not already do.** Dates, sizes, and attributes
   come from the `FindFirstFileExW` record the worker reads. Hover tips,
   titles, and status text read the model. Nothing calls the disk on the
-  UI thread per item or per event; W25 removes the one place that calls
-  it per lens.
+  UI thread per item or per event; the folder watch checks the store on
+  its worker (W25).
 - **Measure what could be slow.** A task that touches `SyncLens`,
   sorting, filtering, or grouping times it on 50,000 entries with a
   release build and records the dated result in its commit body. Over
@@ -813,38 +810,6 @@ interest. In phase 4 and 5 terms:
   expected in this phase.
 
 #### Phase 5 tasks
-
-- [ ] **W25. The storage check runs off the UI thread (platform, app).**
-  Any time.
-  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
-    lens's folder and on the store, on the UI thread. `sync_watches`
-    calls it twice for every lens, through `desired_watches` and
-    `refused_lenses`, each time the watches are reconciled. On an
-    unreachable network share, `canonicalize` can block until the SMB
-    timeout, freezing every space. It is also the only junction guard,
-    so it must not simply be dropped.
-  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
-    it.
-  - `win32/folder_watch.rs`: when the worker opens a watched folder's
-    handle, it asks for the handle's final path
-    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
-    refuses a folder that is the store or inside it. It posts the refusal
-    as a new `FolderListing::Refused`. That costs no extra IO, since the
-    handle is already open. The store root is passed in when the watch
-    starts.
-  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
-    `allows_lens`; a `Refused` listing marks the lens unavailable, as
-    `refused_lenses` does today. `allows_lens` stays only where a user
-    has just picked a folder (New lens…, Change folder…), and it
-    compares against the stored root.
-  - Tests: a pure `inside_store(final_path, root)` (without case, with
-    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
-    `Refused` into an unavailable lens. One platform test makes a
-    junction into a temp "store" with `cmd /c mklink /J`, which needs no
-    admin rights, and expects `Refused`.
-  - **[needs human]** check: a lens on a share whose server is off
-    leaves the other spaces responsive at startup; a lens on a junction
-    into the store shows "Folder not available".
 
 - [ ] **W27. The lens's path as a tip on its title (app).** **[needs
   human]** After: W9.
@@ -2236,6 +2201,7 @@ each id is in `archive/TASKS-done.md`.
 | W21 (D17) | Tiles beside Explorer's Tiles on the same folder, at 100 % and 150 %, in light and dark: 48 px icons with name, type, and size beside them, tiles wrapping into rows and scrolling down; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
+| W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

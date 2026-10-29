@@ -16,8 +16,10 @@ impl Ui {
     /// Watches `path` for changes under `key` and delivers
     /// `Event::FolderChanged { key }` once per debounced burst. Calling it
     /// again with the same key and path does nothing; another path replaces
-    /// that key's watch. Call `unwatch_folder` to stop.
-    pub fn watch_folder(&mut self, key: WatchKey, path: &Path) {
+    /// that key's watch. Call `unwatch_folder` to stop. A folder whose final
+    /// path is `store` or inside it is never watched; it reports
+    /// `FolderListing::Refused`.
+    pub fn watch_folder(&mut self, key: WatchKey, path: &Path, store: &Path) {
         let Some(controller) = with_runtime(|runtime| runtime.controller) else {
             return;
         };
@@ -29,7 +31,7 @@ impl Ui {
                 }
             }
             match runtime.folder_watches.as_mut() {
-                Some(watches) => watches.watch(key, path),
+                Some(watches) => watches.watch(key, path, store),
                 None => Ok(()),
             }
         });

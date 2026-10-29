@@ -4414,3 +4414,45 @@ until I5-I6 all land, so no partial build hides the desktop.
     shows (`lens_shows`, tested without a `Ui`). `on_desktop_listing`
     re-points the watch instead, since a mismatch there means the Desktop
     moved. The controller's decode has no test: it needs a live runtime.
+
+- [x] **W25. The storage check runs off the UI thread (platform, app).**
+  Any time.
+  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
+    lens's folder and on the store, on the UI thread. `sync_watches`
+    calls it twice for every lens, through `desired_watches` and
+    `refused_lenses`, each time the watches are reconciled. On an
+    unreachable network share, `canonicalize` can block until the SMB
+    timeout, freezing every space. It is also the only junction guard,
+    so it must not simply be dropped.
+  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
+    it.
+  - `win32/folder_watch.rs`: when the worker opens a watched folder's
+    handle, it asks for the handle's final path
+    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
+    refuses a folder that is the store or inside it. It posts the refusal
+    as a new `FolderListing::Refused`. That costs no extra IO, since the
+    handle is already open. The store root is passed in when the watch
+    starts.
+  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
+    `allows_lens`; a `Refused` listing marks the lens unavailable, as
+    `refused_lenses` does today. `allows_lens` stays only where a user
+    has just picked a folder (New lens…, Change folder…), and it
+    compares against the stored root.
+  - Tests: a pure `inside_store(final_path, root)` (without case, with
+    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
+    `Refused` into an unavailable lens. One platform test makes a
+    junction into a temp "store" with `cmd /c mklink /J`, which needs no
+    admin rights, and expects `Refused`.
+  - **[needs human]** check: a lens on a share whose server is off
+    leaves the other spaces responsive at startup; a lens on a junction
+    into the store shows "Folder not available".
+  - Done 2026-10-29. Settled with the maintainer before coding: the store
+    travels with each watch (`Ui::watch_folder(key, path, store)`); the
+    drop, paste, and New shortcut checks keep `allows_lens`, since each runs
+    once per user action and dropping them would let a drop through a
+    junction into the store; a store not created yet resolves through its
+    parent; a refused folder retries on the 5 s cadence like a missing one.
+    `is_inside` moved to the platform (`win32/names.rs`) and compares
+    `\\?\` and plain drives and shares alike; the task's `inside_store` is
+    that function. A folder whose final path cannot be read is checked by
+    the path as given, as `canonicalize`'s fallback always did.

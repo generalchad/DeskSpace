@@ -8,14 +8,14 @@ use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
 use deskspace_platform::{
     CustomShortcut, DropAction, OnCollision, ShellItem, Ui, create_custom_shortcut,
-    create_shortcut, desktop_directory, item_facts, notify_moved,
+    create_shortcut, desktop_directory, is_inside, item_facts, notify_moved,
 };
 
 use super::undo::{
     FileChange, copy_items_label, delete_items_label, move_items_label, new_shortcuts_label,
 };
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
-use crate::storage::{ItemStore, is_inside, path_key, same_path, unique_destination};
+use crate::storage::{ItemStore, path_key, same_path, unique_destination};
 
 /// The dropped `paths` worth handing to the shell for `folder`, in order. A
 /// path already directly in `folder`, `folder` itself, and any folder that
