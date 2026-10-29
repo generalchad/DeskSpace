@@ -1516,6 +1516,12 @@ in `ui.rs`. What spans them:
 - Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
   Medium, or Small icons, List, Details, Tiles, or Content, the way the View
   menu does.
+- While the current space is a lens shown below its own folder, Backspace,
+  Alt+Left, and Alt+Up show the parent folder (`SelectionKey::Back`, under
+  the hook's `WATCH_BACK`), as do the title bar's Back button (a click, or
+  each press of a double-click) and the mouse's back button over the lens
+  (`SpaceEvent::BackButton`). At the lens's own folder there is no button
+  and the keys pass through (D18).
 - With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
   (passing through to Explorer when no space is current); typing selects the
   next item whose label starts with

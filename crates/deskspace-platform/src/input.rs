@@ -147,6 +147,8 @@ pub enum SpaceEvent {
     DpiChanged {
         dpi: u32,
     },
+    /// The mouse's back button (`XBUTTON1`) was released over the space.
+    BackButton,
 }
 
 /// A clipboard shortcut pressed while an item is selected or a space is
@@ -195,6 +197,9 @@ pub enum SelectionKey {
     /// with that digit (`VIEW_MODES` in the settings tables). A digit with no
     /// view yet does nothing.
     View(u8),
+    /// Backspace, Alt+Left, or Alt+Up: show the parent of the subfolder a
+    /// lens is browsed into (D18). Sent only while there is one.
+    Back,
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size

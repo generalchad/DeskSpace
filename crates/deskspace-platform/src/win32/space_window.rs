@@ -35,8 +35,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
     WM_SETCURSOR, WM_SIZE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
-    WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    WM_XBUTTONUP, WS_CHILD, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    XBUTTON1,
 };
 use windows::core::{PCWSTR, w};
 
@@ -1153,6 +1154,13 @@ unsafe extern "system" fn wndproc(
                 let (x, y) = to_desktop(window, lparam, is_hosted(window));
                 space_event(window, SpaceEvent::DoubleClick { x, y });
                 LRESULT(0)
+            }
+            // The high word of wParam names the X button; a handled
+            // WM_XBUTTONUP returns TRUE.
+            // https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-xbuttonup
+            WM_XBUTTONUP if hiword(wparam.0 as isize) == i32::from(XBUTTON1) => {
+                space_event(window, SpaceEvent::BackButton);
+                LRESULT(1)
             }
             WM_DESTROY => {
                 // Revoke while the window still exists so OLE releases its

@@ -84,6 +84,10 @@ pub struct SpaceScene {
     /// lens shows its folder's shell icon; another space shows the glyph its
     /// icon setting resolves to.
     pub title_icon: Option<TitleIcon>,
+    /// The Back button's square at the left of the title bar, in the space's
+    /// coordinates, while a lens shows a subfolder (D18); `None` otherwise.
+    /// The icon and the text start after it.
+    pub back_button: Option<Rect>,
     pub title_height: i32,
     pub tint: Color,
     pub title_fill: Color,

@@ -232,7 +232,21 @@ impl App {
                     }
                 }
             }
-            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
+            // A double-click's second press arrives as the double-click
+            // alone, so on the Back button it goes up again, as two clicks
+            // would, rather than fold the space.
+            SpaceEvent::DoubleClick { x, y } => {
+                let point = Point::new(x, y);
+                let back = matches!(surface, Surface::Space(id) if self.back_button_clicked(ui, id, point));
+                if !back {
+                    self.double_click(ui, surface, point);
+                }
+            }
+            SpaceEvent::BackButton => {
+                if let Surface::Space(id) = surface {
+                    self.browse_up(ui, id);
+                }
+            }
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
                 let mut repaint = false;
@@ -281,6 +295,18 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// If `point` is on space `id`'s Back button, shows the parent of the
+    /// subfolder it is browsed into and returns true (D18).
+    fn back_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let browsed = self.is_browsed(id);
+        let on_button = self
+            .config
+            .desktop
+            .space(id)
+            .is_some_and(|space| crate::scene::back_button_at(space, browsed, point));
+        on_button && self.browse_up(ui, id)
     }
 
     /// If `point` is on a status-bar view button, switches the space to that
@@ -342,6 +368,13 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a browsed lens's Back button shows the parent folder,
+        // before the title bar can start a move.
+        if let Surface::Space(id) = surface
+            && self.back_button_clicked(ui, id, point)
+        {
+            return;
+        }
         // A click on a status-bar view button switches this space's view
         // (W19).
         if let Surface::Space(id) = surface

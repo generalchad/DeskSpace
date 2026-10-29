@@ -4498,3 +4498,29 @@ until I5-I6 all land, so no partial build hides the desktop.
     browse keeps the lens current, so the keys still reach it; the cut
     measures DirectWrite clusters once per title, so it splits no
     character and a resize recuts without layout.
+
+- [x] **W43. Back and Up (app, platform).** **[needs human]** After:
+  W42.
+  - A Back button at the left of the title bar, before the folder icon,
+    only while a lens shows a subfolder (a `SpaceScene` field, the "new
+    visual" recipe). Clicking it shows the parent. So do Alt+Left,
+    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
+    only while a space is current), and the mouse's back button
+    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
+    do nothing, and Backspace passes on to type-to-select as today.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: the parent of each depth; nothing above the root; the keys'
+    `keys_for_*` rows.
+  - **[needs human]** check: each way back at 100 % and 150 %; the
+    button is gone at the root; Backspace in a rename edits the text and
+    does not go back.
+  - Done 2026-10-29. Settled before coding, as the maintainer asked:
+    the hook takes the keys only under a new `WATCH_BACK` flag (the current
+    space is browsed), since it decides before the app is asked; at a
+    lens's own folder Backspace passes through as before, and the Alt
+    arrows pass through instead of moving the selection, as in Explorer.
+    Back and Up both show the parent (D18 keeps no forward history). A
+    double-click on the button goes up twice rather than folding the
+    space. The mouse's back button acts on the lens under the pointer.
+    The button's size is provisional and it has no hover highlight.

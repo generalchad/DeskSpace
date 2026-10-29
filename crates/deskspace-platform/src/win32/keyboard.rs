@@ -57,6 +57,7 @@ pub(crate) const SEL_VIEW_5: usize = 18;
 pub(crate) const SEL_VIEW_6: usize = 19;
 pub(crate) const SEL_VIEW_7: usize = 20;
 pub(crate) const SEL_VIEW_8: usize = 21;
+pub(crate) const SEL_BACK: usize = 22;
 
 /// Direction codes packed into `NAV_KEY`'s wParam low bits.
 pub(crate) const NAV_LEFT: usize = 0;
@@ -102,6 +103,9 @@ thread_local! {
     static WATCH_SELECTION: Cell<bool> = const { Cell::new(false) };
     /// Watching while a space is current (the name is historical).
     static WATCH_PASTE: Cell<bool> = const { Cell::new(false) };
+    /// Watching while the current space is a lens shown below its own
+    /// folder, so the keys that go back have somewhere to go (D18).
+    static WATCH_BACK: Cell<bool> = const { Cell::new(false) };
     /// A popup menu is being tracked, so every key belongs to it; the hook
     /// passes everything through until it closes.
     static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
@@ -126,11 +130,13 @@ pub(crate) fn capture(controller: HWND, enabled: bool) {
     refresh(controller);
 }
 
-/// Watches the selection keys while `selection` is true, and the keys that need
-/// a current space while `paste` is true. Idempotent.
-pub(crate) fn watch_selection(controller: HWND, selection: bool, paste: bool) {
+/// Watches the selection keys while `selection` is true, the keys that need
+/// a current space while `paste` is true, and the keys that go back while
+/// `back` is true. Idempotent.
+pub(crate) fn watch_selection(controller: HWND, selection: bool, paste: bool, back: bool) {
     WATCH_SELECTION.set(selection);
     WATCH_PASTE.set(paste);
+    WATCH_BACK.set(back);
     refresh(controller);
 }
 
@@ -257,6 +263,9 @@ struct Watch {
     selection: bool,
     /// A space is current (`WATCH_PASTE`).
     paste: bool,
+    /// The current space is a lens shown below its own folder
+    /// (`WATCH_BACK`).
+    back: bool,
 }
 
 impl Watch {
@@ -276,6 +285,7 @@ fn handle(event: &KBDLLHOOKSTRUCT) -> bool {
     let watch = Watch {
         selection: WATCH_SELECTION.get(),
         paste: WATCH_PASTE.get(),
+        back: WATCH_BACK.get(),
     };
     if watch.any() && !EDITING.get() {
         return handle_watched(event.vkCode, watch);
@@ -348,6 +358,16 @@ fn watched_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
     // paste watch tracks that).
     if !watch.paste {
         return None;
+    }
+    // Backspace, Alt+Left, and Alt+Up show a browsed lens's parent (D18).
+    // Elsewhere they pass through: Backspace as it always has, and the Alt
+    // arrows, which never move Explorer's selection either.
+    if mods.alt {
+        let goes_back = is_key(vk, VK_LEFT) || is_key(vk, VK_UP);
+        return (watch.back && goes_back).then_some((messages::SELECTION_KEY, SEL_BACK));
+    }
+    if watch.back && is_key(vk, VK_BACK) {
+        return Some((messages::SELECTION_KEY, SEL_BACK));
     }
     if let Some(dir) = arrow_dir(vk) {
         let extend = if mods.shift { NAV_EXTEND } else { 0 };
@@ -664,6 +684,7 @@ pub(crate) fn selection_key(action: usize) -> Option<SelectionKey> {
         SEL_VIEW_6 => SelectionKey::View(6),
         SEL_VIEW_7 => SelectionKey::View(7),
         SEL_VIEW_8 => SelectionKey::View(8),
+        SEL_BACK => SelectionKey::Back,
         _ => return None,
     })
 }
@@ -809,6 +830,7 @@ mod tests {
         assert_eq!(selection_key(SEL_VIEW_1), Some(SelectionKey::View(1)));
         assert_eq!(selection_key(SEL_VIEW_5), Some(SelectionKey::View(5)));
         assert_eq!(selection_key(SEL_VIEW_8), Some(SelectionKey::View(8)));
+        assert_eq!(selection_key(SEL_BACK), Some(SelectionKey::Back));
         assert_eq!(selection_key(99), None);
     }
 
@@ -888,13 +910,21 @@ mod tests {
     const NO_WATCH: Watch = Watch {
         selection: false,
         paste: false,
+        back: false,
     };
     const SELECTION: Watch = Watch {
         selection: true,
         paste: false,
+        back: false,
+    };
+    const BACK: Watch = Watch {
+        selection: false,
+        paste: true,
+        back: true,
     };
     const PASTE: Watch = Watch {
         selection: false,
+        back: false,
         paste: true,
     };
 
@@ -993,6 +1023,27 @@ mod tests {
             ],
             &[PASTE],
             &[SELECTION, NO_WATCH],
+        );
+    }
+
+    #[test]
+    fn keys_for_the_back_watch() {
+        let back = (messages::SELECTION_KEY, SEL_BACK);
+        assert_routes(
+            &[
+                (VK_BACK, PLAIN, back),
+                (VK_LEFT, ALT, back),
+                (VK_UP, ALT, back),
+            ],
+            &[BACK],
+            &[PASTE, SELECTION, NO_WATCH],
+        );
+        // At a lens's own folder the Alt arrows pass through rather than
+        // move the selection, and the plain arrows still navigate.
+        assert_eq!(watched_key(VK_RIGHT.0 as u32, ALT, BACK), None);
+        assert_eq!(
+            watched_key(VK_LEFT.0 as u32, PLAIN, BACK),
+            Some((messages::NAV_KEY, NAV_LEFT))
         );
     }
 

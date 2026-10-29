@@ -9,7 +9,7 @@ use deskspace_core::source::FolderEntry;
 use deskspace_core::{Command, Item, ItemId, ItemKind, SpaceId};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
-use super::App;
+use super::{App, Surface};
 use crate::scene::subfolder_path;
 
 /// The subfolder a lens shows below its own folder, and the lens folder it
@@ -77,15 +77,53 @@ impl App {
         let Ok(sub) = folder.strip_prefix(&root).map(Path::to_path_buf) else {
             return false;
         };
-        self.browsed.insert(id, Browsed { root, sub });
+        self.show_subfolder(ui, id, root, sub);
+        true
+    }
+
+    /// Shows the parent of the subfolder lens `id` shows (D18), and returns
+    /// whether there was one; at the lens's own folder it does nothing.
+    pub(super) fn browse_up(&mut self, ui: &mut Ui, id: SpaceId) -> bool {
+        let Some(root) = self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| space.folder_view())
+            .map(|view| view.path.clone())
+        else {
+            return false;
+        };
+        let Some(parent) = parent_subfolder(&self.subfolder_of(id)) else {
+            return false;
+        };
+        self.show_subfolder(ui, id, root, parent);
+        true
+    }
+
+    /// Whether lens `id` shows a subfolder, so there is somewhere to go back
+    /// to.
+    pub(super) fn is_browsed(&self, id: SpaceId) -> bool {
+        !self.subfolder_of(id).as_os_str().is_empty()
+    }
+
+    /// Points lens `id` (on `root`) at `sub` below its own folder, or at its
+    /// own folder when `sub` is empty. The old items go at once, and the
+    /// re-pointed watch lists the new folder.
+    fn show_subfolder(&mut self, ui: &mut Ui, id: SpaceId, root: PathBuf, sub: PathBuf) {
+        if sub.as_os_str().is_empty() {
+            self.browsed.remove(&id);
+        } else {
+            self.browsed.insert(id, Browsed { root, sub });
+        }
         // The lens stays the current space, so the keys keep reaching it, as
         // Explorer keeps focus in the folder it opens; `sync_lens` repaints.
-        self.selection.clear_items();
+        if self.selection.surface == Some(Surface::Space(id)) {
+            self.selection.clear_items();
+        }
         self.view_cache.set_scroll(id, 0);
         self.unavailable_lenses.remove(&id);
         self.sync_lens(ui, id, Vec::new());
         self.sync_watches(ui);
-        true
     }
 
     /// Returns lens `id` to its own folder.
@@ -265,6 +303,16 @@ fn listing_is_current(listed: &Path, shown: &Path) -> bool {
     is_inside(listed, shown) && is_inside(shown, listed)
 }
 
+/// The parent of `sub`, a lens's subfolder relative to its own folder: empty
+/// for the lens's own folder, and `None` when `sub` already is it, since a
+/// lens never goes above its folder (D18).
+fn parent_subfolder(sub: &Path) -> Option<PathBuf> {
+    if sub.as_os_str().is_empty() {
+        return None;
+    }
+    Some(sub.parent().map(Path::to_path_buf).unwrap_or_default())
+}
+
 /// The folder to show when `entry` is opened in a lens on `root` that shows
 /// `shown`: a folder the listing put there, never a shortcut (it can point
 /// anywhere), and never outside `root` (D18). `None` means open it as
@@ -394,6 +442,20 @@ mod tests {
             !app.lens_shows(lens, &root),
             "a listing of the lens's own folder is stale now"
         );
+    }
+
+    #[test]
+    fn back_goes_to_the_parent_and_never_above_the_lens() {
+        assert_eq!(
+            parent_subfolder(Path::new(r"Photos\2026")),
+            Some(PathBuf::from("Photos"))
+        );
+        assert_eq!(
+            parent_subfolder(Path::new("Photos")),
+            Some(PathBuf::new()),
+            "one level down goes back to the lens's own folder"
+        );
+        assert_eq!(parent_subfolder(Path::new("")), None, "nothing above it");
     }
 
     #[test]

@@ -153,6 +153,8 @@ const TITLE_ICON_GAP: f32 = 6.0;
 /// Segoe Fluent Icons / Segoe MDL2 Assets "Lock" glyph.
 /// https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
 const LOCK_GLYPH: &[u16] = &[0xE72E];
+/// Segoe Fluent Icons / Segoe MDL2 Assets "Back" glyph, in both fonts.
+const BACK_GLYPH: &[u16] = &[0xE72B];
 /// The lock glyph's alpha, and its gap from the title bar's right edge.
 const LOCK_ALPHA: u8 = 170;
 const LOCK_MARGIN: f32 = 4.0;
@@ -168,8 +170,9 @@ struct TitleLayout {
 }
 
 impl TitleLayout {
-    /// The layout of a title bar `width` by `height`, with a title icon
-    /// ending at `icon_right` (`None` when the space has none).
+    /// The layout of a title bar `width` by `height`, with a title icon or
+    /// Back button ending at `icon_right` (`None` when the space has
+    /// neither).
     fn new(width: f32, height: f32, locked: bool, icon_right: Option<f32>) -> Self {
         let lock_width = if locked { height } else { 0.0 };
         let left = match icon_right {
@@ -211,11 +214,32 @@ pub(super) unsafe fn draw_title(
         width,
         title_height,
         scene.locked,
-        title_icon.map(|title| title.rect.right() as f32),
+        // The icon sits after the Back button, so the text follows whichever
+        // is drawn last; an icon still loading leaves the button's edge.
+        title_icon
+            .map(|title| title.rect.right())
+            .or(scene.back_button.map(|back| back.right()))
+            .map(|right| right as f32),
     );
     let text = layout.text;
     // SAFETY: caller is inside BeginDraw/EndDraw.
     unsafe {
+        if let (Some(back), Some(format)) = (scene.back_button, &graphics.glyph_format) {
+            brush.SetColor(&color_f(scene.title_text));
+            target.DrawText(
+                BACK_GLYPH,
+                format,
+                &rect_f(
+                    back.x as f32,
+                    back.y as f32,
+                    back.right() as f32,
+                    back.bottom() as f32,
+                ),
+                brush,
+                D2D1_DRAW_TEXT_OPTIONS_NONE,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
         if let (Some(bitmap), Some(title)) = (bitmap, title_icon) {
             let icon = title.rect;
             target.DrawBitmap(

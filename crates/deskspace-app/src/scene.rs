@@ -23,6 +23,12 @@ const SCROLL_THUMB_MIN_HEIGHT: i32 = 24;
 /// with the title bar like the title text.
 const TITLE_ICON_SIZE: i32 = 16;
 const TITLE_ICON_INSET: i32 = 10;
+/// The Back button of a browsed lens (D18), at 96 DPI: a 24 px square, 4 px
+/// from the left edge, and 2 px before the title icon. Provisional until
+/// W43's on-screen check compares it with Explorer's.
+const BACK_BUTTON_SIZE: i32 = 24;
+const BACK_BUTTON_INSET: i32 = 4;
+const BACK_BUTTON_GAP: i32 = 2;
 /// The gap between a Details column's text and its divider, at 96 DPI.
 const DETAILS_CELL_PAD: i32 = 6;
 /// Explorer's status-bar button size, gap, and edge inset at 96 DPI.
@@ -239,12 +245,15 @@ pub fn space_scene_with_details(
         LabelShadow::Off => None,
     };
 
+    let browsed = !view.subfolder.as_os_str().is_empty();
+    let back = browsed.then(|| back_button_rect(space.title_height));
     SpaceScene {
         chrome: true,
         title: browse_title(space.title(), &view.subfolder),
-        title_keeps_end: !view.subfolder.as_os_str().is_empty(),
+        title_keeps_end: browsed,
+        back_button: back,
         title_icon: {
-            let rect = title_icon_rect(space.title_height);
+            let rect = title_icon_rect_after(space.title_height, back);
             match glyph {
                 Some(image) => Some(TitleIcon {
                     rect,
@@ -315,10 +324,40 @@ pub fn space_scene_with_details(
 /// square `TITLE_ICON_SIZE` at 96 DPI, `TITLE_ICON_INSET` from the left edge,
 /// centered vertically, both scaled by `title_height / DEFAULT_TITLE_HEIGHT`.
 pub fn title_icon_rect(title_height: i32) -> Rect {
+    title_icon_rect_after(title_height, None)
+}
+
+/// `title_icon_rect`, moved past a Back button at `back` when there is one,
+/// by the same inset it keeps from the edge otherwise.
+fn title_icon_rect_after(title_height: i32, back: Option<Rect>) -> Rect {
     let scale = title_height as f32 / DEFAULT_TITLE_HEIGHT as f32;
     let size = ((TITLE_ICON_SIZE as f32) * scale).round().max(1.0) as i32;
-    let inset = ((TITLE_ICON_INSET as f32) * scale).round() as i32;
+    let gap = match back {
+        Some(_) => BACK_BUTTON_GAP,
+        None => TITLE_ICON_INSET,
+    };
+    let left = back.map_or(0, |back| back.right()) + ((gap as f32) * scale).round() as i32;
+    Rect::new(left, ((title_height - size) / 2).max(0), size, size)
+}
+
+/// Where the Back button goes in a title bar `title_height` pixels tall while
+/// a lens shows a subfolder: a square `BACK_BUTTON_SIZE` at 96 DPI,
+/// `BACK_BUTTON_INSET` from the left edge, centered vertically, scaled with
+/// the bar like the title icon.
+pub fn back_button_rect(title_height: i32) -> Rect {
+    let scale = title_height as f32 / DEFAULT_TITLE_HEIGHT as f32;
+    let size = ((BACK_BUTTON_SIZE as f32) * scale).round().max(1.0) as i32;
+    let inset = ((BACK_BUTTON_INSET as f32) * scale).round() as i32;
     Rect::new(inset, ((title_height - size) / 2).max(0), size, size)
+}
+
+/// Whether `point`, in desktop coordinates, is on the Back button of
+/// `space`, which shows one only while `browsed`.
+pub fn back_button_at(space: &Space, browsed: bool, point: Point) -> bool {
+    let origin = space.rect().origin();
+    browsed
+        && back_button_rect(space.title_height)
+            .contains(Point::new(point.x - origin.x, point.y - origin.y))
 }
 
 /// What a lens's title bar asks the icon cache for: the folder it shows
@@ -391,6 +430,7 @@ pub fn desktop_layer_scene(
         chrome: false,
         title: String::new(),
         title_keeps_end: false,
+        back_button: None,
         title_icon: None,
         title_height: 0,
         tint: Color::TRANSPARENT,
@@ -1772,6 +1812,44 @@ mod tests {
         assert!(text.contains("Downloads"));
         assert_eq!(placeholder(lens, false), None, "an available lens");
         assert_eq!(placeholder(&space(), true), None, "a normal space");
+    }
+
+    #[test]
+    fn only_a_browsed_lens_has_a_back_button_and_its_icon_moves_past_it() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(100, 50, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        let lens = desktop.space(lens).unwrap();
+        let scene = |subfolder: &str| {
+            let view = ViewState {
+                subfolder: PathBuf::from(subfolder),
+                ..ViewState::default()
+            };
+            space_scene(lens, look, view, &mut IconCache::new())
+        };
+        assert_eq!(scene("").back_button, None, "at the lens's own folder");
+        let back = back_button_rect(lens.title_height);
+        assert_eq!(scene("Photos").back_button, Some(back));
+        assert_eq!(back_button_rect(28), Rect::new(4, 2, 24, 24));
+        assert_eq!(
+            title_icon_rect_after(28, Some(back)).x,
+            back.right() + BACK_BUTTON_GAP,
+            "the icon follows the button"
+        );
+        assert_eq!(title_icon_rect_after(28, None), title_icon_rect(28));
+
+        // Hit testing is in desktop coordinates, and only while browsed.
+        let on_button = Point::new(100 + back.x + 1, 50 + back.y + 1);
+        assert!(back_button_at(lens, true, on_button));
+        assert!(!back_button_at(lens, false, on_button));
+        assert!(!back_button_at(lens, true, Point::new(100 + 200, 50 + 10)));
     }
 
     #[test]

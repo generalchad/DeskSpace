@@ -158,6 +158,9 @@ help inspect the look and the desktop layer.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.
+- In a lens showing a subfolder, the Back button at the left of its title
+  bar, `Backspace`, `Alt+Left`, `Alt+Up`, and the mouse's back button go to
+  the parent folder, never above the lens's own folder.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
   A right drag onto a space opens a menu to move or copy the files, create

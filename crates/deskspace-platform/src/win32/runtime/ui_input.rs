@@ -105,11 +105,12 @@ impl Ui {
 
     /// Watches the selection keys while `selection` is true, and the keys that
     /// need a current space while `paste` is true, since spaces are never
-    /// focused. Call with `false` when nothing applies; only the watched keys
+    /// focused, and the keys that go back (`SelectionKey::Back`) while `back`
+    /// is true. Call with `false` when nothing applies; only the watched keys
     /// are consumed.
-    pub fn watch_selection_keys(&mut self, selection: bool, paste: bool) {
+    pub fn watch_selection_keys(&mut self, selection: bool, paste: bool, back: bool) {
         if let Some(controller) = with_runtime(|runtime| runtime.controller) {
-            crate::win32::keyboard::watch_selection(controller, selection, paste);
+            crate::win32::keyboard::watch_selection(controller, selection, paste, back);
         }
     }
 

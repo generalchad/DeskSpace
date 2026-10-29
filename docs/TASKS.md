@@ -11,9 +11,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W43 (with a
-  reviewer) now that W42 has landed, and W34 now that W14 has landed; the
-  rest once the task each one names has landed;
+- section W phase 5: W34 now that W14 has landed; the rest once the task
+  each one names has landed;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
 
@@ -631,7 +630,7 @@ are in section V. The open work is phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37, W43 | W43 |
+| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37 | none yet |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
@@ -1020,23 +1019,6 @@ interest. In phase 4 and 5 terms:
     Match Explorer.
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
-
-- [ ] **W43. Back and Up (app, platform).** **[needs human]** After:
-  W42.
-  - A Back button at the left of the title bar, before the folder icon,
-    only while a lens shows a subfolder (a `SpaceScene` field, the "new
-    visual" recipe). Clicking it shows the parent. So do Alt+Left,
-    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
-    only while a space is current), and the mouse's back button
-    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
-    do nothing, and Backspace passes on to type-to-select as today.
-  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
-    `README.md` Controls.
-  - Tests: the parent of each depth; nothing above the root; the keys'
-    `keys_for_*` rows.
-  - **[needs human]** check: each way back at 100 % and 150 %; the
-    button is gone at the root; Backspace in a rename edits the text and
-    does not go back.
 
 ## S. Space icons (ROADMAP D16, F-62)
 
@@ -2173,6 +2155,7 @@ each id is in `archive/TASKS-done.md`.
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 | W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
 | W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. |
+| W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

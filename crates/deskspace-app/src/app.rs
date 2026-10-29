@@ -580,6 +580,13 @@ impl App {
             SelectionKey::Undo => self.undo(ui),
             SelectionKey::Redo => self.redo(ui),
             SelectionKey::View(digit) => self.set_view_by_digit(ui, digit),
+            // The current space is looked up now: it may have changed since
+            // the hook took the key.
+            SelectionKey::Back => {
+                if let Some(Surface::Space(id)) = self.selection.surface {
+                    self.browse_up(ui, id);
+                }
+            }
         }
     }
 
@@ -875,11 +882,18 @@ impl EventHandler for App {
             }
         }
         // The keyboard hook is on only while it is needed: editing captures
-        // keys, and a selection or current space watches the item keys.
+        // keys, a selection or current space watches the item keys, and a
+        // current lens shown below its own folder watches the keys that go
+        // back.
         ui.capture_text_input(self.edit.is_active());
+        let browsed = matches!(
+            self.selection.surface,
+            Some(Surface::Space(id)) if self.is_browsed(id)
+        );
         ui.watch_selection_keys(
             !self.edit.is_active() && !self.selection.items.is_empty(),
             !self.edit.is_active() && self.selection.surface.is_some(),
+            !self.edit.is_active() && browsed,
         );
         self.sync_outside_watch(ui);
     }
