@@ -8,7 +8,7 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Urgent first:** W46, then W45. A task marked
+**Urgent first:** W45. A task marked
 **[urgent]** goes ahead of everything else in its section.
 
 **Pick a task:** these are ready for any contributor:
@@ -1007,32 +1007,6 @@ interest. In phase 4 and 5 terms:
     Match Explorer.
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
-
-- [ ] **W46. An empty title follows the folder again (app).** **[urgent]**
-  **[needs human]** After: W11.
-  - Why: renaming a lens's title (F2 with nothing selected, or a
-    double-click on the title) quietly switches its "Show as" to Custom,
-    so the title stops following the folder, and committing an empty
-    title is ignored. The only way back is the Lens page. Raised by the
-    maintainer, 2026-10-29: F2 on the title stays a nickname, never a
-    folder rename, but the nickname must be easy to undo.
-  - `app/rename.rs`, where a title rename commits: on a lens, an empty
-    (or all-space) title becomes `SetLensTitle` with the Lenses defaults
-    page's "Show as" (`WindowSettings.new_lens.title`, W23; Folder name
-    unless changed), or Folder name when that default is Custom, and the
-    title text `lens_title` gives for it. One undo entry, as a rename is
-    now. A normal space keeps ignoring an empty title.
-  - Decide it in a pure function, for example `title_commit(space,
-    typed, default) -> Option<Command>`, so the cases are tested without
-    a `Ui`.
-  - Tests: a lens with an empty title, an all-space title, and a typed
-    title; a normal space with an empty title; the default Custom case.
-  - Docs: `CONTEXT.md` section 8 (the F2 and title-rename lines) and
-    `README.md` Controls say that clearing a lens's title returns it to
-    following the folder.
-  - **[needs human]** check: F2 on a lens's title, clear it, Enter: the
-    title shows the folder's name and the Lens page shows "Folder name";
-    Ctrl+Z gives the old nickname back.
 
 - [ ] **W45. A lens follows its folder when it is renamed or moved
   (platform, app).** **[urgent]** **[needs human]** ROADMAP D19 is the
@@ -2253,6 +2227,7 @@ each id is in `archive/TASKS-done.md`.
 | W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. F2 on the browsed lens's title edits the lens's own nickname, so its box shows `Downloads`, not the bar's `Downloads › A › B`: confirm that reads clearly. |
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens re-filters on every keystroke (about 60 ms each, B37): note whether it stutters. |
+| W46 (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

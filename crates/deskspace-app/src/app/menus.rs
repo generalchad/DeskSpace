@@ -1413,7 +1413,13 @@ mod tests {
             ]
         );
 
-        app.rename_space(id, "Work".to_string());
+        app.commit_title(
+            id,
+            Command::RenameSpace {
+                id,
+                title: "Work".to_string(),
+            },
+        );
         assert_eq!(
             app.undo_entries(),
             [

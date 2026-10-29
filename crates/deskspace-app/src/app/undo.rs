@@ -1067,7 +1067,13 @@ mod tests {
         app.toggle_space_fold(a);
 
         // Rename space.
-        app.rename_space(a, "Docs".to_string());
+        app.commit_title(
+            a,
+            Command::RenameSpace {
+                id: a,
+                title: "Docs".to_string(),
+            },
+        );
         assert_eq!(app.config.desktop.space(a).unwrap().title(), "Docs");
         assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
         assert_eq!(app.config.desktop.space(a).unwrap().title(), "New space");
@@ -1225,7 +1231,13 @@ mod tests {
     fn settings_edit_records_no_entry_and_makes_prior_space_entry_stale() {
         let mut app = test_app();
         let id = create_space(&mut app.config.desktop, "Work", sample_rect(16));
-        app.rename_space(id, "Renamed".to_string());
+        app.commit_title(
+            id,
+            Command::RenameSpace {
+                id,
+                title: "Renamed".to_string(),
+            },
+        );
         assert_eq!(app.undo.undo.len(), 1);
 
         // A settings-window edit on the space dispatches without an open undo

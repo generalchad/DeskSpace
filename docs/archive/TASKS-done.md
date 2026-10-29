@@ -4580,3 +4580,32 @@ until I5-I6 all land, so no partial build hides the desktop.
     lens still shows that folder. Show hidden files still re-lists, as
     before. Every keystroke re-filters on the UI thread; B37 covers the
     cost on big folders.
+
+- [x] **W46. An empty title follows the folder again (app).** **[urgent]**
+  **[needs human]** After: W11.
+  - Why: renaming a lens's title (F2 with nothing selected, or a
+    double-click on the title) quietly switches its "Show as" to Custom,
+    so the title stops following the folder, and committing an empty
+    title is ignored. The only way back is the Lens page. Raised by the
+    maintainer, 2026-10-29: F2 on the title stays a nickname, never a
+    folder rename, but the nickname must be easy to undo.
+  - `app/rename.rs`, where a title rename commits: on a lens, an empty
+    (or all-space) title becomes `SetLensTitle` with the Lenses defaults
+    page's "Show as" (`WindowSettings.new_lens.title`, W23; Folder name
+    unless changed), or Folder name when that default is Custom, and the
+    title text `lens_title` gives for it. One undo entry, as a rename is
+    now. A normal space keeps ignoring an empty title.
+  - Decide it in a pure function, for example `title_commit(space,
+    typed, default) -> Option<Command>`, so the cases are tested without
+    a `Ui`.
+  - Tests: a lens with an empty title, an all-space title, and a typed
+    title; a normal space with an empty title; the default Custom case.
+  - Docs: `CONTEXT.md` section 8 (the F2 and title-rename lines) and
+    `README.md` Controls say that clearing a lens's title returns it to
+    following the folder.
+  - **[needs human]** check: F2 on a lens's title, clear it, Enter: the
+    title shows the folder's name and the Lens page shows "Folder name";
+    Ctrl+Z gives the old nickname back.
+  - Done 2026-10-29. An empty title on a lens that already follows its
+    folder is ignored too, so clearing it never swaps one "Show as" for
+    another.

@@ -1326,7 +1326,11 @@ in `ui.rs`. What spans them:
   100 %). Buttons grey out at the ends of the range, and Reset at 100 %. It
   hides 2 s after the last zoom, or once the pointer leaves it.
 - Rename a space from its right-click menu: the title is edited in place
-  (Enter commits, Escape cancels, clicking away commits).
+  (Enter commits, Escape cancels, clicking away commits). A typed title on a
+  lens is a nickname that stops the title following the folder. Committing an
+  empty title makes it follow again, as the Lenses page's "Show as" says
+  (Folder name when that is Custom), as one undo entry. An empty title on a
+  normal space, or on a lens that already follows its folder, is ignored.
 
 **Menus**
 
@@ -1517,7 +1521,9 @@ in `ui.rs`. What spans them:
 
 - F2 renames the selected item's file inline (Enter commits, Escape cancels,
   clicking away commits; the extension is kept when the label hides it), or
-  the current space's title with no item selected.
+  the current space's title with no item selected (an empty lens title
+  follows the folder again, as under Menus). F2 never renames a lens's
+  folder.
 - Alt+Enter opens the selected item's Properties, or DeskSpace Settings with
   nothing selected. With an item selected, Enter opens it, and the Menu key or
   Shift+F10 opens its context menu (the space's menu with no item selected).

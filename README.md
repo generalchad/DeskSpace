@@ -150,7 +150,8 @@ help inspect the look and the desktop layer.
   `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
-  selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
+  selected. On a lens, the title is a nickname; clear it and press `Enter` to
+  show the folder's name again. `Alt+Enter` opens the selected item's Properties, or DeskSpace
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
