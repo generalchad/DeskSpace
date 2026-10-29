@@ -246,6 +246,10 @@ impl App {
                 Surface::Space(id) => self.unavailable_lenses.contains(&id),
                 Surface::Desktop => false,
             },
+            filtered_out: match surface {
+                Surface::Space(id) => self.filtered_out(id),
+                Surface::Desktop => false,
+            },
             subfolder: match surface {
                 Surface::Space(id) => self.subfolder_of(id),
                 Surface::Desktop => PathBuf::new(),

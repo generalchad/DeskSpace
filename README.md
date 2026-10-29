@@ -125,7 +125,9 @@ help inspect the look and the desktop layer.
   place; the title names the folders below the lens's own, and a restart
   or "Change folder…" returns to the lens's folder. Right-click a lens to
   open the folder it shows, change its folder, or choose its order and
-  show hidden files.
+  show hidden files. Its Lens page in Settings also filters it: "Show
+  only" (`*.pdf; *.docx`) lists only matching files, and "Hide" leaves out
+  matching files and folders.
 - "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
   Type, and Size, then Ascending or Descending, then Folders first and Keep
   sorted. A normal space sorts once, or holds the order as items come and go

@@ -4556,3 +4556,27 @@ until I5-I6 all land, so no partial build hides the desktop.
     with 32 typical patterns, 309 ms with 32 whose end matches and middle
     fails. Taken to the maintainer before merging, as the Performance
     rule asks.
+
+- [x] **W35. Lens filters on the Lens page (app).** **[needs human]**
+  After: W10, W34.
+  - A "Filter" heading with two text fields, "Show only" and "Hide",
+    each a `;`-separated list (`*.pdf; *.docx`). A pure
+    `parse_patterns(text) -> Vec<String>` trims spaces and drops
+    empties; `format_patterns` writes it back. Edits preview and Cancel
+    undoes them (W10's snapshot).
+  - A lens whose filters hide every entry shows "No items match the
+    filter" in `SpaceScene::placeholder`, so it never looks broken.
+  - Changing a filter re-filters the listing the app already has; it
+    does not re-list the folder.
+  - Tests: `parse_patterns` round trip; the placeholder.
+  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
+    `*.tmp`; a filter that matches nothing shows the message; typing
+    quickly in the field stays smooth on a 50,000-file lens.
+  - Done 2026-10-29. The window rewrites a text field whose value
+    differs from the form, so the fields show the text as typed
+    (`Session::filter_texts`, as `hotkey_texts` does), and the lens's
+    list only when the page is built. `App::listings` keeps each lens's
+    last listing with its folder, and a re-filter uses it only while the
+    lens still shows that folder. Show hidden files still re-lists, as
+    before. Every keystroke re-filters on the UI thread; B37 covers the
+    cost on big folders.

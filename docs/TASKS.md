@@ -11,8 +11,8 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W35 now that W34 has landed; the rest once the task
-  each one names has landed;
+- section W phase 5: the tasks whose "After" tasks have all landed; the
+  rest once they have;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
 
@@ -924,22 +924,6 @@ interest. In phase 4 and 5 terms:
     same in the icon views.
   - **[needs human]** check: against Explorer's Compact view in each
     view, at 100 % and 150 %.
-
-- [ ] **W35. Lens filters on the Lens page (app).** **[needs human]**
-  After: W10, W34.
-  - A "Filter" heading with two text fields, "Show only" and "Hide",
-    each a `;`-separated list (`*.pdf; *.docx`). A pure
-    `parse_patterns(text) -> Vec<String>` trims spaces and drops
-    empties; `format_patterns` writes it back. Edits preview and Cancel
-    undoes them (W10's snapshot).
-  - A lens whose filters hide every entry shows "No items match the
-    filter" in `SpaceScene::placeholder`, so it never looks broken.
-  - Changing a filter re-filters the listing the app already has; it
-    does not re-list the folder.
-  - Tests: `parse_patterns` round trip; the placeholder.
-  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
-    `*.tmp`; a filter that matches nothing shows the message; typing
-    quickly in the field stays smooth on a 50,000-file lens.
 
 - [ ] **W36. Group by: the groups (core, app).** After: W15, W18.
   - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
@@ -2160,6 +2144,7 @@ each id is in `archive/TASKS-done.md`.
 | W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
 | W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. |
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
+| W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens re-filters on every keystroke (about 60 ms each, B37): note whether it stutters. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

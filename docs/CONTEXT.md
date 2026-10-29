@@ -1099,8 +1099,15 @@ in `ui.rs`. What spans them:
   `SetSpaceView`), and its always-enabled Shortcuts page.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
-  preview through `SetLensTitle`), and Show hidden files, which previews
-  through `SetLensView`. Global edits write `Config` directly; a space's edits
+  preview through `SetLensTitle`), Show hidden files, which previews
+  through `SetLensView`, and its Filter: "Show only" and "Hide", each a
+  `;`-separated list (`settings::pages::parse_patterns`). A filter edit
+  is a `SetLensView` that re-filters the lens's last listing, kept per lens
+  in `App::listings` with the folder it came from, without reading the
+  folder (`FieldEffect::Refilter`); the field shows the text as typed
+  (`Session::filter_texts`), so the form never rewrites it mid-edit. A
+  lens whose filters leave no entry says "No items match the filter".
+  Global edits write `Config` directly; a space's edits
   become `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors
   page's reset becomes "Match global appearance". Cancel restores each space's
   `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit

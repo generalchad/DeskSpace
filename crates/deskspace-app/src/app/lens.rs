@@ -154,6 +154,8 @@ impl App {
                 .and_then(|space| space.folder_view())
                 .is_some_and(|view| view.path == browsed.root)
         });
+        self.listings
+            .retain(|id, _| spaces.space(*id).is_some_and(|space| space.is_lens()));
         let desktop = if self.layer_active() {
             match desktop_directory() {
                 Ok(directory) => Some(directory),
@@ -227,8 +229,50 @@ impl App {
             );
             return;
         }
+        match &listing {
+            FolderListing::Listed(entries) => {
+                self.listings
+                    .insert(id, (folder.to_path_buf(), entries.clone()));
+            }
+            FolderListing::Unavailable | FolderListing::Refused => {
+                self.listings.remove(&id);
+            }
+        }
         let entries = self.take_listing(id, listing);
         self.sync_lens(ui, id, entries);
+    }
+
+    /// Filters lens `id`'s last listing again after its filters changed,
+    /// without reading the folder (W35). A listing of a folder the lens no
+    /// longer shows (Change folder…, a browse) is left alone: the new one is
+    /// on its way.
+    pub(super) fn refilter_lens(&mut self, ui: &mut Ui, id: SpaceId) {
+        let Some(entries) = self
+            .listings
+            .get(&id)
+            .filter(|(folder, _)| self.lens_shows(id, folder))
+            .map(|(_, entries)| entries.clone())
+        else {
+            return;
+        };
+        self.sync_lens(ui, id, entries);
+    }
+
+    /// Whether lens `id`'s filters leave none of its listing's entries, so
+    /// its placeholder says so instead of looking broken (W35).
+    pub(super) fn filtered_out(&self, id: SpaceId) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        let filtered = space
+            .folder_view()
+            .is_some_and(|view| !view.include.is_empty() || !view.exclude.is_empty());
+        filtered
+            && space.items().is_empty()
+            && self
+                .listings
+                .get(&id)
+                .is_some_and(|(folder, entries)| !entries.is_empty() && self.lens_shows(id, folder))
     }
 
     /// Notes what `listing` says about lens `id` (whether its folder is
@@ -453,6 +497,57 @@ mod tests {
             !app.lens_shows(lens, &root),
             "a listing of the lens's own folder is stale now"
         );
+    }
+
+    #[test]
+    fn filters_that_leave_no_entry_are_told_apart_from_an_empty_folder() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        let folder = PathBuf::from(r"C:\Users\me\Downloads");
+        let entry = FolderEntry {
+            path: folder.join("notes.txt"),
+            label: String::new(),
+            kind: ItemKind::File,
+            size: Some(1),
+            modified: None,
+            hidden: false,
+        };
+        // An empty folder, with no filter: nothing to say.
+        app.listings.insert(lens, (folder.clone(), Vec::new()));
+        assert!(!app.filtered_out(lens));
+        // A file the "Show only" list leaves out.
+        app.listings
+            .insert(lens, (folder.clone(), vec![entry.clone()]));
+        let mut view = app
+            .config
+            .desktop
+            .space(lens)
+            .unwrap()
+            .folder_view()
+            .unwrap()
+            .clone();
+        view.include = vec!["*.pdf".into()];
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetLensView { id: lens, view },
+        );
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SyncLens {
+                id: lens,
+                entries: vec![entry.clone()],
+            },
+        );
+        assert!(app.filtered_out(lens));
+        // A listing of a folder the lens no longer shows proves nothing.
+        app.listings
+            .insert(lens, (PathBuf::from(r"C:\Elsewhere"), vec![entry]));
+        assert!(!app.filtered_out(lens));
     }
 
     #[test]

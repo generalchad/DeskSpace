@@ -1196,7 +1196,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |
-| F-22 | Exclude rules / filters | M7 | Partial: lens filters are matched and applied (W34); the Lens page fields follow (W35); decided in D18 |
+| F-22 | Exclude rules / filters | M7 | Partial: lens filters are done, check pending (`TASKS.md` V: W35); rules for normal spaces are open; decided in D18 |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color and drawn shadows (D15) built 2026-10-19, check pending (`TASKS.md` section V, "Border settings", "Drawn shadows") |
 | F-25 | Icon size | M3 | Done (50-200 %, jumbo icons, per-monitor DPI, per space; Ctrl+wheel per D9); check pending (`TASKS.md` V: F13, Display) |

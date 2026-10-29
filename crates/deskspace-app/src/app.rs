@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
+use deskspace_core::source::FolderEntry;
 use deskspace_core::{Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
@@ -493,6 +494,10 @@ pub struct App {
     unavailable_lenses: HashSet<SpaceId>,
     /// The subfolder each browsed lens shows (W42). Session-only.
     browsed: HashMap<SpaceId, lens::Browsed>,
+    /// The last listing of the folder each lens shows, before its filters,
+    /// so a filter edit filters it again without reading the folder (W35).
+    /// Session-only.
+    listings: HashMap<SpaceId, (PathBuf, Vec<FolderEntry>)>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -534,6 +539,7 @@ impl App {
             view_cache: ViewCache::default(),
             unavailable_lenses: HashSet::new(),
             browsed: HashMap::new(),
+            listings: HashMap::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),

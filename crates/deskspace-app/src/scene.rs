@@ -91,12 +91,18 @@ pub struct ViewState {
     /// A lens whose folder cannot be listed (missing, or refused because it
     /// is DeskSpace's storage): the scene says so in place of items.
     pub folder_unavailable: bool,
+    /// A lens whose filters leave none of its folder's entries: the scene
+    /// says so, so the lens never looks broken (W35).
+    pub filtered_out: bool,
     /// The subfolder a lens is browsed into, relative to its own folder;
     /// empty at its own folder (W42).
     pub subfolder: PathBuf,
     /// The status-bar view button the pointer is over, if any (W19).
     pub hovered_status: Option<usize>,
 }
+
+/// What a lens whose filters hide every entry shows in place of items.
+const FILTERED_OUT_PLACEHOLDER: &str = "No items match the filter";
 
 /// The separator between the folders of a browsed lens's title (D18).
 const BROWSE_SEPARATOR: &str = " \u{203A} ";
@@ -291,13 +297,15 @@ pub fn space_scene_with_details(
         } else {
             DropInto::Space
         },
-        placeholder: space
-            .folder_view()
-            .filter(|_| view.folder_unavailable)
-            .map(|folder| {
+        placeholder: space.folder_view().and_then(|folder| {
+            if view.folder_unavailable {
                 let shown = subfolder_path(&folder.path, &view.subfolder);
-                format!("Folder not available\n{}", shown.display())
-            }),
+                Some(format!("Folder not available\n{}", shown.display()))
+            } else {
+                view.filtered_out
+                    .then(|| FILTERED_OUT_PLACEHOLDER.to_owned())
+            }
+        }),
         focused_item: view.focused.map(|id| id.0),
         details: details_view(space, &view_layout, content.width, layout.padding, scale),
         status: status_bar(space, &view),
@@ -1850,6 +1858,40 @@ mod tests {
         assert!(back_button_at(lens, true, on_button));
         assert!(!back_button_at(lens, false, on_button));
         assert!(!back_button_at(lens, true, Point::new(100 + 200, 50 + 10)));
+    }
+
+    #[test]
+    fn a_lens_whose_filters_hide_everything_says_so() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        let lens = desktop.space(lens).unwrap();
+        let placeholder = |filtered_out, folder_unavailable| {
+            let view = ViewState {
+                filtered_out,
+                folder_unavailable,
+                ..ViewState::default()
+            };
+            space_scene(lens, look, view, &mut IconCache::new()).placeholder
+        };
+        assert_eq!(
+            placeholder(true, false).as_deref(),
+            Some(FILTERED_OUT_PLACEHOLDER)
+        );
+        assert_eq!(placeholder(false, false), None);
+        assert!(
+            placeholder(true, true)
+                .unwrap()
+                .starts_with("Folder not available"),
+            "a missing folder says so first"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! directly, and a space's edits become Commands.
 
 use super::ids::field;
+use super::pages::parse_patterns;
 use super::session::Session;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
@@ -392,6 +393,20 @@ fn lens_edit(
             (
                 Command::SetLensView { id: space.id, view },
                 FieldEffect::Lens,
+            )
+        }
+        (field::LENS_SHOW_ONLY | field::LENS_HIDE, FieldValue::Text(text)) => {
+            let mut view = space.folder_view()?.clone();
+            let patterns = parse_patterns(text);
+            if id == field::LENS_SHOW_ONLY {
+                view.include = patterns;
+            } else {
+                view.exclude = patterns;
+            }
+            session.filter_texts.insert((space.id, id), text.clone());
+            (
+                Command::SetLensView { id: space.id, view },
+                FieldEffect::Refilter,
             )
         }
         (field::LENS_TITLE_MODE, FieldValue::Choice(index)) => {
@@ -1149,6 +1164,52 @@ mod tests {
             .is_none(),
             "General is Global only"
         );
+    }
+
+    #[test]
+    fn a_filter_field_sets_the_lens_lists_and_keeps_the_text_as_typed() {
+        let (config, lens) = config_with_lens("Downloads");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let typed = " *.pdf;  *.docx; ";
+        let (id, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_SHOW_ONLY,
+            FieldValue::Text(typed.into()),
+            true,
+            Path::new(""),
+        )
+        .expect("the filter field has a command");
+        assert_eq!(id, lens);
+        assert_eq!(effect, FieldEffect::Refilter, "no new listing");
+        let Command::SetLensView { view, .. } = command else {
+            panic!("expected SetLensView, got {command:?}");
+        };
+        assert_eq!(view.include, ["*.pdf", "*.docx"]);
+        assert!(view.exclude.is_empty());
+        assert_eq!(
+            session
+                .filter_texts
+                .get(&(lens, field::LENS_SHOW_ONLY))
+                .map(String::as_str),
+            Some(typed),
+            "the form shows the text back unchanged"
+        );
+
+        let (_, command, _) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_HIDE,
+            FieldValue::Text("*.tmp".into()),
+            true,
+            Path::new(""),
+        )
+        .unwrap();
+        let Command::SetLensView { view, .. } = command else {
+            panic!("expected SetLensView, got {command:?}");
+        };
+        assert_eq!(view.exclude, ["*.tmp"]);
     }
 
     #[test]
