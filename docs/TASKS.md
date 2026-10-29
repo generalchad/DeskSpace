@@ -8,6 +8,9 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
+**Urgent first:** W44, then W45 once its decision is made. A task marked
+**[urgent]** goes ahead of everything else in its section.
+
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
@@ -1007,6 +1010,60 @@ interest. In phase 4 and 5 terms:
     Match Explorer.
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
+
+- [ ] **W44. An empty title follows the folder again (app).** **[urgent]**
+  **[needs human]** After: W11.
+  - Why: renaming a lens's title (F2 with nothing selected, or a
+    double-click on the title) quietly switches its "Show as" to Custom,
+    so the title stops following the folder, and committing an empty
+    title is ignored. The only way back is the Lens page. Raised by the
+    maintainer, 2026-10-29: F2 on the title stays a nickname, never a
+    folder rename, but the nickname must be easy to undo.
+  - `app/rename.rs`, where a title rename commits: on a lens, an empty
+    (or all-space) title becomes `SetLensTitle` with the Lenses defaults
+    page's "Show as" (`WindowSettings.new_lens.title`, W23; Folder name
+    unless changed), or Folder name when that default is Custom, and the
+    title text `lens_title` gives for it. One undo entry, as a rename is
+    now. A normal space keeps ignoring an empty title.
+  - Decide it in a pure function, for example `title_commit(space,
+    typed, default) -> Option<Command>`, so the cases are tested without
+    a `Ui`.
+  - Tests: a lens with an empty title, an all-space title, and a typed
+    title; a normal space with an empty title; the default Custom case.
+  - Docs: `CONTEXT.md` section 8 (the F2 and title-rename lines) and
+    `README.md` Controls say that clearing a lens's title returns it to
+    following the folder.
+  - **[needs human]** check: F2 on a lens's title, clear it, Enter: the
+    title shows the folder's name and the Lens page shows "Folder name";
+    Ctrl+Z gives the old nickname back.
+
+- [ ] **W45. A lens follows its folder when it is renamed or moved
+  (platform, app).** **[urgent]** **[needs decision]**: ROADMAP open
+  question 5. After: W24, W25, W42.
+  - Why: renaming or moving a lens's folder in Explorer makes the lens
+    "Folder not available" within 5 s, though the watch's open handle
+    follows the folder to its new path. A lens that follows its folder
+    is also the safe way to offer renaming it: rename in Explorer, or
+    through an explicit "Rename folder…" (a later task), never through
+    F2 on the title (see W44).
+  - Proposal, for the decision: in `check_paths`, when an open folder's
+    path no longer names it, the worker reads the handle's final path
+    (`final_path`, W25) and posts a new `FolderListing::Moved { to }`
+    instead of `Unavailable` when `to` is a real folder, outside the
+    Recycle Bin (a `$Recycle.Bin` component, without case), outside the
+    store (W25), and on the same volume. The app re-points the lens
+    with `SetLensFolder` (its title follows when "Show as" follows the
+    folder), as one undo entry, and the watch moves with it. A browsed
+    lens (W42) whose subfolder moved keeps its own folder and returns to
+    it, or follows within it; the decision says which.
+  - Tests: the pure "should the lens follow" check (a rename, a move on
+    the same volume, into the Recycle Bin, into the store, onto another
+    volume); a platform test that renames a watched scratch folder and
+    expects `Moved`; the app turns `Moved` into the new folder.
+  - **[needs human]** check: rename a lens's folder in Explorer: within
+    5 s the lens shows the new path and keeps its items; delete it in
+    Explorer: the lens says "Folder not available", and never lists the
+    Recycle Bin; Ctrl+Z points it back.
 
 ## S. Space icons (ROADMAP D16, F-62)
 
@@ -2142,7 +2199,7 @@ each id is in `archive/TASKS-done.md`.
 | W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 | W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
-| W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. |
+| W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. F2 on the browsed lens's title edits the lens's own nickname, so its box shows `Downloads`, not the bar's `Downloads › A › B`: confirm that reads clearly. |
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens re-filters on every keystroke (about 60 ms each, B37): note whether it stutters. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |

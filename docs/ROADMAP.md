@@ -1241,6 +1241,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; needs a decision (M6 item 4) |
+| F-67 | A lens follows its folder when it is renamed or moved | M4 | Open, urgent; awaits open question 5 (`TASKS.md` W45) |
 
 
 ## 8. Open questions
@@ -1266,6 +1267,22 @@ Resolve each one during the milestone that raises it.
      catalogs beside it let a translator try a change without building.
    - Proposed, awaiting the maintainer: Fluent, embedded, with a test that
      every key the code uses has English text.
+5. **A lens whose folder is renamed or moved (M4, urgent).** Today the
+   lens says "Folder not available" within 5 s, though the watch's open
+   handle follows the folder (F-67, `TASKS.md` W45). Should the lens
+   follow it?
+   - Never into the Recycle Bin (deleting in Explorer moves a folder
+     there), never into DeskSpace's storage (D3, W25), and only on the
+     same volume, where a move is a rename the handle follows.
+   - Is following silent, or does the lens say where it went? Is it one
+     undo entry, as Change folder… is?
+   - A lens browsed into a subfolder (D18) whose subfolder moves: return
+     to its own folder, or follow within it?
+   - Proposed, awaiting the maintainer: follow on the same volume outside
+     the Recycle Bin and the store, silently, as one undo entry; a
+     browsed lens returns to its own folder. Renaming the folder from
+     DeskSpace becomes an explicit "Rename folder…" in the lens menu,
+     never F2 on the title, which stays a nickname (W44).
 
 Every other question raised so far is answered by a decision in section 2.
 
