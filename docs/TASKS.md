@@ -11,7 +11,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W34 now that W14 has landed; the rest once the task
+- section W phase 5: W35 now that W34 has landed; the rest once the task
   each one names has landed;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
@@ -902,24 +902,6 @@ interest. In phase 4 and 5 terms:
     same in the icon views.
   - **[needs human]** check: against Explorer's Compact view in each
     view, at 100 % and 150 %.
-
-- [ ] **W34. Lens filters: the matcher (core).** After: W14.
-  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
-    &str) -> bool` for `*` and `?`, without case, in time linear in the
-    two lengths (the greedy matcher that remembers the last `*`; cite
-    its source beside it). Compare by `char`, folding with
-    `to_lowercase` per char; no allocation per call.
-  - `FolderView.include` and `exclude` (already reserved): caps
-    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
-    `FolderView::clamped` on load and on edit. An empty pattern is
-    dropped.
-  - `SyncLens` applies them (D18): "Show only" to files, "Hide" to every
-    entry, both by name only, never by full path.
-  - Tests: the matcher on the usual cases and on hostile ones (thousands
-    of `*`, a 260-char pattern against a 260-char name, which must stay
-    fast in a debug test), non-ASCII names, case; `SyncLens` with each
-    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
-    (see Performance).
 
 - [ ] **W35. Lens filters on the Lens page (app).** **[needs human]**
   After: W10, W34.

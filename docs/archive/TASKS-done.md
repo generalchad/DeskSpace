@@ -4529,3 +4529,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     reached the lens's own folder; a resize edge under the button wins; a
     click on it makes the lens current; the mouse's back button finishes a
     rename first; and Alt leaves the scroll keys as they were.
+
+- [x] **W34. Lens filters: the matcher (core).** After: W14.
+  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
+    &str) -> bool` for `*` and `?`, without case, in time linear in the
+    two lengths (the greedy matcher that remembers the last `*`; cite
+    its source beside it). Compare by `char`, folding with
+    `to_lowercase` per char; no allocation per call.
+  - `FolderView.include` and `exclude` (already reserved): caps
+    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
+    `FolderView::clamped` on load and on edit. An empty pattern is
+    dropped.
+  - `SyncLens` applies them (D18): "Show only" to files, "Hide" to every
+    entry, both by name only, never by full path.
+  - Tests: the matcher on the usual cases and on hostile ones (thousands
+    of `*`, a 260-char pattern against a 260-char name, which must stay
+    fast in a debug test), non-ASCII names, case; `SyncLens` with each
+    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
+    (see Performance).
+  - Done 2026-10-29. The matcher's bound is pattern x name steps, not
+    linear as written above; the caps keep it to about 68,000. It checks
+    the text after the last star against the name's end first, and
+    compares ASCII without Unicode folding. Patterns are also trimmed and
+    deduplicated. Release timings of `SyncLens` on 50,000 entries: 44-46
+    ms with no filters (already over the 8 ms budget before W34), 62-65 ms
+    with 32 typical patterns, 309 ms with 32 whose end matches and middle
+    fails. Taken to the maintainer before merging, as the Performance
+    rule asks.

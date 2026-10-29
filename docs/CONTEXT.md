@@ -194,7 +194,9 @@ index, and the scroll indicator all read the same layout. `FolderEntry` is what
 the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
-filters hidden entries, sorts by the space's `SortRule`, and reconciles by
+filters hidden entries and the view's "Show only" and "Hide" patterns
+(`FolderView::shows`, `wildcard::matches`), sorts by the space's
+`SortRule`, and reconciles by
 path so an `ItemId` survives a refresh. They are never written to the config,
 and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 `MoveItem` into a lens are `Rejected`; file changes there are shell
@@ -331,8 +333,10 @@ ones a variant's doc cannot show.
   view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
   listed items by path, keeping ids, filtering hidden entries unless the view
   shows them, and sorting by the space's `SortRule` (natural names, so
-  `file2` comes before `file10`; folders first when asked). The include/exclude
-  filters are stored for F-22 but not applied.
+  `file2` comes before `file10`; folders first when asked). "Show only"
+  (`include`) keeps only files whose name matches, and "Hide" (`exclude`)
+  drops any match, file or folder (D18). The lists are capped by
+  `FolderView::clamped` when the config loads and in `SetLensView`.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings

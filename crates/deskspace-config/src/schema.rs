@@ -220,6 +220,7 @@ impl Config {
         self.window = self.window.clone().clamped();
         self.desktop.layout = self.desktop.layout.clamped();
         self.desktop.clamp_looks();
+        self.desktop.clamp_lens_views();
         // A lens's items are a live view of its folder, never saved; drop any
         // a hand-edited file listed so the next sync fills them again.
         self.desktop.clear_lens_items();

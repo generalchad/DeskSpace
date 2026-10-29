@@ -7,7 +7,7 @@ use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::geometry::Rect;
 use crate::id::SpaceId;
-use crate::item::Item;
+use crate::item::{Item, ItemKind};
 use crate::layout::{GridSpec, arrange_space, clamp_to_bounds};
 use crate::source::{FolderEntry, FolderView, LensTitle, SpaceSource};
 use crate::view::SpaceView;
@@ -74,14 +74,14 @@ impl Desktop {
             let SpaceSource::Folder(current) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
-            *current = view;
+            *current = view.clamped();
             CommandOutcome::Applied
         })
     }
 
     /// Reconciles `entries` with the lens's current items by path, then sorts
-    /// and lays them out. Include/exclude filters are F-22 and are not applied
-    /// yet.
+    /// and lays them out. Hidden entries and those the view's filters leave
+    /// out (`FolderView::shows`) are skipped.
     pub(super) fn apply_sync_lens(
         &mut self,
         id: SpaceId,
@@ -106,6 +106,10 @@ impl Desktop {
         let mut items = Vec::new();
         for entry in entries {
             if !seen.insert(entry.path.clone()) || (entry.hidden && !view.show_hidden) {
+                continue;
+            }
+            let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
+            if !view.shows(&name, entry.kind == ItemKind::Folder) {
                 continue;
             }
             let path = entry.path.clone();
@@ -717,5 +721,121 @@ mod tests {
             "the rejected move changed nothing"
         );
         assert_eq!(desktop.space_containing(lens_item), Some(lens_id));
+    }
+
+    fn filter(desktop: &mut Desktop, id: SpaceId, include: &[&str], exclude: &[&str]) {
+        let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+        view.include = include.iter().map(|p| p.to_string()).collect();
+        view.exclude = exclude.iter().map(|p| p.to_string()).collect();
+        assert!(
+            desktop
+                .apply(Command::SetLensView { id, view }, bounds())
+                .is_applied()
+        );
+    }
+
+    fn filter_entries() -> Vec<FolderEntry> {
+        vec![
+            entry("a.pdf", ItemKind::File),
+            entry("b.txt", ItemKind::File),
+            entry("c.tmp", ItemKind::File),
+            entry("Sub", ItemKind::Folder),
+            entry("Old", ItemKind::Folder),
+        ]
+    }
+
+    #[test]
+    fn show_only_keeps_matching_files_and_every_folder() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        filter(&mut desktop, id, &["*.PDF"], &[]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["a.pdf", "Old", "Sub"]);
+    }
+
+    #[test]
+    fn hide_drops_matching_files_and_folders() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        filter(&mut desktop, id, &[], &["*.tmp", "old"]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["a.pdf", "b", "Sub"]);
+    }
+
+    #[test]
+    fn hide_wins_over_show_only_and_names_not_paths_are_matched() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        // "folder" is in every entry's path but no entry's name.
+        filter(&mut desktop, id, &["*.pdf", "*folder*"], &["a.*"]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["Old", "Sub"]);
+    }
+
+    #[test]
+    fn filter_lists_are_capped_trimmed_and_deduplicated() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let mut many: Vec<String> = (0..40).map(|n| format!("*.{n}")).collect();
+        many.insert(0, "  *.pdf  ".into());
+        many.insert(1, "*.pdf".into());
+        many.insert(2, "   ".into());
+        many.insert(3, "x".repeat(300));
+        let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+        view.include = many;
+        desktop.apply(Command::SetLensView { id, view }, bounds());
+        let include = &desktop.space(id).unwrap().folder_view().unwrap().include;
+        assert_eq!(include.len(), crate::source::MAX_PATTERNS);
+        assert_eq!(include[0], "*.pdf", "trimmed, and its repeat dropped");
+        assert_eq!(include[1].chars().count(), crate::source::MAX_PATTERN_LEN);
+        assert_eq!(include[2], "*.0", "the blank pattern is dropped");
+    }
+
+    /// Run by hand in release for the Performance rule's dated timing:
+    /// `cargo test --release -p deskspace-core -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a timing, for release builds; run by hand"]
+    fn time_a_filtered_sync_of_fifty_thousand_entries() {
+        let entries = || -> Vec<FolderEntry> {
+            (0..50_000)
+                .map(|n| {
+                    entry(
+                        &format!("quarterly report {n} final draft.pdf"),
+                        ItemKind::File,
+                    )
+                })
+                .collect()
+        };
+        // 32 "Hide" patterns, each tried on every entry and matching none, so
+        // every entry is still listed: one set the end check rejects at
+        // once, as most real patterns are, and one whose end matches so the
+        // whole pattern is tried.
+        let hide = |pattern: fn(usize) -> String| (0..32).map(pattern).collect::<Vec<_>>();
+        let cases = [
+            ("no filters", Vec::new()),
+            (
+                "32 patterns, end differs",
+                hide(|n| format!("*report*draft{n}?.tmp")),
+            ),
+            (
+                "32 patterns, end matches",
+                hide(|n| format!("*quarterly*report*{n}x*.pdf")),
+            ),
+        ];
+        for (label, exclude) in cases {
+            let mut desktop = Desktop::new();
+            let id = lens(&mut desktop, "C:/folder");
+            let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+            view.exclude = exclude;
+            desktop.apply(Command::SetLensView { id, view }, bounds());
+            let entries = entries();
+            let start = std::time::Instant::now();
+            sync(&mut desktop, id, entries);
+            println!(
+                "SyncLens, {label}, 50,000 entries: {:?} ({} kept)",
+                start.elapsed(),
+                desktop.space(id).unwrap().items().len()
+            );
+        }
     }
 }

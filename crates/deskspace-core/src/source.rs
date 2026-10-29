@@ -59,12 +59,20 @@ pub struct FolderView {
     #[serde(default)]
     pub title: LensTitle,
     pub show_hidden: bool,
-    /// Reserved for F-22; stored for forward compatibility but not applied
-    /// by `Command::SyncLens` yet.
+    /// "Show only": `*`/`?` patterns a file's name must match to be listed,
+    /// when there are any. Folders are always listed, so they stay browsable
+    /// (D18). Capped by `clamped`.
     pub include: Vec<String>,
-    /// Reserved for F-22, as `include`.
+    /// "Hide": `*`/`?` patterns whose matches are never listed, files and
+    /// folders alike. Capped by `clamped`.
     pub exclude: Vec<String>,
 }
+
+/// The most patterns each filter list keeps.
+pub const MAX_PATTERNS: usize = 32;
+/// The longest pattern kept, in characters: a Windows path's classic limit,
+/// so any real name fits.
+pub const MAX_PATTERN_LEN: usize = 260;
 
 impl Default for FolderView {
     fn default() -> Self {
@@ -76,6 +84,47 @@ impl Default for FolderView {
             exclude: Vec::new(),
         }
     }
+}
+
+impl FolderView {
+    /// The view with its filter lists made safe to match: each pattern
+    /// trimmed and cut to `MAX_PATTERN_LEN` characters, empty and repeated
+    /// ones dropped, and at most `MAX_PATTERNS` kept. A hand-edited config
+    /// reaches these lists, so the cost of matching is bounded here.
+    pub fn clamped(mut self) -> Self {
+        self.include = clamp_patterns(self.include);
+        self.exclude = clamp_patterns(self.exclude);
+        self
+    }
+
+    /// Whether an entry named `name` passes the filters (D18): "Hide" drops
+    /// any match, and "Show only", when it has patterns, keeps only the
+    /// files that match one. Names only, never full paths.
+    pub fn shows(&self, name: &str, is_folder: bool) -> bool {
+        let any = |patterns: &[String]| {
+            patterns
+                .iter()
+                .any(|pattern| crate::wildcard::matches(pattern, name))
+        };
+        if any(&self.exclude) {
+            return false;
+        }
+        is_folder || self.include.is_empty() || any(&self.include)
+    }
+}
+
+fn clamp_patterns(patterns: Vec<String>) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::new();
+    for pattern in patterns {
+        let pattern: String = pattern.trim().chars().take(MAX_PATTERN_LEN).collect();
+        if !pattern.is_empty() && !kept.contains(&pattern) {
+            kept.push(pattern);
+        }
+        if kept.len() == MAX_PATTERNS {
+            break;
+        }
+    }
+    kept
 }
 
 /// The title a lens shows for `view`, given its current title text and the
