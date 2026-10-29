@@ -132,7 +132,8 @@ impl App {
             }
             FolderListing::Refused => {
                 self.unavailable_lenses.insert(id);
-                tracing::warn!(space = %id, "lens folder is DeskSpace's storage; not watching it");
+                // The worker warns with the folder and where it leads.
+                tracing::debug!(space = %id, "lens folder is DeskSpace's storage; not watching it");
                 Vec::new()
             }
         }

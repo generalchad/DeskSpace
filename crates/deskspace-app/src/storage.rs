@@ -66,11 +66,16 @@ impl ItemStore {
     /// inside it would list files that other spaces own. A folder that merely
     /// contains the store is fine. The folder watch makes the same check on
     /// every folder it opens; this one answers a folder the user just picked
-    /// or is about to write into.
+    /// or is about to write into. A folder that cannot be resolved is
+    /// compared, with its `..` steps taken, against both spellings of the
+    /// store.
     pub fn allows_lens(&self, folder: &Path) -> bool {
         match std::fs::canonicalize(folder) {
             Ok(folder) => !is_inside(&folder, &self.final_root),
-            Err(_) => !is_inside(folder, &self.root),
+            Err(_) => {
+                let folder = std::path::absolute(folder).unwrap_or_else(|_| folder.to_path_buf());
+                !is_inside(&folder, &self.root) && !is_inside(&folder, &self.final_root)
+            }
         }
     }
 
@@ -122,15 +127,20 @@ impl ItemStore {
     }
 }
 
-/// `root` resolved to its final path. The store is created only on the first
-/// drop, so while it is missing its parent is resolved and its name joined.
+/// `root` resolved to its final path. The store, and on a first run the
+/// folders above it, are created only on the first drop, so the deepest
+/// folder that exists is resolved and the rest of the path joined to it.
 fn final_path(root: &Path) -> PathBuf {
-    if let Ok(path) = std::fs::canonicalize(root) {
-        return path;
-    }
-    root.parent()
-        .zip(root.file_name())
-        .and_then(|(parent, name)| std::fs::canonicalize(parent).ok().map(|p| p.join(name)))
+    root.ancestors()
+        .find_map(|ancestor| {
+            let resolved = std::fs::canonicalize(ancestor).ok()?;
+            let rest = root.strip_prefix(ancestor).ok()?;
+            Some(if rest.as_os_str().is_empty() {
+                resolved
+            } else {
+                resolved.join(rest)
+            })
+        })
         .unwrap_or_else(|| root.to_path_buf())
 }
 
@@ -395,6 +405,20 @@ mod tests {
             !store.allows_lens(&store.root().join("sub")),
             "a folder inside the store created after startup"
         );
+        let first_run = ItemStore::new(scratch.0.join("data/storage"));
+        assert_eq!(
+            first_run.final_root(),
+            std::fs::canonicalize(&scratch.0)
+                .unwrap()
+                .join("data/storage"),
+            "the store's parent is missing too"
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_folder_is_compared_without_its_dot_dot_steps() {
+        let store = ItemStore::new("C:/nowhere/storage");
+        assert!(!store.allows_lens(Path::new("C:/nowhere/other/../storage/sub")));
     }
 
     /// ROADMAP D6: the installer's install root (`%LocalAppData%\DeskSpace.App`)

@@ -612,29 +612,29 @@ impl Worker {
 
     /// A watched folder renamed away keeps reporting for the moved directory,
     /// so the pending read may stay open forever. Check that the path still
-    /// names a folder, and empty the lens when it does not.
+    /// names a folder outside the store, and empty the lens when it does not.
     fn check_paths(&mut self, now_ms: u64) {
         if now_ms < self.next_check {
             return;
         }
         self.next_check = now_ms + CHECK_MS;
-        let gone: Vec<usize> = self
+        let gone: Vec<(usize, FolderListing)> = self
             .folders
             .iter()
-            .filter(|(_, folder)| folder.open.is_some() && !folder.path.is_dir())
-            .map(|(slot, _)| *slot)
+            .filter(|(_, folder)| folder.open.is_some())
+            .filter_map(|(slot, folder)| folder.moved().map(|listing| (*slot, listing)))
             .collect();
-        for slot in gone {
+        for (slot, listing) in gone {
             let path = self.folders.get(&slot).map(|folder| folder.path.clone());
             if let Some(path) = path {
-                tracing::debug!(path = %path.display(), "watched folder moved or disappeared");
+                tracing::debug!(path = %path.display(), ?listing, "watched folder moved or disappeared");
             }
             self.close_open(slot);
             if let Some(folder) = self.folders.get_mut(&slot) {
                 folder.retry_at = Some(now_ms + RETRY_MS);
             }
             self.bursts.remove(slot);
-            self.publish(slot, FolderListing::Unavailable);
+            self.publish(slot, listing);
         }
     }
 
@@ -731,9 +731,8 @@ struct Folder {
 impl Folder {
     /// Opens the folder if it is not open and starts its read under
     /// `read_key`. A folder that resolves to the store or inside it is closed
-    /// again before any read starts. The handle is already open, so the check
-    /// costs no extra IO, and it runs on every open, so a folder replaced by
-    /// a junction is caught on the retry that reopens it.
+    /// again before any read starts. The final path comes from the handle
+    /// just opened, on this worker, so the UI thread never waits on it.
     fn open(&mut self, port: HANDLE, read_key: usize) -> Result<(), OpenFailure> {
         if self.open.is_some() {
             return Ok(());
@@ -741,10 +740,10 @@ impl Folder {
         let mut open = open_folder(&self.path, port, read_key).map_err(OpenFailure::Failed)?;
         // Some file systems cannot name a final path; `canonicalize` fails
         // there too, and the store check has always fallen back to the path
-        // as given.
+        // as given, with its `..` steps taken (no IO).
         let resolved = final_path(open.directory).unwrap_or_else(|error| {
             tracing::debug!(%error, path = %self.path.display(), "no final path; checking the path as given");
-            self.path.clone()
+            std::path::absolute(&self.path).unwrap_or_else(|_| self.path.clone())
         });
         if is_inside(&resolved, &self.store) {
             // No read started, so nothing is left to wait for.
@@ -757,6 +756,20 @@ impl Folder {
         }
         self.open = Some(open);
         Ok(())
+    }
+
+    /// What an open folder's path names now, when that is no longer a folder
+    /// to list: `Unavailable` when it is gone, or `Refused` when it resolves
+    /// into the store. The open handle follows a renamed folder, but a
+    /// listing reads the path, so a junction into the store put in the old
+    /// folder's place would be listed.
+    fn moved(&self) -> Option<FolderListing> {
+        if !self.path.is_dir() {
+            return Some(FolderListing::Unavailable);
+        }
+        std::fs::canonicalize(&self.path)
+            .is_ok_and(|resolved| is_inside(&resolved, &self.store))
+            .then_some(FolderListing::Refused)
     }
 
     /// The folder's current contents, or `Unavailable` with the reason logged.
@@ -1192,23 +1205,34 @@ mod tests {
         );
     }
 
+    /// Makes `link` a junction to `target`. `mklink /J` needs no admin rights.
+    fn junction(link: &Path, target: &Path) {
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "mklink /J failed: {made:?}");
+    }
+
+    /// A scratch folder holding `storage\inner` and `link`, a junction into
+    /// it, with the store's final path.
+    fn store_with_junction(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let scratch = scratch_folder(name);
+        let store = scratch.join("storage");
+        std::fs::create_dir_all(store.join("inner")).unwrap();
+        let link = scratch.join("link");
+        junction(&link, &store.join("inner"));
+        let final_store = std::fs::canonicalize(&store).unwrap();
+        (scratch, link, final_store)
+    }
+
     /// A junction into the store is refused by its final path, though the
     /// path the lens names is outside the store.
     #[test]
     fn a_junction_into_the_store_is_refused() {
-        let scratch = scratch_folder("junction");
-        let store = scratch.join("storage");
-        std::fs::create_dir_all(store.join("inner")).unwrap();
-        let link = scratch.join("link");
-        // `mklink /J` makes a junction without admin rights.
-        let made = std::process::Command::new("cmd")
-            .args(["/c", "mklink", "/J"])
-            .arg(&link)
-            .arg(store.join("inner"))
-            .output()
-            .unwrap();
-        assert!(made.status.success(), "mklink /J failed: {made:?}");
-        let final_store = std::fs::canonicalize(&store).unwrap();
+        let (scratch, link, final_store) = store_with_junction("junction");
         let listed = Arc::new(Mutex::new(None));
         let seen = Arc::clone(&listed);
         let finished = finishes(move || {
@@ -1220,5 +1244,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
         assert!(finished, "the watch did not finish");
         assert_eq!(listed.lock().unwrap().take(), Some(FolderListing::Refused));
+    }
+
+    /// The 5 s path check finds a watched path that now leads into the store,
+    /// as when a folder is renamed away and a junction put in its place.
+    #[test]
+    fn a_path_that_now_leads_into_the_store_is_refused() {
+        let (scratch, link, final_store) = store_with_junction("moved");
+        let folder = |path: &Path| Folder {
+            path: path.to_path_buf(),
+            store: final_store.clone(),
+            listing: Arc::new(Mutex::new(None)),
+            open: None,
+            retry_at: None,
+        };
+        let moved = folder(&link).moved();
+        let plain = folder(&scratch).moved();
+        let gone = folder(&scratch.join("gone")).moved();
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(moved, Some(FolderListing::Refused));
+        assert_eq!(plain, None, "a folder outside the store is still fine");
+        assert_eq!(gone, Some(FolderListing::Unavailable));
     }
 }

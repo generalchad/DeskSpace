@@ -204,9 +204,9 @@ operations: a drop on a lens moves
 folder, or inside it, is kept but never watched, and counts as unavailable:
 the folder watch refuses it by its final path, so a junction into the store
 is caught too, and the UI thread resolves no lens path to decide it. A
-folder the user picks or writes into (New lens…, Change folder…, a drop,
-New shortcut) is also checked on the spot (`ItemStore::allows_lens`),
-against the store's final path resolved once at startup.
+folder the user has just picked or is writing into is also checked on the
+spot (`ItemStore::allows_lens`; see its callers), against the store's final
+path resolved once at startup.
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
 A lens's title bar shows its folder's own shell icon, or the generic folder
@@ -1137,7 +1137,8 @@ in `ui.rs`. What spans them:
   pending read may never fail. Each time the worker opens a folder it asks
   for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
   that is the store or inside it, posting `FolderListing::Refused`; the
-  check needs no extra IO, since the handle is open. `is_inside` compares
+  5 s path check also refuses a path that has come to lead into the store
+  (a junction put in a renamed folder's place). `is_inside` compares
   paths for it and for the app: whole components, without case, and a drive
   or share alike with or without the `\\?\` prefix. A refused folder is
   retried like a missing one. `Ui::watch_folder(key, path, store)` adds or
