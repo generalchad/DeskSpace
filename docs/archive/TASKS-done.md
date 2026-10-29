@@ -4650,3 +4650,23 @@ until I5-I6 all land, so no partial build hides the desktop.
     `Timer::Notice`. A lens browsed into a subfolder sees only the
     subfolder's watch, so when its own folder is the one renamed it
     returns there and shows "Folder not available" rather than following.
+
+- [x] **W47. A view change keeps the sort rule (core).** **[needs human]**
+  - Why: `SpaceView::with_mode` gives the default sort rule, so a View
+    menu choice or a Ctrl+Shift digit resets a space's sort rule and its
+    Keep sorted choice, though D17 says a space keeps its last rule
+    (confirmed by the maintainer, 2026-10-29).
+  - Build the new view from the current one and change only the mode.
+    Every caller of `with_mode` gets this; if one needs the default rule,
+    stop and ask.
+  - Tests: a space sorted by date, descending, with Keep sorted off,
+    keeps all three across a mode change, by the View menu's path and by
+    the Ctrl+Shift path.
+  - **[needs human]** check: sort a space by Date, descending, then press
+    Ctrl+Shift+6 and Ctrl+Shift+2: Sort by ▸ still shows Date and
+    Descending.
+  - Done 2026-10-29. `SpaceView::with_mode` is now a method on the
+    current view, so the View menu (`view_after`), the Ctrl+Shift keys
+    (`view_by_digit`), and the status bar's view buttons all keep the
+    sort rule, Keep sorted, and the status bar. The status bar was reset
+    too, so its own view buttons used to hide it.

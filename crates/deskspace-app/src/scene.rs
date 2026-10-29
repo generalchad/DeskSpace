@@ -1152,7 +1152,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(ViewMode::SmallIcons),
+                view: deskspace_core::SpaceView::default().with_mode(ViewMode::SmallIcons),
             },
         );
         let space = desktop.space(id).unwrap();
@@ -1196,7 +1196,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(ViewMode::List),
+                view: deskspace_core::SpaceView::default().with_mode(ViewMode::List),
             },
         );
         for index in 0..10 {
@@ -1221,7 +1221,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(ViewMode::Details),
+                view: deskspace_core::SpaceView::default().with_mode(ViewMode::Details),
             },
         );
         desktop.space(id).unwrap().clone()
@@ -1642,7 +1642,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(ViewMode::Tiles),
+                view: deskspace_core::SpaceView::default().with_mode(ViewMode::Tiles),
             },
         );
         let space = desktop.space(id).unwrap();
@@ -1672,7 +1672,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(ViewMode::Content),
+                view: deskspace_core::SpaceView::default().with_mode(ViewMode::Content),
             },
         );
         let space = desktop.space(id).unwrap();

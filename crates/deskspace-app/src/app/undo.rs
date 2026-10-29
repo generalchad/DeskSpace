@@ -1423,7 +1423,7 @@ mod tests {
         // A view change: one entry, undone and redone.
         let (applied, _) = app.change_view(
             space,
-            SpaceView::with_mode(ViewMode::LargeIcons),
+            SpaceView::default().with_mode(ViewMode::LargeIcons),
             Point::new(40, 40),
             "Change view",
         );

@@ -836,14 +836,21 @@ impl App {
     /// its `VIEW_MODES` digit names. A digit with no view yet, or no space
     /// current, does nothing.
     pub(super) fn set_view_by_digit(&mut self, ui: &mut Ui, digit: u8) {
-        let Some(Surface::Space(id)) = self.selection.surface else {
-            return;
-        };
-        let Some(mode) = view_for_digit(digit) else {
+        let Some((id, view)) = self.view_by_digit(digit) else {
             return;
         };
         let at = self.space_center(id);
-        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        self.set_space_view(ui, id, view, at);
+    }
+
+    /// The current space and the view Ctrl+Shift+`digit` gives it, without a
+    /// `Ui`, so tests can check it.
+    fn view_by_digit(&self, digit: u8) -> Option<(SpaceId, SpaceView)> {
+        let Some(Surface::Space(id)) = self.selection.surface else {
+            return None;
+        };
+        let mode = view_for_digit(digit)?;
+        Some((id, self.config.desktop.space(id)?.view().with_mode(mode)))
     }
 
     /// When `id`'s icon factor changed since its last re-flow (a zoom, a view
@@ -986,6 +993,36 @@ mod tests {
     }
 
     #[test]
+    fn a_view_key_keeps_the_sort_rule() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = create_space(&mut app.config.desktop, "A", Rect::new(0, 0, 100, 100));
+        let sorted = SpaceView {
+            sort: deskspace_core::SortRule {
+                key: deskspace_core::SortKey::Modified,
+                descending: true,
+                folders_first: false,
+            },
+            keep_sorted: false,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView { id, view: sorted },
+        );
+        assert_eq!(app.view_by_digit(6), None, "no space is current");
+
+        app.selection.surface = Some(Surface::Space(id));
+        let (target, view) = app.view_by_digit(6).unwrap();
+        assert_eq!(target, id);
+        assert_eq!(view, sorted.with_mode(ViewMode::Details));
+        assert_eq!(view.sort, sorted.sort);
+        assert!(!view.keep_sorted);
+        assert!(view.status_bar);
+    }
+
+    #[test]
     fn view_cache_forgets_a_deleted_space() {
         let mut cache = ViewCache::default();
         let id = SpaceId(1);
@@ -1110,7 +1147,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
         // Large icons are 96 px at 96 DPI; the grid cell is twice the base
@@ -1135,7 +1172,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
         let before = (app.metrics_for(id), app.layout_for(id));

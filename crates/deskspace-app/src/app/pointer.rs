@@ -1,7 +1,7 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, SpaceView, ViewLayout, ViewMode};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout, ViewMode};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
@@ -342,9 +342,9 @@ impl App {
         let Some(button) = STATUS_BUTTONS.get(index) else {
             return false;
         };
-        let mode = button.mode;
+        let view = space.view().with_mode(button.mode);
         let at = space.rect().origin();
-        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        self.set_space_view(ui, id, view, at);
         true
     }
 

@@ -1093,7 +1093,7 @@ mod tests {
             desktop.apply(
                 Command::SetSpaceView {
                     id,
-                    view: SpaceView::with_mode(crate::view::ViewMode::SmallIcons),
+                    view: SpaceView::default().with_mode(crate::view::ViewMode::SmallIcons),
                 },
                 bounds()
             ),
@@ -1478,7 +1478,7 @@ mod tests {
                 desktop.apply(
                     Command::SetSpaceView {
                         id,
-                        view: SpaceView::with_mode(ViewMode::LargeIcons),
+                        view: SpaceView::default().with_mode(ViewMode::LargeIcons),
                     },
                     bounds()
                 ),

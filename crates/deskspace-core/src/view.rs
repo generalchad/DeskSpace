@@ -24,13 +24,11 @@ pub struct SpaceView {
 }
 
 impl SpaceView {
-    /// The view with `mode` and the default rule, as the View menu and its
-    /// keys change it.
-    pub fn with_mode(mode: ViewMode) -> Self {
-        Self {
-            mode,
-            ..Self::default()
-        }
+    /// This view shown as `mode`, as the View menu and its keys change it. The
+    /// sort rule, Keep sorted, and the status bar stay, since a space keeps
+    /// its last rule across views (D17).
+    pub fn with_mode(self, mode: ViewMode) -> Self {
+        Self { mode, ..self }
     }
 
     /// Whether this is the default view, which old files leave out.
@@ -163,9 +161,33 @@ mod tests {
     }
 
     #[test]
+    fn a_mode_change_keeps_the_rest_of_the_view() {
+        let view = SpaceView {
+            mode: ViewMode::Icons,
+            sort: SortRule {
+                key: SortKey::Modified,
+                descending: true,
+                folders_first: true,
+            },
+            keep_sorted: false,
+            status_bar: true,
+        };
+        let next = view.with_mode(ViewMode::Details);
+        assert_eq!(next.mode, ViewMode::Details);
+        assert_eq!(
+            SpaceView {
+                mode: view.mode,
+                ..next
+            },
+            view,
+            "only the mode changes"
+        );
+    }
+
+    #[test]
     fn small_icons_survive_a_round_trip() {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
-        space.view = SpaceView::with_mode(ViewMode::SmallIcons);
+        space.view = SpaceView::default().with_mode(ViewMode::SmallIcons);
         let text = toml::to_string(&space).unwrap();
         assert!(text.contains("small_icons"));
         let back: Space = toml::from_str(&text).unwrap();
@@ -175,7 +197,7 @@ mod tests {
     #[test]
     fn list_survives_a_round_trip() {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
-        space.view = SpaceView::with_mode(ViewMode::List);
+        space.view = SpaceView::default().with_mode(ViewMode::List);
         let text = toml::to_string(&space).unwrap();
         assert!(text.contains("list"));
         let back: Space = toml::from_str(&text).unwrap();
@@ -274,7 +296,7 @@ mod tests {
     #[test]
     fn a_fixed_view_survives_a_round_trip() {
         let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
-        space.view = SpaceView::with_mode(ViewMode::LargeIcons);
+        space.view = SpaceView::default().with_mode(ViewMode::LargeIcons);
         let text = toml::to_string(&space).unwrap();
         let back: Space = toml::from_str(&text).unwrap();
         assert_eq!(back.view().mode, ViewMode::LargeIcons);
