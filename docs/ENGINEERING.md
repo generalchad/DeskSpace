@@ -170,6 +170,10 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
    issue (`// see issue #1425`), so the workaround can be re-evaluated.
 9. Mark incomplete work as `// TODO(name):` or `// FIXME(name):` with a short
    description and an issue when one exists. Reuse existing markers.
+10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
+    in the comment and put the id in the commit message. Ids are decoded
+    only through `TASKS.md` and its archive, and they age as tasks are
+    archived. Existing ones go when their code is next touched.
 
 Rust specifics: `///` doc comments are expected on non-obvious public library
 items, kept concise. Every `unsafe` block carries a `// SAFETY:` comment saying
