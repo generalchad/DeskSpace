@@ -991,6 +991,14 @@ Remaining:
 3. Pages: several named layouts per monitor, with a page switcher (F-12).
    A page is a stored layout, so it builds on the snapshot format.
 4. Snapping to other spaces, with alignment guides (F-35).
+   - Optional measuring guides while a space is moved or resized (F-66),
+     like the smart guides in Photoshop. Lines show when an edge or center
+     lines up with another space or the work area. Labels give the gap to
+     each neighbour in pixels, and mark equal gaps and equal sizes, so a
+     layout can be made even by eye. A setting turns them on or off.
+   - Open: whether the guides come with snapping or stand alone, and the
+     setting's home (General, beside "Snap resized spaces", is the likely
+     one). Settle both in a D entry before tasks are written.
 5. A desktop overview map (F-47): a scaled picture of every monitor with
    its wallpaper and miniature spaces.
    - Clicking a miniature selects that space in the F-46 scopes pane.
@@ -1232,6 +1240,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Open; decided in D18 (`TASKS.md` W29-W32) |
 | F-64 | Browse into subfolders inside a lens | M4 | Open; decided in D18 (`TASKS.md` W24, W25, W42, W43) |
 | F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
+| F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; needs a decision (M6 item 4) |
 
 
 ## 8. Open questions
