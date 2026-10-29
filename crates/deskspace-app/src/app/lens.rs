@@ -102,8 +102,19 @@ impl App {
 
     /// Whether lens `id` shows a subfolder, so there is somewhere to go back
     /// to.
+    /// It runs after every event, so it borrows rather than copies the path.
     pub(super) fn is_browsed(&self, id: SpaceId) -> bool {
-        !self.subfolder_of(id).as_os_str().is_empty()
+        let Some(view) = self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| space.folder_view())
+        else {
+            return false;
+        };
+        self.browsed
+            .get(&id)
+            .is_some_and(|browsed| browsed.root == view.path)
     }
 
     /// Points lens `id` (on `root`) at `sub` below its own folder, or at its

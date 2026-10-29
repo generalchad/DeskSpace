@@ -4524,3 +4524,8 @@ until I5-I6 all land, so no partial build hides the desktop.
     double-click on the button goes up twice rather than folding the
     space. The mouse's back button acts on the lens under the pointer.
     The button's size is provisional and it has no hover highlight.
+    After review: the press on the button is remembered, so the
+    double-click that follows never folds the space even when the press
+    reached the lens's own folder; a resize edge under the button wins; a
+    click on it makes the lens current; the mouse's back button finishes a
+    rename first; and Alt leaves the scroll keys as they were.

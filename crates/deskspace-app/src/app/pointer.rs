@@ -86,6 +86,11 @@ pub(super) struct PointerState {
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
+    /// The space whose Back button took the last left press. The press may
+    /// have gone back to the lens's own folder, where the button is gone, so
+    /// the double-click that follows finds it here instead of folding the
+    /// space (W43).
+    pub(super) back_press: Option<SpaceId>,
 }
 
 impl PointerState {
@@ -151,11 +156,14 @@ impl App {
             return;
         }
         // Clicking anywhere commits a rename in progress before the click is
-        // handled, as clicking away from a title does elsewhere.
+        // handled, as clicking away from a title does elsewhere; so does the
+        // mouse's back button, which empties the lens the rename is in.
         if self.edit.is_active()
             && matches!(
                 &event,
-                SpaceEvent::MouseDown { .. } | SpaceEvent::DoubleClick { .. }
+                SpaceEvent::MouseDown { .. }
+                    | SpaceEvent::DoubleClick { .. }
+                    | SpaceEvent::BackButton
             )
         {
             self.finish_rename(ui, true);
@@ -164,6 +172,8 @@ impl App {
         // click here is made to behave like one on the desktop: focus it and
         // clear its icon selection.
         if matches!(&event, SpaceEvent::MouseDown { .. }) {
+            // A new press starts over; one on the Back button sets it again.
+            self.pointer.back_press = None;
             self.dismiss_info_tip(ui);
             self.refresh_shell_display(ui);
             ui.on_desktop_click();
@@ -297,16 +307,27 @@ impl App {
         }
     }
 
-    /// If `point` is on space `id`'s Back button, shows the parent of the
-    /// subfolder it is browsed into and returns true (D18).
+    /// If `point` is on space `id`'s Back button, makes the lens current,
+    /// shows the parent of the subfolder it is browsed into, and returns true
+    /// (D18). A resize edge under the button wins, as the cursor shows.
     fn back_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
-        let browsed = self.is_browsed(id);
-        let on_button = self
-            .config
-            .desktop
-            .space(id)
-            .is_some_and(|space| crate::scene::back_button_at(space, browsed, point));
-        on_button && self.browse_up(ui, id)
+        let shown = self.is_browsed(id) || self.pointer.back_press == Some(id);
+        let on_button = self.config.desktop.space(id).is_some_and(|space| {
+            space.resize_edges_at(point, RESIZE_BORDER) == ResizeEdges::NONE
+                && crate::scene::back_button_at(space, shown, point)
+        });
+        if !on_button {
+            return false;
+        }
+        self.pointer.back_press = Some(id);
+        if self.selection.surface != Some(Surface::Space(id)) {
+            if let Some(previous) = self.selection.take() {
+                self.refresh_surface(ui, previous);
+            }
+            self.selection.surface = Some(Surface::Space(id));
+        }
+        self.browse_up(ui, id);
+        true
     }
 
     /// If `point` is on a status-bar view button, switches the space to that

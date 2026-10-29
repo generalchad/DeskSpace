@@ -362,7 +362,7 @@ fn watched_key(vk: u32, mods: Mods, watch: Watch) -> Option<(u32, usize)> {
     // Backspace, Alt+Left, and Alt+Up show a browsed lens's parent (D18).
     // Elsewhere they pass through: Backspace as it always has, and the Alt
     // arrows, which never move Explorer's selection either.
-    if mods.alt {
+    if mods.alt && arrow_dir(vk).is_some() {
         let goes_back = is_key(vk, VK_LEFT) || is_key(vk, VK_UP);
         return (watch.back && goes_back).then_some((messages::SELECTION_KEY, SEL_BACK));
     }
@@ -1045,6 +1045,13 @@ mod tests {
             watched_key(VK_LEFT.0 as u32, PLAIN, BACK),
             Some((messages::NAV_KEY, NAV_LEFT))
         );
+        // Alt leaves the scroll keys as they were.
+        for watch in [PASTE, BACK] {
+            assert_eq!(
+                watched_key(VK_NEXT.0 as u32, ALT, watch),
+                Some((messages::SELECTION_KEY, SEL_PAGE_DOWN))
+            );
+        }
     }
 
     #[test]
