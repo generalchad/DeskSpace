@@ -213,15 +213,18 @@ Opening a folder in a lens (double-click or Enter) shows it in place
 (D18): `App::browsed` keeps, per lens and for the session only, the
 subfolder shown and the lens folder it was browsed under, and
 `App::lens_folder` joins them. Every file operation and the watch read
-`lens_folder`; the lens's settings, title source, and title icon keep its
-own folder. A shortcut opens as before, since it can point anywhere, and
+`lens_folder`, and so does the title icon, so it and "Folder not
+available" describe the same folder; the lens's settings and title source
+keep its own folder. A shortcut opens as before, since it can point anywhere, and
 `browse_into` never leaves the lens's folder. When the lens's folder
-changes or the lens goes, `sync_watches` drops the browse, so Change
-folder…, its undo, and a restart all return to the lens's folder. The
+changes or the lens goes, `sync_watches` drops the browse, and Change
+folder… drops it even for the same folder, so it, its undo, and a restart
+all return to the lens's folder. The
 title reads `Title › Sub › Sub2` (`scene::browse_title`) and, when too
 long, is cut from its start so the folder shown stays in view
-(`SpaceScene::title_keeps_end`; the painter measures it once per title and
-width).
+(`SpaceScene::title_keeps_end`). The painter measures the title's
+DirectWrite clusters once per title, so a cut never splits a character,
+and recuts by arithmetic as the width changes.
 A lens's title bar shows its folder's own shell icon, or the generic folder
 icon while the folder is unavailable; a normal space's title bar shows none.
 Deleting a lens always asks and only unlists it: its folder and files stay,

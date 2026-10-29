@@ -2180,6 +2180,7 @@ each id is in `archive/TASKS-done.md`.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
+- `app/menus.rs` `change_lens_folder`: picking the folder a lens already has (and is not browsed below) leaves it empty, since `SetLensFolder` clears the items and the same-path watch posts no listing; restart the watch there (`restart_lens_watch`). Found in W42's review, 2026-10-29.
 - Code comments cite task ids and dates in about 143 places, such as
   `(W3c)` or `T12` (review, 2026-10-21). Ids are decoded only through
   `TASKS.md` and its archive, and they age as tasks are archived.

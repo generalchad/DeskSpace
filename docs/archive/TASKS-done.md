@@ -4492,5 +4492,9 @@ until I5-I6 all land, so no partial build hides the desktop.
     double-click. `App::browsed` keeps the lens folder each browse was made
     under, so a changed folder ignores it at once and `sync_watches` drops
     it; that covers Change folder…, its undo, and deleting the lens without
-    a call at each. `lens_folder` moved to `app/lens.rs`. The title icon
-    keeps the lens's own folder, as W9 reads it.
+    a call at each, and Change folder… also drops it for the same folder.
+    `lens_folder` moved to `app/lens.rs`. After review: the title icon
+    follows the folder shown, so it and the unavailable flag agree; a
+    browse keeps the lens current, so the keys still reach it; the cut
+    measures DirectWrite clusters once per title, so it splits no
+    character and a resize recuts without layout.

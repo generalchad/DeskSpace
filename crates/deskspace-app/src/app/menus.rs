@@ -245,6 +245,9 @@ impl App {
         self.run(ui, effects);
         if applied {
             self.unavailable_lenses.remove(&id);
+            // Picking the same folder keeps the browse's root, so forget it
+            // here too: Change folder… always returns to the lens's folder.
+            self.forget_browse(id);
             self.sync_watches(ui);
             self.resnapshot_settings(ui, id);
         }

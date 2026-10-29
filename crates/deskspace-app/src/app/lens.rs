@@ -78,12 +78,19 @@ impl App {
             return false;
         };
         self.browsed.insert(id, Browsed { root, sub });
-        self.clear_selection(ui);
+        // The lens stays the current space, so the keys keep reaching it, as
+        // Explorer keeps focus in the folder it opens; `sync_lens` repaints.
+        self.selection.clear_items();
         self.view_cache.set_scroll(id, 0);
         self.unavailable_lenses.remove(&id);
         self.sync_lens(ui, id, Vec::new());
         self.sync_watches(ui);
         true
+    }
+
+    /// Returns lens `id` to its own folder.
+    pub(super) fn forget_browse(&mut self, id: SpaceId) {
+        self.browsed.remove(&id);
     }
 
     /// Brings the folder watches in line with the model: the Desktop folder

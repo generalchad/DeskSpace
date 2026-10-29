@@ -250,8 +250,8 @@ pub fn space_scene_with_details(
                     rect,
                     image: Some(image),
                 }),
-                None => title_icon_request(space, view.folder_unavailable)
-                    .and_then(|(path, available)| icons.folder_icon(path, rect.width, available))
+                None => title_icon_request(space, &view.subfolder, view.folder_unavailable)
+                    .and_then(|(path, available)| icons.folder_icon(&path, rect.width, available))
                     .map(|image| TitleIcon {
                         rect,
                         image: Some(image),
@@ -321,12 +321,14 @@ pub fn title_icon_rect(title_height: i32) -> Rect {
     Rect::new(inset, ((title_height - size) / 2).max(0), size, size)
 }
 
-/// What a lens's title bar asks the icon cache for: the folder's path and
-/// whether the folder is available. Pure, so the scene test needs no shell.
-fn title_icon_request(space: &Space, unavailable: bool) -> Option<(&std::path::Path, bool)> {
+/// What a lens's title bar asks the icon cache for: the folder it shows
+/// (`sub` below its own) and whether that folder is available, so the icon
+/// and the flag describe the same folder, as Explorer's does. Pure, so the
+/// scene test needs no shell.
+fn title_icon_request(space: &Space, sub: &Path, unavailable: bool) -> Option<(PathBuf, bool)> {
     space
         .folder_view()
-        .map(|folder| (folder.path.as_path(), !unavailable))
+        .map(|folder| (subfolder_path(&folder.path, sub), !unavailable))
 }
 
 /// Builds the draw list for the chrome-less desktop layer (ROADMAP D7). A
@@ -1661,16 +1663,22 @@ mod tests {
         let lens =
             crate::fixtures::create_lens(&mut desktop, "Lens", Rect::new(0, 0, 240, 120), folder);
         let lens = desktop.space(lens).unwrap();
+        let own = Path::new("");
         assert_eq!(
-            title_icon_request(lens, false),
-            Some((std::path::Path::new(folder), true))
+            title_icon_request(lens, own, false),
+            Some((PathBuf::from(folder), true))
         );
         assert_eq!(
-            title_icon_request(lens, true),
-            Some((std::path::Path::new(folder), false)),
+            title_icon_request(lens, own, true),
+            Some((PathBuf::from(folder), false)),
             "an unavailable folder gets the generic icon"
         );
-        assert_eq!(title_icon_request(&space(), false), None);
+        assert_eq!(
+            title_icon_request(lens, Path::new("Photos"), true),
+            Some((Path::new(folder).join("Photos"), false)),
+            "a browsed lens shows the folder it is in"
+        );
+        assert_eq!(title_icon_request(&space(), own, false), None);
 
         let theme = Theme::default();
         let scene = space_scene(
