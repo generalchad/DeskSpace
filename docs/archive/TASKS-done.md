@@ -4609,3 +4609,44 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done 2026-10-29. An empty title on a lens that already follows its
     folder is ignored too, so clearing it never swaps one "Show as" for
     another.
+
+- [x] **W45. A lens follows its folder when it is renamed or moved
+  (platform, app).** **[urgent]** **[needs human]** ROADMAP D19 is the
+  spec. After: W24, W25, W42.
+  - Why: renaming or moving a lens's folder in Explorer makes the lens
+    "Folder not available" within 5 s, though the watch's open handle
+    follows the folder to its new path. A lens that follows its folder
+    is also the safe way to offer renaming it: rename in Explorer, or
+    through an explicit "Rename folder…" (a later task), never through
+    F2 on the title (see W46).
+  - Platform: in `check_paths`, when an open folder's path no longer
+    names it, the worker reads the handle's final path (`final_path`,
+    W25) and posts a new `FolderListing::Moved { to }` instead of
+    `Unavailable` when `to` is a real folder, outside the Recycle Bin (a
+    `$Recycle.Bin` component, without case), outside the store (W25), and
+    on the same volume. Decide that in a pure function.
+  - App: re-point the lens with `SetLensFolder` (its title follows when
+    "Show as" follows the folder), as one undo entry, and the watch moves
+    with it. A browsed lens (W42) whose subfolder moved returns to its
+    own folder. Log the move with one `tracing::info!` line.
+  - The notice: a general space notice, a translucent bar over the
+    space's content showing "Folder moved:" and the new path, hidden
+    about 3 s later. Draw and time it as the zoom pop-up is (`app/zoom.rs`,
+    `render/zoom_bar.rs`), as a `SpaceScene` field the platform paints,
+    so later messages reuse it. If no extension point fits, stop and ask.
+  - Tests: the pure "should the lens follow" check (a rename, a move on
+    the same volume, into the Recycle Bin, into the store, onto another
+    volume); a platform test that renames a watched scratch folder and
+    expects `Moved`; the app turns `Moved` into the new folder and a
+    notice, and a browsed lens returns to its own folder.
+  - **[needs human]** check: rename a lens's folder in Explorer: within
+    5 s the lens shows the new path, keeps its items, and shows "Folder
+    moved:" with the path for about 3 s; delete it in Explorer: the lens
+    says "Folder not available", and never lists the Recycle Bin; Ctrl+Z
+    points it back.
+  - Done 2026-10-29. The notice is `SpaceScene::notice`, a bar two title
+    bars high along the bottom of the item area in the title bar's colors
+    (`notice_rect`), set from `App::notices` and cleared by
+    `Timer::Notice`. A lens browsed into a subfolder sees only the
+    subfolder's watch, so when its own folder is the one renamed it
+    returns there and shows "Folder not available" rather than following.

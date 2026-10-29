@@ -99,6 +99,8 @@ pub struct ViewState {
     pub subfolder: PathBuf,
     /// The status-bar view button the pointer is over, if any (W19).
     pub hovered_status: Option<usize>,
+    /// The message on the space's notice bar, while it shows one.
+    pub notice: Option<String>,
 }
 
 /// What a lens whose filters hide every entry shows in place of items.
@@ -306,6 +308,7 @@ pub fn space_scene_with_details(
                     .then(|| FILTERED_OUT_PLACEHOLDER.to_owned())
             }
         }),
+        notice: view.notice.clone(),
         focused_item: view.focused.map(|id| id.0),
         details: details_view(space, &view_layout, content.width, layout.padding, scale),
         status: status_bar(space, &view),
@@ -461,6 +464,7 @@ pub fn desktop_layer_scene(
         highlight: false,
         drop_into: DropInto::Space,
         placeholder: None,
+        notice: None,
         focused_item: view.focused.map(|id| id.0),
         details: None,
         status: None,

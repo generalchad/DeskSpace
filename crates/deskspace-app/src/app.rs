@@ -103,10 +103,12 @@ enum Timer {
     ExplorerRename = 13,
     /// Showing the icon-download consent question (`app/space_icons.rs`).
     IconConsent = 14,
+    /// Clearing the spaces' notice bars (`app/lens.rs`).
+    Notice = 15,
 }
 
 impl Timer {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -121,6 +123,7 @@ impl Timer {
         Self::DebugRefresh,
         Self::ExplorerRename,
         Self::IconConsent,
+        Self::Notice,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -498,6 +501,9 @@ pub struct App {
     /// so a filter edit filters it again without reading the folder (W35).
     /// Session-only.
     listings: HashMap<SpaceId, (PathBuf, Vec<FolderEntry>)>,
+    /// The message each space shows on its notice bar until `Timer::Notice`
+    /// clears it. Session-only.
+    notices: HashMap<SpaceId, String>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -540,6 +546,7 @@ impl App {
             unavailable_lenses: HashSet::new(),
             browsed: HashMap::new(),
             listings: HashMap::new(),
+            notices: HashMap::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
@@ -716,6 +723,7 @@ impl App {
             Timer::DebugRefresh => self.refresh_debug(ui),
             Timer::ExplorerRename => self.poll_explorer_rename(ui),
             Timer::IconConsent => self.ask_icon_consent(ui),
+            Timer::Notice => self.clear_notices(ui),
         }
     }
 

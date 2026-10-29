@@ -1285,7 +1285,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
-| F-67 | A lens follows its folder when it is renamed or moved | M4 | Open, urgent; decided in D19 (`TASKS.md` W45) |
+| F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
 
 
 ## 8. Open questions

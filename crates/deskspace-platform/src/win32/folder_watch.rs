@@ -40,7 +40,7 @@ use windows::core::{HRESULT, PCWSTR};
 use crate::error::PlatformError;
 use crate::input::{FolderListing, WatchKey};
 use crate::win32::folder_list::list_folder;
-use crate::win32::names::is_inside;
+use crate::win32::names::{in_recycle_bin, is_inside, plain_path, same_volume};
 use crate::win32::system::wide;
 
 /// How long a change waits for the burst to settle before the app is woken.
@@ -577,7 +577,9 @@ impl Worker {
                         folder.retry_at = None;
                         Some(FolderListing::Listed(entries))
                     }
-                    FolderListing::Unavailable | FolderListing::Refused => {
+                    FolderListing::Unavailable
+                    | FolderListing::Refused
+                    | FolderListing::Moved { .. } => {
                         folder.retry_at = Some(now_ms + RETRY_MS);
                         None
                     }
@@ -763,9 +765,18 @@ impl Folder {
     /// into the store. The open handle follows a renamed folder, but a
     /// listing reads the path, so a junction into the store put in the old
     /// folder's place would be listed.
+    /// A folder renamed or moved where a lens may follow it (`follows_to`)
+    /// is `Moved` instead of `Unavailable`; the open handle names where it
+    /// went.
     fn moved(&self) -> Option<FolderListing> {
         if !self.path.is_dir() {
-            return Some(FolderListing::Unavailable);
+            let to = self
+                .open
+                .as_ref()
+                .and_then(|open| final_path(open.directory).ok())
+                .map(|to| plain_path(&to))
+                .filter(|to| follows_to(&self.path, to, &self.store) && to.is_dir());
+            return Some(to.map_or(FolderListing::Unavailable, |to| FolderListing::Moved { to }));
         }
         std::fs::canonicalize(&self.path)
             .is_ok_and(|resolved| is_inside(&resolved, &self.store))
@@ -889,6 +900,13 @@ fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder,
         overlapped: Box::default(),
         pending: false,
     })
+}
+
+/// Whether a lens on `from` follows its folder to `to` (ROADMAP D19): only on
+/// the same volume, where a move is a rename the open handle follows, and
+/// never into a Recycle Bin or DeskSpace's storage folder `store`.
+fn follows_to(from: &Path, to: &Path, store: &Path) -> bool {
+    same_volume(from, to) && !in_recycle_bin(to) && !is_inside(to, store)
 }
 
 /// Why a watched folder could not be opened.
@@ -1123,6 +1141,21 @@ mod tests {
         first_change(watch, slot).map(|(_, _, listing)| listing)
     }
 
+    /// Waits up to 8 s, past one path check, for a change on `slot` that is
+    /// not a listing.
+    fn first_non_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+        let deadline = Instant::now() + std::time::Duration::from_secs(8);
+        while Instant::now() < deadline {
+            match watch.change_for_slot(slot) {
+                Some((_, _, FolderListing::Listed(_))) | None => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Some((_, _, listing)) => return Some(listing),
+            }
+        }
+        None
+    }
+
     /// Runs `body` on a thread and reports whether it finished within 10 s,
     /// so a hung worker fails the test instead of stalling it.
     fn finishes(body: impl FnOnce() + Send + 'static) -> bool {
@@ -1134,6 +1167,53 @@ mod tests {
         finished
             .recv_timeout(std::time::Duration::from_secs(10))
             .is_ok()
+    }
+
+    /// A watched folder renamed in place reports its new path, so a lens can
+    /// follow it (ROADMAP D19).
+    #[test]
+    fn a_renamed_folder_reports_where_it_went() {
+        let parent = scratch_folder("rename");
+        let (old, new) = (parent.join("old"), parent.join("new"));
+        std::fs::create_dir(&old).unwrap();
+        let (watched, renamed) = (old.clone(), new.clone());
+        let seen = Arc::new(Mutex::new(None));
+        let result = Arc::clone(&seen);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &watched, &no_store())
+                .unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            std::fs::rename(&watched, &renamed).unwrap();
+            *result.lock().unwrap() = first_non_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&parent);
+        assert!(finished, "the watch did not finish");
+        let seen = seen.lock().unwrap().take();
+        let Some(FolderListing::Moved { to }) = seen else {
+            panic!("expected Moved, got {seen:?}");
+        };
+        // The temp folder may be spelled with a short name, and the final
+        // path never is, so compare the folder's own name.
+        assert_eq!(to.file_name(), new.file_name(), "moved to {to:?}");
+        assert_eq!(plain_path(&to), to, "the path reads plain");
+    }
+
+    #[test]
+    fn a_lens_follows_only_on_its_volume_outside_the_bin_and_the_store() {
+        let from = Path::new(r"C:\Users\me\Work");
+        let store = Path::new(r"C:\Users\me\AppData\Roaming\DeskSpace\storage");
+        let follows = |to: &str| follows_to(from, Path::new(to), store);
+        assert!(follows(r"C:\Users\me\Projects"), "a rename");
+        assert!(follows(r"C:\Archive\Work"), "a move on the same volume");
+        assert!(!follows(r"C:\$Recycle.Bin\S-1-5-21\$R0ABC12"), "deleted");
+        assert!(
+            !follows(r"C:\Users\me\AppData\Roaming\DeskSpace\storage\Work"),
+            "into the store"
+        );
+        assert!(!follows(r"D:\Work"), "onto another volume");
     }
 
     /// A quiet folder's read is still out when the watch stops. Waiting for

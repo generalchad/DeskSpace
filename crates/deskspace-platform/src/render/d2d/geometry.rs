@@ -161,9 +161,36 @@ pub(super) fn inset(rect: D2D_RECT_F, amount: f32) -> D2D_RECT_F {
     )
 }
 
+/// The notice bar's gap from the item area's edges.
+const NOTICE_MARGIN: f32 = 8.0;
+
+/// Where a space's notice bar sits in its item `area`: along the bottom, a
+/// margin in from each edge, two title bars high so a path can wrap to a
+/// second line, and never above the area's top.
+pub(super) fn notice_rect(area: D2D_RECT_F, title_height: f32) -> D2D_RECT_F {
+    let bar = inset(area, NOTICE_MARGIN);
+    rect_f(
+        bar.left,
+        (bar.bottom - 2.0 * title_height).max(bar.top),
+        bar.right,
+        bar.bottom,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_notice_sits_along_the_bottom_within_the_area() {
+        let bar = notice_rect(rect_f(0.0, 32.0, 300.0, 232.0), 32.0);
+        assert_eq!(
+            (bar.left, bar.top, bar.right, bar.bottom),
+            (8.0, 160.0, 292.0, 224.0)
+        );
+        let short = notice_rect(rect_f(0.0, 32.0, 300.0, 72.0), 32.0);
+        assert_eq!((short.top, short.bottom), (40.0, 64.0));
+    }
 
     #[test]
     fn color_conversion_is_straight_alpha() {

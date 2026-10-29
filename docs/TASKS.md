@@ -8,7 +8,7 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Urgent first:** W45. A task marked
+**Urgent first:** none open. A task marked
 **[urgent]** goes ahead of everything else in its section.
 
 **Pick a task:** these are ready for any contributor:
@@ -1007,41 +1007,6 @@ interest. In phase 4 and 5 terms:
     Match Explorer.
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
-
-- [ ] **W45. A lens follows its folder when it is renamed or moved
-  (platform, app).** **[urgent]** **[needs human]** ROADMAP D19 is the
-  spec. After: W24, W25, W42.
-  - Why: renaming or moving a lens's folder in Explorer makes the lens
-    "Folder not available" within 5 s, though the watch's open handle
-    follows the folder to its new path. A lens that follows its folder
-    is also the safe way to offer renaming it: rename in Explorer, or
-    through an explicit "Rename folder…" (a later task), never through
-    F2 on the title (see W46).
-  - Platform: in `check_paths`, when an open folder's path no longer
-    names it, the worker reads the handle's final path (`final_path`,
-    W25) and posts a new `FolderListing::Moved { to }` instead of
-    `Unavailable` when `to` is a real folder, outside the Recycle Bin (a
-    `$Recycle.Bin` component, without case), outside the store (W25), and
-    on the same volume. Decide that in a pure function.
-  - App: re-point the lens with `SetLensFolder` (its title follows when
-    "Show as" follows the folder), as one undo entry, and the watch moves
-    with it. A browsed lens (W42) whose subfolder moved returns to its
-    own folder. Log the move with one `tracing::info!` line.
-  - The notice: a general space notice, a translucent bar over the
-    space's content showing "Folder moved:" and the new path, hidden
-    about 3 s later. Draw and time it as the zoom pop-up is (`app/zoom.rs`,
-    `render/zoom_bar.rs`), as a `SpaceScene` field the platform paints,
-    so later messages reuse it. If no extension point fits, stop and ask.
-  - Tests: the pure "should the lens follow" check (a rename, a move on
-    the same volume, into the Recycle Bin, into the store, onto another
-    volume); a platform test that renames a watched scratch folder and
-    expects `Moved`; the app turns `Moved` into the new folder and a
-    notice, and a browsed lens returns to its own folder.
-  - **[needs human]** check: rename a lens's folder in Explorer: within
-    5 s the lens shows the new path, keeps its items, and shows "Folder
-    moved:" with the path for about 3 s; delete it in Explorer: the lens
-    says "Folder not available", and never lists the Recycle Bin; Ctrl+Z
-    points it back.
 
 - [ ] **W47. A view change keeps the sort rule (core).** **[needs human]**
   - Why: `SpaceView::with_mode` gives the default sort rule, so a View
@@ -2228,6 +2193,7 @@ each id is in `archive/TASKS-done.md`.
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens re-filters on every keystroke (about 60 ms each, B37): note whether it stutters. |
 | W46 (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
+| W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 
@@ -2237,6 +2203,7 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 
 - `win32/keyboard.rs` `handle_watched`: swallowing an Alt combination (Alt+Enter, and since W43 Alt+Left and Alt+Up) leaves the foreground window a lone Alt tap, which can show its menu or keyboard cues; inject a masking key (an unassigned VK) as other hook tools do. Found in W43's review, 2026-10-29.
 - `app/menus.rs` `change_lens_folder`: picking the folder a lens already has (and is not browsed below) leaves it empty, since `SetLensFolder` clears the items and the same-path watch posts no listing; restart the watch there (`restart_lens_watch`). Found in W42's review, 2026-10-29.
+- `app/lens.rs` `follow_moved_folder`: a lens browsed into a subfolder watches only that subfolder, so renaming the lens's own folder meanwhile reports the subfolder's new path; the lens returns home and shows "Folder not available" instead of following. Suggested task: when the moved path ends with the browsed subfolder, ask the worker whether the old root still exists, and follow the root if not. Found in W45, 2026-10-29.
 - `app/undo.rs` `reverse_files`: the checks run first, but a file step can
   still fail midway (the Recycle Bin emptied of one of two deleted items),
   leaving the earlier steps applied while the entry is dropped as stale; a

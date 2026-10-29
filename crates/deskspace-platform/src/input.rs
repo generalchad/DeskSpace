@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use deskspace_core::SpaceId;
 use deskspace_core::source::FolderEntry;
 
@@ -80,6 +82,10 @@ pub enum FolderListing {
     Listed(Vec<FolderEntry>),
     /// The folder is missing or cannot be read; the worker keeps retrying.
     Unavailable,
+    /// The folder was renamed or moved to `to` on the same volume, outside
+    /// the Recycle Bin and the store. The worker keeps watching the old path
+    /// until the app points the watch at `to`.
+    Moved { to: PathBuf },
     /// The folder resolves to DeskSpace's storage folder or inside it, for
     /// example through a junction, so it is not watched. The worker retries
     /// it like a missing folder.

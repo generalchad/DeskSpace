@@ -6,11 +6,29 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::source::FolderEntry;
-use deskspace_core::{Command, Item, ItemId, ItemKind, SpaceId};
+use deskspace_core::{Command, Item, ItemId, ItemKind, SpaceId, lens_title};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
-use super::{App, Surface};
+use super::{App, Surface, Timer};
 use crate::scene::subfolder_path;
+
+/// How long a space's notice bar shows.
+const NOTICE_MS: u32 = 3_000;
+
+/// The first line of the notice a lens shows after following its folder;
+/// the new path follows on the second.
+const FOLDER_MOVED_NOTICE: &str = "Folder moved:";
+
+/// What lens `follow_moved_folder` decided about a moved folder.
+#[derive(Debug)]
+enum Moved {
+    /// The lens now shows the new path; run these effects.
+    Followed(Vec<super::effect::Effect>),
+    /// A browsed lens returns to its own folder, given here.
+    ReturnHome(PathBuf),
+    /// The space is gone, or the change did not apply.
+    Ignored,
+}
 
 /// The subfolder a lens shows below its own folder, and the lens folder it
 /// was browsed under. Once the lens's folder changes, `root` no longer
@@ -229,17 +247,76 @@ impl App {
             );
             return;
         }
+        if let FolderListing::Moved { to } = listing {
+            self.on_lens_moved(ui, id, &to);
+            return;
+        }
         match &listing {
             FolderListing::Listed(entries) => {
                 self.listings
                     .insert(id, (folder.to_path_buf(), entries.clone()));
             }
-            FolderListing::Unavailable | FolderListing::Refused => {
+            FolderListing::Unavailable | FolderListing::Refused | FolderListing::Moved { .. } => {
                 self.listings.remove(&id);
             }
         }
         let entries = self.take_listing(id, listing);
         self.sync_lens(ui, id, entries);
+    }
+
+    /// Acts on the folder lens `id` shows having moved to `to` (ROADMAP D19).
+    fn on_lens_moved(&mut self, ui: &mut Ui, id: SpaceId, to: &Path) {
+        match self.follow_moved_folder(id, to) {
+            Moved::Followed(effects) => {
+                self.run(ui, effects);
+                self.sync_watches(ui);
+                self.resnapshot_settings(ui, id);
+                Self::set_timer(ui, Timer::Notice, NOTICE_MS);
+                self.refresh_space(ui, id);
+            }
+            Moved::ReturnHome(root) => self.show_subfolder(ui, id, root, PathBuf::new()),
+            Moved::Ignored => {}
+        }
+    }
+
+    /// The model half of `on_lens_moved`, without a `Ui`. A lens follows its
+    /// own folder as one "Change folder" undo entry and says where it went on
+    /// its notice bar. A lens browsed into a subfolder that moved returns to
+    /// its own folder instead.
+    fn follow_moved_folder(&mut self, id: SpaceId, to: &Path) -> Moved {
+        let Some((view, current)) = self.config.desktop.space(id).and_then(|space| {
+            space
+                .folder_view()
+                .cloned()
+                .map(|view| (view, space.title().to_owned()))
+        }) else {
+            return Moved::Ignored;
+        };
+        if self.is_browsed(id) {
+            tracing::info!(space = %id, to = %to.display(), "a browsed lens's folder moved; returning to the lens's own folder");
+            return Moved::ReturnHome(view.path);
+        }
+        let mut next = view;
+        next.path = to.to_path_buf();
+        let title = lens_title(&next, &current, &self.profile);
+        let at = self.space_center(id);
+        let (applied, effects) = self.set_lens_folder(id, next.path, title, at);
+        if !applied {
+            return Moved::Ignored;
+        }
+        tracing::info!(space = %id, to = %to.display(), "a lens followed its moved folder");
+        self.unavailable_lenses.remove(&id);
+        self.notices
+            .insert(id, format!("{FOLDER_MOVED_NOTICE}\n{}", to.display()));
+        Moved::Followed(effects)
+    }
+
+    /// Clears every space's notice bar once `Timer::Notice` fires.
+    pub(super) fn clear_notices(&mut self, ui: &mut Ui) {
+        Self::clear_timer(ui, Timer::Notice);
+        for id in std::mem::take(&mut self.notices).into_keys() {
+            self.refresh_space(ui, id);
+        }
     }
 
     /// Filters lens `id`'s last listing again after its filters changed,
@@ -305,7 +382,8 @@ impl App {
                 self.unavailable_lenses.remove(&id);
                 entries
             }
-            FolderListing::Unavailable => {
+            // A move the lens follows never reaches here (`on_lens_listing`).
+            FolderListing::Unavailable | FolderListing::Moved { .. } => {
                 self.unavailable_lenses.insert(id);
                 tracing::debug!(
                     space = %id,
@@ -562,6 +640,61 @@ mod tests {
             "one level down goes back to the lens's own folder"
         );
         assert_eq!(parent_subfolder(Path::new("")), None, "nothing above it");
+    }
+
+    #[test]
+    fn a_lens_follows_its_moved_folder_and_says_so() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Work",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Work",
+        );
+        app.unavailable_lenses.insert(lens);
+        let to = Path::new(r"C:\Archive\Projects");
+        assert!(matches!(
+            app.follow_moved_folder(lens, to),
+            Moved::Followed(_)
+        ));
+        let space = app.config.desktop.space(lens).unwrap();
+        assert_eq!(space.folder_view().unwrap().path, to);
+        assert_eq!(space.title(), "Projects", "the title follows the folder");
+        assert!(!app.unavailable_lenses.contains(&lens));
+        assert_eq!(
+            app.notices.get(&lens).map(String::as_str),
+            Some("Folder moved:\nC:\\Archive\\Projects")
+        );
+        assert_eq!(app.undo.undo_label(), Some("Change folder"));
+    }
+
+    #[test]
+    fn a_browsed_lens_whose_folder_moved_returns_to_its_own_folder() {
+        let mut app = app();
+        let root = PathBuf::from(r"C:\Users\me\Downloads");
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        app.browsed.insert(
+            lens,
+            Browsed {
+                root: root.clone(),
+                sub: PathBuf::from("Photos"),
+            },
+        );
+        let moved = app.follow_moved_folder(lens, Path::new(r"C:\Users\me\Pictures\Photos"));
+        assert!(matches!(moved, Moved::ReturnHome(home) if home == root));
+        let space = app.config.desktop.space(lens).unwrap();
+        assert_eq!(
+            space.folder_view().unwrap().path,
+            root,
+            "the lens keeps its folder"
+        );
+        assert!(app.notices.is_empty());
+        assert_eq!(app.undo.undo_label(), None);
     }
 
     #[test]

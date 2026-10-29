@@ -211,6 +211,13 @@ spot (`ItemStore::allows_lens`; see its callers), against the store's final
 path resolved once at startup.
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
+A lens whose folder was renamed or moved where it may follow (D19) is
+re-pointed with `SetLensFolder`, one "Change folder" undo entry, and shows
+"Folder moved:" and the new path on its notice bar (`SpaceScene::notice`,
+from `App::notices`) until `Timer::Notice` clears it about 3 s later. A
+lens browsed into a subfolder returns to its own folder instead; if its own
+folder was the one renamed, it then shows "Folder not available", since only
+the subfolder's watch saw the move.
 Opening a folder in a lens (double-click or Enter) shows it in place
 (D18): `App::browsed` keeps, per lens and for the session only, the
 subfolder shown and the lens folder it was browsed under, and
@@ -1161,7 +1168,10 @@ in `ui.rs`. What spans them:
   that is missing or cannot be read posts `FolderListing::Unavailable` and is
   tried again every 5 s on the worker. An open folder's path is checked on the
   same cadence: renaming a watched folder moves its handle with it, so the
-  pending read may never fail. Each time the worker opens a folder it asks
+  pending read may never fail. When the path no longer names a folder, the
+  worker reads where the handle went and posts `FolderListing::Moved { to }`
+  when a lens may follow it (`follows_to`: the same volume, outside a Recycle
+  Bin and the store; D19), else `Unavailable`. Each time the worker opens a folder it asks
   for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
   that is the store or inside it, posting `FolderListing::Refused`; the
   5 s path check also refuses a path that has come to lead into the store

@@ -19,6 +19,8 @@ pub struct PreparedScene {
     pub(super) status_segments: Vec<u16>,
     /// `scene.placeholder`, encoded once.
     pub(super) placeholder: Option<Vec<u16>>,
+    /// `scene.notice`, encoded once.
+    pub(super) notice: Option<Vec<u16>>,
 }
 
 impl PreparedScene {
@@ -67,6 +69,10 @@ impl PreparedScene {
             .placeholder
             .as_ref()
             .map(|text| text.encode_utf16().collect());
+        let notice = scene
+            .notice
+            .as_ref()
+            .map(|text| text.encode_utf16().collect());
         Self {
             scene,
             title,
@@ -77,6 +83,7 @@ impl PreparedScene {
             header,
             status_segments,
             placeholder,
+            notice,
         }
     }
 

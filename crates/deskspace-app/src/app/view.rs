@@ -259,6 +259,10 @@ impl App {
                 .status_hover
                 .filter(|(owner, _)| *owner == surface)
                 .map(|(_, index)| index),
+            notice: match surface {
+                Surface::Space(id) => self.notices.get(&id).cloned(),
+                Surface::Desktop => None,
+            },
         }
     }
 
