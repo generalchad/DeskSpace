@@ -4387,3 +4387,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     only the new method and its callers' use of its result.
   - Done 2026-10-27: `shows_extensions` is in `app/view.rs`; the
     rename, selection, settings-preview, and scene builders call it.
+
+- [x] **W24. A listing carries the folder it read (platform, app).**
+  Any time.
+  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
+    keeps its key when a lens changes folder. So a listing posted for the
+    old folder, still in the queue when Change folder… runs, is applied
+    to the new one. W42 makes this happen on every step into a
+    subfolder.
+  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
+    the worker listed (or found unavailable). `win32/folder_watch.rs`
+    fills it from the watch's own record.
+  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
+    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
+    dropped with a `debug!` line. The desktop layer's listing gets the
+    same check against the Desktop folder.
+  - Tests: the pure check (same path, another case, other slashes,
+    another folder); the controller decode keeps the path.
+  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
+    listing names its folder.
+  - Done 2026-10-29: `Event::FolderChanged` carries `folder`, the path
+    of the slot that listed it. The stale listing came through the
+    runtime's pending queue: a change decoded during `pick_folder`'s pump
+    waited there until after Change folder… had re-pointed the watch.
+    `on_lens_listing` and the new `on_desktop_listing` drop a listing
+    whose folder is not the one shown. No app-level test of the drop:
+    `on_lens_listing` needs a `Ui`; the pure `listing_is_current` carries
+    the decision.

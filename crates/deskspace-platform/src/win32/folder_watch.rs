@@ -218,16 +218,22 @@ impl FolderWatch {
         }
     }
 
-    /// The key and listing behind `slot`, taking the listing the worker left.
-    pub(crate) fn change_for_slot(&self, slot: usize) -> Option<(WatchKey, FolderListing)> {
+    /// The key, folder, and listing behind `slot`, taking the listing the
+    /// worker left. A slot watches one path for its whole life, so the path is
+    /// the folder the worker listed.
+    pub(crate) fn change_for_slot(
+        &self,
+        slot: usize,
+    ) -> Option<(WatchKey, PathBuf, FolderListing)> {
         let key = *self.slots.get(&slot)?;
+        let folder = self.active.get(&key)?.path.clone();
         let listing = self
             .listings
             .get(&slot)?
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()?;
-        Some((key, listing))
+        Some((key, folder, listing))
     }
 
     /// The keys the app is watching now.
@@ -1001,16 +1007,24 @@ mod tests {
         path
     }
 
-    /// Waits up to 5 s for the worker's first listing of `slot`.
-    fn first_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+    /// Waits up to 5 s for the worker's first change on `slot`.
+    fn first_change(
+        watch: &FolderWatch,
+        slot: usize,
+    ) -> Option<(WatchKey, PathBuf, FolderListing)> {
         let deadline = Instant::now() + std::time::Duration::from_secs(5);
         while Instant::now() < deadline {
-            if let Some((_, listing)) = watch.change_for_slot(slot) {
-                return Some(listing);
+            if let Some(change) = watch.change_for_slot(slot) {
+                return Some(change);
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         None
+    }
+
+    /// Waits up to 5 s for the worker's first listing of `slot`.
+    fn first_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+        first_change(watch, slot).map(|(_, _, listing)| listing)
     }
 
     /// Runs `body` on a thread and reports whether it finished within 10 s,
@@ -1065,6 +1079,29 @@ mod tests {
         assert!(
             served,
             "the worker stopped serving after a watch was replaced"
+        );
+    }
+
+    /// A change names the folder its slot watches, so the app can drop a
+    /// listing that waited in the queue while the key moved to another folder.
+    #[test]
+    fn a_change_names_the_folder_it_listed() {
+        let folder = scratch_folder("names");
+        let path = folder.clone();
+        let named = std::sync::Arc::new(Mutex::new(None));
+        let seen = std::sync::Arc::clone(&named);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(WatchKey::Desktop, &path).unwrap();
+            *seen.lock().unwrap() =
+                first_change(&watch, FIRST_SLOT).map(|(key, folder, _)| (key, folder));
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(finished, "the watch did not finish");
+        assert_eq!(
+            named.lock().unwrap().take(),
+            Some((WatchKey::Desktop, folder))
         );
     }
 }

@@ -11,7 +11,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W24 and W25 (with a
+- section W phase 5: W25 (with a
   reviewer), and W34 now that W14 has landed; the rest once the task each
   one names has landed;
 - section S: S5 and S9-S12 need a screen or
@@ -631,12 +631,12 @@ are in section V. The open work is phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W24, W25, W31, W32, W37, W42, W43 | W24, W25 |
+| With a reviewer: layout, painting, threads, or file safety | W25, W31, W32, W37, W42, W43 | W25 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
 code, and have the same reviewer read the diff. W42 is the hardest task left
-in the section. W24 and W25 fix code that runs today, so they go first among
+in the section. W25 fixes code that runs today, so it goes first among
 the reviewer tasks.
 
 ### Phase 4: views, sort rules, and lens settings
@@ -739,9 +739,9 @@ Runtime orders the code must survive:
 
 - **A listing for a folder the lens no longer shows.** The watch worker
   posts a listing as a message, so it can arrive after Change folder…
-  or (after W42) a step into a subfolder. W24 makes a listing carry the
-  folder it read, and the app drops a stale one. Until W24 lands, a
-  stale listing can briefly list the old folder's files in the lens.
+  or (after W42) a step into a subfolder. A listing carries the folder
+  it read (W24), and the app drops a stale one, so a task that changes
+  which folder a lens shows keeps `on_lens_listing`'s check true.
 - **Message pumps inside a call.** `transfer_files`, `pick_folder`, and
   `alert` pump messages. A listing, a settings event, or a delete can run
   inside them. Hold no runtime borrow across them (`ENGINEERING.md`
@@ -813,25 +813,6 @@ interest. In phase 4 and 5 terms:
   expected in this phase.
 
 #### Phase 5 tasks
-
-- [ ] **W24. A listing carries the folder it read (platform, app).**
-  Any time.
-  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
-    keeps its key when a lens changes folder. So a listing posted for the
-    old folder, still in the queue when Change folder… runs, is applied
-    to the new one. W42 makes this happen on every step into a
-    subfolder.
-  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
-    the worker listed (or found unavailable). `win32/folder_watch.rs`
-    fills it from the watch's own record.
-  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
-    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
-    dropped with a `debug!` line. The desktop layer's listing gets the
-    same check against the Desktop folder.
-  - Tests: the pure check (same path, another case, other slashes,
-    another folder); the controller decode keeps the path.
-  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
-    listing names its folder.
 
 - [ ] **W25. The storage check runs off the UI thread (platform, app).**
   Any time.

@@ -1134,10 +1134,13 @@ in `ui.rs`. What spans them:
   replaces that key's watch (idempotent for the same path) and
   `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
   watch's slot in `wParam`; the worker leaves the listing in a shared slot,
-  and the controller raises `Event::FolderChanged { key, listing }`. M2
-  watches the Desktop folder while the layer is drawn (a change makes the app
-  re-enumerate and `SyncDesktop`) and ignores the listing; M4 uses it for a
-  lens's folder.
+  and the controller raises `Event::FolderChanged { key, folder, listing }`.
+  A listing names the folder it read, because a posted change can wait in
+  the event queue (for example during `pick_folder`'s message pump) while
+  the key's watch moves to another folder; the app drops a listing whose
+  folder is not the one it shows now. M2 watches the Desktop folder while
+  the layer is drawn (a change makes the app re-enumerate and `SyncDesktop`)
+  and ignores the listing; M4 uses it for a lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the

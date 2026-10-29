@@ -2,7 +2,7 @@
 //! turning a watched folder's listing into the lens's items (M4 phase 2).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use deskspace_core::source::FolderEntry;
 use deskspace_core::{Command, SpaceId};
@@ -81,12 +81,43 @@ impl App {
             .collect()
     }
 
-    /// Applies a listing the watch worker posted for lens `id`.
-    pub(super) fn on_lens_listing(&mut self, ui: &mut Ui, id: SpaceId, listing: FolderListing) {
+    /// Reconciles the desktop layer after the Desktop folder changed, unless
+    /// the change was for a Desktop folder that has since moved.
+    pub(super) fn on_desktop_listing(&mut self, ui: &mut Ui, folder: &Path) {
+        if let Ok(directory) = desktop_directory()
+            && !listing_is_current(folder, &directory)
+        {
+            tracing::debug!(
+                listed = %folder.display(),
+                desktop = %directory.display(),
+                "dropped a listing for an earlier Desktop folder"
+            );
+            return;
+        }
+        self.resync_desktop_layer(ui);
+    }
+
+    /// Applies a listing the watch worker posted for lens `id` from `folder`.
+    pub(super) fn on_lens_listing(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        folder: &Path,
+        listing: FolderListing,
+    ) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        if !space.is_lens() {
+        let Some(view) = space.folder_view() else {
+            return;
+        };
+        if !listing_is_current(folder, &view.path) {
+            tracing::debug!(
+                space = %id,
+                listed = %folder.display(),
+                shows = %view.path.display(),
+                "dropped a listing for the lens's earlier folder"
+            );
             return;
         }
         match listing {
@@ -137,6 +168,22 @@ impl App {
             .is_applied()
         {
             self.refresh_space(ui, id);
+        }
+    }
+}
+
+/// Whether a listing of `listed` is for `shown`, the folder a surface shows
+/// now.
+/// Compares whole components the way Windows compares names, so case and
+/// `/` against `\` do not matter.
+fn listing_is_current(listed: &Path, shown: &Path) -> bool {
+    let (mut listed, mut shown) = (listed.components(), shown.components());
+    loop {
+        match (listed.next(), shown.next()) {
+            (None, None) => return true,
+            (Some(a), Some(b))
+                if deskspace_platform::same_name_ignoring_case(a.as_os_str(), b.as_os_str()) => {}
+            _ => return false,
         }
     }
 }
@@ -210,5 +257,44 @@ mod tests {
         );
         assert_eq!(app.refused_lenses(), vec![lens]);
         assert!(app.desired_watches(None).is_empty());
+    }
+
+    #[test]
+    fn a_listing_of_the_shown_folder_is_current() {
+        let shown = Path::new(r"C:\Users\me\Downloads");
+        assert!(listing_is_current(shown, shown));
+        assert!(
+            listing_is_current(Path::new(r"c:\users\ME\downloads"), shown),
+            "another case"
+        );
+        assert!(
+            listing_is_current(Path::new("C:/Users/me/Downloads"), shown),
+            "other slashes"
+        );
+        assert!(
+            listing_is_current(Path::new(r"C:\Users\me\Downloads\"), shown),
+            "a trailing separator"
+        );
+    }
+
+    #[test]
+    fn a_listing_of_another_folder_is_stale() {
+        let shown = Path::new(r"C:\Users\me\Downloads");
+        assert!(!listing_is_current(
+            Path::new(r"C:\Users\me\Documents"),
+            shown
+        ));
+        assert!(
+            !listing_is_current(Path::new(r"C:\Users\me"), shown),
+            "the parent"
+        );
+        assert!(
+            !listing_is_current(Path::new(r"C:\Users\me\Downloads\Old"), shown),
+            "a subfolder"
+        );
+        assert!(
+            !listing_is_current(Path::new(r"C:\Users\me\Downloads.old"), shown),
+            "a sibling sharing the prefix"
+        );
     }
 }

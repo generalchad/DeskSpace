@@ -795,12 +795,14 @@ impl EventHandler for App {
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged {
                 key: WatchKey::Desktop,
+                folder,
                 ..
-            } => self.resync_desktop_layer(ui),
+            } => self.on_desktop_listing(ui, &folder),
             Event::FolderChanged {
                 key: WatchKey::Space(id),
+                folder,
                 listing,
-            } => self.on_lens_listing(ui, id, listing),
+            } => self.on_lens_listing(ui, id, &folder, listing),
             Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {

@@ -340,6 +340,10 @@ pub enum Event {
     /// the desktop layer; M4 reuses it for a lens's bound folder.
     FolderChanged {
         key: WatchKey,
+        /// The folder the worker listed. A listing can wait in the queue
+        /// while the key's watch moves to another folder (Change folder…),
+        /// so the app checks it against the folder it shows now.
+        folder: std::path::PathBuf,
         listing: FolderListing,
     },
     /// The user switched Windows between light and dark mode.
