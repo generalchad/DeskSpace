@@ -9,6 +9,7 @@ use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory};
 
 use super::App;
+use crate::storage::is_inside;
 
 impl App {
     /// Brings the folder watches in line with the model: the Desktop folder
@@ -81,8 +82,10 @@ impl App {
             .collect()
     }
 
-    /// Reconciles the desktop layer after the Desktop folder changed, unless
-    /// the change was for a Desktop folder that has since moved.
+    /// Reconciles the desktop layer after the Desktop folder changed. The
+    /// layer re-reads the shell, not the listing, so a listing from another
+    /// folder is not stale data: it means the Desktop moved (OneDrive backup,
+    /// the Location tab), and the watch follows it before the layer re-reads.
     pub(super) fn on_desktop_listing(&mut self, ui: &mut Ui, folder: &Path) {
         if let Ok(directory) = desktop_directory()
             && !listing_is_current(folder, &directory)
@@ -90,9 +93,9 @@ impl App {
             tracing::debug!(
                 listed = %folder.display(),
                 desktop = %directory.display(),
-                "dropped a listing for an earlier Desktop folder"
+                "the Desktop folder moved; watching the new one"
             );
-            return;
+            self.sync_watches(ui);
         }
         self.resync_desktop_layer(ui);
     }
@@ -105,21 +108,17 @@ impl App {
         folder: &Path,
         listing: FolderListing,
     ) {
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let Some(view) = space.folder_view() else {
-            return;
-        };
-        if !listing_is_current(folder, &view.path) {
+        if !self.lens_shows(id, folder) {
             tracing::debug!(
                 space = %id,
                 listed = %folder.display(),
-                shows = %view.path.display(),
-                "dropped a listing for the lens's earlier folder"
+                "dropped a listing for a folder the lens no longer shows"
             );
             return;
         }
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
         match listing {
             FolderListing::Listed(entries) => {
                 // The icon cache keeps an icon until it is told to drop it, so
@@ -152,6 +151,17 @@ impl App {
         }
     }
 
+    /// Whether lens `id` shows `folder` now. A listing can wait in the event
+    /// queue while Change folder… moves the lens, so one for its earlier
+    /// folder is dropped.
+    fn lens_shows(&self, id: SpaceId, folder: &Path) -> bool {
+        self.config
+            .desktop
+            .space(id)
+            .and_then(|space| space.folder_view())
+            .is_some_and(|view| listing_is_current(folder, &view.path))
+    }
+
     /// Replaces lens `id`'s items from `entries` and repaints it. The items are
     /// not persisted, so this needs no save.
     fn sync_lens(&mut self, ui: &mut Ui, id: SpaceId, entries: Vec<FolderEntry>) {
@@ -173,19 +183,10 @@ impl App {
 }
 
 /// Whether a listing of `listed` is for `shown`, the folder a surface shows
-/// now.
-/// Compares whole components the way Windows compares names, so case and
-/// `/` against `\` do not matter.
+/// now. Two folders are the same when each is inside the other, by the one
+/// rule `is_inside` keeps for comparing paths.
 fn listing_is_current(listed: &Path, shown: &Path) -> bool {
-    let (mut listed, mut shown) = (listed.components(), shown.components());
-    loop {
-        match (listed.next(), shown.next()) {
-            (None, None) => return true,
-            (Some(a), Some(b))
-                if deskspace_platform::same_name_ignoring_case(a.as_os_str(), b.as_os_str()) => {}
-            _ => return false,
-        }
-    }
+    is_inside(listed, shown) && is_inside(shown, listed)
 }
 
 #[cfg(test)]
@@ -295,6 +296,37 @@ mod tests {
         assert!(
             !listing_is_current(Path::new(r"C:\Users\me\Downloads.old"), shown),
             "a sibling sharing the prefix"
+        );
+    }
+
+    #[test]
+    fn after_change_folder_a_listing_of_the_old_folder_is_dropped() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/Users/me/Downloads",
+        );
+        let space = fixtures::create_space(
+            &mut app.config.desktop,
+            "Space",
+            Rect::new(300, 0, 240, 120),
+        );
+        assert!(app.lens_shows(lens, Path::new("C:/Users/me/Downloads")));
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetLensFolder {
+                id: lens,
+                path: "C:/Users/me/Documents".into(),
+                title: "Documents".into(),
+            },
+        );
+        assert!(!app.lens_shows(lens, Path::new("C:/Users/me/Downloads")));
+        assert!(app.lens_shows(lens, Path::new("C:/Users/me/Documents")));
+        assert!(
+            !app.lens_shows(space, Path::new("C:/Users/me/Documents")),
+            "a normal space shows no folder"
         );
     }
 }

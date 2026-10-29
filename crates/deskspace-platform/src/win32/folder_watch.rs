@@ -226,7 +226,12 @@ impl FolderWatch {
         slot: usize,
     ) -> Option<(WatchKey, PathBuf, FolderListing)> {
         let key = *self.slots.get(&slot)?;
-        let folder = self.active.get(&key)?.path.clone();
+        let folder = self
+            .active
+            .get(&key)
+            .filter(|active| active.slot == slot)?
+            .path
+            .clone();
         let listing = self
             .listings
             .get(&slot)?

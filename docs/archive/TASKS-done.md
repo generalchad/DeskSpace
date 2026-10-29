@@ -4410,7 +4410,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     of the slot that listed it. The stale listing came through the
     runtime's pending queue: a change decoded during `pick_folder`'s pump
     waited there until after Change folder… had re-pointed the watch.
-    `on_lens_listing` and the new `on_desktop_listing` drop a listing
-    whose folder is not the one shown. No app-level test of the drop:
-    `on_lens_listing` needs a `Ui`; the pure `listing_is_current` carries
-    the decision.
+    `on_lens_listing` drops a listing whose folder the lens no longer
+    shows (`lens_shows`, tested without a `Ui`). `on_desktop_listing`
+    re-points the watch instead, since a mismatch there means the Desktop
+    moved. The controller's decode has no test: it needs a live runtime.

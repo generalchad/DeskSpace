@@ -1137,8 +1137,10 @@ in `ui.rs`. What spans them:
   and the controller raises `Event::FolderChanged { key, folder, listing }`.
   A listing names the folder it read, because a posted change can wait in
   the event queue (for example during `pick_folder`'s message pump) while
-  the key's watch moves to another folder; the app drops a listing whose
-  folder is not the one it shows now. M2 watches the Desktop folder while
+  the key's watch moves to another folder. A lens drops a listing whose
+  folder is not the one it shows now; the desktop layer, which re-reads
+  the shell instead, takes one from another folder to mean the Desktop
+  moved and re-points its watch. M2 watches the Desktop folder while
   the layer is drawn (a change makes the app re-enumerate and `SyncDesktop`)
   and ignores the listing; M4 uses it for a lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
