@@ -258,13 +258,6 @@ impl App {
         touched
     }
 
-    /// The folder space `id` shows, or `None` for a normal space. Drops and
-    /// pastes ask it first: a lens takes its files by the shell, not as items.
-    pub(super) fn lens_folder(&self, id: SpaceId) -> Option<PathBuf> {
-        let space = self.config.desktop.space(id)?;
-        space.folder_view().map(|view| view.path.clone())
-    }
-
     /// Moves or copies dropped `paths` into a lens's `folder` with the shell's
     /// file operation, which asks before replacing a file. The lens's watch
     /// lists the new files; the normal spaces that listed the moved ones are

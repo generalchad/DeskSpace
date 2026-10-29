@@ -4456,3 +4456,41 @@ until I5-I6 all land, so no partial build hides the desktop.
     `\\?\` and plain drives and shares alike; the task's `inside_store` is
     that function. A folder whose final path cannot be read is checked by
     the path as given, as `canonicalize`'s fallback always did.
+
+- [x] **W42. Browse into a subfolder (app).** **[needs human]** After:
+  W24, W25.
+  - `App` keeps, per lens, the folder shown below its own one: session
+    state, a relative path, empty by default. `App::lens_folder(id)`
+    joins the two. A pure `browse_into(root, shown, entry) ->
+    Option<PathBuf>` refuses anything that is not a directory entry of
+    the folder shown, refuses a shortcut, and refuses a result that does
+    not stay inside `root` (D18).
+  - Every app read of `FolderView.path` that means "where the files go"
+    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
+    writer's lens path, delete, Open folder, and `desired_watches`.
+    List each switched site in the commit body; leave W10 and W11's
+    reads alone.
+  - Double-clicking a directory in a lens browses into it. That empties
+    the selection, re-points the lens's watch (W24 drops the old
+    listing), and scrolls to the top. The title bar shows `Root › Sub ›
+    Sub2`, clipped from the left when too long, from a pure
+    `browse_title`.
+  - Change folder…, a restart, and deleting the lens forget the folder
+    shown.
+  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
+    `..` in it, a different case); `browse_title`; each switched site
+    reads the folder shown.
+  - **[needs human]** check: browse two levels down in a Downloads
+    lens; drop, paste, New shortcut, and Delete there all act on the
+    subfolder; deleting the subfolder in Explorer while it is shown shows
+    "Folder not available"; a junction to DeskSpace's store inside the
+    lens shows unavailable when browsed into (W25).
+  - Done 2026-10-29. Settled with the maintainer before coding: the
+    title is cut from its start by the painter (`title_keeps_end`, measured
+    once per title and width), a small platform change beyond "(app)"; and
+    Enter on a folder browses too, sharing `App::open_item` with
+    double-click. `App::browsed` keeps the lens folder each browse was made
+    under, so a changed folder ignores it at once and `sync_watches` drops
+    it; that covers Change folder…, its undo, and deleting the lens without
+    a call at each. `lens_folder` moved to `app/lens.rs`. The title icon
+    keeps the lens's own folder, as W9 reads it.

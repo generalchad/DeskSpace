@@ -1,19 +1,103 @@
-//! `App` lens behavior: keeping folder watches in line with the model and
-//! turning a watched folder's listing into the lens's items (M4 phase 2).
+//! `App` lens behavior: keeping folder watches in line with the model,
+//! turning a watched folder's listing into the lens's items (M4 phase 2), and
+//! browsing into subfolders (W42).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::source::FolderEntry;
-use deskspace_core::{Command, SpaceId};
+use deskspace_core::{Command, Item, ItemId, ItemKind, SpaceId};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
 use super::App;
+use crate::scene::subfolder_path;
+
+/// The subfolder a lens shows below its own folder, and the lens folder it
+/// was browsed under. Once the lens's folder changes, `root` no longer
+/// matches, so the browse is ignored and then dropped (D18).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Browsed {
+    root: PathBuf,
+    sub: PathBuf,
+}
 
 impl App {
+    /// The subfolder lens `id` shows, relative to its own folder: empty at
+    /// its own folder, and for a normal space.
+    pub(super) fn subfolder_of(&self, id: SpaceId) -> PathBuf {
+        let Some(view) = self
+            .config
+            .desktop
+            .space(id)
+            .and_then(|space| space.folder_view())
+        else {
+            return PathBuf::new();
+        };
+        self.browsed
+            .get(&id)
+            .filter(|browsed| browsed.root == view.path)
+            .map(|browsed| browsed.sub.clone())
+            .unwrap_or_default()
+    }
+
+    /// The folder lens `id` shows, or `None` for a normal space. Every file
+    /// operation on a lens (drop, paste, New shortcut, Open folder) and its
+    /// watch go here, so they act on the subfolder it is browsed into.
+    pub(super) fn lens_folder(&self, id: SpaceId) -> Option<PathBuf> {
+        let view = self.config.desktop.space(id)?.folder_view()?;
+        Some(subfolder_path(&view.path, &self.subfolder_of(id)))
+    }
+
+    /// Shows `item` in place when it is a folder in a lens, and returns
+    /// whether it did; anything else is for the caller to open as before.
+    /// The lens's old items go at once, and the re-pointed watch lists the
+    /// new folder.
+    pub(super) fn browse_into_item(&mut self, ui: &mut Ui, item: ItemId) -> bool {
+        let Some(id) = self.config.desktop.space_containing(item) else {
+            return false;
+        };
+        let (Some(root), Some(shown)) = (
+            self.config
+                .desktop
+                .space(id)
+                .and_then(|space| space.folder_view())
+                .map(|view| view.path.clone()),
+            self.lens_folder(id),
+        ) else {
+            return false;
+        };
+        let Some(folder) = self
+            .config
+            .desktop
+            .item(item)
+            .and_then(|entry| browse_into(&root, &shown, entry))
+        else {
+            return false;
+        };
+        let Ok(sub) = folder.strip_prefix(&root).map(Path::to_path_buf) else {
+            return false;
+        };
+        self.browsed.insert(id, Browsed { root, sub });
+        self.clear_selection(ui);
+        self.view_cache.set_scroll(id, 0);
+        self.unavailable_lenses.remove(&id);
+        self.sync_lens(ui, id, Vec::new());
+        self.sync_watches(ui);
+        true
+    }
+
     /// Brings the folder watches in line with the model: the Desktop folder
-    /// while the layer is drawn, and every lens's folder.
+    /// while the layer is drawn, and the folder every lens shows.
     pub(super) fn sync_watches(&mut self, ui: &mut Ui) {
+        // A lens whose folder changed (Change folder…, its undo) or that was
+        // deleted forgets the subfolder it showed.
+        let spaces = &self.config.desktop;
+        self.browsed.retain(|id, browsed| {
+            spaces
+                .space(*id)
+                .and_then(|space| space.folder_view())
+                .is_some_and(|view| view.path == browsed.root)
+        });
         let desktop = if self.layer_active() {
             match desktop_directory() {
                 Ok(directory) => Some(directory),
@@ -46,8 +130,8 @@ impl App {
             wanted.insert(WatchKey::Desktop, directory);
         }
         for space in self.config.desktop.spaces() {
-            if let Some(view) = space.folder_view() {
-                wanted.insert(WatchKey::Space(space.id), view.path.clone());
+            if let Some(folder) = self.lens_folder(space.id) {
+                wanted.insert(WatchKey::Space(space.id), folder);
             }
         }
         wanted
@@ -140,14 +224,11 @@ impl App {
     }
 
     /// Whether lens `id` shows `folder` now. A listing can wait in the event
-    /// queue while Change folder… moves the lens, so one for its earlier
-    /// folder is dropped.
+    /// queue while Change folder… or a browse moves the lens, so one for its
+    /// earlier folder is dropped.
     fn lens_shows(&self, id: SpaceId, folder: &Path) -> bool {
-        self.config
-            .desktop
-            .space(id)
-            .and_then(|space| space.folder_view())
-            .is_some_and(|view| listing_is_current(folder, &view.path))
+        self.lens_folder(id)
+            .is_some_and(|shown| listing_is_current(folder, &shown))
     }
 
     /// Replaces lens `id`'s items from `entries` and repaints it. The items are
@@ -177,6 +258,23 @@ fn listing_is_current(listed: &Path, shown: &Path) -> bool {
     is_inside(listed, shown) && is_inside(shown, listed)
 }
 
+/// The folder to show when `entry` is opened in a lens on `root` that shows
+/// `shown`: a folder the listing put there, never a shortcut (it can point
+/// anywhere), and never outside `root` (D18). `None` means open it as
+/// before.
+fn browse_into(root: &Path, shown: &Path, entry: &Item) -> Option<PathBuf> {
+    if entry.kind != ItemKind::Folder {
+        return None;
+    }
+    // `file_name` is `None` for a path that ends in `..`.
+    let name = entry.path.file_name()?;
+    if !listing_is_current(entry.path.parent()?, shown) {
+        return None;
+    }
+    let folder = shown.join(name);
+    is_inside(&folder, root).then_some(folder)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +296,127 @@ mod tests {
         assert!(
             app.desired_watches(Some("C:/Users/me/Desktop".into()))
                 .is_empty()
+        );
+    }
+
+    fn entry(path: &str, kind: ItemKind) -> Item {
+        let mut item = Item::new(ItemId(1), path, deskspace_core::item::ItemFacts::default());
+        item.kind = kind;
+        item
+    }
+
+    #[test]
+    fn only_a_folder_listed_in_the_folder_shown_is_browsed_into() {
+        let root = Path::new(r"C:\Users\me\Downloads");
+        let browse = |shown: &Path, path: &str, kind| browse_into(root, shown, &entry(path, kind));
+        assert_eq!(
+            browse(root, r"C:\Users\me\Downloads\Photos", ItemKind::Folder),
+            Some(root.join("Photos"))
+        );
+        assert_eq!(
+            browse(root, r"C:\Users\me\Downloads\notes.txt", ItemKind::File),
+            None,
+            "a file"
+        );
+        assert_eq!(
+            browse(
+                root,
+                r"C:\Users\me\Downloads\Elsewhere.lnk",
+                ItemKind::Shortcut
+            ),
+            None,
+            "a shortcut can point anywhere"
+        );
+        assert_eq!(
+            browse(root, r"C:\Users\me\Downloads\..", ItemKind::Folder),
+            None,
+            "the parent"
+        );
+        assert_eq!(
+            browse(root, r"C:\Users\me\Downloads\a..b", ItemKind::Folder),
+            Some(root.join("a..b")),
+            "a name with two dots in it"
+        );
+        assert_eq!(
+            browse(root, r"c:\users\ME\downloads\Photos", ItemKind::Folder),
+            Some(root.join("Photos")),
+            "another case keeps the lens's own spelling"
+        );
+        assert_eq!(
+            browse(root, r"C:\Users\me\Documents\Photos", ItemKind::Folder),
+            None,
+            "a folder the lens does not show"
+        );
+        let photos = root.join("Photos");
+        assert_eq!(
+            browse(
+                &photos,
+                r"C:\Users\me\Downloads\Photos\2026",
+                ItemKind::Folder
+            ),
+            Some(photos.join("2026")),
+            "a second level"
+        );
+    }
+
+    #[test]
+    fn a_browsed_lens_watches_and_takes_listings_for_its_subfolder() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        let root = PathBuf::from(r"C:\Users\me\Downloads");
+        let shown = root.join(r"Photos\2026");
+        app.browsed.insert(
+            lens,
+            Browsed {
+                root: root.clone(),
+                sub: PathBuf::from(r"Photos\2026"),
+            },
+        );
+        assert_eq!(app.lens_folder(lens), Some(shown.clone()));
+        assert_eq!(
+            app.desired_watches(None).get(&WatchKey::Space(lens)),
+            Some(&shown)
+        );
+        assert!(app.lens_shows(lens, &shown));
+        assert!(
+            !app.lens_shows(lens, &root),
+            "a listing of the lens's own folder is stale now"
+        );
+    }
+
+    #[test]
+    fn change_folder_returns_a_browsed_lens_to_its_own_folder() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        app.browsed.insert(
+            lens,
+            Browsed {
+                root: PathBuf::from(r"C:\Users\me\Downloads"),
+                sub: PathBuf::from("Photos"),
+            },
+        );
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetLensFolder {
+                id: lens,
+                path: r"C:\Users\me\Documents".into(),
+                title: "Documents".into(),
+            },
+        );
+        assert_eq!(app.subfolder_of(lens), PathBuf::new());
+        assert_eq!(
+            app.lens_folder(lens),
+            Some(PathBuf::from(r"C:\Users\me\Documents"))
         );
     }
 

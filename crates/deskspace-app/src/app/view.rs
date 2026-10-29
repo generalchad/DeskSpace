@@ -1,7 +1,7 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use deskspace_core::animation::Kind;
 use deskspace_core::geometry::{Point, Rect};
@@ -245,6 +245,10 @@ impl App {
             folder_unavailable: match surface {
                 Surface::Space(id) => self.unavailable_lenses.contains(&id),
                 Surface::Desktop => false,
+            },
+            subfolder: match surface {
+                Surface::Space(id) => self.subfolder_of(id),
+                Surface::Desktop => PathBuf::new(),
             },
             hovered_status: self
                 .pointer

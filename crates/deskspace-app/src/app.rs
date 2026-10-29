@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
+use deskspace_core::{Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
     Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
@@ -491,6 +491,8 @@ pub struct App {
     /// Lens folders the watch worker could not read (W5 draws the
     /// placeholder). Session-only.
     unavailable_lenses: HashSet<SpaceId>,
+    /// The subfolder each browsed lens shows (W42). Session-only.
+    browsed: HashMap<SpaceId, lens::Browsed>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -531,6 +533,7 @@ impl App {
             autosave: Autosave::default(),
             view_cache: ViewCache::default(),
             unavailable_lenses: HashSet::new(),
+            browsed: HashMap::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
@@ -582,13 +585,18 @@ impl App {
 
     /// Opens the focused (last-selected) item, as Enter does in Explorer.
     fn open_selected_item(&mut self, ui: &mut Ui) {
-        if let Some(path) = self
-            .selection
-            .items
-            .last()
-            .and_then(|item| self.config.desktop.item(*item))
-            .map(|item| item.path.clone())
-        {
+        if let Some(item) = self.selection.items.last().copied() {
+            self.open_item(ui, item);
+        }
+    }
+
+    /// Opens `item` as Explorer would: a folder in a lens shows in place
+    /// (D18), and anything else opens with its default verb.
+    fn open_item(&mut self, ui: &mut Ui, item: ItemId) {
+        if self.browse_into_item(ui, item) {
+            return;
+        }
+        if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
             ui.open_path(&path);
         }
     }

@@ -198,6 +198,8 @@ pub struct Painter {
     icons: HashMap<u64, ID2D1Bitmap>,
     /// What an animation's frames are drawn with.
     effects: Effects,
+    /// The last title cut from its start, so a repaint measures nothing.
+    title_cut: Option<title::TitleCut>,
 }
 
 impl Painter {

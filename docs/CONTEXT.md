@@ -209,6 +209,19 @@ spot (`ItemStore::allows_lens`; see its callers), against the store's final
 path resolved once at startup.
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
+Opening a folder in a lens (double-click or Enter) shows it in place
+(D18): `App::browsed` keeps, per lens and for the session only, the
+subfolder shown and the lens folder it was browsed under, and
+`App::lens_folder` joins them. Every file operation and the watch read
+`lens_folder`; the lens's settings, title source, and title icon keep its
+own folder. A shortcut opens as before, since it can point anywhere, and
+`browse_into` never leaves the lens's folder. When the lens's folder
+changes or the lens goes, `sync_watches` drops the browse, so Change
+folder…, its undo, and a restart all return to the lens's folder. The
+title reads `Title › Sub › Sub2` (`scene::browse_title`) and, when too
+long, is cut from its start so the folder shown stays in view
+(`SpaceScene::title_keeps_end`; the painter measures it once per title and
+width).
 A lens's title bar shows its folder's own shell icon, or the generic folder
 icon while the folder is unavailable; a normal space's title bar shows none.
 Deleting a lens always asks and only unlists it: its folder and files stay,
@@ -1426,8 +1439,9 @@ in `ui.rs`. What spans them:
   like a desktop click: it focuses the desktop (deactivating the app in
   front) and clears the desktop icon selection, leaving any selection inside
   an Explorer window alone.
-- Double-click an item to open it; click a selected item again (a slow
-  double-click) to rename it inline. Right-click it for Explorer's context
+- Double-click an item to open it (a folder in a lens shows in place,
+  D18); click a selected item again (a slow double-click) to rename it
+  inline. Right-click it for Explorer's context
   menu with DeskSpace's "Rename" on top (Explorer's own Delete there sends the
   file to the Recycle Bin; ROADMAP D3); right-clicking an item in a
   multi-selection keeps the selection. Loose items on the desktop layer

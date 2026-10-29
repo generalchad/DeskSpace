@@ -589,11 +589,7 @@ impl App {
                     self.toggle_fold(ui, id);
                 }
             }
-            DoubleClickTarget::Item(item) => {
-                if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
-                    ui.open_path(&path);
-                }
-            }
+            DoubleClickTarget::Item(item) => self.open_item(ui, item),
             DoubleClickTarget::Nothing => {}
         }
     }

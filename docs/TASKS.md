@@ -11,9 +11,9 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: W42 (with a
-  reviewer) now that W24 and W25 have landed, and W34 now that W14 has
-  landed; the rest once the task each one names has landed;
+- section W phase 5: W43 (with a
+  reviewer) now that W42 has landed, and W34 now that W14 has landed; the
+  rest once the task each one names has landed;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
 
@@ -631,12 +631,11 @@ are in section V. The open work is phase 5 (W24-W43).
 |-------|-------|----------|
 | First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
 | Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37, W42, W43 | W42 |
+| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37, W43 | W43 |
 | Maintainer only: an on-screen record | W41 | W41 |
 
 "With a reviewer" means: agree the plan with a reviewer before writing
-code, and have the same reviewer read the diff. W42 is the hardest task left
-in the section.
+code, and have the same reviewer read the diff.
 
 ### Phase 4: views, sort rules, and lens settings
 
@@ -706,10 +705,10 @@ Work that collides when run in parallel:
 - **Label text.** W26 merges the four copies of the extension rule.
   W28 then changes that one place. Taking W28 before W26 means editing
   four places, so don't.
-- **The lens's folder.** After W42, file operations read the folder a
-  lens *shows*, through one `App::lens_folder`. A task that lands after
-  W42 and reads `FolderView.path` must say which one it means. W10 and
-  W11 mean the lens's own folder on purpose.
+- **The lens's folder.** File operations read the folder a lens
+  *shows*, through one `App::lens_folder` (W42). A task that reads
+  `FolderView.path` must say which one it means. W10 and W11 mean the
+  lens's own folder on purpose.
 - **Creation signatures.** W19 and W23 change `CreateLens`, and W40
   changes `CreateSpace`. Rebase whichever lands second.
 - **Other sections:**
@@ -1021,35 +1020,6 @@ interest. In phase 4 and 5 terms:
     Match Explorer.
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
-
-- [ ] **W42. Browse into a subfolder (app).** **[needs human]** After:
-  W24, W25.
-  - `App` keeps, per lens, the folder shown below its own one: session
-    state, a relative path, empty by default. `App::lens_folder(id)`
-    joins the two. A pure `browse_into(root, shown, entry) ->
-    Option<PathBuf>` refuses anything that is not a directory entry of
-    the folder shown, refuses a shortcut, and refuses a result that does
-    not stay inside `root` (D18).
-  - Every app read of `FolderView.path` that means "where the files go"
-    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
-    writer's lens path, delete, Open folder, and `desired_watches`.
-    List each switched site in the commit body; leave W10 and W11's
-    reads alone.
-  - Double-clicking a directory in a lens browses into it. That empties
-    the selection, re-points the lens's watch (W24 drops the old
-    listing), and scrolls to the top. The title bar shows `Root › Sub ›
-    Sub2`, clipped from the left when too long, from a pure
-    `browse_title`.
-  - Change folder…, a restart, and deleting the lens forget the folder
-    shown.
-  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
-    `..` in it, a different case); `browse_title`; each switched site
-    reads the folder shown.
-  - **[needs human]** check: browse two levels down in a Downloads
-    lens; drop, paste, New shortcut, and Delete there all act on the
-    subfolder; deleting the subfolder in Explorer while it is shown shows
-    "Folder not available"; a junction to DeskSpace's store inside the
-    lens shows unavailable when browsed into (W25).
 
 - [ ] **W43. Back and Up (app, platform).** **[needs human]** After:
   W42.
@@ -2202,6 +2172,7 @@ each id is in `archive/TASKS-done.md`.
 | W22 (D17) | Content beside Explorer's Content on the same folder, at 100 % and 150 %, in light and dark: one row per item with the icon and name at the left, "Date modified: …" and "Size: …" at the right, and Explorer's separator between rows; click, Ctrl and Shift click, the marquee, the arrow keys, type-to-select, F2 over the name, and drag out. |
 | W23 (D17) | Global's Lenses page sits after New spaces. Change each default (View, Status bar, Sort by, Order, Folders first, Show hidden files, Show as) and "New lens…" uses it; an existing lens keeps its own settings. |
 | W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
+| W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

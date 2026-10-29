@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use deskspace_core::item::ItemKind;
 use deskspace_core::space::DEFAULT_TITLE_HEIGHT;
 use deskspace_core::theme::LABEL_SIZE_RANGE;
@@ -83,8 +85,33 @@ pub struct ViewState {
     /// A lens whose folder cannot be listed (missing, or refused because it
     /// is DeskSpace's storage): the scene says so in place of items.
     pub folder_unavailable: bool,
+    /// The subfolder a lens is browsed into, relative to its own folder;
+    /// empty at its own folder (W42).
+    pub subfolder: PathBuf,
     /// The status-bar view button the pointer is over, if any (W19).
     pub hovered_status: Option<usize>,
+}
+
+/// The separator between the folders of a browsed lens's title (D18).
+const BROWSE_SEPARATOR: &str = " \u{203A} ";
+
+/// A lens's title while it shows `sub` below its own folder:
+/// `Title › Sub › Sub2` (D18). The title alone at its own folder.
+pub fn browse_title(title: &str, sub: &Path) -> String {
+    std::iter::once(title.to_owned())
+        .chain(sub.iter().map(|part| part.to_string_lossy().into_owned()))
+        .collect::<Vec<_>>()
+        .join(BROWSE_SEPARATOR)
+}
+
+/// `root` joined with `sub`, or `root` itself when `sub` is empty, where
+/// `join` would add a trailing separator.
+pub fn subfolder_path(root: &Path, sub: &Path) -> PathBuf {
+    if sub.as_os_str().is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(sub)
+    }
 }
 
 pub fn space_style(theme: &Theme, system_dark: bool) -> SpaceStyle {
@@ -214,7 +241,8 @@ pub fn space_scene_with_details(
 
     SpaceScene {
         chrome: true,
-        title: space.title().to_owned(),
+        title: browse_title(space.title(), &view.subfolder),
+        title_keeps_end: !view.subfolder.as_os_str().is_empty(),
         title_icon: {
             let rect = title_icon_rect(space.title_height);
             match glyph {
@@ -257,7 +285,10 @@ pub fn space_scene_with_details(
         placeholder: space
             .folder_view()
             .filter(|_| view.folder_unavailable)
-            .map(|view| format!("Folder not available\n{}", view.path.display())),
+            .map(|folder| {
+                let shown = subfolder_path(&folder.path, &view.subfolder);
+                format!("Folder not available\n{}", shown.display())
+            }),
         focused_item: view.focused.map(|id| id.0),
         details: details_view(space, &view_layout, content.width, layout.padding, scale),
         status: status_bar(space, &view),
@@ -357,6 +388,7 @@ pub fn desktop_layer_scene(
     SpaceScene {
         chrome: false,
         title: String::new(),
+        title_keeps_end: false,
         title_icon: None,
         title_height: 0,
         tint: Color::TRANSPARENT,
@@ -1732,6 +1764,52 @@ mod tests {
         assert!(text.contains("Downloads"));
         assert_eq!(placeholder(lens, false), None, "an available lens");
         assert_eq!(placeholder(&space(), true), None, "a normal space");
+    }
+
+    #[test]
+    fn a_browsed_title_names_each_folder_below_the_lens() {
+        assert_eq!(browse_title("Downloads", Path::new("")), "Downloads");
+        assert_eq!(
+            browse_title("Downloads", Path::new(r"Photos\2026")),
+            "Downloads \u{203A} Photos \u{203A} 2026"
+        );
+    }
+
+    #[test]
+    fn a_browsed_lens_titles_and_places_its_subfolder() {
+        let theme = Theme::default();
+        let palette = theme.palette(true);
+        let look = surface_look(&theme, &palette);
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        let lens = desktop.space(lens).unwrap();
+        let browsed = |subfolder: &str, folder_unavailable| {
+            let view = ViewState {
+                subfolder: PathBuf::from(subfolder),
+                folder_unavailable,
+                ..ViewState::default()
+            };
+            space_scene(lens, look, view, &mut IconCache::new())
+        };
+        let root = browsed("", true);
+        assert_eq!(root.title, "Lens");
+        assert!(
+            !root.title_keeps_end,
+            "the lens's own folder cuts as before"
+        );
+        let sub = browsed("Photos", true);
+        assert_eq!(sub.title, "Lens \u{203A} Photos");
+        assert!(sub.title_keeps_end, "a deep title keeps the folder shown");
+        assert_eq!(
+            sub.placeholder.as_deref(),
+            Some("Folder not available\nC:\\Users\\me\\Downloads\\Photos"),
+            "the placeholder names the folder shown"
+        );
     }
 
     #[test]

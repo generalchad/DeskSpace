@@ -209,11 +209,11 @@ impl App {
         self.record_effects(label, Command::ToggleLock { id }, at, Vec::new())
     }
 
-    /// Opens lens `id`'s folder in Explorer. The menu and the Lens page share
-    /// this.
+    /// Opens the folder lens `id` shows in Explorer. The menu and the Lens
+    /// page share this.
     pub(super) fn open_lens_folder(&mut self, ui: &mut Ui, id: SpaceId) {
-        if let Some(view) = self.config.desktop.space(id).and_then(Space::folder_view) {
-            ui.open_path(&view.path);
+        if let Some(folder) = self.lens_folder(id) {
+            ui.open_path(&folder);
         }
     }
 

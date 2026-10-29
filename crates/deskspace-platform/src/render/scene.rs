@@ -76,6 +76,10 @@ pub struct SpaceScene {
     /// layer sets it false, so its items fill the whole window.
     pub chrome: bool,
     pub title: String,
+    /// When the title is too long, cut it from the start (`… › Sub`) rather
+    /// than the end, so a lens browsed into a subfolder keeps the folder it
+    /// shows in view.
+    pub title_keeps_end: bool,
     /// The small icon drawn left of the title text, if the space has one. A
     /// lens shows its folder's shell icon; another space shows the glyph its
     /// icon setting resolves to.
