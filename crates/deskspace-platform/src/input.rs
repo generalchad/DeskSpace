@@ -183,6 +183,10 @@ pub enum SelectionKey {
     ZoomOut,
     /// Ctrl+0 (either 0 key): icons back to 100 %.
     ZoomReset,
+    /// Ctrl+Z: undo the last action.
+    Undo,
+    /// Ctrl+Y: redo the last undone action.
+    Redo,
     /// Ctrl+Shift+1 through 8: switch the current space to Explorer's view
     /// with that digit (`VIEW_MODES` in the settings tables). A digit with no
     /// view yet does nothing.
@@ -340,10 +344,16 @@ pub enum Event {
     },
     /// The user switched Windows between light and dark mode.
     SystemThemeChanged,
+    /// DWM's color changed, which can mean a new accent color. It can come
+    /// in bursts and without any visible change.
+    SystemColorChanged,
     /// Windows' "Animation effects" switch changed (`system_animations`).
     SystemAnimationsChanged,
     /// A zoom pop-up button was clicked (see `Ui::show_zoom_bar`).
     Zoom(ZoomAction),
+    /// The color picker's recent colors changed after a pick, most recent
+    /// first (see `Ui::set_recent_colors`). Save them.
+    RecentColors(Vec<deskspace_core::theme::Color>),
     /// Delivered once, before the runtime tears windows down: on quit, console
     /// Ctrl+C or close, and at logoff/shutdown. Save here.
     CloseRequested,

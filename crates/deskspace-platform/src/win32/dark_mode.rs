@@ -129,14 +129,25 @@ pub(crate) struct UiColors {
     pub secondary_text: Color,
     /// Labels of disabled fields.
     pub disabled_text: Color,
-    /// The selection bar and marked dot in the navigation panes. A fixed
-    /// color, not the Windows accent.
+    /// The selection bar and marked dot in the navigation panes, and the
+    /// color picker's selection ring.
     pub accent: Color,
     /// Hairline between the navigation panes.
     pub divider: Color,
 }
 
 impl UiColors {
+    /// The colors with Windows' accent, in the shade Windows' own settings
+    /// draw it, as the spaces' check boxes follow the accent too. Falls back
+    /// to `new`'s, which are the default accent's shades.
+    pub(crate) fn for_system(dark: bool) -> Self {
+        let colors = Self::new(dark);
+        match crate::win32::system::accent_shade(dark) {
+            Some(accent) => Self { accent, ..colors },
+            None => colors,
+        }
+    }
+
     pub(crate) fn new(dark: bool) -> Self {
         if dark {
             Self {

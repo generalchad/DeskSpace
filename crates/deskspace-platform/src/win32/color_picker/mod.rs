@@ -1,402 +1,119 @@
-//! A modern color picker popup (ROADMAP F-51), replacing the dated system
-//! `ChooseColor` dialog. It opens on a palette grid inspired by the Windows
-//! color dialog: a row of recent colors and a grid of standard colors, with the
-//! full saturation/value picker one toggle away ("Custom colors"). It returns
-//! the chosen color from a short modal loop.
+//! The color picker popup (ROADMAP F-51), replacing the dated system
+//! `ChooseColor` dialog. One page holds the saturation/value square, the hue
+//! and opacity sliders, the recent and default swatches, an eyedropper, and
+//! one value box that reads and writes hex, RGB, HSL, or HSB. It returns the
+//! chosen color from a short modal loop.
 //!
-//! The window is opaque GDI (the settings window's model): it does not extend
-//! the DWM frame into the client, because DWM would then read the client's
-//! alpha channel, which GDI leaves at zero, and composite the whole popup as
-//! glass. Rounded corners and the border come from DWM window attributes.
+//! `state.rs` holds what each input does, `format.rs` the value box's text,
+//! and `render::color_picker` the layout; `d2d::ColorPickerPainter` paints
+//! it over the Windows 11 acrylic backdrop (opaque where that is missing).
 //!
-//! `pick` owns the `PickerState` box; the window only points at it through
+//! `pick` owns the `Picker` box; the window only points at it through
 //! `GWLP_USERDATA` for the duration of the loop, which ends when the window is
 //! destroyed. The owner (the settings window or the controller) is disabled
 //! while it is open, so only the picker can be driven, but the loop pumps
 //! every message so Windows does not mark the owner "not responding".
 
-use std::cell::RefCell;
-
-use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::theme::{Color, Hsv};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{
-    DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-    DwmSetWindowAttribute,
-};
+use deskspace_core::geometry::Point;
+use deskspace_core::theme::Color;
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection,
-    CreateFontIndirectW, CreatePen, CreateSolidBrush, DIB_RGB_COLORS, DT_LEFT, DT_SINGLELINE,
-    DT_VCENTER, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GdiFlush,
-    GetStockObject, HBITMAP, HDC, HFONT, HGDIOBJ, InvalidateRect, NULL_BRUSH, PAINTSTRUCT,
-    PS_SOLID, RoundRect, SRCCOPY, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    GetDC, GetPixel, InvalidateRect, ReleaseDC, ScreenToClient, ValidateRect,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, ReleaseCapture, SetCapture, VK_ESCAPE, VK_RETURN,
+    EnableWindow, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
+    TrackMouseEvent, VK_CONTROL, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, IsWindow, MSG, PostQuitMessage, SW_SHOW, SetForegroundWindow, ShowWindow,
-    TranslateMessage, WM_CLOSE, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_SYSKEYDOWN,
-    WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GW_OWNER,
+    GetCaretBlinkTime, GetCursorPos, GetMessageW, GetWindow, HTCAPTION, HTCLIENT, IDC_ARROW,
+    IDC_CROSS, IDC_IBEAM, IsWindow, KillTimer, LoadCursorW, MSG, PostQuitMessage, SW_SHOW,
+    SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowPos,
+    ShowWindow, TranslateMessage, WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_DESTROY, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_PAINT, WM_RBUTTONDOWN,
+    WM_SETCURSOR, WM_TIMER, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
+use crate::edit::EditKey;
 use crate::error::PlatformError;
-use crate::win32::dark_mode::{self, UiColors};
-use crate::win32::settings_window::colorref;
-use crate::win32::system::{draw_glyph, glyph_font, message_logfont, work_area_at};
+use crate::render::color_picker::Region;
+use crate::render::d2d::ColorPickerPainter;
+use crate::win32::dark_mode::UiColors;
+use crate::win32::system::{hiword, loword, system_accent_color, work_area_at};
 use crate::win32::window_class::{self, WindowClass};
-use crate::win32::window_state;
+use crate::win32::{clipboard, dpi, dwm, window_state};
 
 mod draw;
-mod layout;
-mod paint;
+mod format;
+mod state;
 
 pub(crate) use draw::draw_color_box;
-use layout::{Panel, PickerLayout, Region, fraction_x, saturation_value, swatch_color};
-use paint::{Buffer, paint};
+use state::{Outcome, PickerKey, PickerState, picker_key};
 
 const CLASS_NAME: PCWSTR = w!("DeskSpaceColorPicker");
+const CARET_TIMER: usize = 1;
+/// `GetCaretBlinkTime` when the user turned blinking off.
+const NO_BLINK: u32 = u32::MAX;
+/// `GetPixel`'s failure value.
+const CLR_INVALID: u32 = 0xFFFF_FFFF;
 
-// Layout metrics at 96 DPI; `PickerLayout::compute` scales them per monitor.
-const PAD: i32 = 16;
-const SWATCH: i32 = 26;
-const SWATCH_GAP: i32 = 4;
-const COLS: usize = 8;
-const ROWS: usize = 6;
-const LABEL_HEIGHT: i32 = 18;
-const SECTION_GAP: i32 = 14;
-const FIELD_GAP: i32 = 10;
-const ROW_GAP: i32 = 12;
-const SQUARE_HEIGHT: i32 = 150;
-const STRIP_HEIGHT: i32 = 16;
-const PREVIEW_WIDTH: i32 = 44;
-const PREVIEW_HEIGHT: i32 = 22;
-const BUTTON_WIDTH: i32 = 70;
-const BUTTON_HEIGHT: i32 = 30;
-const BUTTON_GAP: i32 = 6;
-const TOGGLE_WIDTH: i32 = 128;
-const BUTTON_ROUND: i32 = 8;
-/// Corner radius of a color swatch.
-const SWATCH_RADIUS: i32 = 4;
-/// Size of one checkerboard square behind the alpha strip and the preview.
-const CHECKER: i32 = 8;
-/// Radius of the marker on the saturation/value square.
-const MARKER: i32 = 6;
-/// Radius of the marker on the hue and alpha strips.
-const STRIP_MARKER: i32 = 7;
-/// Segoe Fluent Icons / Segoe MDL2 Assets "CheckMark" (`\u{E73E}`).
-const GLYPH_CHECK: u16 = 0xE73E;
-
-/// The standard color grid, eight per row, after the Windows 11 palette: vivid
-/// hues, then pastels, then neutrals and earth tones.
-const WINDOWS_COLORS: [Color; COLS * ROWS] = [
-    Color::rgb(0xC4, 0x2B, 0x1C),
-    Color::rgb(0xCA, 0x50, 0x10),
-    Color::rgb(0xC1, 0x9C, 0x00),
-    Color::rgb(0x10, 0x7C, 0x10),
-    Color::rgb(0x03, 0x83, 0x87),
-    Color::rgb(0x00, 0x63, 0xB1),
-    Color::rgb(0x4F, 0x6B, 0xED),
-    Color::rgb(0x74, 0x4D, 0xA9),
-    Color::rgb(0xE7, 0x48, 0x56),
-    Color::rgb(0xF7, 0x63, 0x0C),
-    Color::rgb(0xFF, 0xB9, 0x00),
-    Color::rgb(0x10, 0x7C, 0x10),
-    Color::rgb(0x00, 0xB7, 0xC3),
-    Color::rgb(0x00, 0x78, 0xD4),
-    Color::rgb(0x6B, 0x69, 0xD6),
-    Color::rgb(0x87, 0x64, 0xB8),
-    Color::rgb(0xFF, 0x43, 0x43),
-    Color::rgb(0xFF, 0x8C, 0x00),
-    Color::rgb(0xFF, 0xD7, 0x00),
-    Color::rgb(0x16, 0xC6, 0x0C),
-    Color::rgb(0x00, 0xCC, 0xCC),
-    Color::rgb(0x00, 0x99, 0xBC),
-    Color::rgb(0x8A, 0x8A, 0xFF),
-    Color::rgb(0xB1, 0x46, 0xC2),
-    Color::rgb(0xFF, 0xB3, 0xB3),
-    Color::rgb(0xFF, 0xCC, 0x99),
-    Color::rgb(0xFF, 0xE6, 0x99),
-    Color::rgb(0xB3, 0xE6, 0xB3),
-    Color::rgb(0xB3, 0xEC, 0xEC),
-    Color::rgb(0xB3, 0xD9, 0xF2),
-    Color::rgb(0xC5, 0xC5, 0xF5),
-    Color::rgb(0xE0, 0xB3, 0xE6),
-    Color::rgb(0x00, 0x00, 0x00),
-    Color::rgb(0x40, 0x40, 0x40),
-    Color::rgb(0x60, 0x60, 0x60),
-    Color::rgb(0x80, 0x80, 0x80),
-    Color::rgb(0xA0, 0xA0, 0xA0),
-    Color::rgb(0xC0, 0xC0, 0xC0),
-    Color::rgb(0xE0, 0xE0, 0xE0),
-    Color::rgb(0xFF, 0xFF, 0xFF),
-    Color::rgb(0x5A, 0x3A, 0x1A),
-    Color::rgb(0x8A, 0x6B, 0x3A),
-    Color::rgb(0xB3, 0x9A, 0x6A),
-    Color::rgb(0x4A, 0x5A, 0x3A),
-    Color::rgb(0x6A, 0x7A, 0x5A),
-    Color::rgb(0x3A, 0x4A, 0x5A),
-    Color::rgb(0x5A, 0x6A, 0x7A),
-    Color::rgb(0x8F, 0xA0, 0xB0),
-];
-
-/// How many recent colors are kept and shown (one row).
-const RECENT_LIMIT: usize = COLS;
-
-thread_local! {
-    /// The colors picked recently, most recent first, kept for the session.
-    static RECENT: RefCell<Vec<Color>> = const { RefCell::new(Vec::new()) };
+/// What the window points at: the picker's state and what only the window
+/// needs.
+struct Picker {
+    state: PickerState,
+    /// `None` while `WM_PAINT` has it checked out.
+    painter: Option<ColorPickerPainter>,
+    tracking_leave: bool,
 }
 
-fn remember(color: Color) {
-    RECENT.with(|recent| {
-        let mut recent = recent.borrow_mut();
-        recent.retain(|existing| *existing != color);
-        recent.insert(0, color);
-        recent.truncate(RECENT_LIMIT);
-    });
-}
-
-struct PickerState {
-    panel: Panel,
+/// Opens the picker `dark`-themed over `owner`, showing `recent` (most recent
+/// first), and returns the chosen color, or `None` if it was cancelled or the
+/// window could not be created. Blocks in a modal loop with the owner
+/// disabled, so the owner waits.
+pub(crate) unsafe fn pick(
+    owner: HWND,
     initial: Color,
     dark: bool,
-    layout: PickerLayout,
-    /// The UI font (the system message font at the owner's DPI), owned here.
-    font: HFONT,
-    /// The symbol font used for the selected-swatch check mark.
-    glyph_font: HFONT,
-    /// The back buffer, created on the first paint.
-    buffer: Option<Buffer>,
-    /// The palette's selected color, when one is picked or the initial matches.
-    selected: Option<Color>,
-    /// The recently used colors, read once at open.
-    recent: Vec<Color>,
-    // The custom panel's HSV state, kept so hue survives saturation and value
-    // edits.
-    hue: f32,
-    saturation: f32,
-    value: f32,
-    alpha: u8,
-    result: Option<Color>,
-    drag: Option<Region>,
-    hover: Option<Region>,
-}
-
-impl Drop for PickerState {
-    fn drop(&mut self) {
-        // SAFETY: both fonts are owned by this state; a null handle (tests) is
-        // ignored.
-        unsafe {
-            for font in [self.font, self.glyph_font] {
-                if !font.is_invalid() {
-                    let _ = DeleteObject(HGDIOBJ(font.0));
-                }
-            }
-        }
+    recent: &[Color],
+) -> Option<Color> {
+    if let Err(error) = ensure_class() {
+        tracing::warn!(%error, "could not register the color picker class");
+        return None;
     }
-}
+    let accent = system_accent_color()
+        .map(|accent| accent.with_alpha(255))
+        .unwrap_or(UiColors::new(dark).accent);
+    let mut picker = Box::new(Picker {
+        state: PickerState::new(initial, recent, dark, accent),
+        painter: Some(ColorPickerPainter::default()),
+        tracking_leave: false,
+    });
+    let scale = dpi::scale_for(dpi::window_dpi(owner));
+    picker.state.scale = scale;
+    let size = scaled(picker.state.layout.size, scale);
+    let (x, y) = picker_position(size);
+    let pointer = &mut *picker as *mut Picker;
 
-impl PickerState {
-    fn new(
-        initial: Color,
-        dark: bool,
-        layout: PickerLayout,
-        font: HFONT,
-        glyph_font: HFONT,
-    ) -> Self {
-        let hsv = initial.to_hsv();
-        let recent = RECENT.with(|recent| recent.borrow().clone());
-        let selected = WINDOWS_COLORS
-            .iter()
-            .copied()
-            .find(|color| *color == initial);
-        Self {
-            panel: Panel::Palette,
-            initial,
-            dark,
-            layout,
-            font,
-            glyph_font,
-            buffer: None,
-            selected,
-            recent,
-            hue: hsv.h,
-            saturation: hsv.s,
-            value: hsv.v,
-            alpha: initial.a,
-            result: None,
-            drag: None,
-            hover: None,
-        }
-    }
-
-    /// The color OK would return right now.
-    fn color(&self) -> Color {
-        match self.panel {
-            Panel::Palette => self.selected.unwrap_or(self.initial),
-            Panel::Custom => self.custom_color(),
-        }
-    }
-
-    fn custom_color(&self) -> Color {
-        Hsv {
-            h: self.hue,
-            s: self.saturation,
-            v: self.value,
-        }
-        .to_color(self.alpha)
-    }
-
-    fn set_from_point(&mut self, region: Region, point: Point) {
-        match region {
-            Region::Saturation => {
-                let (saturation, value) = saturation_value(self.layout.saturation, point);
-                self.saturation = saturation;
-                self.value = value;
-            }
-            Region::Hue => self.hue = fraction_x(self.layout.hue, point) * 360.0,
-            Region::Alpha => {
-                self.alpha = (fraction_x(self.layout.alpha, point) * 255.0).round() as u8;
-            }
-            _ => {}
-        }
-    }
-
-    /// Switches panels, carrying the current color across.
-    fn toggle_panel(&mut self) {
-        match self.panel {
-            Panel::Palette => {
-                let hsv = self.color().to_hsv();
-                self.hue = hsv.h;
-                self.saturation = hsv.s;
-                self.value = hsv.v;
-                self.alpha = self.color().a;
-                self.panel = Panel::Custom;
-            }
-            Panel::Custom => {
-                let current = self.color();
-                self.selected = WINDOWS_COLORS
-                    .iter()
-                    .copied()
-                    .find(|color| *color == current);
-                self.panel = Panel::Palette;
-            }
-        }
-    }
-
-    fn select_swatch(&mut self, index: usize) {
-        self.selected = swatch_color(&self.recent, index);
-    }
-
-    fn region_at(&self, point: Point) -> Option<Region> {
-        self.layout.region_at(self.panel, self.recent.len(), point)
-    }
-
-    /// Drags a value control and tracks button hover; returns whether to
-    /// redraw.
-    fn pointer_moved(&mut self, point: Point) -> bool {
-        let mut redraw = false;
-        if let Some(region) = self.drag
-            && region.is_value()
-        {
-            self.set_from_point(region, point);
-            redraw = true;
-        }
-        let hover = self
-            .region_at(point)
-            .filter(|region| matches!(region, Region::Ok | Region::Cancel | Region::Toggle));
-        if hover != self.hover {
-            self.hover = hover;
-            redraw = true;
-        }
-        redraw
-    }
-
-    /// Selects a swatch or starts dragging a value control; returns whether to
-    /// redraw.
-    fn pressed(&mut self, point: Point) -> bool {
-        match self.region_at(point) {
-            Some(Region::Swatch(index)) => {
-                self.select_swatch(index);
-                true
-            }
-            Some(region) if region.is_value() => {
-                self.drag = Some(region);
-                self.set_from_point(region, point);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// A double-click on a swatch picks it; returns whether the picker is done.
-    fn double_clicked(&mut self, point: Point) -> bool {
-        let Some(Region::Swatch(index)) = self.region_at(point) else {
-            return false;
-        };
-        self.select_swatch(index);
-        confirm(self);
-        true
-    }
-
-    /// Ends a drag and presses the button under `point`; returns whether the
-    /// picker is done.
-    fn released(&mut self, point: Point) -> bool {
-        self.drag = None;
-        match self.region_at(point) {
-            Some(Region::Ok) => {
-                confirm(self);
-                true
-            }
-            Some(Region::Cancel) => true,
-            Some(Region::Toggle) => {
-                self.toggle_panel();
-                false
-            }
-            _ => false,
-        }
-    }
-}
-
-/// Opens the picker `dark`-themed over `owner` and returns the chosen color, or
-/// `None` if it was cancelled or the window could not be created. Blocks in a
-/// modal loop with the owner disabled, so the owner waits.
-pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Color> {
-    // SAFETY: Win32 window creation on the UI thread. `state` is owned here and
-    // dropped after the loop; the window points at it only while it is alive.
+    // SAFETY: Win32 window creation on the UI thread. `picker` is owned here
+    // and dropped after the loop; the window points at it only while it is
+    // alive.
     unsafe {
-        let instance = match GetModuleHandleW(None) {
-            Ok(module) => windows::Win32::Foundation::HINSTANCE(module.0),
-            Err(_) => return None,
-        };
-        ensure_class().ok()?;
-        let dpi = dpi_of(owner);
-        let layout = PickerLayout::compute(dpi as f32 / 96.0);
-        let font = CreateFontIndirectW(&message_logfont(dpi));
-        let glyph = glyph_font(dpi);
-        let mut state = Box::new(PickerState::new(initial, dark, layout, font, glyph));
-        let state_pointer = &mut *state as *mut PickerState;
-
-        let (x, y) = picker_position(layout.size);
         let hwnd = match CreateWindowExW(
             WS_EX_TOOLWINDOW,
             CLASS_NAME,
-            w!(""),
-            WS_POPUP | WS_CLIPCHILDREN,
+            w!("Color Picker"),
+            WS_POPUP,
             x,
             y,
-            layout.size.0,
-            layout.size.1,
+            size.0,
+            size.1,
             Some(owner),
             None,
-            Some(instance),
-            Some(state_pointer as *const core::ffi::c_void),
+            Some(window_class::instance().ok()?),
+            Some(pointer as *const core::ffi::c_void),
         ) {
             Ok(hwnd) => hwnd,
             Err(error) => {
@@ -404,11 +121,15 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
                 return None;
             }
         };
-
-        style_window(hwnd, dark);
+        let acrylic = dwm::apply_popup_backdrop(hwnd, dark);
+        with_picker(hwnd, |picker| picker.state.acrylic = acrylic);
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = SetForegroundWindow(hwnd);
         let _ = EnableWindow(owner, false);
+        let blink = GetCaretBlinkTime();
+        if blink != 0 && blink != NO_BLINK {
+            SetTimer(Some(hwnd), CARET_TIMER, blink, None);
+        }
 
         let mut message = MSG::default();
         while IsWindow(Some(hwnd)).as_bool() {
@@ -428,8 +149,13 @@ pub(crate) unsafe fn pick(owner: HWND, initial: Color, dark: bool) -> Option<Col
             DispatchMessageW(&message);
         }
         let _ = EnableWindow(owner, true);
-        state.result
     }
+    picker.state.result
+}
+
+fn scaled(size: (i32, i32), scale: f32) -> (i32, i32) {
+    let scale = |value: i32| (value as f32 * scale).round() as i32;
+    (scale(size.0), scale(size.1))
 }
 
 /// Places the picker at the cursor, kept inside that monitor's work area.
@@ -448,62 +174,160 @@ fn picker_position(size: (i32, i32)) -> (i32, i32) {
     )
 }
 
-/// The DPI of the owner's monitor (96 when it cannot be read).
-fn dpi_of(owner: HWND) -> u32 {
-    // SAFETY: `owner` is a live window.
-    let dpi = unsafe { GetDpiForWindow(owner) };
-    if dpi == 0 { 96 } else { dpi }
-}
-
-/// Rounds the popup and gives it a captionless dark/light frame. The frame is
-/// deliberately not extended over the client: that would make DWM read the
-/// client's alpha, which GDI leaves at zero, and the popup would be invisible.
-fn style_window(hwnd: HWND, dark: bool) {
-    dark_mode::set_caption_dark(hwnd, dark);
-    let corner = DWMWCP_ROUND;
-    let border = DWMWA_COLOR_DEFAULT;
-    // SAFETY: `hwnd` is our live window; both values outlive the calls.
-    unsafe {
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &corner as *const _ as *const core::ffi::c_void,
-            std::mem::size_of_val(&corner) as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_BORDER_COLOR,
-            &border as *const _ as *const core::ffi::c_void,
-            std::mem::size_of_val(&border) as u32,
-        );
-    }
-}
-
 fn ensure_class() -> Result<(), PlatformError> {
-    window_class::register(WindowClass::new(CLASS_NAME, Some(wndproc)).style(CS_DBLCLKS))
-}
-
-/// Runs `f` with a short-lived borrow of the window's state. `f` must not call
-/// anything that can re-enter `wndproc`.
-unsafe fn with_state<R>(window: HWND, f: impl FnOnce(&mut PickerState) -> R) -> Option<R> {
-    // SAFETY: picker windows hold the `PickerState` `pick` owns for as long
-    // as the window exists; the caller rules out re-entry.
-    unsafe { window_state::with_state(window, f) }
-}
-
-/// The client point from a mouse message's `lparam`.
-fn mouse_point(lparam: LPARAM) -> Point {
-    Point::new(
-        (lparam.0 & 0xFFFF) as u16 as i16 as i32,
-        ((lparam.0 >> 16) & 0xFFFF) as u16 as i16 as i32,
+    window_class::register(
+        WindowClass::new(CLASS_NAME, Some(wndproc))
+            .style(CS_DBLCLKS)
+            .arrow_cursor(),
     )
 }
 
-/// Records the current color as the result and remembers it as recent.
-fn confirm(state: &mut PickerState) {
-    let color = state.color();
-    state.result = Some(color);
-    remember(color);
+/// Runs `f` with a short-lived borrow of the window's picker. `f` must not
+/// call anything that can re-enter `wndproc`.
+unsafe fn with_picker<R>(window: HWND, f: impl FnOnce(&mut Picker) -> R) -> Option<R> {
+    // SAFETY: picker windows hold the `Picker` `pick` owns for as long as
+    // the window exists; the caller rules out re-entry.
+    unsafe { window_state::with_state(window, f) }
+}
+
+/// The client point from a mouse message's `lparam`, in physical pixels.
+fn mouse_point(lparam: LPARAM) -> (f32, f32) {
+    (loword(lparam.0) as f32, hiword(lparam.0) as f32)
+}
+
+/// The cursor's position in `window`'s client area.
+unsafe fn cursor_in(window: HWND) -> (f32, f32) {
+    let mut point = POINT::default();
+    // SAFETY: `point` is a valid out-pointer and `window` is live.
+    unsafe {
+        let _ = GetCursorPos(&mut point);
+        let _ = ScreenToClient(window, &mut point);
+    }
+    (point.x as f32, point.y as f32)
+}
+
+/// The color of the screen pixel under the cursor.
+fn color_under_cursor() -> Option<Color> {
+    let mut point = POINT::default();
+    // SAFETY: the screen DC is released before returning; `point` is a valid
+    // out-pointer.
+    let value = unsafe {
+        GetCursorPos(&mut point).ok()?;
+        let screen = GetDC(None);
+        let value: COLORREF = GetPixel(screen, point.x, point.y);
+        ReleaseDC(None, screen);
+        value.0
+    };
+    // COLORREF is 0x00BBGGRR.
+    (value != CLR_INVALID).then(|| {
+        Color::rgb(
+            (value & 0xFF) as u8,
+            ((value >> 8) & 0xFF) as u8,
+            ((value >> 16) & 0xFF) as u8,
+        )
+    })
+}
+
+fn set_cursor(name: PCWSTR) {
+    // SAFETY: loading a shared system cursor.
+    unsafe {
+        if let Ok(cursor) = LoadCursorW(None, name) {
+            SetCursor(Some(cursor));
+        }
+    }
+}
+
+fn key_down(key: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
+    // SAFETY: reads the calling thread's key state.
+    unsafe { GetKeyState(key.0 as i32) < 0 }
+}
+
+unsafe fn invalidate(window: HWND) {
+    // SAFETY: `window` is live.
+    unsafe {
+        let _ = InvalidateRect(Some(window), None, false);
+    }
+}
+
+/// Asks for `WM_MOUSELEAVE`, so hover clears when the pointer leaves.
+unsafe fn track_leave(window: HWND) {
+    // SAFETY: a short borrow; TrackMouseEvent sends no message.
+    unsafe {
+        if with_picker(window, |picker| {
+            std::mem::replace(&mut picker.tracking_leave, true)
+        }) == Some(false)
+        {
+            let mut track = TRACKMOUSEEVENT {
+                cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE,
+                hwndTrack: window,
+                dwHoverTime: 0,
+            };
+            let _ = TrackMouseEvent(&mut track);
+        }
+    }
+}
+
+/// Ends the eyedropper, keeping the sampled color or going back to the one
+/// before, and lets the mouse go.
+unsafe fn stop_sampling(window: HWND, keep: bool) {
+    // SAFETY: the state borrow ends before ReleaseCapture, which sends
+    // WM_CAPTURECHANGED; by then sampling is over, so that message is a no-op.
+    unsafe {
+        with_picker(window, |picker| picker.state.end_sampling(keep));
+        let _ = ReleaseCapture();
+        invalidate(window);
+    }
+}
+
+/// Carries out what an input asked for. `Done` destroys the window, so call
+/// this last in a message branch.
+unsafe fn act(window: HWND, outcome: Outcome) {
+    // SAFETY: `window` is live; no state borrow is held across these calls.
+    unsafe {
+        match outcome {
+            Outcome::Nothing => {}
+            Outcome::Redraw => invalidate(window),
+            Outcome::Done => {
+                let _ = DestroyWindow(window);
+            }
+            Outcome::Sample => {
+                with_picker(window, |picker| picker.state.start_sampling());
+                SetCapture(window);
+                set_cursor(IDC_CROSS);
+                invalidate(window);
+            }
+            Outcome::Copy(text) => {
+                if let Err(error) = clipboard::set_text(window, &text) {
+                    tracing::warn!(%error, "could not copy the color value");
+                }
+                invalidate(window);
+            }
+        }
+    }
+}
+
+unsafe fn paint(window: HWND) {
+    // SAFETY: the painter is taken out of the state, so painting holds no
+    // borrow of it.
+    unsafe {
+        let taken = with_picker(window, |picker| {
+            let state = &picker.state;
+            picker
+                .painter
+                .take()
+                .map(|painter| (painter, state.view(), state.layout, state.scale))
+        })
+        .flatten();
+        let Some((mut painter, view, layout, scale)) = taken else {
+            let _ = ValidateRect(Some(window), None);
+            return;
+        };
+        if let Err(error) = painter.paint(window, &view, &layout, scale) {
+            tracing::debug!(%error, "color picker paint failed");
+        }
+        with_picker(window, |picker| picker.painter = Some(painter));
+    }
 }
 
 unsafe extern "system" fn wndproc(
@@ -513,12 +337,39 @@ unsafe extern "system" fn wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     // SAFETY: called by Windows with valid arguments for `message`; every state
-    // access is a short `with_state` borrow that does not call back into here.
+    // access is a short `with_picker` borrow that does not call back into here.
     unsafe {
+        let sampling = || with_picker(window, |picker| picker.state.is_sampling()).unwrap_or(false);
         match message {
             WM_NCCREATE => {
-                window_state::attach_create_param::<PickerState>(window, lparam);
+                window_state::attach_create_param::<Picker>(window, lparam);
                 DefWindowProcW(window, message, wparam, lparam)
+            }
+            // The title strip drags the window.
+            WM_NCHITTEST => {
+                let (x, y) = cursor_in(window);
+                let region = with_picker(window, |picker| picker.state.region_at(x, y)).flatten();
+                if region == Some(Region::Title) && !sampling() {
+                    LRESULT(HTCAPTION as isize)
+                } else {
+                    DefWindowProcW(window, message, wparam, lparam)
+                }
+            }
+            // A double-click on the title would maximize the pop-up.
+            WM_NCLBUTTONDBLCLK => LRESULT(0),
+            WM_SETCURSOR if loword(lparam.0) as u32 == HTCLIENT => {
+                let (x, y) = cursor_in(window);
+                let over_field = with_picker(window, |picker| {
+                    picker.state.region_at(x, y) == Some(Region::Field)
+                }) == Some(true);
+                set_cursor(if sampling() {
+                    IDC_CROSS
+                } else if over_field {
+                    IDC_IBEAM
+                } else {
+                    IDC_ARROW
+                });
+                LRESULT(1)
             }
             // The whole client is painted in `WM_PAINT`.
             WM_ERASEBKGND => LRESULT(1),
@@ -527,53 +378,146 @@ unsafe extern "system" fn wndproc(
                 LRESULT(0)
             }
             WM_MOUSEMOVE => {
-                let point = mouse_point(lparam);
-                if with_state(window, |state| state.pointer_moved(point)) == Some(true) {
-                    let _ = InvalidateRect(Some(window), None, false);
+                if sampling() {
+                    set_cursor(IDC_CROSS);
+                    if let Some(color) = color_under_cursor() {
+                        with_picker(window, |picker| picker.state.sample(color));
+                        invalidate(window);
+                    }
+                    return LRESULT(0);
                 }
+                track_leave(window);
+                let (x, y) = mouse_point(lparam);
+                let outcome = with_picker(window, |picker| picker.state.moved(x, y));
+                act(window, outcome.unwrap_or(Outcome::Nothing));
                 LRESULT(0)
             }
-            WM_LBUTTONDOWN => {
-                let point = mouse_point(lparam);
-                let redraw = with_state(window, |state| state.pressed(point));
+            WM_MOUSELEAVE => {
+                let outcome = with_picker(window, |picker| {
+                    picker.tracking_leave = false;
+                    picker.state.left()
+                });
+                act(window, outcome.unwrap_or(Outcome::Nothing));
+                LRESULT(0)
+            }
+            WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+                // The eyedropper picks on release, so the press goes nowhere
+                // else while it holds the mouse.
+                if sampling() {
+                    return LRESULT(0);
+                }
                 SetCapture(window);
-                if redraw == Some(true) {
-                    let _ = InvalidateRect(Some(window), None, false);
+                let (x, y) = mouse_point(lparam);
+                let outcome = with_picker(window, |picker| {
+                    if message == WM_LBUTTONDBLCLK {
+                        picker.state.double_clicked(x, y)
+                    } else {
+                        picker.state.pressed(x, y)
+                    }
+                });
+                if outcome == Some(Outcome::Done) {
+                    let _ = ReleaseCapture();
                 }
-                LRESULT(0)
-            }
-            WM_LBUTTONDBLCLK => {
-                let point = mouse_point(lparam);
-                let done = with_state(window, |state| state.double_clicked(point));
-                let _ = ReleaseCapture();
-                if done == Some(true) {
-                    let _ = DestroyWindow(window);
-                }
+                act(window, outcome.unwrap_or(Outcome::Nothing));
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
-                let point = mouse_point(lparam);
-                let done = with_state(window, |state| state.released(point));
+                if sampling() {
+                    stop_sampling(window, true);
+                    return LRESULT(0);
+                }
                 let _ = ReleaseCapture();
-                if done == Some(true) {
-                    let _ = DestroyWindow(window);
-                } else {
-                    let _ = InvalidateRect(Some(window), None, false);
+                let (x, y) = mouse_point(lparam);
+                let outcome = with_picker(window, |picker| picker.state.released(x, y));
+                act(window, outcome.unwrap_or(Outcome::Nothing));
+                LRESULT(0)
+            }
+            WM_RBUTTONDOWN if sampling() => {
+                stop_sampling(window, false);
+                LRESULT(0)
+            }
+            // Losing the mouse to another window (Alt+Tab) cancels the
+            // eyedropper.
+            WM_CAPTURECHANGED => {
+                if sampling() && HWND(lparam.0 as *mut core::ffi::c_void) != window {
+                    with_picker(window, |picker| picker.state.end_sampling(false));
+                    invalidate(window);
                 }
                 LRESULT(0)
             }
-            WM_KEYDOWN | WM_SYSKEYDOWN => {
-                let key = wparam.0 as u16;
-                if key == VK_ESCAPE.0 {
-                    let _ = DestroyWindow(window);
-                } else if key == VK_RETURN.0 {
-                    with_state(window, confirm);
-                    let _ = DestroyWindow(window);
+            WM_KEYDOWN => {
+                let code = wparam.0 as u16;
+                if sampling() {
+                    if code == state::vk::ESCAPE {
+                        stop_sampling(window, false);
+                    }
+                    return LRESULT(0);
                 }
+                let Some(key) = picker_key(code, key_down(VK_CONTROL), key_down(VK_SHIFT)) else {
+                    return LRESULT(0);
+                };
+                let outcome = if key == PickerKey::Paste {
+                    let text = clipboard::text();
+                    with_picker(window, |picker| {
+                        if let Some(text) = text {
+                            picker.state.paste(&text);
+                        }
+                        Outcome::Redraw
+                    })
+                } else {
+                    with_picker(window, |picker| picker.state.key(key))
+                };
+                act(window, outcome.unwrap_or(Outcome::Nothing));
+                LRESULT(0)
+            }
+            WM_CHAR => {
+                let typed = char::from_u32(wparam.0 as u32).filter(|c| !c.is_control());
+                if let Some(c) = typed
+                    && !sampling()
+                {
+                    let outcome = with_picker(window, |picker| {
+                        picker.state.key(PickerKey::Edit(EditKey::Char(c)))
+                    });
+                    act(window, outcome.unwrap_or(Outcome::Nothing));
+                }
+                LRESULT(0)
+            }
+            WM_TIMER if wparam.0 == CARET_TIMER => {
+                if with_picker(window, |picker| picker.state.blink()) == Some(true) {
+                    invalidate(window);
+                }
+                LRESULT(0)
+            }
+            // Moved to a monitor with another scale: take the size Windows
+            // suggests and draw at the new scale.
+            // https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged
+            WM_DPICHANGED => {
+                let scale = dpi::scale_for(hiword(wparam.0 as isize) as u32);
+                with_picker(window, |picker| picker.state.scale = scale);
+                let suggested = *(lparam.0 as *const RECT);
+                let _ = SetWindowPos(
+                    window,
+                    None,
+                    suggested.left,
+                    suggested.top,
+                    suggested.right - suggested.left,
+                    suggested.bottom - suggested.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+                invalidate(window);
                 LRESULT(0)
             }
             WM_CLOSE => {
                 let _ = DestroyWindow(window);
+                LRESULT(0)
+            }
+            WM_DESTROY => {
+                let _ = KillTimer(Some(window), CARET_TIMER);
+                // Re-enabled before the pop-up goes, Windows hands the
+                // activation back to the owner instead of another app.
+                if let Ok(owner) = GetWindow(window, GW_OWNER) {
+                    let _ = EnableWindow(owner, true);
+                }
                 LRESULT(0)
             }
             WM_NCDESTROY => {
@@ -582,127 +526,5 @@ unsafe extern "system" fn wndproc(
             }
             _ => DefWindowProcW(window, message, wparam, lparam),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn palette_has_one_swatch_per_cell() {
-        assert_eq!(WINDOWS_COLORS.len(), COLS * ROWS);
-    }
-
-    #[test]
-    fn a_picked_color_round_trips_through_the_state() {
-        for color in [
-            Color::rgb(0x12, 0x34, 0x56),
-            Color::rgba(0xAB, 0xCD, 0xEF, 128),
-            Color::rgb(255, 0, 0),
-        ] {
-            let mut state = PickerState::new(
-                color,
-                true,
-                PickerLayout::compute(1.0),
-                HFONT::default(),
-                HFONT::default(),
-            );
-            state.panel = Panel::Custom;
-            assert_eq!(state.color(), color);
-        }
-    }
-
-    #[test]
-    fn selecting_a_swatch_changes_the_result() {
-        let mut state = PickerState::new(
-            Color::rgb(0, 0, 0),
-            true,
-            PickerLayout::compute(1.0),
-            HFONT::default(),
-            HFONT::default(),
-        );
-        assert_eq!(state.color(), Color::rgb(0, 0, 0));
-        state.select_swatch(0);
-        assert_eq!(state.color(), WINDOWS_COLORS[0]);
-    }
-
-    #[test]
-    fn toggling_panels_carries_the_color_across() {
-        let mut state = PickerState::new(
-            Color::rgb(0x10, 0x7C, 0x10),
-            true,
-            PickerLayout::compute(1.0),
-            HFONT::default(),
-            HFONT::default(),
-        );
-        let custom = state.color();
-        state.toggle_panel();
-        assert_eq!(state.panel, Panel::Custom);
-        assert_eq!(state.custom_color(), custom);
-        state.toggle_panel();
-        assert_eq!(state.panel, Panel::Palette);
-        assert_eq!(state.selected, Some(Color::rgb(0x10, 0x7C, 0x10)));
-    }
-
-    fn state_at(color: Color) -> PickerState {
-        PickerState::new(
-            color,
-            true,
-            PickerLayout::compute(1.0),
-            HFONT::default(),
-            HFONT::default(),
-        )
-    }
-
-    fn center(rect: Rect) -> Point {
-        Point::new(rect.x + rect.width / 2, rect.y + rect.height / 2)
-    }
-
-    #[test]
-    fn releasing_on_ok_or_cancel_finishes_and_only_ok_picks() {
-        let mut state = state_at(Color::rgb(1, 2, 3));
-        assert!(state.released(center(state.layout.cancel)));
-        assert_eq!(state.result, None);
-        assert!(state.released(center(state.layout.ok)));
-        assert_eq!(state.result, Some(Color::rgb(1, 2, 3)));
-    }
-
-    #[test]
-    fn releasing_on_toggle_switches_panels_without_finishing() {
-        let mut state = state_at(Color::rgb(1, 2, 3));
-        assert!(!state.released(center(state.layout.toggle)));
-        assert_eq!(state.panel, Panel::Custom);
-    }
-
-    #[test]
-    fn pressing_a_value_control_drags_it_until_release() {
-        let mut state = state_at(Color::rgb(1, 2, 3));
-        state.toggle_panel();
-        let hue = state.layout.hue;
-        assert!(state.pressed(Point::new(hue.x, hue.y + 1)));
-        assert_eq!(state.drag, Some(Region::Hue));
-        assert!(state.pointer_moved(Point::new(hue.x + hue.width, hue.y + 1)));
-        assert_eq!(state.hue, 360.0);
-        state.released(Point::new(0, 0));
-        assert_eq!(state.drag, None);
-    }
-
-    #[test]
-    fn double_clicking_a_swatch_picks_it() {
-        let mut state = state_at(Color::rgb(1, 2, 3));
-        let swatch = state.layout.swatch_rect(state.layout.windows_grid, 0);
-        assert!(state.double_clicked(center(swatch)));
-        assert_eq!(state.result, Some(WINDOWS_COLORS[0]));
-        assert!(!state.double_clicked(Point::new(0, 0)));
-    }
-
-    #[test]
-    fn hovering_a_button_redraws_once() {
-        let mut state = state_at(Color::rgb(1, 2, 3));
-        let ok = center(state.layout.ok);
-        assert!(state.pointer_moved(ok));
-        assert_eq!(state.hover, Some(Region::Ok));
-        assert!(!state.pointer_moved(ok));
     }
 }

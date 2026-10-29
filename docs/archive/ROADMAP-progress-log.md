@@ -510,3 +510,40 @@ Moved from the section V rows, which now list only what is left to check.
   monitors stayed behind other windows, the spaces sat on top, and other
   apps took clicks (maintainer; the window styles of the running instance,
   read with `GetWindowLongW`, showed only the spaces as `WS_EX_TOPMOST`).
+
+### 2026-10-27: drawn shadows, the structure (O2)
+
+`scripts/onscreen/shadows.ps1` passed here on the composition path (Windows
+11, "Transparency effects" on): Acrylic, Blur, Solid, and Clear at radii 0,
+4, 8, and 16, with exactly one visible `DeskSpaceShadow` per space that
+should cast one; each directly below its space; each with `ShadowLook::rect`
+at the space's DPI, including a space with its own `shadow_size` of 40
+beside the global 16; each layered, click-through, never activated, and a
+tool window; and the bands beside and below each space reach the backdrop.
+The desktop layer cast none, and `show_shadow = false` cast none. Not
+covered: the desktop-hosted placement (this session had no desktop host),
+the pixels (O3), animations, the Settings preview, the debug toggles,
+Windows 10, and 150 %.
+
+### 2026-10-27: drawn shadows, the pixels (O3)
+
+`scripts/onscreen/shadows.ps1 -Pixels` passed here at 125 % on the
+composition path. Over a white backdrop, against two 300 px Solid spaces
+per run: the alpha beside a space is half the `shadow_opacity` setting and
+below it three quarters (within 0.09 and 0.10), nothing outside the space
+is darker than the setting, both falloff lines only fall and reach 0 at the
+shadow's edge, a 16 px corner's diagonal reads 0.008 where a square one
+reads 0.035, opacity 0 hides the shadow window and leaves the backdrop
+white, and a Solid space's centre is its tint. The harness's backdrop is
+now topmost and is created before the spaces (Start-DeskSpace
+-BackdropColor), so another application cannot show through where a shadow
+is measured; its window procedure moved into C# so a second run in the same
+PowerShell session does not re-register the class with a collected
+delegate. Not covered: 100 % and 150 %, Acrylic and Blur as a backdrop,
+Windows 10, transparency off, the animations, the Settings preview, the
+debug toggles, and the desktop-hosted placement.
+
+The run also showed that `shadow_opacity` is the black's own alpha, not the
+darkest pixel: the blur leaves the peak at about three quarters of it below
+the space and half beside it. The maintainer chose on 2026-10-27 to keep
+that look; the theme field's comment and D15 now say so.

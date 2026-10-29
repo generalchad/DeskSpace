@@ -14,7 +14,8 @@ mod session;
 mod tables;
 
 pub use apply::{
-    apply_animation_edit, apply_field, customize_space, match_global, reset_appearance, space_edit,
+    apply_animation_edit, apply_field, apply_shadow_edit, customize_space, match_global,
+    reset_appearance, space_edit,
 };
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
@@ -26,7 +27,7 @@ pub use tables::{
 
 use std::path::Path;
 
-use deskspace_config::{Config, NEW_SPACE_SIZE_RANGE, WindowSettings};
+use deskspace_config::{Config, IconDownloads, NEW_SPACE_SIZE_RANGE, NewSpaceIcon, WindowSettings};
 use deskspace_core::animation::{
     Animations, DETAIL_RANGE, DURATION_MS_RANGE, Edge, Effect as AnimationEffect, EffectChoice,
     EffectOption, Kind, STAGGER_MS_RANGE, StartupOrder,
@@ -34,7 +35,8 @@ use deskspace_core::animation::{
 use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
 use deskspace_core::theme::{
     BORDER_OPACITY_RANGE, BORDER_WIDTH_RANGE, ICON_SIZE_RANGE, LABEL_SIZE_RANGE,
-    OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
+    OVERLAY_SIZE_DEFAULT, OVERLAY_SIZE_RANGE, SHADOW_OPACITY_RANGE, SHADOW_SIZE_RANGE,
+    TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
     Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
@@ -340,7 +342,7 @@ pub fn button_action(id: u32) -> Option<ButtonAction> {
 
 /// What an edit changed, so the caller knows what to refresh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Effect {
+pub enum FieldEffect {
     None,
     /// The look changed; restyle and repaint.
     Appearance,
@@ -443,7 +445,7 @@ mod tests {
                 let effect = apply_field(&mut config, &mut session, field.id, value, true);
                 assert_ne!(
                     effect,
-                    Effect::None,
+                    FieldEffect::None,
                     "field {} ({:?}) on the {} page has no arm in `apply_field`",
                     field.id,
                     field.label,
@@ -516,22 +518,22 @@ mod tests {
     fn form_reflects_the_theme_and_disables_dependent_fields() {
         let (mut config, session) = setup();
         config.theme.backdrop = Backdrop::Solid;
-        let form = build_form(
-            &config,
-            &session,
-            true,
-            true,
-            Path::new("C:/cfg.toml"),
-            SpacePreview::default(),
-        );
-        let opacity = form.field(field::TINT_OPACITY).unwrap();
+        let built = form(&config, &session);
+        let opacity = built.field(field::TINT_OPACITY).unwrap();
         assert!(!opacity.enabled);
-        assert!(!form.field(field::TINT).unwrap().enabled);
+        assert!(!built.field(field::TINT).unwrap().enabled);
         assert!(matches!(
-            form.field(field::BACKDROP).unwrap().kind,
+            built.field(field::BACKDROP).unwrap().kind,
             FieldKind::Choice { selected: 3, .. }
         ));
-        assert!(!form.apply_enabled);
+        assert!(built.field(field::SHADOW_SIZE).unwrap().enabled);
+        assert!(built.field(field::SHADOW_OPACITY).unwrap().enabled);
+        assert!(!built.apply_enabled);
+
+        config.theme.show_shadow = false;
+        let built = form(&config, &session);
+        assert!(!built.field(field::SHADOW_SIZE).unwrap().enabled);
+        assert!(!built.field(field::SHADOW_OPACITY).unwrap().enabled);
     }
 
     #[test]
@@ -1225,5 +1227,36 @@ mod tests {
         assert_eq!(scope_index(&config, &session), 1);
         session.select_scope(Some(SpaceId(999)), ScopeKind::Space);
         assert_eq!(scope_index(&config, &session), 0, "a deleted space");
+    }
+
+    #[test]
+    fn the_about_page_names_every_icon_set() {
+        let (config, session) = setup();
+        let form = form(&config, &session);
+        let note = form.field(field::ABOUT_ICONS).expect("the icons note");
+        assert!(matches!(note.kind, FieldKind::Note), "{:?}", note.kind);
+        for set in deskspace_config::ICON_SETS {
+            assert!(
+                note.label.contains(set.label),
+                "{}: {}",
+                set.label,
+                note.label
+            );
+            assert!(note.label.contains(set.author), "{}", set.author);
+            assert!(note.label.contains(set.license), "{}", set.license);
+        }
+    }
+
+    #[test]
+    fn the_notice_names_every_icon_set() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../NOTICE");
+        let notice = std::fs::read_to_string(&path).expect("NOTICE");
+        for set in deskspace_config::ICON_SETS {
+            assert!(
+                notice.contains(set.label),
+                "NOTICE is missing {}",
+                set.label
+            );
+        }
     }
 }

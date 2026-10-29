@@ -1,12 +1,11 @@
 //! Facts the debug window shows about this process and Windows (ROADMAP D14).
 
 use deskspace_core::geometry::Rect;
-use windows::Win32::Foundation::{ERROR_SUCCESS, HWND, LPARAM, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
 };
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::System::Threading::{
     GR_GDIOBJECTS, GR_USEROBJECTS, GetCurrentProcess, GetCurrentProcessId, GetGuiResources,
 };
@@ -16,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, MONITORINFOF_PRIMARY,
     WINDOW_EX_STYLE, WS_EX_TOPMOST,
 };
-use windows::core::{BOOL, w};
+use windows::core::BOOL;
 
 use crate::win32::dialog::window_text;
 use crate::win32::dpi::window_dpi;
@@ -76,26 +75,6 @@ pub(crate) fn hook_state() -> HookState {
         watch_paste,
         outside_clicks: crate::win32::outside_click::is_watching(),
     }
-}
-
-/// Windows' "Transparency effects" switch (Settings > Personalization >
-/// Colors): the `EnableTransparency` DWORD, or `None` when it is unset.
-pub fn transparency_enabled() -> Option<bool> {
-    let mut value: u32 = 0;
-    let mut size = std::mem::size_of::<u32>() as u32;
-    // SAFETY: `value` and `size` are valid out-pointers sized for a DWORD.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
-            w!("EnableTransparency"),
-            RRF_RT_REG_DWORD,
-            None,
-            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
-            Some(&mut size),
-        )
-    };
-    (status == ERROR_SUCCESS).then_some(value != 0)
 }
 
 /// One of this process's windows, as the debug window's table lists it.

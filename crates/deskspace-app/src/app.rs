@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use deskspace_config::{Config, ConfigStore};
+use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
@@ -29,6 +29,8 @@ mod pointer;
 mod rename;
 mod selection;
 mod settings_session;
+mod space_icons;
+mod undo;
 mod update;
 mod view;
 mod visibility;
@@ -41,6 +43,8 @@ use pointer::PointerState;
 use rename::EditState;
 use selection::Selection;
 use settings_session::SettingsUi;
+use space_icons::{IconStep, SpaceIcons};
+use undo::UndoStack;
 use update::UpdateState;
 pub(crate) use view::{LayerState, SystemLook, ViewCache};
 
@@ -52,10 +56,14 @@ const RESIZE_BORDER: i32 = 6;
 const WHEEL_DELTA: i32 = 120;
 /// Icon-size percent changed by one Ctrl+wheel notch.
 const ICON_SIZE_WHEEL_STEP: i32 = 10;
-/// Wake ids passed to `Ui::waker` by the update worker threads: the check
-/// result, then the download result.
+/// Wake ids passed to `Ui::waker` by the worker threads: the update check
+/// result, the download result, then an icon set that finished loading.
 const UPDATE_WAKE: usize = 0;
 const UPDATE_DOWNLOADED_WAKE: usize = 1;
+const ICONS_WAKE: usize = 2;
+/// How long the icon consent question waits, so a new space's animation
+/// starts and an OLE drop returns first.
+const ICON_CONSENT_DELAY_MS: u32 = 300;
 /// The app's timers, delivered back as `Event::Timer` with the variant's
 /// value as the id. Never renumber one; a new timer takes the highest value
 /// plus one and joins `ALL`, and `App::on_timer`'s exhaustive match asks for
@@ -89,10 +97,15 @@ enum Timer {
     DebugLog = 11,
     /// Reading the debug window's values again (`app/debug/`).
     DebugRefresh = 12,
+    /// Looking for a rename Explorer started in its hidden desktop view
+    /// (`app/rename.rs`).
+    ExplorerRename = 13,
+    /// Showing the icon-download consent question (`app/space_icons.rs`).
+    IconConsent = 14,
 }
 
 impl Timer {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 14] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -105,6 +118,8 @@ impl Timer {
         Self::ZoomBar,
         Self::DebugLog,
         Self::DebugRefresh,
+        Self::ExplorerRename,
+        Self::IconConsent,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -152,47 +167,49 @@ enum MenuId {
     AddFiles = 48,
     /// The tray's "Debug…", only with `--debug` (ROADMAP D14).
     Debug = 49,
+    Undo = 50,
+    Redo = 51,
     /// A lens's "Open folder".
-    OpenFolder = 50,
+    OpenFolder = 52,
     /// A lens's "Change folder…".
-    ChangeFolder = 51,
+    ChangeFolder = 53,
     /// A space's "Folders first" toggle, in its Sort by submenu.
-    FoldersFirst = 52,
+    FoldersFirst = 54,
     /// A lens's "Show hidden files" toggle, in its Sort by submenu.
-    ShowHidden = 53,
+    ShowHidden = 55,
     /// "New lens…", under New space in every menu that has it.
-    NewLens = 54,
-    /// The View submenu's icon views (D15).
-    ViewIcons = 55,
-    ViewExtraLargeIcons = 56,
-    ViewLargeIcons = 57,
-    ViewMediumIcons = 58,
+    NewLens = 56,
+    /// The View submenu's icon views (D17).
+    ViewIcons = 57,
+    ViewExtraLargeIcons = 58,
+    ViewLargeIcons = 59,
+    ViewMediumIcons = 60,
     /// Small icons (W16): inline cells placed by order.
-    ViewSmallIcons = 66,
+    ViewSmallIcons = 68,
     /// List (W17): inline cells in columns that scroll sideways.
-    ViewList = 67,
+    ViewList = 69,
     /// Details (W18): full-width rows under a header.
-    ViewDetails = 68,
+    ViewDetails = 70,
     /// The View submenu's "Status bar" toggle (W19).
-    StatusBar = 69,
+    StatusBar = 71,
     /// Tiles (W21).
-    ViewTiles = 70,
+    ViewTiles = 72,
     /// Content (W22).
-    ViewContent = 71,
-    /// The Sort by submenu's keys (D15).
-    SortByName = 59,
-    SortByModified = 60,
-    SortByKind = 61,
-    SortBySize = 62,
+    ViewContent = 73,
+    /// The Sort by submenu's keys (D17).
+    SortByName = 61,
+    SortByModified = 62,
+    SortByKind = 63,
+    SortBySize = 64,
     /// The Sort by submenu's direction.
-    SortAscending = 63,
-    SortDescending = 64,
-    /// A space's "Keep sorted" toggle, last in its Sort by submenu (D15).
-    KeepSorted = 65,
+    SortAscending = 65,
+    SortDescending = 66,
+    /// A space's "Keep sorted" toggle, last in its Sort by submenu (D17).
+    KeepSorted = 67,
 }
 
 impl MenuId {
-    const ALL: [Self; 52] = [
+    const ALL: [Self; 54] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -223,6 +240,8 @@ impl MenuId {
         Self::PasteShortcut,
         Self::AddFiles,
         Self::Debug,
+        Self::Undo,
+        Self::Redo,
         Self::OpenFolder,
         Self::ChangeFolder,
         Self::FoldersFirst,
@@ -481,11 +500,15 @@ pub struct App {
     pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
     update: UpdateState,
+    /// The title icons' sets and glyphs (`app/space_icons.rs`).
+    space_icons: SpaceIcons,
     /// The debug window's state, only with `--debug` (`app/debug/`).
     pub(crate) debug: Option<DebugTools>,
     /// Slow motion and ignoring Windows' animation switch, set only from the
     /// debug window; the default changes nothing.
     animation_tweak: AnimationTweak,
+    /// Session-only undo and redo stacks (ROADMAP D11).
+    undo: UndoStack,
 }
 
 impl App {
@@ -514,8 +537,10 @@ impl App {
             open_settings_on_start: open_settings,
             layer: LayerState::default(),
             update: UpdateState::default(),
+            space_icons: SpaceIcons::default(),
             debug: None,
             animation_tweak: AnimationTweak::default(),
+            undo: UndoStack::default(),
         }
     }
 
@@ -549,6 +574,8 @@ impl App {
             SelectionKey::ZoomIn => self.zoom(ui, ZoomAction::In),
             SelectionKey::ZoomOut => self.zoom(ui, ZoomAction::Out),
             SelectionKey::ZoomReset => self.zoom(ui, ZoomAction::Reset),
+            SelectionKey::Undo => self.undo(ui),
+            SelectionKey::Redo => self.redo(ui),
             SelectionKey::View(digit) => self.set_view_by_digit(ui, digit),
         }
     }
@@ -567,17 +594,26 @@ impl App {
     }
 
     fn toggle_fold(&mut self, ui: &mut Ui, id: SpaceId) {
+        let effects = self.toggle_space_fold(id);
+        self.run(ui, effects);
+    }
+
+    fn toggle_space_fold(&mut self, id: SpaceId) -> Vec<Effect> {
+        let label = match self.config.desktop.space(id) {
+            Some(space) if space.folded() => "Unfold space",
+            _ => "Fold space",
+        };
         let near = self.space_center(id);
         // A folded space hides its items, so it cannot keep one selected.
         if self.selection.surface == Some(Surface::Space(id)) {
             self.selection.clear();
         }
-        self.commit_led_by(
-            ui,
+        self.record_effects(
+            label,
             Command::ToggleFold { id },
             near,
             vec![Effect::FoldSpace(id)],
-        );
+        )
     }
 
     // ---- timers --------------------------------------------------------
@@ -588,6 +624,57 @@ impl App {
 
     fn clear_timer(ui: &mut Ui, timer: Timer) {
         ui.clear_timer(timer as usize);
+    }
+
+    /// Decides what to do about one icon set and does it: read the cache, ask
+    /// the user once, download it, or leave it. The one place a download is
+    /// decided (D16).
+    pub(super) fn need_icon_set(&mut self, ui: &mut Ui, spec: &'static IconSetSpec) {
+        let step = space_icons::next_step(
+            self.space_icons.state(spec.prefix),
+            self.config.window.icon_downloads,
+            self.space_icons.asked(),
+        );
+        match step {
+            IconStep::Nothing | IconStep::Unavailable => {}
+            IconStep::Load => self.space_icons.load(&self.store, ui, spec),
+            IconStep::Fetch => self.space_icons.fetch(&self.store, ui, spec),
+            IconStep::Ask => {
+                self.space_icons.set_pending(spec);
+                Self::set_timer(ui, Timer::IconConsent, ICON_CONSENT_DELAY_MS);
+            }
+        }
+    }
+
+    /// Asks whether DeskSpace may download the icon set once, and remembers
+    /// the answer. Esc counts as "No thanks".
+    fn ask_icon_consent(&mut self, ui: &mut Ui) {
+        let Some(spec) = self.space_icons.take_pending() else {
+            return;
+        };
+        let text = format!(
+            "Space icons come from {} by {}, {}. DeskSpace downloads that set once, from \
+             DeskSpace's releases on GitHub, and asks nothing else of you: nothing about you \
+             or your files is sent.\n\nYou can change this later in Settings > General.",
+            spec.label, spec.author, spec.license
+        );
+        let allowed = ui.choose(
+            "Show icons on spaces?",
+            &text,
+            &["Download icons", "No thanks"],
+            0,
+        ) == Some(0);
+        self.config.window.icon_downloads = if allowed {
+            IconDownloads::Allowed
+        } else {
+            IconDownloads::Declined
+        };
+        self.schedule_save(ui);
+        if allowed {
+            for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                self.need_icon_set(ui, spec);
+            }
+        }
     }
 
     /// Runs the work of a timer that fired.
@@ -606,6 +693,8 @@ impl App {
             Timer::ZoomBar => self.on_zoom_bar_timer(ui),
             Timer::DebugLog => self.feed_debug_log(ui),
             Timer::DebugRefresh => self.refresh_debug(ui),
+            Timer::ExplorerRename => self.poll_explorer_rename(ui),
+            Timer::IconConsent => self.ask_icon_consent(ui),
         }
     }
 
@@ -635,6 +724,7 @@ impl EventHandler for App {
                 // DeskSpace's own menus and settings window follow the
                 // `ui_mode` setting; the spaces follow their own Color mode.
                 ui.set_ui_dark(self.ui_dark());
+                ui.set_recent_colors(self.config.recent_colors.clone());
                 self.hotkeys.register_all(ui, &self.config.window);
                 // The spaces appear as their windows are created, below; this
                 // only settles whether they start hidden.
@@ -670,6 +760,11 @@ impl EventHandler for App {
                     self.open_settings(ui);
                 }
                 self.sync_update_schedule(ui);
+                // Read the title icons' sets off this thread; a missing set
+                // asks or downloads, and the wake repaints the spaces.
+                for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                    self.need_icon_set(ui, spec);
+                }
                 // Warm the installed-apps list, so "New shortcut ▸ From
                 // installed apps…" opens at once.
                 ui.prefetch_apps();
@@ -721,8 +816,21 @@ impl EventHandler for App {
             // Worker threads hand their result back through the waker.
             Event::Wake { id } if id == UPDATE_WAKE => self.on_update_checked(ui),
             Event::Wake { id } if id == UPDATE_DOWNLOADED_WAKE => self.on_update_downloaded(ui),
+            Event::Wake { id } if id == ICONS_WAKE => {
+                let (changed, missing) = self.space_icons.take_results();
+                for spec in missing {
+                    self.need_icon_set(ui, spec);
+                }
+                if changed {
+                    self.repaint_spaces(ui);
+                }
+            }
             Event::Wake { .. } => {}
             Event::Zoom(action) => self.zoom(ui, action),
+            Event::RecentColors(colors) => {
+                self.config.recent_colors = colors;
+                self.schedule_save(ui);
+            }
             Event::SystemThemeChanged => {
                 self.system.refresh();
                 ui.set_ui_dark(self.ui_dark());
@@ -731,6 +839,13 @@ impl EventHandler for App {
                 self.refresh_shell_display(ui);
                 self.restyle_all(ui);
                 self.refresh_settings(ui);
+            }
+            Event::SystemColorChanged => {
+                if self.system.refresh() {
+                    ui.set_ui_dark(self.ui_dark());
+                    self.restyle_all(ui);
+                    self.refresh_settings(ui);
+                }
             }
             Event::SystemAnimationsChanged => {
                 self.system.refresh_animations();

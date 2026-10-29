@@ -491,7 +491,11 @@ impl App {
         }
         self.pointer.right_press = None;
         self.pointer.right_dragged = true;
+        // Without our image the shell substitutes its own oversized one.
+        let ids = self.drag_items(item);
+        self.pointer.drag_image = self.drag_image_of(surface, &ids, press);
         self.drag_item_out(ui, surface, item);
+        self.pointer.drag_image = None;
         true
     }
 

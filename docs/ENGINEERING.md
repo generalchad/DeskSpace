@@ -30,6 +30,7 @@ links the `windows` crate under `cfg(windows)`.
 | Deps   | `cargo deny check all` (licenses/advisories, per `deny.toml`) |
 | Release| `cargo build --release`; the checklist is in `RELEASING.md` |
 | Dev loop | `./scripts/dev.ps1` (below) |
+| On-screen checks | `./scripts/onscreen/smoke.ps1`, `shadows.ps1 [-Pixels]` (they import `scripts/onscreen/OnScreen.psm1`; `TASKS.md` section O) |
 
 `scripts/dev.ps1` stops any DeskSpace running from `target\` (the running
 executable is locked), builds, and runs the app with a scratch config at
@@ -132,7 +133,7 @@ The crates and what each owns are in `CONTEXT.md` section 3.
   crates that depend on it. So put a pure type or pure logic in the
   lowest crate that can hold it. In particular, keep it out of a crate
   that needs the `windows` crate, or every test that uses it pays for
-  Win32. `deskspace-platform` still mixes the two; R19 plans the split.
+  Win32. `deskspace-platform` still mixes the two; R20 plans the split.
 - While working, test only what a change can affect with
   `./scripts/dev.ps1 -Check -Changed` (B31). The gates (section 1)
   still run on the whole workspace before every commit, and CI always
@@ -242,7 +243,7 @@ says why; the diff already shows what. Run the gates (section 1) first.
   |------|------|
   | either watch flag | F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom; main and keypad) |
   | `WATCH_SELECTION` | Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X |
-  | `WATCH_PASTE` | Ctrl+V, Ctrl+Shift+1..8 (Explorer's views), the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
+  | `WATCH_PASTE` | Ctrl+V, Ctrl+Z, Ctrl+Y, Ctrl+Shift+1..8 (Explorer's views), the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
 
   Every other key passes through. The watch consumes keys only while the
   desktop shell has the foreground (`desktop_is_foreground`), so other apps

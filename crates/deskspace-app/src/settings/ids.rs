@@ -41,6 +41,7 @@ pub mod field {
     pub const ABOUT_SUMMARY: u32 = 31;
     pub const ABOUT_LICENSE: u32 = 32;
     pub const CONFIG_PATH: u32 = 33;
+    pub const ABOUT_ICONS: u32 = 137;
     pub const USE_ACCENT: u32 = 47;
     pub const UI_MODE: u32 = 48;
     pub const START_WITH_WINDOWS: u32 = 49;
@@ -62,6 +63,7 @@ pub mod field {
     pub const FIT_TO_GRID: u32 = 63;
     pub const MARQUEE_COLOR: u32 = 64;
     pub const MARQUEE_BORDER: u32 = 65;
+    pub const NEW_SPACE_ICON: u32 = 138;
 
     pub const UPDATES_HEADING: u32 = 66;
     pub const CHECK_UPDATES: u32 = 67;
@@ -103,36 +105,41 @@ pub mod field {
     pub const BORDER_SOURCE: u32 = 104;
     pub const BORDER_COLOR: u32 = 105;
     pub const BORDER_OPACITY: u32 = 106;
+    pub const SHADOW: u32 = 107;
+    pub const SHADOW_SIZE: u32 = 108;
+    pub const SHADOW_OPACITY: u32 = 109;
+    pub const ICON_DOWNLOADS: u32 = 139;
+    pub const ICON_DOWNLOADS_NOTE: u32 = 140;
 
-    pub const LENS_HEADING: u32 = 107;
-    pub const LENS_PATH: u32 = 108;
-    pub const LENS_OPEN: u32 = 109;
-    pub const LENS_CHANGE: u32 = 110;
-    pub const LENS_CONTENTS_HEADING: u32 = 111;
-    pub const LENS_SHOW_HIDDEN: u32 = 112;
-    pub const LENS_TITLE_HEADING: u32 = 113;
-    pub const LENS_TITLE_MODE: u32 = 114;
-    pub const LENS_TITLE_TEXT: u32 = 115;
+    pub const LENS_HEADING: u32 = 110;
+    pub const LENS_PATH: u32 = 111;
+    pub const LENS_OPEN: u32 = 112;
+    pub const LENS_CHANGE: u32 = 113;
+    pub const LENS_CONTENTS_HEADING: u32 = 114;
+    pub const LENS_SHOW_HIDDEN: u32 = 115;
+    pub const LENS_TITLE_HEADING: u32 = 116;
+    pub const LENS_TITLE_MODE: u32 = 117;
+    pub const LENS_TITLE_TEXT: u32 = 118;
 
-    pub const VIEW_HEADING: u32 = 116;
-    pub const VIEW_MODE: u32 = 117;
-    pub const VIEW_STATUS_BAR: u32 = 118;
-    pub const VIEW_SORT_HEADING: u32 = 119;
-    pub const VIEW_SORT_KEY: u32 = 120;
-    pub const VIEW_ORDER: u32 = 121;
-    pub const VIEW_FOLDERS_FIRST: u32 = 122;
-    pub const VIEW_KEEP_SORTED: u32 = 123;
+    pub const VIEW_HEADING: u32 = 119;
+    pub const VIEW_MODE: u32 = 120;
+    pub const VIEW_STATUS_BAR: u32 = 121;
+    pub const VIEW_SORT_HEADING: u32 = 122;
+    pub const VIEW_SORT_KEY: u32 = 123;
+    pub const VIEW_ORDER: u32 = 124;
+    pub const VIEW_FOLDERS_FIRST: u32 = 125;
+    pub const VIEW_KEEP_SORTED: u32 = 126;
 
-    pub const LENSES_VIEW_HEADING: u32 = 124;
-    pub const LENSES_VIEW_MODE: u32 = 125;
-    pub const LENSES_STATUS_BAR: u32 = 126;
-    pub const LENSES_SORT_HEADING: u32 = 127;
-    pub const LENSES_SORT_KEY: u32 = 128;
-    pub const LENSES_ORDER: u32 = 129;
-    pub const LENSES_FOLDERS_FIRST: u32 = 130;
-    pub const LENSES_SHOW_HIDDEN: u32 = 131;
-    pub const LENSES_TITLE_HEADING: u32 = 132;
-    pub const LENSES_TITLE_MODE: u32 = 133;
+    pub const LENSES_VIEW_HEADING: u32 = 127;
+    pub const LENSES_VIEW_MODE: u32 = 128;
+    pub const LENSES_STATUS_BAR: u32 = 129;
+    pub const LENSES_SORT_HEADING: u32 = 130;
+    pub const LENSES_SORT_KEY: u32 = 131;
+    pub const LENSES_ORDER: u32 = 132;
+    pub const LENSES_FOLDERS_FIRST: u32 = 133;
+    pub const LENSES_SHOW_HIDDEN: u32 = 134;
+    pub const LENSES_TITLE_HEADING: u32 = 135;
+    pub const LENSES_TITLE_MODE: u32 = 136;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

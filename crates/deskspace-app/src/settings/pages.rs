@@ -1,10 +1,12 @@
 //! The settings pages: how the configuration becomes the form's pages.
 
+use deskspace_config::ICON_SETS;
+
 use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
-    VIEW_ORDERS, corner_marks,
+    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
+    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, VIEW_ORDERS, corner_marks,
 };
 use super::*;
 use super::{index_of, labels};
@@ -74,6 +76,27 @@ pub(super) fn look_pages(
             )
             .suffix(" px")
             .enabled(theme.show_border),
+            Field::toggle(field::SHADOW, "Show shadow", theme.show_shadow),
+            Field::slider(
+                field::SHADOW_SIZE,
+                "Shadow size",
+                (SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()),
+                theme
+                    .shadow_size
+                    .clamp(SHADOW_SIZE_RANGE.0, SHADOW_SIZE_RANGE.1) as i32,
+            )
+            .suffix(" px")
+            .enabled(theme.show_shadow),
+            Field::slider(
+                field::SHADOW_OPACITY,
+                "Shadow opacity",
+                (SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()),
+                theme
+                    .shadow_opacity
+                    .clamp(SHADOW_OPACITY_RANGE.0, SHADOW_OPACITY_RANGE.1) as i32,
+            )
+            .suffix(" %")
+            .enabled(theme.show_shadow),
             Field::choice(
                 field::PRESET,
                 "Item preset",
@@ -288,6 +311,17 @@ pub(super) fn general_page(config: &Config) -> SettingsPage {
                 &labels(&MODES),
                 index_of(&MODES, config.theme.ui_mode),
             ),
+            Field::choice(
+                field::ICON_DOWNLOADS,
+                "Icon downloads",
+                &labels(&ICON_DOWNLOAD_OPTIONS),
+                index_of(&ICON_DOWNLOAD_OPTIONS, config.window.icon_downloads),
+            ),
+            Field::note(
+                field::ICON_DOWNLOADS_NOTE,
+                "Space icons come from an icon set downloaded once from DeskSpace's releases \
+                 on GitHub, and only after you agree. Nothing about you or your files is sent.",
+            ),
             Field::heading(field::UPDATES_HEADING, "Updates"),
             Field::toggle(
                 field::CHECK_UPDATES,
@@ -363,6 +397,12 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
                 field::NEW_SPACE_LOCKED,
                 "Start new spaces locked",
                 window.new_space_locked,
+            ),
+            Field::choice(
+                field::NEW_SPACE_ICON,
+                "Icon",
+                &labels(&NEW_SPACE_ICON_OPTIONS),
+                index_of(&NEW_SPACE_ICON_OPTIONS, window.new_space_icon),
             ),
             Field::note(
                 field::NEW_SPACES_NOTE,
@@ -514,6 +554,7 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
                 field::ABOUT_LICENSE,
                 "Copyright 2026 Timothy W. Brown. Licensed under the Apache License 2.0.",
             ),
+            Field::note(field::ABOUT_ICONS, icons_note()),
             Field::read_only_text(
                 field::CONFIG_PATH,
                 "Configuration file",
@@ -521,6 +562,21 @@ pub(super) fn about_page(config_path: &Path) -> SettingsPage {
             ),
         ],
     }
+}
+
+/// One line per icon set: its label, author, and license. A single note
+/// whatever the number of sets, so adding a set never adds a field id.
+fn icons_note() -> String {
+    ICON_SETS
+        .iter()
+        .map(|set| {
+            format!(
+                "Icons: {} by {}, {} License.",
+                set.label, set.author, set.license
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The note atop every animation page: why the page is grey when Windows'

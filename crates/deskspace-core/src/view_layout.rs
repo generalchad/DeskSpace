@@ -1,11 +1,11 @@
-//! Where a space's items sit, for its current view (W16, D15).
+//! Where a space's items sit, for its current view (W16, D17).
 //!
 //! Every reader of item geometry goes through this pure layout: scenes, hit
 //! tests, the marquee, keyboard navigation, the drag drop index, and the scroll
 //! extent. The icon views keep the grid they always had; a view that places
 //! items by their order (Small icons, and List since W17) never writes
 //! `Item.position`, so switching back to an icon view restores the hand
-//! arrangement (D15).
+//! arrangement (D17).
 //!
 //! Layout is arithmetic: [`ViewLayout::rect`] is `O(1)`, and
 //! [`ViewLayout::visible`] finds the items in a scroll window without walking

@@ -7,6 +7,70 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A redesigned color picker: a color square with hue and opacity sliders,
+  hex, RGB, or HSL text, copy and paste, an eyedropper that samples any pixel
+  on screen, and recent colors that survive a restart and a settings Cancel.
+  On Windows 11 22H2 and later it is acrylic, as Explorer's own picker is.
+- Space icons: a space can show a Fluent UI glyph left of its title, matched
+  from its title or named in the config (`icon = "fluent:games"`). New spaces
+  can start with one (Settings > New spaces), and the icon set is downloaded
+  once from DeskSpace's releases after asking (Settings > General); nothing
+  about you or your files is sent. The icon takes the title's color, so it
+  follows a dark and light switch, and a space without one keeps its old
+  title bar. Settings > About credits the icon sets.
+- Lenses: a space that shows a folder's live contents. "New lens." in a
+  space's menu, the tray, and the desktop menu asks for a folder and shows it;
+  files dropped, pasted, or added as shortcuts go into that folder, and
+  deleting a lens never touches it. A lens keeps its sort rule as files come
+  and go, has Open folder and Change folder… entries, and shows its folder's
+  icon and name in its title bar.
+- Explorer's eight views for every space: Extra large, Large, Medium, and
+  Small icons, List, Details, Tiles, and Content, from the View menu,
+  Ctrl+Shift+1..8, or the status bar's buttons. Details has Explorer's
+  columns and sortable headers, Tiles its type and size, and Content its
+  separators.
+- A status bar for a space, on for new lenses: Explorer's item counts, the
+  selected files' size, and its two view buttons. Settings > View toggles it.
+- Settings > Lens for a lens (folder, title, and hidden files), Settings >
+  View for every space (view, status bar, and sort rule), and Settings >
+  Lenses for the defaults a new lens starts with.
+- Sort by now has Explorer's shape: Name, Date modified, Type, and Size;
+  Ascending or Descending; Folders first; and Keep sorted, which holds a
+  space's order as items change.
+
+- Undo and redo for layout changes, file moves, item removal, space creation
+  and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
+  a space is current, and the space menu and the tray name the action ("Undo
+  Move 3 items"). Undo and redo last for the session. Shift+Delete and edits
+  in the settings window are not undone.
+- Drawn shadows on Windows 11: DeskSpace draws each space's shadow, so it
+  follows the space's corners and fades with an animation where Windows casts
+  none. Settings > Appearance adds "Show shadow" (on by default), "Shadow
+  size", and "Shadow opacity".
+- A border thickness, a border color (the Windows accent or a custom color),
+  and its own opacity in Settings > Appearance and Settings > Colors.
+- With the desktop takeover on, a loose desktop icon renames in place, as an
+  item in a space does.
+
+### Changed
+
+- The window border is white in dark mode and black in light mode, as
+  Explorer's borders are. "Use Windows accent color" now colors the selection
+  only, unless "Border color" is set to the Windows accent.
+
+### Fixed
+
+- With the desktop takeover on: a taskbar that ended up under the desktop
+  layer takes clicks again; Delete removes loose desktop icons; New › Folder
+  opens a visible rename box; and an icon updates when its file changes in
+  place, without a restart.
+- A right drag shows DeskSpace's drag image rather than the shell's, and each
+  entry in the right-drop menu is greyed when the source cannot do it.
+- The settings window's selection follows a change to the Windows accent
+  color.
+
 ## [0.2.4] - 2026-10-18
 
 ### Added

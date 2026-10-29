@@ -21,6 +21,7 @@ pub fn create_space(desktop: &mut Desktop, title: &str, rect: Rect) -> SpaceId {
             at: rect.origin(),
             size: rect.size(),
             locked: false,
+            icon: deskspace_core::SpaceIcon::None,
         },
     );
     id

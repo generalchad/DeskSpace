@@ -1,6 +1,7 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use deskspace_core::animation::Kind;
 use deskspace_core::geometry::{Point, Rect};
@@ -9,9 +10,9 @@ use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
 use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode};
 use deskspace_platform::{
-    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceStyle, Ui, Way,
-    arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
-    hide_desktop_icons, item_facts, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceScene, SpaceStyle,
+    Ui, Way, arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
+    hide_desktop_icons, rehide_desktop_icons, restore_desktop_icons, space_dpi,
     system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
     work_area_at,
 };
@@ -59,9 +60,11 @@ impl SystemLook {
     }
 
     /// Re-reads dark mode and the accent after a Windows theme change.
-    pub(super) fn refresh(&mut self) {
-        self.dark = system_uses_dark_mode();
-        self.accent = system_accent_color();
+    /// Returns whether either changed.
+    pub(super) fn refresh(&mut self) -> bool {
+        let dark = std::mem::replace(&mut self.dark, system_uses_dark_mode());
+        let accent = std::mem::replace(&mut self.accent, system_accent_color());
+        (dark, accent) != (self.dark, self.accent)
     }
 
     pub(super) fn dark(&self) -> bool {
@@ -219,8 +222,7 @@ impl App {
             show_check_boxes: check_boxes != CheckBoxMode::Hidden,
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
             checked: self.selection.checked.clone(),
-            show_extensions: self.surface_match_explorer(surface)
-                && self.system.shell().show_extensions,
+            show_extensions: self.shows_extensions(surface),
             show_compressed_color: self.surface_match_explorer(surface)
                 && self.system.shell().show_compressed_color,
             cut: self.selection.cut.iter().copied().collect(),
@@ -272,11 +274,6 @@ impl App {
             .map_or(global, |space| space.grid(global))
     }
 
-    /// Whether a space mirrors Explorer's display settings.
-    pub(super) fn match_explorer(&self, id: SpaceId) -> bool {
-        self.theme_for(id).match_explorer()
-    }
-
     /// The concrete colors for a space's scene: its theme's palette, with the
     /// selection highlight and border replaced by Windows' accent when the
     /// theme asks for it and an accent is known.
@@ -286,7 +283,11 @@ impl App {
 
     /// The window style for a space.
     pub(super) fn style_for(&self, id: SpaceId) -> SpaceStyle {
-        space_style(self.theme_for(id), self.system.dark())
+        let mut style = space_style(self.theme_for(id), self.system.dark());
+        if self.debug.as_ref().is_some_and(|tools| tools.hide_shadows) {
+            style.shadow = None;
+        }
+        style
     }
 
     /// Whether DeskSpace's own chrome (the settings window and menus) is dark.
@@ -519,9 +520,8 @@ impl App {
                 if in_spaces.contains(&path_key(&entry.path)) {
                     return None;
                 }
-                let mut item = Item::new(ItemId(0), &entry.path, item_facts(&entry.path))
-                    .with_label(entry.label.clone())
-                    .with_kind(entry.kind);
+                let mut item =
+                    Item::new(ItemId(0), &entry.path, entry.facts).with_label(entry.label.clone());
                 item.position = position;
                 Some(item)
             })
@@ -541,6 +541,11 @@ impl App {
             return false;
         }
         let items = self.desktop_layer_items();
+        // A file changed in place keeps its path, so its cached icon would
+        // outlive the change (a new thumbnail, a re-pointed shortcut).
+        for path in changed_in_place(self.config.desktop.layer().items(), &items) {
+            self.icons.invalidate(path);
+        }
         self.config.desktop.apply_with_layout(
             Command::SyncDesktop { items },
             self.effective_layout(),
@@ -582,17 +587,27 @@ impl App {
 
     /// The health timer: re-hide Explorer's icons if it recreated its layer
     /// without broadcasting `TaskbarCreated`.
-    /// Logs when a taskbar falls under the desktop layer, which then takes
-    /// its clicks, and when it is clear again, with what Windows reports at
-    /// that moment. Diagnostic only: an open bug whose trigger is unknown.
-    pub(super) fn check_taskbars(&mut self, ui: &Ui) {
+    /// Repairs a taskbar fallen under the desktop layer, which then takes its
+    /// clicks, by sending the layer back below it. Explorer drops a taskbar's
+    /// topmost style and sends it down when it thinks a full-screen app is
+    /// up; the trigger is not known yet (seen 2026-10-18), so each
+    /// occurrence is logged with what Windows reports, and whether the
+    /// repair held.
+    pub(super) fn check_taskbars(&mut self, ui: &mut Ui) {
         if !self.layer_active() {
             self.layer.taskbar_blocked = false;
             return;
         }
         let taskbars = ui.taskbars();
-        let blocked = taskbars.iter().any(|taskbar| taskbar.is_blocked());
-        if blocked == std::mem::replace(&mut self.layer.taskbar_blocked, blocked) {
+        let found = taskbars.iter().any(|taskbar| taskbar.is_blocked());
+        let blocked = found && {
+            ui.sink_desktop_layer();
+            ui.taskbars().iter().any(|taskbar| taskbar.is_blocked())
+        };
+        let was_blocked = std::mem::replace(&mut self.layer.taskbar_blocked, blocked);
+        // A repaired occurrence logs each time; one the repair cannot fix
+        // logs once, and again when it clears.
+        if (found && was_blocked) || (!found && !was_blocked) {
             return;
         }
         let state: Vec<String> = taskbars
@@ -606,14 +621,20 @@ impl App {
             .collect();
         let foreground = foreground_window()
             .map(|window| format!("{} {:?} {:?}", window.class, window.title, window.rect));
-        if blocked {
+        if !found {
+            tracing::info!(taskbars = ?state, "every taskbar is above the desktop layer again");
+        } else if blocked {
             tracing::warn!(
                 taskbars = ?state,
                 ?foreground,
-                "a taskbar is under the desktop layer; its clicks go to the layer"
+                "a taskbar is under the desktop layer, and sinking the layer did not help; its clicks go to the layer"
             );
         } else {
-            tracing::info!(taskbars = ?state, "every taskbar is above the desktop layer again");
+            tracing::warn!(
+                taskbars = ?state,
+                ?foreground,
+                "a taskbar was under the desktop layer; sank the layer below it"
+            );
         }
     }
 
@@ -639,13 +660,14 @@ impl App {
             metrics: self.surface_metrics(Surface::Desktop),
             scale: 1.0,
         };
-        let scene = desktop_layer_scene(
+        let mut scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
             look,
             view,
             &mut self.icons,
         );
+        self.show_edit(&mut scene, Surface::Desktop);
         ui.set_desktop_layer_rect(rect);
         ui.set_desktop_layer_scene(scene);
     }
@@ -656,6 +678,12 @@ impl App {
             Surface::Space(id) => self.refresh_space(ui, id),
             Surface::Desktop => self.refresh_desktop_layer(ui),
         }
+    }
+
+    /// Whether a surface's labels show filename extensions: Explorer's own
+    /// option, on a surface that mirrors Explorer's display.
+    pub(super) fn shows_extensions(&self, surface: Surface) -> bool {
+        self.surface_match_explorer(surface) && self.system.shell().show_extensions
     }
 
     /// Pushes the space's current geometry and draw list to its window.
@@ -678,11 +706,23 @@ impl App {
             ViewMode::Details | ViewMode::Tiles | ViewMode::Content
         ))
         .then_some(&mut details as &mut dyn FnMut(&Item) -> Vec<String>);
-        let mut scene = space_scene_with_details(space, look, view, row_cells, &mut self.icons);
+        let title_icon = self
+            .space_icons
+            .space_icon(space, palette.title_text, space.title_height);
+        let mut scene =
+            space_scene_with_details(space, look, view, row_cells, &mut self.icons, title_icon);
+        let rect = space.visible_rect();
+        self.show_edit(&mut scene, Surface::Space(id));
+        ui.set_space_rect(id.0, rect);
+        ui.set_space_scene(id.0, scene);
+    }
+
+    /// Draws the rename in progress on `surface`, if any, into its scene.
+    fn show_edit(&self, scene: &mut SpaceScene, surface: Surface) {
         if let Some(session) = self
             .edit
             .session()
-            .filter(|session| session.surface == Surface::Space(id))
+            .filter(|session| session.surface == surface)
         {
             match session.target {
                 EditTarget::Title => scene.editing = Some(session.text.clone()),
@@ -692,8 +732,6 @@ impl App {
             }
         }
         scene.caret_visible = self.edit.caret_visible();
-        ui.set_space_rect(id.0, space.visible_rect());
-        ui.set_space_scene(id.0, scene);
     }
 
     /// Re-applies every space's style and repaints them and the desktop
@@ -744,17 +782,42 @@ impl App {
         self.refresh_space(ui, id);
     }
 
-    /// Applies a view choice to space `id`, reflows that space alone, and
-    /// keeps an open settings window's snapshot. Shared by the View menu and
-    /// the Ctrl+Shift keys.
-    pub(super) fn set_space_view(&mut self, ui: &mut Ui, id: SpaceId, view: SpaceView, at: Point) {
-        if self
-            .commit(ui, Command::SetSpaceView { id, view }, at)
-            .is_applied()
-        {
+    /// Applies a view choice to space `id` as one undo entry named `label`,
+    /// reflows that space alone, and keeps an open settings window's
+    /// snapshot. Shared by the View menu, the Ctrl+Shift keys, and the status
+    /// bar's buttons.
+    pub(super) fn set_space_view_labelled(
+        &mut self,
+        ui: &mut Ui,
+        id: SpaceId,
+        view: SpaceView,
+        at: Point,
+        label: &str,
+    ) -> bool {
+        let (applied, effects) = self.change_view(id, view, at, label);
+        self.run(ui, effects);
+        if applied {
             self.reflow_space(ui, id);
             self.resnapshot_settings(ui, id);
         }
+        applied
+    }
+
+    /// `set_space_view_labelled` under the name the menus show.
+    pub(super) fn set_space_view(&mut self, ui: &mut Ui, id: SpaceId, view: SpaceView, at: Point) {
+        self.set_space_view_labelled(ui, id, view, at, "Change view");
+    }
+
+    /// The undo-recording half of a view change, without a `Ui`, so tests can
+    /// check what an entry captures.
+    pub(super) fn change_view(
+        &mut self,
+        id: SpaceId,
+        view: SpaceView,
+        at: Point,
+        label: &str,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(label, Command::SetSpaceView { id, view }, at, Vec::new())
     }
 
     /// Ctrl+Shift+1 through 8 (W13): switches the current space to the view
@@ -826,6 +889,39 @@ impl App {
         self.refresh_shell_display(ui);
         self.relayout_all(ui);
     }
+
+    /// Repaints every space without re-reading the shell (for example after a
+    /// title icon's set finished loading).
+    pub(super) fn repaint_spaces(&mut self, ui: &mut Ui) {
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        for id in ids {
+            self.refresh_space(ui, id);
+        }
+    }
+}
+
+/// The paths of `fresh` items whose file was modified since `known` read it:
+/// same path, another modification time.
+fn changed_in_place<'a>(known: &[Item], fresh: &'a [Item]) -> Vec<&'a Path> {
+    let modified: HashMap<&Path, Option<u64>> = known
+        .iter()
+        .map(|item| (item.path.as_path(), item.modified))
+        .collect();
+    fresh
+        .iter()
+        .filter(|item| {
+            modified
+                .get(item.path.as_path())
+                .is_some_and(|&before| before != item.modified)
+        })
+        .map(|item| item.path.as_path())
+        .collect()
 }
 
 #[cfg(test)]
@@ -833,10 +929,35 @@ mod tests {
     use super::*;
     use crate::fixtures::{apply, create_space};
     use deskspace_config::{Config, ConfigStore};
-    use deskspace_core::Preset;
     use deskspace_core::geometry::Size;
+    use deskspace_core::{ItemFacts, Preset};
     use deskspace_core::{SpaceView, ViewMode};
     use deskspace_platform::ShellDisplay;
+
+    #[test]
+    fn only_items_modified_at_the_same_path_changed_in_place() {
+        let item = |path: &str, modified| {
+            let facts = ItemFacts {
+                modified,
+                ..ItemFacts::default()
+            };
+            Item::new(ItemId(0), path, facts)
+        };
+        let known = [
+            item("C:/d/same.txt", Some(1)),
+            item("C:/d/edited.txt", Some(1)),
+            item("C:/d/gone.txt", Some(1)),
+        ];
+        let fresh = [
+            item("C:/d/same.txt", Some(1)),
+            item("C:/d/edited.txt", Some(2)),
+            item("C:/d/new.txt", Some(5)),
+        ];
+        assert_eq!(
+            changed_in_place(&known, &fresh),
+            [Path::new("C:/d/edited.txt")]
+        );
+    }
 
     #[test]
     fn the_session_takeover_wins_without_touching_the_setting() {

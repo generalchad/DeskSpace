@@ -541,17 +541,27 @@ const DROP_KEEP: u32 = 3;
 const DROP_CANCEL: u32 = 4;
 const DROP_LINK: u32 = 5;
 
-/// The entries of the menu a right drag shows on a space, in order. "Create
-/// shortcuts here" is greyed when the source does not `allow` a link, so the
-/// menu never reports an effect the source refused, and "Show here without
-/// moving" is greyed for a folder, which cannot list a file kept elsewhere.
+/// The entries of the menu a right drag shows on a space, in order. Each
+/// entry is greyed when the source does not `allow` the effect it would
+/// report (`right_drop_effect`), so the menu never reports an effect the
+/// source refused. "Show here without moving" is also greyed for a folder,
+/// which cannot list a file kept elsewhere.
 fn right_drop_entries(allowed: DROPEFFECT, into: DropInto) -> Vec<MenuEntry> {
+    let offered = |id, label| {
+        let effect = right_drop_effect(right_drop_choice(id));
+        MenuEntry::item(id, label).enabled(allowed.0 & effect.0 != 0)
+    };
+    let keep = offered(DROP_KEEP, "Show here without moving");
+    let keep = if into == DropInto::Space {
+        keep
+    } else {
+        keep.enabled(false)
+    };
     vec![
-        MenuEntry::item(DROP_MOVE, "Move here"),
-        MenuEntry::item(DROP_COPY, "Copy here"),
-        MenuEntry::item(DROP_LINK, "Create shortcuts here")
-            .enabled(allowed.0 & DROPEFFECT_LINK.0 != 0),
-        MenuEntry::item(DROP_KEEP, "Show here without moving").enabled(into == DropInto::Space),
+        offered(DROP_MOVE, "Move here"),
+        offered(DROP_COPY, "Copy here"),
+        offered(DROP_LINK, "Create shortcuts here"),
+        keep,
         MenuEntry::Separator,
         MenuEntry::item(DROP_CANCEL, "Cancel"),
     ]
@@ -931,16 +941,40 @@ mod tests {
     }
 
     #[test]
-    fn create_shortcuts_is_greyed_when_the_source_refuses_a_link() {
-        let link_enabled = |allowed| {
-            item_states(&right_drop_entries(allowed, DropInto::Space))
-                .into_iter()
-                .find(|&(id, _)| id == DROP_LINK)
-                .map(|(_, enabled)| enabled)
-        };
-        assert_eq!(link_enabled(ALL), Some(true));
+    fn each_drop_entry_is_greyed_when_the_source_refuses_its_effect() {
+        let states = |allowed| item_states(&right_drop_entries(allowed, DropInto::Space));
+        assert!(states(ALL).iter().all(|&(_, enabled)| enabled));
         let move_or_copy = DROPEFFECT(DROPEFFECT_MOVE.0 | DROPEFFECT_COPY.0);
-        assert_eq!(link_enabled(move_or_copy), Some(false));
+        assert_eq!(
+            states(move_or_copy),
+            [
+                (DROP_MOVE, true),
+                (DROP_COPY, true),
+                (DROP_LINK, false),
+                (DROP_KEEP, true),
+                (DROP_CANCEL, true),
+            ]
+        );
+        assert_eq!(
+            states(DROPEFFECT_COPY),
+            [
+                (DROP_MOVE, false),
+                (DROP_COPY, true),
+                (DROP_LINK, false),
+                (DROP_KEEP, true),
+                (DROP_CANCEL, true),
+            ]
+        );
+        assert_eq!(
+            states(DROPEFFECT_LINK),
+            [
+                (DROP_MOVE, false),
+                (DROP_COPY, false),
+                (DROP_LINK, true),
+                (DROP_KEEP, false),
+                (DROP_CANCEL, true),
+            ]
+        );
     }
 
     #[test]

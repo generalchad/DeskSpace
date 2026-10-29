@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use deskspace_config::IconDownloads;
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
 use deskspace_platform::{
@@ -9,7 +10,7 @@ use deskspace_platform::{
 };
 
 use crate::scene::item_label;
-use crate::settings::{self, ButtonAction, Effect, ScopeKind, Session, SpaceSnapshot};
+use crate::settings::{self, ButtonAction, FieldEffect, ScopeKind, Session, SpaceSnapshot};
 
 use super::{App, Preview, Surface, Timer};
 
@@ -94,8 +95,7 @@ impl App {
             return SpacePreview::default();
         };
         let id = space.id;
-        let show_extensions =
-            self.surface_match_explorer(Surface::Space(id)) && self.system.shell().show_extensions;
+        let show_extensions = self.shows_extensions(Surface::Space(id));
         let overlay_size = space.theme(&self.config.theme).overlay_size;
         let title = space.title().to_owned();
         let entries: Vec<(PathBuf, String)> = space
@@ -202,10 +202,10 @@ impl App {
                     value,
                     self.system.dark(),
                 );
-                if effect == Effect::Appearance {
+                if effect == FieldEffect::Appearance {
                     ui.set_ui_dark(self.ui_dark());
                     self.schedule_preview(ui, Preview::restyle_all());
-                } else if effect == Effect::Layout {
+                } else if effect == FieldEffect::Layout {
                     self.schedule_preview(ui, Preview::relayout_all());
                 }
                 self.refresh_settings(ui);
@@ -369,8 +369,8 @@ impl App {
                     self.sync_watches(ui);
                 }
                 match effect {
-                    Effect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
-                    Effect::Lens => {
+                    FieldEffect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
+                    FieldEffect::Lens => {
                         // A changed sort or filter needs a fresh listing.
                         ui.unwatch_folder(WatchKey::Space(id));
                         self.sync_watches(ui);
@@ -443,6 +443,20 @@ impl App {
         });
         if update_check_changed {
             self.sync_update_schedule(ui);
+        }
+        let icon_consent_changed = self.settings_ui.session.as_ref().is_some_and(|session| {
+            session.saved_window.icon_downloads != self.config.window.icon_downloads
+        });
+        if icon_consent_changed {
+            // "Ask first" may show the question again, and "Allowed" fetches
+            // what the user just agreed to.
+            if self.config.window.icon_downloads == IconDownloads::Allowed {
+                for spec in super::SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+                    self.need_icon_set(ui, spec);
+                }
+            } else {
+                self.space_icons.reset_asked();
+            }
         }
         self.save(ui);
         if let Some(session) = self.settings_ui.session.as_mut() {

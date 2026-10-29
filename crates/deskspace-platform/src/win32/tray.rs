@@ -4,18 +4,15 @@
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION,
     NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyIcon, GetSystemMetrics, HICON, IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LoadIconW,
-    LoadImageW, SM_CXSMICON, SM_CYSMICON,
+    DestroyIcon, GetSystemMetrics, HICON, IDI_APPLICATION, LoadIconW, SM_CXSMICON,
 };
-use windows::core::{PCWSTR, Result};
 
-use crate::win32::messages;
+use crate::win32::{app_icon, messages};
 
 const TRAY_ID: u32 = 1;
 
@@ -29,7 +26,9 @@ fn tray_icon() -> HICON {
     if existing != 0 {
         return HICON(existing as *mut core::ffi::c_void);
     }
-    match load_app_icon() {
+    // SAFETY: a plain metric query.
+    let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    match app_icon::load(size) {
         Ok(handle) => {
             OWNED_ICON.store(handle.0 as isize, Ordering::SeqCst);
             handle
@@ -39,33 +38,6 @@ fn tray_icon() -> HICON {
             // SAFETY: loading a shared stock icon.
             unsafe { LoadIconW(None, IDI_APPLICATION) }.unwrap_or_default()
         }
-    }
-}
-
-/// `MAKEINTRESOURCE(1)`: the Win32 resource APIs take an integer id in place
-/// of a name, encoded as the raw value `1`. It is deliberately the value 1 and
-/// not an aligned dangling pointer.
-/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-makeintresourcew
-const ICON_RESOURCE: PCWSTR = PCWSTR(std::ptr::without_provenance::<u16>(1));
-
-/// Loads icon resource 1 (embedded by the build script) at the small-icon
-/// size. It is not `LR_SHARED`, so the returned handle is ours to destroy in
-/// `remove`.
-/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-loadimagew
-fn load_app_icon() -> Result<HICON> {
-    // SAFETY: the module handle is this process, and resource 1 is the icon the
-    // build script embedded; the returned handle is a fresh, unshared icon.
-    unsafe {
-        let instance = GetModuleHandleW(None)?;
-        let handle = LoadImageW(
-            Some(instance.into()),
-            ICON_RESOURCE,
-            IMAGE_ICON,
-            GetSystemMetrics(SM_CXSMICON),
-            GetSystemMetrics(SM_CYSMICON),
-            LR_DEFAULTCOLOR,
-        )?;
-        Ok(HICON(handle.0))
     }
 }
 
@@ -123,16 +95,10 @@ pub(crate) fn remove(window: HWND) {
     }
     let handle = OWNED_ICON.swap(0, Ordering::SeqCst);
     if handle != 0 {
-        // SAFETY: the icon was loaded from our executable's resource, the tray
-        // no longer shows it, and the settings window is destroyed before this.
+        // SAFETY: the icon was loaded from our executable's resource for the
+        // tray alone, and the tray no longer shows it.
         unsafe {
             let _ = DestroyIcon(HICON(handle as *mut core::ffi::c_void));
         }
     }
-}
-
-/// The tray's icon handle, for other windows to reuse (the settings window).
-/// It is the same handle, not a copy, and the caller must not destroy it.
-pub(crate) fn shared_icon() -> HICON {
-    tray_icon()
 }

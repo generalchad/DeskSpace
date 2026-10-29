@@ -1,5 +1,5 @@
 //! A space's view: how its items are laid out and ordered, apart from its
-//! look (D15).
+//! look (D17).
 
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub struct SpaceView {
     #[serde(skip_serializing_if = "SortRule::is_default")]
     pub sort: SortRule,
     /// Whether the space re-sorts its items whenever they change, holding the
-    /// rule. A lens always does; a normal space only when this is set (D15).
+    /// rule. A lens always does; a normal space only when this is set (D17).
     pub keep_sorted: bool,
     /// Whether the space shows Explorer's status bar along its bottom edge
     /// with the item counts and view buttons (W19).
@@ -39,7 +39,7 @@ impl SpaceView {
     }
 }
 
-/// Explorer's views (D15). `Icons` follows the look's icon size; the fixed icon
+/// Explorer's views (D17). `Icons` follows the look's icon size; the fixed icon
 /// views set it for the space. `SmallIcons`, `List`, and `Details` place items
 /// by their order, in inline cells, rather than on the icon grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -93,7 +93,7 @@ impl ViewMode {
     }
 
     /// Whether the view places items by their order instead of on the icon
-    /// grid, so it never writes `Item.position` (D15, W16).
+    /// grid, so it never writes `Item.position` (D17, W16).
     pub fn places_by_order(self) -> bool {
         matches!(
             self,
@@ -102,7 +102,7 @@ impl ViewMode {
     }
 }
 
-/// Explorer's fixed icon sizes at 96 DPI (D15). `SmallIcons` is the one an
+/// Explorer's fixed icon sizes at 96 DPI (D17). `SmallIcons` is the one an
 /// inline cell draws; the rest are grid views.
 const EXTRA_LARGE_ICON_PX: i32 = 256;
 const LARGE_ICON_PX: i32 = 96;

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use deskspace_core::{Command, ItemId, SpaceId};
 use deskspace_platform::{ClipboardFiles, DropAction, OnCollision, Ui, item_facts};
 
+use super::undo::{FileChange, move_items_label, paste_items_label};
 use super::{App, Surface};
 use crate::storage::path_key;
 
@@ -147,19 +148,14 @@ impl App {
             external_moves,
             copies,
         } = plan;
-        let mut touched = HashSet::from([target]);
-
-        for item in &moved {
-            match self.config.desktop.space_containing(*item) {
-                Some(source) if source == target => continue,
-                Some(source) => {
-                    touched.insert(source);
-                }
-                None => {}
-            }
-            // Not `commit`: one of several commands, refreshed once below.
-            self.dispatch(Command::MoveItem { id: *item, target }, at);
-        }
+        let total = moved.len() + external_moves.len() + copies.len();
+        let label = if copies.is_empty() {
+            move_items_label(total)
+        } else {
+            paste_items_label(total)
+        };
+        self.undo.begin(label);
+        let mut touched = self.move_items_to_space(&moved, target, at);
 
         let store = self.storage.root().to_path_buf();
         let mut created: Vec<PathBuf> = Vec::new();
@@ -167,11 +163,27 @@ impl App {
             && let Some(paths) =
                 ui.transfer_files(&external_moves, &store, true, OnCollision::Rename)
         {
+            for (from, to) in external_moves
+                .iter()
+                .filter(|from| !from.exists())
+                .zip(&paths)
+            {
+                self.undo.note_file(FileChange::Moved {
+                    from: from.clone(),
+                    to: to.clone(),
+                });
+            }
             created.extend(paths);
         }
         if !copies.is_empty()
             && let Some(paths) = ui.transfer_files(&copies, &store, false, OnCollision::Rename)
         {
+            for path in &paths {
+                if path.exists() {
+                    self.undo
+                        .note_file(FileChange::Created { path: path.clone() });
+                }
+            }
             created.extend(paths);
         }
         for path in &created {
@@ -191,6 +203,7 @@ impl App {
                 at,
             );
         }
+        self.undo.finish(&self.config.desktop);
 
         // Select what was pasted, as Explorer does.
         let mut pasted: Vec<ItemId> = moved

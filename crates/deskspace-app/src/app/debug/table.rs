@@ -71,6 +71,16 @@ pub(crate) const DEBUG_CONTROLS: &[DebugRow] = &[
         label: "Keep spaces above other windows",
     },
     DebugRow {
+        id: DebugId::OutlineShadows,
+        section: DebugSectionId::Windows,
+        label: "Outline every shadow window",
+    },
+    DebugRow {
+        id: DebugId::HideShadows,
+        section: DebugSectionId::Windows,
+        label: "Hide every shadow",
+    },
+    DebugRow {
         id: DebugId::Taskbars,
         section: DebugSectionId::Windows,
         label: "Taskbars",

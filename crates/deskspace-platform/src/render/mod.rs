@@ -1,7 +1,12 @@
 pub mod burn;
+pub(crate) mod color_picker;
 pub mod d2d;
+pub mod dissolve;
 pub mod flames;
+pub(crate) mod glyph;
+pub(crate) mod math;
 pub mod scene;
+pub mod shadow;
 pub mod transition;
 pub mod zoom_bar;
 
@@ -12,9 +17,9 @@ pub(crate) use d2d::{BorderStroke, PaintFrame};
 pub use d2d::{Painter, PreparedScene};
 pub use scene::{
     ColumnAlign, DetailsColumnVisual, DetailsView, DropInto, ItemLayout, ItemState, ItemVisual,
-    SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual,
+    ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual, TitleIcon,
 };
-pub use transition::{Geometry, Mask, Play, Transition, TransitionFrame, Way};
+pub use transition::{Content, Geometry, Mask, Play, Side, Transition, TransitionFrame, Way};
 pub use zoom_bar::ZoomBar;
 
 use deskspace_core::geometry::Rect;

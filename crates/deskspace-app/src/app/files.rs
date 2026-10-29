@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, Space, SpaceId};
@@ -10,6 +11,9 @@ use deskspace_platform::{
     create_shortcut, desktop_directory, item_facts, notify_moved,
 };
 
+use super::undo::{
+    FileChange, copy_items_label, delete_items_label, move_items_label, new_shortcuts_label,
+};
 use super::{App, Surface, delete_consequence, delete_needs_confirmation};
 use crate::storage::{ItemStore, is_inside, path_key, same_path, unique_destination};
 
@@ -53,11 +57,17 @@ impl App {
         at: Point,
         add: impl FnOnce(&mut Self, &mut Ui, SpaceId),
     ) {
+        if surface == Surface::Desktop {
+            self.undo.begin("New space");
+        }
         let target = match surface {
             Surface::Space(id) => id,
             Surface::Desktop => match self.create_space_for_drop(ui, at) {
                 Some(id) => id,
-                None => return,
+                None => {
+                    self.undo.cancel();
+                    return;
+                }
             },
         };
         add(self, ui, target);
@@ -69,6 +79,11 @@ impl App {
                 .is_some_and(|space| space.items().is_empty());
         if left_empty {
             self.delete_space(ui, target);
+            self.undo.cancel();
+            return;
+        }
+        if surface == Surface::Desktop {
+            self.undo.finish(&self.config.desktop);
         }
     }
 
@@ -86,9 +101,77 @@ impl App {
             self.drop_into_lens(ui, folder, paths, action);
             return;
         }
+        let touched = match action {
+            DropAction::Move => self.move_or_keep_dropped(target, at, paths, true),
+            DropAction::KeepInPlace => self.move_or_keep_dropped(target, at, paths, false),
+            DropAction::Copy => {
+                self.undo.begin(copy_items_label(paths.len()));
+                let mut touched = HashSet::from([target]);
+                let mut count = 0usize;
+                for path in paths {
+                    if !path.exists() {
+                        tracing::warn!(path = %path.display(), "dropped file does not exist; ignored");
+                        continue;
+                    }
+                    let command = match self.find_item_by_file(&path) {
+                        Some(item) => {
+                            match self.config.desktop.space_containing(item) {
+                                Some(source) if source == target => continue,
+                                Some(source) => {
+                                    touched.insert(source);
+                                }
+                                None => {}
+                            }
+                            Command::MoveItem { id: item, target }
+                        }
+                        None => {
+                            let Some(placed) = self.copy_dropped(ui, path) else {
+                                continue;
+                            };
+                            Command::AddItem {
+                                space: target,
+                                facts: item_facts(&placed),
+                                path: placed,
+                            }
+                        }
+                    };
+                    if self.dispatch(command, at).is_applied() {
+                        count += 1;
+                    }
+                }
+                if count > 0 {
+                    self.undo.set_label(copy_items_label(count));
+                }
+                self.undo.finish(&self.config.desktop);
+                touched
+            }
+        };
+        for id in &touched {
+            self.refresh_space(ui, *id);
+        }
+        // A loose desktop item that was dropped in has moved off the desktop,
+        // so reconcile the layer now instead of at the next shell refresh.
+        if self.layer_active() {
+            self.resync_desktop_layer(ui);
+        }
+        self.refresh_tray(ui);
+        self.save(ui);
+    }
+
+    /// Moves or lists `paths` into `target`, recording one undo entry and
+    /// returning the spaces that changed.
+    pub(super) fn move_or_keep_dropped(
+        &mut self,
+        target: SpaceId,
+        at: Point,
+        paths: Vec<PathBuf>,
+        move_into_store: bool,
+    ) -> HashSet<SpaceId> {
+        self.undo.begin(move_items_label(paths.len()));
         let index = self.item_index();
         let mut handled = HashSet::new();
         let mut touched = HashSet::from([target]);
+        let mut count = 0usize;
         for path in paths {
             // A drop can name a file that no longer exists (for example a
             // stale desktop icon). Listing it would show a label without an
@@ -115,10 +198,10 @@ impl App {
                     Command::MoveItem { id: item, target }
                 }
                 None => {
-                    let placed = match action {
-                        DropAction::KeepInPlace => Some(path),
-                        DropAction::Move => self.place_dropped(path),
-                        DropAction::Copy => self.copy_dropped(ui, path),
+                    let placed = if move_into_store {
+                        self.place_dropped(path)
+                    } else {
+                        Some(path)
                     };
                     match placed {
                         Some(path) => Command::AddItem {
@@ -131,18 +214,48 @@ impl App {
                 }
             };
             // Not `commit`: one of several commands, refreshed once below.
-            self.dispatch(command, at);
+            if self.dispatch(command, at).is_applied() {
+                count += 1;
+            }
         }
-        for id in &touched {
-            self.refresh_space(ui, *id);
+        if count > 0 {
+            self.undo.set_label(move_items_label(count));
         }
-        // A loose desktop item that was dropped in has moved off the desktop,
-        // so reconcile the layer now instead of at the next shell refresh.
-        if self.layer_active() {
-            self.resync_desktop_layer(ui);
+        self.undo.finish(&self.config.desktop);
+        touched
+    }
+
+    /// Moves `items` from their current spaces into `target`, recording one
+    /// undo entry. Returns the spaces that changed.
+    pub(super) fn move_items_to_space(
+        &mut self,
+        items: &[ItemId],
+        target: SpaceId,
+        at: Point,
+    ) -> HashSet<SpaceId> {
+        let mut touched = HashSet::from([target]);
+        let mut moved = 0usize;
+        self.undo.begin(move_items_label(items.len()));
+        for &item in items {
+            match self.config.desktop.space_containing(item) {
+                Some(source) if source == target => continue,
+                Some(source) => {
+                    touched.insert(source);
+                }
+                None => {}
+            }
+            if self
+                .dispatch(Command::MoveItem { id: item, target }, at)
+                .is_applied()
+            {
+                moved += 1;
+            }
         }
-        self.refresh_tray(ui);
-        self.save(ui);
+        if moved > 0 {
+            self.undo.set_label(move_items_label(moved));
+        }
+        self.undo.finish(&self.config.desktop);
+        touched
     }
 
     /// The folder space `id` shows, or `None` for a normal space. Drops and
@@ -213,48 +326,73 @@ impl App {
         at: Point,
         sources: Vec<ShortcutSource>,
     ) {
+        if !self.create_shortcuts(target, at, sources) {
+            return;
+        }
+        self.refresh_space(ui, target);
+        self.refresh_tray(ui);
+        self.save(ui);
+        self.refresh_settings(ui);
+    }
+
+    pub(super) fn create_shortcuts(
+        &mut self,
+        target: SpaceId,
+        at: Point,
+        sources: Vec<ShortcutSource>,
+    ) -> bool {
         let lens = self.lens_folder(target);
         let destination = match &lens {
             Some(folder) if !folder.is_dir() || !self.storage.allows_lens(folder) => {
                 tracing::warn!(folder = %folder.display(), "lens folder is unavailable; no shortcut written");
-                return;
+                return false;
             }
             Some(folder) => folder.clone(),
             None => {
                 let root = self.storage.root();
                 if let Err(error) = std::fs::create_dir_all(root) {
                     tracing::warn!(%error, root = %root.display(), "cannot create the space storage folder");
-                    return;
+                    return false;
                 }
                 root.to_path_buf()
             }
         };
+        self.undo.begin(new_shortcuts_label(sources.len()));
+        let mut count = 0usize;
         for source in sources {
             match write_shortcut(&destination, &source) {
                 Ok(path) => {
                     tracing::info!(name = source.name(), path = %path.display(), "created a shortcut");
+                    self.undo
+                        .note_file(FileChange::Created { path: path.clone() });
                     if lens.is_some() {
                         continue;
                     }
                     // Not `commit`: one of several commands, refreshed once below.
-                    self.dispatch(
-                        Command::AddItem {
-                            space: target,
-                            facts: item_facts(&path),
-                            path,
-                        },
-                        at,
-                    );
+                    if self
+                        .dispatch(
+                            Command::AddItem {
+                                space: target,
+                                facts: item_facts(&path),
+                                path,
+                            },
+                            at,
+                        )
+                        .is_applied()
+                    {
+                        count += 1;
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(%error, name = source.name(), "could not create a shortcut");
                 }
             }
         }
-        self.refresh_space(ui, target);
-        self.refresh_tray(ui);
-        self.save(ui);
-        self.refresh_settings(ui);
+        if count > 0 {
+            self.undo.set_label(new_shortcuts_label(count));
+        }
+        self.undo.finish(&self.config.desktop);
+        true
     }
 
     /// Re-reads the shell's loose desktop items and reconciles the layer. Used
@@ -270,12 +408,16 @@ impl App {
 
     /// Where a moved dropped file will live: in the storage folder. `None` if
     /// it vanished before it could be moved.
-    fn place_dropped(&self, path: PathBuf) -> Option<PathBuf> {
+    fn place_dropped(&mut self, path: PathBuf) -> Option<PathBuf> {
         match self.storage.adopt(&path) {
             Ok(stored) => {
                 if stored != path {
                     tracing::info!(from = %path.display(), to = %stored.display(), "moved into space storage");
                     notify_moved(&path, &stored);
+                    self.undo.note_file(FileChange::Moved {
+                        from: path,
+                        to: stored.clone(),
+                    });
                 }
                 Some(stored)
             }
@@ -305,14 +447,20 @@ impl App {
             false,
             OnCollision::Rename,
         )?;
-        created.into_iter().next()
+        let placed = created.into_iter().next()?;
+        if placed.exists() {
+            self.undo.note_file(FileChange::Created {
+                path: placed.clone(),
+            });
+        }
+        Some(placed)
     }
 
     /// Takes an item out of its space when the space is deleted. A file that
     /// was moved into the space storage goes back to the desktop first, so
     /// nothing is left behind in a folder the user never sees. Returns false
     /// if that move failed; the item then stays.
-    pub(super) fn release_item(&mut self, id: ItemId) -> bool {
+    pub(super) fn release_item(&mut self, id: ItemId, desktop_override: Option<&Path>) -> bool {
         let Some(path) = self.config.desktop.item(id).map(|item| item.path.clone()) else {
             return false;
         };
@@ -323,17 +471,28 @@ impl App {
             .and_then(|space| self.config.desktop.space(space))
             .is_some_and(Space::is_lens);
         if !in_lens && self.storage.contains(&path) && path.exists() {
-            let desktop = match desktop_directory() {
-                Ok(desktop) => desktop,
-                Err(error) => {
-                    tracing::error!(%error, "cannot find the desktop folder");
-                    return false;
-                }
+            let resolved;
+            let desktop = match desktop_override {
+                Some(dir) => dir,
+                None => match desktop_directory() {
+                    Ok(dir) => {
+                        resolved = dir;
+                        &resolved
+                    }
+                    Err(error) => {
+                        tracing::error!(%error, "cannot find the desktop folder");
+                        return false;
+                    }
+                },
             };
-            match self.storage.release(&path, &desktop) {
+            match self.storage.release(&path, desktop) {
                 Ok(back) => {
                     tracing::info!(to = %back.display(), "moved back to the desktop");
                     notify_moved(&path, &back);
+                    self.undo.note_file(FileChange::Moved {
+                        from: path,
+                        to: back,
+                    });
                 }
                 Err(error) => {
                     tracing::error!(%error, "could not move the item back to the desktop");
@@ -358,9 +517,7 @@ impl App {
     /// is distinct from deleting a space, which returns its stored files to
     /// the desktop.
     pub(super) fn delete_selected_items(&mut self, ui: &mut Ui, permanent: bool) {
-        // Deleting a loose desktop item would need a way to drop it from the
-        // layer, so only a space's items are deleted here.
-        let Some(Surface::Space(space)) = self.selection.surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
         let items = self.active_items();
@@ -369,6 +526,44 @@ impl App {
         }
         self.selection.clear_items();
         self.pointer.clear_hover();
+        match surface {
+            Surface::Space(space) => {
+                self.remove_space_items(space, items, permanent, |paths, permanent| {
+                    ui.delete_files(paths, permanent);
+                });
+                self.refresh_space(ui, space);
+                self.refresh_tray(ui);
+                self.save(ui);
+            }
+            // The layer mirrors the Desktop folder, so re-reading it drops
+            // whatever the shell removed.
+            Surface::Desktop => {
+                let paths: Vec<PathBuf> = items
+                    .iter()
+                    .filter_map(|item| self.config.desktop.item(*item))
+                    .filter(|item| item.path.exists())
+                    .map(|item| item.path.clone())
+                    .collect();
+                if !paths.is_empty() {
+                    ui.delete_files(&paths, permanent);
+                }
+                self.resync_desktop_layer(ui);
+            }
+        }
+    }
+
+    /// Deletes `items` from `space` using `delete_files`, recording an undo
+    /// entry unless `permanent` is set.
+    pub(super) fn remove_space_items(
+        &mut self,
+        space: SpaceId,
+        items: Vec<ItemId>,
+        permanent: bool,
+        delete_files: impl FnOnce(&[PathBuf], bool),
+    ) {
+        if !permanent {
+            self.undo.begin(delete_items_label(items.len()));
+        }
         let paths: Vec<PathBuf> = items
             .iter()
             .filter_map(|item| self.config.desktop.item(*item))
@@ -376,11 +571,19 @@ impl App {
             .map(|item| item.path.clone())
             .collect();
         if !paths.is_empty() {
-            ui.delete_files(&paths, permanent);
+            let at = SystemTime::now();
+            delete_files(&paths, permanent);
+            if !permanent {
+                for path in paths {
+                    if !path.exists() {
+                        self.undo
+                            .note_file(FileChange::Recycled { original: path, at });
+                    }
+                }
+            }
         }
-        // Drop every item whose file is gone, whether the shell removed it or
-        // it was already stale, so no label without an icon is left behind.
         let near = self.space_center(space);
+        let mut removed = 0usize;
         for item in items {
             let gone = self
                 .config
@@ -389,13 +592,21 @@ impl App {
                 .is_none_or(|item| !item.path.exists());
             if gone {
                 self.forget_item(item);
-                // Not `commit`: the file already moved, so this saves at once below.
-                self.dispatch(Command::RemoveItem { id: item }, near);
+                // Not `commit`: the file already moved, so the caller saves once.
+                if self
+                    .dispatch(Command::RemoveItem { id: item }, near)
+                    .is_applied()
+                {
+                    removed += 1;
+                }
             }
         }
-        self.refresh_space(ui, space);
-        self.refresh_tray(ui);
-        self.save(ui);
+        if !permanent {
+            if removed > 0 {
+                self.undo.set_label(delete_items_label(removed));
+            }
+            self.undo.finish(&self.config.desktop);
+        }
     }
 
     /// Deletes the `index`-th item of space `space` after asking, from the X
@@ -405,12 +616,12 @@ impl App {
     /// If the shell cannot delete the file (for example it is in use), the
     /// item stays.
     pub(super) fn delete_space_item(&mut self, ui: &mut Ui, space: SpaceId, index: usize) {
-        let Some((item, path, label)) = self
+        let Some((path, label)) = self
             .config
             .desktop
             .space(space)
             .and_then(|space| space.items().get(index))
-            .map(|item| (item.id, item.path.clone(), item.label.clone()))
+            .map(|item| (item.path.clone(), item.label.clone()))
         else {
             return;
         };
@@ -422,21 +633,51 @@ impl App {
         if !ui.confirm("Delete item", &delete_item_question(&label, recycles)) {
             return;
         }
-        if recycles && path.exists() {
-            ui.delete_files(std::slice::from_ref(&path), false);
-            if path.exists() {
-                tracing::warn!(path = %path.display(), "the item's file could not be deleted; it stays");
-                return;
-            }
+        if !self.remove_space_item_at(space, index, recycles, |file| {
+            ui.delete_files(std::slice::from_ref(&file.to_path_buf()), false);
+        }) {
+            return;
         }
-        self.forget_item(item);
-        let near = self.space_center(space);
-        // Not `commit`: the file already moved, so this saves at once below.
-        self.dispatch(Command::RemoveItem { id: item }, near);
         self.refresh_space(ui, space);
         self.refresh_tray(ui);
         self.save(ui);
         self.refresh_settings(ui);
+    }
+
+    pub(super) fn remove_space_item_at(
+        &mut self,
+        space: SpaceId,
+        index: usize,
+        recycles: bool,
+        delete_file: impl FnOnce(&Path),
+    ) -> bool {
+        let Some((item, path)) = self
+            .config
+            .desktop
+            .space(space)
+            .and_then(|space| space.items().get(index))
+            .map(|item| (item.id, item.path.clone()))
+        else {
+            return false;
+        };
+        self.undo.begin(delete_items_label(1));
+        if recycles && path.exists() {
+            let at = SystemTime::now();
+            delete_file(&path);
+            if path.exists() {
+                tracing::warn!(path = %path.display(), "the item's file could not be deleted; it stays");
+                self.undo.cancel();
+                return false;
+            }
+            self.undo
+                .note_file(FileChange::Recycled { original: path, at });
+        }
+        self.forget_item(item);
+        let near = self.space_center(space);
+        // Not `commit`: the file already moved, so the caller saves once.
+        self.dispatch(Command::RemoveItem { id: item }, near);
+        self.undo.finish(&self.config.desktop);
+        true
     }
 
     /// Forgets an item's transient per-item state (the selection, cut
@@ -535,43 +776,68 @@ impl App {
                 return;
             }
         }
+        self.undo.begin("Delete space");
+        if stored == StoredFiles::ToRecycleBin {
+            self.undo.cancel();
+        }
         // Any stored files still here go back to the desktop before the
         // space goes; recycled ones are gone, so `release_item` only unlists
         // them.
-        let Some(space) = self.config.desktop.space(id) else {
+        if !self.release_and_delete_space(id) {
+            self.undo.cancel();
+            self.refresh_space(ui, id);
+            self.save(ui);
             return;
+        }
+        self.undo.finish(&self.config.desktop);
+        self.sync_watches(ui);
+        self.sync_windows(ui);
+        self.save(ui);
+    }
+
+    pub(super) fn release_and_delete_space(&mut self, id: SpaceId) -> bool {
+        self.release_and_delete_space_to(id, None)
+    }
+
+    pub(super) fn release_and_delete_space_to(
+        &mut self,
+        id: SpaceId,
+        desktop_override: Option<&Path>,
+    ) -> bool {
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
         };
+        let near = self.space_center(id);
         let items: Vec<ItemId> = space.items().iter().map(|item| item.id).collect();
+        // Note the space before `release_item` removes its items, so `before`
+        // holds the space with all of its items.
+        self.undo.note_space(&self.config.desktop, id);
         let kept = items
             .into_iter()
-            .filter(|item| !self.release_item(*item))
+            .filter(|item| !self.release_item(*item, desktop_override))
             .count();
         if kept > 0 {
             tracing::error!(
                 kept,
                 "space kept because some files could not be moved back"
             );
-            self.refresh_space(ui, id);
-            self.save(ui);
-            return;
+            return false;
         }
-        let near = self.space_center(id);
         // Not `commit`: a deleted space closes its window and saves at once.
-        if self
+        if !self
             .dispatch(Command::DeleteSpace { id }, near)
             .is_applied()
         {
-            if self.selection.surface == Some(Surface::Space(id)) {
-                self.selection.clear();
-            }
-            self.pointer.clear_hover_on(Surface::Space(id));
-            self.view_cache.forget(id);
-            // A deleted lens's folder stops being watched; its files stay.
-            self.unavailable_lenses.remove(&id);
-            self.sync_watches(ui);
-            self.sync_windows(ui);
-            self.save(ui);
+            return false;
         }
+        if self.selection.surface == Some(Surface::Space(id)) {
+            self.selection.clear();
+        }
+        self.pointer.clear_hover_on(Surface::Space(id));
+        self.view_cache.forget(id);
+        // A deleted lens's folder stops being watched; its files stay.
+        self.unavailable_lenses.remove(&id);
+        true
     }
 }
 

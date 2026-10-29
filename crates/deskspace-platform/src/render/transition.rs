@@ -3,17 +3,18 @@
 //! tested here and the window side only applies frames.
 //!
 //! A transition tracks one linear value, `u`, from 0 (gone) to 1 (fully
-//! there), and a direction. What is drawn is a function of `ease(u)` alone,
-//! with one symmetric curve for both directions, so an Out is the In played
-//! backwards and reversing at any moment just turns the direction around:
-//! the next frame equals the current one.
+//! there), and a direction. What is drawn is a function of `smoothstep(u)`
+//! alone, one symmetric curve for both directions, so an Out is the In
+//! played backwards and reversing at any moment just turns the direction
+//! around: the next frame equals the current one.
 
 use std::time::Duration;
 
-use deskspace_core::animation::{DETAIL_RANGE, Edge, Effect};
+use deskspace_core::animation::{AutoEdge, DETAIL_RANGE, Edge, Effect};
 use deskspace_core::geometry::{Point, Rect, Size};
 
 use super::burn;
+use super::math::{lerp, smoothstep};
 
 /// Which way a play runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +50,44 @@ impl Play {
             edge: Edge::Auto,
         }
     }
+
+    /// The side this play moves toward or sweeps from, for a window at
+    /// `rect` on `work_area`: its own edge, or for Automatic the one its
+    /// effect's row names (`EffectSpec::auto_edge`).
+    pub fn side(&self, rect: Rect, work_area: Rect) -> Side {
+        match self.edge {
+            Edge::Top => Side::Top,
+            Edge::Bottom => Side::Bottom,
+            Edge::Left => Side::Left,
+            Edge::Right => Side::Right,
+            Edge::Auto => match self.effect.spec().auto_edge {
+                AutoEdge::Top => Side::Top,
+                AutoEdge::Nearest => nearest_side(rect, work_area),
+            },
+        }
+    }
+}
+
+/// An edge of a space, with "Automatic" already decided (`Play::side`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The side of `work_area` nearest `rect`.
+fn nearest_side(rect: Rect, work_area: Rect) -> Side {
+    [
+        (rect.top() - work_area.top(), Side::Top),
+        (work_area.bottom() - rect.bottom(), Side::Bottom),
+        (rect.left() - work_area.left(), Side::Left),
+        (work_area.right() - rect.right(), Side::Right),
+    ]
+    .into_iter()
+    .min_by_key(|(distance, _)| *distance)
+    .map_or(Side::Top, |(_, side)| side)
 }
 
 /// Where a window is and what it may cover, in desktop coordinates.
@@ -64,14 +103,14 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    /// A window that hides and shows (or comes and goes): Roll collapses it
-    /// into `edge` (`Auto` is the top), and Fly uses `work_area`.
-    pub fn for_visibility(rect: Rect, work_area: Rect, edge: Edge) -> Self {
-        let rolled = match edge {
-            Edge::Auto | Edge::Top => Rect::new(rect.x, rect.y, rect.width, 0),
-            Edge::Bottom => Rect::new(rect.x, rect.bottom(), rect.width, 0),
-            Edge::Left => Rect::new(rect.x, rect.y, 0, rect.height),
-            Edge::Right => Rect::new(rect.right(), rect.y, 0, rect.height),
+    /// A window that hides and shows (or comes and goes) with `play`: Roll
+    /// collapses it into the play's side, and Fly uses `work_area`.
+    pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play) -> Self {
+        let rolled = match play.side(rect, work_area) {
+            Side::Top => Rect::new(rect.x, rect.y, rect.width, 0),
+            Side::Bottom => Rect::new(rect.x, rect.bottom(), rect.width, 0),
+            Side::Left => Rect::new(rect.x, rect.y, 0, rect.height),
+            Side::Right => Rect::new(rect.right(), rect.y, 0, rect.height),
         };
         Self {
             rect,
@@ -94,12 +133,12 @@ impl Geometry {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mask {
     None,
-    /// A soft edge sweeping in from `edge`. Along the axis from that edge
-    /// (0 at the edge, 1 at the far side), a pixel is hidden before
+    /// A soft edge sweeping in from `side`. Along the axis from that side
+    /// (0 at the side, 1 at the far side), a pixel is hidden before
     /// `position - feather`, fades in over `feather`, and shows from
     /// `position` on.
     Gradient {
-        edge: Edge,
+        side: Side,
         position: f32,
         feather: f32,
     },
@@ -146,11 +185,10 @@ pub struct TransitionFrame {
     pub content_offset: Point,
     /// The opacity of the tint and the contents, 0 to 1.
     pub opacity: f32,
+    /// What of the contents shows.
     pub mask: Mask,
-    /// The pixel block size: 1 draws normally (Pixelate).
-    pub block: u32,
-    /// How strongly a CRT's bright line glows over the contents, 0 to 1.
-    pub glow: f32,
+    /// How the contents are drawn.
+    pub content: Content,
 }
 
 impl TransitionFrame {
@@ -158,7 +196,62 @@ impl TransitionFrame {
     /// window, so nothing behind them shows through: what moves is only the
     /// window's rect (Roll, Fly, CRT).
     pub fn covers_window(&self) -> bool {
-        self.opacity >= 1.0 && self.block <= 1 && self.mask.hides_nothing()
+        self.opacity >= 1.0 && self.content.covers() && self.mask.hides_nothing()
+    }
+
+    /// How strongly the space casts its shadow, 0 to 1 (ROADMAP D15). A
+    /// frame that only moves the window casts it whole, since the shadow
+    /// follows the rect. One that leaves the window see-through fades it as
+    /// far as the space has faded, or as far as it has gone.
+    pub fn shadow_strength(&self) -> f32 {
+        if self.covers_window() {
+            1.0
+        } else {
+            self.opacity.min(self.shown).clamp(0.0, 1.0)
+        }
+    }
+}
+
+/// How a frame draws the space's contents (ROADMAP D12, amended
+/// 2026-10-19): one variant per way an effect changes them, rather than a
+/// frame field per effect. An effect that draws them some new way adds a
+/// variant, and the painter's `match` asks for it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Content {
+    /// As at rest.
+    Whole,
+    /// In square blocks `block` pixels wide, more than 1 (Pixelate).
+    Pixelated { block: u32 },
+    /// Whole, under a bright line's light, `glow` from above 0 to 1 (CRT).
+    Lit { glow: f32 },
+}
+
+impl Content {
+    /// Blocks `block` pixels wide; 1 or less is `Whole`.
+    pub fn pixelated(block: u32) -> Self {
+        if block <= 1 {
+            Content::Whole
+        } else {
+            Content::Pixelated { block }
+        }
+    }
+
+    /// Lit by `glow`; none is `Whole`.
+    pub fn lit(glow: f32) -> Self {
+        if glow <= 0.0 {
+            Content::Whole
+        } else {
+            Content::Lit { glow }
+        }
+    }
+
+    /// Whether the contents cover every pixel they cover at rest.
+    fn covers(self) -> bool {
+        match self {
+            Content::Whole | Content::Lit { .. } => true,
+            // A block takes its whole area's color, so its edges blend.
+            Content::Pixelated { .. } => false,
+        }
     }
 }
 
@@ -192,8 +285,14 @@ impl Transition {
         }
     }
 
+    /// The way it runs now, which `reverse` turns around.
     pub fn way(&self) -> Way {
         self.way
+    }
+
+    /// The play it started with; its `way` is the one it started in.
+    pub fn play(&self) -> Play {
+        self.play
     }
 
     pub fn geometry(&self) -> Geometry {
@@ -249,14 +348,8 @@ impl Transition {
     }
 
     pub fn frame(&self, now: Duration) -> TransitionFrame {
-        frame(&self.play, &self.geometry, ease(self.u(now)))
+        frame(&self.play, &self.geometry, smoothstep(self.u(now)))
     }
-}
-
-/// Smoothstep: slow at both ends and symmetric, so playing it backwards is
-/// the same curve.
-fn ease(u: f32) -> f32 {
-    u * u * (3.0 - 2.0 * u)
 }
 
 /// How much of the space the gradient's soft edge spans.
@@ -278,8 +371,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         content_offset: Point::new(0, 0),
         opacity: 1.0,
         mask: Mask::None,
-        block: 1,
-        glow: 0.0,
+        content: Content::Whole,
     };
     let gone = 1.0 - shown;
     match play.effect {
@@ -288,7 +380,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             ..whole
         },
         Effect::Roll => {
-            let rect = lerp_rect(geometry.rolled, geometry.rect, shown);
+            let rect = geometry.rolled.lerp(geometry.rect, shown);
             TransitionFrame {
                 rect,
                 content_offset: offset_of(geometry.rect, rect),
@@ -302,14 +394,14 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         Effect::Pixelate => {
             let largest = f32::from(play.detail) * PIXELATE_BLOCK_PER_DETAIL;
             TransitionFrame {
-                block: (1.0 + (largest - 1.0) * gone).round() as u32,
+                content: Content::pixelated((1.0 + (largest - 1.0) * gone).round() as u32),
                 opacity: (shown / PIXELATE_FADE).min(1.0),
                 ..whole
             }
         }
         Effect::Gradient => TransitionFrame {
             mask: Mask::Gradient {
-                edge: resolve_sweep(play.edge),
+                side: play.side(geometry.rect, geometry.work_area),
                 position: gone * (1.0 + GRADIENT_FEATHER),
                 feather: GRADIENT_FEATHER,
             },
@@ -330,9 +422,9 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             ..whole
         },
         Effect::Fly => {
-            let edge = resolve_fly(play.edge, geometry.rect, geometry.work_area);
-            let moved = fly_rect(geometry.rect, geometry.work_area, edge, gone);
-            let rect = intersection(moved, geometry.work_area);
+            let side = play.side(geometry.rect, geometry.work_area);
+            let moved = fly_rect(geometry.rect, geometry.work_area, side, gone);
+            let rect = moved.intersection(geometry.work_area);
             TransitionFrame {
                 rect,
                 content_offset: offset_of(moved, rect),
@@ -363,43 +455,20 @@ fn crt(rect: Rect, shown: f32, whole: TransitionFrame) -> TransitionFrame {
     TransitionFrame {
         rect: opened,
         content_offset: offset_of(rect, opened),
-        glow,
+        content: Content::lit(glow),
         ..whole
     }
 }
 
-fn resolve_sweep(edge: Edge) -> Edge {
-    match edge {
-        Edge::Auto => Edge::Top,
-        edge => edge,
-    }
-}
-
-/// `Auto` flies to the work area's edge nearest the space.
-fn resolve_fly(edge: Edge, rect: Rect, work_area: Rect) -> Edge {
-    if edge != Edge::Auto {
-        return edge;
-    }
-    [
-        (rect.top() - work_area.top(), Edge::Top),
-        (work_area.bottom() - rect.bottom(), Edge::Bottom),
-        (rect.left() - work_area.left(), Edge::Left),
-        (work_area.right() - rect.right(), Edge::Right),
-    ]
-    .into_iter()
-    .min_by_key(|(distance, _)| *distance)
-    .map_or(Edge::Top, |(_, edge)| edge)
-}
-
-/// `rect` moved `gone` of the way past `edge` of `work_area`: at 1 it is
+/// `rect` moved `gone` of the way past `side` of `work_area`: at 1 it is
 /// just outside.
-fn fly_rect(rect: Rect, work_area: Rect, edge: Edge, gone: f32) -> Rect {
+fn fly_rect(rect: Rect, work_area: Rect, side: Side, gone: f32) -> Rect {
     let travel = |distance: i32| (distance as f32 * gone).round() as i32;
-    match edge {
-        Edge::Auto | Edge::Top => rect.offset(0, -travel(rect.bottom() - work_area.top())),
-        Edge::Bottom => rect.offset(0, travel(work_area.bottom() - rect.top())),
-        Edge::Left => rect.offset(-travel(rect.right() - work_area.left()), 0),
-        Edge::Right => rect.offset(travel(work_area.right() - rect.left()), 0),
+    match side {
+        Side::Top => rect.offset(0, -travel(rect.bottom() - work_area.top())),
+        Side::Bottom => rect.offset(0, travel(work_area.bottom() - rect.top())),
+        Side::Left => rect.offset(-travel(rect.right() - work_area.left()), 0),
+        Side::Right => rect.offset(travel(work_area.right() - rect.left()), 0),
     }
 }
 
@@ -409,45 +478,32 @@ fn offset_of(content: Rect, window: Rect) -> Point {
     Point::new(content.x - window.x, content.y - window.y)
 }
 
-fn intersection(a: Rect, b: Rect) -> Rect {
-    let left = a.left().max(b.left());
-    let top = a.top().max(b.top());
-    let right = a.right().min(b.right());
-    let bottom = a.bottom().min(b.bottom());
-    if right <= left || bottom <= top {
-        return Rect::new(left, top, 0, 0);
-    }
-    Rect::new(left, top, right - left, bottom - top)
-}
-
-fn lerp(from: f32, to: f32, t: f32) -> f32 {
-    from + (to - from) * t
-}
-
-fn lerp_rect(from: Rect, to: Rect, t: f32) -> Rect {
-    let at = |a: i32, b: i32| lerp(a as f32, b as f32, t).round() as i32;
-    let left = at(from.left(), to.left());
-    let top = at(from.top(), to.top());
-    let right = at(from.right(), to.right());
-    let bottom = at(from.bottom(), to.bottom());
-    Rect::new(left, top, right - left, bottom - top)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use deskspace_core::animation::EFFECTS;
 
-    const EVERY_EFFECT: [Effect; 9] = [
-        Effect::None,
-        Effect::Roll,
-        Effect::Fade,
-        Effect::Pixelate,
-        Effect::Gradient,
-        Effect::Dissolve,
-        Effect::Fly,
-        Effect::Crt,
-        Effect::Burn,
-    ];
+    /// Every effect, from the table, so a new one is tested without an edit
+    /// here.
+    fn every_effect() -> impl Iterator<Item = Effect> {
+        EFFECTS.iter().map(|spec| spec.effect)
+    }
+
+    /// Every effect that moves through frames: `None` has none.
+    fn every_animated_effect() -> impl Iterator<Item = Effect> {
+        every_effect().filter(|&effect| effect != Effect::None)
+    }
+
+    /// Every edge. The match makes a new `Edge` a compile error here.
+    fn every_edge() -> [Edge; 5] {
+        let edges = [Edge::Auto, Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
+        for edge in edges {
+            match edge {
+                Edge::Auto | Edge::Top | Edge::Bottom | Edge::Left | Edge::Right => {}
+            }
+        }
+        edges
+    }
 
     fn ms(millis: u64) -> Duration {
         Duration::from_millis(millis)
@@ -468,12 +524,25 @@ mod tests {
         Rect::new(0, 0, 1920, 1040)
     }
 
+    /// A Roll's geometry from the top, for the tests that only need a rect.
     fn geometry() -> Geometry {
-        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), Edge::Auto)
+        geometry_for(&play(Effect::Roll, Way::In))
+    }
+
+    fn geometry_for(play: &Play) -> Geometry {
+        Geometry::for_visibility(Rect::new(300, 100, 240, 160), work_area(), play)
     }
 
     fn start(effect: Effect, way: Way) -> Transition {
-        Transition::new(play(effect, way), geometry(), Duration::ZERO)
+        start_from(effect, way, Edge::Auto)
+    }
+
+    fn start_from(effect: Effect, way: Way, edge: Edge) -> Transition {
+        let play = Play {
+            edge,
+            ..play(effect, way)
+        };
+        Transition::new(play, geometry_for(&play), Duration::ZERO)
     }
 
     /// Whether `frame` draws the whole space as it is when fully there.
@@ -481,9 +550,25 @@ mod tests {
         frame.rect == geometry().rect
             && frame.content_offset == Point::new(0, 0)
             && frame.opacity == 1.0
-            && frame.block == 1
-            && frame.glow == 0.0
+            && frame.content == Content::Whole
             && frame.mask.hides_nothing()
+    }
+
+    /// The block size `frame` draws its contents in: 1 when not pixelated.
+    fn block(frame: TransitionFrame) -> u32 {
+        match frame.content {
+            Content::Pixelated { block } => block,
+            Content::Whole | Content::Lit { .. } => 1,
+        }
+    }
+
+    #[test]
+    fn whole_contents_have_one_form() {
+        assert_eq!(Content::pixelated(1), Content::Whole);
+        assert_eq!(Content::pixelated(0), Content::Whole);
+        assert_eq!(Content::pixelated(4), Content::Pixelated { block: 4 });
+        assert_eq!(Content::lit(0.0), Content::Whole);
+        assert_eq!(Content::lit(0.5), Content::Lit { glow: 0.5 });
     }
 
     /// Whether `frame` draws nothing at all.
@@ -500,19 +585,19 @@ mod tests {
 
     #[test]
     fn every_effect_starts_and_ends_where_it_should() {
-        for effect in EVERY_EFFECT {
-            let shown = start(effect, Way::In);
-            assert!(shown.is_done(ms(200)), "{effect:?} In ends");
-            assert!(is_whole(&shown.frame(ms(200))), "{effect:?} In ends whole");
-            let hidden = start(effect, Way::Out);
-            assert!(hidden.is_done(ms(200)), "{effect:?} Out ends");
-            assert!(is_gone(&hidden.frame(ms(200))), "{effect:?} Out ends gone");
-            if effect != Effect::None {
-                assert!(is_gone(&shown.frame(ms(0))), "{effect:?} In starts gone");
-                assert!(
-                    is_whole(&hidden.frame(ms(0))),
-                    "{effect:?} Out starts whole"
-                );
+        for effect in every_effect() {
+            for edge in every_edge() {
+                let case = format!("{effect:?} from {edge:?}");
+                let shown = start_from(effect, Way::In, edge);
+                assert!(shown.is_done(ms(200)), "{case} In ends");
+                assert!(is_whole(&shown.frame(ms(200))), "{case} In ends whole");
+                let hidden = start_from(effect, Way::Out, edge);
+                assert!(hidden.is_done(ms(200)), "{case} Out ends");
+                assert!(is_gone(&hidden.frame(ms(200))), "{case} Out ends gone");
+                if effect != Effect::None {
+                    assert!(is_gone(&shown.frame(ms(0))), "{case} In starts gone");
+                    assert!(is_whole(&hidden.frame(ms(0))), "{case} Out starts whole");
+                }
             }
         }
     }
@@ -520,12 +605,11 @@ mod tests {
     #[test]
     fn only_effects_that_change_pixels_uncover_the_window_midway() {
         // None has no midway: its Out is gone at once.
-        for effect in EVERY_EFFECT
-            .into_iter()
-            .filter(|effect| *effect != Effect::None)
-        {
+        for effect in every_animated_effect() {
             let transition = start(effect, Way::Out);
             let midway = transition.frame(ms(100));
+            // The effects that fade or mask pixels; the rest only move or
+            // crop the window. A new effect fails here until it is sorted.
             let pixels = matches!(
                 effect,
                 Effect::Fade
@@ -543,6 +627,21 @@ mod tests {
     }
 
     #[test]
+    fn a_shadow_stays_whole_while_the_window_moves_and_fades_with_its_pixels() {
+        for effect in every_animated_effect() {
+            let transition = start(effect, Way::Out);
+            assert_eq!(transition.frame(ms(0)).shadow_strength(), 1.0, "{effect:?}");
+            let midway = transition.frame(ms(100));
+            let strength = midway.shadow_strength();
+            if midway.covers_window() {
+                assert_eq!(strength, 1.0, "{effect:?} only moves the window");
+            } else {
+                assert!((0.0..1.0).contains(&strength), "{effect:?}: {strength}");
+            }
+        }
+    }
+
+    #[test]
     fn none_is_done_at_once() {
         assert!(start(Effect::None, Way::In).is_done(Duration::ZERO));
         let out = start(Effect::None, Way::Out);
@@ -552,20 +651,23 @@ mod tests {
 
     #[test]
     fn showing_only_ever_reveals_more() {
-        for effect in EVERY_EFFECT {
-            let transition = start(effect, Way::In);
-            let mut last = transition.frame(ms(0));
-            for step in 1..=40 {
-                let frame = transition.frame(ms(step * 5));
-                assert!(frame.shown >= last.shown, "{effect:?} at {step}");
-                assert!(frame.opacity >= last.opacity, "{effect:?} at {step}");
-                assert!(frame.block <= last.block, "{effect:?} at {step}");
-                assert!(
-                    frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
-                        || effect == Effect::Crt,
-                    "{effect:?} at {step}"
-                );
-                last = frame;
+        for effect in every_effect() {
+            for edge in every_edge() {
+                let case = format!("{effect:?} from {edge:?}");
+                let transition = start_from(effect, Way::In, edge);
+                let mut last = transition.frame(ms(0));
+                for step in 1..=40 {
+                    let frame = transition.frame(ms(step * 5));
+                    assert!(frame.shown >= last.shown, "{case} at {step}");
+                    assert!(frame.opacity >= last.opacity, "{case} at {step}");
+                    assert!(block(frame) <= block(last), "{case} at {step}");
+                    assert!(
+                        frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
+                            || effect == Effect::Crt,
+                        "{case} at {step}"
+                    );
+                    last = frame;
+                }
             }
         }
     }
@@ -573,23 +675,19 @@ mod tests {
     #[test]
     fn reversing_at_any_moment_continues_from_the_same_frame() {
         // None has no frames to continue: reversing it is instant.
-        for effect in EVERY_EFFECT
-            .into_iter()
-            .filter(|&effect| effect != Effect::None)
-        {
-            for way in [Way::In, Way::Out] {
-                for at in [0, 1, 37, 100, 150, 199, 200, 260] {
-                    let mut transition = start(effect, way);
-                    let before = transition.frame(ms(at));
-                    transition.reverse(ms(at));
-                    assert_eq!(
-                        transition.frame(ms(at)),
-                        before,
-                        "{effect:?} {way:?} at {at}"
-                    );
-                    let next = transition.frame(ms(at + 5));
-                    let shift = (next.shown - before.shown).abs();
-                    assert!(shift < 0.1, "{effect:?} {way:?} at {at} jumps by {shift}");
+        for effect in every_animated_effect() {
+            for edge in every_edge() {
+                for way in [Way::In, Way::Out] {
+                    for at in [0, 1, 37, 100, 150, 199, 200, 260] {
+                        let case = format!("{effect:?} from {edge:?} {way:?} at {at}");
+                        let mut transition = start_from(effect, way, edge);
+                        let before = transition.frame(ms(at));
+                        transition.reverse(ms(at));
+                        assert_eq!(transition.frame(ms(at)), before, "{case}");
+                        let next = transition.frame(ms(at + 5));
+                        let shift = (next.shown - before.shown).abs();
+                        assert!(shift < 0.1, "{case} jumps by {shift}");
+                    }
                 }
             }
         }
@@ -624,17 +722,26 @@ mod tests {
     #[test]
     fn roll_keeps_its_edge_and_its_content_in_place() {
         let rect = geometry().rect;
-        let transition = start(Effect::Roll, Way::Out);
-        let frame = transition.frame(ms(100));
-        assert_eq!(frame.rect.top(), rect.top(), "rolls into the top");
-        assert!(frame.rect.height < rect.height);
-        assert_eq!(frame.content_offset, Point::new(0, 0));
-
-        let bottom = Geometry::for_visibility(rect, work_area(), Edge::Bottom);
-        let transition = Transition::new(play(Effect::Roll, Way::Out), bottom, Duration::ZERO);
-        let frame = transition.frame(ms(100));
-        assert_eq!(frame.rect.bottom(), rect.bottom(), "rolls into the bottom");
-        assert_eq!(frame.content_offset.y, rect.top() - frame.rect.top());
+        for edge in every_edge() {
+            let frame = start_from(Effect::Roll, Way::Out, edge).frame(ms(100));
+            let kept = match edge {
+                Edge::Auto | Edge::Top => frame.rect.top() == rect.top(),
+                Edge::Bottom => frame.rect.bottom() == rect.bottom(),
+                Edge::Left => frame.rect.left() == rect.left(),
+                Edge::Right => frame.rect.right() == rect.right(),
+            };
+            assert!(kept, "rolls into {edge:?}: {:?}", frame.rect);
+            assert!(frame.rect.width * frame.rect.height < rect.width * rect.height);
+            // The content stays where it was while the window crops it.
+            assert_eq!(
+                frame.content_offset,
+                Point::new(
+                    rect.left() - frame.rect.left(),
+                    rect.top() - frame.rect.top()
+                ),
+                "{edge:?}"
+            );
+        }
     }
 
     #[test]
@@ -650,8 +757,9 @@ mod tests {
     #[test]
     fn fly_leaves_by_the_nearest_edge_and_never_leaves_the_work_area() {
         let near_right = Rect::new(1600, 400, 240, 160);
-        let geometry = Geometry::for_visibility(near_right, work_area(), Edge::Auto);
-        let transition = Transition::new(play(Effect::Fly, Way::Out), geometry, Duration::ZERO);
+        let fly = play(Effect::Fly, Way::Out);
+        let geometry = Geometry::for_visibility(near_right, work_area(), &fly);
+        let transition = Transition::new(fly, geometry, Duration::ZERO);
         for step in 0..=40 {
             let frame = transition.frame(ms(step * 5));
             let area = work_area();
@@ -667,6 +775,43 @@ mod tests {
     }
 
     #[test]
+    fn automatic_takes_the_side_the_effect_row_names() {
+        let near_right = Rect::new(1600, 400, 240, 160);
+        let side = |effect| play(effect, Way::Out).side(near_right, work_area());
+        assert_eq!(side(Effect::Fly), Side::Right, "the nearest side");
+        assert_eq!(side(Effect::Roll), Side::Top);
+        assert_eq!(side(Effect::Gradient), Side::Top);
+        let left = Play {
+            edge: Edge::Left,
+            ..play(Effect::Fly, Way::Out)
+        };
+        assert_eq!(
+            left.side(near_right, work_area()),
+            Side::Left,
+            "a set edge wins"
+        );
+    }
+
+    #[test]
+    fn fly_never_leaves_the_work_area_from_any_edge() {
+        let area = work_area();
+        for edge in every_edge() {
+            let transition = start_from(Effect::Fly, Way::Out, edge);
+            for step in 0..=40 {
+                let rect = transition.frame(ms(step * 5)).rect;
+                if rect.is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    rect.intersection(area),
+                    rect,
+                    "{edge:?} at {step}: {rect:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn crt_draws_a_line_then_opens_it() {
         let rect = geometry().rect;
         let transition = start(Effect::Crt, Way::In);
@@ -674,21 +819,11 @@ mod tests {
         let line = transition.frame(ms(55));
         assert_eq!(line.rect.height, CRT_LINE_THICKNESS);
         assert!(line.rect.width < rect.width);
-        assert_eq!(line.glow, 1.0);
+        assert_eq!(line.content, Content::Lit { glow: 1.0 });
         let opening = transition.frame(ms(140));
         assert_eq!(opening.rect.width, rect.width);
         assert!(opening.rect.height > CRT_LINE_THICKNESS && opening.rect.height < rect.height);
-        assert!(opening.glow > 0.0 && opening.glow < 1.0);
+        assert!(matches!(opening.content, Content::Lit { glow } if glow < 1.0));
         assert_eq!(opening.rect.center(), rect.center());
-    }
-
-    #[test]
-    fn rects_intersect_or_come_out_empty() {
-        let a = Rect::new(0, 0, 100, 100);
-        assert_eq!(
-            intersection(a, Rect::new(50, 60, 100, 100)),
-            Rect::new(50, 60, 50, 40)
-        );
-        assert!(intersection(a, Rect::new(200, 0, 10, 10)).is_empty());
     }
 }

@@ -16,15 +16,16 @@ const AUTOSAVE_DELAY_MS: u32 = 700;
 impl App {
     pub(super) fn dispatch(&mut self, command: Command, near: Point) -> CommandOutcome {
         let bounds = work_area_at(near);
+        let touched = self.config.desktop.touched_by(&command);
+        for id in &touched.spaces {
+            self.undo.note_space(&self.config.desktop, *id);
+        }
         // Lay the command out on the grid of the space it changes (for a move,
         // the destination), so the result matches that space's monitor scale
         // and icon size even when another space overlaps it at `near`. A
         // command that names no existing space falls back to the space under
         // the action.
-        let target = self
-            .config
-            .desktop
-            .touched_by(&command)
+        let target = touched
             .spaces
             .first()
             .copied()
@@ -116,6 +117,35 @@ impl App {
         let outcome = self.dispatch(command, at);
         self.run(ui, commit_effects(outcome, touched, lead));
         outcome
+    }
+
+    /// Dispatches `command` inside an undo entry named `label` and returns the
+    /// [`Effect`]s a `commit_led_by` would run.
+    pub(super) fn record_effects(
+        &mut self,
+        label: impl Into<String>,
+        command: Command,
+        at: Point,
+        lead: Vec<Effect>,
+    ) -> Vec<Effect> {
+        self.record_outcome(label, command, at, lead).1
+    }
+
+    /// `record_effects`, also reporting whether the command applied, for a
+    /// caller that does something of its own when it did.
+    pub(super) fn record_outcome(
+        &mut self,
+        label: impl Into<String>,
+        command: Command,
+        at: Point,
+        lead: Vec<Effect>,
+    ) -> (bool, Vec<Effect>) {
+        self.undo.begin(label);
+        let touched = self.config.desktop.touched_by(&command);
+        let outcome = self.dispatch(command, at);
+        self.undo.finish(&self.config.desktop);
+        let applied = outcome.is_applied();
+        (applied, commit_effects(outcome, touched, lead))
     }
 }
 

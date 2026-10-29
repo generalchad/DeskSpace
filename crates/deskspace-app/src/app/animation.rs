@@ -1,13 +1,15 @@
 //! `App` animations (ROADMAP D12): what each kind of moment plays, from the
 //! settings and Windows' "Animation effects" switch. The platform plays it.
 
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use deskspace_core::animation::{Animations, Kind, StartupOrder};
 use deskspace_core::{Rect, SpaceId};
-use deskspace_platform::{Play, Way};
+use deskspace_platform::{Play, Ui, Way};
 
 use super::App;
+use super::effect::Effect;
 
 /// The longest an exit may take to animate before DeskSpace tears down
 /// anyway (ROADMAP D13).
@@ -15,18 +17,27 @@ pub(super) const EXIT_LIMIT: Duration = Duration::from_secs(2);
 
 /// The debug window's animation tweaks (ROADMAP D14), for this session
 /// only: slow motion, and playing even while Windows' switch is off.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AnimationTweak {
-    /// How many times slower everything plays; 0 and 1 both mean normal.
-    pub speed: u32,
+    /// How many times slower everything plays; 1 is normal.
+    pub speed: NonZeroU32,
     /// Play as if Windows' "Animation effects" were on.
     pub ignore_windows: bool,
+}
+
+impl Default for AnimationTweak {
+    fn default() -> Self {
+        Self {
+            speed: NonZeroU32::MIN,
+            ignore_windows: false,
+        }
+    }
 }
 
 impl AnimationTweak {
     /// `time` stretched by the speed.
     fn slow(self, time: Duration) -> Duration {
-        time * self.speed.max(1)
+        time * self.speed.get()
     }
 }
 
@@ -82,25 +93,31 @@ impl App {
 impl App {
     /// Exits gracefully (ROADMAP D13): the shown spaces play Startup's Out,
     /// in reverse reading order, then DeskSpace tears down as before.
-    pub(super) fn exit(&mut self, ui: &mut deskspace_platform::Ui) {
-        let plays = if self.visible {
-            let spaces: Vec<(SpaceId, Rect)> = self
-                .config
-                .desktop
-                .spaces()
-                .iter()
-                .map(|space| (space.id, space.visible_rect()))
-                .collect();
-            let play = self.play(Kind::Startup, Way::Out);
-            let animations = &self.config.window.animations;
-            exit_delays(&spaces, animations.startup, self.stagger(), play.duration)
-                .into_iter()
-                .map(|(id, delay)| (id.0, Play { delay, ..play }))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        ui.quit_after(plays, EXIT_LIMIT);
+    pub(super) fn exit(&mut self, ui: &mut Ui) {
+        let effects = self.exit_effects();
+        self.run(ui, effects);
+    }
+
+    /// What exiting asks of the shell: quit after the shown spaces' way out,
+    /// staggered so the last one ends within `EXIT_LIMIT`.
+    fn exit_effects(&self) -> Vec<Effect> {
+        if !self.visible {
+            return vec![Effect::QuitAfter(Vec::new())];
+        }
+        let spaces: Vec<(SpaceId, Rect)> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| (space.id, space.visible_rect()))
+            .collect();
+        let play = self.play(Kind::Startup, Way::Out);
+        let animations = &self.config.window.animations;
+        let plays = exit_delays(&spaces, animations.startup, self.stagger(), play.duration)
+            .into_iter()
+            .map(|(id, delay)| (id, Play { delay, ..play }))
+            .collect();
+        vec![Effect::QuitAfter(plays)]
     }
 }
 
@@ -178,6 +195,7 @@ fn play_for(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::effect::Effect as AppEffect;
     use deskspace_core::animation::{Edge, Effect, EffectChoice};
 
     #[test]
@@ -268,6 +286,40 @@ mod tests {
         assert!(last > Duration::ZERO, "still staggered");
     }
 
+    /// An app with two shown spaces, the lower one made first, that animates
+    /// whatever Windows' switch says.
+    fn app_with_two_spaces() -> (App, SpaceId, SpaceId) {
+        let store = deskspace_config::ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(deskspace_config::Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let lower = crate::fixtures::create_space(desktop, "Lower", Rect::new(20, 400, 200, 150));
+        let upper = crate::fixtures::create_space(desktop, "Upper", Rect::new(20, 20, 200, 150));
+        app.visible = true;
+        app.animation_tweak.ignore_windows = true;
+        (app, lower, upper)
+    }
+
+    #[test]
+    fn exiting_plays_every_shown_space_out_in_reverse_reading_order() {
+        let (app, lower, upper) = app_with_two_spaces();
+        let effects = app.exit_effects();
+        let [AppEffect::QuitAfter(plays)] = effects.as_slice() else {
+            panic!("exit asks for one QuitAfter");
+        };
+        let order: Vec<SpaceId> = plays.iter().map(|(id, _)| *id).collect();
+        let lower_turn = order.iter().position(|id| *id == lower).unwrap();
+        let upper_turn = order.iter().position(|id| *id == upper).unwrap();
+        assert!(lower_turn < upper_turn, "the lower space leaves first");
+        assert!(plays.iter().all(|(_, play)| play.way == Way::Out));
+    }
+
+    #[test]
+    fn exiting_while_hidden_quits_at_once() {
+        let (mut app, _, _) = app_with_two_spaces();
+        app.visible = false;
+        assert_eq!(app.exit_effects(), [AppEffect::QuitAfter(Vec::new())]);
+    }
+
     #[test]
     fn nothing_plays_while_windows_animations_are_off() {
         let normal = AnimationTweak::default();
@@ -287,7 +339,7 @@ mod tests {
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
         animations.startup_exit.duration_ms = 300;
         let quarter = AnimationTweak {
-            speed: 4,
+            speed: NonZeroU32::new(4).unwrap(),
             ignore_windows: false,
         };
         let play = play_for(&animations, true, quarter, Kind::Startup, Way::In);
@@ -303,8 +355,8 @@ mod tests {
         let mut animations = Animations::default();
         animations.startup_exit.effect = EffectChoice::Effect(Effect::Fly);
         let ignore = AnimationTweak {
-            speed: 0,
             ignore_windows: true,
+            ..AnimationTweak::default()
         };
         let play = play_for(&animations, false, ignore, Kind::Startup, Way::In);
         assert_eq!(play.effect, Effect::Fly);
@@ -321,13 +373,9 @@ mod tests {
             Kind::Startup,
             Way::In,
         );
-        let speed_one = AnimationTweak {
-            speed: 1,
-            ignore_windows: false,
-        };
         assert_eq!(
-            tweaked,
-            play_for(&animations, true, speed_one, Kind::Startup, Way::In)
+            tweaked.duration,
+            Duration::from_millis(animations.startup_exit.duration_ms.into())
         );
         assert_eq!(
             AnimationTweak::default().slow(Duration::from_millis(70)),

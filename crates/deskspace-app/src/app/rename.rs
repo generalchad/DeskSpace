@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-use deskspace_core::geometry::Point;
 use deskspace_core::{Command, ItemId, ItemKind, SpaceId};
 use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
 use crate::scene::item_label;
 
+use super::undo::FileChange;
 use super::{App, Surface, Timer};
 
 /// Caret blink half-period, matching Windows' default.
@@ -33,15 +33,40 @@ pub(super) struct EditSession {
     pub(super) text: TextEdit,
 }
 
-/// The inline-edit state: the active rename session, if any, and whether the
-/// caret is currently shown (toggled by `Timer::Caret`).
+/// How often to look for a rename Explorer started in its hidden desktop
+/// view after a command from the desktop menu, and for how many looks: New ›
+/// Folder starts one only once the shell has made the folder and its view
+/// has caught up.
+const EXPLORER_RENAME_POLL_MS: u32 = 100;
+const EXPLORER_RENAME_POLLS: u8 = 20;
+
+/// The inline-edit state: the active rename session, if any, whether the
+/// caret is currently shown (toggled by `Timer::Caret`), and how many more
+/// times to look for a rename Explorer started (`Timer::ExplorerRename`).
 #[derive(Debug, Default)]
 pub(super) struct EditState {
     session: Option<EditSession>,
     caret_visible: bool,
+    explorer_polls: u8,
 }
 
 impl EditState {
+    /// Starts looking for a rename Explorer starts.
+    fn watch_explorer(&mut self) {
+        self.explorer_polls = EXPLORER_RENAME_POLLS;
+    }
+
+    /// Uses up one look; returns whether any are left after it.
+    fn next_explorer_poll(&mut self) -> bool {
+        self.explorer_polls = self.explorer_polls.saturating_sub(1);
+        self.explorer_polls > 0
+    }
+
+    /// Stops looking.
+    fn stop_watching_explorer(&mut self) {
+        self.explorer_polls = 0;
+    }
+
     /// Whether a rename is in progress.
     pub(super) fn is_active(&self) -> bool {
         self.session.is_some()
@@ -111,20 +136,19 @@ impl App {
     /// Handles F2: renames the focused (last-selected) item, or the current
     /// space's title when no item is selected, as F2 does in Explorer.
     pub(super) fn begin_f2_rename(&mut self, ui: &mut Ui) {
-        // Only a space renames: its title, or an item's file. A loose desktop
-        // item's file rename would need `Command::RenameItem` to reach the
-        // layer.
-        let Some(Surface::Space(space)) = self.selection.surface else {
+        let Some(surface) = self.selection.surface else {
             return;
         };
-        match self.selection.items.last().copied() {
-            Some(item) => self.begin_item_rename(ui, space, item),
-            None => self.begin_rename(ui, space),
+        match (surface, self.selection.items.last().copied()) {
+            (_, Some(item)) => self.begin_item_rename(ui, surface, item),
+            (Surface::Space(space), None) => self.begin_rename(ui, space),
+            // The desktop has no title.
+            (Surface::Desktop, None) => {}
         }
     }
 
-    pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, space: SpaceId, item: ItemId) {
-        let show_extensions = self.match_explorer(space) && self.system.shell().show_extensions;
+    pub(super) fn begin_item_rename(&mut self, ui: &mut Ui, surface: Surface, item: ItemId) {
+        let show_extensions = self.shows_extensions(surface);
         let Some(entry) = self.config.desktop.item(item) else {
             return;
         };
@@ -139,7 +163,7 @@ impl App {
             }
         }
         self.edit.begin(EditSession {
-            surface: Surface::Space(space),
+            surface,
             target: EditTarget::Item {
                 id: item,
                 shows_extension,
@@ -149,7 +173,7 @@ impl App {
         });
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
-        self.refresh_space(ui, space);
+        self.refresh_surface(ui, surface);
     }
 
     pub(super) fn apply_edit_key(&mut self, ui: &mut Ui, key: EditKey) {
@@ -187,13 +211,9 @@ impl App {
                 if commit {
                     let title = session.text.text().trim().to_string();
                     if !title.is_empty() && title != session.original {
-                        let near = self.space_center(id);
-                        if self
-                            .commit(ui, Command::RenameSpace { id, title }, near)
-                            .is_applied()
-                        {
-                            self.resnapshot_settings(ui, id);
-                        }
+                        let effects = self.rename_space(id, title);
+                        self.run(ui, effects);
+                        self.resnapshot_settings(ui, id);
                     }
                 }
             }
@@ -209,6 +229,20 @@ impl App {
         self.refresh_surface(ui, surface);
     }
 
+    pub(super) fn rename_space(
+        &mut self,
+        id: SpaceId,
+        title: String,
+    ) -> Vec<super::effect::Effect> {
+        let near = self.space_center(id);
+        self.record_effects(
+            "Rename space",
+            Command::RenameSpace { id, title },
+            near,
+            Vec::new(),
+        )
+    }
+
     /// Renames an item's file to the edited text and updates the model. The
     /// original extension is kept when the label did not show it, as Explorer
     /// does. A cancelled or skipped shell rename leaves the item unchanged.
@@ -219,6 +253,15 @@ impl App {
         shows_extension: bool,
         typed: &str,
     ) {
+        if self.config.desktop.space_containing(id).is_some() {
+            if self.rename_space_item(id, shows_extension, typed, |path, new_name| {
+                ui.rename_path(path, new_name)
+            }) {
+                self.refresh_tray(ui);
+                self.save(ui);
+            }
+            return;
+        }
         let typed = typed.trim();
         let Some(item) = self.config.desktop.item(id) else {
             return;
@@ -237,6 +280,51 @@ impl App {
             return;
         }
         self.icons.invalidate(&path);
+        // A loose item mirrors the Desktop folder, which now holds the
+        // new name; it keeps the selection under its new id.
+        self.resync_desktop_layer(ui);
+        let renamed = self
+            .config
+            .desktop
+            .layer()
+            .items()
+            .iter()
+            .find(|item| item.path == new_path);
+        if let Some(renamed) = renamed.map(|item| item.id) {
+            self.selection.select_only(Surface::Desktop, renamed);
+        }
+    }
+
+    /// Renames space item `id` with `rename_on_disk` and records one
+    /// `"Rename item"` undo entry. Returns whether the rename succeeded.
+    pub(super) fn rename_space_item(
+        &mut self,
+        id: ItemId,
+        shows_extension: bool,
+        typed: &str,
+        rename_on_disk: impl FnOnce(&Path, &str) -> bool,
+    ) -> bool {
+        let typed = typed.trim();
+        let Some(space) = self.config.desktop.space_containing(id) else {
+            return false;
+        };
+        let Some(item) = self.config.desktop.item(id) else {
+            return false;
+        };
+        let path = item.path.clone();
+        let kind = item.kind;
+        let new_name = renamed_file_name(&path, typed, shows_extension || kind == ItemKind::Folder);
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let new_path = parent.join(&new_name);
+        if new_name.is_empty() || new_path == path {
+            return false;
+        }
+        if !rename_on_disk(&path, &new_name) || !new_path.exists() {
+            return false;
+        }
+        self.icons.invalidate(&path);
         let label = if kind == ItemKind::Folder {
             new_name.clone()
         } else {
@@ -246,13 +334,14 @@ impl App {
                 .unwrap_or(new_name.as_str())
                 .to_string()
         };
-        let near = self
-            .config
-            .desktop
-            .space_containing(id)
-            .map_or(Point::ZERO, |space| self.space_center(space));
-        // Not `commit`: the file is already renamed on disk, so this saves at
-        // once below.
+        let near = self.space_center(space);
+        self.undo.begin("Rename item");
+        self.undo.note_file(FileChange::Renamed {
+            from: path,
+            to: new_path.clone(),
+        });
+        // Not `commit`: the file is already renamed on disk, so the caller
+        // saves at once.
         self.dispatch(
             Command::RenameItem {
                 id,
@@ -261,13 +350,63 @@ impl App {
             },
             near,
         );
-        self.save(ui);
+        self.undo.finish(&self.config.desktop);
+        true
     }
 
     pub(super) fn cancel_edit(&mut self, ui: &mut Ui) {
         if self.edit.is_active() {
             self.finish_rename(ui, false);
         }
+    }
+
+    /// After a shell command from the desktop menu, watches for a rename
+    /// Explorer starts in its view (New › Folder, any New entry), which is
+    /// invisible while takeover hides its icons. Without takeover Explorer's
+    /// own box shows, so nothing is watched.
+    pub(super) fn watch_explorer_rename(&mut self, ui: &mut Ui) {
+        if !self.desktop_takeover() {
+            return;
+        }
+        self.edit.watch_explorer();
+        Self::set_timer(ui, Timer::ExplorerRename, EXPLORER_RENAME_POLL_MS);
+    }
+
+    /// `Timer::ExplorerRename`: takes over a rename Explorer started, showing
+    /// DeskSpace's own on the same item, or gives up after the last look.
+    pub(super) fn poll_explorer_rename(&mut self, ui: &mut Ui) {
+        let label = deskspace_platform::take_explorer_rename();
+        if label.is_none() && self.edit.next_explorer_poll() {
+            return;
+        }
+        self.edit.stop_watching_explorer();
+        Self::clear_timer(ui, Timer::ExplorerRename);
+        let Some(label) = label else {
+            return;
+        };
+        // The new item may not be on the layer yet.
+        self.resync_desktop_layer(ui);
+        let item = self
+            .config
+            .desktop
+            .layer()
+            .items()
+            .iter()
+            .find(|item| {
+                item.label == label
+                    || item
+                        .path
+                        .file_name()
+                        .is_some_and(|name| name == label.as_str())
+            })
+            .map(|item| item.id);
+        let Some(item) = item else {
+            tracing::debug!(%label, "Explorer renamed an item the layer does not show");
+            return;
+        };
+        self.cancel_edit(ui);
+        self.selection.select_only(Surface::Desktop, item);
+        self.begin_item_rename(ui, Surface::Desktop, item);
     }
 
     /// Toggles the edit caret so it blinks, as Windows does.
@@ -301,6 +440,18 @@ fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_explorer_rename_watch_gives_up_after_its_last_look() {
+        let mut edit = EditState::default();
+        assert!(!edit.next_explorer_poll(), "nothing is watched at first");
+        edit.watch_explorer();
+        let looks = std::iter::from_fn(|| edit.next_explorer_poll().then_some(())).count();
+        assert_eq!(looks + 1, usize::from(EXPLORER_RENAME_POLLS));
+        edit.watch_explorer();
+        edit.stop_watching_explorer();
+        assert!(!edit.next_explorer_poll());
+    }
 
     #[test]
     fn rename_preserves_hidden_extensions() {

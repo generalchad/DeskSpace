@@ -261,6 +261,14 @@ pub const BORDER_WIDTH_RANGE: (u8, u8) = (1, 8);
 pub const BORDER_OPACITY_RANGE: (u8, u8) = (0, 100);
 /// The border's default opacity: 19 % (0x30), as it was before the setting.
 pub const BORDER_OPACITY_DEFAULT: u8 = 19;
+/// The bounds a shadow's reach is clamped to, in pixels at 96 DPI.
+pub const SHADOW_SIZE_RANGE: (u8, u8) = (2, 48);
+/// A shadow's default reach, close to the Windows 11 window shadow's.
+pub const SHADOW_SIZE_DEFAULT: u8 = 16;
+/// The bounds a shadow's opacity is clamped to, in percent.
+pub const SHADOW_OPACITY_RANGE: (u8, u8) = (0, 100);
+/// A shadow's default strength, as a percentage of black.
+pub const SHADOW_OPACITY_DEFAULT: u8 = 35;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -291,6 +299,16 @@ pub struct Theme {
     pub border_color: Color,
     /// The border's opacity, in percent, whatever its color.
     pub border_opacity: u8,
+    /// Draw a shadow under each space where Windows draws none (ROADMAP
+    /// D15).
+    pub show_shadow: bool,
+    /// How far the shadow's blur reaches past the space, in pixels at 96
+    /// DPI, scaled with the monitor.
+    pub shadow_size: u8,
+    /// How strongly the shadow is laid down, in percent of black. The blur
+    /// softens its peak to about three quarters of this below the space and
+    /// half beside it.
+    pub shadow_opacity: u8,
     /// Item label lines, 1 or 2.
     pub label_lines: u8,
     /// Item label font size as a percent of the default (100).
@@ -339,6 +357,9 @@ impl Default for Theme {
             border_source: BorderSource::Mode,
             border_color: Color::rgb(255, 255, 255),
             border_opacity: BORDER_OPACITY_DEFAULT,
+            show_shadow: true,
+            shadow_size: SHADOW_SIZE_DEFAULT,
+            shadow_opacity: SHADOW_OPACITY_DEFAULT,
             label_lines: 2,
             label_size: 100,
             icon_size: ICON_SIZE_DEFAULT,
@@ -397,6 +418,18 @@ const LIGHT_TEXT: Color = Color::rgb(26, 26, 26);
 /// unknown. Explorer always fills a checked box with the accent; Windows blue
 /// is the fallback.
 pub const CHECK_ACCENT: Color = Color::rgb(0x00, 0x78, 0xD4);
+
+/// How many recently picked colors the color picker shows and the config
+/// keeps.
+pub const RECENT_COLORS_LIMIT: usize = 14;
+
+/// Puts `color` at the front of `recent`, dropping an earlier copy of it and
+/// anything past `RECENT_COLORS_LIMIT`.
+pub fn remember_color(recent: &mut Vec<Color>, color: Color) {
+    recent.retain(|existing| *existing != color);
+    recent.insert(0, color);
+    recent.truncate(RECENT_COLORS_LIMIT);
+}
 
 /// The default rubber-band selection box color. Explorer draws the box in the
 /// system highlight color; Windows blue is what it resolves to by default.
@@ -544,6 +577,12 @@ impl Theme {
         self.border_opacity = self
             .border_opacity
             .clamp(BORDER_OPACITY_RANGE.0, BORDER_OPACITY_RANGE.1);
+        self.shadow_size = self
+            .shadow_size
+            .clamp(SHADOW_SIZE_RANGE.0, SHADOW_SIZE_RANGE.1);
+        self.shadow_opacity = self
+            .shadow_opacity
+            .clamp(SHADOW_OPACITY_RANGE.0, SHADOW_OPACITY_RANGE.1);
         self.label_lines = self.label_lines.clamp(1, 2);
         self.label_size = self
             .label_size
@@ -607,6 +646,18 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remember_color_moves_to_front_and_caps_the_list() {
+        let mut recent = vec![Color::rgb(1, 1, 1), Color::rgb(2, 2, 2)];
+        remember_color(&mut recent, Color::rgb(2, 2, 2));
+        assert_eq!(recent, vec![Color::rgb(2, 2, 2), Color::rgb(1, 1, 1)]);
+        for shade in 0..RECENT_COLORS_LIMIT as u8 + 3 {
+            remember_color(&mut recent, Color::rgb(shade, 0, 0));
+        }
+        assert_eq!(recent.len(), RECENT_COLORS_LIMIT);
+        assert_eq!(recent[0], Color::rgb(RECENT_COLORS_LIMIT as u8 + 2, 0, 0));
+    }
 
     #[test]
     fn hex_round_trips_rgb() {
@@ -932,9 +983,13 @@ mod tests {
             overlay_size: 250,
             border_width: 0,
             border_opacity: 250,
+            shadow_size: 0,
+            shadow_opacity: 250,
             ..Theme::default()
         }
         .clamped();
+        assert_eq!(theme.shadow_size, SHADOW_SIZE_RANGE.0);
+        assert_eq!(theme.shadow_opacity, SHADOW_OPACITY_RANGE.1);
         assert_eq!(theme.border_width, BORDER_WIDTH_RANGE.0);
         assert_eq!(theme.border_opacity, BORDER_OPACITY_RANGE.1);
         assert_eq!(theme.corner_radius, corner::MAX);

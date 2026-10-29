@@ -46,9 +46,14 @@ impl Ui {
                 runtime.ui_dark,
             )
         })?;
-        // SAFETY: `owner` is a live window owned by this thread, and the picker
-        // is modal for the duration of the call.
-        unsafe { crate::win32::color_picker::pick(owner, initial, dark) }
+        pick_color(owner, initial, dark)
+    }
+
+    /// Sets the color picker's recent colors, most recent first, such as the
+    /// ones saved last session. Picks update them and raise
+    /// `Event::RecentColors`.
+    pub fn set_recent_colors(&mut self, colors: Vec<deskspace_core::theme::Color>) {
+        with_runtime(|runtime| runtime.recent_colors = colors);
     }
 
     /// Opens the installed-apps picker titled `title` and returns the apps the
@@ -243,9 +248,10 @@ impl Ui {
     }
 
     /// This process's windows for the debug window's table: top-level ones
-    /// in z-order, then desktop-hosted spaces.
+    /// in z-order, then desktop-hosted spaces. A shadow window is listed
+    /// under the space that casts it.
     pub fn debug_windows(&self) -> Vec<WindowRow> {
-        let Some((host, spaces)) = with_runtime(|runtime| {
+        let Some((host, mut spaces)) = with_runtime(|runtime| {
             let spaces: Vec<(HWND, u64)> = runtime
                 .spaces
                 .iter()
@@ -255,6 +261,11 @@ impl Ui {
         }) else {
             return Vec::new();
         };
+        let shadows: Vec<(HWND, u64)> = spaces
+            .iter()
+            .filter_map(|(hwnd, id)| space_window::shadow_of(*hwnd).map(|shadow| (shadow, *id)))
+            .collect();
+        spaces.extend(shadows);
         let space_of = |window: HWND| {
             spaces
                 .iter()

@@ -7,7 +7,7 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use deskspace_core::geometry::Point;
-use deskspace_core::item::{ItemFacts, ItemKind};
+use deskspace_core::item::ItemFacts;
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::Globalization::{
     DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_FORMAT_FLAGS,
@@ -35,7 +35,8 @@ use crate::win32::system::wide;
 pub struct DesktopEntry {
     pub path: PathBuf,
     pub label: String,
-    pub kind: ItemKind,
+    /// What the file system said about `path` when it was listed.
+    pub facts: ItemFacts,
     /// The item's top-left in the desktop view's coordinates, when the shell
     /// view supplied it. The folder-walk fallback has no positions, so it is
     /// `None` there and the caller decides where to place the item.
@@ -96,7 +97,7 @@ fn enumerate_via_view() -> Option<Vec<DesktopEntry>> {
         };
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path, path.is_dir()),
+            facts: item_facts(&path),
             path,
             position,
         });
@@ -118,7 +119,7 @@ fn enumerate_via_folder(
         }
         entries.push(DesktopEntry {
             label: display_name(&path).unwrap_or_else(|| fallback_label(&path)),
-            kind: ItemKind::classify(&path, path.is_dir()),
+            facts: item_facts(&path),
             path,
             position: None,
         });
@@ -460,7 +461,9 @@ mod tests {
         };
         assert!(result.is_ok(), "{result:?}");
         assert!(!wide_text(&buffer).is_empty(), "{result:?}");
-        assert!(format_bytes(2048).ends_with("KB"));
+        // The unit follows the machine's locale and Windows build ("KiB" on
+        // newer ones), so compare with the raw call instead of a unit.
+        assert_eq!(format_bytes(2048), wide_text(&buffer));
     }
 
     #[test]
@@ -474,8 +477,14 @@ mod tests {
     #[test]
     fn a_kilobyte_size_carries_its_unit() {
         let text = format_kb(1_234 * 1024);
-        assert!(text.ends_with("KB"), "{text}");
-        assert!(text.chars().any(|c| c.is_ascii_digit()));
+        // The unit itself follows the locale and Windows build ("KB", "KiB"),
+        // so require a number and something after it rather than a unit.
+        assert!(text.chars().any(|c| c.is_ascii_digit()), "{text}");
+        assert!(
+            text.chars()
+                .any(|c| !c.is_ascii_digit() && !c.is_whitespace()),
+            "{text}"
+        );
     }
 
     #[test]

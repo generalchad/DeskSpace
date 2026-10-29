@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
+use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
@@ -35,6 +36,7 @@ pub enum Command {
         at: Point,
         size: Size,
         locked: bool,
+        icon: SpaceIcon,
     },
     /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
     /// `path` is only stored; `SyncLens` fills the items. `view` is the new
@@ -81,11 +83,17 @@ pub enum Command {
         id: SpaceId,
         title: String,
     },
-    /// Sets how a space lays its items out (D15). Works on a normal space and
+    /// Sets how a space lays its items out (D17). Works on a normal space and
     /// a lens alike; the view is separate from the look.
     SetSpaceView {
         id: SpaceId,
         view: SpaceView,
+    },
+    /// Sets a space's icon. A locked space still takes it, as it takes a
+    /// rename.
+    SetSpaceIcon {
+        id: SpaceId,
+        icon: SpaceIcon,
     },
     /// Moves an unlocked space by `delta`, snapped to the grid and kept
     /// inside the bounds.
@@ -180,13 +188,13 @@ pub enum Command {
         target: SpaceId,
     },
     /// Moves `id` to slot `index` within its space, a manual rearrangement.
-    /// Rejected on a space that keeps sorted (D15).
+    /// Rejected on a space that keeps sorted (D17).
     ReorderItem {
         id: ItemId,
         index: usize,
     },
     /// Moves several items (a drag of a multi-selection) to `index`, keeping
-    /// their relative order. Rejected on a space that keeps sorted (D15).
+    /// their relative order. Rejected on a space that keeps sorted (D17).
     ReorderItems {
         ids: Vec<ItemId>,
         index: usize,
@@ -258,12 +266,17 @@ impl Desktop {
         bounds: Rect,
     ) -> CommandOutcome {
         match command {
+            Command::SetSpaceView { id, view } => self.apply_set_space_view(id, view, layout),
+            Command::SetSpaceIcon { id, icon } => self.apply_set_space_icon(id, icon),
             Command::CreateSpace {
                 title,
                 at,
                 size,
                 locked,
-            } => self.apply_create_space(title, at, size, locked, bounds),
+                icon,
+            } => self.apply_create_space(title, at, size, locked, icon, bounds),
+            Command::DeleteSpace { id } => self.apply_delete_space(id),
+            Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
             Command::CreateLens {
                 title,
                 at,
@@ -285,9 +298,6 @@ impl Desktop {
             Command::SetLensTitle { id, title, text } => self.apply_set_lens_title(id, title, text),
             Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
             Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
-            Command::DeleteSpace { id } => self.apply_delete_space(id),
-            Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
-            Command::SetSpaceView { id, view } => self.apply_set_space_view(id, view, layout),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
@@ -360,7 +370,7 @@ impl Desktop {
 
 /// Puts a space's items in its kept order after one changed, and reports
 /// whether it sorted. A lens always keeps sorted; a normal space when its
-/// view asks (D15).
+/// view asks (D17).
 fn hold_kept_order(space: &mut Space) -> bool {
     if !space.keeps_sorted() {
         return false;
@@ -387,6 +397,7 @@ mod tests {
                 at: Point::new(40, 40),
                 size: Size::new(240, 120),
                 locked: false,
+                icon: SpaceIcon::None,
             },
             bounds(),
         );
@@ -409,6 +420,7 @@ mod tests {
                 at: Point::new(10, 10),
                 size: Size::new(320, 200),
                 locked: true,
+                icon: SpaceIcon::None,
             },
             bounds(),
         );
@@ -751,6 +763,56 @@ mod tests {
             ),
             CommandOutcome::NotFound
         );
+    }
+
+    #[test]
+    fn set_space_icon_sets_it_even_on_a_locked_space() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        desktop.apply(Command::ToggleLock { id }, bounds());
+        let icon = SpaceIcon::Chosen(crate::icon::IconRef::parse("fluent:games").unwrap());
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIcon {
+                    id,
+                    icon: icon.clone()
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(desktop.space(id).unwrap().icon(), &icon);
+    }
+
+    #[test]
+    fn set_space_icon_on_a_missing_space_is_not_found() {
+        let mut desktop = Desktop::new();
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceIcon {
+                    id: SpaceId(999),
+                    icon: SpaceIcon::Automatic
+                },
+                bounds()
+            ),
+            CommandOutcome::NotFound
+        );
+    }
+
+    #[test]
+    fn create_space_sets_the_icon() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Games".into(),
+                at: Point::new(0, 0),
+                size: Size::new(240, 120),
+                locked: false,
+                icon: SpaceIcon::Automatic,
+            },
+            bounds(),
+        );
+        assert_eq!(desktop.spaces[0].icon(), &SpaceIcon::Automatic);
     }
 
     #[test]
@@ -1564,6 +1626,7 @@ mod tests {
                 at: Point::new(40, 40),
                 size: Size::new(240, 120),
                 locked: false,
+                icon: SpaceIcon::None,
             };
             assert!(desktop.apply(create, bounds()).is_applied());
             id

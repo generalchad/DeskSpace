@@ -6,9 +6,10 @@ Windows 11, with translucent, softly blurred backgrounds and rounded corners.
 DeskSpace is a native app that works offline: no browser engine, no background
 service, and most importantly: no tracking or telemetry. The only network
 access is the update check, which runs when you choose "Check for updates…" or,
-if you turn it on in Settings, about once a day. You can also let the installed
-version install updates on its own while you are away. It asks GitHub for the latest
-release and sends nothing about you or your files.
+if you turn it on in Settings, about once a day, and the space icons' one-time
+icon-set download, which asks first (Settings > General, "Icon downloads"). You
+can also let the installed version install updates on its own while you are
+away. Both ask GitHub and send nothing about you or your files.
 
 Spaces hold desktop items and shortcuts, and *lenses* show the live contents
 of a folder. Other planned features include
@@ -106,8 +107,8 @@ help inspect the look and the desktop layer.
   or a new row underneath.
 - Double-click a space title bar to fold or unfold it (animated; Settings >
   Animations > Fold sets the speed). Right-click a space for
-  fold, rename, lock, fit to contents, new shortcut, appearance, sort,
-  delete, new space, new lens, settings, hide/show spaces, and exit. "New shortcut"
+  undo, redo, fold, rename, lock, fit to contents, new shortcut, appearance,
+  sort, delete, new space, new lens, settings, hide/show spaces, and exit. "New shortcut"
   lists your installed apps (Store apps included) to tick and add,
   opens "Custom shortcut…" to type or browse to any file, folder, program, or
   web address, pastes a shortcut to what you copied in Explorer ("Paste
@@ -140,7 +141,8 @@ help inspect the look and the desktop layer.
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
   Windows 11 the one "Show more options" opens) with New space, New lens,
   DeskSpace settings, and hide/show spaces on top.
-- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items. `Delete` sends the
+- `Ctrl+X` / `Ctrl+C` / `Ctrl+V` cut, copy, and paste items, and `Ctrl+Z` /
+  `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
   selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
@@ -148,7 +150,8 @@ help inspect the look and the desktop layer.
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
   icons larger and smaller, `Ctrl+0` resets them to 100 %, and `Ctrl+Shift+1`
-  through `Ctrl+Shift+5` pick Extra large, Large, Medium, Small icons, or List.
+  through `Ctrl+Shift+8` pick Extra large, Large, Medium, or Small icons, List,
+  Details, Tiles, or Content.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.

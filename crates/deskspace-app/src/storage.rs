@@ -83,6 +83,31 @@ impl ItemStore {
     pub fn release(&self, path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
         move_into(path, folder)
     }
+    /// Moves `from` to the exact `to` path when either end is in the store.
+    /// Used by undo and redo after `UndoEntry` has verified `from` exists and
+    /// `to` is free, so the restored path matches the space snapshot even when
+    /// the original move added a " (n)" clash suffix.
+    pub fn move_between(&self, from: &Path, to: &Path) -> Result<(), StoreError> {
+        if !self.contains(from) && !self.contains(to) {
+            return Err(StoreError::NotMovable(from.to_path_buf()));
+        }
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| StoreError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+        match std::fs::rename(from, to) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+                Err(StoreError::OtherVolume(from.to_path_buf()))
+            }
+            Err(source) => Err(StoreError::Io {
+                path: from.to_path_buf(),
+                source,
+            }),
+        }
+    }
 }
 
 /// Whether two paths name the same file, comparing `path_key`s. Exact equality
@@ -250,6 +275,29 @@ mod tests {
         let back = store.release(&stored, &desktop).unwrap();
         assert_eq!(back, original);
         assert!(!stored.exists());
+    }
+
+    #[test]
+    fn move_between_restores_exact_paths_even_after_a_clash_rename() {
+        let scratch = Scratch::new("move-between");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        let folder = scratch.0.join("folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(store.root()).unwrap();
+        std::fs::write(store.root().join("report.txt"), "first").unwrap();
+        let original = folder.join("report.txt");
+        std::fs::write(&original, "second").unwrap();
+
+        let stored = store.adopt(&original).unwrap();
+        assert_eq!(stored.file_name().unwrap(), "report (2).txt");
+
+        store.move_between(&stored, &original).unwrap();
+        assert!(original.exists());
+        assert!(!stored.exists());
+
+        store.move_between(&original, &stored).unwrap();
+        assert!(stored.exists());
+        assert!(!original.exists());
     }
 
     #[test]

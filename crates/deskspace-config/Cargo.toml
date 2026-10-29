@@ -12,6 +12,8 @@ publish.workspace = true
 [dependencies]
 deskspace-core.workspace = true
 serde.workspace = true
+# Iconify icon sets are JSON (D16).
+serde_json = "1"
 toml.workspace = true
 directories.workspace = true
 thiserror.workspace = true

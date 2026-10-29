@@ -1,4 +1,4 @@
-//! One item ordering for spaces and lenses (ROADMAP D15).
+//! One item ordering for spaces and lenses (ROADMAP D17).
 //!
 //! A space keeps its rule and a lens always uses its own, so both kinds sort
 //! through `SortRule::compare`: there is no separate lens comparator.

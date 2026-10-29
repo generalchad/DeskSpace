@@ -232,7 +232,7 @@ pub(crate) fn columns_for(length: i32, cell: i32, gap: i32, padding: i32) -> i32
 
 /// Sizes the space to fit its items (unless the user sized it) and lays the
 /// items out. Locked spaces are left alone, and a view that places items by
-/// order keeps the space's size and `Item.position` (D15).
+/// order keeps the space's size and `Item.position` (D17).
 pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     if space.locked {
         return;
@@ -271,7 +271,7 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
 /// Places items on the grid. Positions are relative to the space's content
 /// area, so moving the space never has to touch its items. User-sized spaces
 /// use as many columns as their width allows; others use `spec.columns`. A view
-/// that places items by order leaves the positions alone (D15).
+/// that places items by order leaves the positions alone (D17).
 pub fn position_items(space: &mut Space, spec: GridSpec) {
     if space.view().mode.places_by_order() {
         return;

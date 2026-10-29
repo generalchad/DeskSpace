@@ -14,7 +14,12 @@ pub struct Desktop {
     pub(crate) spaces: Vec<Space>,
     /// The desktop's loose items, outside any space (ROADMAP D7).
     #[serde(default)]
-    pub layer: DesktopLayer,
+    pub(crate) layer: DesktopLayer,
+    /// The global grid. It is a setting, not model state, so it is public
+    /// rather than behind a `Command`: the settings window edits, previews,
+    /// and cancels it as it does the global `Theme`, it is not undoable, and
+    /// every `Command` is applied against a layout passed in
+    /// (`apply_with_layout`) rather than reading it.
     #[serde(default)]
     pub layout: GridSpec,
     /// The highest space id handed out this session.
@@ -137,7 +142,7 @@ impl Desktop {
         id
     }
 
-    pub fn remove_space(&mut self, id: SpaceId) -> Option<Space> {
+    pub(crate) fn remove_space(&mut self, id: SpaceId) -> Option<Space> {
         let index = self.spaces.iter().position(|space| space.id == id)?;
         Some(self.spaces.remove(index))
     }
@@ -163,7 +168,7 @@ impl Desktop {
 
     /// Moves `item` into `target`. Returns `false` without changing anything if
     /// the item or the target space does not exist, or the item is already there.
-    pub fn move_item(&mut self, item: ItemId, target: SpaceId) -> bool {
+    pub(crate) fn move_item(&mut self, item: ItemId, target: SpaceId) -> bool {
         let Some(target_index) = self.spaces.iter().position(|space| space.id == target) else {
             return false;
         };
@@ -192,10 +197,6 @@ impl Desktop {
             .rev()
             .find(|space| space.visible_rect().contains(point))
             .map(|space| space.id)
-    }
-
-    pub fn sort_by_id(&mut self) {
-        self.spaces.sort_by_key(|space| space.id.0);
     }
 
     /// Folds every space's per-space overrides from older files into a

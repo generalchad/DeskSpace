@@ -41,6 +41,15 @@ pub enum EffectOption {
     Direction,
 }
 
+/// Where an effect with `EffectOption::Direction` goes when its direction
+/// is `Edge::Auto`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoEdge {
+    Top,
+    /// The edge of the space's monitor work area nearest the space.
+    Nearest,
+}
+
 /// One row of `EFFECTS`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectSpec {
@@ -49,6 +58,9 @@ pub struct EffectSpec {
     pub key: &'static str,
     /// The options the effect uses; the settings page greys the rest.
     pub options: &'static [EffectOption],
+    /// Where "Automatic" goes, for an effect that uses `Direction`: the top
+    /// unless the row says otherwise.
+    pub auto_edge: AutoEdge,
 }
 
 use EffectOption::{Detail, Direction};
@@ -61,7 +73,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Pixelate, "pixelate", &[Detail]),
     effect(Effect::Gradient, "gradient", &[Direction]),
     effect(Effect::Dissolve, "dissolve", &[Detail]),
-    effect(Effect::Fly, "fly", &[Direction]),
+    effect(Effect::Fly, "fly", &[Direction]).auto_edge(AutoEdge::Nearest),
     effect(Effect::Crt, "crt", &[]),
     effect(Effect::Burn, "burn", &[Detail]),
 ];
@@ -71,6 +83,13 @@ const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOpti
         effect,
         key,
         options,
+        auto_edge: AutoEdge::Top,
+    }
+}
+
+impl EffectSpec {
+    const fn auto_edge(self, auto_edge: AutoEdge) -> Self {
+        Self { auto_edge, ..self }
     }
 }
 
@@ -113,9 +132,9 @@ pub struct KindSpec {
     /// The name in "same as" choices in the config file. Never change one:
     /// it is stored.
     pub key: &'static str,
-    /// The effects the kind offers, in `EFFECTS` order. Always includes
-    /// `Effect::None` and the kind's default.
-    pub effects: &'static [Effect],
+    /// The effects the kind offers. Always includes `Effect::None` and the
+    /// kind's default.
+    pub offers: Offers,
     /// The options the kind lets the user change, when its effect uses them.
     pub options: &'static [EffectOption],
     /// A kind whose effect this one can follow ("Same as startup").
@@ -125,24 +144,38 @@ pub struct KindSpec {
     pub default: EffectChoice,
 }
 
-const EVERY_EFFECT: &[Effect] = &[
-    Effect::None,
-    Effect::Roll,
-    Effect::Fade,
-    Effect::Pixelate,
-    Effect::Gradient,
-    Effect::Dissolve,
-    Effect::Fly,
-    Effect::Crt,
-    Effect::Burn,
-];
+/// Which effects a kind offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offers {
+    /// Every row of `EFFECTS`, so a new effect needs no edit here.
+    Every,
+    /// Only these, in `EFFECTS` order.
+    Only(&'static [Effect]),
+}
+
+impl Offers {
+    pub fn contains(self, effect: Effect) -> bool {
+        match self {
+            Offers::Every => true,
+            Offers::Only(effects) => effects.contains(&effect),
+        }
+    }
+
+    /// The effects offered, in `EFFECTS` order.
+    pub fn effects(self) -> impl Iterator<Item = Effect> {
+        EFFECTS
+            .iter()
+            .map(|spec| spec.effect)
+            .filter(move |&effect| self.contains(effect))
+    }
+}
 
 /// Every kind, in the order the settings page lists them.
 pub const KINDS: &[KindSpec] = &[
     KindSpec {
         kind: Kind::Startup,
         key: "startup",
-        effects: EVERY_EFFECT,
+        offers: Offers::Every,
         options: &[Detail, Direction],
         follows: None,
         startup: true,
@@ -151,7 +184,7 @@ pub const KINDS: &[KindSpec] = &[
     KindSpec {
         kind: Kind::Delete,
         key: "delete",
-        effects: EVERY_EFFECT,
+        offers: Offers::Every,
         options: &[Detail, Direction],
         follows: Some(Kind::Startup),
         startup: false,
@@ -161,7 +194,7 @@ pub const KINDS: &[KindSpec] = &[
     KindSpec {
         kind: Kind::Fold,
         key: "fold",
-        effects: &[Effect::None, Effect::Roll],
+        offers: Offers::Only(&[Effect::None, Effect::Roll]),
         options: &[],
         follows: None,
         startup: false,
@@ -180,7 +213,7 @@ impl Kind {
     fn offers(self, choice: EffectChoice) -> bool {
         let spec = self.spec();
         match choice {
-            EffectChoice::Effect(effect) => spec.effects.contains(&effect),
+            EffectChoice::Effect(effect) => spec.offers.contains(effect),
             EffectChoice::SameAs(kind) => spec.follows == Some(kind),
             EffectChoice::Unknown => false,
         }
@@ -229,8 +262,7 @@ impl From<EffectChoice> for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Edge {
-    /// The effect's own: the top for Roll and Gradient, and the nearest edge
-    /// of the work area for Fly.
+    /// The effect's own (`EffectSpec::auto_edge`).
     #[default]
     Auto,
     Top,
@@ -399,12 +431,27 @@ impl Animations {
 mod tests {
     use super::*;
 
+    /// Every effect. The match makes a new `Effect` a compile error here, so
+    /// it cannot miss its `EFFECTS` row.
+    fn every_effect() -> [Effect; 9] {
+        use Effect::*;
+        let effects = [
+            None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt, Burn,
+        ];
+        for effect in effects {
+            match effect {
+                None | Roll | Fade | Pixelate | Gradient | Dissolve | Fly | Crt | Burn => {}
+            }
+        }
+        effects
+    }
+
     #[test]
     fn every_effect_has_one_row_and_a_unique_key() {
-        assert_eq!(EFFECTS.len(), EVERY_EFFECT.len());
-        for (row, effect) in EFFECTS.iter().zip(EVERY_EFFECT) {
-            assert_eq!(row.effect, *effect, "EFFECTS and EVERY_EFFECT agree");
-            assert_eq!(Effect::from_key(row.key), Some(row.effect));
+        assert_eq!(EFFECTS.len(), every_effect().len());
+        for effect in every_effect() {
+            assert_eq!(EFFECTS.iter().filter(|row| row.effect == effect).count(), 1);
+            assert_eq!(Effect::from_key(effect.spec().key), Some(effect));
         }
     }
 
@@ -422,11 +469,49 @@ mod tests {
     }
 
     #[test]
+    fn automatic_is_the_top_but_for_fly() {
+        for spec in EFFECTS {
+            let expected = if spec.effect == Effect::Fly {
+                AutoEdge::Nearest
+            } else {
+                AutoEdge::Top
+            };
+            assert_eq!(spec.auto_edge, expected, "{:?}", spec.effect);
+        }
+    }
+
+    #[test]
+    fn a_kind_offers_its_effects_in_effects_order() {
+        let order = |effect: Effect| EFFECTS.iter().position(|spec| spec.effect == effect);
+        for spec in KINDS {
+            let offered: Vec<_> = spec.offers.effects().map(order).collect();
+            assert!(offered.windows(2).all(|pair| pair[0] < pair[1]), "{spec:?}");
+            if let Offers::Only(effects) = spec.offers {
+                assert_eq!(offered.len(), effects.len(), "{spec:?} lists only effects");
+            }
+        }
+        assert_eq!(Offers::Every.effects().count(), EFFECTS.len());
+    }
+
+    /// Every kind. The match makes a new `Kind` a compile error here, so it
+    /// cannot miss its `KINDS` row.
+    fn every_kind() -> [Kind; 3] {
+        let kinds = [Kind::Startup, Kind::Delete, Kind::Fold];
+        for kind in kinds {
+            match kind {
+                Kind::Startup | Kind::Delete | Kind::Fold => {}
+            }
+        }
+        kinds
+    }
+
+    #[test]
     fn every_kind_has_one_row_and_offers_none_and_its_default() {
-        for kind in [Kind::Startup, Kind::Delete, Kind::Fold] {
+        assert_eq!(KINDS.len(), every_kind().len());
+        for kind in every_kind() {
             let spec = kind.spec();
             assert_eq!(KINDS.iter().filter(|row| row.kind == kind).count(), 1);
-            assert!(spec.effects.contains(&Effect::None), "{kind:?}");
+            assert!(spec.offers.contains(Effect::None), "{kind:?}");
             assert!(kind.offers(spec.default), "{kind:?}");
         }
     }

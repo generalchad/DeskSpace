@@ -1,32 +1,31 @@
 //! The debug window's Animations section: slow motion, ignoring Windows'
 //! switch, and playing an effect on one space or every space on demand.
 
+use std::num::NonZeroU32;
+
 use deskspace_core::SpaceId;
-use deskspace_core::animation::Kind;
+use deskspace_core::animation::{KINDS, Kind};
 use deskspace_platform::{DebugControlKind, Ui, Way};
 
 use crate::app::App;
-
-/// The kinds the Kind box offers: the one a preview plays, and the one the
-/// Animation settings box shows. A preview plays Fold's effect out and back
-/// like the others, since it never touches the model.
-const PREVIEW_KINDS: [(Kind, &str); 3] = [
-    (Kind::Startup, "Startup"),
-    (Kind::Delete, "Delete"),
-    (Kind::Fold, "Fold"),
-];
+use crate::app::effect::Effect;
+use crate::settings::AnimationPage;
 
 /// The slow-motion speeds offered: how many times slower, and the label.
-const SPEEDS: [(u32, &str); 4] = [
-    (1, "Normal"),
-    (2, "\u{00BD}\u{00D7}"),
-    (4, "\u{00BC}\u{00D7}"),
-    (10, "\u{2152}\u{00D7}"),
+const SPEEDS: [(NonZeroU32, &str); 4] = [
+    (NonZeroU32::MIN, "Normal"),
+    (times(2), "\u{00BD}\u{00D7}"),
+    (times(4), "\u{00BC}\u{00D7}"),
+    (times(10), "\u{2152}\u{00D7}"),
 ];
+
+const fn times(slower: u32) -> NonZeroU32 {
+    NonZeroU32::new(slower).expect("a speed is at least 1")
+}
 
 impl App {
     pub(super) fn speed_choice(&self) -> DebugControlKind {
-        let speed = self.animation_tweak.speed.max(1);
+        let speed = self.animation_tweak.speed;
         DebugControlKind::Choice {
             options: SPEEDS.iter().map(|(_, label)| label.to_string()).collect(),
             selected: SPEEDS
@@ -54,9 +53,8 @@ impl App {
 
     pub(super) fn preview_kind_choice(&self) -> DebugControlKind {
         DebugControlKind::Choice {
-            options: PREVIEW_KINDS
-                .iter()
-                .map(|(_, label)| label.to_string())
+            options: (0..KINDS.len())
+                .map(|index| preview_kind(index).1.to_string())
                 .collect(),
             selected: self.debug.as_ref().map_or(0, |tools| tools.preview_kind),
             enabled: true,
@@ -92,7 +90,8 @@ impl App {
             return;
         };
         let (kind, label) = preview_kind(tools.preview_kind);
-        ui.preview_play(id.0, self.play(kind, Way::Out), self.play(kind, Way::In));
+        let effects = self.preview_effects(kind, &[id]);
+        self.run(ui, effects);
         tracing::info!(
             space = id.0,
             kind = label,
@@ -106,16 +105,30 @@ impl App {
             return;
         };
         let (kind, label) = preview_kind(tools.preview_kind);
-        let (out, back) = (self.play(kind, Way::Out), self.play(kind, Way::In));
-        let spaces = self.config.desktop.spaces();
-        for space in spaces {
-            ui.preview_play(space.id.0, out, back);
-        }
+        let ids: Vec<SpaceId> = self
+            .config
+            .desktop
+            .spaces()
+            .iter()
+            .map(|space| space.id)
+            .collect();
+        let effects = self.preview_effects(kind, &ids);
+        self.run(ui, effects);
         tracing::info!(
-            spaces = spaces.len(),
+            spaces = ids.len(),
             kind = label,
             "debug: played an effect preview on every space"
         );
+    }
+
+    /// The preview of `kind` on each of `spaces`: its Out, then its In, with
+    /// the current settings and slow motion.
+    fn preview_effects(&self, kind: Kind, spaces: &[SpaceId]) -> Vec<Effect> {
+        let (out, back) = (self.play(kind, Way::Out), self.play(kind, Way::In));
+        spaces
+            .iter()
+            .map(|&space| Effect::PreviewPlay { space, out, back })
+            .collect()
     }
 
     /// The kind chosen in the Kind box.
@@ -131,9 +144,14 @@ impl App {
     }
 }
 
-/// The preview kind at `index`, or the last one when it is out of range.
+/// The Kind box's kind at `index` and its name, or the last one when
+/// `index` is out of range. The box offers every kind in `KINDS` order,
+/// named as the settings name it: the kind a preview plays, and the one the
+/// Animation settings box shows. A preview plays Fold's effect out and back
+/// like the others, since it never touches the model.
 fn preview_kind(index: usize) -> (Kind, &'static str) {
-    PREVIEW_KINDS[index.min(PREVIEW_KINDS.len() - 1)]
+    let kind = KINDS[index.min(KINDS.len() - 1)].kind;
+    (kind, AnimationPage::of(kind).title)
 }
 
 /// Where `chosen` is in `ids`, or the first space when it is gone or was
@@ -158,7 +176,34 @@ mod tests {
 
     #[test]
     fn speeds_start_at_normal_and_slow_down() {
-        assert_eq!(SPEEDS[0].0, 1);
+        assert_eq!(SPEEDS[0].0, NonZeroU32::MIN);
         assert!(SPEEDS.windows(2).all(|pair| pair[0].0 < pair[1].0));
+    }
+
+    #[test]
+    fn the_kind_box_offers_every_kind_by_its_settings_name() {
+        for (index, spec) in KINDS.iter().enumerate() {
+            assert_eq!(
+                preview_kind(index),
+                (spec.kind, AnimationPage::of(spec.kind).title)
+            );
+        }
+        assert_eq!(preview_kind(99).0, KINDS[KINDS.len() - 1].kind);
+    }
+
+    #[test]
+    fn a_preview_plays_out_and_back_on_each_space() {
+        let store = deskspace_config::ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let app = App::new(deskspace_config::Config::new(), store, false, false);
+        let spaces = [SpaceId(3), SpaceId(5)];
+        let effects = app.preview_effects(Kind::Delete, &spaces);
+        assert_eq!(effects.len(), 2);
+        for (effect, id) in effects.iter().zip(spaces) {
+            let Effect::PreviewPlay { space, out, back } = effect else {
+                panic!("{effect:?} is not a preview");
+            };
+            assert_eq!(*space, id);
+            assert_eq!((out.way, back.way), (Way::Out, Way::In));
+        }
     }
 }

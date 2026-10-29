@@ -10,6 +10,8 @@
 
 use deskspace_core::animation::DETAIL_RANGE;
 
+use super::math::{Grid, hash, smoothstep, unit};
+
 /// Pixels per field cell; the painter draws the cells with linear
 /// interpolation, so the edges stay soft.
 pub const CELL: u32 = 3;
@@ -35,46 +37,54 @@ pub fn front(gone: f32) -> f32 {
     gone * (1.0 + BANDS) - BANDS
 }
 
-/// The burn field of a space, `cols` by `rows` cells.
+/// The cells that cover a space of `size` pixels.
+pub fn grid_for(size: (f32, f32)) -> Grid {
+    Grid::covering(size, CELL)
+}
+
+/// The burn field of a space, one value per cell of its `grid_for`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BurnField {
-    cols: u32,
-    rows: u32,
+    grid: Grid,
     values: Vec<f32>,
 }
 
 impl BurnField {
-    /// A field for a space of `cols` by `rows` cells; `detail`
-    /// (`DETAIL_RANGE`) coarsens the ragged front.
-    pub fn new(cols: u32, rows: u32, detail: u8) -> Self {
+    /// The field for a space of `size` pixels; `detail` (`DETAIL_RANGE`)
+    /// coarsens the ragged front. The painter and the flames each make one
+    /// from the same size, so the flames stand on the edge the paper burns.
+    pub fn for_size(size: (f32, f32), detail: u8) -> Self {
+        Self::new(grid_for(size), detail)
+    }
+
+    fn new(grid: Grid, detail: u8) -> Self {
         let detail = detail.clamp(DETAIL_RANGE.0, DETAIL_RANGE.1);
         let lattice = LATTICE_BASE + LATTICE_PER_DETAIL * f32::from(detail);
-        let rows_f = rows.max(1) as f32;
-        let values = (0..rows)
-            .flat_map(|row| (0..cols).map(move |col| (col, row)))
+        let rows = grid.rows as f32;
+        let values = grid
+            .cells()
             .map(|(col, row)| {
                 let noise = fractal(col as f32, row as f32, lattice);
-                let from_bottom = 1.0 - (row as f32 + 0.5) / rows_f;
+                let from_bottom = 1.0 - (row as f32 + 0.5) / rows;
                 NOISE_SHARE * noise + (1.0 - NOISE_SHARE) * from_bottom
             })
             .collect();
-        Self { cols, rows, values }
+        Self { grid, values }
     }
 
-    pub fn cols(&self) -> u32 {
-        self.cols
-    }
-
-    pub fn rows(&self) -> u32 {
-        self.rows
-    }
-
-    pub fn values(&self) -> &[f32] {
-        &self.values
+    pub fn grid(&self) -> Grid {
+        self.grid
     }
 
     pub fn value(&self, col: u32, row: u32) -> f32 {
-        self.values[(row * self.cols + col) as usize]
+        self.values[(row * self.grid.cols + col) as usize]
+    }
+
+    /// Writes each cell's two pixels for a burn at `front`: into `paper`,
+    /// whether the paper still shows, and into `marks`, the glow, char, or
+    /// scorch over it (`cell_pixels`).
+    pub fn fill_pixels(&self, front: f32, paper: &mut [u32], marks: &mut [u32]) {
+        fill_pixels(&self.values, front, paper, marks);
     }
 
     /// Where flames stand at `front`, into `bases`: in every `every`-th
@@ -82,19 +92,20 @@ impl BurnField {
     /// there (1 right at the front).
     pub fn flame_bases(&self, front: f32, every: u32, bases: &mut Vec<FlameBase>) {
         bases.clear();
-        let last = self.cols.saturating_sub(1);
-        let columns = (0..self.cols)
+        let last = self.grid.cols.saturating_sub(1);
+        let columns = (0..self.grid.cols)
             .step_by(every.max(1) as usize)
             .chain((!last.is_multiple_of(every.max(1))).then_some(last));
         for col in columns {
-            let base = (0..self.rows).find_map(|row| match stage(self.value(col, row) - front) {
-                Stage::Burning(along) => Some(FlameBase {
-                    col,
-                    row,
-                    heat: 1.0 - along,
-                }),
-                _ => None,
-            });
+            let base =
+                (0..self.grid.rows).find_map(|row| match stage(self.value(col, row) - front) {
+                    Stage::Burning(along) => Some(FlameBase {
+                        col,
+                        row,
+                        heat: 1.0 - along,
+                    }),
+                    _ => None,
+                });
             bases.extend(base);
         }
     }
@@ -156,6 +167,12 @@ pub fn cell_pixels(stage: Stage) -> (u32, u32) {
     }
 }
 
+fn fill_pixels(values: &[f32], front: f32, paper: &mut [u32], marks: &mut [u32]) {
+    for ((value, paper), marks) in values.iter().zip(paper.iter_mut()).zip(marks.iter_mut()) {
+        (*paper, *marks) = cell_pixels(stage(value - front));
+    }
+}
+
 fn mix(from: (u8, u8, u8), to: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
     let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
     (
@@ -187,7 +204,7 @@ fn fractal(x: f32, y: f32, lattice: f32) -> f32 {
 /// smoothstep weights; 0 to 1.
 fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
     let (x0, y0) = (x.floor(), y.floor());
-    let (tx, ty) = (smooth(x - x0), smooth(y - y0));
+    let (tx, ty) = (smoothstep(x - x0), smoothstep(y - y0));
     let (ix, iy) = (x0 as i32, y0 as i32);
     let corner = |dx: i32, dy: i32| lattice_value(ix + dx, iy + dy, octave);
     let top = corner(0, 0) + (corner(1, 0) - corner(0, 0)) * tx;
@@ -195,33 +212,19 @@ fn value_noise(x: f32, y: f32, octave: u32) -> f32 {
     top + (bottom - top) * ty
 }
 
-fn smooth(t: f32) -> f32 {
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// A lattice point's fixed random value, 0 to 1: an integer hash, so a
-/// burn always takes the same shape and a reversed one retraces it.
+/// A lattice point's fixed random value, 0 to 1, so a burn always takes the
+/// same shape and a reversed one retraces it.
 fn lattice_value(x: i32, y: i32, octave: u32) -> f32 {
-    let mut hash = (x as u32).wrapping_mul(0x9E37_79B1)
-        ^ (y as u32).wrapping_mul(0x85EB_CA77)
-        ^ octave.wrapping_mul(0xC2B2_AE3D);
-    hash ^= hash >> 15;
-    hash = hash.wrapping_mul(0x2C1B_3C6D);
-    hash ^= hash >> 12;
-    (hash >> 8) as f32 / (1u32 << 24) as f32
+    unit(hash(x as u32, y as u32, octave))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn value(field: &BurnField, col: u32, row: u32) -> f32 {
-        field.value(col, row)
-    }
-
     #[test]
     fn flames_stand_on_the_burning_edge() {
-        let field = BurnField::new(60, 40, 5);
+        let field = BurnField::new(Grid { cols: 60, rows: 40 }, 5);
         let mut bases = Vec::new();
         field.flame_bases(0.4, 4, &mut bases);
         assert!(!bases.is_empty());
@@ -236,16 +239,11 @@ mod tests {
 
     #[test]
     fn the_field_stays_in_range_and_burns_the_bottom_first() {
-        let field = BurnField::new(80, 60, 5);
-        assert!(
-            field
-                .values()
-                .iter()
-                .all(|value| (0.0..=1.0).contains(value))
-        );
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5);
+        assert!(field.values.iter().all(|value| (0.0..=1.0).contains(value)));
         let row_mean = |row: u32| {
-            (0..field.cols())
-                .map(|col| value(&field, col, row))
+            (0..field.grid().cols)
+                .map(|col| field.value(col, row))
                 .sum::<f32>()
                 / 80.0
         };
@@ -254,10 +252,10 @@ mod tests {
 
     #[test]
     fn the_front_is_ragged() {
-        let field = BurnField::new(80, 60, 5);
+        let field = BurnField::new(Grid { cols: 80, rows: 60 }, 5);
         let row = 30;
         let (low, high) = (0..80)
-            .map(|col| value(&field, col, row))
+            .map(|col| field.value(col, row))
             .fold((1.0f32, 0.0f32), |(low, high), value| {
                 (low.min(value), high.max(value))
             });
@@ -269,10 +267,10 @@ mod tests {
 
     #[test]
     fn the_front_runs_from_untouched_to_all_gone() {
-        let field = BurnField::new(40, 30, 5);
+        let field = BurnField::new(Grid { cols: 40, rows: 30 }, 5);
         let at = |gone| {
             field
-                .values()
+                .values
                 .iter()
                 .map(move |value| stage(value - front(gone)))
         };
@@ -293,5 +291,27 @@ mod tests {
         assert_eq!((mask, color), (u32::MAX, 0));
         let (_, glow) = cell_pixels(Stage::Burning(0.0));
         assert_eq!(glow >> 24, 255, "the edge is opaque fire");
+    }
+
+    #[test]
+    fn a_burn_writes_both_pixels_of_every_cell() {
+        let values = [0.0, 0.5, 1.0];
+        let (mut paper, mut marks) = ([7; 3], [7; 3]);
+        fill_pixels(&values, 0.5, &mut paper, &mut marks);
+        assert_eq!(paper[0], 0, "below the front is gone");
+        assert_eq!(paper[1], u32::MAX, "the front itself still burns");
+        assert_eq!(marks[1] >> 24, 255, "and glows");
+        assert_eq!(
+            (paper[2], marks[2]),
+            (u32::MAX, 0),
+            "far above is untouched"
+        );
+    }
+
+    #[test]
+    fn the_field_covers_the_space() {
+        let field = BurnField::for_size((100.0, 31.0), 5);
+        assert_eq!(field.grid(), Grid::covering((100.0, 31.0), CELL));
+        assert_eq!(field.values.len(), field.grid().cell_count());
     }
 }

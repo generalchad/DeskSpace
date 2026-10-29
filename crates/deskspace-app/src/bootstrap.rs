@@ -4,7 +4,7 @@ use anyhow::Context;
 use deskspace_config::{Config, ConfigStore};
 use deskspace_core::{Command, Desktop, ItemFacts, Rect};
 use deskspace_platform::{
-    Placement, RunOptions, enumerate_desktop_items, item_facts, system_uses_dark_mode, work_area_at,
+    Placement, RunOptions, enumerate_desktop_items, system_uses_dark_mode, work_area_at,
 };
 
 use crate::app::{App, DebugTools, LayerState, tray_tooltip};
@@ -36,7 +36,7 @@ fn desktop_entries() -> Vec<SeedEntry> {
         Ok(entries) => entries
             .into_iter()
             .map(|entry| SeedEntry {
-                facts: item_facts(&entry.path),
+                facts: entry.facts,
                 path: entry.path,
                 label: entry.label,
             })
@@ -58,6 +58,7 @@ fn seed_space(desktop: &mut Desktop, entries: Vec<SeedEntry>, bounds: Rect) {
         at: INITIAL_RECT.origin(),
         size: INITIAL_RECT.size(),
         locked: false,
+        icon: deskspace_core::SpaceIcon::None,
     };
     if !apply_seed(desktop, create, bounds) {
         return;
@@ -200,6 +201,7 @@ mod tests {
             panic!("expected one space, got {}", desktop.spaces().len());
         };
         assert_eq!(space.title(), INITIAL_SPACE);
+        assert!(space.icon().is_none(), "the first launch never asks");
         assert_eq!(space.rect().origin(), INITIAL_RECT.origin());
         let seeded: Vec<(&str, ItemKind)> = space
             .items()

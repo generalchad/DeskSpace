@@ -48,6 +48,23 @@ impl App {
         ui.set_on_top(on);
         tracing::info!(on_top = on, "debug: spaces kept on top or not");
     }
+
+    /// Draws a 1 px magenta outline around every shadow window, or clears it,
+    /// for this session only (ROADMAP D15).
+    pub(super) fn set_shadows_outlined(&mut self, ui: &mut Ui, on: bool) {
+        ui.set_shadows_outlined(on);
+        tracing::info!(outlined = on, "debug: shadow windows outlined or not");
+    }
+
+    /// Hides every shadow, or shows them again, for this session only
+    /// (ROADMAP D15); the saved setting does not change.
+    pub(super) fn set_shadows_hidden(&mut self, ui: &mut Ui, on: bool) {
+        if let Some(tools) = self.debug.as_mut() {
+            tools.hide_shadows = on;
+        }
+        self.restyle_all(ui);
+        tracing::info!(hidden = on, "debug: shadows hidden or not");
+    }
 }
 
 /// Each taskbar: topmost or not, and whether it is above the desktop layer

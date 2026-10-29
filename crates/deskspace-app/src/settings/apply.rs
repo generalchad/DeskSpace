@@ -5,11 +5,11 @@ use super::ids::field;
 use super::session::Session;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
-    LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES, PRESETS, STARTUP_ORDERS,
-    is_hotkey_field,
+    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
+    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
 use super::*;
-use super::{Effect, scope_space};
+use super::{FieldEffect, scope_space};
 use deskspace_core::source::{LensTitle, lens_title};
 
 /// Applies a look-page edit to `look`. `None` when `id` is not a look field.
@@ -18,41 +18,41 @@ fn apply_look_field(
     id: u32,
     value: &FieldValue,
     system_dark: bool,
-) -> Option<Effect> {
+) -> Option<FieldEffect> {
     let theme = &mut look.theme;
     Some(match (id, value) {
         (field::MODE, FieldValue::Choice(index)) => {
             theme.mode = MODES.get(*index).map_or(theme.mode, |entry| entry.0);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BACKDROP, FieldValue::Choice(index)) => {
             theme.backdrop = BACKDROPS
                 .get(*index)
                 .map_or(theme.backdrop, |entry| entry.0);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::CORNERS, FieldValue::Slider(radius)) => {
             theme.corner_radius = (*radius).clamp(0, corner::MAX.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::TINT_OPACITY, FieldValue::Slider(value)) => {
             theme.tint_opacity =
                 (*value).clamp(TINT_OPACITY_RANGE.0.into(), TINT_OPACITY_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::TITLE_SHADING, FieldValue::Slider(value)) => {
             theme.title_shading =
                 (*value).clamp(TITLE_SHADING_RANGE.0.into(), TITLE_SHADING_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BORDER, FieldValue::Toggle(on)) => {
             theme.show_border = *on;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BORDER_WIDTH, FieldValue::Slider(value)) => {
             theme.border_width =
                 (*value).clamp(BORDER_WIDTH_RANGE.0.into(), BORDER_WIDTH_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BORDER_SOURCE, FieldValue::Choice(index)) => {
             let source = BORDER_SOURCES
@@ -63,57 +63,58 @@ fn apply_look_field(
                 theme.border_color = theme.palette(system_dark).border.with_alpha(255);
             }
             theme.border_source = source;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BORDER_COLOR, FieldValue::Color(color)) => {
             theme.border_color = color.with_alpha(255);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::BORDER_OPACITY, FieldValue::Slider(value)) => {
             theme.border_opacity =
                 (*value).clamp(BORDER_OPACITY_RANGE.0.into(), BORDER_OPACITY_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
+        (id, value) if apply_shadow_edit(theme, id, value.clone()) => FieldEffect::Appearance,
         (field::PRESET, FieldValue::Choice(index)) => {
             theme.preset = PRESETS.get(*index).map_or(theme.preset, |entry| entry.0);
             // Mirroring also imports Explorer's icon size and item spacing, so
             // the grid has to re-flow, not just restyle.
-            Effect::Layout
+            FieldEffect::Layout
         }
         (field::LABEL_LINES, FieldValue::Choice(index)) => {
             theme.label_lines = LABEL_LINES_OPTIONS
                 .get(*index)
                 .map_or(theme.label_lines, |entry| entry.0);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::LABEL_SIZE, FieldValue::Slider(value)) => {
             theme.label_size =
                 (*value).clamp(LABEL_SIZE_RANGE.0.into(), LABEL_SIZE_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::LABEL_SHADOW, FieldValue::Choice(index)) => {
             theme.label_shadow = LABEL_SHADOW_OPTIONS
                 .get(*index)
                 .map_or(theme.label_shadow, |entry| entry.0);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::ICON_SIZE, FieldValue::Slider(value)) => {
             theme.icon_size =
                 (*value).clamp(ICON_SIZE_RANGE.0.into(), ICON_SIZE_RANGE.1.into()) as u8;
-            Effect::Layout
+            FieldEffect::Layout
         }
         (field::OVERLAY_SIZE, FieldValue::Slider(value)) => {
             theme.overlay_size =
                 (*value).clamp(OVERLAY_SIZE_RANGE.0.into(), OVERLAY_SIZE_RANGE.1.into()) as u8;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::GRID_GAP, FieldValue::Slider(value)) => {
             look.gap = (*value).clamp(GAP_RANGE.0, GAP_RANGE.1);
-            Effect::Layout
+            FieldEffect::Layout
         }
         (field::GRID_PADDING, FieldValue::Slider(value)) => {
             look.padding = (*value).clamp(GAP_RANGE.0, GAP_RANGE.1);
-            Effect::Layout
+            FieldEffect::Layout
         }
         (field::CUSTOM_COLORS, FieldValue::Toggle(on)) => {
             if *on && !theme.custom_colors {
@@ -123,27 +124,27 @@ fn apply_look_field(
                 theme.text = palette.title_text;
             }
             theme.custom_colors = *on;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::TINT, FieldValue::Color(color)) => {
             theme.tint = color.with_alpha(255);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::TEXT, FieldValue::Color(color)) => {
             theme.text = color.with_alpha(255);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::USE_ACCENT, FieldValue::Toggle(on)) => {
             theme.use_accent = *on;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::MARQUEE_COLOR, FieldValue::Color(color)) => {
             theme.marquee_color = color.with_alpha(255);
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         (field::MARQUEE_BORDER, FieldValue::Toggle(on)) => {
             theme.show_marquee_border = *on;
-            Effect::Appearance
+            FieldEffect::Appearance
         }
         _ => return None,
     })
@@ -156,7 +157,7 @@ pub fn apply_field(
     id: u32,
     value: FieldValue,
     system_dark: bool,
-) -> Effect {
+) -> FieldEffect {
     let mut look = SpaceLook::from_global(&config.theme, &config.desktop.layout);
     let effect = match apply_look_field(&mut look, id, &value, system_dark) {
         Some(effect) => {
@@ -170,15 +171,15 @@ pub fn apply_field(
                 config.theme.ui_mode = MODES
                     .get(index)
                     .map_or(config.theme.ui_mode, |entry| entry.0);
-                Effect::Appearance
+                FieldEffect::Appearance
             }
             (field::START_WITH_WINDOWS, FieldValue::Toggle(on)) => {
                 config.window.start_with_windows = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::TAKE_OVER_DESKTOP, FieldValue::Toggle(on)) => {
                 config.window.take_over_desktop = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (id, FieldValue::Text(text)) if is_hotkey_field(id) => {
                 let slot = HOTKEY_BINDINGS
@@ -187,62 +188,74 @@ pub fn apply_field(
                     .expect("a hotkey field is in the table");
                 session.hotkey_texts[slot] = text;
                 session.hotkey_errors[slot] = None;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::START_HIDDEN, FieldValue::Toggle(on)) => {
                 config.window.start_hidden = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::CHECK_UPDATES, FieldValue::Toggle(on)) => {
                 config.window.check_for_updates = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::INSTALL_UPDATES, FieldValue::Toggle(on)) => {
                 config.window.install_updates = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::SNAP, FieldValue::Slider(value)) => {
                 config.desktop.layout.snap = value.clamp(SNAP_RANGE.0, SNAP_RANGE.1);
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::FIT_TO_GRID, FieldValue::Toggle(on)) => {
                 config.desktop.layout.fit_to_grid = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::NEW_SPACE_TITLE, FieldValue::Text(text)) => {
                 config.window.new_space_title = text;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::NEW_SPACE_WIDTH, FieldValue::Slider(value)) => {
                 config.window.new_space_width =
                     value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::NEW_SPACE_HEIGHT, FieldValue::Slider(value)) => {
                 config.window.new_space_height =
                     value.clamp(NEW_SPACE_SIZE_RANGE.0, NEW_SPACE_SIZE_RANGE.1);
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::NEW_SPACE_LOCKED, FieldValue::Toggle(on)) => {
                 config.window.new_space_locked = on;
-                Effect::Pending
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_ICON, FieldValue::Choice(index)) => {
+                config.window.new_space_icon = NEW_SPACE_ICON_OPTIONS
+                    .get(index)
+                    .map_or(config.window.new_space_icon, |entry| entry.0);
+                FieldEffect::Pending
+            }
+            (field::ICON_DOWNLOADS, FieldValue::Choice(index)) => {
+                config.window.icon_downloads = ICON_DOWNLOAD_OPTIONS
+                    .get(index)
+                    .map_or(config.window.icon_downloads, |entry| entry.0);
+                FieldEffect::Pending
             }
             // The Lenses page's defaults (W23) apply to the next new lens.
             (field::LENSES_VIEW_MODE, FieldValue::Choice(index)) => {
                 if let Some((mode, ..)) = VIEW_MODES.get(index) {
                     config.window.new_lens.view.mode = *mode;
                 }
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_STATUS_BAR, FieldValue::Toggle(on)) => {
                 config.window.new_lens.view.status_bar = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_SORT_KEY, FieldValue::Choice(index)) => {
                 if let Some((key, _)) = SORT_KEYS.get(index) {
                     config.window.new_lens.view.sort.key = *key;
                 }
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_ORDER, FieldValue::Choice(index)) => {
                 match index {
@@ -250,37 +263,56 @@ pub fn apply_field(
                     1 => config.window.new_lens.view.sort.descending = true,
                     _ => {}
                 }
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_FOLDERS_FIRST, FieldValue::Toggle(on)) => {
                 config.window.new_lens.view.sort.folders_first = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
                 config.window.new_lens.show_hidden = on;
-                Effect::Pending
+                FieldEffect::Pending
             }
             (field::LENSES_TITLE_MODE, FieldValue::Choice(index)) => {
                 if let Some((title, _)) = LENS_TITLES.get(index) {
                     config.window.new_lens.title = *title;
                 }
-                Effect::Pending
+                FieldEffect::Pending
             }
             // Animations play only on what comes next, so every edit waits
             // for Apply.
             (id, value) => {
                 if apply_animation_edit(&mut config.window.animations, id, value) {
-                    Effect::Pending
+                    FieldEffect::Pending
                 } else {
-                    Effect::None
+                    FieldEffect::None
                 }
             }
         },
     };
-    if effect != Effect::None {
+    if effect != FieldEffect::None {
         session.dirty = true;
     }
     effect
+}
+
+/// Applies an edit to a shadow field (`SHADOW`, `SHADOW_SIZE`, or
+/// `SHADOW_OPACITY`). Returns whether `id` and `value` were one. The
+/// settings window and the debug window (ROADMAP D15) both edit through it.
+pub fn apply_shadow_edit(theme: &mut Theme, id: u32, value: FieldValue) -> bool {
+    match (id, value) {
+        (field::SHADOW, FieldValue::Toggle(on)) => theme.show_shadow = on,
+        (field::SHADOW_SIZE, FieldValue::Slider(value)) => {
+            theme.shadow_size =
+                value.clamp(SHADOW_SIZE_RANGE.0.into(), SHADOW_SIZE_RANGE.1.into()) as u8;
+        }
+        (field::SHADOW_OPACITY, FieldValue::Slider(value)) => {
+            theme.shadow_opacity =
+                value.clamp(SHADOW_OPACITY_RANGE.0.into(), SHADOW_OPACITY_RANGE.1.into()) as u8;
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// Applies an edit to an animation field: a kind's page, or the startup
@@ -351,13 +383,16 @@ fn lens_edit(
     id: u32,
     value: &FieldValue,
     profile: &Path,
-) -> Option<(SpaceId, Command, Effect)> {
+) -> Option<(SpaceId, Command, FieldEffect)> {
     let space = scope_space(config, session).filter(|space| space.is_lens())?;
     let (command, effect) = match (id, value) {
         (field::LENS_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
             let mut view = space.folder_view()?.clone();
             view.show_hidden = *on;
-            (Command::SetLensView { id: space.id, view }, Effect::Lens)
+            (
+                Command::SetLensView { id: space.id, view },
+                FieldEffect::Lens,
+            )
         }
         (field::LENS_TITLE_MODE, FieldValue::Choice(index)) => {
             let (title, _) = LENS_TITLES.get(*index)?;
@@ -370,7 +405,7 @@ fn lens_edit(
                     title: *title,
                     text,
                 },
-                Effect::None,
+                FieldEffect::None,
             )
         }
         (field::LENS_TITLE_TEXT, FieldValue::Text(text)) => {
@@ -383,7 +418,7 @@ fn lens_edit(
                     title: LensTitle::Custom,
                     text: text.clone(),
                 },
-                Effect::None,
+                FieldEffect::None,
             )
         }
         _ => return None,
@@ -400,7 +435,7 @@ fn view_edit(
     session: &mut Session,
     id: u32,
     value: &FieldValue,
-) -> Option<(SpaceId, Command, Effect)> {
+) -> Option<(SpaceId, Command, FieldEffect)> {
     let space = scope_space(config, session)?;
     let mut view = space.view();
     match (id, value) {
@@ -429,7 +464,7 @@ fn view_edit(
     Some((
         space.id,
         Command::SetSpaceView { id: space.id, view },
-        Effect::Layout,
+        FieldEffect::Layout,
     ))
 }
 
@@ -443,7 +478,7 @@ pub fn space_edit(
     value: FieldValue,
     system_dark: bool,
     profile: &Path,
-) -> Option<(SpaceId, Command, Effect)> {
+) -> Option<(SpaceId, Command, FieldEffect)> {
     if let Some(edit) = view_edit(config, session, id, &value) {
         return Some(edit);
     }
@@ -528,6 +563,35 @@ mod tests {
     }
 
     #[test]
+    fn icon_settings_take_their_choices() {
+        let (mut config, mut session) = setup();
+        apply_field(
+            &mut config,
+            &mut session,
+            field::NEW_SPACE_ICON,
+            FieldValue::Choice(1),
+            true,
+        );
+        assert_eq!(config.window.new_space_icon, NewSpaceIcon::None);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_DOWNLOADS,
+            FieldValue::Choice(1),
+            true,
+        );
+        assert_eq!(config.window.icon_downloads, IconDownloads::Allowed);
+        apply_field(
+            &mut config,
+            &mut session,
+            field::ICON_DOWNLOADS,
+            FieldValue::Choice(2),
+            true,
+        );
+        assert_eq!(config.window.icon_downloads, IconDownloads::Declined);
+    }
+
+    #[test]
     fn ui_mode_choice_applies_live() {
         let (mut config, mut session) = setup();
         let effect = apply_field(
@@ -537,7 +601,7 @@ mod tests {
             FieldValue::Choice(1),
             true,
         );
-        assert_eq!(effect, Effect::Appearance);
+        assert_eq!(effect, FieldEffect::Appearance);
         assert_eq!(config.theme.ui_mode, ThemeMode::Dark);
     }
 
@@ -551,7 +615,7 @@ mod tests {
             FieldValue::Toggle(true),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(config.window.start_with_windows);
     }
 
@@ -565,27 +629,27 @@ mod tests {
         // Delete lists "Same as startup" first, then None, then Roll.
         assert_eq!(
             edit(field::ANIM_DELETE_EFFECT, FieldValue::Choice(2)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(
             edit(field::ANIM_STARTUP_DURATION, FieldValue::Slider(5)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(
             edit(field::ANIM_STARTUP_DETAIL, FieldValue::Slider(99)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(
             edit(field::ANIM_STARTUP_DIRECTION, FieldValue::Choice(3)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(
             edit(field::ANIM_STARTUP_ORDER, FieldValue::Choice(1)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(
             edit(field::ANIM_STAGGER, FieldValue::Slider(100)),
-            Effect::Pending
+            FieldEffect::Pending
         );
         let animations = config.window.animations;
         assert_eq!(
@@ -614,7 +678,7 @@ mod tests {
             FieldValue::Toggle(false),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(!config.desktop.layout.fit_to_grid);
     }
 
@@ -628,7 +692,7 @@ mod tests {
             FieldValue::Toggle(true),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(config.window.take_over_desktop);
     }
 
@@ -642,7 +706,7 @@ mod tests {
             FieldValue::Toggle(true),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(config.window.check_for_updates);
     }
 
@@ -656,7 +720,7 @@ mod tests {
             FieldValue::Toggle(true),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(config.window.install_updates);
     }
 
@@ -671,7 +735,7 @@ mod tests {
             FieldValue::Choice(1),
             true,
         );
-        assert_eq!(effect, Effect::Layout);
+        assert_eq!(effect, FieldEffect::Layout);
         assert_eq!(config.theme.preset, Preset::Custom);
         assert!(!config.theme.match_explorer());
         apply_field(
@@ -731,7 +795,7 @@ mod tests {
                 FieldValue::Color(Color::rgba(10, 20, 30, 0)),
                 true,
             ),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(config.theme.marquee_color, Color::rgb(10, 20, 30));
         assert_eq!(
@@ -742,7 +806,7 @@ mod tests {
                 FieldValue::Toggle(false),
                 true,
             ),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert!(!config.theme.show_marquee_border);
     }
@@ -757,7 +821,7 @@ mod tests {
             FieldValue::Text("Ctrl+Shift+F".into()),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert_eq!(config.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(session.hotkey_texts[0], "Ctrl+Shift+F");
         let form = build_form(
@@ -781,7 +845,7 @@ mod tests {
             FieldValue::Text("Ctrl+Alt+N".into()),
             true,
         );
-        assert_eq!(effect, Effect::Pending);
+        assert_eq!(effect, FieldEffect::Pending);
         assert!(config.window.new_space_hotkey.is_empty());
         assert_eq!(session.hotkey_texts[1], "Ctrl+Alt+N");
     }
@@ -797,7 +861,7 @@ mod tests {
                 FieldValue::Text("Inbox".into()),
                 true,
             ),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(config.window.new_space_title, "Inbox");
         assert_eq!(
@@ -808,7 +872,7 @@ mod tests {
                 FieldValue::Slider(320),
                 true,
             ),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(config.window.new_space_width, 320);
         assert_eq!(
@@ -819,7 +883,7 @@ mod tests {
                 FieldValue::Slider(9_000),
                 true,
             ),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert_eq!(config.window.new_space_height, NEW_SPACE_SIZE_RANGE.1);
         assert_eq!(
@@ -830,7 +894,7 @@ mod tests {
                 FieldValue::Toggle(true),
                 true,
             ),
-            Effect::Pending
+            FieldEffect::Pending
         );
         assert!(config.window.new_space_locked);
         assert!(session.dirty);
@@ -842,22 +906,43 @@ mod tests {
         let mut set = |id, value| apply_field(&mut config, &mut session, id, value, true);
         assert_eq!(
             set(field::BORDER_WIDTH, FieldValue::Slider(40)),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(
             set(field::BORDER_OPACITY, FieldValue::Slider(-5)),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(
             set(
                 field::BORDER_COLOR,
                 FieldValue::Color(Color::rgba(9, 8, 7, 3))
             ),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(config.theme.border_width, BORDER_WIDTH_RANGE.1);
         assert_eq!(config.theme.border_opacity, BORDER_OPACITY_RANGE.0);
         assert_eq!(config.theme.border_color, Color::rgb(9, 8, 7));
+    }
+
+    #[test]
+    fn shadow_settings_restyle_and_clamp() {
+        let (mut config, mut session) = setup();
+        let mut set = |id, value| apply_field(&mut config, &mut session, id, value, true);
+        assert_eq!(
+            set(field::SHADOW, FieldValue::Toggle(false)),
+            FieldEffect::Appearance
+        );
+        assert_eq!(
+            set(field::SHADOW_SIZE, FieldValue::Slider(100)),
+            FieldEffect::Appearance
+        );
+        assert_eq!(
+            set(field::SHADOW_OPACITY, FieldValue::Slider(-5)),
+            FieldEffect::Appearance
+        );
+        assert!(!config.theme.show_shadow);
+        assert_eq!(config.theme.shadow_size, SHADOW_SIZE_RANGE.1);
+        assert_eq!(config.theme.shadow_opacity, SHADOW_OPACITY_RANGE.0);
     }
 
     #[test]
@@ -906,7 +991,7 @@ mod tests {
             FieldValue::Slider(30),
             true,
         );
-        assert_eq!(effect, Effect::Layout);
+        assert_eq!(effect, FieldEffect::Layout);
         assert_eq!(config.desktop.layout.gap, 24);
         apply_field(
             &mut config,
@@ -929,7 +1014,7 @@ mod tests {
                 FieldValue::Slider(150),
                 true,
             ),
-            Effect::Layout
+            FieldEffect::Layout
         );
         assert_eq!(config.theme.icon_size, 150);
         apply_field(
@@ -961,7 +1046,7 @@ mod tests {
                 FieldValue::Slider(60),
                 true,
             ),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(config.theme.overlay_size, 60);
         apply_field(
@@ -993,7 +1078,7 @@ mod tests {
                 FieldValue::Choice(0),
                 true,
             ),
-            Effect::Appearance
+            FieldEffect::Appearance
         );
         assert_eq!(config.theme.label_lines, 1);
         apply_field(
@@ -1038,7 +1123,7 @@ mod tests {
         );
         let (space, command, effect) = edit(&config, &mut session).unwrap();
         assert_eq!(space, id);
-        assert_eq!(effect, Effect::Layout);
+        assert_eq!(effect, FieldEffect::Layout);
         assert!(session.dirty);
         match command {
             Command::SetSpaceLook {
@@ -1081,7 +1166,7 @@ mod tests {
         )
         .expect("the lens toggle has a command");
         assert_eq!(id, lens);
-        assert_eq!(effect, Effect::Lens);
+        assert_eq!(effect, FieldEffect::Lens);
         assert!(session.dirty);
         let Command::SetLensView {
             id: command_id,
@@ -1157,7 +1242,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(id, lens);
-        assert_eq!(effect, Effect::None);
+        assert_eq!(effect, FieldEffect::None);
         let Command::SetLensTitle { title, text, .. } = command else {
             panic!("expected SetLensTitle, got {command:?}");
         };
@@ -1199,7 +1284,7 @@ mod tests {
             profile,
         )
         .unwrap();
-        assert_eq!(effect, Effect::None);
+        assert_eq!(effect, FieldEffect::None);
         let Command::SetLensTitle { title, text, .. } = command else {
             panic!("expected SetLensTitle, got {command:?}");
         };

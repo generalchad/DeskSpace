@@ -123,6 +123,30 @@ impl Rect {
         Self::new(x, y, right - x, bottom - y)
     }
 
+    /// The part both rects cover; empty, at the overlap's top-left corner,
+    /// when they do not overlap.
+    pub fn intersection(self, other: Self) -> Self {
+        let left = self.left().max(other.left());
+        let top = self.top().max(other.top());
+        let right = self.right().min(other.right());
+        let bottom = self.bottom().min(other.bottom());
+        if right <= left || bottom <= top {
+            return Self::new(left, top, 0, 0);
+        }
+        Self::new(left, top, right - left, bottom - top)
+    }
+
+    /// The rect `t` of the way from `self` to `to` (0 is `self`, 1 is `to`),
+    /// each edge moved on its own and rounded to whole pixels.
+    pub fn lerp(self, to: Self, t: f32) -> Self {
+        let at = |from: i32, to: i32| (from as f32 + (to - from) as f32 * t).round() as i32;
+        let left = at(self.left(), to.left());
+        let top = at(self.top(), to.top());
+        let right = at(self.right(), to.right());
+        let bottom = at(self.bottom(), to.bottom());
+        Self::new(left, top, right - left, bottom - top)
+    }
+
     pub const fn offset(self, dx: i32, dy: i32) -> Self {
         Self {
             x: self.x + dx,
@@ -188,5 +212,24 @@ mod tests {
         let b = Rect::new(20, 30, 10, 10);
         let u = a.union(b);
         assert_eq!(u, Rect::new(0, 0, 30, 40));
+    }
+
+    #[test]
+    fn rects_intersect_or_come_out_empty() {
+        let a = Rect::new(0, 0, 100, 100);
+        assert_eq!(
+            a.intersection(Rect::new(50, 60, 100, 100)),
+            Rect::new(50, 60, 50, 40)
+        );
+        assert!(a.intersection(Rect::new(200, 0, 10, 10)).is_empty());
+    }
+
+    #[test]
+    fn lerp_moves_each_edge_from_one_rect_to_the_other() {
+        let from = Rect::new(0, 0, 100, 0);
+        let to = Rect::new(0, 0, 100, 50);
+        assert_eq!(from.lerp(to, 0.0), from);
+        assert_eq!(from.lerp(to, 1.0), to);
+        assert_eq!(from.lerp(to, 0.5), Rect::new(0, 0, 100, 25));
     }
 }

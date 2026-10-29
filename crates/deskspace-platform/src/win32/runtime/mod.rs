@@ -53,8 +53,8 @@ use crate::win32::system::wide;
 use crate::win32::{
     clipboard, composition, console, controller, dark_mode, debug_window, desktop_icons,
     desktop_shell, drop_target, file_op, folder_watch, menu, messages, outside_click,
-    settings_window, shell_selection, shell_view, space_animation, space_window, tray, watchdog,
-    zoom_bar,
+    settings_window, shadow_window, shell_selection, shell_view, space_animation, space_window,
+    tray, watchdog, zoom_bar,
 };
 
 pub trait EventHandler {
@@ -109,6 +109,9 @@ struct Runtime {
     info_tip: Option<InfoTip>,
     /// The zoom pop-up (ROADMAP F-57), created when it is first shown.
     zoom_bar: Option<HWND>,
+    /// The color picker's recent colors, most recent first; set by the app
+    /// (`Ui::set_recent_colors`) and updated by every pick.
+    recent_colors: Vec<deskspace_core::theme::Color>,
     /// The folder watches and the worker that serves them, when
     /// `Ui::watch_folder` is on. Dropped on teardown, which stops the worker.
     folder_watches: Option<folder_watch::FolderWatch>,
@@ -148,6 +151,33 @@ pub(crate) fn dispatch(event: Event) {
         handler.on_event(event, &mut ui);
     }
     with_runtime(|runtime| runtime.handler = Some(handler));
+}
+
+/// Queues `event` for the handler without running it: the dispatch already
+/// running further up the stack, or the next one, delivers it. For callers
+/// that must not run the handler mid-way, such as a window procedure that
+/// dispatches last.
+pub(crate) fn queue(event: Event) {
+    with_runtime(|runtime| runtime.pending.push_back(event));
+}
+
+/// Opens the color picker `dark`-themed over `owner` with the recent colors,
+/// and returns the chosen color. A pick is remembered as recent and queued
+/// as `Event::RecentColors`, so the caller's own dispatch delivers it.
+pub(crate) fn pick_color(
+    owner: HWND,
+    initial: deskspace_core::theme::Color,
+    dark: bool,
+) -> Option<deskspace_core::theme::Color> {
+    let recent = with_runtime(|runtime| runtime.recent_colors.clone()).unwrap_or_default();
+    // SAFETY: `owner` is a live window on this thread, and the picker is
+    // modal for the duration of the call.
+    let picked = unsafe { crate::win32::color_picker::pick(owner, initial, dark, &recent) }?;
+    let mut recent = recent;
+    deskspace_core::theme::remember_color(&mut recent, picked);
+    with_runtime(|runtime| runtime.recent_colors = recent.clone());
+    queue(Event::RecentColors(recent));
+    Some(picked)
 }
 
 /// Posts the close that tears the runtime down (`Ui::quit`).
@@ -195,9 +225,13 @@ pub(crate) fn tray_tooltip() -> String {
     with_runtime(|runtime| runtime.tray_tooltip.clone()).unwrap_or_default()
 }
 
-/// Whether `window` is one of this runtime's space windows.
-pub(crate) fn is_space_window(window: HWND) -> bool {
-    with_runtime(|runtime| runtime.spaces.values().any(|space| *space == window)).unwrap_or(false)
+/// Whether `window` is one of this runtime's space windows or the desktop
+/// layer: a surface that handles its own presses.
+pub(crate) fn is_surface_window(window: HWND) -> bool {
+    with_runtime(|runtime| {
+        runtime.layer == Some(window) || runtime.spaces.values().any(|space| *space == window)
+    })
+    .unwrap_or(false)
 }
 
 /// The desktop layer's window, while it exists.
@@ -410,6 +444,7 @@ pub fn run(options: RunOptions, handler: Box<dyn EventHandler>) -> Result<(), Pl
             drag_ghost: None,
             info_tip: None,
             zoom_bar: None,
+            recent_colors: Vec::new(),
             folder_watches: None,
         });
     });

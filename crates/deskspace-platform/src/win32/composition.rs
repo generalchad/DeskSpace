@@ -8,8 +8,9 @@
 //! DeskSpace owns, so it follows an animation's opacity and masks (T13),
 //! which the accent policy (`dwm`) cannot: while a frame leaves the window
 //! see-through, the backdrop is shown through `alpha_mask` with a second
-//! surface, the blur's mask, which the painter draws with the same frame. It renders on a window that is
-//! never activated, as spaces never are (T1, seen on build 26300).
+//! surface, the blur's mask, which the painter draws with the same frame
+//! (`blur_shows` decides which). It renders on a window that is never
+//! activated, as spaces never are (T1, seen on build 26300).
 //!
 //! The choice is made once, at startup (`start`). Windows 10, "Transparency
 //! effects" off, desktop-hosted or click-through spaces, and a failure to
@@ -41,8 +42,8 @@ use deskspace_core::theme::Backdrop;
 use crate::error::PlatformError;
 use crate::render::{Painter, SpaceStyle, d2d};
 use crate::win32::alpha_mask;
-use crate::win32::debug_info::transparency_enabled;
 use crate::win32::runtime;
+use crate::win32::system::transparency_enabled;
 // The host backdrop brush needs Windows 11.
 use crate::win32::system::{WINDOWS_11, windows_build};
 
@@ -162,12 +163,14 @@ pub(crate) struct SpaceVisuals {
     /// The backdrop's brush while a frame masks it: the blur through
     /// `blur_mask`'s alpha.
     masked_blur: CompositionEffectBrush,
-    /// Whether the backdrop shows `masked_blur` (`mask_blur`).
+    /// A frame masks the blur (`mask_blur`).
     masked: bool,
     /// The style asks for the blur (Acrylic, Blur).
     blurred: bool,
     /// The blur is not stepped aside (`show_material`).
     material_shown: bool,
+    /// What the backdrop shows now, from the three above (`blur_shows`).
+    shows: BlurShows,
     surface: CompositionDrawingSurface,
     /// Where the painter draws how much of the blur shows (T13).
     blur_mask: CompositionDrawingSurface,
@@ -243,6 +246,8 @@ impl SpaceVisuals {
             masked: false,
             blurred: false,
             material_shown: true,
+            // A new sprite is visible, and its brush is the whole blur.
+            shows: BlurShows::Whole,
             surface,
             blur_mask,
             graphics,
@@ -272,7 +277,7 @@ impl SpaceVisuals {
         Ok(())
     }
 
-    /// Steps the blur aside, or brings it back (`space_window::show_material`).
+    /// Steps the blur aside, or brings it back (`space_window::show_backing`).
     pub(crate) fn show_material(&mut self, shown: bool) -> Result<(), PlatformError> {
         self.material_shown = shown;
         self.sync_backdrop()
@@ -281,22 +286,30 @@ impl SpaceVisuals {
     /// Shows the blur through the mask the painter last drew, or whole.
     /// Call after painting a frame, so a new mask is drawn before it shows.
     pub(crate) fn mask_blur(&mut self, masked: bool) -> Result<(), PlatformError> {
-        if self.masked == masked {
-            return Ok(());
-        }
         self.masked = masked;
-        if masked {
-            self.backdrop.SetBrush(&self.masked_blur)?;
-        } else {
-            self.backdrop.SetBrush(&self.blur)?;
-        }
-        Ok(())
+        self.sync_backdrop()
     }
 
-    fn sync_backdrop(&self) -> Result<(), PlatformError> {
-        Ok(self
-            .backdrop
-            .SetIsVisible(self.blurred && self.material_shown)?)
+    /// Makes the backdrop show what `blur_shows` says, changing only what
+    /// differs.
+    fn sync_backdrop(&mut self) -> Result<(), PlatformError> {
+        let shows = blur_shows(self.blurred, self.material_shown, self.masked);
+        if shows == self.shows {
+            return Ok(());
+        }
+        match shows {
+            BlurShows::Nothing => self.backdrop.SetIsVisible(false)?,
+            BlurShows::Whole => {
+                self.backdrop.SetBrush(&self.blur)?;
+                self.backdrop.SetIsVisible(true)?;
+            }
+            BlurShows::Masked => {
+                self.backdrop.SetBrush(&self.masked_blur)?;
+                self.backdrop.SetIsVisible(true)?;
+            }
+        }
+        self.shows = shows;
+        Ok(())
     }
 
     /// Sizes the tree to `window`'s client area.
@@ -311,6 +324,28 @@ impl SpaceVisuals {
         self.root.SetSize(size)?;
         self.corners.SetSize(size)?;
         Ok(())
+    }
+}
+
+/// What a space's backdrop sprite shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlurShows {
+    Nothing,
+    /// The blur, whole: at rest.
+    Whole,
+    /// The blur through the painter's mask: while a frame leaves the window
+    /// see-through (T13).
+    Masked,
+}
+
+/// What the backdrop shows: nothing unless the style asks for the blur
+/// (`blurred`) and it is not stepped aside (`material_shown`), and then the
+/// blur through the mask while a frame `masked` it, or whole.
+fn blur_shows(blurred: bool, material_shown: bool, masked: bool) -> BlurShows {
+    match (blurred && material_shown, masked) {
+        (false, _) => BlurShows::Nothing,
+        (true, false) => BlurShows::Whole,
+        (true, true) => BlurShows::Masked,
     }
 }
 
@@ -360,5 +395,23 @@ mod tests {
         assert!(ruled_out(false, false, Some(19045), Some(true)).is_some());
         assert!(ruled_out(false, false, None, Some(true)).is_some());
         assert!(ruled_out(false, false, ELEVEN, Some(false)).is_some());
+    }
+
+    #[test]
+    fn the_blur_shows_only_where_the_style_asks_and_nothing_stepped_it_aside() {
+        assert_eq!(blur_shows(true, true, false), BlurShows::Whole);
+        assert_eq!(blur_shows(true, true, true), BlurShows::Masked);
+        for masked in [false, true] {
+            assert_eq!(
+                blur_shows(false, true, masked),
+                BlurShows::Nothing,
+                "Clear, Solid"
+            );
+            assert_eq!(
+                blur_shows(true, false, masked),
+                BlurShows::Nothing,
+                "stepped aside"
+            );
+        }
     }
 }

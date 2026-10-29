@@ -1,7 +1,61 @@
-//! Small drawing primitives: filled rounded rectangles, clipped text,
-//! and the color and rectangle conversions.
+//! Small drawing primitives: filled rounded rectangles, clipped text, the
+//! color and rectangle conversions, and the pixel format every target and
+//! bitmap uses.
 
 use super::*;
+
+/// 32-bit BGRA with premultiplied alpha: every render target, bitmap, and
+/// surface the painters use.
+/// https://learn.microsoft.com/en-us/windows/win32/direct2d/supported-pixel-formats-and-alpha-modes
+pub(super) const PREMULTIPLIED_BGRA: D2D1_PIXEL_FORMAT = D2D1_PIXEL_FORMAT {
+    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+};
+
+/// 96 DPI makes one DIP one physical pixel, matching the model's pixel
+/// coordinates.
+pub(super) const PIXEL_DPI: f32 = 96.0;
+
+/// A bitmap's properties: `PREMULTIPLIED_BGRA` at `PIXEL_DPI`.
+pub(super) fn bitmap_properties() -> D2D1_BITMAP_PROPERTIES {
+    D2D1_BITMAP_PROPERTIES {
+        pixelFormat: PREMULTIPLIED_BGRA,
+        dpiX: PIXEL_DPI,
+        dpiY: PIXEL_DPI,
+    }
+}
+
+/// A render target's properties: `PREMULTIPLIED_BGRA` at `PIXEL_DPI`, on
+/// whatever hardware or software Direct2D picks.
+pub(super) fn render_target_properties() -> D2D1_RENDER_TARGET_PROPERTIES {
+    D2D1_RENDER_TARGET_PROPERTIES {
+        r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        pixelFormat: PREMULTIPLIED_BGRA,
+        dpiX: PIXEL_DPI,
+        dpiY: PIXEL_DPI,
+        usage: D2D1_RENDER_TARGET_USAGE_NONE,
+        minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+    }
+}
+
+/// `icon` uploaded to the GPU through `target`.
+pub(super) fn upload_icon(target: &ID2D1RenderTarget, icon: &Icon) -> Option<ID2D1Bitmap> {
+    // SAFETY: `Icon::new` guarantees `pixels` holds width * height BGRA
+    // pixels, so `width * 4` is the row pitch; D2D copies the data.
+    unsafe {
+        target
+            .CreateBitmap(
+                D2D_SIZE_U {
+                    width: icon.width(),
+                    height: icon.height(),
+                },
+                Some(icon.pixels().as_ptr() as *const core::ffi::c_void),
+                icon.width() * 4,
+                &bitmap_properties(),
+            )
+            .ok()
+    }
+}
 
 pub(super) unsafe fn fill_rounded(
     target: &ID2D1RenderTarget,

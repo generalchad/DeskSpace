@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect, Size};
+use crate::icon::SpaceIcon;
 use crate::id::SpaceId;
 use crate::layout::{
     GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
@@ -22,12 +23,14 @@ impl Desktop {
         at: Point,
         size: Size,
         locked: bool,
+        icon: SpaceIcon,
         bounds: Rect,
     ) -> CommandOutcome {
         let rect = clamp_to_bounds(Rect::new(at.x, at.y, size.width, size.height), bounds);
         let id = self.add_space(title, rect);
-        if locked && let Some(space) = self.space_mut(id) {
-            space.locked = true;
+        if let Some(space) = self.space_mut(id) {
+            space.locked = locked;
+            space.icon = icon;
         }
         CommandOutcome::Applied
     }
@@ -113,6 +116,13 @@ impl Desktop {
                 space.view.sort.sort_items(&mut space.items);
                 position_items(space, layout);
             }
+            CommandOutcome::Applied
+        })
+    }
+
+    pub(super) fn apply_set_space_icon(&mut self, id: SpaceId, icon: SpaceIcon) -> CommandOutcome {
+        self.with_space(id, |space| {
+            space.icon = icon;
             CommandOutcome::Applied
         })
     }

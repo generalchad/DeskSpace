@@ -2998,6 +2998,96 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: T8's list on Windows 11, with no step in the
     blur; the same on Windows 10, where it still steps.
 
+- [x] **K9. Split `render/d2d/mod.rs`.** 804 lines, at the guideline.
+  Turn it into `render/d2d/mod.rs` plus:
+  - `prepared.rs`: `PreparedScene`.
+  - `drag_image.rs`: `render_items`.
+  - `mod.rs` keeps `Painter`, `DrawContext`, `PaintFrame`,
+    `BorderStroke`, and the device-loss helpers.
+
+- [x] **U2. The undo stack (app, pure; no callers yet).** `app/undo.rs`:
+  - `UndoStack { undo, redo }` of `UndoEntry { label, spaces, files }`.
+    `spaces` holds each changed space's before and after
+    (`Option<(usize, Space)>` each; `None` means absent), and `files` is a
+    `Vec<FileChange>` in the order made: `Moved { from, to }`,
+    `Renamed { from, to }`, `Created { path }`, and
+    `Recycled { original, at }` (`at` is when it was recycled).
+  - Recording: `begin(label)`, then `note_space(desktop, id)` captures a
+    space's before state the first time an entry sees it, `note_file(change)`
+    adds a file change, and `finish(desktop)` reads every after state and
+    pushes the entry, unless it changed nothing. `finish` clears `redo` and
+    keeps at most `UNDO_DEPTH` (50) entries.
+  - Checks: `UndoEntry::can_undo(desktop, exists)` is true while every
+    listed space equals its after state and every file change can be
+    reversed (`to` exists and `from` is free, as `exists` reports);
+    `can_redo` is the same against the before state. `exists` is a closure,
+    so tests run without a disk.
+  - Tests: an entry round trip, the depth cap, a new entry clears redo, a
+    changed space or a moved file makes an entry stale, and an empty action
+    records nothing.
+
+- [x] **U3. Undo and redo layout changes (app).**
+  - `App::dispatch` calls `note_space` for every space in `touched_by`
+    while an entry is open. Wrap each user action in `begin`/`finish` at its
+    entry point (menu choice, drag end, resize end, rename commit, new
+    space, delete space): move, resize, reorder, sort, arrange, snap all,
+    fit to contents, lock, fold, rename a space, create a space, and move
+    items between spaces. A drag records once, on release, not per mouse
+    move.
+  - `App::undo` and `App::redo` (in `app/undo.rs`): check the top entry; if
+    it is stale, drop it and tell the user with `ui.alert` ("DeskSpace can't
+    undo “Move 3 items”, because the space changed since."); otherwise
+    dispatch `RestoreSpaces`, move the entry across, refresh what it names,
+    and save. File changes are reversed in U5-U7; until then an entry that
+    holds any is never recorded.
+  - Menus (the menu-entry recipe): Undo and Redo, named for the entry's
+    label ("Undo Move 3 items"), at the top of the space menu and the tray,
+    greyed when there is nothing to do.
+  - Tests: through `fixtures.rs`, each listed action records one entry that
+    undoes and redoes; a settings-window edit records none.
+
+- [x] **U4. Ctrl+Z and Ctrl+Y (the key recipe).** Two `SelectionKey`
+  variants under `WATCH_PASTE`, the flag Ctrl+V uses, so they act only
+  while a space is current and pass through to Explorer otherwise. Move
+  Ctrl+Z out of `other_keys_pass_through_to_type_to_select_or_the_app`.
+  **[needs human]** check: Ctrl+Z after a space move puts it back, Ctrl+Y
+  moves it again; with no space current, Ctrl+Z on the desktop still undoes
+  an Explorer rename.
+
+- [x] **U5. Undo file moves (app).** Record `Moved` where DeskSpace moves a
+  file: `place_dropped` (into the store, including drops from the taken-over
+  desktop), `release_item` (back to the desktop on a space delete), and a
+  paste's external moves; record `Renamed` for an item rename
+  (`rename.rs`). Reverse in reverse order with the same mechanism that made
+  the change (`ItemStore` for store moves, `ui.transfer_files`, and
+  `ui.rename_path`), after checking every change first, so a stale entry
+  touches no file. Then a space delete undoes: its files go back into the
+  store and the space comes back with its items. **[needs human]** check:
+  drop a file into a space and undo (it is back where it was); delete a
+  space with stored files, undo, then redo; rename an item and undo.
+
+- [x] **U6. Restore from the Recycle Bin (platform).**
+  `Ui::restore_recycled(original: &Path, since: SystemTime) -> Option<PathBuf>`:
+  find the Recycle Bin item whose original location is `original` and that
+  was deleted at or after `since` (the newest if several), restore it with
+  the shell's "undelete" verb, and return the restored path. `None` when it
+  is gone (emptied, or restored by hand). Cite the Microsoft Learn pages for
+  the Recycle Bin folder and its properties beside the code. **[needs
+  human]** check: recycle a file in Explorer, restore it through a test
+  harness or `--verbose` log, and confirm it is back under its old name.
+
+- [x] **U7. Undo deletes, copies, and new shortcuts (app).** Record
+  `Recycled` (with the time taken just before the call) for a Recycle-Bin
+  delete in `delete_selected_items` and `delete_space_item`; an item that
+  was only unlisted is a model change and needs no file record. Record
+  `Created` for copies (`copy_dropped`, a paste's copies), shortcuts
+  (`add_shortcuts`), and "Add files…". Undoing `Recycled` restores with
+  U6; undoing `Created` recycles the file and turns the record into
+  `Recycled` so redo can restore it. Shift+Delete records nothing.
+  **[needs human]** check: delete two items and undo (both return to the
+  space); paste a copy, undo (it goes to the Recycle Bin), then redo; empty
+  the Recycle Bin between a delete and its undo: the undo says it can't and
+  changes nothing.
 - [x] **W1. Keyed folder watches (platform, app).** The hardest task here;
   ask a maintainer to review it.
   - Why: today `win32/folder_watch.rs` runs one thread per watch, and
@@ -3845,3 +3935,455 @@ until I5-I6 all land, so no partial build hides the desktop.
     gets the defaults.
   - **[needs human]** check: change each default, and "New lens…" uses
     it; existing lenses do not change.
+
+
+- [x] **W44. Undo for lens and view actions (app).** The undo work (U1-U7,
+  D11) and the lens work (D17, D18) met late, so no lens or view action
+  records an entry yet: `SetSpaceView` (the View menu, Ctrl+Shift+1..8, the
+  status bar's buttons), `SetLensView` (Sort by, Show hidden files, the Lens
+  page), `SetLensFolder` (Change folder…), `SetLensTitle`, and `CreateLens`
+  (New lens…) all reach the model through a bare `commit`.
+  - Record each as one entry through `App::record_effects` (the "new model
+    change" recipe), labelled as its menu names it ("Change view", "Sort
+    lens", "Change folder", "New lens"), and restart the watch after an
+    applied change as the menu already does. `CreateLens` in
+    `App::show_new_space` opens its entry; check it labels it "New lens" and
+    finishes it on failure.
+  - A restored lens must list its folder again: after an undo or redo that
+    restored one, `App::sync_watches`. The command itself is
+    `RestoreSpaces`, so nothing new is needed in core.
+  - Tests in `app/undo.rs` (copy the layout tests): each action records one
+    entry that undoes and redoes; a restored lens gets a watch; a change
+    that does not apply records nothing.
+  - **[needs human]** check: change a view, sort a lens, toggle its hidden
+    files, change its folder, and create a lens; each undoes and redoes from
+    Ctrl+Z / Ctrl+Y and both menus, and a lens brought back lists its folder
+    again.
+- [x] **S1. The model (core).**
+  - `deskspace-core/src/icon.rs`: `IconRef { set: String, name: String }`
+    and `SpaceIcon { None (default), Automatic, Chosen(IconRef) }`, both
+    `Debug, Clone, PartialEq, Eq`. `IconRef::parse("fluent:games")` accepts
+    a prefix and a name of lowercase ASCII letters, digits, and hyphens (the
+    Iconify name rule), split at the one `:`; `Display` writes it back.
+  - `SpaceIcon` saves as a string, via `#[serde(from = "String", into =
+    "String")]`: `"automatic"`, or `"<set>:<name>"`. Any other string loads
+    as `None` instead of failing the file (ENGINEERING rule 3). Document
+    that on the type.
+  - `Space.icon: SpaceIcon`, `#[serde(default, skip_serializing_if =
+    "SpaceIcon::is_none")]`, `pub(crate)` with an `icon()` accessor, like
+    `locked`. Missing means `None`, so every existing space keeps no icon.
+  - `Command::SetSpaceIcon { id, icon }`: `Applied`, or `NotFound`. A locked
+    space still takes it, as `RenameSpace` does. Its `touched_by` arm joins
+    `RenameSpace`'s.
+  - `Command::CreateSpace` gains `icon: SpaceIcon`, set on the new space.
+    Every caller passes `SpaceIcon::None` for now (S8 passes the New spaces
+    default); the compiler lists them.
+  - Tests: core, `parse` and `Display` round trip, bad strings rejected,
+    and `SetSpaceIcon`'s two outcomes (copy the `RenameSpace` tests).
+    Config, in `schema.rs`'s tests (core has no format crate): a space with
+    each `SpaceIcon` survives a TOML save and load, a space without the key
+    loads as `None` and writes none, and `icon = "?"` loads as `None`.
+  - `CONTEXT.md` section 4, "Space": one sentence saying a space stores a
+    reference to its icon, not the picture, resolved when it is drawn (S7).
+
+- [x] **S2. Icon sets and matching (core, pure).**
+  - `deskspace-core/src/icon_set.rs`: the subset of the Iconify JSON
+    format DeskSpace reads
+    (<https://iconify.design/docs/types/iconify-json.html>; cite it on the
+    type), `Serialize` and `Deserialize`, camelCase:
+    `IconSet { prefix, info: IconSetInfo, icons: BTreeMap<String,
+    IconData>, aliases: BTreeMap<String, IconAlias>, width, height }`, where
+    `IconData { body, width, height }` (both optional, falling back to the
+    set's, which default to 16 as the format says), `IconAlias { parent,
+    rotate, h_flip, v_flip }`, and `IconSetInfo { name, author: { name, url
+    }, license: { title, spdx, url } }`, all `#[serde(default)]`. Unknown
+    keys are ignored.
+  - `Glyph { key: String, body: String, width: u32, height: u32 }` (`key`
+    is `"<prefix>:<name>"`) and `IconSet::glyph(name) -> Option<Glyph>`. It
+    follows aliases to their icon, at most 8 steps so a cycle ends, and
+    refuses an alias with a rotation or a flip, which DeskSpace does not
+    draw. `IconSet::names()` lists icons and plain aliases.
+  - `deskspace-core/src/icon_match.rs`, the D16 matching. Words are the
+    title in lowercase, split on every character that is not alphanumeric,
+    dropping words shorter than 3 letters and those in `STOP_WORDS` ("the",
+    "and", "for", "new", "space", "stuff", "misc", "other").
+    Each word also tries a singular form: "-ies" to "-y", "-es" after s, x,
+    ch, or sh, else a trailing "s" on a word longer than 3 letters.
+    - `best_icon<'a>(title, set: &'a IconSet, words: &'a [(&str, &str)])
+      -> Option<&'a str>` scores each word, as written and singular: 100 a
+      curated `words` row for the word, 95 for its singular, 80 an icon or
+      plain alias named exactly the word, 75 its singular, 60 an icon whose
+      first hyphen-separated part is the word or its singular. A curated
+      row whose icon the set lacks is skipped. The highest score wins; ties
+      go to the earlier word in the title, then the shorter name, then
+      alphabetical order. No candidate, no icon. Aliases resolve to their
+      icon's name.
+    - `search<'a>(query, set, words) -> Vec<&'a str>` for the picker. The
+      query is split as above, but with no stop words or minimum length.
+      An icon matches when every query word is a prefix of one of its
+      hyphen-separated name parts or an alias's, or a curated row maps the
+      word to it. Curated hits come first, then icons with a part equal to
+      a query word, then the rest, each group alphabetical, with no
+      duplicates. An empty query lists every icon alphabetically.
+  - Tests, on small sets built in the test: aliases resolve, a cycle and a
+    transformed alias give `None`, sizes fall back to the set's; each score
+    level wins over the one below it; ties break as stated; stop words and
+    short words never match; "Libraries", "Boxes", and "Games" reach
+    "library", "box", and "game"; "New space" gives `None`; every `search`
+    ordering rule.
+
+- [x] **S3. Icon sets, the cache, and the trimmer (config).** Needs network
+  once, to fetch the upstream set; stop and ask if you have none.
+  - `cargo-add` `serde_json` to `deskspace-config` (it is already in
+    `Cargo.lock` through the updater, so `cargo deny` sees nothing new).
+  - `deskspace-config/src/icons.rs`:
+    - `IconSetSpec { prefix, label, author, license, upstream,
+      upstream_version, keep_suffix, revision, words }`, all `&'static`
+      except `revision: u32`, and `pub const ICON_SETS: &[IconSetSpec]`
+      with one row: prefix `fluent`, label "Fluent UI System Icons", author
+      "Microsoft Corporation", license "MIT", upstream
+      `@iconify-json/fluent` at the newest version on npm today
+      (`https://registry.npmjs.org/@iconify-json/fluent/latest` says which),
+      `keep_suffix` `-20-regular` (one-color outlines, as Windows 11's own
+      title-bar glyphs are), revision 1, and `FLUENT_WORDS`. Add
+      `icon_set(prefix)`, `default_set()` (the first row), `file_name()`
+      (`fluent-r1.json`), and `release_tag()` (`icons-fluent-r1`).
+    - `FLUENT_WORDS: &[(&str, &str)]`, English words to icon names, for
+      common space titles. Start from: apps, games, work, office, school,
+      study, homework, photos, pictures, videos, movies, music, podcasts,
+      documents, downloads, projects, code, tools, utilities, design, art,
+      notes, books, finance, money, bills, taxes, shopping, travel, health,
+      fitness, recipes, home, family, kids, social, chat, mail, calendar,
+      web, links, favorites, cloud, backup, archive, temp, important,
+      todo, ideas, research, science, sports, weather, maps, news,
+      security, network, server, database, terminal, scripts, writing,
+      presentations, spreadsheets, clients, meetings. Pick each target by
+      searching the names file. Leave out a word the set already names
+      exactly, which matching finds on its own.
+    - `IconStore`, made by `ConfigStore::icons_dir()`, which is
+      `%LOCALAPPDATA%\DeskSpace\DeskSpace\data\icons`, or an `icons` folder
+      beside an explicit config, as `storage_dir()` does, so a scratch
+      config has its own cache. `load(spec) -> Result<Option<IconSet>,
+      ConfigError>`: `None` when the file is missing; a file that does not
+      parse, or whose `prefix` is not the row's, is deleted and returned as
+      an error, so the next need fetches it again. `save(spec, bytes)`
+      parses first, writes a sibling `.tmp` and renames it (as
+      `ConfigStore::save` does), then deletes this prefix's other revisions.
+      The cache is trusted once written: only the download is verified
+      (S4).
+    - `trim(upstream: IconSet, spec) -> IconSet`: keeps the icons whose name
+      ends with `keep_suffix`, with the suffix removed, and the aliases that
+      end with it, have no transform, and point at a kept icon. It keeps
+      `info` and sets `prefix`. A width and height every kept icon shares
+      move to the set level. `missing_names(set, shipped: &str) ->
+      Vec<String>` lists the shipped names the set lacks.
+  - `crates/deskspace-config/examples/icon_set.rs`, the glue:
+    - `trim <prefix> <upstream icons.json> <out dir>` writes
+      `<out dir>/<file_name>` as compact JSON. `BTreeMap` keeps the order,
+      so the same input gives the same bytes. It exits non-zero, listing
+      them, if any name in `assets/icons/<prefix>-names.txt` is missing,
+      then rewrites that file: every name, sorted, one per line.
+    - `spec <prefix>` prints `tag=`, `file=`, and `upstream=<package>@
+      <version>` lines, for the workflow (S5).
+  - Fetch the upstream package from `https://registry.npmjs.org/
+    @iconify-json/fluent/-/fluent-<version>.tgz`, extract `package/
+    icons.json` into your scratchpad, run `trim`, and commit the new
+    `assets/icons/fluent-names.txt` (not the set itself). Put the icon and
+    alias counts in the commit body.
+  - Tests: a small Iconify file parses, unknown keys and all; `trim` keeps,
+    renames, and drops exactly as stated; `missing_names`; `IconStore` round
+    trip in a temp dir, a corrupt file deleted, older revisions pruned, and
+    a scratch config's `icons_dir()` beside it. For every row: its names
+    file is sorted with no duplicates, every `words` target is in it, its
+    words are single lowercase words with no duplicates, and prefixes are
+    unique.
+  - `CONTEXT.md` section 5: one bullet on `icons_dir()` and that the cache
+    is trusted once written.
+
+- [x] **S4. Signed downloads (update).**
+  - `deskspace-update/src/lib.rs`: `pub fn fetch_signed(tag, file) ->
+    Result<Vec<u8>, UpdateError>`. It downloads `{ASSETS_URL}/{tag}/{file}`
+    and `{file}.sig`, where `ASSETS_URL` is
+    `https://github.com/generalchad/DeskSpace/releases/download`, then
+    verifies them against `UPDATE_PUBKEY`. Without a key it is
+    `NotConfigured`, as `check` is. Use a blocking `reqwest` client with a
+    30 s timeout and a `DeskSpace/<version>` user agent. Refuse a body over
+    `MAX_ASSET_BYTES` (32 MiB), by its `Content-Length` and while reading,
+    so a bad server cannot fill memory. Blocking: the doc says to call it
+    on a worker thread.
+  - `fn verify(data, signature, pubkey) -> Result<(), UpdateError>`:
+    base64-decode the key and the `.sig` text, then `minisign-verify`'s
+    `PublicKey::decode`, `Signature::decode`, and `verify(.., true)`. That is
+    exactly what `cargo-packager-updater` 0.2.3 does in its
+    `verify_signature`; cite it (crates.io source, `src/lib.rs`), so one key
+    and one `cargo packager signer sign` serve both. New `UpdateError`
+    variants `Fetch(String)` and `Signature(String)`.
+  - `cargo-add` `reqwest` (no default features; `blocking` and
+    `native-tls`, as the updater uses), `minisign-verify`, and `base64` at
+    their locked versions. `cargo-deny-check` must pass with no new crates.
+  - Update the crate doc: the app also fetches icon sets, only when the
+    user has agreed (D16).
+  - Tests, with no network: generate a throwaway key with
+    `cargo packager signer generate` (no password), sign a small file, and
+    commit the public key, the file, and its `.sig` under
+    `crates/deskspace-update/tests/fixtures/` (never the private key). A good
+    signature verifies; a changed byte, another key, and garbage base64
+    each fail with an error, not a panic.
+
+
+- [x] **O1. The harness (scripts).**
+  - `scripts/onscreen/OnScreen.psm1`, one module every check imports:
+    - the P/Invoke class from `zorder.ps1`, moved here, plus
+      `GetDpiForWindow`, `GetDC`/`BitBlt` (`CAPTUREBLT`), and
+      `CreateDIBSection`; `zorder.ps1` imports it, and its output is
+      unchanged.
+    - `Start-DeskSpace -Config <toml>`: builds with `./scripts/dev.ps1
+      -NoRun`, writes the TOML to a fresh folder under `%TEMP%`, starts
+      `deskspace.exe --config <it> --on-top --no-icons`, and returns once
+      every space window is visible and its rect has held still for 500 ms.
+      Configs set Startup to None, so nothing animates.
+    - `Stop-DeskSpace`: ends that process and deletes the folder.
+    - `Show-Backdrop -Color <rgb>`: a borderless, non-topmost window of one
+      color over the primary monitor, under the `--on-top` spaces.
+    - `Get-DeskSpaceWindows`: each window of the process with its class,
+      handle, rect, extended style, DPI, and z-order index.
+    - `Get-ScreenPixels -Rect <r>`: the composed screen there, as BGR.
+    - `Assert-Check <name> <bool> <detail>` and `Complete-Checks`: print a
+      PASS / FAIL / NOT COVERED table and exit non-zero on any FAIL.
+  - `scripts/onscreen/smoke.ps1`: one Solid space with an opaque red tint
+    over a white backdrop. The capture reads red at the space's center and
+    white well away from it.
+  - **Stop and ask** if the smoke check cannot read the space's pixels
+    with `BitBlt` (composition content missing from the capture). The
+    fallback, `Windows.Graphics.Capture`, is a design change.
+  - `ENGINEERING.md` section 1 lists `scripts/onscreen/`, and `TASKS.md`
+    rule 8 says to run any `onscreen` script that covers a check before
+    handing what is left to a human.
+  - Done when `smoke.ps1` exits 0 here and `zorder.ps1` prints what it did.
+
+
+- [x] **O2. Shadows: which windows, where (D15).**
+  `scripts/onscreen/shadows.ps1`, structure only, no pixels. It reads
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\EnableTransparency`
+  and runs the matching half of the D15 row. Cases: Acrylic, Blur, Solid,
+  and Clear at radius 0, 4, 8, and 16; `--placement desktop-bottom`; and
+  `--takeover-layer`. For each:
+  - Exactly one visible `DeskSpaceShadow` per space that should cast one
+    (the row's rules), and none for Clear, desktop placement, and the
+    layer; with `show_shadow = false`, none at all.
+  - The shadow is the next window below its space
+    (`GetWindow(space, GW_HWNDNEXT)`).
+  - Its extended style has `WS_EX_LAYERED`, `WS_EX_TRANSPARENT`,
+    `WS_EX_NOACTIVATE`, and `WS_EX_TOOLWINDOW`.
+  - Its rect is `ShadowLook::rect` of the space's rect (`render/shadow.rs`),
+    with the reach scaled to the window's DPI the way
+    `space_window::sync_shadow` scales it. Read both; do not guess.
+  - `WindowFromPoint` at the middle of the band left of the space, and of
+    the band below it, reaches the backdrop, not the shadow.
+  - Two spaces, one customized with `shadow_size = 40`: each shadow's
+    reach matches its own theme.
+  - Done when it exits 0 here with every case of this machine's half
+    covered.
+- [x] **O3. Shadows: the pixels (D15).** `shadows.ps1 -Pixels` adds, over
+  a white backdrop, alpha read as `1 - R / 255` on lines out from the
+  middle of the left edge, the bottom edge, and the caster's bottom-left
+  corner:
+  - Beside the space a straight edge shows half the blur, so alpha is
+    within 0.09 of half `shadow_opacity`; the drop uncovers a band below,
+    where it is within 0.10 of three quarters. No pixel outside the space
+    is darker than the setting (`shadow_size` 16 and 48; opacity 0, 40,
+    and 100; at 125 %).
+  - Alpha never rises going outward, and is 0 by the reach.
+  - The band below is wider than the band above by the drop
+    (`ShadowLook::drop`).
+  - A 16 px corner thins the shadow where a square one does not: on the
+    diagonal from the caster's bottom-left corner, at `r * (1 - 1/sqrt(2))`
+    out, the 16 px alpha is at most half the square corner's.
+  - Inside a Solid space the pixels equal its tint: the cut-out leaves
+    the space undarkened.
+  - Opacity 0 hides the shadow window and leaves the backdrop untouched.
+  - Done 2026-10-27: exits 0 here. Section V keeps the animations, the
+    Settings page, the debug toggles, other DPIs, Windows 10, and the
+    desktop-hosted placement. Amended then, by the maintainer's decision:
+    the setting is the black's own alpha, not the darkest pixel, so the
+    theme field and D15 say so.
+
+
+- [x] **S6. Drawing a glyph (platform).**
+  - `render/glyph.rs` (pure): `svg_document(glyph: &Glyph, color: Color) ->
+    String` wraps the body in `<svg xmlns=".." viewBox="0 0 w h">`, writes
+    `color` as `#rrggbb` in place of every `currentColor` (Direct2D's SVG
+    support has no `currentColor`), and adds an `opacity` for a color that
+    is not opaque.
+  - `render/d2d/glyph.rs`: `rasterize(glyph, px, color) -> Result<Icon,
+    PlatformError>`. On the shared device (`create_device`), draw into a
+    `px` square target bitmap with `ID2D1DeviceContext5::CreateSvgDocument`
+    (from `SHCreateMemStream`) and `DrawSvgDocument`. Copy the result to a
+    CPU-readable bitmap, map it, and build an `Icon` (premultiplied BGRA,
+    as `Icon::new` wants). Without `ID2D1DeviceContext5` (Windows 10 before
+    1703) it fails, and callers show no icon. Cite the Microsoft Learn
+    pages for `CreateSvgDocument` and `DrawSvgDocument` beside the calls.
+  - `win32/glyphs.rs`: `GlyphCache`, copied from `IconCache`
+    (least-recently-used, 256 entries), keyed by `(glyph key, px, color)`.
+    `icon(&mut self, key, px, color, glyph: impl FnOnce() -> Option<Glyph>)
+    -> Option<Icon>` builds the glyph only on a miss. It logs a failure
+    once per key at `debug`. Re-export `GlyphCache` and `Glyph` from
+    `lib.rs`.
+  - Tests: `svg_document`'s wrapping, color, and opacity. `rasterize`
+    draws `M2 2h16v16H2z` in a 20-wide glyph at 20 px in red: the middle
+    pixel is opaque red and a corner is clear. It runs on WARP in CI, as
+    `create_device` falls back to it. The cache evicts the oldest entry
+    and keys on color.
+  - `CONTEXT.md` section 6, "Rendering": one bullet on glyphs. Add the new
+    modules to the module map.
+  - Done 2026-10-27. The document also sets the root's `fill` to the
+    color, so a body that names no paint still draws in it; the tests'
+    bodies are `<path d="..."/>` elements, since a body is SVG content,
+    not path data. The cache tests draw real glyphs through WARP.
+
+
+- [x] **S7. Icons in the title bar (app, platform).** **[needs human]**
+  - `render/scene.rs`: `SpaceScene.title_icon: Option<TitleIcon>`, with
+    `TitleIcon { rect: Rect, image: Option<Icon> }` in window-local pixels;
+    default `None` (the visual-in-a-space recipe).
+  - `deskspace-app/src/scene.rs`: pure `title_icon_rect(title_height) ->
+    Rect`, a square `TITLE_ICON_SIZE` (16) by `TITLE_ICON_INSET` (10) at 96
+    DPI and a 28 px title, scaled by `title_height / DEFAULT_TITLE_HEIGHT`,
+    centered vertically. `space_scene` fills `title_icon` when the space
+    resolves to a picture; the desktop layer never does.
+  - `deskspace-app/src/app/space_icons.rs`, a new `app/` module (add it to
+    `CONTEXT.md` section 3's table): `SpaceIcons` on `App`, with per-prefix
+    state (`Loading`, `Ready(Arc<IconSet>)`, `Missing`, `Failed(String)`),
+    a `GlyphCache`, and a memo of automatic matches by title, cleared when
+    a set changes.
+    - On `Event::Started`, a worker thread runs `IconStore::load` for the
+      sets in use (`Automatic` uses `default_set()`), as the update checks
+      do. It wakes the app with `ICONS_WAKE` (the next free wake id beside
+      `UPDATE_WAKE`), which refreshes the spaces showing that set. No
+      network here; S8 adds the download.
+    - `App::space_glyph(space) -> Option<Glyph>`: `Chosen` gives its name
+      in its set; `Automatic` gives `best_icon` in `default_set()` with the
+      row's words; then `IconSet::glyph`, when that set is `Ready`.
+      `App::space_icon(space, color, title_height) -> Option<Icon>` puts it
+      through the cache, at the rect's size, in the space's `title_text`
+      color. `refresh_space` passes that to the scene.
+  - Painter: move `draw_title` and `LOCK_GLYPH` into a new
+    `render/d2d/title.rs`, so `d2d/mod.rs` stays under 800 lines. Draw the
+    image at its rect with `bitmap_for`, and start the title text (and the
+    rename box) `TITLE_ICON_GAP` (6 px, scaled the same way) after the
+    rect. The per-target bitmap cache is pruned to the scene's icons, so
+    count the title icon among them.
+  - Tests: `title_icon_rect` at 28 and 42 px; a space with
+    `Chosen`, with `Automatic` and a matching title, and with `None` gives
+    the scene a rect or none (copy
+    `the_settings_highlight_reaches_the_scene`); the layer's scene has
+    none.
+  - **[needs human]** check: with a scratch config, make the cache by hand
+    (S3's example: `trim fluent <upstream icons.json>
+    %TEMP%\deskspace-dev\icons`). Then set `icon = "fluent:games"` on one
+    space and `icon = "automatic"` on spaces titled "Games", "Photos", and
+    "Stuff". The first three show their icons left of the title, in the
+    title's color, and follow a dark and light switch. "Stuff" and spaces
+    without the key show none and look as before. Hovering or clicking the
+    icon does what the title bar does. Check at 100 % and 150 %, on every
+    backdrop, and with a lock. With the cache deleted, nothing shows and
+    nothing fails.
+  - Done 2026-10-27. `TitleIcon` carries the rect in window-local pixels,
+    so the painter no longer centers a lens icon itself; `d2d/title.rs`
+    holds the title drawing and its layout tests. The set load is one
+    worker per set, so a chosen set and the default one load in
+    parallel. The app tests cover `title_icon_rect`, the no-icon scene,
+    and the glyph resolution (chosen, automatic, none, missing); the
+    scene-to-painter wiring is what the on-screen check above proves,
+    since the app cannot build an `Icon` without the shell or COM.
+
+
+- [x] **S13. Credits (app, docs).**
+  - `settings/pages.rs` `about_page`: one `Field::note` (`ABOUT_ICONS`, the
+    next free id) with a line per `ICON_SETS` row: "Icons: `label` by
+    `author`, `license` License." One field whatever the number of sets,
+    so a pack is never a new id.
+  - `NOTICE`: the Fluent UI System Icons copyright line and MIT license
+    text, under a heading naming the set and its upstream URL.
+  - Tests: the About page lists every row; `NOTICE` names every row's label
+    (read it as `deskspace-update`'s tests read `release.yml`).
+  - Done 2026-10-27. The note is one `Field::note` with one line per
+    `ICON_SETS` row, so a new set never takes a new id; `NOTICE` has
+    the Fluent UI System Icons heading, upstream URL, copyright, and
+    MIT text. The About note and `NOTICE` are tested against
+    `ICON_SETS`; the note's on-screen height is a glance for the next
+    pass through Settings > About.
+
+
+- [x] **S8. Consent, the download, and new spaces (config, app).**
+  **[needs human]**
+  - `deskspace-config/src/schema.rs`: `WindowSettings.icon_downloads:
+    IconDownloads { Ask (default), Allowed, Declined }` and
+    `new_space_icon: NewSpaceIcon { Automatic (default), None }`, with
+    `NewSpaceIcon::space_icon()`. Both snake_case enums.
+  - `app/space_icons.rs`: a pure `next_step(state, consent, asked) ->
+    IconStep { Nothing, Load, Ask, Fetch, Unavailable }`, where `asked`
+    means the prompt already showed this session. It is the one place that
+    decides to download, and only `Allowed` gives `Fetch` (S rule 2).
+    `App::need_icon_set(ui, spec)` acts on it.
+    - `Fetch`: a worker runs `fetch_signed(release_tag, file_name)`, then
+      `IconStore::save`, and wakes `ICONS_WAKE`. A failure becomes
+      `Failed`, logged at `warn`, and is tried again only at the next
+      start.
+    - `Ask`: arms `Timer::IconConsent` (the next free timer, 300 ms, so a
+      new space's animation starts and an OLE drop returns first). Its
+      handler shows `ui.choose` titled "Show icons on spaces?". The text
+      names the set's label, author, and license, says it is downloaded
+      once from DeskSpace's releases on GitHub and that nothing about you
+      or your files is sent, and points at Settings > General. The buttons
+      are "Download icons" and "No thanks"; save `Allowed` or `Declined`,
+      and Esc counts as "No thanks".
+  - Call `need_icon_set` where an icon is first needed: when a load finds
+    no file and a space uses the set, and after `open_new_space` makes an
+    `Automatic` space. `open_new_space` passes
+    `window.new_space_icon.space_icon()` to `CreateSpace`. `seed_space`
+    keeps `SpaceIcon::None`, so the first launch never asks.
+  - Settings (the new-global-setting recipe): an "Icon" choice on the New
+    spaces page (Automatic, No icon), and "Icon downloads" on the General
+    page (Ask first, Allowed, Never), with a note naming what is downloaded
+    and from where. Option tables go in `tables.rs`. In
+    `App::apply_settings`, a change to `Allowed` calls `need_icon_set` for
+    the sets in use.
+  - README: the privacy paragraph names the one-time icon download, which
+    asks first, beside the update check. Add the two settings to
+    `CONTEXT.md` section 5.
+  - Tests: `next_step` for every state, consent, and `asked` combination,
+    `Fetch` only with `Allowed`; the settings' serde defaults and old files
+    without the keys; each `apply_field` arm; a new space gets the
+    configured icon (through `fixtures.rs`); the seed space gets none.
+  - **[needs human]** check, with a scratch config, before the key exists:
+    New space opens a "Games"-titled space. The prompt appears once.
+    "Download icons" logs a `NotConfigured` failure and shows no icon, and
+    nothing else breaks. With S5 published and the key set: the same steps
+    download once, then every automatic space shows its icon. The next
+    start reads the cache with no network (check with `-Verbosity 1`).
+    "No thanks" never asks again until General is set back to "Ask first".
+    `-Fresh` first launch: no prompt.
+  - Done 2026-10-27. `next_step` is the one download decision, with a
+    5-by-3-by-2 test matrix in `space_icons.rs`. A load or download
+    result wakes the app; missing sets then ask or fetch, and one
+    shared channel carries both. The consent question waits 300 ms
+    (`Timer::IconConsent`), saves Allowed or Declined, and Esc counts
+    as No thanks. `create_new_space` builds its command in
+    `new_space_command`, tested through `fixtures.rs`; the seed space
+    asserts `None`. The settings gain "Icon" and "Icon downloads"
+    with their tables and arms. The published set and key are what the
+    on-screen check above still needs.
+
+
+- [x] **W26. One place decides whether a label shows its extension
+  (app).** Any time; before W28.
+  - `self.surface_match_explorer(surface) &&
+    self.system.shell().show_extensions` is written out in
+    `app/rename.rs`, `app/selection.rs`, `app/settings_session.rs`, and
+    `app/view.rs`. Move it into one `App::shows_extensions(surface)` in
+    `app/view.rs` and call that from all four. A pure move.
+  - Done when: `rg "show_extensions" crates/deskspace-app/src/app` finds
+    only the new method and its callers' use of its result.
+  - Done 2026-10-27: `shows_extensions` is in `app/view.rs`; the
+    rename, selection, settings-preview, and scene builders call it.

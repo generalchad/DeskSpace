@@ -1,6 +1,7 @@
 use deskspace_core::animation::Animations;
 use deskspace_core::source::LensTitle;
-use deskspace_core::{Desktop, SpaceView, Theme};
+use deskspace_core::theme::RECENT_COLORS_LIMIT;
+use deskspace_core::{Color, Desktop, SpaceIcon, SpaceView, Theme};
 use serde::{Deserialize, Serialize};
 
 /// Version 2 replaced the color-key theme with the Windows 11 theme model and
@@ -21,6 +22,10 @@ pub struct Config {
     pub theme: Theme,
     #[serde(default)]
     pub window: WindowSettings,
+    /// The color picker's recent colors, most recent first. Kept outside
+    /// `window` so a settings Cancel, which restores `window`, keeps them.
+    #[serde(default)]
+    pub recent_colors: Vec<Color>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +54,11 @@ pub struct WindowSettings {
     /// Whether a new space starts locked (kept at its size, scrolling instead
     /// of growing).
     pub new_space_locked: bool,
+    /// Whether DeskSpace may download an icon set, and whether the question
+    /// was asked. Nothing is fetched before the user agrees.
+    pub icon_downloads: IconDownloads,
+    /// The icon a new space starts with.
+    pub new_space_icon: NewSpaceIcon,
     /// Check for a newer release in the background, about once a day. Off by
     /// default: no network traffic happens unless the user turns this on or
     /// starts a check from the tray.
@@ -66,7 +76,7 @@ pub struct WindowSettings {
     pub skipped_version: Option<String>,
     /// What each kind of moment plays (ROADMAP D12), clamped on load.
     pub animations: Animations,
-    /// The defaults a new lens starts with (D15, W23).
+    /// The defaults a new lens starts with (D17, W23).
     pub new_lens: NewLens,
 }
 
@@ -96,6 +106,41 @@ impl Default for NewLens {
     }
 }
 
+/// Whether DeskSpace may download an icon set, and whether it has asked yet.
+/// `Ask` is the default, so no download happens before the user agrees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IconDownloads {
+    /// Ask once before the first download (the default).
+    #[default]
+    Ask,
+    /// Download icon sets without asking again.
+    Allowed,
+    /// Never download icon sets.
+    Declined,
+}
+
+/// The icon a new space starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NewSpaceIcon {
+    /// Match an icon from the space's title (the default).
+    #[default]
+    Automatic,
+    /// No icon; the title starts where it always did.
+    None,
+}
+
+impl NewSpaceIcon {
+    /// The icon a space made with this setting gets.
+    pub fn space_icon(self) -> SpaceIcon {
+        match self {
+            Self::Automatic => SpaceIcon::Automatic,
+            Self::None => SpaceIcon::None,
+        }
+    }
+}
+
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
@@ -109,6 +154,8 @@ impl Default for WindowSettings {
             new_space_width: 240,
             new_space_height: 120,
             new_space_locked: false,
+            icon_downloads: IconDownloads::Ask,
+            new_space_icon: NewSpaceIcon::Automatic,
             check_for_updates: false,
             install_updates: false,
             last_update_check: None,
@@ -141,6 +188,7 @@ impl Default for Config {
             desktop: Desktop::default(),
             theme: Theme::default(),
             window: WindowSettings::default(),
+            recent_colors: Vec::new(),
         }
     }
 }
@@ -175,6 +223,7 @@ impl Config {
         // A lens's items are a live view of its folder, never saved; drop any
         // a hand-edited file listed so the next sync fills them again.
         self.desktop.clear_lens_items();
+        self.recent_colors.truncate(RECENT_COLORS_LIMIT);
     }
 }
 
@@ -193,6 +242,29 @@ mod tests {
         assert!(parsed.desktop.spaces().is_empty());
         assert_eq!(parsed.window.toggle_hotkey, "Ctrl+Alt+D");
         assert_eq!(parsed.theme, Theme::default());
+    }
+
+    #[test]
+    fn icon_settings_default_and_round_trip() {
+        let parsed: Config = toml::from_str("version = 2\n").unwrap();
+        assert_eq!(parsed.window.icon_downloads, IconDownloads::Ask);
+        assert_eq!(parsed.window.new_space_icon, NewSpaceIcon::Automatic);
+
+        let mut config = Config::new();
+        config.window.icon_downloads = IconDownloads::Declined;
+        config.window.new_space_icon = NewSpaceIcon::None;
+        let text = toml::to_string_pretty(&config).unwrap();
+        assert!(text.contains("icon_downloads = \"declined\""), "{text}");
+        assert!(text.contains("new_space_icon = \"none\""), "{text}");
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back.window.icon_downloads, IconDownloads::Declined);
+        assert_eq!(back.window.new_space_icon, NewSpaceIcon::None);
+    }
+
+    #[test]
+    fn a_new_space_icon_maps_to_the_space_icon() {
+        assert_eq!(NewSpaceIcon::Automatic.space_icon(), SpaceIcon::Automatic);
+        assert_eq!(NewSpaceIcon::None.space_icon(), SpaceIcon::None);
     }
 
     #[test]
@@ -357,6 +429,23 @@ mod tests {
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
         assert_eq!(look.theme.overlay_size, OVERLAY_SIZE_RANGE.0);
+    }
+
+    #[test]
+    fn recent_colors_load_and_are_capped() {
+        let mut text = String::from("version = 2\n");
+        for shade in 0..RECENT_COLORS_LIMIT + 2 {
+            text.push_str(&format!(
+                "[[recent_colors]]\nr = {shade}\ng = 0\nb = 0\na = 255\n"
+            ));
+        }
+        let mut parsed: Config = toml::from_str(&text).unwrap();
+        parsed.migrate();
+        assert_eq!(parsed.recent_colors.len(), RECENT_COLORS_LIMIT);
+        assert_eq!(parsed.recent_colors[0], Color::rgb(0, 0, 0));
+        let saved = toml::to_string(&parsed).unwrap();
+        let reloaded: Config = toml::from_str(&saved).unwrap();
+        assert_eq!(reloaded.recent_colors, parsed.recent_colors);
     }
 
     #[test]
@@ -647,6 +736,54 @@ mod tests {
         assert!(parsed.desktop.layer().items().is_empty());
     }
 
+    fn config_with_icon(icon: deskspace_core::SpaceIcon) -> Config {
+        let mut config = Config::new();
+        let create = deskspace_core::Command::CreateSpace {
+            title: "Games".to_owned(),
+            at: Point::new(10, 20),
+            size: deskspace_core::Size::new(300, 200),
+            locked: false,
+            icon,
+        };
+        let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
+        assert!(config.desktop.apply(create, bounds).is_applied());
+        config
+    }
+
+    #[test]
+    fn a_space_icon_survives_a_toml_save_and_load() {
+        use deskspace_core::{IconRef, SpaceIcon};
+        let chosen = SpaceIcon::Chosen(IconRef::parse("fluent:games").unwrap());
+        for icon in [SpaceIcon::Automatic, chosen] {
+            let text = toml::to_string_pretty(&config_with_icon(icon.clone())).unwrap();
+            let parsed: Config = toml::from_str(&text).unwrap();
+            assert_eq!(parsed.desktop.spaces()[0].icon(), &icon);
+        }
+    }
+
+    #[test]
+    fn a_space_without_an_icon_loads_and_writes_none() {
+        let text =
+            toml::to_string_pretty(&config_with_icon(deskspace_core::SpaceIcon::None)).unwrap();
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.trim_start().starts_with("icon ="))
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.desktop.spaces()[0].icon().is_none());
+    }
+
+    #[test]
+    fn an_unreadable_space_icon_loads_as_none() {
+        let text = toml::to_string_pretty(&config_with_icon(deskspace_core::SpaceIcon::Automatic))
+            .unwrap()
+            .replace("\nicon = \"automatic\"", "\nicon = \"?\"");
+        assert!(text.contains("\nicon = \"?\""), "{text}");
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.desktop.spaces()[0].icon().is_none());
+    }
+
     #[test]
     fn a_theme_without_border_settings_keeps_the_old_border() {
         let text = format!(
@@ -680,6 +817,37 @@ show_border = true
     }
 
     #[test]
+    fn a_theme_from_before_shadows_gets_the_default_shadow() {
+        let text = format!(
+            "version = {CURRENT_VERSION}
+[theme]
+show_border = true
+"
+        );
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert!(parsed.theme.show_shadow, "D15: an upgrade gets its shadow");
+        assert_eq!(
+            parsed.theme.shadow_size,
+            deskspace_core::theme::SHADOW_SIZE_DEFAULT
+        );
+        assert_eq!(
+            parsed.theme.shadow_opacity,
+            deskspace_core::theme::SHADOW_OPACITY_DEFAULT
+        );
+    }
+
+    #[test]
+    fn shadow_settings_round_trip_through_toml() {
+        let mut config = Config::new();
+        config.theme.show_shadow = false;
+        config.theme.shadow_size = 30;
+        config.theme.shadow_opacity = 60;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&text).unwrap();
+        assert_eq!(parsed.theme, config.theme);
+    }
+
+    #[test]
     fn round_trips_through_toml() {
         let mut config = Config::new();
         let create = deskspace_core::Command::CreateSpace {
@@ -687,6 +855,7 @@ show_border = true
             at: Point::new(10, 20),
             size: deskspace_core::Size::new(300, 200),
             locked: false,
+            icon: deskspace_core::SpaceIcon::None,
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());
@@ -725,6 +894,7 @@ show_border = true
                         at: Point::ZERO,
                         size: Size::new(240, 120),
                         locked: false,
+                        icon: deskspace_core::SpaceIcon::None,
                     },
                     bounds(),
                 )

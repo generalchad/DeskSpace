@@ -31,7 +31,7 @@ impl SpaceSource {
     }
 }
 
-/// How a lens derives its `Space.title` from its folder (ROADMAP D15). The
+/// How a lens derives its `Space.title` from its folder (ROADMAP D17). The
 /// default is `Custom`, so a lens saved before this setting keeps its title.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,7 +49,7 @@ pub enum LensTitle {
 
 /// A lens's bound folder and how its contents are shown. The view is saved
 /// with the space; the items it produces are not (M4 phase 1). Its order
-/// lives in `SpaceView.sort` (D15).
+/// lives in `SpaceView.sort` (D17).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FolderView {

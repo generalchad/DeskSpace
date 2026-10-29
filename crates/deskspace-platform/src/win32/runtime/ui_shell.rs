@@ -156,6 +156,19 @@ impl Ui {
         }
     }
 
+    /// Finds the Recycle Bin item whose original location is `original` and
+    /// that was deleted at or after `since` (the newest if several), restores
+    /// it with the shell's `"undelete"` verb, and returns the restored path.
+    /// `None` when it is gone (emptied, or restored by hand).
+    pub fn restore_recycled(
+        &mut self,
+        original: &Path,
+        since: std::time::SystemTime,
+    ) -> Option<PathBuf> {
+        let owner = with_runtime(|runtime| runtime.controller);
+        file_op::restore_recycled(owner, original, since)
+    }
+
     /// Shows Explorer's info tip for `path` near `at` (desktop coordinates).
     /// Reused across hovers; call `hide_info_tip` when the pointer leaves.
     pub fn show_info_tip(&mut self, path: &Path, at: Point) {

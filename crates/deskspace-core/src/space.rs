@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::geometry::{Point, Rect};
+use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::Item;
 use crate::layout::{GAP_RANGE, GridSpec};
@@ -72,7 +73,7 @@ pub struct Space {
     /// A lens's items are a live cache and are never written to the config.
     #[serde(default)]
     pub(crate) source: SpaceSource,
-    /// How the space lays its items out (D15). Views are not part of the look,
+    /// How the space lays its items out (D17). Views are not part of the look,
     /// so a normal space and a lens share this.
     #[serde(default)]
     pub(crate) view: SpaceView,
@@ -80,6 +81,9 @@ pub struct Space {
     pub(crate) items: Vec<Item>,
     #[serde(default)]
     pub(crate) locked: bool,
+    /// Shown left of the title. A reference, resolved when drawn.
+    #[serde(default, skip_serializing_if = "SpaceIcon::is_none")]
+    pub(crate) icon: SpaceIcon,
     /// Folded to its title bar. The key keeps its old name, `rolled_up`, so
     /// configs from before the rename load and older versions read new ones.
     #[serde(default, rename = "rolled_up")]
@@ -153,6 +157,9 @@ struct PersistedSpace<'a> {
     custom: bool,
     title_height: i32,
     user_sized: bool,
+    /// Shown left of the title. A reference, resolved when drawn.
+    #[serde(skip_serializing_if = "SpaceIcon::is_none")]
+    icon: SpaceIcon,
     #[serde(skip_serializing_if = "SpaceView::is_default")]
     view: SpaceView,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -175,6 +182,7 @@ impl Serialize for Space {
             custom: self.custom,
             title_height: self.title_height,
             user_sized: self.user_sized,
+            icon: self.icon.clone(),
             view: self.view,
             look: self.look.as_ref(),
             source: (!self.source.is_items()).then_some(&self.source),
@@ -194,6 +202,7 @@ impl Space {
             view: SpaceView::default(),
             items: Vec::new(),
             locked: false,
+            icon: SpaceIcon::None,
             folded: false,
             custom: false,
             look: None,
@@ -218,12 +227,16 @@ impl Space {
         &self.items
     }
 
+    pub fn icon(&self) -> &SpaceIcon {
+        &self.icon
+    }
+
     /// What fills the space.
     pub fn source(&self) -> &SpaceSource {
         &self.source
     }
 
-    /// How the space lays its items out (D15).
+    /// How the space lays its items out (D17).
     pub fn view(&self) -> SpaceView {
         self.view
     }
@@ -234,7 +247,7 @@ impl Space {
     }
 
     /// Whether the space holds its sort as items come and go: a lens always
-    /// does, and a normal space when its view asks (D15).
+    /// does, and a normal space when its view asks (D17).
     pub fn keeps_sorted(&self) -> bool {
         self.is_lens() || self.view.keep_sorted
     }

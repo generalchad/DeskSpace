@@ -147,7 +147,7 @@ impl App {
         self.resnapshot_settings(ui, id);
     }
 
-    /// Applies a Sort by choice (D15). A normal space sorts once and keeps the
+    /// Applies a Sort by choice (D17). A normal space sorts once and keeps the
     /// rule; a lens keeps the rule and lists its folder again, so the new
     /// order applies now rather than at the next change.
     pub(super) fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, rule: SortRule, at: Point) {
@@ -157,11 +157,56 @@ impl App {
         if space.is_lens() {
             let mut view = space.view();
             view.sort = rule;
-            self.set_space_view(ui, id, view, at);
-            self.restart_lens_watch(ui, id);
+            if self.set_space_view_labelled(ui, id, view, at, "Sort lens") {
+                self.restart_lens_watch(ui, id);
+            }
         } else {
-            self.commit(ui, Command::SortSpace { id, rule }, at);
+            let effects = self.sort_space_items(id, rule, at);
+            self.run(ui, effects);
         }
+    }
+
+    pub(super) fn sort_space_items(
+        &mut self,
+        id: SpaceId,
+        rule: SortRule,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        self.record_effects(
+            "Sort space",
+            Command::SortSpace { id, rule },
+            at,
+            Vec::new(),
+        )
+    }
+
+    pub(super) fn fit_space_to_contents(
+        &mut self,
+        id: SpaceId,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        let effects = self.record_effects(
+            "Fit to contents",
+            Command::FitToContents { id },
+            at,
+            Vec::new(),
+        );
+        if !effects.is_empty() {
+            self.view_cache.set_scroll(id, 0);
+        }
+        effects
+    }
+
+    pub(super) fn toggle_space_lock(
+        &mut self,
+        id: SpaceId,
+        at: Point,
+    ) -> Vec<super::effect::Effect> {
+        let label = match self.config.desktop.space(id) {
+            Some(space) if space.locked() => "Unlock space",
+            _ => "Lock space",
+        };
+        self.record_effects(label, Command::ToggleLock { id }, at, Vec::new())
     }
 
     /// Opens lens `id`'s folder in Explorer. The menu and the Lens page share
@@ -196,34 +241,56 @@ impl App {
         let mut next = view;
         next.path = folder.clone();
         let title = lens_title(&next, &current, &self.profile);
-        if self
-            .commit(
-                ui,
-                Command::SetLensFolder {
-                    id,
-                    path: folder,
-                    title,
-                },
-                at,
-            )
-            .is_applied()
-        {
+        let (applied, effects) = self.set_lens_folder(id, folder, title, at);
+        self.run(ui, effects);
+        if applied {
             self.unavailable_lenses.remove(&id);
             self.sync_watches(ui);
             self.resnapshot_settings(ui, id);
         }
     }
 
-    /// Replaces lens `id`'s view and lists its folder again, so the new order
-    /// and the hidden-files choice apply now rather than at the next change.
+    /// The undo-recording half of Change folder…, without a `Ui`.
+    pub(super) fn set_lens_folder(
+        &mut self,
+        id: SpaceId,
+        path: PathBuf,
+        title: String,
+        at: Point,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(
+            "Change folder",
+            Command::SetLensFolder { id, path, title },
+            at,
+            Vec::new(),
+        )
+    }
+
+    /// Replaces lens `id`'s view as one undo entry and lists its folder again,
+    /// so the new order and the hidden-files choice apply now rather than at
+    /// the next change.
     fn set_lens_view(&mut self, ui: &mut Ui, id: SpaceId, view: FolderView, at: Point) {
-        if self
-            .commit(ui, Command::SetLensView { id, view }, at)
-            .is_applied()
-        {
+        let (applied, effects) = self.change_lens_view(id, view, at);
+        self.run(ui, effects);
+        if applied {
             self.restart_lens_watch(ui, id);
             self.resnapshot_settings(ui, id);
         }
+    }
+
+    /// The undo-recording half of a lens view change, without a `Ui`.
+    pub(super) fn change_lens_view(
+        &mut self,
+        id: SpaceId,
+        view: FolderView,
+        at: Point,
+    ) -> (bool, Vec<super::effect::Effect>) {
+        self.record_outcome(
+            "Change lens view",
+            Command::SetLensView { id, view },
+            at,
+            Vec::new(),
+        )
     }
 
     /// Lists a lens's folder again by starting its watch over: a watch lists
@@ -246,19 +313,14 @@ impl App {
         };
         // Removing an item is Explorer's own Delete in the same menu (to the
         // Recycle Bin, as the Delete key does), and taking one back to the
-        // desktop is a drag, so DeskSpace adds only its inline Rename. A loose
-        // desktop item gets Explorer's menu alone.
-        let entries = match surface {
-            Surface::Space(_) => vec![menu_item(MenuId::RenameItem, "Rename")],
-            Surface::Desktop => Vec::new(),
-        };
+        // desktop is a drag, so DeskSpace adds only its inline Rename, which
+        // Explorer leaves out of a menu without a view to rename in.
+        let entries = [menu_item(MenuId::RenameItem, "Rename")];
         match ui.item_menu(&path, &entries, at) {
             Some(ItemMenuChoice::App(choice))
                 if MenuId::from_id(choice) == Some(MenuId::RenameItem) =>
             {
-                if let Surface::Space(id) = surface {
-                    self.begin_item_rename(ui, id, item);
-                }
+                self.begin_item_rename(ui, surface, item);
             }
             Some(ItemMenuChoice::Shell) => {
                 self.icons.invalidate(&path);
@@ -291,7 +353,10 @@ impl App {
                     self.run_common_menu(ui, choice, at);
                 }
             }
-            Some(ItemMenuChoice::Shell) => self.resync_desktop_layer(ui),
+            Some(ItemMenuChoice::Shell) => {
+                self.resync_desktop_layer(ui);
+                self.watch_explorer_rename(ui);
+            }
             None => {}
         }
     }
@@ -300,8 +365,12 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
+        let [undo, redo] = self.undo_entries();
         let fold = if space.folded() { "Unfold" } else { "Fold" };
         let mut entries = vec![
+            undo,
+            redo,
+            MenuEntry::Separator,
             menu_item(MenuId::Fold, fold),
             menu_item(MenuId::Rename, "Rename"),
             menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
@@ -350,15 +419,12 @@ impl App {
             Some(MenuId::Rename) => self.begin_rename(ui, id),
             Some(MenuId::Delete) => self.delete_space(ui, id),
             Some(MenuId::Fit) => {
-                if self
-                    .commit(ui, Command::FitToContents { id }, at)
-                    .is_applied()
-                {
-                    self.view_cache.set_scroll(id, 0);
-                }
+                let effects = self.fit_space_to_contents(id, at);
+                self.run(ui, effects);
             }
             Some(MenuId::Lock) => {
-                self.commit(ui, Command::ToggleLock { id }, at);
+                let effects = self.toggle_space_lock(id, at);
+                self.run(ui, effects);
             }
             Some(MenuId::SpaceTint) => self.pick_space_color(ui, id, at, SpaceColor::Tint),
             Some(MenuId::SpaceText) => self.pick_space_color(ui, id, at, SpaceColor::Text),
@@ -475,7 +541,13 @@ impl App {
     }
 
     pub(super) fn show_tray_menu(&mut self, ui: &mut Ui, at: Point) {
-        let mut entries = vec![menu_item(MenuId::Settings, "Settings\u{2026}")];
+        let [undo, redo] = self.undo_entries();
+        let mut entries = vec![
+            undo,
+            redo,
+            MenuEntry::Separator,
+            menu_item(MenuId::Settings, "Settings\u{2026}"),
+        ];
         if self.debug.is_some() {
             entries.push(menu_item(MenuId::Debug, "Debug\u{2026}"));
         }
@@ -513,8 +585,22 @@ impl App {
         }
     }
 
+    pub(super) fn undo_entries(&self) -> [MenuEntry; 2] {
+        let undo = match self.undo.undo_label() {
+            Some(label) => menu_item(MenuId::Undo, format!("Undo {label}")),
+            None => menu_item(MenuId::Undo, "Undo").enabled(false),
+        };
+        let redo = match self.undo.redo_label() {
+            Some(label) => menu_item(MenuId::Redo, format!("Redo {label}")),
+            None => menu_item(MenuId::Redo, "Redo").enabled(false),
+        };
+        [undo, redo]
+    }
+
     pub(super) fn run_common_menu(&mut self, ui: &mut Ui, choice: MenuId, at: Point) {
         match choice {
+            MenuId::Undo => self.undo(ui),
+            MenuId::Redo => self.redo(ui),
             MenuId::NewSpace => {
                 self.create_space(ui, at);
             }
@@ -611,6 +697,19 @@ impl App {
     /// Creates a space at `origin` with the configured title and lock state,
     /// shows it, and returns its id.
     fn open_new_space(&mut self, ui: &mut Ui, origin: Point, size: Size) -> Option<SpaceId> {
+        let id = self.create_new_space(origin, size)?;
+        if self.config.window.new_space_icon == deskspace_config::NewSpaceIcon::Automatic {
+            self.need_icon_set(ui, deskspace_config::default_set());
+        }
+        if !self.visible {
+            self.set_visible(ui, true);
+        }
+        self.sync_windows(ui);
+        self.schedule_save(ui);
+        Some(id)
+    }
+
+    pub(super) fn create_new_space(&mut self, origin: Point, size: Size) -> Option<SpaceId> {
         let window = &self.config.window;
         let title = window.new_space_title.trim();
         let title = if title.is_empty() {
@@ -618,22 +717,33 @@ impl App {
         } else {
             title.to_string()
         };
-        let command = Command::CreateSpace {
-            title,
-            at: origin,
-            size,
-            locked: window.new_space_locked,
-        };
-        self.show_new_space(ui, command, origin)
-    }
-
-    /// Applies `command`, which creates a space or a lens at `origin`, gives it
-    /// a window, and returns its id. Spaces are shown first if hidden.
-    fn show_new_space(&mut self, ui: &mut Ui, command: Command, origin: Point) -> Option<SpaceId> {
         let id = self.config.desktop.next_space_id();
+        let command = new_space_command(window, origin, size, title);
+        self.undo.begin("New space");
         // Not `commit`: a new space needs a window (`sync_windows`), not a
         // repaint.
-        if !self.dispatch(command, origin).is_applied() {
+        let applied = self.dispatch(command, origin).is_applied();
+        self.undo.finish(&self.config.desktop);
+        applied.then_some(id)
+    }
+
+    /// Applies `command`, which creates a lens at `origin`, gives it a window,
+    /// and returns its id. Spaces are shown first if hidden. New space has its
+    /// own path (`create_new_space`) because the undo tests build one without
+    /// a `Ui`.
+    fn show_new_space(&mut self, ui: &mut Ui, command: Command, origin: Point) -> Option<SpaceId> {
+        let id = self.config.desktop.next_space_id();
+        let label = if matches!(command, Command::CreateLens { .. }) {
+            "New lens"
+        } else {
+            "New space"
+        };
+        self.undo.begin(label);
+        // Not `commit`: a new space needs a window (`sync_windows`), not a
+        // repaint.
+        let applied = self.dispatch(command, origin).is_applied();
+        self.undo.finish(&self.config.desktop);
+        if !applied {
             return None;
         }
         if !self.visible {
@@ -670,6 +780,23 @@ impl App {
 /// A menu entry for one of the app's menu ids.
 pub(super) fn menu_item(id: MenuId, label: impl Into<String>) -> MenuEntry {
     MenuEntry::item(id as u32, label)
+}
+
+/// The command a new space is made with, from the window's defaults: its
+/// title, place, size, lock, and the icon the New spaces page asks for.
+fn new_space_command(
+    window: &deskspace_config::WindowSettings,
+    origin: Point,
+    size: Size,
+    title: String,
+) -> Command {
+    Command::CreateSpace {
+        title,
+        at: origin,
+        size,
+        locked: window.new_space_locked,
+        icon: window.new_space_icon.space_icon(),
+    }
 }
 
 /// The default gutter around a new space, scaled for the monitor at `at`.
@@ -753,7 +880,7 @@ fn space_view_menu(space: &Space) -> MenuEntry {
     MenuEntry::submenu("View", entries)
 }
 
-/// The "Sort by" submenu (D15): Explorer's four keys as radio items, the
+/// The "Sort by" submenu (D17): Explorer's four keys as radio items, the
 /// direction, then Folders first and Keep sorted. A lens also gets its
 /// hidden-files toggle, which DeskSpace has no other menu for.
 fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
@@ -786,7 +913,7 @@ fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
 
 /// The view a Keep sorted choice leaves, or `None` when it is not that
 /// choice. A lens is always kept sorted, so its entry is greyed and changes
-/// nothing (D15).
+/// nothing (D17).
 fn keep_sorted_after(view: SpaceView, choice: MenuId, lens: bool) -> Option<SpaceView> {
     if choice != MenuId::KeepSorted || lens {
         return None;
@@ -856,6 +983,41 @@ mod tests {
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::{Rect, SortKey};
+
+    #[test]
+    fn a_new_space_takes_the_configured_icon() {
+        use deskspace_config::NewSpaceIcon;
+        use deskspace_core::{Desktop, SpaceIcon};
+
+        let mut config = Config::new();
+        config.window.new_space_icon = NewSpaceIcon::Automatic;
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Games".to_owned(),
+            ),
+        );
+        assert_eq!(desktop.space(id).unwrap().icon(), &SpaceIcon::Automatic);
+
+        config.window.new_space_icon = NewSpaceIcon::None;
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Games".to_owned(),
+            ),
+        );
+        assert!(desktop.space(id).unwrap().icon().is_none());
+    }
 
     #[test]
     fn the_new_shortcut_menu_maps_each_entry_back() {
@@ -1231,6 +1393,39 @@ mod tests {
                 content.x + position.x + layout.cell_width / 2,
                 content.y + position.y + layout.cell_height / 2,
             ))
+        );
+    }
+
+    #[test]
+    fn undo_menu_entries_name_the_top_action_and_grey_when_empty() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id =
+            fixtures::create_space(&mut app.config.desktop, "S", Rect::new(100, 100, 240, 200));
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo").enabled(false),
+                menu_item(MenuId::Redo, "Redo").enabled(false),
+            ]
+        );
+
+        app.rename_space(id, "Work".to_string());
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo Rename space"),
+                menu_item(MenuId::Redo, "Redo").enabled(false),
+            ]
+        );
+
+        app.apply_undo();
+        assert_eq!(
+            app.undo_entries(),
+            [
+                menu_item(MenuId::Undo, "Undo").enabled(false),
+                menu_item(MenuId::Redo, "Redo Rename space"),
+            ]
         );
     }
 }
