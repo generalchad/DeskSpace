@@ -784,7 +784,8 @@ pub(super) fn menu_item(id: MenuId, label: impl Into<String>) -> MenuEntry {
 }
 
 /// The command a new space is made with, from the window's defaults: its
-/// title, place, size, lock, and the icon the New spaces page asks for.
+/// title, place, size, lock, view, and the icon the New spaces page asks
+/// for.
 fn new_space_command(
     window: &deskspace_config::WindowSettings,
     origin: Point,
@@ -797,6 +798,7 @@ fn new_space_command(
         size,
         locked: window.new_space_locked,
         icon: window.new_space_icon.space_icon(),
+        view: window.new_space_view,
     }
 }
 
@@ -1026,6 +1028,31 @@ mod tests {
             ),
         );
         assert!(desktop.space(id).unwrap().icon().is_none());
+    }
+
+    #[test]
+    fn a_new_space_takes_the_configured_view() {
+        use deskspace_core::{Desktop, SpaceView, ViewMode};
+
+        let mut config = Config::new();
+        config.window.new_space_view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default().with_mode(ViewMode::Details)
+        };
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Files".to_owned(),
+            ),
+        );
+        let view = desktop.space(id).unwrap().view();
+        assert_eq!(view.mode, ViewMode::Details);
+        assert!(view.status_bar);
     }
 
     #[test]

@@ -963,15 +963,6 @@ interest. In phase 4 and 5 terms:
     to Content and back and stops; a space on "Settings icon size" zooms
     as before (the F13 row still passes).
 
-- [ ] **W40. The default view for new spaces (config, app).** After:
-  W23.
-  - `WindowSettings.new_space_view: SpaceView`, defaulting to
-    `SpaceView::default()`, so nothing changes until the user changes it.
-    `CreateSpace` takes a `view`, as `CreateLens` does since W19. Fields
-    on the New spaces page, through W23's shared builder.
-  - Tests: the config's missing-field default; a new space gets the
-    setting.
-
 - [ ] **W41. Close F-40: the desktop's view modes (docs).** **[needs
   human]** After: W12.
   - Check (maintainer): on Windows 10 and 11, the desktop's View menu
@@ -2071,7 +2062,7 @@ each id is in `archive/TASKS-done.md`.
 | C4 (F-34) | "Start DeskSpace when you sign in" adds and removes the `Run` value, and DeskSpace starts at sign-in. |
 | C5 (F-48) | The "Item preset" dropdown shows both entries; "Custom" enables the Layout fields and the icon size takes effect; "Match Explorer's display" greys them. |
 | C7 (F-18) | Each hotkey fires once bound; a conflicting binding is reported beside its field and the window stays open; clearing a binding stops it. |
-| C8 (F-17) | A space created from the space menu, the tray, and the hotkey uses the configured title, size, and lock state; a locked new space keeps its size and scrolls. |
+| C8 (F-17) | A space created from the space menu, the tray, and the hotkey uses the configured title, size, lock state, icon, and view (set the New spaces page's Show as to List with the status bar on); a locked new space keeps its size and scrolls. |
 | E1, E2 | `deskspace.exe` shows the icon in Explorer's small, medium, and extra-large views and the version under Properties > Details; the tray, settings title bar, and Shift+right-click desktop verb show the icon at 100 % and 150 %. |
 | E5-E7, E10-E12 | Covered by the R12 dry run (installer, uninstall, the watchdog in the zip, update from one pre-release to the next). |
 | F-45 automatic install | Installed build with a feed: turn on both update toggles; after a check finds a newer release, the tray shows "Restart to update to X"; 10 minutes without input (no full-screen app) installs silently and DeskSpace comes back with the same spaces, with takeover on the desktop icons are never left blank; the tray entry installs at once with a progress window; a portable copy greys the install toggle. |

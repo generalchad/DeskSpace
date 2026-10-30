@@ -190,9 +190,11 @@ selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and
 layout, scrolling, and hit tests shrink with it. It is off for new spaces and
 on for new lenses. A new lens takes its view, its title mode, and its
-hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`). Hit tests, the marquee, keyboard navigation, the drag drop
-index, and the scroll indicator all read the same layout. `FolderEntry` is what
-the platform reads from the folder.
+hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`);
+a new space its view from the New spaces page
+(`WindowSettings.new_space_view`, W40). Hit tests, the marquee, keyboard
+navigation, the drag drop index, and the scroll indicator all read the same
+layout. `FolderEntry` is what the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
 filters hidden entries and the view's "Show only" and "Hide" patterns
@@ -320,8 +322,8 @@ change on a space or report `NotFound`), `rearrange`, and `close_gap`. The
 variants and their fields are documented on `Command`; the rules below are the
 ones a variant's doc cannot show.
 
-- `CreateSpace { title, at, size, locked }` clamps to the work area (no
-  snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
+- `CreateSpace { title, at, size, locked, view }` clamps to the work area
+  (no snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
   reject locked spaces and snap to the grid; `SnapAll` skips locked spaces.
 - `ResizeSpace` also rejects folded spaces and an empty edge set, marks
   the space user-sized, and (with `fit_to_grid`) fits to whole columns and
@@ -336,10 +338,10 @@ ones a variant's doc cannot show.
 - `SortSpace { id, rule: SortRule }` sorts by the rule's key (name, type,
   size, or modified), direction, and folders-first, and keeps the rule as the
   space's own; a lens uses the same rule in `SyncLens`.
-- `CreateLens { title, at, size, path, locked }` clamps like `CreateSpace` and
-  starts the lens with a default `FolderView` whose title mode is
-  `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets its title
-  text, and clears its items until the next sync; `SetLensTitle { id, title,
+- `CreateLens { title, at, size, path, locked, view }` clamps like
+  `CreateSpace` and starts the lens with a default `FolderView` whose title
+  mode is `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets
+  its title text, and clears its items until the next sync; `SetLensTitle { id, title,
   text }` sets how the title follows the folder (D17); `SetLensView { id,
   view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
   listed items by path, keeping ids, filtering hidden entries unless the view
@@ -1447,7 +1449,7 @@ in `ui.rs`. What spans them:
   | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
   | Advanced | look | Shortcut overlay size |
   | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now |
-  | New spaces | Global | Default title, width, height, Start new spaces locked (affect only spaces created afterwards) |
+  | New spaces | Global | Default title, width, height, Start new spaces locked, Icon, and the view and sort a new space starts with (affect only spaces created afterwards) |
   | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
   | About | Global | Version, summary, license, configuration file path |
   | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |

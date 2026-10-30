@@ -104,7 +104,8 @@ help inspect the look and the desktop layer.
 - A new space (from any menu or the hotkey) opens on the screen you clicked
   or pointed at, to the right of the top row of spaces there, lined up with
   them and spaced like them. When that row is full it goes to the next row,
-  or a new row underneath.
+  or a new row underneath. New spaces start with the defaults on Settings >
+  New spaces: title, size, lock, icon, and view.
 - Double-click a space title bar to fold or unfold it (animated; Settings >
   Animations > Fold sets the speed). Right-click a space for
   undo, redo, fold, rename, lock, fit to contents, new shortcut, appearance,

@@ -1027,6 +1027,7 @@ mod tests {
                 size: Size::new(240, 200),
                 locked: false,
                 icon: deskspace_core::SpaceIcon::None,
+                view: deskspace_core::SpaceView::default(),
             },
         );
         apply(
@@ -1202,6 +1203,7 @@ mod tests {
                 size: Size::new(240, 200),
                 locked: false,
                 icon: deskspace_core::SpaceIcon::None,
+                view: deskspace_core::SpaceView::default(),
             },
         );
         apply(&mut desktop, Command::KeepSize { id });
@@ -2154,6 +2156,7 @@ mod tests {
                 size: Size::new(240, 200),
                 locked: false,
                 icon: deskspace_core::SpaceIcon::None,
+                view: deskspace_core::SpaceView::default(),
             },
         );
         apply(&mut desktop, Command::KeepSize { id });

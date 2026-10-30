@@ -148,6 +148,7 @@ mod tests {
             size: Size::new(200, 200),
             locked: false,
             icon: crate::icon::SpaceIcon::None,
+            view: crate::view::SpaceView::default(),
         };
         let touched = desktop.touched_by(&create);
         assert!(desktop.apply(create, bounds()).is_applied());

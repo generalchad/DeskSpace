@@ -4710,3 +4710,20 @@ until I5-I6 all land, so no partial build hides the desktop.
     re-check the hover. `begin_rename` also dismisses a tip already shown
     when F2 starts the rename. The item tip has the same hole on an item
     rename; noted under **Found while working**.
+
+- [x] **W40. The default view for new spaces (config, app).** After:
+  W23.
+  - `WindowSettings.new_space_view: SpaceView`, defaulting to
+    `SpaceView::default()`, so nothing changes until the user changes it.
+    `CreateSpace` takes a `view`, as `CreateLens` does since W19. Fields
+    on the New spaces page, through W23's shared builder.
+  - Tests: the config's missing-field default; a new space gets the
+    setting.
+  - Done 2026-10-30. The New spaces page's view and sort fields are the
+    shared builder's third user, so `ViewIds`, the three pages' id sets,
+    and `view_fields` moved to `settings/view_fields.rs`; `pages.rs` had
+    reached the 800-line guideline (K's rule, not an `ALLOWED` entry).
+    `apply_create_space` takes the rect instead of `at` and `size`, as
+    `apply_create_lens` does, to stay under `too_many_arguments`. The
+    seed space keeps `SpaceView::default()`, as it keeps its own title
+    and size. The C8 row in section V now covers the view.

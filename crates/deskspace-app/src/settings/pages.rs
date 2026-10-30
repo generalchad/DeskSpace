@@ -7,8 +7,9 @@ use super::ids::field;
 use super::tables::{
     ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
     ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
-    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, VIEW_ORDERS, corner_marks,
+    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, corner_marks,
 };
+use super::view_fields::{LENSES_PAGE_IDS, NEW_SPACES_PAGE_IDS, VIEW_PAGE_IDS, view_fields};
 use super::*;
 use super::{index_of, labels};
 
@@ -410,78 +411,15 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
                 "New spaces otherwise follow the Global appearance and layout. \
                  A locked space keeps its size and scrolls instead of growing.",
             ),
-        ],
+        ]
+        .into_iter()
+        .chain(view_fields(
+            &window.new_space_view,
+            &NEW_SPACES_PAGE_IDS,
+            false,
+        ))
+        .collect(),
     }
-}
-
-/// The field ids one page uses for the shared view and sort controls, so the
-/// View page and the Lenses defaults page build them with one function (W20,
-/// W23). `keep_sorted` is `None` on the defaults page, where a lens always
-/// keeps its order.
-struct ViewIds {
-    heading: u32,
-    mode: u32,
-    status_bar: u32,
-    sort_heading: u32,
-    sort: u32,
-    order: u32,
-    folders_first: u32,
-    keep_sorted: Option<u32>,
-}
-
-const VIEW_PAGE_IDS: ViewIds = ViewIds {
-    heading: field::VIEW_HEADING,
-    mode: field::VIEW_MODE,
-    status_bar: field::VIEW_STATUS_BAR,
-    sort_heading: field::VIEW_SORT_HEADING,
-    sort: field::VIEW_SORT_KEY,
-    order: field::VIEW_ORDER,
-    folders_first: field::VIEW_FOLDERS_FIRST,
-    keep_sorted: Some(field::VIEW_KEEP_SORTED),
-};
-
-const LENSES_PAGE_IDS: ViewIds = ViewIds {
-    heading: field::LENSES_VIEW_HEADING,
-    mode: field::LENSES_VIEW_MODE,
-    status_bar: field::LENSES_STATUS_BAR,
-    sort_heading: field::LENSES_SORT_HEADING,
-    sort: field::LENSES_SORT_KEY,
-    order: field::LENSES_ORDER,
-    folders_first: field::LENSES_FOLDERS_FIRST,
-    keep_sorted: None,
-};
-
-/// The view and sort controls shared by the View page and the Lenses defaults
-/// page. `lens` greys and ticks Keep sorted, as a lens always holds its order.
-fn view_fields(view: &SpaceView, ids: &ViewIds, lens: bool) -> Vec<Field> {
-    let modes: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
-    let mode = VIEW_MODES
-        .iter()
-        .position(|(candidate, ..)| *candidate == view.mode)
-        .unwrap_or(0);
-    let mut fields = vec![
-        Field::heading(ids.heading, "View"),
-        Field::choice(ids.mode, "Show as", &modes, mode),
-        Field::toggle(ids.status_bar, "Status bar", view.status_bar),
-        Field::heading(ids.sort_heading, "Sort"),
-        Field::choice(
-            ids.sort,
-            "Sort by",
-            &labels(&SORT_KEYS),
-            index_of(&SORT_KEYS, view.sort.key),
-        ),
-        Field::choice(
-            ids.order,
-            "Order",
-            &VIEW_ORDERS,
-            usize::from(view.sort.descending),
-        ),
-        Field::toggle(ids.folders_first, "Folders first", view.sort.folders_first),
-    ];
-    if let Some(id) = ids.keep_sorted {
-        fields.push(Field::toggle(id, "Keep sorted", view.keep_sorted || lens).enabled(!lens));
-    }
-    fields
 }
 
 /// A space's View page (W20): its view mode, status bar, and sort rule. Built

@@ -59,6 +59,10 @@ pub struct WindowSettings {
     pub icon_downloads: IconDownloads,
     /// The icon a new space starts with.
     pub new_space_icon: NewSpaceIcon,
+    /// The view settings a new space starts with (W40): its mode, status
+    /// bar, and sort rule. The default is today's view, so nothing changes
+    /// until the user changes it.
+    pub new_space_view: SpaceView,
     /// Check for a newer release in the background, about once a day. Off by
     /// default: no network traffic happens unless the user turns this on or
     /// starts a check from the tray.
@@ -156,6 +160,7 @@ impl Default for WindowSettings {
             new_space_locked: false,
             icon_downloads: IconDownloads::Ask,
             new_space_icon: NewSpaceIcon::Automatic,
+            new_space_view: SpaceView::default(),
             check_for_updates: false,
             install_updates: false,
             last_update_check: None,
@@ -284,6 +289,22 @@ mod tests {
         let text = toml::to_string_pretty(&config).unwrap();
         let back: Config = toml::from_str(&text).unwrap();
         assert_eq!(back.window.new_lens, config.window.new_lens);
+    }
+
+    #[test]
+    fn a_new_space_view_defaults_to_today_s_view_and_round_trips() {
+        let parsed: Config = toml::from_str("version = 2\n[window]\n").unwrap();
+        assert_eq!(parsed.window.new_space_view, SpaceView::default());
+
+        let mut config = Config::new();
+        config.window.new_space_view.mode = deskspace_core::ViewMode::Details;
+        config.window.new_space_view.status_bar = true;
+        config.window.new_space_view.sort.key = SortKey::Size;
+        config.window.new_space_view.sort.descending = true;
+        config.window.new_space_view.keep_sorted = true;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back.window.new_space_view, config.window.new_space_view);
     }
 
     #[test]
@@ -745,6 +766,7 @@ mod tests {
             size: deskspace_core::Size::new(300, 200),
             locked: false,
             icon,
+            view: deskspace_core::SpaceView::default(),
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());
@@ -857,6 +879,7 @@ show_border = true
             size: deskspace_core::Size::new(300, 200),
             locked: false,
             icon: deskspace_core::SpaceIcon::None,
+            view: deskspace_core::SpaceView::default(),
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());
@@ -897,6 +920,7 @@ show_border = true
                         size: Size::new(240, 120),
                         locked: false,
                         icon: deskspace_core::SpaceIcon::None,
+                        view: deskspace_core::SpaceView::default(),
                     },
                     bounds(),
                 )

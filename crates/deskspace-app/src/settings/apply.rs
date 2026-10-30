@@ -235,6 +235,40 @@ pub fn apply_field(
                     .map_or(config.window.new_space_icon, |entry| entry.0);
                 FieldEffect::Pending
             }
+            // The New spaces page's view defaults (W40) apply to the next
+            // new space.
+            (field::NEW_SPACE_VIEW_MODE, FieldValue::Choice(index)) => {
+                if let Some((mode, ..)) = VIEW_MODES.get(index) {
+                    config.window.new_space_view.mode = *mode;
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_STATUS_BAR, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.status_bar = on;
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_SORT_KEY, FieldValue::Choice(index)) => {
+                if let Some((key, _)) = SORT_KEYS.get(index) {
+                    config.window.new_space_view.sort.key = *key;
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_ORDER, FieldValue::Choice(index)) => {
+                match index {
+                    0 => config.window.new_space_view.sort.descending = false,
+                    1 => config.window.new_space_view.sort.descending = true,
+                    _ => {}
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_FOLDERS_FIRST, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.sort.folders_first = on;
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_KEEP_SORTED, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.keep_sorted = on;
+                FieldEffect::Pending
+            }
             (field::ICON_DOWNLOADS, FieldValue::Choice(index)) => {
                 config.window.icon_downloads = ICON_DOWNLOAD_OPTIONS
                     .get(index)
@@ -912,6 +946,35 @@ mod tests {
             FieldEffect::Pending
         );
         assert!(config.window.new_space_locked);
+        let details = VIEW_MODES
+            .iter()
+            .position(|(mode, ..)| *mode == deskspace_core::ViewMode::Details)
+            .unwrap();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_VIEW_MODE,
+                FieldValue::Choice(details),
+                true,
+            ),
+            FieldEffect::Pending
+        );
+        assert_eq!(
+            config.window.new_space_view.mode,
+            deskspace_core::ViewMode::Details
+        );
+        for (id, on) in [
+            (field::NEW_SPACE_STATUS_BAR, true),
+            (field::NEW_SPACE_KEEP_SORTED, true),
+        ] {
+            assert_eq!(
+                apply_field(&mut config, &mut session, id, FieldValue::Toggle(on), true),
+                FieldEffect::Pending
+            );
+        }
+        assert!(config.window.new_space_view.status_bar);
+        assert!(config.window.new_space_view.keep_sorted);
         assert!(session.dirty);
     }
 

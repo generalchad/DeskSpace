@@ -30,13 +30,15 @@ pub use touched::Touched;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Creates a space at `at` (its top-left in desktop coordinates) with the
-    /// configured `size`, optionally starting locked.
+    /// configured `size`, optionally starting locked. `view` is the new
+    /// space's view settings (W40).
     CreateSpace {
         title: String,
         at: Point,
         size: Size,
         locked: bool,
         icon: SpaceIcon,
+        view: SpaceView,
     },
     /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
     /// `path` is only stored; `SyncLens` fills the items. `view` is the new
@@ -274,7 +276,15 @@ impl Desktop {
                 size,
                 locked,
                 icon,
-            } => self.apply_create_space(title, at, size, locked, icon, bounds),
+                view,
+            } => self.apply_create_space(
+                title,
+                Rect::new(at.x, at.y, size.width, size.height),
+                locked,
+                icon,
+                view,
+                bounds,
+            ),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
             Command::CreateLens {
@@ -398,6 +408,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             },
             bounds(),
         );
@@ -421,6 +432,7 @@ mod tests {
                 size: Size::new(320, 200),
                 locked: true,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             },
             bounds(),
         );
@@ -809,10 +821,35 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::Automatic,
+                view: SpaceView::default(),
             },
             bounds(),
         );
         assert_eq!(desktop.spaces[0].icon(), &SpaceIcon::Automatic);
+    }
+
+    #[test]
+    fn create_space_takes_the_view() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Files".into(),
+                at: Point::new(0, 0),
+                size: Size::new(240, 120),
+                locked: false,
+                icon: SpaceIcon::None,
+                view: SpaceView {
+                    status_bar: true,
+                    ..SpaceView::default().with_mode(crate::view::ViewMode::Details)
+                },
+            },
+            bounds(),
+        );
+        assert_eq!(
+            desktop.spaces[0].view().mode,
+            crate::view::ViewMode::Details
+        );
+        assert!(desktop.spaces[0].view().status_bar);
     }
 
     #[test]
@@ -1627,6 +1664,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             };
             assert!(desktop.apply(create, bounds()).is_applied());
             id

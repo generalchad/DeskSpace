@@ -256,6 +256,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -456,6 +457,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -617,6 +619,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -684,6 +687,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );

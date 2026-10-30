@@ -12,6 +12,7 @@ mod ids;
 mod pages;
 mod session;
 mod tables;
+mod view_fields;
 
 pub use apply::{
     apply_animation_edit, apply_field, apply_shadow_edit, customize_space, match_global,
@@ -574,6 +575,10 @@ mod tests {
         let (mut config, session) = setup();
         config.window.new_space_title = "Inbox".into();
         config.window.new_space_width = 300;
+        config.window.new_space_view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default().with_mode(ViewMode::List)
+        };
         let form = build_form(
             &config,
             &session,
@@ -588,6 +593,18 @@ mod tests {
             form.field(field::NEW_SPACE_TITLE).unwrap().label,
             "Default title"
         );
+        let list = VIEW_MODES
+            .iter()
+            .position(|(mode, ..)| *mode == ViewMode::List)
+            .unwrap();
+        assert!(matches!(
+            form.field(field::NEW_SPACE_VIEW_MODE).unwrap().kind,
+            FieldKind::Choice { selected, .. } if selected == list
+        ));
+        assert!(matches!(
+            form.field(field::NEW_SPACE_STATUS_BAR).unwrap().kind,
+            FieldKind::Toggle { on: true }
+        ));
     }
 
     #[test]

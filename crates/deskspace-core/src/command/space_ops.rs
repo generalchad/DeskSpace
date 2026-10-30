@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use super::CommandOutcome;
 use crate::desktop::Desktop;
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::{Point, Rect};
 use crate::icon::SpaceIcon;
 use crate::id::SpaceId;
 use crate::layout::{
@@ -20,17 +20,18 @@ impl Desktop {
     pub(super) fn apply_create_space(
         &mut self,
         title: String,
-        at: Point,
-        size: Size,
+        rect: Rect,
         locked: bool,
         icon: SpaceIcon,
+        view: SpaceView,
         bounds: Rect,
     ) -> CommandOutcome {
-        let rect = clamp_to_bounds(Rect::new(at.x, at.y, size.width, size.height), bounds);
+        let rect = clamp_to_bounds(rect, bounds);
         let id = self.add_space(title, rect);
         if let Some(space) = self.space_mut(id) {
             space.locked = locked;
             space.icon = icon;
+            space.view = view;
         }
         CommandOutcome::Applied
     }

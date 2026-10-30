@@ -124,6 +124,15 @@ pub mod field {
     pub const LENS_SHOW_ONLY: u32 = 142;
     pub const LENS_HIDE: u32 = 143;
 
+    pub const NEW_SPACES_VIEW_HEADING: u32 = 144;
+    pub const NEW_SPACE_VIEW_MODE: u32 = 145;
+    pub const NEW_SPACE_STATUS_BAR: u32 = 146;
+    pub const NEW_SPACES_SORT_HEADING: u32 = 147;
+    pub const NEW_SPACE_SORT_KEY: u32 = 148;
+    pub const NEW_SPACE_ORDER: u32 = 149;
+    pub const NEW_SPACE_FOLDERS_FIRST: u32 = 150;
+    pub const NEW_SPACE_KEEP_SORTED: u32 = 151;
+
     pub const VIEW_HEADING: u32 = 119;
     pub const VIEW_MODE: u32 = 120;
     pub const VIEW_STATUS_BAR: u32 = 121;
