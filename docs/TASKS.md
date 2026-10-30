@@ -832,20 +832,6 @@ interest. In phase 4 and 5 terms:
 
 #### Phase 5 tasks
 
-- [ ] **W27. The lens's path as a tip on its title (app).** **[needs
-  human]** After: W9.
-  - Hovering a lens's title shows its full path through the existing
-    hover tip (`app/info_tip.rs`). An unavailable lens adds "Folder not
-    available". After W42, it shows the folder on display. The text
-    comes from the model; no disk access.
-  - A pure `title_tip(space, unavailable) -> Option<String>`; `None` for
-    a normal space. Hovering the title of a normal space shows no tip, as
-    today.
-  - Tests: the tip for a lens, an unavailable lens, and a normal space.
-  - **[needs human]** check: the tip appears after the usual delay and
-    leaves with the pointer; it does not cover the title while you are
-    renaming.
-
 - [ ] **W28. File name extensions per space (core, app).** **[needs
   human]** After: W20, W26.
   - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
@@ -2176,6 +2162,7 @@ each id is in `archive/TASKS-done.md`.
 | W46 (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
 | W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. |
 | W47 (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
+| W27 (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 
@@ -2250,4 +2237,8 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `@iconify-json/fluent`'s `icons.json` has no `info` block (it is in
   `info.json`), so the trimmed set's `info` is empty. The credits come
   from the `ICON_SETS` row, which the About note and `NOTICE` use.
+- `app/rename.rs` `begin_item_rename`: an item tip already shown when F2
+  starts an item rename stays over the rename box, the same hole W27
+  closes for the title rename (`dismiss_info_tip` in `begin_rename`).
+  Suggested: dismiss it there too. Found in W27, 2026-10-30.
 

@@ -237,6 +237,9 @@ DirectWrite clusters once per title, so a cut never splits a character,
 and recuts by arithmetic as the width changes.
 A lens's title bar shows its folder's own shell icon, or the generic folder
 icon while the folder is unavailable; a normal space's title bar shows none.
+Hovering a lens's title bar tips the folder it displays (`scene::title_tip`),
+prefixed with "Folder not available" while its folder is gone; a normal
+space's title bar tips nothing (W27).
 Deleting a lens always asks and only unlists it: its folder and files stay,
 it is no longer watched, and `stored_paths` and `release_item` never touch its
 files.

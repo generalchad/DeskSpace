@@ -120,10 +120,14 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
+        let title = space.title().to_owned();
+        // The pointer may rest on this title with its tip already shown
+        // (W27); the edit takes its place.
+        self.dismiss_info_tip(ui);
         self.edit.begin(EditSession {
             surface: Surface::Space(id),
             target: EditTarget::Title,
-            text: TextEdit::new(space.title().to_owned()),
+            text: TextEdit::new(title),
         });
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);

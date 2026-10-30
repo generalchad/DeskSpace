@@ -83,6 +83,10 @@ pub(super) struct PointerState {
     pub(super) hovered: Option<(Surface, ItemId)>,
     /// The status-bar view button the pointer is over, and its surface (W19).
     pub(super) status_hover: Option<(Surface, usize)>,
+    /// The lens whose title bar the pointer is over, when no item or status
+    /// button is: it shows the folder on display as a tip after the usual
+    /// delay (W27). A normal space's title shows nothing.
+    pub(super) title_hover: Option<SpaceId>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
@@ -274,6 +278,14 @@ impl App {
                     .is_some_and(|(owner, _)| owner == surface)
                 {
                     self.pointer.status_hover = None;
+                    repaint = true;
+                }
+                if self
+                    .pointer
+                    .title_hover
+                    .is_some_and(|owner| Surface::of(owner) == surface)
+                {
+                    self.pointer.title_hover = None;
                     repaint = true;
                 }
                 if repaint {
@@ -599,15 +611,32 @@ impl App {
                 .map(|index| (surface, index)),
             _ => None,
         };
-        if hovered == self.pointer.hovered && status_hover == self.pointer.status_hover {
+        // A lens's title bar tips the folder it displays (W27). While that
+        // space is being renamed the tip would cover the edit, so it is not
+        // armed then.
+        let title_hover = match (surface, hovered, status_hover) {
+            (Surface::Space(id), None, None) => self
+                .config
+                .desktop
+                .space(id)
+                .filter(|space| space.is_lens() && space.title_bar().contains(point))
+                .filter(|_| self.edit.surface() != Some(surface))
+                .map(|_| id),
+            _ => None,
+        };
+        if hovered == self.pointer.hovered
+            && status_hover == self.pointer.status_hover
+            && title_hover == self.pointer.title_hover
+        {
             return;
         }
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
         let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
+        let previous_title = std::mem::replace(&mut self.pointer.title_hover, title_hover);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         Self::clear_timer(ui, Timer::InfoTip);
-        if hovered.is_some() || status_hover.is_some() {
+        if hovered.is_some() || status_hover.is_some() || title_hover.is_some() {
             Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
         }
         if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
@@ -615,6 +644,9 @@ impl App {
         }
         if let Some((owner, _)) = previous_status.filter(|(owner, _)| *owner != surface) {
             self.refresh_surface(ui, owner);
+        }
+        if let Some(owner) = previous_title.filter(|owner| Surface::of(*owner) != surface) {
+            self.refresh_surface(ui, Surface::of(owner));
         }
         self.refresh_surface(ui, surface);
     }

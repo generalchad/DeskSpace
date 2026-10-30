@@ -4686,3 +4686,27 @@ until I5-I6 all land, so no partial build hides the desktop.
     the header, the cells, and the sort arrow read
     `shown_details_columns`, so W30 replaces that one function with the
     space's own list. Sort by ▸ Date created is menu id 74.
+
+- [x] **W27. The lens's path as a tip on its title (app).** **[needs
+  human]** After: W9.
+  - Hovering a lens's title shows its full path through the existing hover
+    tip (`app/info_tip.rs`). An unavailable lens adds "Folder not
+    available". After W42, it shows the folder on display. The text
+    comes from the model; no disk access.
+  - A pure `title_tip(space, unavailable) -> Option<String>`; `None` for
+    a normal space. Hovering the title of a normal space shows no tip, as
+    today.
+  - Tests: the tip for a lens, an unavailable lens, and a normal space.
+  - **[needs human]** check: the tip appears after the usual delay and
+    leaves with the pointer; it does not cover the title while you are
+    renaming.
+  - Done 2026-10-30. The pure function is `scene::title_tip(space, shown,
+    unavailable)`: it takes the folder the lens displays as an argument,
+    because since W42 that is session state (`App::lens_folder`) the
+    space cannot know. `PointerState::title_hover` arms the same
+    `Timer::InfoTip`; `update_hover` does not arm it while its space is
+    being renamed, and `show_info_tip` holds back an already-armed tip for
+    the same reason, since F2 starts a rename with no pointer move to
+    re-check the hover. `begin_rename` also dismisses a tip already shown
+    when F2 starts the rename. The item tip has the same hole on an item
+    rename; noted under **Found while working**.

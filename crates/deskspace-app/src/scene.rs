@@ -834,6 +834,19 @@ pub(crate) fn status_tip(index: usize) -> Option<String> {
     })
 }
 
+/// The tip a lens's title bar shows on hover (W27): the folder it displays,
+/// with `Folder not available` first when its folder is gone. `None` for a
+/// normal space, whose title shows nothing, as before.
+pub(crate) fn title_tip(space: &Space, shown: &Path, unavailable: bool) -> Option<String> {
+    space.is_lens().then(|| {
+        if unavailable {
+            format!("Folder not available\n{}", shown.display())
+        } else {
+            shown.display().to_string()
+        }
+    })
+}
+
 /// The text for a view's secondary lines, made by the app when the scene is
 /// built: a Details row's columns after Name (W18), a tile's type and size
 /// (W21), or a content row's labelled details (W22).
@@ -1851,6 +1864,33 @@ mod tests {
         assert!(text.contains("Downloads"));
         assert_eq!(placeholder(lens, false), None, "an available lens");
         assert_eq!(placeholder(&space(), true), None, "a normal space");
+    }
+
+    #[test]
+    fn a_lens_title_tip_names_its_folder_and_a_normal_space_shows_none() {
+        let mut desktop = Desktop::new();
+        let lens = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        let lens = desktop.space(lens).unwrap();
+        let shown = Path::new(r"C:\Users\me\Downloads\Photos");
+        assert_eq!(
+            title_tip(lens, shown, false).as_deref(),
+            Some(r"C:\Users\me\Downloads\Photos"),
+            "an available lens names the folder it displays"
+        );
+        assert_eq!(
+            title_tip(lens, shown, true).as_deref(),
+            Some(concat!(
+                "Folder not available\n",
+                r"C:\Users\me\Downloads\Photos"
+            )),
+            "an unavailable lens says so first"
+        );
+        assert_eq!(title_tip(&space(), shown, false), None, "a normal space");
     }
 
     #[test]
