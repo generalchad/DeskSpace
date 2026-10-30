@@ -108,6 +108,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
+| The file-size limit and its exceptions | `deskspace-app/tests/file_size.rs` (`ALLOWED`) |
 
 Ids (`WM_APP` messages, timers, menu ids, `field::` ids): never renumber
 one. "Next free" in the recipes means the highest value in that list plus
@@ -1823,7 +1824,10 @@ order, after B11 and B12 (the strip adds scene and paint arguments).
 `ENGINEERING.md` asks for files under about 800 lines of non-test code. When one
 grows past it, add a K task naming what stays in `mod.rs` and what moves where
 (the archived K tasks are the model). Each K task is a **pure move**: no
-renames, no logic changes, no signature changes beyond visibility.
+renames, no logic changes, no signature changes beyond visibility. The limit is
+enforced by `crates/deskspace-app/tests/file_size.rs`; its `ALLOWED` table lists
+every file still over it, with the reason it is tolerated, and its K task once
+one is written.
 
 Rules for every K task:
 
@@ -1837,6 +1841,8 @@ Rules for every K task:
 - Give each new file a one-line `//!` header.
 - Commit as `refactor: split <file> (Kn)`. If a function does not clearly
   belong to one group, leave it in `mod.rs`.
+- Delete the split file's entry from `ALLOWED` in
+  `crates/deskspace-app/tests/file_size.rs`; that test fails on a stale one.
 - Done when: fmt, clippy, and tests pass with the same test count;
   `git diff --stat` shows mostly moved lines; and the file map above names
   the new files.

@@ -31,7 +31,8 @@ finished product. The direction is decided in `ROADMAP.md` section 2.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Code health: a non-test file past the ~800-line guideline gets a K task in
-  `TASKS.md` section K; section 3 lists the `app/` modules.
+  `TASKS.md` section K; `crates/deskspace-app/tests/file_size.rs` enforces the
+  limit and lists the exceptions. Section 3 lists the `app/` modules.
 
 ## 3. Architecture
 

@@ -78,7 +78,10 @@ Four rules come first, because the rest follow from them:
   between files: small functions with descriptive names, early returns, named
   constants instead of magic numbers, one concept per module. When a file
   passes about 800 lines of non-test code, split it along its existing seams
-  (`TASKS.md` section K) rather than adding to it.
+  (`TASKS.md` section K) rather than adding to it. The limit is enforced:
+  `crates/deskspace-app/tests/file_size.rs` fails on a file past it unless
+  the file is in its `ALLOWED` table with a reason, and with its task once
+  one is written.
 - **Maintainable.** One source of truth per fact. Tables drive menus
   (`OPACITY_PRESETS`, `SORT_MENU_IDS`), option lists (`(value, label)` pairs in
   `settings/tables.rs`), and hotkeys (`HOTKEY_BINDINGS`), so a new entry is one
