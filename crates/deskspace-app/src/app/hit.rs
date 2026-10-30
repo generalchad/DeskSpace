@@ -365,6 +365,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(
@@ -395,6 +396,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(

@@ -1377,7 +1377,7 @@ in `ui.rs`. What spans them:
   draw 16 px icons in inline cells. Small icons wraps the cells into rows and
   scrolls down; List fills a column top to bottom and scrolls sideways, wheel
   included. **Sort by ▸** is Explorer's folder menu:
-  Name, Date modified, Type, and Size as radio items, then Ascending and
+  the `SORT_KEYS` keys as radio items, then Ascending and
   Descending, then Folders first and Keep sorted, then, on a lens, Show
   hidden files. Keep sorted is checked and greyed on a lens. A key
   keeps the direction, a direction keeps the key, and Folders first toggles,

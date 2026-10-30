@@ -861,16 +861,6 @@ interest. In phase 4 and 5 terms:
     Automatic under Match Explorer with Explorer's setting on and off;
     F2 selects only the name part.
 
-- [ ] **W29. Date created (core, platform, app).** After: W18.
-  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
-    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
-    record it already has; `item_facts` reads it from the metadata call it
-    already makes. No new IO.
-  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
-    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
-    user show it.
-  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
-
 - [ ] **W30. Choose the Details columns (core, app).** **[needs
   human]** After: W29.
   - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
@@ -2187,6 +2177,12 @@ each id is in `archive/TASKS-done.md`.
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
 
+- `app/files.rs` and the other `AddItem` callers: a normal space's item
+  takes its dates once, when it is added, and nothing refreshes them, so an
+  item saved before W29 has no Date created and sorts as the oldest. A lens
+  re-reads it on every listing. Suggested task: refresh a normal space's
+  item facts at startup off the UI thread (with B33's worker). Found in
+  W29, 2026-10-29.
 - `win32/keyboard.rs` `handle_watched`: swallowing an Alt combination (Alt+Enter, and since W43 Alt+Left and Alt+Up) leaves the foreground window a lone Alt tap, which can show its menu or keyboard cues; inject a masking key (an unassigned VK) as other hook tools do. Found in W43's review, 2026-10-29.
 - `app/menus.rs` `change_lens_folder`: picking the folder a lens already has (and is not browsed below) leaves it empty, since `SetLensFolder` clears the items and the same-path watch posts no listing; restart the watch there (`restart_lens_watch`). Found in W42's review, 2026-10-29.
 - `app/lens.rs` `follow_moved_folder`: a lens browsed into a subfolder watches only that subfolder, so renaming the lens's own folder meanwhile reports the subfolder's new path; the lens returns home and shows "Folder not available" instead of following. Suggested task: when the moved path ends with the browsed subfolder, ask the worker whether the old root still exists, and follow the root if not. Found in W45, 2026-10-29.

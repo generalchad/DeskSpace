@@ -1095,6 +1095,7 @@ mod tests {
                     kind: deskspace_core::item::ItemKind::Other,
                     size: None,
                     modified: None,
+                    created: None,
                     hidden: false,
                 }],
             },

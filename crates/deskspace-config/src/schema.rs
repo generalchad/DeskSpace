@@ -879,6 +879,7 @@ show_border = true
             kind: ItemKind::File,
             size: Some(3),
             modified: Some(4),
+            created: None,
             hidden: false,
         }
     }

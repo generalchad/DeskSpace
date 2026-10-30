@@ -14,7 +14,7 @@ use deskspace_platform::{
     TitleIcon, format_date, format_kb, type_name,
 };
 
-use crate::settings::{DETAILS_COLUMNS, NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES};
+use crate::settings::{NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES, shown_details_columns};
 
 const SCROLL_THUMB_WIDTH: i32 = 4;
 const SCROLL_THUMB_MARGIN: i32 = 3;
@@ -612,15 +612,13 @@ pub(crate) fn details_columns(
 ) -> Vec<DetailsColumnVisual> {
     let scale = scale.max(0.1);
     let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-    let fixed: i32 = DETAILS_COLUMNS
-        .iter()
+    let fixed: i32 = shown_details_columns()
         .skip(1)
         .map(|column| scaled(column.width))
         .sum();
     let name_width = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
     let mut x = padding;
-    DETAILS_COLUMNS
-        .iter()
+    shown_details_columns()
         .enumerate()
         .map(|(index, column)| {
             let width = if index == 0 {
@@ -641,8 +639,7 @@ pub(crate) fn details_columns(
 
 /// The column whose header shows Explorer's arrow, and whether it points up.
 fn details_sorted(rule: SortRule) -> Option<(usize, bool)> {
-    DETAILS_COLUMNS
-        .iter()
+    shown_details_columns()
         .position(|column| column.key == rule.key)
         .map(|index| (index, !rule.descending))
 }
@@ -655,11 +652,14 @@ pub(crate) fn details_header_column_at(view: &DetailsView, point: Point) -> Opti
         .position(|column| column.rect.contains(point))
 }
 
-/// The sort rule after a click on Details column `index`: clicking the sorted
-/// column reverses it, and any other column becomes the key in ascending
-/// order, as Explorer does.
+/// The sort rule after a click on shown Details column `index`: clicking the
+/// sorted column reverses it, and any other column becomes the key in
+/// ascending order, as Explorer does. An index past the shown columns keeps
+/// the rule.
 pub(crate) fn details_rule_after(rule: SortRule, index: usize) -> SortRule {
-    let key = DETAILS_COLUMNS[index].key;
+    let Some(key) = shown_details_columns().nth(index).map(|column| column.key) else {
+        return rule;
+    };
     if rule.key == key {
         SortRule {
             descending: !rule.descending,
@@ -674,14 +674,14 @@ pub(crate) fn details_rule_after(rule: SortRule, index: usize) -> SortRule {
     }
 }
 
-/// The text of one Details row for the columns after Name, in
-/// `DETAILS_COLUMNS` order. It reads the item's facts only, never the disk.
+/// The text of one Details row for the shown columns after Name, in display
+/// order. It reads the item's facts only, never the disk.
 pub(crate) fn details_cells(item: &Item) -> Vec<String> {
-    DETAILS_COLUMNS
-        .iter()
+    shown_details_columns()
         .skip(1)
         .map(|column| match column.key {
             SortKey::Modified => item.modified.map(format_date).unwrap_or_default(),
+            SortKey::Created => item.created.map(format_date).unwrap_or_default(),
             SortKey::Kind => {
                 type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default()
             }
@@ -1319,6 +1319,33 @@ mod tests {
         let by_size = details_rule_after(reversed, 3);
         assert_eq!(by_size.key, SortKey::Size);
         assert!(!by_size.descending);
+    }
+
+    #[test]
+    fn the_date_created_column_starts_hidden() {
+        let created = SortRule {
+            key: SortKey::Created,
+            ..SortRule::default()
+        };
+        assert_eq!(
+            details_sorted(created),
+            None,
+            "a hidden column shows no arrow"
+        );
+        assert_eq!(
+            details_rule_after(created, 4),
+            created,
+            "past the shown columns"
+        );
+        let item = Item::new(
+            ItemId(1),
+            "C:/a.txt",
+            ItemFacts {
+                created: Some(1_700_000_000),
+                ..ItemFacts::default()
+            },
+        );
+        assert_eq!(details_cells(&item).len(), 3, "Date, Type, and Size");
     }
 
     #[test]

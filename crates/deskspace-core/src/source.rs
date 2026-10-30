@@ -184,6 +184,8 @@ pub struct FolderEntry {
     pub size: Option<u64>,
     /// Last modification time in seconds since the Unix epoch.
     pub modified: Option<u64>,
+    /// Creation time in seconds since the Unix epoch.
+    pub created: Option<u64>,
     pub hidden: bool,
 }
 
@@ -194,6 +196,7 @@ impl FolderEntry {
             is_folder: self.kind == ItemKind::Folder,
             size: self.size,
             modified: self.modified,
+            created: self.created,
             ..ItemFacts::default()
         };
         let item = Item::new(id, self.path, facts).with_kind(self.kind);
@@ -234,6 +237,7 @@ mod tests {
             kind: ItemKind::File,
             size: Some(42),
             modified: Some(7),
+            created: Some(5),
             hidden: false,
         };
         let item = entry.into_item(ItemId(3));
@@ -242,6 +246,7 @@ mod tests {
         assert_eq!(item.kind, ItemKind::File);
         assert_eq!(item.size, Some(42));
         assert_eq!(item.modified, Some(7));
+        assert_eq!(item.created, Some(5));
     }
 
     #[test]
@@ -252,6 +257,7 @@ mod tests {
             kind: ItemKind::File,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         assert_eq!(entry.into_item(ItemId(1)).label, "report");

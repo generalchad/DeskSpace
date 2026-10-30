@@ -141,14 +141,18 @@ pub fn item_facts(path: &Path) -> ItemFacts {
     ItemFacts {
         is_folder: metadata.is_dir(),
         size: metadata.is_file().then_some(metadata.len()),
-        modified: metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|elapsed| elapsed.as_secs()),
+        modified: metadata.modified().ok().and_then(epoch_seconds),
+        created: metadata.created().ok().and_then(epoch_seconds),
         compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
         encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
     }
+}
+
+/// `time` in seconds since the Unix epoch, or `None` before it.
+fn epoch_seconds(time: std::time::SystemTime) -> Option<u64> {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
 }
 
 thread_local! {
@@ -488,6 +492,17 @@ mod tests {
     }
 
     #[test]
+    fn a_time_before_the_epoch_has_no_seconds() {
+        use std::time::{Duration, UNIX_EPOCH};
+        assert_eq!(epoch_seconds(UNIX_EPOCH), Some(0));
+        assert_eq!(
+            epoch_seconds(UNIX_EPOCH + Duration::from_secs(1_700_000_000)),
+            Some(1_700_000_000)
+        );
+        assert_eq!(epoch_seconds(UNIX_EPOCH - Duration::from_secs(1)), None);
+    }
+
+    #[test]
     fn item_facts_reads_files_and_folders_and_defaults_when_missing() {
         let folder = std::env::temp_dir().join(format!("deskspace-facts-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -502,6 +517,7 @@ mod tests {
         assert!(!file_facts.is_folder);
         assert_eq!(file_facts.size, Some(5));
         assert!(file_facts.modified.is_some());
+        assert!(file_facts.created.is_some());
         assert!(folder_facts.is_folder);
         assert_eq!(folder_facts.size, None);
         assert_eq!(missing_facts, ItemFacts::default());

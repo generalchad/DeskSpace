@@ -593,6 +593,7 @@ mod tests {
             kind: ItemKind::File,
             size: Some(1),
             modified: None,
+            created: None,
             hidden: false,
         };
         // An empty folder, with no filter: nothing to say.

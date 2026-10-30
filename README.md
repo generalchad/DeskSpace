@@ -129,10 +129,10 @@ help inspect the look and the desktop layer.
   only" (`*.pdf; *.docx`) lists only matching files, and "Hide" leaves out
   matching files and folders.
 - "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
-  Type, and Size, then Ascending or Descending, then Folders first and Keep
-  sorted. A normal space sorts once, or holds the order as items come and go
-  once Keep sorted is on; a lens always holds it. "Folders first" stands in
-  both directions.
+  Type, Size, and Date created, then Ascending or Descending, then Folders
+  first and Keep sorted. A normal space sorts once, or holds the order as
+  items come and go once Keep sorted is on; a lens always holds it.
+  "Folders first" stands in both directions.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space (not one that keeps sorted), or out to another space,

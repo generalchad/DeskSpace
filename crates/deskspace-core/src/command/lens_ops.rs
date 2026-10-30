@@ -117,6 +117,7 @@ impl Desktop {
             let kind = entry.kind;
             let size = entry.size;
             let modified = entry.modified;
+            let created = entry.created;
             let mut item = match existing.remove(&path) {
                 Some(item) => item,
                 None => entry.into_item(self.take_item_id()),
@@ -127,6 +128,7 @@ impl Desktop {
             item.kind = kind;
             item.size = size;
             item.modified = modified;
+            item.created = created;
             items.push(item);
         }
 
@@ -178,6 +180,7 @@ mod tests {
             kind,
             size: Some(1),
             modified: Some(2),
+            created: Some(1),
             hidden: false,
         }
     }
@@ -373,11 +376,13 @@ mod tests {
         changed.label = "Renamed".into();
         changed.size = Some(99);
         changed.modified = Some(7);
+        changed.created = Some(6);
         sync(&mut desktop, id, vec![changed]);
         let item = &desktop.space(id).unwrap().items()[0];
         assert_eq!(item.label, "Renamed");
         assert_eq!(item.kind, ItemKind::Folder);
         assert_eq!((item.size, item.modified), (Some(99), Some(7)));
+        assert_eq!(item.created, Some(6));
     }
 
     #[test]

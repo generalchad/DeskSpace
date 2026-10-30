@@ -4670,3 +4670,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     (`view_by_digit`), and the status bar's view buttons all keep the
     sort rule, Keep sorted, and the status bar. The status bar was reset
     too, so its own view buttons used to hide it.
+
+- [x] **W29. Date created (core, platform, app).** After: W18.
+  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
+    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
+    record it already has; `item_facts` reads it from the metadata call it
+    already makes. No new IO.
+  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
+    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
+    user show it.
+  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
+  - Done 2026-10-29. `Item`, `ItemFacts`, and `FolderEntry` carry
+    `created`; a lens's sync refreshes it with the other facts. The
+    Details row is hidden through a `shown` flag on `DetailsColumn`, and
+    the header, the cells, and the sort arrow read
+    `shown_details_columns`, so W30 replaces that one function with the
+    space's own list. Sort by ▸ Date created is menu id 74.

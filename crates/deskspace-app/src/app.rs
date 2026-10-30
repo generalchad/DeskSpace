@@ -210,10 +210,12 @@ enum MenuId {
     SortDescending = 66,
     /// A space's "Keep sorted" toggle, last in its Sort by submenu (D17).
     KeepSorted = 67,
+    /// The Sort by submenu's "Date created", after Size.
+    SortByCreated = 74,
 }
 
 impl MenuId {
-    const ALL: [Self; 54] = [
+    const ALL: [Self; 55] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -268,6 +270,7 @@ impl MenuId {
         Self::StatusBar,
         Self::ViewTiles,
         Self::ViewContent,
+        Self::SortByCreated,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -324,11 +327,12 @@ const ICON_SIZE_PRESETS: [(MenuId, &str, u8); 4] = [
 
 /// The Sort by submenu's key choices: menu id and the key it picks, in
 /// `SORT_KEYS` order. Drives both the submenu and how a choice is handled.
-const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
+const SORT_MENU_IDS: [(MenuId, SortKey); 5] = [
     (MenuId::SortByName, SortKey::Name),
     (MenuId::SortByModified, SortKey::Modified),
     (MenuId::SortByKind, SortKey::Kind),
     (MenuId::SortBySize, SortKey::Size),
+    (MenuId::SortByCreated, SortKey::Created),
 ];
 
 /// The View submenu's choices: one per view, in `VIEW_MODES` order.

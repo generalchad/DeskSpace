@@ -85,51 +85,70 @@ pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
 
 /// Explorer's Sort by keys, in its order and words (D17). The Sort by menu,
 /// the View page, and the Lenses defaults page read it.
-pub const SORT_KEYS: [(SortKey, &str); 4] = [
+pub const SORT_KEYS: [(SortKey, &str); 5] = [
     (SortKey::Name, "Name"),
     (SortKey::Modified, "Date modified"),
     (SortKey::Kind, "Type"),
     (SortKey::Size, "Size"),
+    (SortKey::Created, "Date created"),
 ];
 
 /// Explorer's Details columns in display order (W18): its header label, the
-/// sort key a click on the header uses, its default width at 96 DPI, and how
-/// its values align. Name takes the width left over, down to
-/// `NAME_MIN_WIDTH`. Widths are provisional until W18's on-screen check
-/// measures Explorer's own.
+/// sort key a click on the header uses, its default width at 96 DPI, how its
+/// values align, and whether a space shows it until the user chooses. Name
+/// takes the width left over, down to `NAME_MIN_WIDTH`. Widths are
+/// provisional until W18's on-screen check measures Explorer's own.
 pub struct DetailsColumn {
     pub label: &'static str,
     pub key: SortKey,
     pub width: i32,
     pub align: ColumnAlign,
+    pub shown: bool,
 }
 
-pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
+pub const DETAILS_COLUMNS: [DetailsColumn; 5] = [
     DetailsColumn {
         label: "Name",
         key: SortKey::Name,
         width: 0,
         align: ColumnAlign::Left,
+        shown: true,
     },
     DetailsColumn {
         label: "Date modified",
         key: SortKey::Modified,
         width: 130,
         align: ColumnAlign::Left,
+        shown: true,
     },
     DetailsColumn {
         label: "Type",
         key: SortKey::Kind,
         width: 100,
         align: ColumnAlign::Left,
+        shown: true,
     },
     DetailsColumn {
         label: "Size",
         key: SortKey::Size,
         width: 80,
         align: ColumnAlign::Right,
+        shown: true,
+    },
+    // Explorer leaves Date created out of a new folder's Details view.
+    DetailsColumn {
+        label: "Date created",
+        key: SortKey::Created,
+        width: 130,
+        align: ColumnAlign::Left,
+        shown: false,
     },
 ];
+
+/// The Details columns a space shows, in display order. Name is always first.
+pub fn shown_details_columns() -> impl Iterator<Item = &'static DetailsColumn> {
+    DETAILS_COLUMNS.iter().filter(|column| column.shown)
+}
 
 /// The narrowest Name column, so a small space keeps a readable name.
 pub const NAME_MIN_WIDTH: i32 = 120;
