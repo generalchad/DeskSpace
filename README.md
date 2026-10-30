@@ -121,13 +121,18 @@ help inspect the look and the desktop layer.
   files or shortcuts on a lens puts them in its folder (Explorer asks before
   replacing a file, and "Copy here" copies); deleting an item from a lens
   sends its file to the Recycle Bin. Deleting a lens leaves the folder and
-  its files where they are. Right-click a lens to open its folder, change
-  it, or choose its order and show hidden files.
+  its files where they are. Double-click a folder in a lens to show it in
+  place; the title names the folders below the lens's own, and a restart
+  or "Change folder…" returns to the lens's folder. Right-click a lens to
+  open the folder it shows, change its folder, or choose its order and
+  show hidden files. Its Lens page in Settings also filters it: "Show
+  only" (`*.pdf; *.docx`) lists only matching files, and "Hide" leaves out
+  matching files and folders.
 - "Sort by" (in a space's menu) is Explorer's menu: Name, Date modified,
-  Type, and Size, then Ascending or Descending, then Folders first and Keep
-  sorted. A normal space sorts once, or holds the order as items come and go
-  once Keep sorted is on; a lens always holds it. "Folders first" stands in
-  both directions.
+  Type, Size, and Date created, then Ascending or Descending, then Folders
+  first and Keep sorted. A normal space sorts once, or holds the order as
+  items come and go once Keep sorted is on; a lens always holds it.
+  "Folders first" stands in both directions.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space (not one that keeps sorted), or out to another space,
@@ -145,7 +150,8 @@ help inspect the look and the desktop layer.
   `Ctrl+Y` undo and redo while a space is current. `Delete` sends the
   selection to the Recycle Bin (Shift+Delete removes it for good).
 - `F2` renames the selected item, or the current space's title when no item is
-  selected. `Alt+Enter` opens the selected item's Properties, or DeskSpace
+  selected. On a lens, the title is a nickname; clear it and press `Enter` to
+  show the folder's name again. `Alt+Enter` opens the selected item's Properties, or DeskSpace
   Settings when no item is selected. `Enter` opens the selected item, `Escape`
   clears the selection, `F5` refreshes the spaces, and the Menu key or
   `Shift+F10` opens the context menu. `Ctrl+Plus` and `Ctrl+Minus` make the
@@ -155,6 +161,9 @@ help inspect the look and the desktop layer.
 - The arrow keys move the selection (Shift extends it, Ctrl moves only the
   focus), typing a name jumps to it, and `Home` / `End` / `PageUp` /
   `PageDown` scroll the space.
+- In a lens showing a subfolder, the Back button at the left of its title
+  bar, `Backspace`, `Alt+Left`, `Alt+Up`, and the mouse's back button go to
+  the parent folder, never above the lens's own folder.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
   A right drag onto a space opens a menu to move or copy the files, create
@@ -216,6 +225,7 @@ show and the platform turns that into windows and pixels.
 | [`CONTEXT.md`](docs/CONTEXT.md) | Architecture and current behavior (authoritative) |
 | [`ROADMAP.md`](docs/ROADMAP.md) | The plan, milestones, and the feature index |
 | [`TASKS.md`](docs/TASKS.md) | Open, one-commit work items and the on-screen check list |
+| [`TOOLS.md`](docs/TOOLS.md) | Agent tools, scripts, diagnostics, and how to find a hang |
 | [`docs/archive/`](docs/archive/) | Finished tasks and the progress log up to v0.2.0 (history) |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes in each release |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to report bugs and contribute changes |

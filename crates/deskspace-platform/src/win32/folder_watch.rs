@@ -11,20 +11,23 @@
 //! https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports
 
 use std::collections::HashMap;
-use std::ffi::c_void;
+use std::ffi::{OsString, c_void};
+use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_IO_PENDING, HANDLE, HWND, INVALID_HANDLE_VALUE, LPARAM, WAIT_TIMEOUT, WPARAM,
+    CloseHandle, ERROR_IO_PENDING, HANDLE, HWND, INVALID_HANDLE_VALUE, LPARAM, MAX_PATH,
+    WAIT_TIMEOUT, WPARAM,
 };
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY,
-    FILE_NOTIFY_CHANGE, FILE_NOTIFY_CHANGE_ATTRIBUTES, FILE_NOTIFY_CHANGE_DIR_NAME,
-    FILE_NOTIFY_CHANGE_FILE_NAME, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    OPEN_EXISTING, ReadDirectoryChangesW,
+    FILE_NAME_NORMALIZED, FILE_NOTIFY_CHANGE, FILE_NOTIFY_CHANGE_ATTRIBUTES,
+    FILE_NOTIFY_CHANGE_DIR_NAME, FILE_NOTIFY_CHANGE_FILE_NAME, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, GETFINALPATHNAMEBYHANDLE_FLAGS, GetFinalPathNameByHandleW, OPEN_EXISTING,
+    ReadDirectoryChangesW, VOLUME_NAME_DOS,
 };
 use windows::Win32::System::IO::{
     CancelIoEx, CreateIoCompletionPort, GetQueuedCompletionStatus, OVERLAPPED,
@@ -37,6 +40,7 @@ use windows::core::{HRESULT, PCWSTR};
 use crate::error::PlatformError;
 use crate::input::{FolderListing, WatchKey};
 use crate::win32::folder_list::list_folder;
+use crate::win32::names::{in_recycle_bin, is_inside, plain_path, same_volume};
 use crate::win32::system::wide;
 
 /// How long a change waits for the burst to settle before the app is woken.
@@ -105,6 +109,7 @@ pub(crate) struct FolderWatch {
 /// A watch the UI has added but the worker has not opened yet.
 struct PendingWatch {
     path: PathBuf,
+    store: PathBuf,
     listing: SharedListing,
 }
 
@@ -168,9 +173,15 @@ impl FolderWatch {
         }
     }
 
-    /// Watches `path` for `key`. Does nothing when that key already watches
-    /// the same path; another path replaces the key's watch.
-    pub(crate) fn watch(&mut self, key: WatchKey, path: &Path) -> Result<(), PlatformError> {
+    /// Watches `path` for `key`, refusing it when it resolves to `store` or
+    /// inside it. Does nothing when that key already watches the same path;
+    /// another path replaces the key's watch.
+    pub(crate) fn watch(
+        &mut self,
+        key: WatchKey,
+        path: &Path,
+        store: &Path,
+    ) -> Result<(), PlatformError> {
         if let Some(active) = self.active.get(&key) {
             if active.path == path {
                 return Ok(());
@@ -196,6 +207,7 @@ impl FolderWatch {
                 slot,
                 PendingWatch {
                     path: path.to_path_buf(),
+                    store: store.to_path_buf(),
                     listing,
                 },
             );
@@ -218,16 +230,27 @@ impl FolderWatch {
         }
     }
 
-    /// The key and listing behind `slot`, taking the listing the worker left.
-    pub(crate) fn change_for_slot(&self, slot: usize) -> Option<(WatchKey, FolderListing)> {
+    /// The key, folder, and listing behind `slot`, taking the listing the
+    /// worker left. A slot watches one path for its whole life, so the path is
+    /// the folder the worker listed.
+    pub(crate) fn change_for_slot(
+        &self,
+        slot: usize,
+    ) -> Option<(WatchKey, PathBuf, FolderListing)> {
         let key = *self.slots.get(&slot)?;
+        let folder = self
+            .active
+            .get(&key)
+            .filter(|active| active.slot == slot)?
+            .path
+            .clone();
         let listing = self
             .listings
             .get(&slot)?
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()?;
-        Some((key, listing))
+        Some((key, folder, listing))
     }
 
     /// The keys the app is watching now.
@@ -360,12 +383,18 @@ impl Worker {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&slot);
-        let Some(PendingWatch { path, listing }) = pending else {
+        let Some(PendingWatch {
+            path,
+            store,
+            listing,
+        }) = pending
+        else {
             tracing::warn!(slot, "folder watch add had no path");
             return;
         };
         let mut folder = Folder {
             path,
+            store,
             listing,
             open: None,
             retry_at: None,
@@ -378,7 +407,15 @@ impl Worker {
                 self.by_read.insert(read_key, slot);
                 folder.list()
             }
-            Err(error) => {
+            Err(OpenFailure::Refused(resolved)) => {
+                tracing::warn!(
+                    path = %folder.path.display(),
+                    resolved = %resolved.display(),
+                    "the folder is DeskSpace's storage or inside it; not watching it"
+                );
+                FolderListing::Refused
+            }
+            Err(OpenFailure::Failed(error)) => {
                 tracing::warn!(
                     %error,
                     path = %folder.path.display(),
@@ -512,11 +549,13 @@ impl Worker {
                 };
                 match result {
                     Ok(()) => opened = Some(read_key),
-                    Err(error) => {
+                    // A refused folder stays unavailable to the app, so a
+                    // retry that is still refused posts nothing.
+                    Err(failure) => {
                         let folder = self.folders.get_mut(&slot);
                         if let Some(folder) = folder {
                             tracing::debug!(
-                                %error,
+                                ?failure,
                                 path = %folder.path.display(),
                                 "folder is still unavailable"
                             );
@@ -538,7 +577,9 @@ impl Worker {
                         folder.retry_at = None;
                         Some(FolderListing::Listed(entries))
                     }
-                    FolderListing::Unavailable => {
+                    FolderListing::Unavailable
+                    | FolderListing::Refused
+                    | FolderListing::Moved { .. } => {
                         folder.retry_at = Some(now_ms + RETRY_MS);
                         None
                     }
@@ -573,29 +614,29 @@ impl Worker {
 
     /// A watched folder renamed away keeps reporting for the moved directory,
     /// so the pending read may stay open forever. Check that the path still
-    /// names a folder, and empty the lens when it does not.
+    /// names a folder outside the store, and empty the lens when it does not.
     fn check_paths(&mut self, now_ms: u64) {
         if now_ms < self.next_check {
             return;
         }
         self.next_check = now_ms + CHECK_MS;
-        let gone: Vec<usize> = self
+        let gone: Vec<(usize, FolderListing)> = self
             .folders
             .iter()
-            .filter(|(_, folder)| folder.open.is_some() && !folder.path.is_dir())
-            .map(|(slot, _)| *slot)
+            .filter(|(_, folder)| folder.open.is_some())
+            .filter_map(|(slot, folder)| folder.moved().map(|listing| (*slot, listing)))
             .collect();
-        for slot in gone {
+        for (slot, listing) in gone {
             let path = self.folders.get(&slot).map(|folder| folder.path.clone());
             if let Some(path) = path {
-                tracing::debug!(path = %path.display(), "watched folder moved or disappeared");
+                tracing::debug!(path = %path.display(), ?listing, "watched folder moved or disappeared");
             }
             self.close_open(slot);
             if let Some(folder) = self.folders.get_mut(&slot) {
                 folder.retry_at = Some(now_ms + RETRY_MS);
             }
             self.bursts.remove(slot);
-            self.publish(slot, FolderListing::Unavailable);
+            self.publish(slot, listing);
         }
     }
 
@@ -679,6 +720,9 @@ struct CanceledRead {
 /// One watched folder.
 struct Folder {
     path: PathBuf,
+    /// DeskSpace's storage folder as a final path. The folder is refused when
+    /// its own final path is this or inside it.
+    store: PathBuf,
     listing: SharedListing,
     /// `None` while the folder is missing and waiting for a retry.
     open: Option<OpenFolder>,
@@ -688,24 +732,55 @@ struct Folder {
 
 impl Folder {
     /// Opens the folder if it is not open and starts its read under
-    /// `read_key`.
-    fn open(&mut self, port: HANDLE, read_key: usize) -> Result<(), PlatformError> {
+    /// `read_key`. A folder that resolves to the store or inside it is closed
+    /// again before any read starts. The final path comes from the handle
+    /// just opened, on this worker, so the UI thread never waits on it.
+    fn open(&mut self, port: HANDLE, read_key: usize) -> Result<(), OpenFailure> {
         if self.open.is_some() {
             return Ok(());
         }
-        self.open = Some(open_folder(&self.path, port, read_key)?);
-        let started = match self.open.as_mut() {
-            Some(open) => open.read_changes(),
-            None => Ok(()),
-        };
-        if let Err(error) = started {
+        let mut open = open_folder(&self.path, port, read_key).map_err(OpenFailure::Failed)?;
+        // Some file systems cannot name a final path; `canonicalize` fails
+        // there too, and the store check has always fallen back to the path
+        // as given, with its `..` steps taken (no IO).
+        let resolved = final_path(open.directory).unwrap_or_else(|error| {
+            tracing::debug!(%error, path = %self.path.display(), "no final path; checking the path as given");
+            std::path::absolute(&self.path).unwrap_or_else(|_| self.path.clone())
+        });
+        if is_inside(&resolved, &self.store) {
             // No read started, so nothing is left to wait for.
-            if let Some(open) = self.open.take() {
-                let _ = open.close();
-            }
-            return Err(error);
+            let _ = open.close();
+            return Err(OpenFailure::Refused(resolved));
         }
+        if let Err(error) = open.read_changes() {
+            let _ = open.close();
+            return Err(OpenFailure::Failed(error));
+        }
+        self.open = Some(open);
         Ok(())
+    }
+
+    /// What an open folder's path names now, when that is no longer a folder
+    /// to list: `Unavailable` when it is gone, or `Refused` when it resolves
+    /// into the store. The open handle follows a renamed folder, but a
+    /// listing reads the path, so a junction into the store put in the old
+    /// folder's place would be listed.
+    /// A folder renamed or moved where a lens may follow it (`follows_to`)
+    /// is `Moved` instead of `Unavailable`; the open handle names where it
+    /// went.
+    fn moved(&self) -> Option<FolderListing> {
+        if !self.path.is_dir() {
+            let to = self
+                .open
+                .as_ref()
+                .and_then(|open| final_path(open.directory).ok())
+                .map(|to| plain_path(&to))
+                .filter(|to| follows_to(&self.path, to, &self.store) && to.is_dir());
+            return Some(to.map_or(FolderListing::Unavailable, |to| FolderListing::Moved { to }));
+        }
+        std::fs::canonicalize(&self.path)
+            .is_ok_and(|resolved| is_inside(&resolved, &self.store))
+            .then_some(FolderListing::Refused)
     }
 
     /// The folder's current contents, or `Unavailable` with the reason logged.
@@ -825,6 +900,46 @@ fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder,
         overlapped: Box::default(),
         pending: false,
     })
+}
+
+/// Whether a lens on `from` follows its folder to `to` (ROADMAP D19): only on
+/// the same volume, where a move is a rename the open handle follows, and
+/// never into a Recycle Bin or DeskSpace's storage folder `store`.
+fn follows_to(from: &Path, to: &Path, store: &Path) -> bool {
+    same_volume(from, to) && !in_recycle_bin(to) && !is_inside(to, store)
+}
+
+/// Why a watched folder could not be opened.
+#[derive(Debug)]
+enum OpenFailure {
+    /// Its final path, given here, is the store or inside it.
+    Refused(PathBuf),
+    Failed(PlatformError),
+}
+
+/// The final path of an open handle, through junctions, links, and short
+/// names, in the `\\?\` form.
+/// https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew
+fn final_path(handle: HANDLE) -> Result<PathBuf, PlatformError> {
+    let flags = GETFINALPATHNAMEBYHANDLE_FLAGS(FILE_NAME_NORMALIZED.0 | VOLUME_NAME_DOS.0);
+    let mut buffer = vec![0u16; MAX_PATH as usize];
+    // A buffer too small returns the length needed, with the terminator; one
+    // large enough returns the length written, without it. So a second call
+    // with the length the first asked for always fits.
+    for _ in 0..2 {
+        // SAFETY: `handle` is open, and the call writes at most
+        // `buffer.len()` characters into `buffer`.
+        let length = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, flags) } as usize;
+        if length == 0 {
+            return Err(windows::core::Error::from_thread().into());
+        }
+        if length < buffer.len() {
+            buffer.truncate(length);
+            return Ok(PathBuf::from(OsString::from_wide(&buffer)));
+        }
+        buffer.resize(length, 0);
+    }
+    Err(PlatformError::InvalidFormat("a final path"))
 }
 
 /// Whether a failed wait timed out rather than broke.
@@ -991,6 +1106,11 @@ mod tests {
         assert_eq!(bursts.take_due(150), vec![1]);
     }
 
+    /// A store path no test folder is inside.
+    fn no_store() -> PathBuf {
+        std::env::temp_dir().join("deskspace-watch-no-store")
+    }
+
     /// A fresh, empty folder under the system temp folder, unique to `name`
     /// and this process.
     fn scratch_folder(name: &str) -> PathBuf {
@@ -1001,14 +1121,37 @@ mod tests {
         path
     }
 
-    /// Waits up to 5 s for the worker's first listing of `slot`.
-    fn first_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+    /// Waits up to 5 s for the worker's first change on `slot`.
+    fn first_change(
+        watch: &FolderWatch,
+        slot: usize,
+    ) -> Option<(WatchKey, PathBuf, FolderListing)> {
         let deadline = Instant::now() + std::time::Duration::from_secs(5);
         while Instant::now() < deadline {
-            if let Some((_, listing)) = watch.change_for_slot(slot) {
-                return Some(listing);
+            if let Some(change) = watch.change_for_slot(slot) {
+                return Some(change);
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        None
+    }
+
+    /// Waits up to 5 s for the worker's first listing of `slot`.
+    fn first_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+        first_change(watch, slot).map(|(_, _, listing)| listing)
+    }
+
+    /// Waits up to 8 s, past one path check, for a change on `slot` that is
+    /// not a listing.
+    fn first_non_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
+        let deadline = Instant::now() + std::time::Duration::from_secs(8);
+        while Instant::now() < deadline {
+            match watch.change_for_slot(slot) {
+                Some((_, _, FolderListing::Listed(_))) | None => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Some((_, _, listing)) => return Some(listing),
+            }
         }
         None
     }
@@ -1026,6 +1169,53 @@ mod tests {
             .is_ok()
     }
 
+    /// A watched folder renamed in place reports its new path, so a lens can
+    /// follow it (ROADMAP D19).
+    #[test]
+    fn a_renamed_folder_reports_where_it_went() {
+        let parent = scratch_folder("rename");
+        let (old, new) = (parent.join("old"), parent.join("new"));
+        std::fs::create_dir(&old).unwrap();
+        let (watched, renamed) = (old.clone(), new.clone());
+        let seen = Arc::new(Mutex::new(None));
+        let result = Arc::clone(&seen);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &watched, &no_store())
+                .unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            std::fs::rename(&watched, &renamed).unwrap();
+            *result.lock().unwrap() = first_non_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&parent);
+        assert!(finished, "the watch did not finish");
+        let seen = seen.lock().unwrap().take();
+        let Some(FolderListing::Moved { to }) = seen else {
+            panic!("expected Moved, got {seen:?}");
+        };
+        // The temp folder may be spelled with a short name, and the final
+        // path never is, so compare the folder's own name.
+        assert_eq!(to.file_name(), new.file_name(), "moved to {to:?}");
+        assert_eq!(plain_path(&to), to, "the path reads plain");
+    }
+
+    #[test]
+    fn a_lens_follows_only_on_its_volume_outside_the_bin_and_the_store() {
+        let from = Path::new(r"C:\Users\me\Work");
+        let store = Path::new(r"C:\Users\me\AppData\Roaming\DeskSpace\storage");
+        let follows = |to: &str| follows_to(from, Path::new(to), store);
+        assert!(follows(r"C:\Users\me\Projects"), "a rename");
+        assert!(follows(r"C:\Archive\Work"), "a move on the same volume");
+        assert!(!follows(r"C:\$Recycle.Bin\S-1-5-21\$R0ABC12"), "deleted");
+        assert!(
+            !follows(r"C:\Users\me\AppData\Roaming\DeskSpace\storage\Work"),
+            "into the store"
+        );
+        assert!(!follows(r"D:\Work"), "onto another volume");
+    }
+
     /// A quiet folder's read is still out when the watch stops. Waiting for
     /// that read used to hang the worker, and with it the app's exit.
     #[test]
@@ -1034,7 +1224,7 @@ mod tests {
         let path = folder.clone();
         let stopped = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(WatchKey::Desktop, &path).unwrap();
+            watch.watch(WatchKey::Desktop, &path, &no_store()).unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             watch.stop();
         });
@@ -1051,9 +1241,13 @@ mod tests {
         let (old_path, new_path) = (old.clone(), new.clone());
         let served = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(WatchKey::Desktop, &old_path).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &old_path, &no_store())
+                .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
-            watch.watch(WatchKey::Desktop, &new_path).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &new_path, &no_store())
+                .unwrap();
             assert!(matches!(
                 first_listing(&watch, FIRST_SLOT + 1),
                 Some(FolderListing::Listed(_))
@@ -1066,5 +1260,90 @@ mod tests {
             served,
             "the worker stopped serving after a watch was replaced"
         );
+    }
+
+    /// A change names the folder its slot watches, so the app can drop a
+    /// listing that waited in the queue while the key moved to another folder.
+    #[test]
+    fn a_change_names_the_folder_it_listed() {
+        let folder = scratch_folder("names");
+        let path = folder.clone();
+        let named = std::sync::Arc::new(Mutex::new(None));
+        let seen = std::sync::Arc::clone(&named);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(WatchKey::Desktop, &path, &no_store()).unwrap();
+            *seen.lock().unwrap() =
+                first_change(&watch, FIRST_SLOT).map(|(key, folder, _)| (key, folder));
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(finished, "the watch did not finish");
+        assert_eq!(
+            named.lock().unwrap().take(),
+            Some((WatchKey::Desktop, folder))
+        );
+    }
+
+    /// Makes `link` a junction to `target`. `mklink /J` needs no admin rights.
+    fn junction(link: &Path, target: &Path) {
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "mklink /J failed: {made:?}");
+    }
+
+    /// A scratch folder holding `storage\inner` and `link`, a junction into
+    /// it, with the store's final path.
+    fn store_with_junction(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let scratch = scratch_folder(name);
+        let store = scratch.join("storage");
+        std::fs::create_dir_all(store.join("inner")).unwrap();
+        let link = scratch.join("link");
+        junction(&link, &store.join("inner"));
+        let final_store = std::fs::canonicalize(&store).unwrap();
+        (scratch, link, final_store)
+    }
+
+    /// A junction into the store is refused by its final path, though the
+    /// path the lens names is outside the store.
+    #[test]
+    fn a_junction_into_the_store_is_refused() {
+        let (scratch, link, final_store) = store_with_junction("junction");
+        let listed = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&listed);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(WatchKey::Desktop, &link, &final_store).unwrap();
+            *seen.lock().unwrap() = first_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(finished, "the watch did not finish");
+        assert_eq!(listed.lock().unwrap().take(), Some(FolderListing::Refused));
+    }
+
+    /// The 5 s path check finds a watched path that now leads into the store,
+    /// as when a folder is renamed away and a junction put in its place.
+    #[test]
+    fn a_path_that_now_leads_into_the_store_is_refused() {
+        let (scratch, link, final_store) = store_with_junction("moved");
+        let folder = |path: &Path| Folder {
+            path: path.to_path_buf(),
+            store: final_store.clone(),
+            listing: Arc::new(Mutex::new(None)),
+            open: None,
+            retry_at: None,
+        };
+        let moved = folder(&link).moved();
+        let plain = folder(&scratch).moved();
+        let gone = folder(&scratch.join("gone")).moved();
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(moved, Some(FolderListing::Refused));
+        assert_eq!(plain, None, "a folder outside the store is still fine");
+        assert_eq!(gone, Some(FolderListing::Unavailable));
     }
 }

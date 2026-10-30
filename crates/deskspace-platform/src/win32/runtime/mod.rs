@@ -239,9 +239,9 @@ pub(crate) fn desktop_layer_window() -> Option<HWND> {
     with_runtime(|runtime| runtime.layer).flatten()
 }
 
-/// The key and listing for the folder watch on `slot`, if it is still
-/// watched.
-pub(crate) fn folder_change(slot: usize) -> Option<(WatchKey, FolderListing)> {
+/// The key, folder, and listing for the folder watch on `slot`, if it is
+/// still watched.
+pub(crate) fn folder_change(slot: usize) -> Option<(WatchKey, PathBuf, FolderListing)> {
     with_runtime(|runtime| {
         runtime
             .folder_watches

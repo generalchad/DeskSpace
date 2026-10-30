@@ -365,6 +365,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(
@@ -395,6 +396,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(
@@ -459,7 +461,8 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::SmallIcons),
+                view: deskspace_core::SpaceView::default()
+                    .with_mode(deskspace_core::ViewMode::SmallIcons),
             },
         );
         app.system.set_shell(ShellDisplay {
@@ -498,7 +501,8 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::List),
+                view: deskspace_core::SpaceView::default()
+                    .with_mode(deskspace_core::ViewMode::List),
             },
         );
         let items: Vec<ItemId> = (0..7)

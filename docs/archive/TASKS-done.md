@@ -4387,3 +4387,302 @@ until I5-I6 all land, so no partial build hides the desktop.
     only the new method and its callers' use of its result.
   - Done 2026-10-27: `shows_extensions` is in `app/view.rs`; the
     rename, selection, settings-preview, and scene builders call it.
+
+- [x] **W24. A listing carries the folder it read (platform, app).**
+  Any time.
+  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
+    keeps its key when a lens changes folder. So a listing posted for the
+    old folder, still in the queue when Change folder… runs, is applied
+    to the new one. W42 makes this happen on every step into a
+    subfolder.
+  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
+    the worker listed (or found unavailable). `win32/folder_watch.rs`
+    fills it from the watch's own record.
+  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
+    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
+    dropped with a `debug!` line. The desktop layer's listing gets the
+    same check against the Desktop folder.
+  - Tests: the pure check (same path, another case, other slashes,
+    another folder); the controller decode keeps the path.
+  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
+    listing names its folder.
+  - Done 2026-10-29: `Event::FolderChanged` carries `folder`, the path
+    of the slot that listed it. The stale listing came through the
+    runtime's pending queue: a change decoded during `pick_folder`'s pump
+    waited there until after Change folder… had re-pointed the watch.
+    `on_lens_listing` drops a listing whose folder the lens no longer
+    shows (`lens_shows`, tested without a `Ui`). `on_desktop_listing`
+    re-points the watch instead, since a mismatch there means the Desktop
+    moved. The controller's decode has no test: it needs a live runtime.
+
+- [x] **W25. The storage check runs off the UI thread (platform, app).**
+  Any time.
+  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
+    lens's folder and on the store, on the UI thread. `sync_watches`
+    calls it twice for every lens, through `desired_watches` and
+    `refused_lenses`, each time the watches are reconciled. On an
+    unreachable network share, `canonicalize` can block until the SMB
+    timeout, freezing every space. It is also the only junction guard,
+    so it must not simply be dropped.
+  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
+    it.
+  - `win32/folder_watch.rs`: when the worker opens a watched folder's
+    handle, it asks for the handle's final path
+    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
+    refuses a folder that is the store or inside it. It posts the refusal
+    as a new `FolderListing::Refused`. That costs no extra IO, since the
+    handle is already open. The store root is passed in when the watch
+    starts.
+  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
+    `allows_lens`; a `Refused` listing marks the lens unavailable, as
+    `refused_lenses` does today. `allows_lens` stays only where a user
+    has just picked a folder (New lens…, Change folder…), and it
+    compares against the stored root.
+  - Tests: a pure `inside_store(final_path, root)` (without case, with
+    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
+    `Refused` into an unavailable lens. One platform test makes a
+    junction into a temp "store" with `cmd /c mklink /J`, which needs no
+    admin rights, and expects `Refused`.
+  - **[needs human]** check: a lens on a share whose server is off
+    leaves the other spaces responsive at startup; a lens on a junction
+    into the store shows "Folder not available".
+  - Done 2026-10-29. Settled with the maintainer before coding: the store
+    travels with each watch (`Ui::watch_folder(key, path, store)`); the
+    drop, paste, and New shortcut checks keep `allows_lens`, since each runs
+    once per user action and dropping them would let a drop through a
+    junction into the store; a store not created yet resolves through its
+    parent; a refused folder retries on the 5 s cadence like a missing one.
+    `is_inside` moved to the platform (`win32/names.rs`) and compares
+    `\\?\` and plain drives and shares alike; the task's `inside_store` is
+    that function. A folder whose final path cannot be read is checked by
+    the path as given, as `canonicalize`'s fallback always did.
+
+- [x] **W42. Browse into a subfolder (app).** **[needs human]** After:
+  W24, W25.
+  - `App` keeps, per lens, the folder shown below its own one: session
+    state, a relative path, empty by default. `App::lens_folder(id)`
+    joins the two. A pure `browse_into(root, shown, entry) ->
+    Option<PathBuf>` refuses anything that is not a directory entry of
+    the folder shown, refuses a shortcut, and refuses a result that does
+    not stay inside `root` (D18).
+  - Every app read of `FolderView.path` that means "where the files go"
+    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
+    writer's lens path, delete, Open folder, and `desired_watches`.
+    List each switched site in the commit body; leave W10 and W11's
+    reads alone.
+  - Double-clicking a directory in a lens browses into it. That empties
+    the selection, re-points the lens's watch (W24 drops the old
+    listing), and scrolls to the top. The title bar shows `Root › Sub ›
+    Sub2`, clipped from the left when too long, from a pure
+    `browse_title`.
+  - Change folder…, a restart, and deleting the lens forget the folder
+    shown.
+  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
+    `..` in it, a different case); `browse_title`; each switched site
+    reads the folder shown.
+  - **[needs human]** check: browse two levels down in a Downloads
+    lens; drop, paste, New shortcut, and Delete there all act on the
+    subfolder; deleting the subfolder in Explorer while it is shown shows
+    "Folder not available"; a junction to DeskSpace's store inside the
+    lens shows unavailable when browsed into (W25).
+  - Done 2026-10-29. Settled with the maintainer before coding: the
+    title is cut from its start by the painter (`title_keeps_end`, measured
+    once per title and width), a small platform change beyond "(app)"; and
+    Enter on a folder browses too, sharing `App::open_item` with
+    double-click. `App::browsed` keeps the lens folder each browse was made
+    under, so a changed folder ignores it at once and `sync_watches` drops
+    it; that covers Change folder…, its undo, and deleting the lens without
+    a call at each, and Change folder… also drops it for the same folder.
+    `lens_folder` moved to `app/lens.rs`. After review: the title icon
+    follows the folder shown, so it and the unavailable flag agree; a
+    browse keeps the lens current, so the keys still reach it; the cut
+    measures DirectWrite clusters once per title, so it splits no
+    character and a resize recuts without layout.
+
+- [x] **W43. Back and Up (app, platform).** **[needs human]** After:
+  W42.
+  - A Back button at the left of the title bar, before the folder icon,
+    only while a lens shows a subfolder (a `SpaceScene` field, the "new
+    visual" recipe). Clicking it shows the parent. So do Alt+Left,
+    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
+    only while a space is current), and the mouse's back button
+    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
+    do nothing, and Backspace passes on to type-to-select as today.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: the parent of each depth; nothing above the root; the keys'
+    `keys_for_*` rows.
+  - **[needs human]** check: each way back at 100 % and 150 %; the
+    button is gone at the root; Backspace in a rename edits the text and
+    does not go back.
+  - Done 2026-10-29. Settled before coding, as the maintainer asked:
+    the hook takes the keys only under a new `WATCH_BACK` flag (the current
+    space is browsed), since it decides before the app is asked; at a
+    lens's own folder Backspace passes through as before, and the Alt
+    arrows pass through instead of moving the selection, as in Explorer.
+    Back and Up both show the parent (D18 keeps no forward history). A
+    double-click on the button goes up twice rather than folding the
+    space. The mouse's back button acts on the lens under the pointer.
+    The button's size is provisional and it has no hover highlight.
+    After review: the press on the button is remembered, so the
+    double-click that follows never folds the space even when the press
+    reached the lens's own folder; a resize edge under the button wins; a
+    click on it makes the lens current; the mouse's back button finishes a
+    rename first; and Alt leaves the scroll keys as they were.
+
+- [x] **W34. Lens filters: the matcher (core).** After: W14.
+  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
+    &str) -> bool` for `*` and `?`, without case, in time linear in the
+    two lengths (the greedy matcher that remembers the last `*`; cite
+    its source beside it). Compare by `char`, folding with
+    `to_lowercase` per char; no allocation per call.
+  - `FolderView.include` and `exclude` (already reserved): caps
+    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
+    `FolderView::clamped` on load and on edit. An empty pattern is
+    dropped.
+  - `SyncLens` applies them (D18): "Show only" to files, "Hide" to every
+    entry, both by name only, never by full path.
+  - Tests: the matcher on the usual cases and on hostile ones (thousands
+    of `*`, a 260-char pattern against a 260-char name, which must stay
+    fast in a debug test), non-ASCII names, case; `SyncLens` with each
+    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
+    (see Performance).
+  - Done 2026-10-29. The matcher's bound is pattern x name steps, not
+    linear as written above; the caps keep it to about 68,000. It checks
+    the text after the last star against the name's end first, and
+    compares ASCII without Unicode folding. Patterns are also trimmed and
+    deduplicated. Release timings of `SyncLens` on 50,000 entries: 44-46
+    ms with no filters (already over the 8 ms budget before W34), 62-65 ms
+    with 32 typical patterns, 309 ms with 32 whose end matches and middle
+    fails. Taken to the maintainer before merging, as the Performance
+    rule asks.
+
+- [x] **W35. Lens filters on the Lens page (app).** **[needs human]**
+  After: W10, W34.
+  - A "Filter" heading with two text fields, "Show only" and "Hide",
+    each a `;`-separated list (`*.pdf; *.docx`). A pure
+    `parse_patterns(text) -> Vec<String>` trims spaces and drops
+    empties; `format_patterns` writes it back. Edits preview and Cancel
+    undoes them (W10's snapshot).
+  - A lens whose filters hide every entry shows "No items match the
+    filter" in `SpaceScene::placeholder`, so it never looks broken.
+  - Changing a filter re-filters the listing the app already has; it
+    does not re-list the folder.
+  - Tests: `parse_patterns` round trip; the placeholder.
+  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
+    `*.tmp`; a filter that matches nothing shows the message; typing
+    quickly in the field stays smooth on a 50,000-file lens.
+  - Done 2026-10-29. The window rewrites a text field whose value
+    differs from the form, so the fields show the text as typed
+    (`Session::filter_texts`, as `hotkey_texts` does), and the lens's
+    list only when the page is built. `App::listings` keeps each lens's
+    last listing with its folder, and a re-filter uses it only while the
+    lens still shows that folder. Show hidden files still re-lists, as
+    before. Every keystroke re-filters on the UI thread; B37 covers the
+    cost on big folders.
+
+- [x] **W46. An empty title follows the folder again (app).** **[urgent]**
+  **[needs human]** After: W11.
+  - Why: renaming a lens's title (F2 with nothing selected, or a
+    double-click on the title) quietly switches its "Show as" to Custom,
+    so the title stops following the folder, and committing an empty
+    title is ignored. The only way back is the Lens page. Raised by the
+    maintainer, 2026-10-29: F2 on the title stays a nickname, never a
+    folder rename, but the nickname must be easy to undo.
+  - `app/rename.rs`, where a title rename commits: on a lens, an empty
+    (or all-space) title becomes `SetLensTitle` with the Lenses defaults
+    page's "Show as" (`WindowSettings.new_lens.title`, W23; Folder name
+    unless changed), or Folder name when that default is Custom, and the
+    title text `lens_title` gives for it. One undo entry, as a rename is
+    now. A normal space keeps ignoring an empty title.
+  - Decide it in a pure function, for example `title_commit(space,
+    typed, default) -> Option<Command>`, so the cases are tested without
+    a `Ui`.
+  - Tests: a lens with an empty title, an all-space title, and a typed
+    title; a normal space with an empty title; the default Custom case.
+  - Docs: `CONTEXT.md` section 8 (the F2 and title-rename lines) and
+    `README.md` Controls say that clearing a lens's title returns it to
+    following the folder.
+  - **[needs human]** check: F2 on a lens's title, clear it, Enter: the
+    title shows the folder's name and the Lens page shows "Folder name";
+    Ctrl+Z gives the old nickname back.
+  - Done 2026-10-29. An empty title on a lens that already follows its
+    folder is ignored too, so clearing it never swaps one "Show as" for
+    another.
+
+- [x] **W45. A lens follows its folder when it is renamed or moved
+  (platform, app).** **[urgent]** **[needs human]** ROADMAP D19 is the
+  spec. After: W24, W25, W42.
+  - Why: renaming or moving a lens's folder in Explorer makes the lens
+    "Folder not available" within 5 s, though the watch's open handle
+    follows the folder to its new path. A lens that follows its folder
+    is also the safe way to offer renaming it: rename in Explorer, or
+    through an explicit "Rename folder…" (a later task), never through
+    F2 on the title (see W46).
+  - Platform: in `check_paths`, when an open folder's path no longer
+    names it, the worker reads the handle's final path (`final_path`,
+    W25) and posts a new `FolderListing::Moved { to }` instead of
+    `Unavailable` when `to` is a real folder, outside the Recycle Bin (a
+    `$Recycle.Bin` component, without case), outside the store (W25), and
+    on the same volume. Decide that in a pure function.
+  - App: re-point the lens with `SetLensFolder` (its title follows when
+    "Show as" follows the folder), as one undo entry, and the watch moves
+    with it. A browsed lens (W42) whose subfolder moved returns to its
+    own folder. Log the move with one `tracing::info!` line.
+  - The notice: a general space notice, a translucent bar over the
+    space's content showing "Folder moved:" and the new path, hidden
+    about 3 s later. Draw and time it as the zoom pop-up is (`app/zoom.rs`,
+    `render/zoom_bar.rs`), as a `SpaceScene` field the platform paints,
+    so later messages reuse it. If no extension point fits, stop and ask.
+  - Tests: the pure "should the lens follow" check (a rename, a move on
+    the same volume, into the Recycle Bin, into the store, onto another
+    volume); a platform test that renames a watched scratch folder and
+    expects `Moved`; the app turns `Moved` into the new folder and a
+    notice, and a browsed lens returns to its own folder.
+  - **[needs human]** check: rename a lens's folder in Explorer: within
+    5 s the lens shows the new path, keeps its items, and shows "Folder
+    moved:" with the path for about 3 s; delete it in Explorer: the lens
+    says "Folder not available", and never lists the Recycle Bin; Ctrl+Z
+    points it back.
+  - Done 2026-10-29. The notice is `SpaceScene::notice`, a bar two title
+    bars high along the bottom of the item area in the title bar's colors
+    (`notice_rect`), set from `App::notices` and cleared by
+    `Timer::Notice`. A lens browsed into a subfolder sees only the
+    subfolder's watch, so when its own folder is the one renamed it
+    returns there and shows "Folder not available" rather than following.
+
+- [x] **W47. A view change keeps the sort rule (core).** **[needs human]**
+  - Why: `SpaceView::with_mode` gives the default sort rule, so a View
+    menu choice or a Ctrl+Shift digit resets a space's sort rule and its
+    Keep sorted choice, though D17 says a space keeps its last rule
+    (confirmed by the maintainer, 2026-10-29).
+  - Build the new view from the current one and change only the mode.
+    Every caller of `with_mode` gets this; if one needs the default rule,
+    stop and ask.
+  - Tests: a space sorted by date, descending, with Keep sorted off,
+    keeps all three across a mode change, by the View menu's path and by
+    the Ctrl+Shift path.
+  - **[needs human]** check: sort a space by Date, descending, then press
+    Ctrl+Shift+6 and Ctrl+Shift+2: Sort by ▸ still shows Date and
+    Descending.
+  - Done 2026-10-29. `SpaceView::with_mode` is now a method on the
+    current view, so the View menu (`view_after`), the Ctrl+Shift keys
+    (`view_by_digit`), and the status bar's view buttons all keep the
+    sort rule, Keep sorted, and the status bar. The status bar was reset
+    too, so its own view buttons used to hide it.
+
+- [x] **W29. Date created (core, platform, app).** After: W18.
+  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
+    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
+    record it already has; `item_facts` reads it from the metadata call it
+    already makes. No new IO.
+  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
+    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
+    user show it.
+  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
+  - Done 2026-10-29. `Item`, `ItemFacts`, and `FolderEntry` carry
+    `created`; a lens's sync refreshes it with the other facts. The
+    Details row is hidden through a `shown` flag on `DetailsColumn`, and
+    the header, the cells, and the sort arrow read
+    `shown_details_columns`, so W30 replaces that one function with the
+    space's own list. Sort by ▸ Date created is menu id 74.

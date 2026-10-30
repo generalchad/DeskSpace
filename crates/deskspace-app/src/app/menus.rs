@@ -209,11 +209,11 @@ impl App {
         self.record_effects(label, Command::ToggleLock { id }, at, Vec::new())
     }
 
-    /// Opens lens `id`'s folder in Explorer. The menu and the Lens page share
-    /// this.
+    /// Opens the folder lens `id` shows in Explorer. The menu and the Lens
+    /// page share this.
     pub(super) fn open_lens_folder(&mut self, ui: &mut Ui, id: SpaceId) {
-        if let Some(view) = self.config.desktop.space(id).and_then(Space::folder_view) {
-            ui.open_path(&view.path);
+        if let Some(folder) = self.lens_folder(id) {
+            ui.open_path(&folder);
         }
     }
 
@@ -245,6 +245,9 @@ impl App {
         self.run(ui, effects);
         if applied {
             self.unavailable_lenses.remove(&id);
+            // Picking the same folder keeps the browse's root, so forget it
+            // here too: Change folder… always returns to the lens's folder.
+            self.forget_browse(id);
             self.sync_watches(ui);
             self.resnapshot_settings(ui, id);
         }
@@ -438,10 +441,8 @@ impl App {
                         ..view
                     };
                     self.set_space_view(ui, id, next, at);
-                } else if let Some((_, mode)) =
-                    VIEW_PRESETS.iter().find(|(preset, _)| *preset == choice)
-                {
-                    self.set_space_view(ui, id, SpaceView::with_mode(*mode), at);
+                } else if let Some(next) = view_after(view, choice) {
+                    self.set_space_view(ui, id, next, at);
                 } else if let Some(view) = lens_view
                     .as_ref()
                     .and_then(|view| lens_view_after(view, choice))
@@ -914,6 +915,14 @@ fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
 /// The view a Keep sorted choice leaves, or `None` when it is not that
 /// choice. A lens is always kept sorted, so its entry is greyed and changes
 /// nothing (D17).
+/// The view a View ▸ choice leaves, or `None` when `choice` is not a view.
+fn view_after(view: SpaceView, choice: MenuId) -> Option<SpaceView> {
+    VIEW_PRESETS
+        .iter()
+        .find(|(preset, _)| *preset == choice)
+        .map(|(_, mode)| view.with_mode(*mode))
+}
+
 fn keep_sorted_after(view: SpaceView, choice: MenuId, lens: bool) -> Option<SpaceView> {
     if choice != MenuId::KeepSorted || lens {
         return None;
@@ -1112,7 +1121,7 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
         let entries = view_entries(desktop.space(id).unwrap());
@@ -1257,6 +1266,26 @@ mod tests {
             item_checks(&lens).contains(&(Some(MenuId::KeepSorted), true)),
             "a lens is always kept sorted"
         );
+    }
+
+    #[test]
+    fn a_view_choice_keeps_the_sort_rule_and_the_status_bar() {
+        let view = SpaceView {
+            sort: SortRule {
+                key: SortKey::Modified,
+                descending: true,
+                folders_first: false,
+            },
+            keep_sorted: false,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        let next = view_after(view, MenuId::ViewDetails).unwrap();
+        assert_eq!(next.mode, deskspace_core::ViewMode::Details);
+        assert_eq!(next.sort, view.sort);
+        assert!(!next.keep_sorted);
+        assert!(next.status_bar);
+        assert_eq!(view_after(view, MenuId::KeepSorted), None);
     }
 
     #[test]
@@ -1410,7 +1439,13 @@ mod tests {
             ]
         );
 
-        app.rename_space(id, "Work".to_string());
+        app.commit_title(
+            id,
+            Command::RenameSpace {
+                id,
+                title: "Work".to_string(),
+            },
+        );
         assert_eq!(
             app.undo_entries(),
             [

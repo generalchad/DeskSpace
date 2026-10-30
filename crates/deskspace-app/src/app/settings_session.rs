@@ -371,10 +371,11 @@ impl App {
                 match effect {
                     FieldEffect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
                     FieldEffect::Lens => {
-                        // A changed sort or filter needs a fresh listing.
+                        // A changed hidden-files choice needs a fresh listing.
                         ui.unwatch_folder(WatchKey::Space(id));
                         self.sync_watches(ui);
                     }
+                    FieldEffect::Refilter => self.refilter_lens(ui, id),
                     _ => self.schedule_preview(ui, Preview::restyle(id)),
                 }
             }

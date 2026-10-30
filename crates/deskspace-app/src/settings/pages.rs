@@ -1,6 +1,7 @@
 //! The settings pages: how the configuration becomes the form's pages.
 
 use deskspace_config::ICON_SETS;
+use deskspace_core::source::FolderView;
 
 use super::ids::field;
 use super::tables::{
@@ -696,11 +697,38 @@ fn animation_page(page: &AnimationPage, animations: &Animations, system_on: bool
     }
 }
 
-/// A lens's Lens page: its folder, the buttons that act on it, and the
-/// hidden-files toggle. Built for every scope so the form keeps its shape;
-/// only a lens lists it.
-pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage {
+/// The separator between a filter field's patterns, as typed and as shown.
+const PATTERN_SEPARATOR: char = ';';
+
+/// A filter field's text as patterns: split at `;`, each trimmed, empty ones
+/// dropped. The lens caps the list further (`FolderView::clamped`).
+pub(crate) fn parse_patterns(text: &str) -> Vec<String> {
+    text.split(PATTERN_SEPARATOR)
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Patterns as a filter field shows them: `*.pdf; *.docx`.
+pub(crate) fn format_patterns(patterns: &[String]) -> String {
+    patterns.join(&format!("{PATTERN_SEPARATOR} "))
+}
+
+/// A lens's Lens page: its folder, the buttons that act on it, the
+/// hidden-files toggle, and its filters. Built for every scope so the form
+/// keeps its shape; only a lens lists it.
+pub(super) fn lens_page(space: Option<&Space>, available: bool, session: &Session) -> SettingsPage {
     let view = space.and_then(Space::folder_view);
+    // A filter shows the text as typed while the window is open, so the form
+    // never rewrites it mid-edit; otherwise the lens's own list.
+    let filter_text = |id: u32, patterns: fn(&FolderView) -> &[String]| {
+        space
+            .and_then(|space| session.filter_texts.get(&(space.id, id)))
+            .cloned()
+            .or_else(|| view.map(|view| format_patterns(patterns(view))))
+            .unwrap_or_default()
+    };
     let path = view.map(|view| view.path.display().to_string());
     let folder = match (path, available) {
         (Some(path), true) => path,
@@ -730,6 +758,17 @@ pub(super) fn lens_page(space: Option<&Space>, available: bool) -> SettingsPage 
                 field::LENS_SHOW_HIDDEN,
                 "Show hidden files",
                 view.is_some_and(|view| view.show_hidden),
+            ),
+            Field::heading(field::LENS_FILTER_HEADING, "Filter"),
+            Field::text(
+                field::LENS_SHOW_ONLY,
+                "Show only",
+                filter_text(field::LENS_SHOW_ONLY, |view| &view.include),
+            ),
+            Field::text(
+                field::LENS_HIDE,
+                "Hide",
+                filter_text(field::LENS_HIDE, |view| &view.exclude),
             ),
         ],
     }

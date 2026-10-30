@@ -76,10 +76,18 @@ pub struct SpaceScene {
     /// layer sets it false, so its items fill the whole window.
     pub chrome: bool,
     pub title: String,
+    /// When the title is too long, cut it from the start (`… › Sub`) rather
+    /// than the end, so a lens browsed into a subfolder keeps the folder it
+    /// shows in view.
+    pub title_keeps_end: bool,
     /// The small icon drawn left of the title text, if the space has one. A
     /// lens shows its folder's shell icon; another space shows the glyph its
     /// icon setting resolves to.
     pub title_icon: Option<TitleIcon>,
+    /// The Back button's square at the left of the title bar, in the space's
+    /// coordinates, while a lens shows a subfolder (D18); `None` otherwise.
+    /// The icon and the text start after it.
+    pub back_button: Option<Rect>,
     pub title_height: i32,
     pub tint: Color,
     pub title_fill: Color,
@@ -116,6 +124,10 @@ pub struct SpaceScene {
     /// color at about 60 % opacity; a lens whose folder is unavailable says
     /// so here. `None` draws nothing.
     pub placeholder: Option<String>,
+    /// A short message on a bar along the bottom of the item area, over the
+    /// items, in the title bar's colors; a lens that followed its moved
+    /// folder says where it went. The app clears it after a few seconds.
+    pub notice: Option<String>,
     /// The item with keyboard focus, drawn with a dotted focus rectangle. Only
     /// the current space's scene sets it.
     pub focused_item: Option<u64>,

@@ -106,8 +106,12 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
         messages::TRAY_CALLBACK => tray_event(wparam, lparam)?,
         messages::SHOW_SPACES => Event::ShowSpaces,
         messages::FOLDER_CHANGE => {
-            let (key, listing) = runtime::folder_change(wparam.0)?;
-            Event::FolderChanged { key, listing }
+            let (key, folder, listing) = runtime::folder_change(wparam.0)?;
+            Event::FolderChanged {
+                key,
+                folder,
+                listing,
+            }
         }
         messages::WAKE => Event::Wake { id: wparam.0 },
         messages::EDIT_KEY => Event::EditKey(keyboard::decode(wparam.0, lparam.0)?),

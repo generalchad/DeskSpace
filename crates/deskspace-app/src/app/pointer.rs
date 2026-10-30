@@ -1,7 +1,7 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, SpaceView, ViewLayout, ViewMode};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout, ViewMode};
 
 use deskspace_platform::{
     CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
@@ -86,6 +86,11 @@ pub(super) struct PointerState {
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
+    /// The space whose Back button took the last left press. The press may
+    /// have gone back to the lens's own folder, where the button is gone, so
+    /// the double-click that follows finds it here instead of folding the
+    /// space (W43).
+    pub(super) back_press: Option<SpaceId>,
 }
 
 impl PointerState {
@@ -151,11 +156,14 @@ impl App {
             return;
         }
         // Clicking anywhere commits a rename in progress before the click is
-        // handled, as clicking away from a title does elsewhere.
+        // handled, as clicking away from a title does elsewhere; so does the
+        // mouse's back button, which empties the lens the rename is in.
         if self.edit.is_active()
             && matches!(
                 &event,
-                SpaceEvent::MouseDown { .. } | SpaceEvent::DoubleClick { .. }
+                SpaceEvent::MouseDown { .. }
+                    | SpaceEvent::DoubleClick { .. }
+                    | SpaceEvent::BackButton
             )
         {
             self.finish_rename(ui, true);
@@ -164,6 +172,8 @@ impl App {
         // click here is made to behave like one on the desktop: focus it and
         // clear its icon selection.
         if matches!(&event, SpaceEvent::MouseDown { .. }) {
+            // A new press starts over; one on the Back button sets it again.
+            self.pointer.back_press = None;
             self.dismiss_info_tip(ui);
             self.refresh_shell_display(ui);
             ui.on_desktop_click();
@@ -232,7 +242,21 @@ impl App {
                     }
                 }
             }
-            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
+            // A double-click's second press arrives as the double-click
+            // alone, so on the Back button it goes up again, as two clicks
+            // would, rather than fold the space.
+            SpaceEvent::DoubleClick { x, y } => {
+                let point = Point::new(x, y);
+                let back = matches!(surface, Surface::Space(id) if self.back_button_clicked(ui, id, point));
+                if !back {
+                    self.double_click(ui, surface, point);
+                }
+            }
+            SpaceEvent::BackButton => {
+                if let Surface::Space(id) = surface {
+                    self.browse_up(ui, id);
+                }
+            }
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
                 let mut repaint = false;
@@ -283,6 +307,29 @@ impl App {
         }
     }
 
+    /// If `point` is on space `id`'s Back button, makes the lens current,
+    /// shows the parent of the subfolder it is browsed into, and returns true
+    /// (D18). A resize edge under the button wins, as the cursor shows.
+    fn back_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let shown = self.is_browsed(id) || self.pointer.back_press == Some(id);
+        let on_button = self.config.desktop.space(id).is_some_and(|space| {
+            space.resize_edges_at(point, RESIZE_BORDER) == ResizeEdges::NONE
+                && crate::scene::back_button_at(space, shown, point)
+        });
+        if !on_button {
+            return false;
+        }
+        self.pointer.back_press = Some(id);
+        if self.selection.surface != Some(Surface::Space(id)) {
+            if let Some(previous) = self.selection.take() {
+                self.refresh_surface(ui, previous);
+            }
+            self.selection.surface = Some(Surface::Space(id));
+        }
+        self.browse_up(ui, id);
+        true
+    }
+
     /// If `point` is on a status-bar view button, switches the space to that
     /// view and returns true (W19).
     fn status_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
@@ -295,9 +342,9 @@ impl App {
         let Some(button) = STATUS_BUTTONS.get(index) else {
             return false;
         };
-        let mode = button.mode;
+        let view = space.view().with_mode(button.mode);
         let at = space.rect().origin();
-        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        self.set_space_view(ui, id, view, at);
         true
     }
 
@@ -342,6 +389,13 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a browsed lens's Back button shows the parent folder,
+        // before the title bar can start a move.
+        if let Surface::Space(id) = surface
+            && self.back_button_clicked(ui, id, point)
+        {
+            return;
+        }
         // A click on a status-bar view button switches this space's view
         // (W19).
         if let Surface::Space(id) = surface
@@ -589,11 +643,7 @@ impl App {
                     self.toggle_fold(ui, id);
                 }
             }
-            DoubleClickTarget::Item(item) => {
-                if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
-                    ui.open_path(&path);
-                }
-            }
+            DoubleClickTarget::Item(item) => self.open_item(ui, item),
             DoubleClickTarget::Nothing => {}
         }
     }

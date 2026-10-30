@@ -17,6 +17,7 @@ pub mod space;
 pub mod theme;
 pub mod view;
 pub mod view_layout;
+pub mod wildcard;
 
 mod sort;
 

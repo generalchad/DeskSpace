@@ -120,6 +120,9 @@ pub mod field {
     pub const LENS_TITLE_HEADING: u32 = 116;
     pub const LENS_TITLE_MODE: u32 = 117;
     pub const LENS_TITLE_TEXT: u32 = 118;
+    pub const LENS_FILTER_HEADING: u32 = 141;
+    pub const LENS_SHOW_ONLY: u32 = 142;
+    pub const LENS_HIDE: u32 = 143;
 
     pub const VIEW_HEADING: u32 = 119;
     pub const VIEW_MODE: u32 = 120;

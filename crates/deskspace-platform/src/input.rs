@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use deskspace_core::SpaceId;
 use deskspace_core::source::FolderEntry;
 
@@ -80,6 +82,14 @@ pub enum FolderListing {
     Listed(Vec<FolderEntry>),
     /// The folder is missing or cannot be read; the worker keeps retrying.
     Unavailable,
+    /// The folder was renamed or moved to `to` on the same volume, outside
+    /// the Recycle Bin and the store. The worker keeps watching the old path
+    /// until the app points the watch at `to`.
+    Moved { to: PathBuf },
+    /// The folder resolves to DeskSpace's storage folder or inside it, for
+    /// example through a junction, so it is not watched. The worker retries
+    /// it like a missing folder.
+    Refused,
 }
 
 /// Input on a space window. Coordinates are desktop coordinates (the
@@ -143,6 +153,8 @@ pub enum SpaceEvent {
     DpiChanged {
         dpi: u32,
     },
+    /// The mouse's back button (`XBUTTON1`) was released over the space.
+    BackButton,
 }
 
 /// A clipboard shortcut pressed while an item is selected or a space is
@@ -191,6 +203,9 @@ pub enum SelectionKey {
     /// with that digit (`VIEW_MODES` in the settings tables). A digit with no
     /// view yet does nothing.
     View(u8),
+    /// Backspace, Alt+Left, or Alt+Up: show the parent of the subfolder a
+    /// lens is browsed into (D18). Sent only while there is one.
+    Back,
 }
 
 /// A button on the zoom pop-up (ROADMAP F-57), which changes the icon size
@@ -340,6 +355,10 @@ pub enum Event {
     /// the desktop layer; M4 reuses it for a lens's bound folder.
     FolderChanged {
         key: WatchKey,
+        /// The folder the worker listed. A listing can wait in the queue
+        /// while the key's watch moves to another folder (Change folder…),
+        /// so the app checks it against the folder it shows now.
+        folder: std::path::PathBuf,
         listing: FolderListing,
     },
     /// The user switched Windows between light and dark mode.

@@ -45,6 +45,8 @@ pub enum SortKey {
     Kind,
     Size,
     Modified,
+    /// When the item was created; Explorer's "Date created".
+    Created,
 }
 
 /// What the file system knows about an item's path, read by the caller (core
@@ -56,6 +58,8 @@ pub struct ItemFacts {
     pub size: Option<u64>,
     /// Last modification time in seconds since the Unix epoch.
     pub modified: Option<u64>,
+    /// Creation time in seconds since the Unix epoch.
+    pub created: Option<u64>,
     pub compressed: bool,
     pub encrypted: bool,
 }
@@ -78,6 +82,11 @@ pub struct Item {
     /// item's `ItemFacts`. `None` when unavailable.
     #[serde(default)]
     pub modified: Option<u64>,
+    /// Creation time in seconds since the Unix epoch, from the item's
+    /// `ItemFacts`. `None` when unavailable, and for an item saved before it
+    /// was recorded.
+    #[serde(default)]
+    pub created: Option<u64>,
     /// NTFS compressed attribute, for Explorer's compressed label color
     /// (`SSF_SHOWCOMPCOLOR`).
     #[serde(default)]
@@ -98,6 +107,7 @@ impl Item {
             position: Point::ZERO,
             size: facts.size,
             modified: facts.modified,
+            created: facts.created,
             compressed: facts.compressed,
             encrypted: facts.encrypted,
         }
@@ -161,12 +171,14 @@ mod tests {
         let facts = ItemFacts {
             size: Some(42),
             modified: Some(7),
+            created: Some(5),
             compressed: true,
             ..ItemFacts::default()
         };
         let item = Item::new(ItemId(1), "C:/a.txt", facts);
         assert_eq!(item.kind, ItemKind::File);
         assert_eq!((item.size, item.modified), (Some(42), Some(7)));
+        assert_eq!(item.created, Some(5));
         assert!(item.compressed && !item.encrypted);
     }
 }

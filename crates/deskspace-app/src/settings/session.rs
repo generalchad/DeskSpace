@@ -1,6 +1,8 @@
 //! The settings session: Cancel snapshots, staged hotkey text, and what
 //! a revert needs to reflow or restyle.
 
+use std::collections::HashMap;
+
 use deskspace_core::Rect;
 use deskspace_core::source::FolderView;
 
@@ -80,6 +82,9 @@ pub struct Session {
     /// The binding text as typed, per `HOTKEY_BINDINGS`, committed on Apply.
     pub hotkey_texts: [String; HOTKEY_BINDINGS.len()],
     pub hotkey_errors: [Option<String>; HOTKEY_BINDINGS.len()],
+    /// A lens filter field's text as typed, by space and field id, so the
+    /// form shows it back unchanged; the lens holds the parsed list (W35).
+    pub filter_texts: HashMap<(SpaceId, u32), String>,
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -109,6 +114,7 @@ impl Session {
             saved_layout: config.desktop.layout,
             hotkey_texts: saved_hotkey_texts(&config.window),
             hotkey_errors: Default::default(),
+            filter_texts: HashMap::new(),
             dirty: false,
             scope: None,
             scope_kind: ScopeKind::Global,

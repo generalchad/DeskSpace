@@ -31,7 +31,8 @@ finished product. The direction is decided in `ROADMAP.md` section 2.
 - History: commits `07dba93`..`18ffac2` replace the old overlay together and
   only build as a series; bisect across them as one step.
 - Code health: a non-test file past the ~800-line guideline gets a K task in
-  `TASKS.md` section K; section 3 lists the `app/` modules.
+  `TASKS.md` section K; `crates/deskspace-app/tests/file_size.rs` enforces the
+  limit and lists the exceptions. Section 3 lists the `app/` modules.
 
 ## 3. Architecture
 
@@ -194,17 +195,46 @@ index, and the scroll indicator all read the same layout. `FolderEntry` is what
 the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
 `Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
-filters hidden entries, sorts by the space's `SortRule`, and reconciles by
+filters hidden entries and the view's "Show only" and "Hide" patterns
+(`FolderView::shows`, `wildcard::matches`), sorts by the space's
+`SortRule`, and reconciles by
 path so an `ItemId` survives a refresh. They are never written to the config,
 and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 `MoveItem` into a lens are `Rejected`; file changes there are shell
 operations: a drop on a lens moves
 (or copies) the files into its folder with `Ui::transfer_files` and
 `OnCollision::Ask` (`App::drop_into_lens`). A lens on the storage
-folder, or inside it, is kept but never watched, and counts as unavailable
-(`ItemStore::allows_lens`).
+folder, or inside it, is kept but never watched, and counts as unavailable:
+the folder watch refuses it by its final path, so a junction into the store
+is caught too, and the UI thread resolves no lens path to decide it. A
+folder the user has just picked or is writing into is also checked on the
+spot (`ItemStore::allows_lens`; see its callers), against the store's final
+path resolved once at startup.
 An unavailable lens (`App::unavailable_lenses`) draws "Folder not available"
 and its path in place of items (`SpaceScene::placeholder`).
+A lens whose folder was renamed or moved where it may follow (D19) is
+re-pointed with `SetLensFolder`, one "Change folder" undo entry, and shows
+"Folder moved:" and the new path on its notice bar (`SpaceScene::notice`,
+from `App::notices`) until `Timer::Notice` clears it about 3 s later. A
+lens browsed into a subfolder returns to its own folder instead; if its own
+folder was the one renamed, it then shows "Folder not available", since only
+the subfolder's watch saw the move.
+Opening a folder in a lens (double-click or Enter) shows it in place
+(D18): `App::browsed` keeps, per lens and for the session only, the
+subfolder shown and the lens folder it was browsed under, and
+`App::lens_folder` joins them. Every file operation and the watch read
+`lens_folder`, and so does the title icon, so it and "Folder not
+available" describe the same folder; the lens's settings and title source
+keep its own folder. A shortcut opens as before, since it can point anywhere, and
+`browse_into` never leaves the lens's folder. When the lens's folder
+changes or the lens goes, `sync_watches` drops the browse, and Change
+folder… drops it even for the same folder, so it, its undo, and a restart
+all return to the lens's folder. The
+title reads `Title › Sub › Sub2` (`scene::browse_title`) and, when too
+long, is cut from its start so the folder shown stays in view
+(`SpaceScene::title_keeps_end`). The painter measures the title's
+DirectWrite clusters once per title, so a cut never splits a character,
+and recuts by arithmetic as the width changes.
 A lens's title bar shows its folder's own shell icon, or the generic folder
 icon while the folder is unavailable; a normal space's title bar shows none.
 Deleting a lens always asks and only unlists it: its folder and files stay,
@@ -311,8 +341,10 @@ ones a variant's doc cannot show.
   view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
   listed items by path, keeping ids, filtering hidden entries unless the view
   shows them, and sorting by the space's `SortRule` (natural names, so
-  `file2` comes before `file10`; folders first when asked). The include/exclude
-  filters are stored for F-22 but not applied.
+  `file2` comes before `file10`; folders first when asked). "Show only"
+  (`include`) keeps only files whose name matches, and "Hide" (`exclude`)
+  drops any match, file or folder (D18). The lists are capped by
+  `FolderView::clamped` when the config loads and in `SetLensView`.
 - `CustomizeSpace { id, on, seed }` turns a space's own look on or off,
   seeding it from `seed` (the global settings) only when it has none.
   `SetSpaceLook { id, custom, look }` sets both exactly (clamped): settings
@@ -1075,8 +1107,15 @@ in `ui.rs`. What spans them:
   `SetSpaceView`), and its always-enabled Shortcuts page.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
-  preview through `SetLensTitle`), and Show hidden files, which previews
-  through `SetLensView`. Global edits write `Config` directly; a space's edits
+  preview through `SetLensTitle`), Show hidden files, which previews
+  through `SetLensView`, and its Filter: "Show only" and "Hide", each a
+  `;`-separated list (`settings::pages::parse_patterns`). A filter edit
+  is a `SetLensView` that re-filters the lens's last listing, kept per lens
+  in `App::listings` with the folder it came from, without reading the
+  folder (`FieldEffect::Refilter`); the field shows the text as typed
+  (`Session::filter_texts`), so the form never rewrites it mid-edit. A
+  lens whose filters leave no entry says "No items match the filter".
+  Global edits write `Config` directly; a space's edits
   become `SetSpaceLook` commands, the switch `CustomizeSpace`, and the Colors
   page's reset becomes "Match global appearance". Cancel restores each space's
   `SpaceSnapshot` (its look, its view, a lens's folder view, and its title); a space menu edit
@@ -1130,14 +1169,29 @@ in `ui.rs`. What spans them:
   that is missing or cannot be read posts `FolderListing::Unavailable` and is
   tried again every 5 s on the worker. An open folder's path is checked on the
   same cadence: renaming a watched folder moves its handle with it, so the
-  pending read may never fail. `Ui::watch_folder(key, path)` adds or
+  pending read may never fail. When the path no longer names a folder, the
+  worker reads where the handle went and posts `FolderListing::Moved { to }`
+  when a lens may follow it (`follows_to`: the same volume, outside a Recycle
+  Bin and the store; D19), else `Unavailable`. Each time the worker opens a folder it asks
+  for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
+  that is the store or inside it, posting `FolderListing::Refused`; the
+  5 s path check also refuses a path that has come to lead into the store
+  (a junction put in a renamed folder's place). `is_inside` compares
+  paths for it and for the app: whole components, without case, and a drive
+  or share alike with or without the `\\?\` prefix. A refused folder is
+  retried like a missing one. `Ui::watch_folder(key, path, store)` adds or
   replaces that key's watch (idempotent for the same path) and
   `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
   watch's slot in `wParam`; the worker leaves the listing in a shared slot,
-  and the controller raises `Event::FolderChanged { key, listing }`. M2
-  watches the Desktop folder while the layer is drawn (a change makes the app
-  re-enumerate and `SyncDesktop`) and ignores the listing; M4 uses it for a
-  lens's folder.
+  and the controller raises `Event::FolderChanged { key, folder, listing }`.
+  A listing names the folder it read, because a posted change can wait in
+  the event queue (for example during `pick_folder`'s message pump) while
+  the key's watch moves to another folder. A lens drops a listing whose
+  folder is not the one it shows now; the desktop layer, which re-reads
+  the shell instead, takes one from another folder to mean the Desktop
+  moved and re-points its watch. M2 watches the Desktop folder while
+  the layer is drawn (a change makes the app re-enumerate and `SyncDesktop`)
+  and ignores the listing; M4 uses it for a lens's folder.
 - `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
   `0x052C` spawn trick) for hosted placements.
 - `desktop_icons.rs` hides and restores Explorer's icon layer for the
@@ -1283,7 +1337,11 @@ in `ui.rs`. What spans them:
   100 %). Buttons grey out at the ends of the range, and Reset at 100 %. It
   hides 2 s after the last zoom, or once the pointer leaves it.
 - Rename a space from its right-click menu: the title is edited in place
-  (Enter commits, Escape cancels, clicking away commits).
+  (Enter commits, Escape cancels, clicking away commits). A typed title on a
+  lens is a nickname that stops the title following the folder. Committing an
+  empty title makes it follow again, as the Lenses page's "Show as" says
+  (Folder name when that is Custom), as one undo entry. An empty title on a
+  normal space, or on a lens that already follows its folder, is ignored.
 
 **Menus**
 
@@ -1320,7 +1378,7 @@ in `ui.rs`. What spans them:
   draw 16 px icons in inline cells. Small icons wraps the cells into rows and
   scrolls down; List fills a column top to bottom and scrolls sideways, wheel
   included. **Sort by ▸** is Explorer's folder menu:
-  Name, Date modified, Type, and Size as radio items, then Ascending and
+  the `SORT_KEYS` keys as radio items, then Ascending and
   Descending, then Folders first and Keep sorted, then, on a lens, Show
   hidden files. Keep sorted is checked and greyed on a lens. A key
   keeps the direction, a direction keeps the key, and Folders first toggles,
@@ -1410,8 +1468,9 @@ in `ui.rs`. What spans them:
   like a desktop click: it focuses the desktop (deactivating the app in
   front) and clears the desktop icon selection, leaving any selection inside
   an Explorer window alone.
-- Double-click an item to open it; click a selected item again (a slow
-  double-click) to rename it inline. Right-click it for Explorer's context
+- Double-click an item to open it (a folder in a lens shows in place,
+  D18); click a selected item again (a slow double-click) to rename it
+  inline. Right-click it for Explorer's context
   menu with DeskSpace's "Rename" on top (Explorer's own Delete there sends the
   file to the Recycle Bin; ROADMAP D3); right-clicking an item in a
   multi-selection keeps the selection. Loose items on the desktop layer
@@ -1473,7 +1532,9 @@ in `ui.rs`. What spans them:
 
 - F2 renames the selected item's file inline (Enter commits, Escape cancels,
   clicking away commits; the extension is kept when the label hides it), or
-  the current space's title with no item selected.
+  the current space's title with no item selected (an empty lens title
+  follows the folder again, as under Menus). F2 never renames a lens's
+  folder.
 - Alt+Enter opens the selected item's Properties, or DeskSpace Settings with
   nothing selected. With an item selected, Enter opens it, and the Menu key or
   Shift+F10 opens its context menu (the space's menu with no item selected).
@@ -1483,6 +1544,12 @@ in `ui.rs`. What spans them:
 - Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
   Medium, or Small icons, List, Details, Tiles, or Content, the way the View
   menu does.
+- While the current space is a lens shown below its own folder, Backspace,
+  Alt+Left, and Alt+Up show the parent folder (`SelectionKey::Back`, under
+  the hook's `WATCH_BACK`), as do the title bar's Back button (a click, or
+  each press of a double-click) and the mouse's back button over the lens
+  (`SpaceEvent::BackButton`). At the lens's own folder there is no button
+  and the keys pass through (D18).
 - With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
   (passing through to Explorer when no space is current); typing selects the
   next item whose label starts with

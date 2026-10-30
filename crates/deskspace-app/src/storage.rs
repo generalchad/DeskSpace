@@ -11,9 +11,15 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use deskspace_platform::is_inside;
+
 #[derive(Debug, Clone)]
 pub struct ItemStore {
     root: PathBuf,
+    /// `root` resolved through junctions and short names, once, so checking a
+    /// lens's folder costs no IO for the store's side. `root` itself stays as
+    /// given, because stored items' paths are built from it.
+    final_root: PathBuf,
 }
 
 /// Why a file was left in place instead of being moved.
@@ -33,11 +39,19 @@ pub enum StoreError {
 
 impl ItemStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        let root = root.into();
+        let final_root = final_path(&root);
+        Self { root, final_root }
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The store's final path, which a folder watch refuses to watch or
+    /// enter.
+    pub fn final_root(&self) -> &Path {
+        &self.final_root
     }
 
     /// Whether `path` was moved into the store (and so has to be moved back
@@ -50,16 +64,19 @@ impl ItemStore {
     /// Whether a lens may watch `folder`. Every space shares the store, and
     /// deleting a space moves its files out of it, so a lens on the store or
     /// inside it would list files that other spaces own. A folder that merely
-    /// contains the store is fine.
+    /// contains the store is fine. The folder watch makes the same check on
+    /// every folder it opens; this one answers a folder the user just picked
+    /// or is about to write into. A folder that cannot be resolved is
+    /// compared, with its `..` steps taken, against both spellings of the
+    /// store.
     pub fn allows_lens(&self, folder: &Path) -> bool {
-        let (folder, root) = match (
-            std::fs::canonicalize(folder),
-            std::fs::canonicalize(&self.root),
-        ) {
-            (Ok(folder), Ok(root)) => (folder, root),
-            _ => (folder.to_path_buf(), self.root.clone()),
-        };
-        !is_inside(&folder, &root)
+        match std::fs::canonicalize(folder) {
+            Ok(folder) => !is_inside(&folder, &self.final_root),
+            Err(_) => {
+                let folder = std::path::absolute(folder).unwrap_or_else(|_| folder.to_path_buf());
+                !is_inside(&folder, &self.root) && !is_inside(&folder, &self.final_root)
+            }
+        }
     }
 
     /// Moves `path` into the store and returns its new path. Items already
@@ -110,6 +127,23 @@ impl ItemStore {
     }
 }
 
+/// `root` resolved to its final path. The store, and on a first run the
+/// folders above it, are created only on the first drop, so the deepest
+/// folder that exists is resolved and the rest of the path joined to it.
+fn final_path(root: &Path) -> PathBuf {
+    root.ancestors()
+        .find_map(|ancestor| {
+            let resolved = std::fs::canonicalize(ancestor).ok()?;
+            let rest = root.strip_prefix(ancestor).ok()?;
+            Some(if rest.as_os_str().is_empty() {
+                resolved
+            } else {
+                resolved.join(rest)
+            })
+        })
+        .unwrap_or_else(|| root.to_path_buf())
+}
+
 /// Whether two paths name the same file, comparing `path_key`s. Exact equality
 /// is the common case and avoids the filesystem.
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
@@ -130,18 +164,6 @@ pub(crate) fn path_key(path: &Path) -> PathBuf {
     }
     let text = path.to_string_lossy().replace('/', "\\");
     PathBuf::from(deskspace_platform::upper_name(OsStr::new(&text)))
-}
-
-/// Whether `path` is `root` or lies below it, comparing whole components by
-/// the same rule Windows uses for names. Unlike a string-prefix test,
-/// `...\DeskSpace.App` is not inside `...\DeskSpace`.
-pub(crate) fn is_inside(path: &Path, root: &Path) -> bool {
-    let mut path = path.components();
-    root.components().all(|root| {
-        path.next().is_some_and(|part| {
-            deskspace_platform::same_name_ignoring_case(part.as_os_str(), root.as_os_str())
-        })
-    })
 }
 
 fn move_into(path: &Path, folder: &Path) -> Result<PathBuf, StoreError> {
@@ -371,18 +393,32 @@ mod tests {
     }
 
     #[test]
-    fn is_inside_compares_whole_components() {
-        assert!(is_inside(Path::new(r"C:\A\B\x.txt"), Path::new(r"C:\a\b")));
-        assert!(is_inside(Path::new(r"C:\A"), Path::new(r"C:\a")));
-        assert!(!is_inside(
-            Path::new(r"C:\DeskSpace.App"),
-            Path::new(r"C:\DeskSpace")
-        ));
-        assert!(!is_inside(
-            Path::new(r"C:\DeskSpace"),
-            Path::new(r"C:\DeskSpace.App")
-        ));
-        assert!(!is_inside(Path::new(r"C:\Other"), Path::new(r"C:\A")));
+    fn a_store_not_created_yet_resolves_through_its_parent() {
+        let scratch = Scratch::new("final-root");
+        let store = ItemStore::new(scratch.0.join("storage"));
+        assert_eq!(
+            store.final_root(),
+            std::fs::canonicalize(&scratch.0).unwrap().join("storage")
+        );
+        std::fs::create_dir_all(store.root().join("sub")).unwrap();
+        assert!(
+            !store.allows_lens(&store.root().join("sub")),
+            "a folder inside the store created after startup"
+        );
+        let first_run = ItemStore::new(scratch.0.join("data/storage"));
+        assert_eq!(
+            first_run.final_root(),
+            std::fs::canonicalize(&scratch.0)
+                .unwrap()
+                .join("data/storage"),
+            "the store's parent is missing too"
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_folder_is_compared_without_its_dot_dot_steps() {
+        let store = ItemStore::new("C:/nowhere/storage");
+        assert!(!store.allows_lens(Path::new("C:/nowhere/other/../storage/sub")));
     }
 
     /// ROADMAP D6: the installer's install root (`%LocalAppData%\DeskSpace.App`)

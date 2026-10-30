@@ -1,9 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
-use deskspace_core::{Command, Desktop, SortKey, Space, SpaceId, ViewMode};
+use deskspace_core::source::FolderEntry;
+use deskspace_core::{Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
     Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
@@ -102,10 +103,12 @@ enum Timer {
     ExplorerRename = 13,
     /// Showing the icon-download consent question (`app/space_icons.rs`).
     IconConsent = 14,
+    /// Clearing the spaces' notice bars (`app/lens.rs`).
+    Notice = 15,
 }
 
 impl Timer {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Autosave,
         Self::Caret,
         Self::InfoTip,
@@ -120,6 +123,7 @@ impl Timer {
         Self::DebugRefresh,
         Self::ExplorerRename,
         Self::IconConsent,
+        Self::Notice,
     ];
 
     fn from_id(id: usize) -> Option<Self> {
@@ -206,10 +210,12 @@ enum MenuId {
     SortDescending = 66,
     /// A space's "Keep sorted" toggle, last in its Sort by submenu (D17).
     KeepSorted = 67,
+    /// The Sort by submenu's "Date created", after Size.
+    SortByCreated = 74,
 }
 
 impl MenuId {
-    const ALL: [Self; 54] = [
+    const ALL: [Self; 55] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -264,6 +270,7 @@ impl MenuId {
         Self::StatusBar,
         Self::ViewTiles,
         Self::ViewContent,
+        Self::SortByCreated,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -320,11 +327,12 @@ const ICON_SIZE_PRESETS: [(MenuId, &str, u8); 4] = [
 
 /// The Sort by submenu's key choices: menu id and the key it picks, in
 /// `SORT_KEYS` order. Drives both the submenu and how a choice is handled.
-const SORT_MENU_IDS: [(MenuId, SortKey); 4] = [
+const SORT_MENU_IDS: [(MenuId, SortKey); 5] = [
     (MenuId::SortByName, SortKey::Name),
     (MenuId::SortByModified, SortKey::Modified),
     (MenuId::SortByKind, SortKey::Kind),
     (MenuId::SortBySize, SortKey::Size),
+    (MenuId::SortByCreated, SortKey::Created),
 ];
 
 /// The View submenu's choices: one per view, in `VIEW_MODES` order.
@@ -491,6 +499,15 @@ pub struct App {
     /// Lens folders the watch worker could not read (W5 draws the
     /// placeholder). Session-only.
     unavailable_lenses: HashSet<SpaceId>,
+    /// The subfolder each browsed lens shows (W42). Session-only.
+    browsed: HashMap<SpaceId, lens::Browsed>,
+    /// The last listing of the folder each lens shows, before its filters,
+    /// so a filter edit filters it again without reading the folder (W35).
+    /// Session-only.
+    listings: HashMap<SpaceId, (PathBuf, Vec<FolderEntry>)>,
+    /// The message each space shows on its notice bar until `Timer::Notice`
+    /// clears it. Session-only.
+    notices: HashMap<SpaceId, String>,
     visible: bool,
     /// The registered global hotkeys, indexed by `hotkey_id`'s index.
     hotkeys: Hotkeys,
@@ -531,6 +548,9 @@ impl App {
             autosave: Autosave::default(),
             view_cache: ViewCache::default(),
             unavailable_lenses: HashSet::new(),
+            browsed: HashMap::new(),
+            listings: HashMap::new(),
+            notices: HashMap::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
@@ -577,18 +597,30 @@ impl App {
             SelectionKey::Undo => self.undo(ui),
             SelectionKey::Redo => self.redo(ui),
             SelectionKey::View(digit) => self.set_view_by_digit(ui, digit),
+            // The current space is looked up now: it may have changed since
+            // the hook took the key.
+            SelectionKey::Back => {
+                if let Some(Surface::Space(id)) = self.selection.surface {
+                    self.browse_up(ui, id);
+                }
+            }
         }
     }
 
     /// Opens the focused (last-selected) item, as Enter does in Explorer.
     fn open_selected_item(&mut self, ui: &mut Ui) {
-        if let Some(path) = self
-            .selection
-            .items
-            .last()
-            .and_then(|item| self.config.desktop.item(*item))
-            .map(|item| item.path.clone())
-        {
+        if let Some(item) = self.selection.items.last().copied() {
+            self.open_item(ui, item);
+        }
+    }
+
+    /// Opens `item` as Explorer would: a folder in a lens shows in place
+    /// (D18), and anything else opens with its default verb.
+    fn open_item(&mut self, ui: &mut Ui, item: ItemId) {
+        if self.browse_into_item(ui, item) {
+            return;
+        }
+        if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
             ui.open_path(&path);
         }
     }
@@ -695,6 +727,7 @@ impl App {
             Timer::DebugRefresh => self.refresh_debug(ui),
             Timer::ExplorerRename => self.poll_explorer_rename(ui),
             Timer::IconConsent => self.ask_icon_consent(ui),
+            Timer::Notice => self.clear_notices(ui),
         }
     }
 
@@ -795,12 +828,14 @@ impl EventHandler for App {
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged {
                 key: WatchKey::Desktop,
+                folder,
                 ..
-            } => self.resync_desktop_layer(ui),
+            } => self.on_desktop_listing(ui, &folder),
             Event::FolderChanged {
                 key: WatchKey::Space(id),
+                folder,
                 listing,
-            } => self.on_lens_listing(ui, id, listing),
+            } => self.on_lens_listing(ui, id, &folder, listing),
             Event::Hotkey { id } => self.on_hotkey(ui, id),
             Event::Tray(TrayEvent::Activated) => self.open_settings(ui),
             Event::Tray(TrayEvent::MenuRequested { x, y }) => {
@@ -865,11 +900,18 @@ impl EventHandler for App {
             }
         }
         // The keyboard hook is on only while it is needed: editing captures
-        // keys, and a selection or current space watches the item keys.
+        // keys, a selection or current space watches the item keys, and a
+        // current lens shown below its own folder watches the keys that go
+        // back.
         ui.capture_text_input(self.edit.is_active());
+        let browsed = matches!(
+            self.selection.surface,
+            Some(Surface::Space(id)) if self.is_browsed(id)
+        );
         ui.watch_selection_keys(
             !self.edit.is_active() && !self.selection.items.is_empty(),
             !self.edit.is_active() && self.selection.surface.is_some(),
+            !self.edit.is_active() && browsed,
         );
         self.sync_outside_watch(ui);
     }
