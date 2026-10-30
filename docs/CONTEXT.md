@@ -192,7 +192,13 @@ layout, scrolling, and hit tests shrink with it. It is off for new spaces and
 on for new lenses. A new lens takes its view, its title mode, and its
 hidden-files choice from Global's Lenses page (`WindowSettings.new_lens`);
 a new space its view from the New spaces page
-(`WindowSettings.new_space_view`, W40). Hit tests, the marquee, keyboard
+(`WindowSettings.new_space_view`, W40). `SpaceView.extensions` (W28)
+decides whether a space's labels show filename extensions: `Show` and
+`Hide` are its own answer, and `Automatic` follows today's rule,
+Explorer's option on a space that mirrors Explorer's display
+(`App::shows_extensions`, the one reader). The View ▸ menu's "File name
+extensions" check shows what the space shows now and flips to the
+opposite; the View page offers all three. Hit tests, the marquee, keyboard
 navigation, the drag drop index, and the scroll indicator all read the same
 layout. `FolderEntry` is what the platform reads from the folder.
 A lens's items are a live cache: the watch worker lists the folder and posts
@@ -1108,8 +1114,8 @@ in `ui.rs`. What spans them:
   show
   its values (from Global until customized) greyed unless the header's
   "Customize this space" switch is on, its always-enabled View page (the view
-  mode, the status bar, and the sort rule, which preview through
-  `SetSpaceView`), and its always-enabled Shortcuts page.
+  mode, the status bar, the extension choice, and the sort rule, which
+  preview through `SetSpaceView`), and its always-enabled Shortcuts page.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
   preview through `SetLensTitle`), Show hidden files, which previews

@@ -5,9 +5,9 @@ use super::ids::field;
 use super::pages::parse_patterns;
 use super::session::Session;
 use super::tables::{
-    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
-    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
-    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, EXTENSIONS_OPTIONS,
+    HOTKEY_BINDINGS, ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES,
+    MODES, NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
 use super::*;
 use super::{FieldEffect, scope_space};
@@ -492,6 +492,9 @@ fn view_edit(
             view.mode = VIEW_MODES.get(*index)?.0;
         }
         (field::VIEW_STATUS_BAR, FieldValue::Toggle(on)) => view.status_bar = *on,
+        (field::VIEW_EXTENSIONS, FieldValue::Choice(index)) => {
+            view.extensions = EXTENSIONS_OPTIONS.get(*index)?.0;
+        }
         (field::VIEW_SORT_KEY, FieldValue::Choice(index)) => {
             view.sort.key = SORT_KEYS.get(*index)?.0;
         }

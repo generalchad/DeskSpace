@@ -7,7 +7,7 @@ use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
 use deskspace_core::source::{FolderView, lens_title};
 use deskspace_core::{
-    Command, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook, SpaceView, Theme,
+    Command, Extensions, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook, SpaceView, Theme,
 };
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
@@ -395,7 +395,10 @@ impl App {
             space,
             space.theme(&self.config.theme),
         ));
-        entries.push(space_view_menu(space));
+        entries.push(space_view_menu(
+            space,
+            self.shows_extensions(Surface::Space(space.id)),
+        ));
         entries.push(space_sort_menu(space.view(), space.folder_view()));
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
@@ -440,6 +443,17 @@ impl App {
                         status_bar: !view.status_bar,
                         ..view
                     };
+                    self.set_space_view(ui, id, next, at);
+                } else if choice == MenuId::FileExtensions {
+                    // The entry checks what the space shows now, so choosing
+                    // it flips to the opposite (W28); `Automatic` is the View
+                    // page's to choose.
+                    let extensions = if self.shows_extensions(Surface::Space(id)) {
+                        Extensions::Hide
+                    } else {
+                        Extensions::Show
+                    };
+                    let next = SpaceView { extensions, ..view };
                     self.set_space_view(ui, id, next, at);
                 } else if let Some(next) = view_after(view, choice) {
                     self.set_space_view(ui, id, next, at);
@@ -864,8 +878,10 @@ fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
 }
 
 /// The "View" submenu: one radio item per icon view, checking the space's
-/// current mode.
-fn space_view_menu(space: &Space) -> MenuEntry {
+/// current mode, then the status bar and file-extension checks. The
+/// extension entry checks what the space shows now, which `Automatic`
+/// decides with Explorer's own option (W28).
+fn space_view_menu(space: &Space, shows_extensions: bool) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = VIEW_PRESETS
         .iter()
         .map(|(id, mode)| {
@@ -879,6 +895,7 @@ fn space_view_menu(space: &Space) -> MenuEntry {
     entries.extend([
         MenuEntry::Separator,
         menu_item(MenuId::StatusBar, "Status bar").checked(space.view().status_bar),
+        menu_item(MenuId::FileExtensions, "File name extensions").checked(shows_extensions),
     ]);
     MenuEntry::submenu("View", entries)
 }
@@ -1109,8 +1126,8 @@ mod tests {
         }
     }
 
-    fn view_entries(space: &Space) -> Vec<MenuEntry> {
-        match space_view_menu(space) {
+    fn view_entries(space: &Space, shows_extensions: bool) -> Vec<MenuEntry> {
+        match space_view_menu(space, shows_extensions) {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
         }
@@ -1151,12 +1168,12 @@ mod tests {
                 view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
-        let entries = view_entries(desktop.space(id).unwrap());
+        let entries = view_entries(desktop.space(id).unwrap(), false);
         let checks = item_checks(&entries);
         assert_eq!(
             checks.len(),
-            VIEW_PRESETS.len() + 1,
-            "the views and the Status bar toggle"
+            VIEW_PRESETS.len() + 2,
+            "the views and the two checks"
         );
         assert_eq!(
             checks.iter().filter(|(_, checked)| *checked).count(),
@@ -1179,7 +1196,29 @@ mod tests {
             .collect();
         let mut expected: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
         expected.push("Status bar");
+        expected.push("File name extensions");
         assert_eq!(labels, expected);
+    }
+
+    #[test]
+    fn the_view_menu_extension_check_follows_what_the_space_shows() {
+        use crate::fixtures::create_space;
+        use deskspace_core::Desktop;
+
+        let mut desktop = Desktop::new();
+        let id = create_space(&mut desktop, "A", Rect::new(0, 0, 100, 100));
+        let space = desktop.space(id).unwrap();
+        for (shows, checked) in [(true, true), (false, false)] {
+            let entries = view_entries(space, shows);
+            assert_eq!(
+                item_checks(&entries)
+                    .into_iter()
+                    .find(|(id, _)| *id == Some(MenuId::FileExtensions))
+                    .map(|(_, checked)| checked),
+                Some(checked),
+                "the check follows what the space shows now ({shows})"
+            );
+        }
     }
 
     #[test]

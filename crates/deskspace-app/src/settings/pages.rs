@@ -5,9 +5,9 @@ use deskspace_core::source::FolderView;
 
 use super::ids::field;
 use super::tables::{
-    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS, HOTKEY_HINT,
-    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
-    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, corner_marks,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, EXTENSIONS_OPTIONS,
+    HOTKEY_BINDINGS, HOTKEY_HINT, ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS,
+    LENS_TITLES, MODES, NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, corner_marks,
 };
 use super::view_fields::{LENSES_PAGE_IDS, NEW_SPACES_PAGE_IDS, VIEW_PAGE_IDS, view_fields};
 use super::*;
@@ -422,13 +422,29 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
     }
 }
 
-/// A space's View page (W20): its view mode, status bar, and sort rule. Built
-/// for every scope so the form keeps its shape, but only a space lists it.
+/// A space's View page (W20): its view mode, status bar, extension choice
+/// (W28), and sort rule. Built for every scope so the form keeps its shape,
+/// but only a space lists it.
 pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
     let view = space.map_or_else(SpaceView::default, Space::view);
+    let mut fields = view_fields(&view, &VIEW_PAGE_IDS, space.is_some_and(Space::is_lens));
+    // The extension choice sits after the status bar, as in the View menu.
+    let after_status = fields
+        .iter()
+        .position(|field| field.id == field::VIEW_STATUS_BAR)
+        .map_or(fields.len(), |index| index + 1);
+    fields.insert(
+        after_status,
+        Field::choice(
+            field::VIEW_EXTENSIONS,
+            "File name extensions",
+            &labels(&EXTENSIONS_OPTIONS),
+            index_of(&EXTENSIONS_OPTIONS, view.extensions),
+        ),
+    );
     SettingsPage {
         title: "View".into(),
-        fields: view_fields(&view, &VIEW_PAGE_IDS, space.is_some_and(Space::is_lens)),
+        fields,
     }
 }
 

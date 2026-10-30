@@ -8,7 +8,9 @@ use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
-use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode};
+use deskspace_core::{
+    Color, Command, Extensions, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode,
+};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceScene, SpaceStyle,
     Ui, Way, arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
@@ -692,9 +694,19 @@ impl App {
         }
     }
 
-    /// Whether a surface's labels show filename extensions: Explorer's own
-    /// option, on a surface that mirrors Explorer's display.
+    /// Whether a surface's labels show filename extensions: the space's own
+    /// choice (W28), or under `Automatic` Explorer's own option on a surface
+    /// that mirrors Explorer's display.
     pub(super) fn shows_extensions(&self, surface: Surface) -> bool {
+        if let Surface::Space(id) = surface
+            && let Some(space) = self.config.desktop.space(id)
+        {
+            match space.view().extensions {
+                Extensions::Show => return true,
+                Extensions::Hide => return false,
+                Extensions::Automatic => {}
+            }
+        }
         self.surface_match_explorer(surface) && self.system.shell().show_extensions
     }
 
@@ -949,8 +961,8 @@ mod tests {
     use crate::fixtures::{apply, create_space};
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::geometry::Size;
+    use deskspace_core::{Extensions, SpaceView, ViewMode};
     use deskspace_core::{ItemFacts, Preset};
-    use deskspace_core::{SpaceView, ViewMode};
     use deskspace_platform::ShellDisplay;
 
     #[test]
@@ -990,6 +1002,44 @@ mod tests {
         app.config.window.take_over_desktop = false;
         app.layer.session_takeover = Some(true);
         assert!(app.desktop_takeover());
+    }
+
+    #[test]
+    fn each_extension_choice_decides_its_space_and_automatic_follows_explorer() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = create_space(&mut app.config.desktop, "A", Rect::new(0, 0, 100, 100));
+        let surface = Surface::Space(id);
+        app.system.set_shell(ShellDisplay {
+            show_extensions: true,
+            ..ShellDisplay::default()
+        });
+        // Automatic is today's rule, so Explorer's option counts only while
+        // the space mirrors Explorer's display.
+        assert!(app.config.theme.match_explorer(), "the default preset");
+        assert!(app.shows_extensions(surface));
+        app.config.theme.preset = Preset::Custom;
+        assert!(!app.shows_extensions(surface), "hidden under Custom");
+        app.system.set_shell(ShellDisplay::default());
+        assert!(!app.shows_extensions(surface), "Explorer hides them too");
+        // Show and Hide decide for the space, whatever Explorer does.
+        for (extensions, shown) in [(Extensions::Show, true), (Extensions::Hide, false)] {
+            apply(
+                &mut app.config.desktop,
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        extensions,
+                        ..SpaceView::default()
+                    },
+                },
+            );
+            assert_eq!(
+                app.shows_extensions(surface),
+                shown,
+                "{extensions:?} decides over both presets"
+            );
+        }
     }
 
     #[test]

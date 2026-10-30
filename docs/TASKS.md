@@ -832,22 +832,6 @@ interest. In phase 4 and 5 terms:
 
 #### Phase 5 tasks
 
-- [ ] **W28. File name extensions per space (core, app).** **[needs
-  human]** After: W20, W26.
-  - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
-    `Automatic` is the default (D18). `App::shows_extensions` (W26) reads
-    it first and falls back to today's rule for `Automatic`.
-  - View ▸ "File name extensions": a check entry showing what the space
-    shows now. Choosing it sets `Show` or `Hide`. The View page offers all
-    three in a choice.
-  - Rename already selects the name without its extension when one
-    shows; check that it still does.
-  - Tests: each value under both presets; the menu check follows the
-    effective value.
-  - **[needs human]** check: Show and Hide on a normal space and a lens,
-    Automatic under Match Explorer with Explorer's setting on and off;
-    F2 selects only the name part.
-
 - [ ] **W30. Choose the Details columns (core, app).** **[needs
   human]** After: W29.
   - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
@@ -2141,6 +2125,7 @@ each id is in `archive/TASKS-done.md`.
 | W47 (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
 | W27 (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
+| W28 (F-07) | On a normal space and a lens: View ▸ "File name extensions" checks what the space shows now and choosing it flips Show and Hide; the View page offers Automatic, Show, and Hide, and Cancel restores. Under Automatic, Match Explorer follows Explorer's own setting (checked and unchecked, with the preset switched while the window is open), Custom hides. F2 on an item selects only the name part while extensions show. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

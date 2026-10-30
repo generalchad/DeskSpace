@@ -212,10 +212,12 @@ enum MenuId {
     KeepSorted = 67,
     /// The Sort by submenu's "Date created", after Size.
     SortByCreated = 74,
+    /// The View submenu's "File name extensions" check (W28).
+    FileExtensions = 75,
 }
 
 impl MenuId {
-    const ALL: [Self; 55] = [
+    const ALL: [Self; 56] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -271,6 +273,7 @@ impl MenuId {
         Self::ViewTiles,
         Self::ViewContent,
         Self::SortByCreated,
+        Self::FileExtensions,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

@@ -101,6 +101,14 @@ pub fn step_view(mode: ViewMode, steps: i32) -> ViewMode {
     VIEW_MODES[(current as i32 + steps).clamp(1, last as i32) as usize].0
 }
 
+/// A space's file name extension choices (W28): Explorer's own option under
+/// `Automatic`, or its own answer.
+pub const EXTENSIONS_OPTIONS: [(Extensions, &str); 3] = [
+    (Extensions::Automatic, "Automatic"),
+    (Extensions::Show, "Show"),
+    (Extensions::Hide, "Hide"),
+];
+
 /// Explorer's Sort by keys, in its order and words (D17). The Sort by menu,
 /// the View page, and the Lenses defaults page read it.
 pub const SORT_KEYS: [(SortKey, &str); 5] = [

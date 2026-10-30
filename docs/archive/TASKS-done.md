@@ -4750,3 +4750,26 @@ until I5-I6 all land, so no partial build hides the desktop.
     partial notch changes nothing and never zooms instead, since a fixed
     view never zooms. The keys read `selection.surface` at handle time,
     and the wheel takes the surface the event named.
+
+- [x] **W28. File name extensions per space (core, app).** **[needs
+  human]** After: W20, W26.
+  - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
+    `Automatic` is the default (D18). `App::shows_extensions` (W26) reads
+    it first and falls back to today's rule for `Automatic`.
+  - View ▸ "File name extensions": a check entry showing what the space
+    shows now. Choosing it sets `Show` or `Hide`. The View page offers all
+    three in a choice.
+  - Rename already selects the name without its extension when one
+    shows; check that it still does.
+  - Tests: each value under both presets; the menu check follows the
+    effective value.
+  - **[needs human]** check: Show and Hide on a normal space and a lens,
+    Automatic under Match Explorer with Explorer's setting on and off;
+    F2 selects only the name part.
+  - Done 2026-10-30. `Extensions` lives beside `SpaceView` in core
+    `view.rs`, serialized as `automatic` / `show` / `hide` and left out
+    when default, like `SortRule`. `space_view_menu` takes the effective
+    answer from `App::shows_extensions` so the check needs no system state
+    of its own; the menu id is 75 and the View-page field id 152. Rename
+    and the scene's labels flow through `shows_extensions`, so both follow
+    the choice with no further change.

@@ -5,6 +5,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::sort::SortRule;
 
+/// Whether a space's labels show filename extensions (D18, W28).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Extensions {
+    /// Today's rule: Explorer's own option on a space that mirrors
+    /// Explorer's display, else hidden.
+    #[default]
+    Automatic,
+    /// Always show them, whatever Explorer does.
+    Show,
+    /// Never show them, whatever Explorer does.
+    Hide,
+}
+
+impl Extensions {
+    /// Whether this is the default, which old files leave out.
+    fn is_default(&self) -> bool {
+        *self == Self::Automatic
+    }
+}
+
 /// A space's view settings. Every space has one; a lens is not special.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -21,6 +42,9 @@ pub struct SpaceView {
     /// Whether the space shows Explorer's status bar along its bottom edge
     /// with the item counts and view buttons (W19).
     pub status_bar: bool,
+    /// Whether the space's labels show filename extensions (W28).
+    #[serde(skip_serializing_if = "Extensions::is_default")]
+    pub extensions: Extensions,
 }
 
 impl SpaceView {
@@ -126,6 +150,25 @@ mod tests {
     }
 
     #[test]
+    fn an_extension_choice_round_trips_and_the_default_is_left_out() {
+        let default = toml::to_string(&SpaceView::default()).unwrap();
+        assert!(!default.contains("extensions"), "{default}");
+        assert_eq!(
+            toml::from_str::<SpaceView>("").unwrap(),
+            SpaceView::default(),
+            "a missing field loads as Automatic"
+        );
+        let shown = SpaceView {
+            extensions: Extensions::Show,
+            ..SpaceView::default()
+        };
+        assert_eq!(
+            toml::from_str::<SpaceView>(&toml::to_string(&shown).unwrap()).unwrap(),
+            shown
+        );
+    }
+
+    #[test]
     fn the_icon_views_have_fixed_sizes() {
         assert_eq!(ViewMode::ExtraLargeIcons.icon_px(), Some(256));
         assert_eq!(ViewMode::LargeIcons.icon_px(), Some(96));
@@ -171,6 +214,7 @@ mod tests {
             },
             keep_sorted: false,
             status_bar: true,
+            extensions: Extensions::Hide,
         };
         let next = view.with_mode(ViewMode::Details);
         assert_eq!(next.mode, ViewMode::Details);

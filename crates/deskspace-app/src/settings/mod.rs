@@ -40,8 +40,8 @@ use deskspace_core::theme::{
     TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
-    SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
+    Backdrop, BorderSource, Color, Command, Extensions, GridSpec, LabelShadow, LensTitle, Palette,
+    Preset, SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
 };
 use deskspace_platform::{
     ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
