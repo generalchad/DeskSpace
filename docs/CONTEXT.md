@@ -1336,6 +1336,11 @@ in `ui.rs`. What spans them:
   icon size. Every space keeps its size and re-flows its icons into more or
   fewer columns (scrolling when they no longer fit), as an Explorer window
   does; "Fit to contents" sizes it to its items again.
+- On a space set to one of Explorer's views, Ctrl+wheel, Ctrl+Plus, and
+  Ctrl+Minus step it through the views in the View menu's order, zooming in
+  toward the bigger ones, and stop at the ends; Ctrl+0 returns it to
+  "Settings icon size". Each step is one "Change view" undo entry, and no
+  zoom pop-up shows for it (W39).
 - Every zoom shows the zoom pop-up at the top center of the monitor under the
   pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
   icons" is 100 %), zoom out and in (one notch each), and Reset (back to

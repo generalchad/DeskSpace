@@ -98,7 +98,10 @@ help inspect the look and the desktop layer.
   wheel scrolls a space whose items do not fit, and Ctrl+wheel changes the
   icon size: under "Match Explorer's display" (the default) it resizes the
   desktop's own icons and the spaces together, as Ctrl+wheel on the desktop
-  does; under "Custom" it changes DeskSpace's icon size. A pop-up at the top
+  does; under "Custom" it changes DeskSpace's icon size. On a space showing
+  one of Explorer's views (Extra large icons through Content), Ctrl+wheel,
+  Ctrl+Plus, and Ctrl+Minus step through those views instead, and Ctrl+0
+  returns to "Settings icon size". A pop-up at the top
   of the screen shows the size as a percentage, with buttons to zoom out, zoom
   in, and reset to 100 %.
 - A new space (from any menu or the hotkey) opens on the screen you clicked

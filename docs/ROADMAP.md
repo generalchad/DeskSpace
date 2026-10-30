@@ -1227,7 +1227,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Done: lenses work end to end and phase 4 added the views, sort rules, status bar, and lens settings (M4 phases 1-4, W1-W23, 2026-10-24); on-screen checks in `TASKS.md` section V |
 | F-08 | Lens sort rules | M4 | Done: one `SortRule`, Explorer's Sort by (W14), and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
-| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22); checks pending (`TASKS.md` section V) |
+| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22), with Ctrl+wheel stepping through them (W39); checks pending (`TASKS.md` section V) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |

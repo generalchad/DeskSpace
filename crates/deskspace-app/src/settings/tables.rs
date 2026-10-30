@@ -83,6 +83,24 @@ pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
         .map(|(mode, ..)| *mode)
 }
 
+/// The view `steps` places from `mode` in the View menu's order, stopping at
+/// the ends (W39): Ctrl+wheel and Ctrl+Plus and Minus walk Explorer's views.
+/// "Settings icon size" is not on the walk — it never steps, and Ctrl+0 is
+/// the way back to it — so the caller zooms a space there as D9 says.
+pub fn step_view(mode: ViewMode, steps: i32) -> ViewMode {
+    if mode == ViewMode::Icons {
+        return mode;
+    }
+    let Some(current) = VIEW_MODES
+        .iter()
+        .position(|(candidate, ..)| *candidate == mode)
+    else {
+        return mode;
+    };
+    let last = VIEW_MODES.len() - 1;
+    VIEW_MODES[(current as i32 + steps).clamp(1, last as i32) as usize].0
+}
+
 /// Explorer's Sort by keys, in its order and words (D17). The Sort by menu,
 /// the View page, and the Lenses defaults page read it.
 pub const SORT_KEYS: [(SortKey, &str); 5] = [
@@ -449,6 +467,34 @@ mod tests {
         digits.sort_unstable();
         digits.dedup();
         assert_eq!(digits.len(), count, "one view per shortcut digit");
+    }
+
+    #[test]
+    fn a_view_step_walks_the_menu_order_and_stops_at_the_ends() {
+        use deskspace_core::ViewMode::{
+            Content, Details, ExtraLargeIcons, Icons, LargeIcons, MediumIcons,
+        };
+        assert_eq!(step_view(LargeIcons, 1), MediumIcons, "one step down");
+        assert_eq!(step_view(MediumIcons, -1), LargeIcons, "one step up");
+        assert_eq!(
+            step_view(LargeIcons, 6),
+            Content,
+            "a big wheel delta covers several steps"
+        );
+        assert_eq!(step_view(Content, 1), Content, "stops at the last view");
+        assert_eq!(
+            step_view(ExtraLargeIcons, -1),
+            ExtraLargeIcons,
+            "stops at the first"
+        );
+        assert_eq!(
+            step_view(Details, 100),
+            Content,
+            "clamped from beyond the end"
+        );
+        assert_eq!(step_view(ExtraLargeIcons, -100), ExtraLargeIcons);
+        assert_eq!(step_view(Icons, 1), Icons, "Settings icon size never steps");
+        assert_eq!(step_view(Icons, -3), Icons);
     }
 
     #[test]

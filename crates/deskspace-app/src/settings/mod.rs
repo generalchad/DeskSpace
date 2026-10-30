@@ -22,7 +22,7 @@ pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
     AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, NAME_MIN_WIDTH, SORT_KEYS, STARTUP_ORDERS,
-    STATUS_BUTTONS, VIEW_MODES, shown_details_columns, view_for_digit,
+    STATUS_BUTTONS, VIEW_MODES, shown_details_columns, step_view, view_for_digit,
     windows_animation_settings_uri,
 };
 

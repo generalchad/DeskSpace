@@ -1,9 +1,10 @@
 //! `App` zoom: Ctrl+wheel, the zoom pop-up's buttons, and the zoom keys
 //! change the icon size (ROADMAP D9), and the pop-up shows the result
-//! (ROADMAP F-57).
+//! (ROADMAP F-57). On a space set to one of Explorer's views they step its
+//! view instead, with no pop-up (W39).
 
-use deskspace_core::Backdrop;
 use deskspace_core::theme::{ICON_SIZE_DEFAULT, ICON_SIZE_RANGE, Palette, Theme};
+use deskspace_core::{Backdrop, SpaceId, SpaceView, ViewMode};
 use deskspace_platform::{
     DESKTOP_ICON_RANGE, ITEM_ICON_SIZE, Ui, ZoomAction, ZoomBar, next_desktop_icon_size,
 };
@@ -11,6 +12,7 @@ use deskspace_platform::{
 use super::effect::Effect;
 use super::{App, ICON_SIZE_WHEEL_STEP, Surface, Timer, WHEEL_DELTA};
 use crate::scene::space_style;
+use crate::settings::step_view;
 
 /// How long the zoom pop-up stays after the last zoom, unless the pointer is
 /// over it.
@@ -106,10 +108,83 @@ impl App {
         self.run(ui, effects);
     }
 
-    /// Ctrl+wheel: `delta` is the wheel's, in `WHEEL_DELTA` units.
-    pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, delta: i32) {
+    /// Ctrl+wheel: `delta` is the wheel's, in `WHEEL_DELTA` units. A space
+    /// set to one of Explorer's views steps through them instead (W39).
+    pub(super) fn adjust_icon_size(&mut self, ui: &mut Ui, surface: Surface, delta: i32) {
+        // Zooming in walks toward the bigger views, against the menu's
+        // order, as Explorer's Ctrl+wheel does.
+        if self.step_view_of(ui, self.view_step(surface, -(delta / WHEEL_DELTA))) {
+            return;
+        }
         let effects = self.wheel_zoom_effects(delta);
         self.run(ui, effects);
+    }
+
+    /// Ctrl+Plus, Ctrl+Minus, and Ctrl+0: on a space set to one of
+    /// Explorer's views they step it, and Ctrl+0 returns it to "Settings
+    /// icon size" (W39); anything else zooms as the pop-up's buttons do.
+    pub(super) fn zoom_key(&mut self, ui: &mut Ui, action: ZoomAction) {
+        if self.step_view_of(ui, self.zoom_step(self.selection.surface, action)) {
+            return;
+        }
+        self.zoom(ui, action);
+    }
+
+    /// The space on `surface` and the view `notches` wheel steps give it
+    /// (W39), when it is set to one of Explorer's views; `None` for
+    /// "Settings icon size", the desktop layer, or a gone space, which zoom
+    /// as D9 says. Pure, so tests check it without a `Ui`.
+    fn view_step(&self, surface: Surface, notches: i32) -> Option<(SpaceId, SpaceView)> {
+        let (id, view) = self.fixed_view(surface)?;
+        Some((id, view.with_mode(step_view(view.mode, notches))))
+    }
+
+    /// The view a zoom key steps the current space to (W39): Ctrl+Plus and
+    /// Ctrl+Minus walk Explorer's views, zooming in toward the bigger ones,
+    /// and Ctrl+0 returns to "Settings icon size". No current space, or one
+    /// on "Settings icon size", zooms as D9 says.
+    fn zoom_step(
+        &self,
+        surface: Option<Surface>,
+        action: ZoomAction,
+    ) -> Option<(SpaceId, SpaceView)> {
+        let (id, view) = self.fixed_view(surface?)?;
+        let mode = match action {
+            ZoomAction::In => step_view(view.mode, -1),
+            ZoomAction::Out => step_view(view.mode, 1),
+            ZoomAction::Reset => ViewMode::Icons,
+        };
+        Some((id, view.with_mode(mode)))
+    }
+
+    /// The space on `surface` when it is set to one of Explorer's views
+    /// (W39), with its view; `None` otherwise.
+    fn fixed_view(&self, surface: Surface) -> Option<(SpaceId, SpaceView)> {
+        let Surface::Space(id) = surface else {
+            return None;
+        };
+        let view = self.config.desktop.space(id)?.view();
+        (view.mode != ViewMode::Icons).then_some((id, view))
+    }
+
+    /// Applies a view step `view_step` or `zoom_step` decided (W39): one
+    /// "Change view" undo entry and no zoom pop-up. Returns whether the
+    /// space was set to one of Explorer's views, so a step already at an
+    /// end — or a partial wheel notch — does nothing rather than zooming.
+    fn step_view_of(&mut self, ui: &mut Ui, step: Option<(SpaceId, SpaceView)>) -> bool {
+        let Some((id, view)) = step else {
+            return false;
+        };
+        if self
+            .config
+            .desktop
+            .space(id)
+            .is_some_and(|space| space.view() != view)
+        {
+            let at = self.space_center(id);
+            self.set_space_view(ui, id, view, at);
+        }
+        true
     }
 
     /// Hides the pop-up once the pointer is off it. The timer repeats, so a
@@ -405,5 +480,101 @@ mod tests {
         let bar = zoom_bar(ZoomLevel::Custom(100), &theme, &palette, false);
         assert_eq!(bar.style.backdrop, Backdrop::Acrylic);
         assert_eq!(bar.tint.a, ZOOM_BAR_MIN_TINT_ALPHA);
+    }
+
+    /// An app with one space shown in `mode` (W39), and its id.
+    fn view_app(mode: ViewMode) -> (App, SpaceId) {
+        let mut app = zoom_app(Preset::Custom, ICON_SIZE_DEFAULT, None);
+        let id = app.config.desktop.next_space_id();
+        crate::fixtures::apply(
+            &mut app.config.desktop,
+            deskspace_core::Command::CreateSpace {
+                title: "Files".to_owned(),
+                at: deskspace_core::Point::ZERO,
+                size: deskspace_core::Size::new(240, 120),
+                locked: false,
+                icon: deskspace_core::SpaceIcon::None,
+                view: SpaceView::default().with_mode(mode),
+            },
+        );
+        (app, id)
+    }
+
+    #[test]
+    fn the_wheel_steps_a_fixed_view_and_stops_at_its_ends() {
+        let view = |mode| SpaceView::default().with_mode(mode);
+        let (app, id) = view_app(ViewMode::LargeIcons);
+        let surface = Surface::Space(id);
+        assert_eq!(
+            app.view_step(surface, -1),
+            Some((id, view(ViewMode::ExtraLargeIcons))),
+            "a wheel up steps toward the bigger views"
+        );
+        assert_eq!(
+            app.view_step(surface, 1),
+            Some((id, view(ViewMode::MediumIcons))),
+            "a wheel down steps toward the smaller ones"
+        );
+        assert_eq!(
+            app.view_step(surface, 0),
+            Some((id, view(ViewMode::LargeIcons))),
+            "a partial notch steps nowhere"
+        );
+        let (app, id) = view_app(ViewMode::Content);
+        assert_eq!(
+            app.view_step(Surface::Space(id), 3),
+            Some((id, view(ViewMode::Content))),
+            "a step past the last view stops there"
+        );
+        let (app, id) = view_app(ViewMode::ExtraLargeIcons);
+        assert_eq!(
+            app.view_step(Surface::Space(id), -2),
+            Some((id, view(ViewMode::ExtraLargeIcons))),
+            "a step past the first view stops there"
+        );
+    }
+
+    #[test]
+    fn a_space_without_a_fixed_view_zooms_as_before() {
+        let (app, id) = view_app(ViewMode::Icons);
+        assert_eq!(
+            app.view_step(Surface::Space(id), -1),
+            None,
+            "the default view zooms"
+        );
+        assert_eq!(app.view_step(Surface::Desktop, -1), None, "the layer");
+        assert_eq!(
+            app.view_step(Surface::Space(SpaceId(99)), -1),
+            None,
+            "a gone space"
+        );
+    }
+
+    #[test]
+    fn the_zoom_keys_step_and_ctrl_zero_returns_to_the_default_view() {
+        let view = |mode| SpaceView::default().with_mode(mode);
+        let (mut app, id) = view_app(ViewMode::Details);
+        let surface = Surface::Space(id);
+        app.selection.surface = Some(surface);
+        assert_eq!(
+            app.zoom_step(Some(surface), ZoomAction::In),
+            Some((id, view(ViewMode::List))),
+            "Ctrl+Plus steps toward the bigger views"
+        );
+        assert_eq!(
+            app.zoom_step(Some(surface), ZoomAction::Out),
+            Some((id, view(ViewMode::Tiles))),
+            "Ctrl+Minus steps toward the smaller ones"
+        );
+        assert_eq!(
+            app.zoom_step(Some(surface), ZoomAction::Reset),
+            Some((id, view(ViewMode::Icons))),
+            "Ctrl+0 returns to Settings icon size"
+        );
+        assert_eq!(
+            app.zoom_step(None, ZoomAction::In),
+            None,
+            "with no current space the key zooms"
+        );
     }
 }

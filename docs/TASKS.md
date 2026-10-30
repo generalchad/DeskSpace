@@ -949,20 +949,6 @@ interest. In phase 4 and 5 terms:
   - Tests: the menu checks the current grouping; the page fields have
     handlers.
 
-- [ ] **W39. Ctrl+wheel through the views (app).** **[needs human]**
-  After: W22.
-  - A pure `step_view(mode, steps: i32) -> ViewMode`. It walks
-    `VIEW_MODES` in menu order, stops at the ends, and returns
-    `ViewMode::Icons` unchanged (D18). `app/zoom.rs` calls it first for a
-    space whose mode is not `Icons`, and on a step dispatches
-    `SetSpaceView` and shows no pop-up. Ctrl+Plus and Ctrl+Minus step the
-    same way; Ctrl+0 sets `Icons`.
-  - Tests: steps both ways, the ends, `Icons` unchanged, a big wheel
-    delta that is more than one notch.
-  - **[needs human]** check: Ctrl+wheel on a space in Large icons walks
-    to Content and back and stops; a space on "Settings icon size" zooms
-    as before (the F13 row still passes).
-
 - [ ] **W41. Close F-40: the desktop's view modes (docs).** **[needs
   human]** After: W12.
   - Check (maintainer): on Windows 10 and 11, the desktop's View menu
@@ -2154,6 +2140,7 @@ each id is in `archive/TASKS-done.md`.
 | W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. |
 | W47 (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
 | W27 (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
+| W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

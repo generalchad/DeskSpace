@@ -214,7 +214,7 @@ impl App {
             }
             SpaceEvent::Wheel { x, y, delta, ctrl } => {
                 if ctrl {
-                    self.adjust_icon_size(ui, delta);
+                    self.adjust_icon_size(ui, surface, delta);
                 } else if let Surface::Space(id) = surface {
                     self.scroll_by(ui, id, Point::new(x, y), delta);
                 }

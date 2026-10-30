@@ -4727,3 +4727,26 @@ until I5-I6 all land, so no partial build hides the desktop.
     `apply_create_lens` does, to stay under `too_many_arguments`. The
     seed space keeps `SpaceView::default()`, as it keeps its own title
     and size. The C8 row in section V now covers the view.
+
+- [x] **W39. Ctrl+wheel through the views (app).** **[needs human]**
+  After: W22.
+  - A pure `step_view(mode, steps: i32) -> ViewMode`. It walks
+    `VIEW_MODES` in menu order, stops at the ends, and returns
+    `ViewMode::Icons` unchanged (D18). `app/zoom.rs` calls it first for a
+    space whose mode is not `Icons`, and on a step dispatches
+    `SetSpaceView` and shows no pop-up. Ctrl+Plus and Ctrl+Minus step the
+    same way; Ctrl+0 sets `Icons`.
+  - Tests: steps both ways, the ends, `Icons` unchanged, a big wheel
+    delta that is more than one notch.
+  - **[needs human]** check: Ctrl+wheel on a space in Large icons walks
+    to Content and back and stops; a space on "Settings icon size" zooms
+    as before (the F13 row still passes).
+  - Done 2026-10-30. `step_view` lives beside `view_for_digit` in
+    `settings/tables.rs`. Positive steps walk forward in menu order, so
+    zooming in — wheel up, Ctrl+Plus — runs against it, toward the bigger
+    views, as Explorer's Ctrl+wheel does; the wheel's notches are negated
+    at `adjust_icon_size`. A step goes through `set_space_view`, so it is
+    one "Change view" undo entry like the View menu's; an end-stop or a
+    partial notch changes nothing and never zooms instead, since a fixed
+    view never zooms. The keys read `selection.surface` at handle time,
+    and the wheel takes the surface the event named.
