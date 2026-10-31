@@ -235,17 +235,24 @@ impl App {
             ui.alert("Change folder", &self.storage_refusal());
             return;
         }
+        let same_folder = folder == view.path;
+        let browsed = self.is_browsed(id);
         let mut next = view;
         next.path = folder.clone();
         let title = lens_title(&next, &current, &self.profile);
-        let (applied, effects) = self.set_lens_folder(id, folder, title, at);
+        let (applied, effects) = self.set_lens_folder(id, folder.clone(), title, at);
         self.run(ui, effects);
         if applied {
             self.unavailable_lenses.remove(&id);
-            // Picking the same folder keeps the browse's root, so forget it
-            // here too: Change folder… always returns to the lens's folder.
-            self.forget_browse(id);
-            self.sync_watches(ui);
+            if same_folder && browsed {
+                // The items are the subfolder's, so Change folder… to the
+                // lens's own folder returns home as browsing up does.
+                self.show_subfolder(ui, id, folder, PathBuf::new());
+            } else {
+                // Change folder… always returns to the lens's own folder.
+                self.forget_browse(id);
+                self.sync_watches(ui);
+            }
             self.resnapshot_settings(ui, id);
         }
     }

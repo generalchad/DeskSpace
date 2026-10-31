@@ -365,12 +365,14 @@ ones a variant's doc cannot show.
 - `CreateLens { title, at, size, path, locked, view }` clamps like
   `CreateSpace` and starts the lens with a default `FolderView` whose title
   mode is `FolderName`. `SetLensFolder { id, path, title }` rebinds it, sets
-  its title text, and clears its items until the next sync; `SetLensTitle { id, title,
-  text }` sets how the title follows the folder (D17); `SetLensView { id,
-  view }` replaces its folder view; `SyncLens { id, entries }` reconciles the
-  listed items by path, keeping ids, filtering hidden entries unless the view
-  shows them, and sorting by the space's `SortRule` (natural names, so
-  `file2` comes before `file10`; folders first when asked). "Show only"
+  its title text, and clears its items until the next sync when the path
+  changes; pointing it at the folder it already shows keeps them.
+  `SetLensTitle { id, title, text }` sets how the title follows the folder
+  (D17); `SetLensView { id, view }` replaces its folder view; `SyncLens { id,
+  entries }` reconciles the listed items by path, keeping ids, filtering
+  hidden entries unless the view shows them, and sorting by the space's
+  `SortRule` (natural names, so `file2` comes before `file10`; folders first
+  when asked). "Show only"
   (`include`) keeps only files whose name matches, and "Hide" (`exclude`)
   drops any match, file or folder (D18). The lists are capped by
   `FolderView::clamped` when the config loads and in `SetLensView`.

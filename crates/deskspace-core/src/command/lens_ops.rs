@@ -46,9 +46,15 @@ impl Desktop {
             let SpaceSource::Folder(view) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
-            view.path = path;
+            // The items belong to the folder, so pointing a lens at the
+            // folder it already shows keeps them. Their watch posts no new
+            // listing for an unchanged path, so clearing would empty it for
+            // good.
+            if view.path != path {
+                view.path = path;
+                space.items.clear();
+            }
             space.title = title;
-            space.items.clear();
             CommandOutcome::Applied
         })
     }
@@ -498,6 +504,27 @@ mod tests {
         assert_eq!(space.folder_view().unwrap().path, PathBuf::from("C:/other"));
         assert_eq!(space.title(), "Other");
         assert!(space.items().is_empty());
+    }
+
+    #[test]
+    fn rebinding_a_lens_to_the_folder_it_shows_keeps_its_items() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        assert_eq!(
+            desktop.apply(
+                Command::SetLensFolder {
+                    id,
+                    path: "C:/folder".into(),
+                    title: "Folder".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.title(), "Folder", "the title still updates");
+        assert_eq!(labels(&desktop, id), ["a"], "the folder's items stay");
     }
 
     #[test]

@@ -138,7 +138,7 @@ impl App {
     /// Points lens `id` (on `root`) at `sub` below its own folder, or at its
     /// own folder when `sub` is empty. The old items go at once, and the
     /// re-pointed watch lists the new folder.
-    fn show_subfolder(&mut self, ui: &mut Ui, id: SpaceId, root: PathBuf, sub: PathBuf) {
+    pub(super) fn show_subfolder(&mut self, ui: &mut Ui, id: SpaceId, root: PathBuf, sub: PathBuf) {
         if sub.as_os_str().is_empty() {
             self.browsed.remove(&id);
         } else {

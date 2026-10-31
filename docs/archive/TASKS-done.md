@@ -4951,3 +4951,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     is grey until a key is chosen. The New spaces page has no group rows, as
     the task lists only the View and Lenses pages, though it shares the
     builder.
+
+- [x] **W49. Picking a lens's own folder keeps its items (core, app).**
+  After: W42.
+  - Why: Change folder… on the folder a lens already shows (and is not
+    browsed below) leaves it empty. `SetLensFolder` clears the items, and
+    the watch for that path is already running, so it posts no listing.
+  - Fix: `apply_set_lens_folder` keeps the items when the path is the one
+    the lens shows, since they belong to that folder. Change folder… on a
+    browsed lens still returns home by clearing the subfolder's items.
+  - Done when: on an idle lens, picking its own folder changes nothing but
+    the title; on a browsed lens, it returns home and lists the folder's
+    own items; picking another folder still empties the lens until its
+    listing arrives.
+  - Done 2026-10-31. `change_lens_folder` returns a browsed lens home
+    through `show_subfolder`, so the subfolder's items and selection go as
+    they do on Backspace. A core test covers the same-folder pick.

@@ -848,19 +848,6 @@ interest. In phase 4 and 5 terms:
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
 
-- [ ] **W49. Picking a lens's own folder keeps its items (core, app).**
-  After: W42.
-  - Why: Change folder… on the folder a lens already shows (and is not
-    browsed below) leaves it empty. `SetLensFolder` clears the items, and
-    the watch for that path is already running, so it posts no listing.
-  - Fix: `apply_set_lens_folder` keeps the items when the path is the one
-    the lens shows, since they belong to that folder. Change folder… on a
-    browsed lens still returns home by clearing the subfolder's items.
-  - Done when: on an idle lens, picking its own folder changes nothing but
-    the title; on a browsed lens, it returns home and lists the folder's
-    own items; picking another folder still empties the lens until its
-    listing arrives.
-
 ## S. Space icons (ROADMAP D16, F-62)
 
 Read D16 first, amendments included; it is the spec. Do the tasks in order,
