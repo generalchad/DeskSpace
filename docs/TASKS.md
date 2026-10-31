@@ -2069,4 +2069,9 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   agent (2026-10-31): the screen capture reads the wallpaper rather than the
   backdrop and the space, though both windows report visible at their rects.
   `shadows.ps1 -Pixels` will be affected too. Not yet understood. Found in W37.
+- `command/space_ops.rs` `apply_resize_space`: the minimum is still one icon
+  cell (`GridSpec::min_space_size`), so a Details or Content space cannot
+  shrink to one row even though its fit uses rows, and a fit at that minimum
+  can land below it. Suggested: a view-aware minimum (one cell, or one row in
+  a row view) and clamp the fitted rect to it. Found in C11, 2026-10-31.
 
