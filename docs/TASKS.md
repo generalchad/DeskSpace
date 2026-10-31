@@ -14,14 +14,12 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section W phase 5: the tasks whose "After" tasks have all landed; the
-  rest once they have;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
-decision]** and everything in section D. Phase 4 is complete; its on-screen
-checks are in section V.
+decision]** and everything in section D. Phases 4 and 5 are complete; their
+on-screen checks are in section V.
 
 ## How to work a task
 
@@ -541,10 +539,11 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
-Phases 1-4 are done: drops, pastes, shortcuts, deletes, and menus treat a
+Phases 1-5 are done: drops, pastes, shortcuts, deletes, and menus treat a
 lens as D3 says (W1-W7), and the views, sort rule, status bar, and lens
-settings are in (W9, W18-W23, ROADMAP D17). Phase 5 is W24-W43 (D18). New
-here? Read "Where to start" below before anything else in this section.
+settings are in (W9, W18-W23, ROADMAP D17). Phase 5 was W24-W49 (D18);
+W41 closed F-40, and the rest of the on-screen checks are in section V.
+New here? Read "Where to start" below before anything else in this section.
 
 ### Words used below
 
@@ -627,40 +626,10 @@ the decision inside it.
 
 ### Where to start
 
-W1-W8 and W10-W23 are done (2026-10-21; W14-W16 on 2026-10-22, W17 on
-2026-10-23, W9 and W18-W23 on 2026-10-24) and archived; their on-screen checks
-are in section V. The open work is phase 5 (W24-W43).
-
-1. Read, in this order: "How to work a task" (top of this file),
-   `ENGINEERING.md` in full, `CONTEXT.md` section 3 and the lens part of
-   section 4 ("Space"), then ROADMAP D3, D17, and, for a phase 5 task,
-   D18.
-2. Read the phase's opening rules, then the task. A phase 5 task also
-   means reading "Interleaving", "Performance", and "Safety and
-   security" under phase 5. They bind phase 4 too.
-3. Pick a task from the table below. "Open now" means nothing it waits
-   for is still open (2026-10-21). Otherwise wait until every task it
-   waits for has been ticked and archived. Those are the tasks in its
-   "After:" line, or, for W9-W23, the ones phase 4's first rule names. A
-   ticked box means a task is done; "Open now" goes stale, so trust the
-   boxes.
-4. Find the code with the file map at the top of this file. For lenses
-   the rows to know are "A lens's folder view and entries" (core), "A
-   model mutation" (`command/lens_ops.rs`), and `app/lens.rs` (watches
-   and listings), plus `app/menus.rs` for the lens menu.
-5. Before you commit, run the gates. Tick the box and move the task to
-   `archive/TASKS-done.md` in the same commit. For a **[needs human]**
-   task, add its section V row (rule 8).
-
-| Level | Tasks | Open now |
-|-------|-------|----------|
-| First task: one idea, little Win32, no threads | W26 (a pure move), W27, W29, W40 | W26 |
-| Next: a feature across core, app, and a menu or page | W28, W30, W33, W34, W35, W36, W38, W39 | W34 |
-| With a reviewer: layout, painting, threads, or file safety | W31, W32, W37 | none yet |
-| Maintainer only: an on-screen record | W41 | W41 |
-
-"With a reviewer" means: agree the plan with a reviewer before writing
-code, and have the same reviewer read the diff.
+W1-W49 are done (2026-10-21 to 2026-10-31) and archived; their on-screen
+checks are in section V. No task in this section is open. A new lens task
+starts from "How to work a task" above and the file map, and reads ROADMAP
+D3, D17, and D18 first.
 
 ### Phase 4: views, sort rules, and lens settings
 
@@ -835,18 +804,8 @@ interest. In phase 4 and 5 terms:
 
 #### Phase 5 tasks
 
-- [ ] **W41. Close F-40: the desktop's view modes (docs).** **[needs
-  human]** After: W12.
-  - Check (maintainer): on Windows 10 and 11, the desktop's View menu
-    offers only Large, Medium, and Small icons. In Small icons, are the
-    desktop's labels below or beside the icon? Record it beside
-    `display_settings.rs`'s `FVM_SMALLICON` branch.
-  - If the labels sit below, nothing changes: the default view already
-    follows the desktop's size. Close F-40 in ROADMAP. If they sit
-    beside, add a task to show a matching space as Small icons under
-    Match Explorer.
-  - Done when: the finding is recorded and F-40 is closed or has its
-    task.
+All phase 5 tasks are done and archived; their on-screen checks are in
+section V.
 
 ## S. Space icons (ROADMAP D16, F-62)
 
@@ -2021,6 +1980,7 @@ each id is in `archive/TASKS-done.md`.
 | W37, W38 (F-65) | Group by ▸ beside Sort by ▸ and the View page agree, Cancel restores, and the Lenses page's choice reaches the next new lens. Compare the group names, order, and header with Explorer on the same folder, at 100 % and 150 %, in every view; a grouped List stacks downward. Week start is Sunday: check another locale. The rule runs along the row's bottom rather than from the text as Explorer's does: judge it. A click on a header folds and opens it. Ctrl+A after folding, then Delete: the question counts only visible items; the marquee and arrows skip folded items. Dragging to rearrange is refused and an icon view's hand arrangement returns on ungrouping. A 50,000-file lens grouped by Type scrolls and hovers with no hitch. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
+| F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 
 ## Found while working
 

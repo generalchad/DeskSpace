@@ -113,9 +113,11 @@ fn view_check_boxes(view: &IShellView) -> Option<CheckBoxMode> {
     }
 }
 
-/// The desktop's icon size, only when the view shows icons. In list or details
-/// mode `GetViewModeAndIconSize` reports the small list icon, which says
-/// nothing useful about the desktop's icons.
+/// The desktop's icon size, only when the view shows icons. Explorer's
+/// desktop offers only the three icon views, and Small icons keep their
+/// labels below the icon, so the size alone describes its look. In a list
+/// or details mode `GetViewModeAndIconSize` reports the small list icon,
+/// which says nothing useful about the desktop's icons.
 fn view_icon_size(view: &IShellView) -> Option<i32> {
     let folder = view.cast::<IFolderView2>().ok()?;
     let mut mode = Default::default();

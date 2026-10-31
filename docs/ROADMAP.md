@@ -727,7 +727,7 @@ A native, lightweight, offline Windows desktop organizer that:
   - *The rest of F-40:* Explorer's desktop offers only icon views, which
     the default view already follows. A check confirms this, then F-40
     closes.
-  - Work items: `TASKS.md` section W, phase 5 (W24-W43).
+  - Work items: `TASKS.md` section W, phase 5 (W24-W49).
 
 - **D19. A lens follows its folder (2026-10-29, maintainer).** Resolves
   open question 5 and decides F-67.
@@ -792,39 +792,35 @@ update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), v0.2.3
 v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 (D8, D9).
 
-**Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
+**Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
+(lenses, phases 0-5).
 
 **In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
-F-52, and entries that wait on later milestones or design), M4 (phases 1-4
-are done, the last completing v0.3; phase 5 follows in v0.4 or a v0.3.x), and
-M5's space icons (S1-S4 are built; the title icon and the picker follow).
-Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-4) have landed since
+F-52, and entries that wait on later milestones or design), and M5's space
+icons (S1-S4 are built; the title icon and the picker follow).
+Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **Lenses, M4 phase 5** (`TASKS.md` section W, "Where to start").
-   Phases 1-4 are built (2026-10-21 to 2026-10-24); their on-screen checks
-   are in `TASKS.md` section V. Phase 4 (W8-W23, D17) completed v0.3.
-   Phase 5 (W24-W43, D18) follows, except W24 and W25: they fix code that
-   runs today and go first.
-2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
+1. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
    the icon-set library, its cache, and the signed download are built
    (S1-S4, S6-S8, S13); S5 and S9-S12 need a screen.
-3. **L1's on-screen findings** (`TASKS.md` section L): record what each
+2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-4. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
+3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
    the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
    built-but-unchecked behaviors before more work builds on them.
-5. **Release dry run on clean machines** (R12) and **code signing** (R10),
+4. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-6. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
    ready. The composition spike (T1) runs alongside.
 
-Not next: mapping Explorer's desktop view mode (the rest of F-40). DeskSpace
-now has all eight views; the check that closes F-40 is phase 5's W41.
+Not next: mapping Explorer's desktop view mode. The desktop offers only the
+three icon views, and its Small icons keep labels below, so F-40 closes with
+no mapping.
 
 ## 5. Milestones
 
@@ -904,7 +900,7 @@ Remaining:
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
 
-### M4 - Lenses (folder views)
+### M4 - Lenses (folder views)  **[done]**
 
 Goal: spaces that mirror a folder live. Each phase lands green.
 
@@ -953,12 +949,14 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Deleting a lens removes only the view; its folder and the files in it
     are never deleted or moved (D3). The delete confirmation says so.
   - Double-click to open already works through `Ui::open_path`.
-- **Phase 4 - views and kept sort rules** (decided in D17; `TASKS.md` W8-W23).
+- **Phase 4 - views and kept sort rules. [done]** Decided in D17;
+  `TASKS.md` W8-W23.
   - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
     lens's title bar.
   - Explorer's eight views and icon sizes, for every space (F-09), and
-    their Ctrl+Shift+1..8 keys. Map Explorer's `FOLDERVIEWMODE` onto these
-    views under "Match Explorer" (the rest of F-40).
+    their Ctrl+Shift+1..8 keys. Under "Match Explorer", the desktop's own
+    view needs no mapping: its View menu offers only the three icon views,
+    which the default view already follows (F-40, W41).
   - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
     shape (F-08, F-31).
   - Explorer's status bar: item and selection counts, the Details and
@@ -967,17 +965,18 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     custom text.
   - A View page for every space, a Lens page for each lens, and a Global
     Lenses page with defaults (F-17).
-- **Phase 5 - extras, after v0.3** (decided in D18; `TASKS.md` W24-W43).
+- **Phase 5 - extras, after v0.3. [done]** Decided in D18;
+  `TASKS.md` W24-W49.
   - Two fixes first: a listing carries the folder it read, and the
     storage check moves off the UI thread.
   - Browse into subfolders inside the lens, with a back control (F-64).
-    Until then, subfolders open in Explorer.
   - Group by (F-65); Details columns: choose, resize, reorder, and Date
     created (F-63).
   - Lens filters (part of F-22), per-space file name extensions, compact
     view, the path tip, Ctrl+wheel through the views, and the default
     view for new spaces.
-  - Close F-40 after its desktop check.
+  - F-40 closed: the desktop offers only the three icon views, so no
+    view-mode mapping is needed (W41).
 
 Exit criteria: creating, renaming, or deleting a file in a lens's folder
 updates the lens within about 150 ms, and the sort and view settings persist.
@@ -1258,7 +1257,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
-| F-40 | Explorer icon size and view mode | M2, M4 | Icon size done; view mode waits for M4 phase 4 views, then closes after a desktop check (D18, `TASKS.md` W41) |
+| F-40 | Explorer icon size and view mode | M2, M4 | Done: icon size follows the desktop, whose View menu offers only Large, Medium, and Small icons, with labels below in Small icons (Windows 11, 2026-10-31; Windows 10 unverified, `TASKS.md` section V), so no view-mode mapping is needed (D18, W41) |
 | F-41 | Independent item check boxes | M2 | Done; check pending |
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |

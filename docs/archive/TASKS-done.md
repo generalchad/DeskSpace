@@ -4967,3 +4967,23 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done 2026-10-31. `change_lens_folder` returns a browsed lens home
     through `show_subfolder`, so the subfolder's items and selection go as
     they do on Backspace. A core test covers the same-folder pick.
+
+- [x] **W41. Close F-40: the desktop's view modes (docs).** **[needs
+  human]** After: W12.
+  - Check (maintainer): on Windows 10 and 11, the desktop's View menu
+    offers only Large, Medium, and Small icons. In Small icons, are the
+    desktop's labels below or beside the icon? Record it beside
+    `display_settings.rs`'s `FVM_SMALLICON` branch.
+  - If the labels sit below, nothing changes: the default view already
+    follows the desktop's size. Close F-40 in ROADMAP. If they sit
+    beside, add a task to show a matching space as Small icons under
+    Match Explorer.
+  - Done when: the finding is recorded and F-40 is closed or has its
+    task.
+  - Done 2026-10-31. Windows 11 (maintainer): the desktop's View menu lists
+    Large icons, Medium icons, and Small icons, plus Auto arrange icons,
+    Align icons to grid, and Show desktop icons; it offers no List,
+    Details, Tiles, or Content. Small icons keep their labels below the
+    icon, so the default view already matches and F-40 closes with no
+    view-mode mapping. No Windows 10 machine was available; section V
+    keeps that half of the check open.
