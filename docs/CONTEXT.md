@@ -1382,7 +1382,7 @@ in `ui.rs`. What spans them:
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
   (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
   Fold/Unfold, Rename, Lock position, Fit to contents (unlocked spaces that
-  are resized or in a view that places items by order); New shortcut…, Add files…, Appearance…, View…, Sort by…; Delete space
+  are resized or in a view that places items by order); New shortcut…, Add files…, Appearance…, View…, Sort by…, Group by…; Delete space
   (asks first unless the space is empty); New space, New lens…; Settings…,
   Hide/Show spaces, Exit DeskSpace.
 - A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
@@ -1581,7 +1581,9 @@ in `ui.rs`. What spans them:
 - Dragging a Details header's divider resizes a column, and the divider right
   of Name resizes the next column. Esc during the drag, or losing the mouse,
   puts the width back. It is one "Resize column" undo entry on release.
-- A click on a group's header folds or opens the group (session only).
+- "Group by" (in a space's menu and on the View page) is Explorer's: (None),
+  the keys, and the direction. A click on a group's header folds or opens the
+  group (session only).
 - Dragging a Details header moves its column, with a mark where it would land
   (one "Reorder columns" undo entry on release; Esc cancels). Name stays first.
   A click that never becomes a drag sorts, on release.

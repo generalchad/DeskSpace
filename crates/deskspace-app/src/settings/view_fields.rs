@@ -5,7 +5,7 @@ use deskspace_core::SpaceView;
 use deskspace_platform::Field;
 
 use super::ids::field;
-use super::tables::{SORT_KEYS, VIEW_MODES, VIEW_ORDERS};
+use super::tables::{SORT_KEYS, VIEW_MODES, VIEW_ORDERS, group_choice, group_labels};
 use super::{index_of, labels};
 
 /// The field ids one page uses for the shared view and sort controls. The
@@ -20,6 +20,9 @@ pub(super) struct ViewIds {
     pub(super) order: u32,
     pub(super) folders_first: u32,
     pub(super) keep_sorted: Option<u32>,
+    /// The Group by choice and its direction. `None` on the New spaces page,
+    /// which W38 leaves out.
+    pub(super) group: Option<(u32, u32)>,
 }
 
 pub(super) const VIEW_PAGE_IDS: ViewIds = ViewIds {
@@ -31,6 +34,7 @@ pub(super) const VIEW_PAGE_IDS: ViewIds = ViewIds {
     order: field::VIEW_ORDER,
     folders_first: field::VIEW_FOLDERS_FIRST,
     keep_sorted: Some(field::VIEW_KEEP_SORTED),
+    group: Some((field::VIEW_GROUP, field::VIEW_GROUP_ORDER)),
 };
 
 pub(super) const LENSES_PAGE_IDS: ViewIds = ViewIds {
@@ -42,6 +46,7 @@ pub(super) const LENSES_PAGE_IDS: ViewIds = ViewIds {
     order: field::LENSES_ORDER,
     folders_first: field::LENSES_FOLDERS_FIRST,
     keep_sorted: None,
+    group: Some((field::LENSES_GROUP, field::LENSES_GROUP_ORDER)),
 };
 
 pub(super) const NEW_SPACES_PAGE_IDS: ViewIds = ViewIds {
@@ -53,6 +58,7 @@ pub(super) const NEW_SPACES_PAGE_IDS: ViewIds = ViewIds {
     order: field::NEW_SPACE_ORDER,
     folders_first: field::NEW_SPACE_FOLDERS_FIRST,
     keep_sorted: Some(field::NEW_SPACE_KEEP_SORTED),
+    group: None,
 };
 
 /// The view and sort controls shared by the View page, the Lenses defaults
@@ -85,6 +91,23 @@ pub(super) fn view_fields(view: &SpaceView, ids: &ViewIds, lens: bool) -> Vec<Fi
     ];
     if let Some(id) = ids.keep_sorted {
         fields.push(Field::toggle(id, "Keep sorted", view.keep_sorted || lens).enabled(!lens));
+    }
+    if let Some((group, order)) = ids.group {
+        fields.push(Field::choice(
+            group,
+            "Group by",
+            &group_labels(),
+            group_choice(view.group),
+        ));
+        fields.push(
+            Field::choice(
+                order,
+                "Group order",
+                &VIEW_ORDERS,
+                usize::from(view.group.is_some_and(|group| group.descending)),
+            )
+            .enabled(view.group.is_some()),
+        );
     }
     fields
 }

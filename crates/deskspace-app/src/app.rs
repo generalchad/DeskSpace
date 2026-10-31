@@ -223,10 +223,19 @@ enum MenuId {
     ColumnCreated = 80,
     /// The View submenu's "Compact view" check.
     CompactView = 81,
+    /// The Group by submenu: no grouping, the keys, and the direction.
+    GroupNone = 82,
+    GroupByName = 83,
+    GroupByModified = 84,
+    GroupByKind = 85,
+    GroupBySize = 86,
+    GroupByCreated = 87,
+    GroupAscending = 88,
+    GroupDescending = 89,
 }
 
 impl MenuId {
-    const ALL: [Self; 62] = [
+    const ALL: [Self; 70] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -289,6 +298,14 @@ impl MenuId {
         Self::ColumnSize,
         Self::ColumnCreated,
         Self::CompactView,
+        Self::GroupNone,
+        Self::GroupByName,
+        Self::GroupByModified,
+        Self::GroupByKind,
+        Self::GroupBySize,
+        Self::GroupByCreated,
+        Self::GroupAscending,
+        Self::GroupDescending,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -351,6 +368,15 @@ const SORT_MENU_IDS: [(MenuId, SortKey); 5] = [
     (MenuId::SortByKind, SortKey::Kind),
     (MenuId::SortBySize, SortKey::Size),
     (MenuId::SortByCreated, SortKey::Created),
+];
+
+/// The Group by submenu's keys, in `SORT_KEYS`'s order.
+const GROUP_MENU_IDS: [(MenuId, SortKey); 5] = [
+    (MenuId::GroupByName, SortKey::Name),
+    (MenuId::GroupByModified, SortKey::Modified),
+    (MenuId::GroupByKind, SortKey::Kind),
+    (MenuId::GroupBySize, SortKey::Size),
+    (MenuId::GroupByCreated, SortKey::Created),
 ];
 
 /// The Details header menu's entries, in the order it lists them.

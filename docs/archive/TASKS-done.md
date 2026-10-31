@@ -4939,3 +4939,15 @@ until I5-I6 all land, so no partial build hides the desktop.
     bottom of the row. Release build, 2026-10-31, 50,000 items, on the UI thread:
     grouping 1.9-4.6 ms by key, and the digest each repaint pays about 1.9 ms
     (SipHash took 4.8 ms, so it is a word-at-a-time hash).
+
+- [x] **W38. Group by: the menu and the settings (app).** After: W37,
+  W23.
+  - Group by ▸ beside Sort by ▸, as Explorer: (None), then the keys from
+    `SORT_KEYS`, then Ascending and Descending. Rows on the View page
+    and the Lenses defaults page, through the shared builder.
+  - Tests: the menu checks the current grouping; the page fields have
+    handlers.
+  - Done 2026-10-31. Menu ids 82-89; field ids 154-157. The direction's field
+    is grey until a key is chosen. The New spaces page has no group rows, as
+    the task lists only the View and Lenses pages, though it shares the
+    builder.

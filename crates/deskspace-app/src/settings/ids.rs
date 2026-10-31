@@ -143,6 +143,8 @@ pub mod field {
     pub const VIEW_KEEP_SORTED: u32 = 126;
     pub const VIEW_EXTENSIONS: u32 = 152;
     pub const VIEW_COMPACT: u32 = 153;
+    pub const VIEW_GROUP: u32 = 154;
+    pub const VIEW_GROUP_ORDER: u32 = 155;
 
     pub const LENSES_VIEW_HEADING: u32 = 127;
     pub const LENSES_VIEW_MODE: u32 = 128;
@@ -154,6 +156,8 @@ pub mod field {
     pub const LENSES_SHOW_HIDDEN: u32 = 134;
     pub const LENSES_TITLE_HEADING: u32 = 135;
     pub const LENSES_TITLE_MODE: u32 = 136;
+    pub const LENSES_GROUP: u32 = 156;
+    pub const LENSES_GROUP_ORDER: u32 = 157;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

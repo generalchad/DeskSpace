@@ -9,6 +9,7 @@ use super::tables::{
     HOTKEY_BINDINGS, ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES,
     MODES, NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
+use super::tables::{group_from_choice, group_with_order};
 use super::*;
 use super::{FieldEffect, scope_space};
 use deskspace_core::source::{LensTitle, lens_title};
@@ -304,6 +305,18 @@ pub fn apply_field(
                 config.window.new_lens.view.sort.folders_first = on;
                 FieldEffect::Pending
             }
+            (field::LENSES_GROUP, FieldValue::Choice(index)) => {
+                let group = &mut config.window.new_lens.view.group;
+                if let Some(next) = group_from_choice(index, *group) {
+                    *group = next;
+                }
+                FieldEffect::Pending
+            }
+            (field::LENSES_GROUP_ORDER, FieldValue::Choice(index)) => {
+                let group = &mut config.window.new_lens.view.group;
+                *group = group_with_order(*group, index);
+                FieldEffect::Pending
+            }
             (field::LENSES_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
                 config.window.new_lens.show_hidden = on;
                 FieldEffect::Pending
@@ -493,6 +506,12 @@ fn view_edit(
         }
         (field::VIEW_STATUS_BAR, FieldValue::Toggle(on)) => view.status_bar = *on,
         (field::VIEW_COMPACT, FieldValue::Toggle(on)) => view.compact = *on,
+        (field::VIEW_GROUP, FieldValue::Choice(index)) => {
+            view.group = group_from_choice(*index, view.group)?;
+        }
+        (field::VIEW_GROUP_ORDER, FieldValue::Choice(index)) => {
+            view.group = group_with_order(view.group, *index);
+        }
         (field::VIEW_EXTENSIONS, FieldValue::Choice(index)) => {
             view.extensions = EXTENSIONS_OPTIONS.get(*index)?.0;
         }

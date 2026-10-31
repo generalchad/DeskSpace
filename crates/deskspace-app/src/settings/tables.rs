@@ -119,6 +119,45 @@ pub const SORT_KEYS: [(SortKey, &str); 5] = [
     (SortKey::Created, "Date created"),
 ];
 
+/// The Group by menu's and pages' first choice.
+pub const GROUP_NONE: &str = "(None)";
+
+/// The Group by choices the pages offer: (None), then the keys.
+pub(super) fn group_labels() -> Vec<&'static str> {
+    std::iter::once(GROUP_NONE)
+        .chain(SORT_KEYS.iter().map(|(_, label)| *label))
+        .collect()
+}
+
+/// The page choice showing `group`.
+pub(super) fn group_choice(group: Option<GroupBy>) -> usize {
+    group
+        .and_then(|group| SORT_KEYS.iter().position(|(key, _)| *key == group.key))
+        .map_or(0, |index| index + 1)
+}
+
+/// The grouping a page's choice `index` makes from `current`, which gives it
+/// its direction. `None` for a choice past the list.
+pub(super) fn group_from_choice(index: usize, current: Option<GroupBy>) -> Option<Option<GroupBy>> {
+    if index == 0 {
+        return Some(None);
+    }
+    let (key, _) = SORT_KEYS.get(index - 1)?;
+    Some(Some(GroupBy {
+        key: *key,
+        descending: current.is_some_and(|group| group.descending),
+    }))
+}
+
+/// `current` with the direction a page's choice `index` names; no grouping stays
+/// none.
+pub(super) fn group_with_order(current: Option<GroupBy>, index: usize) -> Option<GroupBy> {
+    current.map(|group| GroupBy {
+        descending: index == 1,
+        ..group
+    })
+}
+
 /// Explorer's Details columns (W18): which column it is, its header label,
 /// the sort key a click on the header uses, its default width at 96 DPI, and
 /// how its values align. A space's `SpaceView.columns` says which it shows and
@@ -426,6 +465,27 @@ pub fn windows_animation_settings_uri(build: Option<u32>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_choice_round_trips_through_every_key() {
+        assert_eq!(group_labels().len(), SORT_KEYS.len() + 1);
+        assert_eq!(group_choice(None), 0);
+        assert_eq!(group_from_choice(0, None), Some(None));
+        for index in 1..=SORT_KEYS.len() {
+            let group = group_from_choice(index, None).unwrap();
+            assert_eq!(group_choice(group), index);
+        }
+        assert_eq!(group_from_choice(SORT_KEYS.len() + 1, None), None);
+    }
+
+    #[test]
+    fn a_key_keeps_the_direction_and_a_direction_needs_a_key() {
+        let down = group_with_order(group_from_choice(1, None).unwrap(), 1);
+        assert!(down.unwrap().descending);
+        assert!(group_from_choice(2, down).unwrap().unwrap().descending);
+        assert_eq!(group_with_order(None, 1), None);
+        assert_eq!(group_from_choice(0, down), Some(None));
+    }
 
     fn setup() -> (Config, Session) {
         let config = Config::new();

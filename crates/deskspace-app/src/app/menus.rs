@@ -7,8 +7,8 @@ use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
 use deskspace_core::source::{FolderView, lens_title};
 use deskspace_core::{
-    Column, Command, Extensions, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook, SpaceView,
-    Theme,
+    Column, Command, Extensions, GroupBy, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook,
+    SpaceView, Theme,
 };
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
@@ -17,10 +17,11 @@ use deskspace_update::InstallMode;
 
 use super::files::ShortcutSource;
 use super::{
-    App, COLUMN_MENU_IDS, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES, NewShortcut,
-    OPACITY_PRESETS, SORT_MENU_IDS, SpaceColor, Surface, VIEW_PRESETS, delete_needs_confirmation,
+    App, COLUMN_MENU_IDS, GROUP_MENU_IDS, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES,
+    NewShortcut, OPACITY_PRESETS, SORT_MENU_IDS, SpaceColor, Surface, VIEW_PRESETS,
+    delete_needs_confirmation,
 };
-use crate::settings::{DETAILS_COLUMNS, SORT_KEYS, VIEW_MODES};
+use crate::settings::{DETAILS_COLUMNS, GROUP_NONE, SORT_KEYS, VIEW_MODES};
 
 impl App {
     /// Opens the context menu for the focused item, or for the current space
@@ -418,6 +419,7 @@ impl App {
             self.shows_extensions(Surface::Space(space.id)),
         ));
         entries.push(space_sort_menu(space.view(), space.folder_view()));
+        entries.push(space_group_menu(space.view()));
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
         let delete = if delete_needs_confirmation(space) {
@@ -478,6 +480,8 @@ impl App {
                         Extensions::Show
                     };
                     let next = SpaceView { extensions, ..view };
+                    self.set_space_view(ui, id, next, at);
+                } else if let Some(next) = group_after(&view, choice) {
                     self.set_space_view(ui, id, next, at);
                 } else if let Some(next) = view_after(&view, choice) {
                     self.set_space_view(ui, id, next, at);
@@ -982,6 +986,60 @@ fn space_sort_menu(view: &SpaceView, lens: Option<&FolderView>) -> MenuEntry {
     MenuEntry::submenu("Sort by", entries)
 }
 
+/// The "Group by" submenu, as Explorer's: (None), the keys, then the direction,
+/// which means nothing until a key is chosen.
+fn space_group_menu(view: &SpaceView) -> MenuEntry {
+    let group = view.group;
+    let mut entries = vec![menu_item(MenuId::GroupNone, GROUP_NONE).checked(group.is_none())];
+    entries.extend(GROUP_MENU_IDS.iter().map(|(id, key)| {
+        let label = SORT_KEYS
+            .iter()
+            .find(|(row, _)| row == key)
+            .map_or("", |(_, label)| *label);
+        menu_item(*id, label).checked(group.is_some_and(|group| group.key == *key))
+    }));
+    entries.extend([
+        MenuEntry::Separator,
+        menu_item(MenuId::GroupAscending, "Ascending")
+            .checked(group.is_some_and(|group| !group.descending))
+            .enabled(group.is_some()),
+        menu_item(MenuId::GroupDescending, "Descending")
+            .checked(group.is_some_and(|group| group.descending))
+            .enabled(group.is_some()),
+    ]);
+    MenuEntry::submenu("Group by", entries)
+}
+
+/// The view a Group by choice leaves, or `None` when `choice` is not one. A key
+/// keeps the direction, and a direction needs a key.
+fn group_after(view: &SpaceView, choice: MenuId) -> Option<SpaceView> {
+    let with_group = |group| SpaceView {
+        group,
+        ..view.clone()
+    };
+    if let Some((_, key)) = GROUP_MENU_IDS.iter().find(|(id, _)| *id == choice) {
+        let descending = view.group.is_some_and(|group| group.descending);
+        return Some(with_group(Some(GroupBy {
+            key: *key,
+            descending,
+        })));
+    }
+    let direction = |descending| {
+        view.group.map(|group| {
+            with_group(Some(GroupBy {
+                descending,
+                ..group
+            }))
+        })
+    };
+    match choice {
+        MenuId::GroupNone => Some(with_group(None)),
+        MenuId::GroupAscending => direction(false),
+        MenuId::GroupDescending => direction(true),
+        _ => None,
+    }
+}
+
 /// The view a Keep sorted choice leaves, or `None` when it is not that
 /// choice. A lens is always kept sorted, so its entry is greyed and changes
 /// nothing (D17).
@@ -1404,6 +1462,84 @@ mod tests {
         assert!(!next.keep_sorted);
         assert!(next.status_bar);
         assert_eq!(view_after(&view, MenuId::KeepSorted), None);
+    }
+
+    #[test]
+    fn the_group_menu_checks_the_current_grouping() {
+        let entries = |view: &SpaceView| match space_group_menu(view) {
+            MenuEntry::Submenu { entries, .. } => entries,
+            _ => panic!("expected a submenu"),
+        };
+        let view = SpaceView::default();
+        let checked = |entries: &[MenuEntry]| -> Vec<MenuId> {
+            item_checks(entries)
+                .into_iter()
+                .filter(|(_, checked)| *checked)
+                .filter_map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(checked(&entries(&view)), [MenuId::GroupNone]);
+        assert_eq!(
+            item_enabled(&entries(&view), MenuId::GroupAscending),
+            Some(false),
+            "no direction without a key"
+        );
+
+        let grouped = group_after(&view, MenuId::GroupBySize).unwrap();
+        assert_eq!(
+            checked(&entries(&grouped)),
+            [MenuId::GroupBySize, MenuId::GroupAscending]
+        );
+        assert_eq!(
+            item_enabled(&entries(&grouped), MenuId::GroupDescending),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn a_group_choice_keeps_the_rest_of_the_view() {
+        use deskspace_core::SortKey;
+
+        let view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        assert_eq!(group_after(&view, MenuId::Fold), None);
+        assert_eq!(
+            group_after(&view, MenuId::GroupDescending),
+            None,
+            "a direction needs a key"
+        );
+        let by_size = group_after(&view, MenuId::GroupBySize).unwrap();
+        assert!(by_size.status_bar);
+        let down = group_after(&by_size, MenuId::GroupDescending).unwrap();
+        assert_eq!(
+            down.group,
+            Some(GroupBy {
+                key: SortKey::Size,
+                descending: true
+            })
+        );
+        let by_name = group_after(&down, MenuId::GroupByName).unwrap();
+        assert_eq!(
+            by_name.group,
+            Some(GroupBy {
+                key: SortKey::Name,
+                descending: true
+            }),
+            "a key keeps the direction"
+        );
+        assert_eq!(
+            group_after(&by_name, MenuId::GroupNone).unwrap().group,
+            None
+        );
+    }
+
+    #[test]
+    fn every_sort_key_can_group() {
+        for (key, _) in SORT_KEYS {
+            assert!(GROUP_MENU_IDS.iter().any(|(_, row)| *row == key), "{key:?}");
+        }
     }
 
     #[test]
