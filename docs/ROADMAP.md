@@ -762,6 +762,17 @@ A native, lightweight, offline Windows desktop organizer that:
   setting, "Show measuring guides", lives on the General page beside
   "Snap resized spaces".
 
+- **D22. Resizing follows the view's grid (2026-10-31, maintainer).**
+  Resolves the rest of F-03's whole-cell fit for the views added in D17.
+  - "Snap resized spaces to whole columns and rows" keeps its name, field
+    (`GridSpec::fit_to_grid`), and default, but fits to the current view's
+    cells: icon cells for the icon views; Small icons, List, and Tiles' own
+    cells; Details and Content rows only, with the width left free at the
+    `snap` step. Details' header and a space's status bar count as chrome.
+  - The resize dead zone is half an item's shorter side, never less than
+    half `snap`, so a wide List cell does not make the grab sluggish.
+  - Work items: `TASKS.md` C11.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in

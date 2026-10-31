@@ -507,6 +507,26 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
+- [ ] **C11. Resize a space to its view's rows and columns (core, app).**
+  Decided by the maintainer, 2026-10-31 (ROADMAP D22).
+  - Why: `GridSpec::fit_to_grid` rounds every resize to the icon grid, which
+    Details, List, Tiles, and Content do not use, so their rows can still be
+    cut in half. The height fit ignores the status bar, and the resize dead
+    zone is half an icon cell in every view.
+  - Fix: `Command::ResizeSpace` carries the space's `ViewMetrics`, as
+    `FitToContents` does, so core can fit against the cells the space is
+    drawn with. With `fit_to_grid` on, fit the dragged axes to that view's
+    cells; Details and Content fit height only (`ViewMode::rows_fill_width`)
+    and keep the width at the `snap` step. Include the status bar and
+    Details' header in the height fit. Make the dead zone half an item's
+    shorter side, never less than half `snap`.
+  - Done when: resizing each view lands on whole rows and columns of that
+    view; Details and Content leave the width free; a space's status bar is
+    never clipped by the height fit; icon views keep today's result;
+    `fit_to_grid` off still keeps the dragged size. Tests cover each view
+    family, the status bar, and the dead zone. `CONTEXT.md` section 4 and
+    the F-03 row say the new rule.
+
 ## U. Undo and redo (ROADMAP D11, M2)
 
 Read D11 first; it is the spec. Do the tasks in order, one commit each. The
