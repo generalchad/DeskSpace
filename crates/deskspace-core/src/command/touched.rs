@@ -53,7 +53,7 @@ impl Desktop {
             | Command::MoveSpace { id, .. }
             | Command::SetSpaceRect { id, .. }
             | Command::ResizeSpace { id, .. }
-            | Command::FitToContents { id }
+            | Command::FitToContents { id, .. }
             | Command::KeepSize { id }
             | Command::Reflow { id }
             | Command::SortSpace { id, .. }

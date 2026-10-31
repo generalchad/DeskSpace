@@ -285,10 +285,7 @@ impl App {
             }
             (ButtonAction::FitToContents, Some(id)) => {
                 let at = self.space_center(id);
-                if self
-                    .commit(ui, Command::FitToContents { id }, at)
-                    .is_applied()
-                {
+                if self.commit(ui, self.fit_command(id), at).is_applied() {
                     self.view_cache.set_scroll(id, 0);
                 }
                 self.refresh_settings(ui);
@@ -503,7 +500,7 @@ impl App {
                 .space(*id)
                 .is_some_and(|space| space.user_sized() && space.rect() == *rect);
             if still_pinned {
-                self.commit(ui, Command::FitToContents { id: *id }, rect.center());
+                self.commit(ui, self.fit_command(*id), rect.center());
             }
         }
     }

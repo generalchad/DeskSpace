@@ -207,7 +207,7 @@ pub fn build_form(
     // the space menu's "Fit to contents".
     pages[page::LAYOUT].fields.push(
         Field::button(field::FIT_CONTENTS, "", "Fit to contents")
-            .enabled(space.is_some_and(|space| space.user_sized() && !space.locked())),
+            .enabled(space.is_some_and(Space::can_fit)),
     );
     pages.push(general_page(config));
     pages.push(new_spaces_page(config));

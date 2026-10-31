@@ -186,12 +186,7 @@ impl App {
         id: SpaceId,
         at: Point,
     ) -> Vec<super::effect::Effect> {
-        let effects = self.record_effects(
-            "Fit to contents",
-            Command::FitToContents { id },
-            at,
-            Vec::new(),
-        );
+        let effects = self.record_effects("Fit to contents", self.fit_command(id), at, Vec::new());
         if !effects.is_empty() {
             self.view_cache.set_scroll(id, 0);
         }
@@ -401,7 +396,7 @@ impl App {
             menu_item(MenuId::Rename, "Rename"),
             menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
         ];
-        if space.user_sized() && !space.locked() {
+        if space.can_fit() {
             entries.push(menu_item(MenuId::Fit, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);

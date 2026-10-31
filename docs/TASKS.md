@@ -928,21 +928,6 @@ interest. In phase 4 and 5 terms:
   - Done when: the finding is recorded and F-40 is closed or has its
     task.
 
-- [ ] **W48. Fit to contents in the views that place by order (core,
-  app).** **[needs human]**
-  - Why: on a space in Small icons or List, Fit to contents changes
-    nothing, because those views keep the space's size. Decided by the
-    maintainer, 2026-10-29: fit the content extent.
-  - Small icons and the other row-placed views keep the width and set the
-    height to fit the rows; List keeps the height and sets the width to
-    fit the columns. The result stays within the work area, as for the
-    icon views. Compute the size from `ViewLayout`'s extent in a pure
-    function.
-  - Tests: Small icons with a few items shrinks the height, with many it
-    stops at the work area; List grows the width to its columns.
-  - **[needs human]** check: Fit to contents on a space in Small icons,
-    List, and Details hugs its items.
-
 ## S. Space icons (ROADMAP D16, F-62)
 
 Read D16 first, amendments included; it is the spec. Do the tasks in order,
@@ -2109,6 +2094,7 @@ each id is in `archive/TASKS-done.md`.
 | W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
 | W28 (F-07) | On a normal space and a lens: View ▸ "File name extensions" checks what the space shows now and choosing it flips Show and Hide; the View page offers Automatic, Show, and Hide, and Cancel restores. Under Automatic, Match Explorer follows Explorer's own setting (checked and unchecked, with the preset switched while the window is open), Custom hides. F2 on an item selects only the name part while extensions show. |
 | W30 (F-63) | On a normal space and a lens in Details, at 100 % and 150 %: right-click the header. Each column you check or uncheck shows or goes at once, its cells line up under its header, and Name is on and grey. A column brought back lands last. The choice survives a restart, and Ctrl+Z puts it back ("Undo Choose columns"). Right-clicking the header leaves the selection alone, including with rows scrolled under it. Hide the sorted column: the items keep their order and no arrow shows. With every column on in a narrow space, note how the right-hand columns are cut off (no sideways scroll yet). |
+| W48 (D17) | Fill a space, then in Small icons, Tiles, Details, Content, and List, at 100 % and 150 %, choose Fit to contents from the menu and from the Layout page: the space hugs its items with no scroll bar and no clipped last row (List keeps its height and takes the width; the rest keep their width), with the status bar on and off. With more items than fit, it stops at the work area and scrolls. Ctrl+Z restores the size. A very short result is allowed to be shorter than a resize would allow: note whether that looks wrong. Add items and Fit again: it is still offered. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

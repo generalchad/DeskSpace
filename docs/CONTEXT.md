@@ -337,7 +337,9 @@ ones a variant's doc cannot show.
 - `ResizeSpace` also rejects folded spaces and an empty edge set, marks
   the space user-sized, and (with `fit_to_grid`) fits to whole columns and
   rows. `FitToContents` clears the user size, so the space grows to fit its
-  items; `KeepSize` sets it without moving the rect. The app sends `KeepSize`
+  items. A view that places items by order keeps its size otherwise, so the
+  command sizes it once from the `ViewMetrics` it carries (`fit_size`), and
+  `Space::can_fit` keeps the choice on offer. `KeepSize` sets it without moving the rect. The app sends `KeepSize`
   before re-flowing a self-sizing space whose icon factor changed
   (`App::keep_size_on_zoom`: a zoom, the icon-size setting, a preset, or
   Explorer's own size, never a DPI move), so an icon-size change keeps every
@@ -1366,8 +1368,8 @@ in `ui.rs`. What spans them:
 
 - Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
   (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
-  Fold/Unfold, Rename, Lock position, Fit to contents (resized, unlocked spaces
-  only); New shortcut…, Add files…, Appearance…, View…, Sort by…; Delete space
+  Fold/Unfold, Rename, Lock position, Fit to contents (unlocked spaces that
+  are resized or in a view that places items by order); New shortcut…, Add files…, Appearance…, View…, Sort by…; Delete space
   (asks first unless the space is empty); New space, New lens…; Settings…,
   Hide/Show spaces, Exit DeskSpace.
 - A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a

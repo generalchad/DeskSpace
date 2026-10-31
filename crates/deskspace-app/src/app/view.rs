@@ -806,6 +806,19 @@ impl App {
         self.refresh_space(ui, id);
     }
 
+    /// The command that fits space `id` to its contents, with the cells it is
+    /// drawn with.
+    pub(super) fn fit_command(&self, id: SpaceId) -> Command {
+        Command::FitToContents {
+            id,
+            metrics: ViewMetrics::for_view(
+                self.view_mode(id),
+                self.layout_for(id),
+                space_dpi(id.0),
+            ),
+        }
+    }
+
     /// Applies a view choice to space `id` as one undo entry named `label`,
     /// reflows that space alone, and keeps an open settings window's
     /// snapshot. Shared by the View menu, the Ctrl+Shift keys, and the status

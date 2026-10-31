@@ -4800,3 +4800,28 @@ until I5-I6 all land, so no partial build hides the desktop.
     selection, since a row can be scrolled under it. A scratch-config run
     of the real app drove the menu by posted messages: a hostile list
     loaded, the checks and the grey Name were right, and a choice saved.
+
+- [x] **W48. Fit to contents in the views that place by order (core,
+  app).** **[needs human]**
+  - Why: on a space in Small icons or List, Fit to contents changes
+    nothing, because those views keep the space's size. Decided by the
+    maintainer, 2026-10-29: fit the content extent.
+  - Small icons and the other row-placed views keep the width and set the
+    height to fit the rows; List keeps the height and sets the width to
+    fit the columns. The result stays within the work area, as for the
+    icon views. Compute the size from `ViewLayout`'s extent in a pure
+    function.
+  - Tests: Small icons with a few items shrinks the height, with many it
+    stops at the work area; List grows the width to its columns.
+  - **[needs human]** check: Fit to contents on a space in Small icons,
+    List, and Details hugs its items.
+  - Done 2026-10-31. `FitToContents` carries the `ViewMetrics` the space is
+    drawn with, since core cannot know the display's scale, and `fit_size`
+    in `view_layout.rs` is the pure function. It sizes once: `arrange_space`
+    still leaves an order-placed view's size alone. So the menu and the
+    Layout page's button also offer the fit on a space the user has not
+    sized (`Space::can_fit`), or a fit could not be repeated after adding
+    items. An empty space keeps room for one line, and a folded one fits as
+    it would show. A scratch-config run of the real app fitted Small icons,
+    Details, and List through the menu: width kept and height shrunk, or
+    the reverse for List.

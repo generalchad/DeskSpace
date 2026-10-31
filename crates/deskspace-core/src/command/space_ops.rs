@@ -15,6 +15,7 @@ use crate::sort::SortRule;
 use crate::source::{LensTitle, SpaceSource};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
+use crate::view_layout::{ViewMetrics, fit_size};
 
 impl Desktop {
     pub(super) fn apply_create_space(
@@ -189,6 +190,7 @@ impl Desktop {
     pub(super) fn apply_fit_to_contents(
         &mut self,
         id: SpaceId,
+        metrics: ViewMetrics,
         layout: GridSpec,
         bounds: Rect,
     ) -> CommandOutcome {
@@ -198,6 +200,11 @@ impl Desktop {
             }
             space.user_sized = false;
             arrange_space(space, layout);
+            if space.view.mode.places_by_order() {
+                let size = fit_size(space, metrics);
+                space.rect.width = size.width.min(bounds.width);
+                space.rect.height = size.height.min(bounds.height);
+            }
             space.rect = clamp_to_bounds(space.rect, bounds);
             CommandOutcome::Applied
         })

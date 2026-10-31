@@ -171,6 +171,22 @@ fn inline_cell(mode: ViewMode) -> Option<(i32, i32)> {
     }
 }
 
+/// The size that shows all of `space`'s items in a view that places them by
+/// order: rows keep the width and take the height they need, and List's columns
+/// keep the height and take the width. An empty space keeps room for one line.
+/// It reads the space's rect rather than its content area, which a fold empties.
+pub fn fit_size(space: &Space, metrics: ViewMetrics) -> Size {
+    let rect = space.rect();
+    let chrome = space.title_height + space.unfolded_status_bar_height();
+    let content = Size::new(rect.width, (rect.height - chrome).max(0));
+    let mode = space.view().mode;
+    let layout = ViewLayout::new(mode, content, space.items().len().max(1), metrics);
+    match layout.axis() {
+        ScrollAxis::Vertical => Size::new(rect.width, chrome + layout.extent()),
+        ScrollAxis::Horizontal => Size::new(layout.extent(), rect.height),
+    }
+}
+
 /// The placement of `count` items in a space's content area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewLayout {
