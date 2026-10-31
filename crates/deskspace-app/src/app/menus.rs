@@ -462,6 +462,12 @@ impl App {
                         ..view
                     };
                     self.set_space_view(ui, id, next, at);
+                } else if choice == MenuId::CompactView {
+                    let next = SpaceView {
+                        compact: !view.compact,
+                        ..view
+                    };
+                    self.set_space_view(ui, id, next, at);
                 } else if choice == MenuId::FileExtensions {
                     // The entry checks what the space shows now, so choosing
                     // it flips to the opposite (W28); `Automatic` is the View
@@ -912,6 +918,7 @@ fn space_view_menu(space: &Space, shows_extensions: bool) -> MenuEntry {
         .collect();
     entries.extend([
         MenuEntry::Separator,
+        menu_item(MenuId::CompactView, "Compact view").checked(space.view().compact),
         menu_item(MenuId::StatusBar, "Status bar").checked(space.view().status_bar),
         menu_item(MenuId::FileExtensions, "File name extensions").checked(shows_extensions),
     ]);
@@ -1216,8 +1223,8 @@ mod tests {
         let checks = item_checks(&entries);
         assert_eq!(
             checks.len(),
-            VIEW_PRESETS.len() + 2,
-            "the views and the two checks"
+            VIEW_PRESETS.len() + 3,
+            "the views and the three checks"
         );
         assert_eq!(
             checks.iter().filter(|(_, checked)| *checked).count(),
@@ -1239,6 +1246,7 @@ mod tests {
             })
             .collect();
         let mut expected: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
+        expected.push("Compact view");
         expected.push("Status bar");
         expected.push("File name extensions");
         assert_eq!(labels, expected);

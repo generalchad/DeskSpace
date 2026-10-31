@@ -435,6 +435,10 @@ pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
         .map_or(fields.len(), |index| index + 1);
     fields.insert(
         after_status,
+        Field::toggle(field::VIEW_COMPACT, "Compact view", view.compact),
+    );
+    fields.insert(
+        after_status + 1,
         Field::choice(
             field::VIEW_EXTENSIONS,
             "File name extensions",

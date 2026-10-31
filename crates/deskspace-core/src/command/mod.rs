@@ -601,7 +601,8 @@ mod tests {
 
     /// Fits the space and returns its rect and how far it can still scroll.
     fn fit(desktop: &mut Desktop, id: SpaceId, mode: ViewMode) -> (Rect, i32) {
-        let metrics = ViewMetrics::for_view(mode, desktop.layout, 1.0);
+        let metrics =
+            ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
         assert!(
             desktop
                 .apply(Command::FitToContents { id, metrics }, bounds())

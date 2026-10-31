@@ -192,10 +192,8 @@ pub fn space_scene_with_details(
         metrics,
         scale,
     } = look;
-    let view_layout = ViewLayout::for_space(
-        space,
-        ViewMetrics::for_view(space.view().mode, layout, scale),
-    );
+    let view_layout =
+        ViewLayout::for_space(space, ViewMetrics::for_view(space.view(), layout, scale));
     let content_top = space.title_height;
     let content = space.content_rect();
     let content_area = Rect::new(0, content_top, content.width, content.height);
@@ -548,7 +546,7 @@ pub fn drag_scene(
     let (icon_size, overlay_size) = (look.metrics.icon_size, look.theme.overlay_size);
     let view_layout = ViewLayout::for_space(
         space,
-        ViewMetrics::for_view(space.view().mode, look.layout, look.scale),
+        ViewMetrics::for_view(space.view(), look.layout, look.scale),
     );
     let mut scene = space_scene(space, look, view, icons);
     let content_top = space.title_height;
@@ -1332,7 +1330,11 @@ mod tests {
         let space = details_space();
         let layout = ViewLayout::for_space(
             &space,
-            ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0),
+            ViewMetrics::for_view(
+                &SpaceView::default().with_mode(ViewMode::Details),
+                GridSpec::default(),
+                1.0,
+            ),
         );
         let view = details_view(
             &space,
@@ -1538,7 +1540,11 @@ mod tests {
         let space = desktop.space(id).unwrap();
         let layout = ViewLayout::for_space(
             space,
-            ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0),
+            ViewMetrics::for_view(
+                &SpaceView::default().with_mode(ViewMode::Details),
+                GridSpec::default(),
+                1.0,
+            ),
         );
         let view = details_view(
             space,

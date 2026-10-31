@@ -427,8 +427,7 @@ impl App {
     /// scale the scene builder uses.
     pub(super) fn view_layout(&self, id: SpaceId) -> Option<ViewLayout> {
         let space = self.config.desktop.space(id)?;
-        let metrics =
-            ViewMetrics::for_view(space.view().mode, self.layout_for(id), space_dpi(id.0));
+        let metrics = ViewMetrics::for_view(space.view(), self.layout_for(id), space_dpi(id.0));
         Some(ViewLayout::for_space(space, metrics))
     }
 
@@ -810,13 +809,14 @@ impl App {
     /// The command that fits space `id` to its contents, with the cells it is
     /// drawn with.
     pub(super) fn fit_command(&self, id: SpaceId) -> Command {
+        let view = self
+            .config
+            .desktop
+            .space(id)
+            .map_or_else(SpaceView::default, |space| space.view().clone());
         Command::FitToContents {
             id,
-            metrics: ViewMetrics::for_view(
-                self.view_mode(id),
-                self.layout_for(id),
-                space_dpi(id.0),
-            ),
+            metrics: ViewMetrics::for_view(&view, self.layout_for(id), space_dpi(id.0)),
         }
     }
 

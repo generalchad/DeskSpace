@@ -221,10 +221,12 @@ enum MenuId {
     ColumnKind = 78,
     ColumnSize = 79,
     ColumnCreated = 80,
+    /// The View submenu's "Compact view" check.
+    CompactView = 81,
 }
 
 impl MenuId {
-    const ALL: [Self; 61] = [
+    const ALL: [Self; 62] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -286,6 +288,7 @@ impl MenuId {
         Self::ColumnKind,
         Self::ColumnSize,
         Self::ColumnCreated,
+        Self::CompactView,
     ];
 
     fn from_id(id: u32) -> Option<Self> {

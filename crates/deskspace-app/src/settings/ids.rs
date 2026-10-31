@@ -142,6 +142,7 @@ pub mod field {
     pub const VIEW_FOLDERS_FIRST: u32 = 125;
     pub const VIEW_KEEP_SORTED: u32 = 126;
     pub const VIEW_EXTENSIONS: u32 = 152;
+    pub const VIEW_COMPACT: u32 = 153;
 
     pub const LENSES_VIEW_HEADING: u32 = 127;
     pub const LENSES_VIEW_MODE: u32 = 128;

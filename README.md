@@ -138,6 +138,8 @@ help inspect the look and the desktop layer.
   first and Keep sorted. A normal space sorts once, or holds the order as
   items come and go once Keep sorted is on; a lens always holds it.
   "Folders first" stands in both directions.
+- View ▸ "Compact view" tightens the rows of Small icons, List, Details, Tiles,
+  and Content, as Explorer's does.
 - In Details, right-click the header to choose which columns show, drag a
   divider to resize a column, and drag a header to reorder it (Esc cancels
   either; Name stays first). Click a header to sort by it.

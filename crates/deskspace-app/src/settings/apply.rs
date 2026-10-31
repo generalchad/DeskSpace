@@ -492,6 +492,7 @@ fn view_edit(
             view.mode = VIEW_MODES.get(*index)?.0;
         }
         (field::VIEW_STATUS_BAR, FieldValue::Toggle(on)) => view.status_bar = *on,
+        (field::VIEW_COMPACT, FieldValue::Toggle(on)) => view.compact = *on,
         (field::VIEW_EXTENSIONS, FieldValue::Choice(index)) => {
             view.extensions = EXTENSIONS_OPTIONS.get(*index)?.0;
         }

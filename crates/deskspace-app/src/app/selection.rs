@@ -554,8 +554,11 @@ mod tests {
     #[test]
     fn arrows_follow_a_view_layouts_rows_and_columns() {
         let mode = deskspace_core::ViewMode::SmallIcons;
-        let metrics =
-            deskspace_core::ViewMetrics::for_view(mode, deskspace_core::GridSpec::default(), 1.0);
+        let metrics = deskspace_core::ViewMetrics::for_view(
+            &deskspace_core::SpaceView::default().with_mode(mode),
+            deskspace_core::GridSpec::default(),
+            1.0,
+        );
         let layout =
             deskspace_core::ViewLayout::new(mode, deskspace_core::Size::new(640, 400), 7, metrics);
         let cells: Vec<Rect> = (0..7).map(|index| layout.rect(index)).collect();

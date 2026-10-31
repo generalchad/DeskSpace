@@ -169,6 +169,9 @@ pub struct SpaceView {
     /// Whether the space's labels show filename extensions (W28).
     #[serde(skip_serializing_if = "Extensions::is_default")]
     pub extensions: Extensions,
+    /// Whether the views that place items by order use Explorer's tighter
+    /// rows. The icon views keep the Layout page's spacing (D18).
+    pub compact: bool,
     /// The Details columns the space shows, in display order (D18). Always
     /// sanitized: `ColumnSpec::sanitize` runs on load and after every edit.
     #[serde(
@@ -186,6 +189,7 @@ impl Default for SpaceView {
             keep_sorted: false,
             status_bar: false,
             extensions: Extensions::default(),
+            compact: false,
             columns: default_columns(),
         }
     }
@@ -674,6 +678,7 @@ mod tests {
             keep_sorted: false,
             status_bar: true,
             extensions: Extensions::Hide,
+            compact: true,
             columns: vec![ColumnSpec::new(Column::Name)],
         };
         let next = view.with_mode(ViewMode::Details);
@@ -769,6 +774,17 @@ mod tests {
         assert!(text.contains("keep_sorted"), "the choice shows in the file");
         let back: Space = toml::from_str(&text).unwrap();
         assert!(back.view().keep_sorted);
+    }
+
+    #[test]
+    fn compact_starts_off_and_survives_a_round_trip() {
+        assert!(!toml::from_str::<SpaceView>("").unwrap().compact);
+        let view = SpaceView {
+            compact: true,
+            ..SpaceView::default()
+        };
+        let text = toml::to_string(&view).unwrap();
+        assert_eq!(toml::from_str::<SpaceView>(&text).unwrap(), view, "{text}");
     }
 
     #[test]

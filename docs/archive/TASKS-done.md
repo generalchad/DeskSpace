@@ -4870,3 +4870,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     nothing records nothing. A scratch-config run of the real app dragged
     headers by posted messages, with the real pointer checked to be off the
     window: every check passed.
+
+- [x] **W33. Compact view (core, app).** **[needs human]** After: W22.
+  - `SpaceView.compact: bool`, off by default. The order-placed views
+    (Small icons, List, Details, Tiles, Content) take their row and cell
+    padding from one metrics struct in `view_layout.rs`, which has a
+    compact variant measured from Explorer's Compact view. The icon
+    views are unchanged (D18).
+  - View ▸ "Compact view" (a check entry) and a View page toggle.
+  - Tests: compact rows are shorter in each order-placed view and the
+    same in the icon views.
+  - **[needs human]** check: against Explorer's Compact view in each
+    view, at 100 % and 150 %.
+  - Done 2026-10-31. The maintainer chose provisional sizes over measuring
+    Explorer now, so `COMPACT_CELLS` in `view_layout.rs` is not yet "measured
+    from Explorer's Compact view": section V carries the comparison. `NORMAL_CELLS`
+    holds the old values unchanged, also never measured, so a space not in
+    compact looks as before. Menu id 81, field id 153. The toggle is on the
+    View page only, not the two defaults pages, as the task asks.
