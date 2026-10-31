@@ -774,6 +774,17 @@ A native, lightweight, offline Windows desktop organizer that:
     make the grab sluggish.
   - Work items: `TASKS.md` C11.
 
+- **D23. Fit to contents on an item's menu (2026-10-31, maintainer).**
+  - An item's right-click menu in a space offers "Fit to contents" beside
+    DeskSpace's Rename, before Explorer's own entries. It fits the space
+    that holds the item, as the space menu's entry does, and is greyed when
+    the space is locked or already fits. A desktop item's menu does not
+    offer it.
+  - Fit to contents never makes a space larger than the work area of its
+    monitor; an icon view that is capped scrolls. This closes the gap where
+    only the order-placed views were capped.
+  - Work items: `TASKS.md` C12.
+
 ## 3. Guiding principles
 
 - **Keep the domain pure.** All new behavior is a `Command` variant in
