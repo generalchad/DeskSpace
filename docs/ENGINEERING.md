@@ -36,7 +36,9 @@ links the `windows` crate under `cfg(windows)`.
 executable is locked), builds, and runs the app with a scratch config at
 `%TEMP%\deskspace-dev\deskspace.toml`. Switches: `-Release`, `-Fresh` (delete
 the scratch config), `-RealConfig`, `-OnTop`, `-Settings`, `-NoIcons`, `-Check`
-(fmt, clippy `-D warnings`, and tests first), `-NoRun`, `-Verbosity 0..2`;
+(fmt, clippy `-D warnings`, and tests first), `-Changed` (with `-Check`, test
+only the crates a change can affect; `-Base` names the branch to compare
+with), `-NoRun`, `-Verbosity 0..2`;
 arguments the script does not know (such as `--debug`) go to the app,
 with or without a `--` before them. `Get-Help ./scripts/dev.ps1` has
 examples.
