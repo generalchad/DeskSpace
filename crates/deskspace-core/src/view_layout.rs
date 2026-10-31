@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use crate::geometry::{Point, Rect, Size};
 use crate::grouping::Grouping;
-use crate::layout::{GridSpec, columns_for};
-use crate::space::Space;
+use crate::layout::{GridSpec, columns_for, fit_length};
+use crate::space::{ResizeEdges, Space};
 use crate::view::{SpaceView, ViewMode};
 
 /// The cells of the views that place items by order, at 96 DPI. Provisional
@@ -170,6 +170,41 @@ impl ViewMetrics {
             header: 0,
             group_header: NORMAL_CELLS.group_header,
         }
+    }
+
+    /// `width` rounded down to whole cell columns with equal edge padding.
+    pub fn fit_width(&self, width: i32) -> i32 {
+        fit_length(width, self.cell.width, self.gap, self.padding)
+    }
+
+    /// `height` rounded down to whole cell rows below `chrome`, the height
+    /// that is not items: a title bar, a status bar, and any header.
+    pub fn fit_height(&self, height: i32, chrome: i32) -> i32 {
+        chrome + fit_length(height - chrome, self.cell.height, self.gap, self.padding)
+    }
+
+    /// `rect` rounded to whole cells along the dragged `edges`, keeping the
+    /// opposite edge fixed. `fit_columns` is false for a view whose rows fill
+    /// the width, so only its height fits (D22).
+    pub fn fit_rect(self, rect: Rect, edges: ResizeEdges, chrome: i32, fit_columns: bool) -> Rect {
+        let mut rect = rect;
+        if fit_columns && (edges.left || edges.right) {
+            let width = self.fit_width(rect.width);
+            rect = if edges.left {
+                Rect::new(rect.right() - width, rect.y, width, rect.height)
+            } else {
+                Rect::new(rect.x, rect.y, width, rect.height)
+            };
+        }
+        if edges.top || edges.bottom {
+            let height = self.fit_height(rect.height, chrome);
+            rect = if edges.top {
+                Rect::new(rect.x, rect.bottom() - height, rect.width, height)
+            } else {
+                Rect::new(rect.x, rect.y, rect.width, height)
+            };
+        }
+        rect
     }
 }
 
@@ -677,6 +712,52 @@ mod tests {
             header: 0,
             group_header: 30,
         }
+    }
+
+    #[test]
+    fn fitting_uses_the_cells_it_is_given() {
+        let metrics = metrics();
+        assert_eq!(metrics.fit_width(480), 454);
+        assert_eq!(metrics.fit_height(300, 28), 282);
+    }
+
+    #[test]
+    fn fitting_keeps_the_grabbed_edge() {
+        let metrics = metrics();
+        let rect = Rect::new(10, 20, 480, 300);
+        let right_bottom = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(rect, right_bottom, 28, true),
+            Rect::new(10, 20, 454, 282)
+        );
+        let left_top = ResizeEdges {
+            left: true,
+            top: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(rect, left_top, 28, true),
+            Rect::new(36, 38, 454, 282),
+            "the far edges stay put"
+        );
+    }
+
+    #[test]
+    fn a_row_view_fits_only_its_height() {
+        let metrics = metrics();
+        let corner = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(Rect::new(10, 20, 480, 300), corner, 28, false),
+            Rect::new(10, 20, 480, 282)
+        );
     }
 
     fn layout_of(mode: ViewMode, width: i32, count: usize) -> ViewLayout {

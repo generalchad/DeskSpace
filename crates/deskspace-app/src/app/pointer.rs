@@ -707,22 +707,37 @@ fn right_drag_started(press: Point, now: Point, threshold: Size) -> bool {
     (now.x - press.x).abs() >= threshold.width || (now.y - press.y).abs() >= threshold.height
 }
 
+/// The movement that starts a resize on each axis: half an item's shorter
+/// side, so a wide inline cell does not make the grab sluggish, and never
+/// less than half the fine `snap` step. A row view has no cell width to
+/// measure, so its row height sets the zone.
+pub(super) fn resize_dead_zone(cell: Size, snap: i32) -> Size {
+    let side = if cell.width > 1 {
+        cell.width.min(cell.height)
+    } else {
+        cell.height
+    }
+    .max(1);
+    let zone = (side / 2).max((snap / 2).max(1));
+    Size::new(zone, zone)
+}
+
 /// The edges a resize moves right now. An axis joins only once the pointer has
-/// left a half-cell dead zone around the grab point, so a click or a tiny drag
-/// on a border never resizes the space; once joined, the axis stays active so
-/// its edge tracks the pointer back. Returns the effective edges and the
-/// updated `(active_x, active_y)` flags.
+/// left the dead zone around the grab point, so a click or a tiny drag on a
+/// border never resizes the space; once joined, the axis stays active so its
+/// edge tracks the pointer back. Returns the effective edges and the updated
+/// `(active_x, active_y)` flags.
 pub(super) fn resize_edges_now(
     edges: ResizeEdges,
     origin: Point,
     point: Point,
-    cell: Size,
+    dead_zone: Size,
     active: (bool, bool),
 ) -> (ResizeEdges, (bool, bool)) {
     let active_x =
-        active.0 || ((edges.left || edges.right) && (point.x - origin.x).abs() > cell.width / 2);
+        active.0 || ((edges.left || edges.right) && (point.x - origin.x).abs() > dead_zone.width);
     let active_y =
-        active.1 || ((edges.top || edges.bottom) && (point.y - origin.y).abs() > cell.height / 2);
+        active.1 || ((edges.top || edges.bottom) && (point.y - origin.y).abs() > dead_zone.height);
     let edges = ResizeEdges {
         left: edges.left && active_x,
         right: edges.right && active_x,
@@ -865,8 +880,16 @@ mod tests {
     }
 
     #[test]
-    fn resize_waits_out_a_half_cell_dead_zone() {
-        let cell = Size::new(80, 100);
+    fn the_dead_zone_is_half_a_cells_shorter_side_and_at_least_half_the_snap() {
+        assert_eq!(resize_dead_zone(Size::new(200, 22), 16), Size::new(11, 11));
+        assert_eq!(resize_dead_zone(Size::new(1, 22), 16), Size::new(11, 11));
+        assert_eq!(resize_dead_zone(Size::new(96, 104), 16), Size::new(48, 48));
+        assert_eq!(resize_dead_zone(Size::new(1, 4), 16), Size::new(8, 8));
+    }
+
+    #[test]
+    fn resize_waits_out_the_dead_zone() {
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let grabbed = ResizeEdges {
             right: true,
             ..ResizeEdges::NONE
@@ -874,19 +897,19 @@ mod tests {
         let origin = Point::new(200, 100);
         // Inside the dead zone (half of 80 is 40): nothing moves.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(230, 100), cell, (false, false));
+            resize_edges_now(grabbed, origin, Point::new(230, 100), zone, (false, false));
         assert_eq!(edges, ResizeEdges::NONE);
         assert_eq!(active, (false, false));
         // Past it, the axis joins.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(241, 100), cell, (false, false));
+            resize_edges_now(grabbed, origin, Point::new(241, 100), zone, (false, false));
         assert!(edges.right);
         assert_eq!(active, (true, false));
     }
 
     #[test]
     fn a_corner_resizes_only_the_axis_that_moved() {
-        let cell = Size::new(80, 100);
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let corner = ResizeEdges {
             right: true,
             bottom: true,
@@ -895,19 +918,19 @@ mod tests {
         let origin = Point::new(200, 100);
         // Horizontal movement only: width resizes, height stays.
         let (edges, active) =
-            resize_edges_now(corner, origin, Point::new(260, 110), cell, (false, false));
+            resize_edges_now(corner, origin, Point::new(260, 110), zone, (false, false));
         assert!(edges.right && !edges.bottom);
         assert_eq!(active, (true, false));
         // A vertical move then joins the bottom too.
         let (edges, active) =
-            resize_edges_now(corner, origin, Point::new(260, 200), cell, (true, false));
+            resize_edges_now(corner, origin, Point::new(260, 200), zone, (true, false));
         assert!(edges.right && edges.bottom);
         assert_eq!(active, (true, true));
     }
 
     #[test]
     fn a_joined_axis_stays_active_inside_the_dead_zone() {
-        let cell = Size::new(80, 100);
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let grabbed = ResizeEdges {
             right: true,
             ..ResizeEdges::NONE
@@ -915,7 +938,7 @@ mod tests {
         let origin = Point::new(200, 100);
         // Back at the grab point, the edge still tracks rather than stopping.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(200, 100), cell, (true, false));
+            resize_edges_now(grabbed, origin, Point::new(200, 100), zone, (true, false));
         assert!(edges.right);
         assert_eq!(active, (true, false));
     }

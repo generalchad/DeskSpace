@@ -4,14 +4,16 @@
 use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
+use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId, ViewMetrics};
 
 use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_desktop_rect};
 
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
 use super::columns::{ColumnResize, HeaderPress};
-use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
+use super::pointer::{
+    PendingClickOutcome, resize_dead_zone, resize_edges_now, resolve_pending_click,
+};
 use super::undo::move_items_label;
 use super::{App, Surface};
 
@@ -171,7 +173,21 @@ impl App {
         point: Point,
     ) -> bool {
         let layout = self.layout_for(id);
-        let (active_edges, active) = resize_edges_now(edges, origin, point, layout.cell(), active);
+        let Some(metrics) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| ViewMetrics::for_view(space.view(), layout, space_dpi(id.0)))
+        else {
+            return false;
+        };
+        let (active_edges, active) = resize_edges_now(
+            edges,
+            origin,
+            point,
+            resize_dead_zone(metrics.cell, layout.snap),
+            active,
+        );
         self.pointer.drag = Drag::Resize {
             id,
             edges,
@@ -187,6 +203,7 @@ impl App {
             id,
             edges: active_edges,
             to: point,
+            metrics,
         };
         self.undo.begin_if_none("Resize space");
         // Not `commit`: runs on every pointer move; `end_drag` saves once.

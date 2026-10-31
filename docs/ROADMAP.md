@@ -769,8 +769,9 @@ A native, lightweight, offline Windows desktop organizer that:
     cells: icon cells for the icon views; Small icons, List, and Tiles' own
     cells; Details and Content rows only, with the width left free at the
     `snap` step. Details' header and a space's status bar count as chrome.
-  - The resize dead zone is half an item's shorter side, never less than
-    half `snap`, so a wide List cell does not make the grab sluggish.
+  - The resize dead zone is half an item's shorter side (a row view uses its
+    row height), never less than half `snap`, so a wide List cell does not
+    make the grab sluggish.
   - Work items: `TASKS.md` C11.
 
 ## 3. Guiding principles
@@ -1231,7 +1232,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; undo of a delete awaits its on-screen check (U5) |
-| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
+| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`), and since D22 it fits the current view's cells (Details and Content rows only) |
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |

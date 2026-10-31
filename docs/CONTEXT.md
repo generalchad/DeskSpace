@@ -314,14 +314,16 @@ every space lays out on.
   space's base grid and theme are its own (`Space::grid`, `Space::theme`);
   under the `MatchExplorer` preset, Explorer's item spacing replaces the cell
   and gap outright.
-- `resize_rect` moves the grabbed edges to a point, snapped, keeping opposite
-  edges fixed, at least `min_space_size()` (one cell plus padding) and inside
-  the work area. With `fit_to_grid` on (the default), a left/right resize then
-  rounds the width to whole columns (`fit_rect_width` /
-  `GridSpec::fit_width`) and a top/bottom resize the height to whole rows
-  (`fit_rect_height` / `GridSpec::fit_height`), so a user-sized space keeps
-  equal padding on both sides and above and below the remainder; the grabbed
-  edge stays put. `scroll_step()` is one row per wheel notch.
+- `resize_rect` moves the grabbed edges to a point, snapped to the fine
+  `snap` step, keeping opposite edges fixed, at least `min_space_size()` (one
+  icon cell plus padding) and inside the work area. With `fit_to_grid` on
+  (the default), `ViewMetrics::fit_rect` then rounds the dragged axes to whole
+  cells of the space's current view, keeping the grabbed edge: icon cells for
+  the icon views; Small icons, List, and Tiles' own cells; Details and Content
+  rows only, with the width left at `snap` (`ViewMode::rows_fill_width`). The
+  height fit counts the title bar, the status bar, and Details' header as
+  chrome, so no row is cut off by them. `scroll_step()` is one icon row per
+  wheel notch.
 - `snap_to_grid` / `snap_rect` snap to the grid, `clamp_to_bounds` keeps
   rects in the work area, and `resolve_collisions` pushes overlapping spaces
   down.
@@ -348,11 +350,12 @@ ones a variant's doc cannot show.
   (no snap). `MoveSpace`, `SetSpaceRect`, `ResizeSpace`, and `FitToContents`
   reject locked spaces and snap to the grid; `SnapAll` skips locked spaces.
 - `ResizeSpace` also rejects folded spaces and an empty edge set, marks
-  the space user-sized, and (with `fit_to_grid`) fits to whole columns and
-  rows. `FitToContents` clears the user size, so the space grows to fit its
-  items. A view that places items by order keeps its size otherwise, so the
-  command sizes it once from the `ViewMetrics` it carries (`fit_size`), and
-  `Space::can_fit` keeps the choice on offer. `KeepSize` sets it without moving the rect. The app sends `KeepSize`
+  the space user-sized, and (with `fit_to_grid`) fits to whole cells of the
+  `ViewMetrics` it carries. `FitToContents` clears the user size, so the
+  space grows to fit its items. A view that places items by order keeps its
+  size otherwise, so the command sizes it once from the `ViewMetrics` it
+  carries (`fit_size`), and `Space::can_fit` keeps the choice on offer.
+  `KeepSize` sets it without moving the rect. The app sends `KeepSize`
   before re-flowing a self-sizing space whose icon factor changed
   (`App::keep_size_on_zoom`: a zoom, the icon-size setting, a preset, or
   Explorer's own size, never a DPI move), so an icon-size change keeps every

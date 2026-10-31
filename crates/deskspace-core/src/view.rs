@@ -376,6 +376,12 @@ impl ViewMode {
             Self::SmallIcons | Self::List | Self::Details | Self::Tiles | Self::Content
         )
     }
+
+    /// Whether every row spans the space's width, so a resize has no columns
+    /// to line up and only its rows matter (D22).
+    pub fn rows_fill_width(self) -> bool {
+        matches!(self, Self::Details | Self::Content)
+    }
 }
 
 /// Explorer's fixed icon sizes at 96 DPI (D17). `SmallIcons` is the one an
@@ -694,6 +700,23 @@ mod tests {
             ViewMode::MediumIcons,
         ] {
             assert!(!mode.places_by_order(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_row_views_fill_their_width() {
+        assert!(ViewMode::Details.rows_fill_width());
+        assert!(ViewMode::Content.rows_fill_width());
+        for mode in [
+            ViewMode::Icons,
+            ViewMode::ExtraLargeIcons,
+            ViewMode::LargeIcons,
+            ViewMode::MediumIcons,
+            ViewMode::SmallIcons,
+            ViewMode::List,
+            ViewMode::Tiles,
+        ] {
+            assert!(!mode.rows_fill_width(), "{mode:?}");
         }
     }
 

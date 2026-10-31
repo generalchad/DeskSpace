@@ -4987,3 +4987,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     icon, so the default view already matches and F-40 closes with no
     view-mode mapping. No Windows 10 machine was available; section V
     keeps that half of the check open.
+
+- [x] **C11. Resize a space to its view's rows and columns (core, app).**
+  Decided by the maintainer, 2026-10-31 (ROADMAP D22).
+  - Why: `GridSpec::fit_to_grid` rounds every resize to the icon grid, which
+    Details, List, Tiles, and Content do not use, so their rows can still be
+    cut in half. The height fit ignores the status bar, and the resize dead
+    zone is half an icon cell in every view.
+  - Fix: `Command::ResizeSpace` carries the space's `ViewMetrics`, as
+    `FitToContents` does, so core can fit against the cells the space is
+    drawn with. With `fit_to_grid` on, fit the dragged axes to that view's
+    cells; Details and Content fit height only (`ViewMode::rows_fill_width`)
+    and keep the width at the `snap` step. Include the status bar and
+    Details' header in the height fit. Make the dead zone half an item's
+    shorter side, never less than half `snap`.
+  - Done when: resizing each view lands on whole rows and columns of that
+    view; Details and Content leave the width free; a space's status bar is
+    never clipped by the height fit; icon views keep today's result;
+    `fit_to_grid` off still keeps the dragged size. Tests cover each view
+    family, the status bar, and the dead zone. `CONTEXT.md` section 4 and
+    the F-03 row say the new rule.
+  - Done 2026-10-31. `ViewMetrics::fit_rect` fits the view's cells, and the
+    status bar and Details' header are chrome. Details and Content keep the
+    `snap`-stepped width. The dead zone is half the shorter real cell side,
+    or half the row height in a row view, and never less than half `snap`.
+    Tests: the three fit tests in `view_layout.rs`; Details, List, keeping
+    the fit in bounds, and the status bar in `command/mod.rs`; and the
+    dead-zone tests in `pointer.rs`.

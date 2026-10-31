@@ -507,26 +507,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
-- [ ] **C11. Resize a space to its view's rows and columns (core, app).**
-  Decided by the maintainer, 2026-10-31 (ROADMAP D22).
-  - Why: `GridSpec::fit_to_grid` rounds every resize to the icon grid, which
-    Details, List, Tiles, and Content do not use, so their rows can still be
-    cut in half. The height fit ignores the status bar, and the resize dead
-    zone is half an icon cell in every view.
-  - Fix: `Command::ResizeSpace` carries the space's `ViewMetrics`, as
-    `FitToContents` does, so core can fit against the cells the space is
-    drawn with. With `fit_to_grid` on, fit the dragged axes to that view's
-    cells; Details and Content fit height only (`ViewMode::rows_fill_width`)
-    and keep the width at the `snap` step. Include the status bar and
-    Details' header in the height fit. Make the dead zone half an item's
-    shorter side, never less than half `snap`.
-  - Done when: resizing each view lands on whole rows and columns of that
-    view; Details and Content leave the width free; a space's status bar is
-    never clipped by the height fit; icon views keep today's result;
-    `fit_to_grid` off still keeps the dragged size. Tests cover each view
-    family, the status bar, and the dead zone. `CONTEXT.md` section 4 and
-    the F-03 row say the new rule.
-
 ## U. Undo and redo (ROADMAP D11, M2)
 
 Read D11 first; it is the spec. Do the tasks in order, one commit each. The
@@ -2001,6 +1981,7 @@ each id is in `archive/TASKS-done.md`.
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
+| C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 
 ## Found while working
 
