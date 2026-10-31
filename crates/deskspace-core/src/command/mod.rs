@@ -860,6 +860,37 @@ mod tests {
     }
 
     #[test]
+    fn fitting_an_icon_view_stays_inside_a_small_work_area() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 200, 200));
+        for index in 0..40 {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("file{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds(),
+            );
+        }
+        let small = Rect::new(0, 0, 300, 200);
+        let metrics = ViewMetrics::for_grid(desktop.layout);
+        assert!(
+            desktop
+                .apply(Command::FitToContents { id, metrics }, small)
+                .is_applied()
+        );
+        let rect = desktop.space(id).unwrap().rect;
+        assert_eq!(
+            rect,
+            Rect::new(0, 0, 226, 200),
+            "two whole columns fit the width; the rows scroll"
+        );
+        assert!(small.contains(Point::new(rect.right() - 1, rect.bottom() - 1)));
+        assert!(!small.contains(Point::new(rect.right(), rect.bottom())));
+    }
+
+    #[test]
     fn a_details_resize_fits_whole_rows_and_leaves_the_width_at_the_snap() {
         let (mut desktop, id) = space_in_view(ViewMode::Details, Rect::new(0, 0, 300, 300), 12);
         let layout = desktop.layout;

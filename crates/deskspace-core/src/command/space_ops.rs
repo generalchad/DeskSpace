@@ -209,9 +209,20 @@ impl Desktop {
             arrange_space(space, layout);
             if space.view.places_by_order() {
                 let size = fit_size(space, metrics);
-                space.rect.width = size.width.min(bounds.width);
-                space.rect.height = size.height.min(bounds.height);
+                space.rect.width = size.width;
+                space.rect.height = size.height;
+            } else {
+                // Fit an icon grid into a narrower work area with whole
+                // columns, then let it scroll down (D23).
+                let columns = layout.columns_for(bounds.width);
+                if columns < layout.columns {
+                    arrange_space(space, GridSpec { columns, ..layout });
+                }
             }
+            // No fitted space is larger than its work area; items beyond it
+            // scroll (D23).
+            space.rect.width = space.rect.width.min(bounds.width);
+            space.rect.height = space.rect.height.min(bounds.height);
             space.rect = clamp_to_bounds(space.rect, bounds);
             CommandOutcome::Applied
         })

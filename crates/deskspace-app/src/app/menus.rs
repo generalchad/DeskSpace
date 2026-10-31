@@ -320,15 +320,31 @@ impl App {
         };
         // Removing an item is Explorer's own Delete in the same menu (to the
         // Recycle Bin, as the Delete key does), and taking one back to the
-        // desktop is a drag, so DeskSpace adds only its inline Rename, which
-        // Explorer leaves out of a menu without a view to rename in.
-        let entries = [menu_item(MenuId::RenameItem, "Rename")];
+        // desktop is a drag, so DeskSpace adds its inline Rename, which
+        // Explorer leaves out of a menu without a view to rename in, and Fit
+        // to contents for the space that holds it (D23).
+        let mut entries = vec![menu_item(MenuId::RenameItem, "Rename")];
+        if let Surface::Space(id) = surface {
+            let can_fit = self
+                .config
+                .desktop
+                .space(id)
+                .is_some_and(|space| space.can_fit());
+            entries.push(menu_item(MenuId::Fit, "Fit to contents").enabled(can_fit));
+        }
         match ui.item_menu(&path, &entries, at) {
-            Some(ItemMenuChoice::App(choice))
-                if MenuId::from_id(choice) == Some(MenuId::RenameItem) =>
-            {
-                self.begin_item_rename(ui, surface, item);
-            }
+            Some(ItemMenuChoice::App(choice)) => match MenuId::from_id(choice) {
+                Some(MenuId::RenameItem) => self.begin_item_rename(ui, surface, item),
+                Some(MenuId::Fit) => {
+                    if let Surface::Space(id) = surface
+                        && self.config.desktop.space(id).is_some()
+                    {
+                        let effects = self.fit_space_to_contents(id, at);
+                        self.run(ui, effects);
+                    }
+                }
+                _ => {}
+            },
             Some(ItemMenuChoice::Shell) => {
                 self.icons.invalidate(&path);
                 match surface {
@@ -339,7 +355,7 @@ impl App {
                     Surface::Desktop => self.resync_desktop_layer(ui),
                 }
             }
-            _ => {}
+            None => {}
         }
     }
 

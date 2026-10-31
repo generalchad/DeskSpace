@@ -507,21 +507,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       check: save a customized space's look, load it on Global and on another
       space, Cancel undoes the load.
 
-- [ ] **C12. Fit to contents on an item's menu (app, core).**
-  Decided by the maintainer, 2026-10-31 (ROADMAP D23).
-  - Why: the space menu already offers Fit to contents, but an item's
-    right-click menu does not; an icon view can also be fitted larger than
-    the work area, so part of it clips.
-  - Fix: `App::show_item_menu` adds "Fit to contents" for an item in a
-    space, enabled from `Space::can_fit`, and fits that space when chosen.
-    `apply_fit_to_contents` caps the width and height to `bounds` in every
-    view, not only the order-placed ones.
-  - Done when: right-clicking an item in a space shows the entry (greyed on
-    a locked or already-fitting space), choosing it fits the space and
-    records one "Fit to contents" undo entry, a desktop item's menu does not
-    show it, and no fitted space exceeds the work area. A test covers the
-    cap; the menu itself is on-screen checked.
-
 ## U. Undo and redo (ROADMAP D11, M2)
 
 Read D11 first; it is the spec. Do the tasks in order, one commit each. The
@@ -1997,6 +1982,7 @@ each id is in `archive/TASKS-done.md`.
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
+| C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
 
 ## Found while working
 

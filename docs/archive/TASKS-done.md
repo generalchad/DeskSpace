@@ -5014,3 +5014,25 @@ until I5-I6 all land, so no partial build hides the desktop.
     Tests: the three fit tests in `view_layout.rs`; Details, List, keeping
     the fit in bounds, and the status bar in `command/mod.rs`; and the
     dead-zone tests in `pointer.rs`.
+
+- [x] **C12. Fit to contents on an item's menu (app, core).**
+  Decided by the maintainer, 2026-10-31 (ROADMAP D23).
+  - Why: the space menu already offers Fit to contents, but an item's
+    right-click menu does not; an icon view can also be fitted larger than
+    the work area, so part of it clips.
+  - Fix: `App::show_item_menu` adds "Fit to contents" for an item in a
+    space, enabled from `Space::can_fit`, and fits that space when chosen.
+    `apply_fit_to_contents` caps the width and height to `bounds` in every
+    view, not only the order-placed ones.
+  - Done when: right-clicking an item in a space shows the entry (greyed on
+    a locked or already-fitting space), choosing it fits the space and
+    records one "Fit to contents" undo entry, a desktop item's menu does not
+    show it, and no fitted space exceeds the work area. A test covers the
+    cap; the menu itself is on-screen checked.
+  - Done 2026-10-31. `show_item_menu` adds the entry for an item in a space,
+    enabled from `Space::can_fit`, and chooses the same
+    `fit_space_to_contents` path as the space menu, so it is one undo
+    entry. `apply_fit_to_contents` caps the width and height to `bounds` in
+    every view; an icon view reflows into whole columns and then scrolls. A
+    core test covers the cap. The menu's placement, greyed state, and
+    desktop absence are in section V.

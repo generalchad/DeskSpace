@@ -352,11 +352,12 @@ ones a variant's doc cannot show.
 - `ResizeSpace` also rejects folded spaces and an empty edge set, marks
   the space user-sized, and (with `fit_to_grid`) fits to whole cells of the
   `ViewMetrics` it carries. `FitToContents` clears the user size, so the
-  space grows to fit its items. A view that places items by order keeps its
-  size otherwise, so the command sizes it once from the `ViewMetrics` it
-  carries (`fit_size`), and `Space::can_fit` keeps the choice on offer.
-  `KeepSize` sets it without moving the rect. The app sends `KeepSize`
-  before re-flowing a self-sizing space whose icon factor changed
+  space grows to fit its items, never past its work area; an icon view that
+  is capped reflows into whole columns and scrolls (D23). A view that places
+  items by order keeps its size otherwise, so the command sizes it once from
+  the `ViewMetrics` it carries (`fit_size`), and `Space::can_fit` keeps the
+  choice on offer. `KeepSize` sets it without moving the rect. The app sends
+  `KeepSize` before re-flowing a self-sizing space whose icon factor changed
   (`App::keep_size_on_zoom`: a zoom, the icon-size setting, a preset, or
   Explorer's own size, never a DPI move), so an icon-size change keeps every
   space's size and re-flows its columns, as an Explorer window does. Settings
@@ -1510,8 +1511,9 @@ in `ui.rs`. What spans them:
 - Double-click an item to open it (a folder in a lens shows in place,
   D18); click a selected item again (a slow double-click) to rename it
   inline. Right-click it for Explorer's context
-  menu with DeskSpace's "Rename" on top (Explorer's own Delete there sends the
-  file to the Recycle Bin; ROADMAP D3); right-clicking an item in a
+  menu with DeskSpace's "Rename" and "Fit to contents" on top (Fit is greyed
+  when the space cannot fit; D23); Explorer's own Delete there sends the
+  file to the Recycle Bin (ROADMAP D3); right-clicking an item in a
   multi-selection keeps the selection. Loose items on the desktop layer
   rename the same ways. Rest the pointer on an item for Explorer's info tip.
 - Right-click an empty spot of the desktop layer (or press the Menu key with
