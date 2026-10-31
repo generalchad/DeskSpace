@@ -78,7 +78,7 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
-            if space.keeps_sorted() {
+            if space.order_is_fixed() {
                 return CommandOutcome::Rejected;
             }
             let Some(current) = space.items.iter().position(|item| item.id == id) else {
@@ -111,7 +111,7 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
-            if space.keeps_sorted() {
+            if space.order_is_fixed() {
                 return CommandOutcome::Rejected;
             }
             let moving: Vec<Item> = space

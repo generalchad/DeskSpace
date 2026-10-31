@@ -157,6 +157,8 @@ pub struct SpaceScene {
     /// Items are clipped to the area below the title bar, so the app can
     /// place scrolled items partly outside it.
     pub items: Vec<ItemVisual>,
+    /// The header rows of a grouped space's groups in the scroll window.
+    pub group_headers: Vec<GroupHeaderVisual>,
     /// Draw a check box on every item, as Explorer does when its "item check
     /// boxes" view option is on. Display only.
     pub show_check_boxes: bool,
@@ -205,6 +207,14 @@ pub struct DetailsView {
     /// Where a dragged header would land: the insertion mark's x, relative to
     /// the content area.
     pub drop_mark: Option<i32>,
+}
+
+/// One group's header row: its name and count, a chevron, and a rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupHeaderVisual {
+    pub rect: Rect,
+    pub label: String,
+    pub folded: bool,
 }
 
 /// One Details column's header rect, label, and value alignment.

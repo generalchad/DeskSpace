@@ -34,5 +34,6 @@ pub use sort::SortRule;
 pub use source::{FolderEntry, FolderView, LensTitle, SpaceSource, lens_title};
 pub use space::{ResizeEdges, Space, SpaceLook};
 pub use theme::{Backdrop, BorderSource, Color, LabelShadow, Palette, Preset, Theme, ThemeMode};
-pub use view::{COLUMN_WIDTH_RANGE, Column, ColumnSpec, Extensions, SpaceView, ViewMode};
+pub mod grouping;
+pub use view::{COLUMN_WIDTH_RANGE, Column, ColumnSpec, Extensions, GroupBy, SpaceView, ViewMode};
 pub use view_layout::{ScrollAxis, ViewLayout, ViewMetrics};

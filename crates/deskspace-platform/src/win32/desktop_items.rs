@@ -5,8 +5,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use deskspace_core::geometry::Point;
+use deskspace_core::grouping::LocalDay;
 use deskspace_core::item::ItemFacts;
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::Globalization::{
@@ -17,6 +19,7 @@ use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_SYSTEM, FileTimeToLocalFileTime,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Time::FileTimeToSystemTime;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Profile, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT,
@@ -222,6 +225,25 @@ fn wide_text(text: &[u16]) -> String {
         .position(|unit| *unit == 0)
         .unwrap_or(text.len());
     String::from_utf16_lossy(&text[..end])
+}
+
+/// Today as the user's clock reads it, for the date groups. It reads the clock
+/// and nothing else, so it is cheap enough for a repaint.
+pub fn local_today() -> LocalDay {
+    // SAFETY: GetLocalTime only fills the structure it returns.
+    let now = unsafe { GetLocalTime() };
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let into_day =
+        u64::from(now.wHour) * 3600 + u64::from(now.wMinute) * 60 + u64::from(now.wSecond);
+    LocalDay {
+        year: i32::from(now.wYear),
+        month: u32::from(now.wMonth),
+        day: u32::from(now.wDay),
+        weekday: u32::from(now.wDayOfWeek),
+        midnight: unix.saturating_sub(into_day),
+    }
 }
 
 /// Explorer's Details date and time for `seconds` since the Unix epoch, in the

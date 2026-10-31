@@ -533,6 +533,7 @@ impl Painter {
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
+                self.draw_group_headers(ctx, prepared, width);
                 if let Some(text) = &prepared.placeholder {
                     draw_text(
                         target,
@@ -708,6 +709,56 @@ impl Painter {
                     Vector2::new(mark, bottom),
                     brush,
                     (height * DROP_MARK_WIDTH_RATIO).round().max(1.0),
+                    None,
+                );
+            }
+        }
+    }
+
+    /// Draws each group's header row: a chevron, its name and count, and a rule
+    /// along its bottom to the edge.
+    unsafe fn draw_group_headers(&self, ctx: DrawContext, prepared: &PreparedScene, width: f32) {
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        for (header, label) in scene.group_headers.iter().zip(&prepared.group_labels) {
+            let rect = to_rect_f(header.rect);
+            let glyph_width = (rect.bottom - rect.top) * 0.8;
+            // SAFETY: caller is inside BeginDraw/EndDraw.
+            unsafe {
+                if let Some(format) = &graphics.glyph_format {
+                    brush.SetColor(&color_f(scene.item_text.fade(200)));
+                    target.DrawText(
+                        if header.folded {
+                            SORT_DOWN_GLYPH
+                        } else {
+                            SORT_UP_GLYPH
+                        },
+                        format,
+                        &rect_f(rect.left, rect.top, rect.left + glyph_width, rect.bottom),
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                }
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &graphics.details_format,
+                    rect_f(rect.left + glyph_width, rect.top, rect.right, rect.bottom),
+                    scene.item_text,
+                    scene.text_shadow,
+                );
+                brush.SetColor(&color_f(scene.item_text.fade(80)));
+                target.DrawLine(
+                    Vector2::new(rect.left, rect.bottom - 0.5),
+                    Vector2::new(width, rect.bottom - 0.5),
+                    brush,
+                    1.0,
                     None,
                 );
             }

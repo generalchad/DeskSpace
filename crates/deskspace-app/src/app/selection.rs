@@ -157,6 +157,22 @@ impl Selection {
     pub(super) fn clear_selected(&mut self) {
         self.items.clear();
     }
+
+    /// Drops `hidden` items from the selection and the ticks, as folding their
+    /// group does.
+    pub(super) fn drop_items(&mut self, hidden: &[ItemId]) {
+        if hidden.is_empty() {
+            return;
+        }
+        self.items.retain(|item| !hidden.contains(item));
+        self.checked.retain(|item| !hidden.contains(item));
+        if self.focused.is_some_and(|item| hidden.contains(&item)) {
+            self.focused = None;
+        }
+        if self.anchor.is_some_and(|item| hidden.contains(&item)) {
+            self.anchor = None;
+        }
+    }
 }
 
 impl App {
@@ -186,7 +202,7 @@ impl App {
             return;
         };
         let ids: Vec<ItemId> = self
-            .surface_items(surface)
+            .surface_shown_items(surface)
             .iter()
             .map(|item| item.id)
             .collect();
@@ -238,27 +254,27 @@ impl App {
         self.selection.typed.push(ch);
         Self::set_timer(ui, Timer::Type, TYPE_DELAY_MS);
         let show_extensions = self.shows_extensions(surface);
-        let labels: Vec<String> = self
-            .surface_items(surface)
+        let shown = self.surface_shown_items(surface);
+        let labels: Vec<String> = shown
             .iter()
             .map(|item| item_label(item, show_extensions))
             .collect();
         let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        let current = self.selection.items.last().and_then(|item| {
-            self.surface_items(surface)
-                .iter()
-                .position(|entry| entry.id == *item)
-        });
+        let current = self
+            .selection
+            .items
+            .last()
+            .and_then(|item| shown.iter().position(|entry| entry.id == *item));
         let start = current.map_or(0, |index| index + 1);
         let Some(index) = next_prefix_match(&labels, &self.selection.typed, start) else {
             return;
         };
-        let Some(item) = self.surface_items(surface).get(index).map(|entry| entry.id) else {
+        let Some(item) = shown.get(index).map(|entry| entry.id) else {
             return;
         };
         self.selection.select_only(surface, item);
         if let Surface::Space(id) = surface {
-            self.scroll_item_into_view(id, index);
+            self.scroll_item_into_view(id, item);
         }
         self.refresh_surface(ui, surface);
     }
@@ -270,20 +286,13 @@ impl App {
         let Some(surface) = self.selection.surface else {
             return;
         };
-        let cells: Vec<Rect> = self
-            .surface_cells(surface)
-            .into_iter()
-            .map(|(_, rect)| rect)
-            .collect();
+        let (ids, cells): (Vec<ItemId>, Vec<Rect>) =
+            self.surface_cells(surface).into_iter().unzip();
         let current = self
             .selection
             .focused
             .or_else(|| self.selection.items.last().copied())
-            .and_then(|item| {
-                self.surface_items(surface)
-                    .iter()
-                    .position(|entry| entry.id == item)
-            });
+            .and_then(|item| ids.iter().position(|entry| *entry == item));
         // A first arrow with nothing focused picks the first item.
         let target = match current {
             Some(index) => match next_in_direction(&cells, index, key.dir) {
@@ -292,11 +301,7 @@ impl App {
             },
             None => 0,
         };
-        let Some(item) = self
-            .surface_items(surface)
-            .get(target)
-            .map(|entry| entry.id)
-        else {
+        let Some(item) = ids.get(target).copied() else {
             return;
         };
         if key.focus {
@@ -309,23 +314,22 @@ impl App {
             self.selection.select_only(surface, item);
         }
         if let Surface::Space(id) = surface {
-            self.scroll_item_into_view(id, target);
+            self.scroll_item_into_view(id, item);
         }
         self.refresh_surface(ui, surface);
     }
 
-    /// Brings the item at `index` (in the space's order) into the content area
-    /// by adjusting the scroll offset.
-    pub(super) fn scroll_item_into_view(&mut self, id: SpaceId, index: usize) {
+    /// Brings `item` into the content area by adjusting the scroll offset.
+    pub(super) fn scroll_item_into_view(&mut self, id: SpaceId, item: ItemId) {
         let Some(layout) = self.view_layout(id) else {
             return;
         };
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        if index >= space.items().len() {
+        let Some(index) = space.items().iter().position(|entry| entry.id == item) else {
             return;
-        }
+        };
         let content = space.content_rect().size();
         let scroll = self.view_cache.scroll_of(id);
         if let Some(offset) = layout.scroll_to_show(index, scroll, content) {
@@ -340,20 +344,14 @@ impl App {
             self.selection.replace_items(vec![item]);
             return;
         };
-        let index = |target| {
-            self.surface_items(surface)
-                .iter()
-                .position(|entry| entry.id == target)
-        };
+        let shown = self.surface_shown_items(surface);
+        let index = |target| shown.iter().position(|entry| entry.id == target);
         let (Some(a), Some(b)) = (index(anchor), index(item)) else {
             self.selection.replace_items(vec![item]);
             return;
         };
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
-        let selected: Vec<ItemId> = self.surface_items(surface)[start..=end]
-            .iter()
-            .map(|entry| entry.id)
-            .collect();
+        let selected: Vec<ItemId> = shown[start..=end].iter().map(|entry| entry.id).collect();
         self.selection.replace_items(selected);
     }
 
@@ -576,6 +574,7 @@ mod tests {
             gap: 10,
             padding: 12,
             header: 0,
+            group_header: 30,
         };
         let layout = deskspace_core::ViewLayout::new(
             deskspace_core::ViewMode::List,

@@ -200,7 +200,7 @@ impl Desktop {
             }
             space.user_sized = false;
             arrange_space(space, layout);
-            if space.view.mode.places_by_order() {
+            if space.view.places_by_order() {
                 let size = fit_size(space, metrics);
                 space.rect.width = size.width.min(bounds.width);
                 space.rect.height = size.height.min(bounds.height);

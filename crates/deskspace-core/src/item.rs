@@ -37,7 +37,7 @@ impl ItemKind {
 
 /// How items are ordered: the field a `SortRule` compares first. The saved
 /// spelling is part of a space's config, so a variant is never renamed.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortKey {
     #[default]

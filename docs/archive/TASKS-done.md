@@ -4888,3 +4888,54 @@ until I5-I6 all land, so no partial build hides the desktop.
     holds the old values unchanged, also never measured, so a space not in
     compact looks as before. Menu id 81, field id 153. The toggle is on the
     View page only, not the two defaults pages, as the task asks.
+
+- [x] **W36. Group by: the groups (core, app).** After: W15, W18.
+  - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
+    }>`. `Space::order_is_fixed()` replaces W15's reorder check: it is
+    true while the space keeps sorted *or* is grouped, and
+    `ReorderItem` reads it (D18).
+  - App, pure: `groups(items, group_by, facts) -> Vec<Group { name,
+    range }>` over items already sorted by the sort rule, with each
+    group's items kept together. Group names follow Explorer, and the
+    implementer checks each one on screen:
+    - Name: letter ranges (for example "A - H", "I - P", "Q - Z") and
+      "0 - 9";
+    - Type: the W18 type name;
+    - Size: Explorer's buckets, from Empty and Tiny through Gigantic;
+    - Date modified: Today, Yesterday, Earlier this week, Last week,
+      Earlier this month, Last month, Earlier this year, A long time ago.
+      Pass the local date in, never read the clock inside.
+  - Tests: each key's groups and order, both directions; date buckets
+    across a week, month, and year boundary; an empty space has no
+    groups; `order_is_fixed`.
+
+- [x] **W37. Group by: headers and folding (core, app, platform).**
+  **[needs human]** After: W36, W17.
+  - `view_layout.rs`: a header row before each group, in every view
+    (an icon view places grouped items by order, as D18 says). Prefix
+    sums and binary search keep a scroll window O(log groups)
+    (Performance).
+  - Painting: Explorer's header (name, count, a chevron, and a rule to
+    the edge).
+  - A click on a header folds or unfolds it. The fold state is per space
+    in `ViewCache` (session only). Folding drops the group's items from
+    the selection; Ctrl+A, the marquee, and the arrow keys skip folded
+    items (D18).
+  - Tests: layout with folded and open groups; the visible-window lookup
+    against a brute-force walk on random group sizes; folding clears the
+    selection; Ctrl+A skips folded items.
+  - **[needs human]** check: group a 50,000-file lens by Type and scroll
+    fast; fold and unfold; Ctrl+A then Delete after folding a group:
+    the question counts only visible items.
+  - Done 2026-10-31, as one commit, since W36's code has no caller before
+    W37; the maintainer reviewed the plan and chose where the order lives.
+    The stored item order stays as it is, and the app derives a display order
+    (`Grouping`, core; `crate::grouping`, app), cached per space behind a digest
+    of what it reads, so ungrouping restores a hand arrangement and undo is not
+    involved. Only `ViewLayout` maps between stored index and display position,
+    so its readers still speak stored indices. Within a group items keep their
+    stored order, which for a lens is its sort rule. A grouped List stacks
+    downward as rows. The chevron sits at the left and the rule runs along the
+    bottom of the row. Release build, 2026-10-31, 50,000 items, on the UI thread:
+    grouping 1.9-4.6 ms by key, and the digest each repaint pays about 1.9 ms
+    (SipHash took 4.8 ms, so it is a word-at-a-time hash).

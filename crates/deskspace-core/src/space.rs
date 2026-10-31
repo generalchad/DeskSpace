@@ -330,7 +330,13 @@ impl Space {
     /// space the user has not sized, while a view that places items by order
     /// fits only when asked, so it can always be asked again.
     pub fn can_fit(&self) -> bool {
-        !self.locked && (self.user_sized || self.view.mode.places_by_order())
+        !self.locked && (self.user_sized || self.view.places_by_order())
+    }
+
+    /// Whether dragging may not rearrange the items: the space holds its sort,
+    /// or groups them (D18).
+    pub fn order_is_fixed(&self) -> bool {
+        self.keeps_sorted() || self.view.group.is_some()
     }
 
     /// The edges a resize grabbed at `point` would move. Corners are wider
@@ -464,6 +470,20 @@ mod tests {
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
         );
         assert!(space.content_rect().is_empty());
+    }
+
+    #[test]
+    fn a_kept_order_or_a_grouping_fixes_the_order() {
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(10, 20, 200, 300));
+        assert!(!space.order_is_fixed());
+        space.view.keep_sorted = true;
+        assert!(space.order_is_fixed());
+        space.view.keep_sorted = false;
+        space.view.group = Some(crate::view::GroupBy {
+            key: crate::item::SortKey::Name,
+            descending: false,
+        });
+        assert!(space.order_is_fixed());
     }
 
     #[test]

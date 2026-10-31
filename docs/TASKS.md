@@ -78,6 +78,8 @@ Where each kind of code lives. Paths are under `crates/`.
 | Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
 | Dragging a Details header or its dividers | `deskspace-app/src/app/columns.rs` |
 | Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
+| Group names and which group an item is in (pure) | `deskspace-app/src/grouping.rs` |
+| A grouped space's display order | `deskspace-core/src/grouping.rs` (`Grouping`), read by `ViewLayout`; `App::sync_grouping` in `app/view.rs` keeps it current |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
 | Cut / copy / paste | `deskspace-app/src/app/clipboard.rs` |
@@ -832,45 +834,6 @@ interest. In phase 4 and 5 terms:
   expected in this phase.
 
 #### Phase 5 tasks
-
-- [ ] **W36. Group by: the groups (core, app).** After: W15, W18.
-  - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
-    }>`. `Space::order_is_fixed()` replaces W15's reorder check: it is
-    true while the space keeps sorted *or* is grouped, and
-    `ReorderItem` reads it (D18).
-  - App, pure: `groups(items, group_by, facts) -> Vec<Group { name,
-    range }>` over items already sorted by the sort rule, with each
-    group's items kept together. Group names follow Explorer, and the
-    implementer checks each one on screen:
-    - Name: letter ranges (for example "A - H", "I - P", "Q - Z") and
-      "0 - 9";
-    - Type: the W18 type name;
-    - Size: Explorer's buckets, from Empty and Tiny through Gigantic;
-    - Date modified: Today, Yesterday, Earlier this week, Last week,
-      Earlier this month, Last month, Earlier this year, A long time ago.
-      Pass the local date in, never read the clock inside.
-  - Tests: each key's groups and order, both directions; date buckets
-    across a week, month, and year boundary; an empty space has no
-    groups; `order_is_fixed`.
-
-- [ ] **W37. Group by: headers and folding (core, app, platform).**
-  **[needs human]** After: W36, W17.
-  - `view_layout.rs`: a header row before each group, in every view
-    (an icon view places grouped items by order, as D18 says). Prefix
-    sums and binary search keep a scroll window O(log groups)
-    (Performance).
-  - Painting: Explorer's header (name, count, a chevron, and a rule to
-    the edge).
-  - A click on a header folds or unfolds it. The fold state is per space
-    in `ViewCache` (session only). Folding drops the group's items from
-    the selection; Ctrl+A, the marquee, and the arrow keys skip folded
-    items (D18).
-  - Tests: layout with folded and open groups; the visible-window lookup
-    against a brute-force walk on random group sizes; folding clears the
-    selection; Ctrl+A skips folded items.
-  - **[needs human]** check: group a 50,000-file lens by Type and scroll
-    fast; fold and unfold; Ctrl+A then Delete after folding a group:
-    the question counts only visible items.
 
 - [ ] **W38. Group by: the menu and the settings (app).** After: W37,
   W23.
@@ -2063,6 +2026,7 @@ each id is in `archive/TASKS-done.md`.
 | W31 (F-63) | On a space and a lens in Details, at 100 % and 150 %: over a header divider the pointer is the resize cursor. Drag a column's right divider: it follows the pointer, the rows follow, the columns may pass the edge, and on release Name takes the rest and the columns shift flush: judge that shift. The divider right of Name resizes the next column with no shift. Esc during a drag puts the width back and leaves the selection. A divider press does not sort; a click elsewhere on a header still does. Smooth on a 50,000-file lens, and a listing arriving mid-drag (copy files into the folder) does not end it. One Ctrl+Z restores the width, and it survives a restart. Compare the grab distance with Explorer's (provisional 4 px each way). |
 | W32 (F-63) | On a space and a lens in Details, at 100 % and 150 %: drag a header past the other columns: an insertion mark shows between headers, readable on Acrylic, Blur, Solid, and Clear, and the columns do not move until release. Esc removes the mark and changes nothing. Name shows no mark and stays first, and nothing lands before it. A click without a drag sorts, now on release rather than on press: note whether that feels slower. One Ctrl+Z restores the order, and it survives a restart. Cell text follows its column. |
 | W33 (D18) | Measure against Explorer's Compact view (Folder Options > View > Decrease space between items) at 100 % and 150 %, with DeskSpace's row sizes in `COMPACT_CELLS` provisional (`view_layout.rs`) and `NORMAL_CELLS` never measured either: Small icons, List, Details and its header, Tiles, Content. Correct the constants and record the measurement. Text and icons must not clip in a compact row. View ▸ "Compact view" and the View page's toggle agree, Cancel restores, it survives a restart, and the icon views do not change. |
+| W37 (F-65) | With `group = { key = "kind" }` (or name, size, modified, created) in a space's `view` until W38's menu is in: compare the group names, order, and header with Explorer on the same folder, at 100 % and 150 %, in every view; a grouped List stacks downward. Week start is Sunday: check another locale. The rule runs along the row's bottom rather than from the text as Explorer's does: judge it. A click on a header folds and opens it. Ctrl+A after folding, then Delete: the question counts only visible items; the marquee and arrows skip folded items. Dragging to rearrange is refused and an icon view's hand arrangement returns on ungrouping. A 50,000-file lens grouped by Type scrolls and hovers with no hitch. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 
@@ -2145,4 +2109,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   (every column on takes 560 px at 96 DPI). Explorer scrolls sideways.
   Suggested task: a horizontal scroll for Details in `ViewLayout`. Found in
   W30, 2026-10-31.
+- `command/space_ops.rs` `apply_fit_to_contents`: `fit_size` knows nothing of
+  groups, so Fit to contents on a grouped space falls short by its header rows
+  and scrolls. Suggested: carry the extent, not the metrics, in the command.
+  Found in W37, 2026-10-31.
+- `scripts/onscreen/smoke.ps1` fails on the maintainer's machine as run by an
+  agent (2026-10-31): the screen capture reads the wallpaper rather than the
+  backdrop and the space, though both windows report visible at their rects.
+  `shadows.ps1 -Pixels` will be affected too. Not yet understood. Found in W37.
 

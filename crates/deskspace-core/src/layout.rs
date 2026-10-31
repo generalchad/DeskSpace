@@ -240,7 +240,7 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     // The title height follows the grid even for user-sized spaces, so an icon
     // or DPI change reaches every space.
     space.title_height = spec.title_height;
-    if space.view().mode.places_by_order() {
+    if space.view().places_by_order() {
         return;
     }
     if space.user_sized {
@@ -267,7 +267,7 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
 /// use as many columns as their width allows; others use `spec.columns`. A view
 /// that places items by order leaves the positions alone (D17).
 pub fn position_items(space: &mut Space, spec: GridSpec) {
-    if space.view().mode.places_by_order() {
+    if space.view().places_by_order() {
         return;
     }
     let columns = if space.user_sized {

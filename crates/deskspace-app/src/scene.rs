@@ -9,9 +9,9 @@ use deskspace_core::{
     SortKey, SortRule, Space, SpaceView, Theme, ViewMode,
 };
 use deskspace_platform::{
-    DetailsColumnVisual, DetailsView, DropInto, Icon, IconCache, ItemLayout, ItemMetrics,
-    ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle, StatusBar, StatusButtonVisual,
-    TitleIcon, format_date, format_kb, type_name,
+    DetailsColumnVisual, DetailsView, DropInto, GroupHeaderVisual, Icon, IconCache, ItemLayout,
+    ItemMetrics, ItemState, ItemVisual, ShadowStyle, SpaceScene, SpaceStyle, StatusBar,
+    StatusButtonVisual, TitleIcon, format_date, format_kb, type_name,
 };
 
 use crate::settings::{NAME_MIN_WIDTH, STATUS_BUTTONS, VIEW_MODES, shown_details_columns};
@@ -59,6 +59,8 @@ pub struct SurfaceLook<'a> {
 /// Transient view state that affects how one space is drawn.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ViewState {
+    /// The space's display order when it groups its items.
+    pub grouping: Option<std::sync::Arc<deskspace_core::grouping::Grouping>>,
     /// Where a dragged Details header would land, as an index to insert at.
     pub column_drop: Option<usize>,
     pub hovered: Option<ItemId>,
@@ -193,7 +195,8 @@ pub fn space_scene_with_details(
         scale,
     } = look;
     let view_layout =
-        ViewLayout::for_space(space, ViewMetrics::for_view(space.view(), layout, scale));
+        ViewLayout::for_space(space, ViewMetrics::for_view(space.view(), layout, scale))
+            .with_grouping(view.grouping.clone());
     let content_top = space.title_height;
     let content = space.content_rect();
     let content_area = Rect::new(0, content_top, content.width, content.height);
@@ -201,7 +204,7 @@ pub fn space_scene_with_details(
         Vec::new()
     } else {
         let mut items = Vec::new();
-        for index in view_layout.visible(view.scroll, content.size()) {
+        for index in view_layout.visible_items(view.scroll, content.size()) {
             let Some(item) = space.items().get(index) else {
                 continue;
             };
@@ -310,6 +313,13 @@ pub fn space_scene_with_details(
         }),
         notice: view.notice.clone(),
         focused_item: view.focused.map(|id| id.0),
+        group_headers: group_headers(
+            space,
+            &view_layout,
+            view.grouping.as_deref(),
+            view.scroll,
+            content_area,
+        ),
         details: details_view(space, &view_layout, content.width, layout.padding, scale).map(
             |mut details| {
                 details.drop_mark = view
@@ -472,6 +482,7 @@ pub fn desktop_layer_scene(
         drop_into: DropInto::Space,
         placeholder: None,
         notice: None,
+        group_headers: Vec::new(),
         focused_item: view.focused.map(|id| id.0),
         details: None,
         status: None,
@@ -571,6 +582,38 @@ pub fn drag_scene(
         })
         .collect();
     scene
+}
+
+/// The header rows of `grouping`'s groups in the scroll window, as Explorer
+/// labels them: the name, then the count.
+fn group_headers(
+    space: &Space,
+    layout: &ViewLayout,
+    grouping: Option<&deskspace_core::grouping::Grouping>,
+    scroll: i32,
+    content_area: Rect,
+) -> Vec<GroupHeaderVisual> {
+    let Some(grouping) = grouping.filter(|_| !space.folded()) else {
+        return Vec::new();
+    };
+    layout
+        .visible_groups(scroll, content_area.size())
+        .filter_map(|index| {
+            let group = grouping.groups().get(index)?;
+            let cell = layout.group_rect(index)?;
+            let rect = Rect::new(
+                cell.x,
+                content_area.y + cell.y - scroll,
+                cell.width,
+                cell.height,
+            );
+            rect.intersects(content_area).then(|| GroupHeaderVisual {
+                rect,
+                label: format!("{} ({})", group.name, group.len),
+                folded: group.folded,
+            })
+        })
+        .collect()
 }
 
 /// How `mode`'s item cells place their icon and label. The painter and the

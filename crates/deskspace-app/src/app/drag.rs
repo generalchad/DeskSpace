@@ -356,7 +356,7 @@ impl App {
             .config
             .desktop
             .space(space)
-            .is_some_and(|space| space.keeps_sorted())
+            .is_some_and(|space| space.order_is_fixed())
         {
             return false;
         }

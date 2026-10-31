@@ -4,6 +4,7 @@
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::item::SortKey;
 use crate::sort::SortRule;
 
 /// Whether a space's labels show filename extensions (D18, W28).
@@ -25,6 +26,23 @@ impl Extensions {
     fn is_default(&self) -> bool {
         *self == Self::Automatic
     }
+}
+
+/// How a space groups its items, as Explorer's Group by does (D18).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroupBy {
+    pub key: SortKey,
+    #[serde(default)]
+    pub descending: bool,
+}
+
+/// Reads a hand-editable grouping so that no value in it can fail the config
+/// load: one that makes no sense means no grouping.
+fn lenient_group<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<GroupBy>, D::Error> {
+    Ok(match Lenient::<GroupBy>::deserialize(deserializer)? {
+        Lenient::Valid(group) => Some(group),
+        Lenient::Invalid(_) => None,
+    })
 }
 
 /// A Details column (D18). Its spelling is part of a space's config, so a
@@ -172,6 +190,12 @@ pub struct SpaceView {
     /// Whether the views that place items by order use Explorer's tighter
     /// rows. The icon views keep the Layout page's spacing (D18).
     pub compact: bool,
+    /// How the space groups its items, if it does.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient_group"
+    )]
+    pub group: Option<GroupBy>,
     /// The Details columns the space shows, in display order (D18). Always
     /// sanitized: `ColumnSpec::sanitize` runs on load and after every edit.
     #[serde(
@@ -190,12 +214,20 @@ impl Default for SpaceView {
             status_bar: false,
             extensions: Extensions::default(),
             compact: false,
+            group: None,
             columns: default_columns(),
         }
     }
 }
 
 impl SpaceView {
+    /// Whether items are placed by their order, not on the icon grid, so
+    /// `Item.position` is left alone: an order-placed view, or any grouped one,
+    /// since groups have no place on a grid (D18).
+    pub fn places_by_order(&self) -> bool {
+        self.mode.places_by_order() || self.group.is_some()
+    }
+
     /// This view shown as `mode`, as the View menu and its keys change it. The
     /// sort rule, Keep sorted, and the status bar stay, since a space keeps
     /// its last rule across views (D17).
@@ -360,7 +392,6 @@ mod tests {
     use super::*;
     use crate::geometry::Rect;
     use crate::id::SpaceId;
-    use crate::item::SortKey;
     use crate::space::Space;
 
     #[test]
@@ -679,6 +710,10 @@ mod tests {
             status_bar: true,
             extensions: Extensions::Hide,
             compact: true,
+            group: Some(GroupBy {
+                key: SortKey::Kind,
+                descending: true,
+            }),
             columns: vec![ColumnSpec::new(Column::Name)],
         };
         let next = view.with_mode(ViewMode::Details);
@@ -774,6 +809,64 @@ mod tests {
         assert!(text.contains("keep_sorted"), "the choice shows in the file");
         let back: Space = toml::from_str(&text).unwrap();
         assert!(back.view().keep_sorted);
+    }
+
+    #[test]
+    fn a_grouping_round_trips_and_is_left_out_when_off() {
+        assert!(
+            !toml::to_string(&SpaceView::default())
+                .unwrap()
+                .contains("group")
+        );
+        let view = SpaceView {
+            group: Some(GroupBy {
+                key: SortKey::Size,
+                descending: true,
+            }),
+            ..SpaceView::default()
+        };
+        let text = toml::to_string(&view).unwrap();
+        assert_eq!(toml::from_str::<SpaceView>(&text).unwrap(), view, "{text}");
+    }
+
+    #[test]
+    fn a_hostile_grouping_never_fails_the_load() {
+        for text in [
+            "group = 'wide'",
+            "group = 3",
+            "group = { key = 'future' }",
+            "group = { descending = true }",
+            "group = { key = 'size', descending = 'y' }",
+        ] {
+            assert_eq!(
+                toml::from_str::<SpaceView>(text).unwrap().group,
+                None,
+                "{text}"
+            );
+        }
+        assert_eq!(
+            toml::from_str::<SpaceView>("group = { key = 'size' }")
+                .unwrap()
+                .group,
+            Some(GroupBy {
+                key: SortKey::Size,
+                descending: false,
+            })
+        );
+    }
+
+    #[test]
+    fn a_grouped_icon_view_places_by_order() {
+        let view = SpaceView::default();
+        assert!(!view.places_by_order());
+        let grouped = SpaceView {
+            group: Some(GroupBy {
+                key: SortKey::Name,
+                descending: false,
+            }),
+            ..view
+        };
+        assert!(grouped.places_by_order());
     }
 
     #[test]

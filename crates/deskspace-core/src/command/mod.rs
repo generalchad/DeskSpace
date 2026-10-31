@@ -684,6 +684,45 @@ mod tests {
     }
 
     #[test]
+    fn a_grouped_space_refuses_a_rearrange_and_leaves_positions_alone() {
+        let (mut desktop, id) = space_in_view(ViewMode::Icons, Rect::new(10, 10, 500, 400), 3);
+        let before: Vec<Point> = desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.position)
+            .collect();
+        let item = desktop.space(id).unwrap().items()[0].id;
+        desktop.apply(
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    group: Some(crate::view::GroupBy {
+                        key: crate::item::SortKey::Name,
+                        descending: false,
+                    }),
+                    ..SpaceView::default()
+                },
+            },
+            bounds(),
+        );
+        assert_eq!(
+            desktop.apply(Command::ReorderItem { id: item, index: 2 }, bounds()),
+            CommandOutcome::Rejected
+        );
+        desktop.apply(Command::Reflow { id }, bounds());
+        let after: Vec<Point> = desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.position)
+            .collect();
+        assert_eq!(after, before, "a hand arrangement waits for ungrouping");
+    }
+
+    #[test]
     fn a_folded_space_fits_as_it_would_show() {
         let tall = Rect::new(10, 10, 500, 700);
         let (mut open, open_id) = space_in_view(ViewMode::Details, tall, 3);

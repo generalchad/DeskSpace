@@ -193,7 +193,14 @@ the space goes back to an icon view. Tiles (W21) wraps 48 px icons with three
 lines beside each (name, type, size), and Content (W22) puts one item on each
 full-width row with its labelled date and size on the right and a separator
 between rows. `SpaceView.compact` (W33) switches these views' cells to
-`COMPACT_CELLS`; the icon views keep the Layout page's spacing. `SpaceView.status_bar` adds Explorer's
+`COMPACT_CELLS`; the icon views keep the Layout page's spacing.
+`SpaceView.group` groups the items in any view (D18). The stored order stays
+as it is: `App::sync_grouping` derives a `Grouping` (display order and groups,
+with the names from `crate::grouping`), cached behind a digest of what it reads
+and checked on every repaint, and `ViewLayout::with_grouping` maps stored
+indices to display positions, so its readers need not know. Folded groups are
+session state in `ViewCache`; their items have no position, so nothing can hit,
+select, or scroll to them, and a rebuild drops them from the selection. `SpaceView.status_bar` adds Explorer's
 status bar along the bottom edge (W19): the item and selection counts and the
 selected files' size on the left, and the Details and Large icons buttons on
 the right. It is chrome, so `Space::content_rect` leaves its height out and
@@ -1574,6 +1581,7 @@ in `ui.rs`. What spans them:
 - Dragging a Details header's divider resizes a column, and the divider right
   of Name resizes the next column. Esc during the drag, or losing the mouse,
   puts the width back. It is one "Resize column" undo entry on release.
+- A click on a group's header folds or opens the group (session only).
 - Dragging a Details header moves its column, with a mark where it would land
   (one "Reorder columns" undo entry on release; Esc cancels). Name stays first.
   A click that never becomes a drag sorts, on release.

@@ -7,13 +7,16 @@
 //! `Item.position`, so switching back to an icon view restores the hand
 //! arrangement (D17).
 //!
-//! Layout is arithmetic: [`ViewLayout::rect`] is `O(1)`, and
+//! Layout is arithmetic: [`ViewLayout::rect`] is `O(1)` (`O(log groups)` in a
+//! grouped space), and
 //! [`ViewLayout::visible`] finds the items in a scroll window without walking
 //! every item.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::geometry::{Point, Rect, Size};
+use crate::grouping::Grouping;
 use crate::layout::{GridSpec, columns_for};
 use crate::space::Space;
 use crate::view::{SpaceView, ViewMode};
@@ -27,6 +30,8 @@ struct OrderedCells {
     list: (i32, i32),
     details_row: i32,
     details_header: i32,
+    /// A group's header row, in every view.
+    group_header: i32,
     tile: (i32, i32),
     content_row: i32,
     /// The space between inline cells, horizontally and vertically.
@@ -38,6 +43,7 @@ const NORMAL_CELLS: OrderedCells = OrderedCells {
     list: (200, 22),
     details_row: 22,
     details_header: 25,
+    group_header: 30,
     tile: (210, 60),
     content_row: 32,
     gap: 2,
@@ -50,6 +56,7 @@ const COMPACT_CELLS: OrderedCells = OrderedCells {
     list: (200, 18),
     details_row: 18,
     details_header: 22,
+    group_header: 24,
     tile: (210, 52),
     content_row: 26,
     gap: 0,
@@ -110,6 +117,8 @@ pub struct ViewMetrics {
     /// The fixed header row above the items; 0 for every view but Details
     /// (W18).
     pub header: i32,
+    /// A group's header row, when the space groups its items.
+    pub group_header: i32,
 }
 
 impl ViewMetrics {
@@ -128,7 +137,12 @@ impl ViewMetrics {
             ViewMode::Icons
             | ViewMode::ExtraLargeIcons
             | ViewMode::LargeIcons
-            | ViewMode::MediumIcons => return Self::for_grid(grid),
+            | ViewMode::MediumIcons => {
+                return Self {
+                    group_header: scaled(NORMAL_CELLS.group_header),
+                    ..Self::for_grid(grid)
+                };
+            }
             ViewMode::SmallIcons => (cells.small_icons, cells.gap, 0),
             ViewMode::List => (cells.list, cells.gap, 0),
             ViewMode::Tiles => (cells.tile, cells.gap, 0),
@@ -142,6 +156,7 @@ impl ViewMetrics {
             gap: if gap == 0 { 0 } else { scaled(gap) },
             padding: grid.padding,
             header: if header == 0 { 0 } else { scaled(header) },
+            group_header: scaled(cells.group_header),
         }
     }
 
@@ -153,6 +168,7 @@ impl ViewMetrics {
             gap: grid.gap,
             padding: grid.padding,
             header: 0,
+            group_header: NORMAL_CELLS.group_header,
         }
     }
 }
@@ -174,12 +190,26 @@ pub fn fit_size(space: &Space, metrics: ViewMetrics) -> Size {
 }
 
 /// The placement of `count` items in a space's content area.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Indices are the items' stored indices, in a grouped space as in any other;
+/// only this type knows the display order that puts them in groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewLayout {
     mode: ViewMode,
     content: Size,
+    /// How many items are shown; in a grouped space, those not folded.
     count: usize,
     metrics: ViewMetrics,
+    groups: Option<GroupedLines>,
+}
+
+/// A grouped layout's arithmetic: where each group begins along the scroll axis,
+/// below the column header and padding, so a lookup is a binary search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GroupedLines {
+    grouping: Arc<Grouping>,
+    /// One per group, then the end of the last.
+    tops: Vec<i32>,
 }
 
 impl ViewLayout {
@@ -189,7 +219,34 @@ impl ViewLayout {
             content,
             count,
             metrics,
+            groups: None,
         }
+    }
+
+    /// This layout with its items in `grouping`'s order, under its headers.
+    /// Groups stack downward in every view, as Explorer's do, so List wraps
+    /// into rows while it is grouped. `None` leaves the layout as it is.
+    pub fn with_grouping(mut self, grouping: Option<Arc<Grouping>>) -> Self {
+        let Some(grouping) = grouping else {
+            return self;
+        };
+        self.count = grouping.shown();
+        self.groups = Some(GroupedLines {
+            tops: Vec::new(),
+            grouping: Arc::clone(&grouping),
+        });
+        let cross_count = self.cross_count();
+        let line_step = self.line_step();
+        let mut tops = Vec::with_capacity(grouping.groups().len() + 1);
+        let mut top = 0;
+        tops.push(top);
+        for group in grouping.groups() {
+            let lines = group.shown().div_ceil(cross_count) as i32;
+            top += self.metrics.group_header + lines * line_step;
+            tops.push(top);
+        }
+        self.groups = Some(GroupedLines { tops, grouping });
+        self
     }
 
     /// The layout of a space's items under `metrics`.
@@ -203,7 +260,53 @@ impl ViewLayout {
     }
 
     fn flow(&self) -> Flow {
-        Flow::of(self.mode)
+        if self.groups.is_some() {
+            Flow::Rows
+        } else {
+            Flow::of(self.mode)
+        }
+    }
+
+    /// The display position of the item stored at `index`, or `None` while it
+    /// is folded or past the items.
+    fn position_of(&self, index: usize) -> Option<usize> {
+        match &self.groups {
+            Some(groups) => groups.grouping.position_of(index),
+            None => (index < self.count).then_some(index),
+        }
+    }
+
+    /// The stored index of the item at display `position`.
+    fn item_at(&self, position: usize) -> Option<usize> {
+        match &self.groups {
+            Some(groups) => groups.grouping.item_at(position),
+            None => (position < self.count).then_some(position),
+        }
+    }
+
+    /// Whether the item stored at `index` is shown, not folded away.
+    pub fn is_shown(&self, index: usize) -> bool {
+        self.position_of(index).is_some()
+    }
+
+    /// The stored indices of the items shown, in display order.
+    pub fn shown(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.count).filter_map(|position| self.item_at(position))
+    }
+
+    /// Where the rows start along the scroll axis, inside the content area.
+    fn lines_start(&self) -> i32 {
+        self.header_height() + self.metrics.padding
+    }
+
+    /// The group whose band holds `y`, measured from `lines_start`.
+    fn group_band_at(&self, y: i32) -> Option<usize> {
+        let groups = self.groups.as_ref()?;
+        let band = groups
+            .tops
+            .partition_point(|top| *top <= y)
+            .checked_sub(1)?;
+        (band < groups.grouping.groups().len()).then_some(band)
     }
 
     /// The cell side across the flow: a row's width, or a column's height.
@@ -270,6 +373,9 @@ impl ViewLayout {
     /// The cell of the item at `index`, relative to the content area's origin.
     /// `index` must be below the item count.
     pub fn rect(&self, index: usize) -> Rect {
+        if let Some(groups) = &self.groups {
+            return self.grouped_rect(groups, index);
+        }
         debug_assert!(index < self.count, "item index out of the layout");
         let cross_count = self.cross_count();
         let line = (index / cross_count) as i32;
@@ -288,6 +394,86 @@ impl ViewLayout {
             },
             self.metrics.cell.height,
         )
+    }
+
+    /// A grouped item's cell, or an empty rect while it is folded.
+    fn grouped_rect(&self, groups: &GroupedLines, index: usize) -> Rect {
+        let grouping = &groups.grouping;
+        let Some((position, group)) = grouping
+            .position_of(index)
+            .and_then(|position| Some((position, grouping.group_at(position)?)))
+        else {
+            return Rect::ZERO;
+        };
+        let cross_count = self.cross_count();
+        let local = position - grouping.groups()[group].first();
+        let line = (local / cross_count) as i32;
+        let cross = (local % cross_count) as i32;
+        Rect::new(
+            self.metrics.padding + cross * self.cross_step(),
+            self.lines_start()
+                + groups.tops[group]
+                + self.metrics.group_header
+                + line * self.line_step(),
+            if matches!(self.mode, ViewMode::Details | ViewMode::Content) {
+                self.cross_cell()
+            } else {
+                self.metrics.cell.width
+            },
+            self.metrics.cell.height,
+        )
+    }
+
+    /// Group `group`'s header row across the content, relative to the content
+    /// area's origin, before scrolling.
+    pub fn group_rect(&self, group: usize) -> Option<Rect> {
+        let groups = self.groups.as_ref()?;
+        Some(Rect::new(
+            self.metrics.padding,
+            self.lines_start() + groups.tops.get(group)?,
+            (self.content.width - self.metrics.padding * 2).max(1),
+            self.metrics.group_header,
+        ))
+    }
+
+    /// The group whose header row holds `point`, relative to the content area
+    /// and scrolled into that coordinate space.
+    pub fn group_at(&self, point: Point) -> Option<usize> {
+        let y = point.y - self.lines_start();
+        let group = self.group_band_at(y)?;
+        self.group_rect(group)?.contains(point).then_some(group)
+    }
+
+    /// The groups whose bands can be inside a scroll window.
+    pub fn visible_groups(&self, scroll: i32, content: Size) -> Range<usize> {
+        let Some(groups) = &self.groups else {
+            return 0..0;
+        };
+        let start = scroll - self.lines_start();
+        let end = start + self.viewport(content);
+        let first = self
+            .group_band_at(start.max(0))
+            .unwrap_or(groups.tops.len());
+        let count = groups.grouping.groups().len();
+        let last = self
+            .group_band_at(end.max(0))
+            .map_or(count, |last| last + 1);
+        first.min(count)..last
+    }
+
+    /// The display position `y` reaches in a grouped layout: the first item at
+    /// or after it, measured from `lines_start`.
+    fn grouped_position_at(&self, groups: &GroupedLines, y: i32) -> usize {
+        let Some(group) = self.group_band_at(y.max(0)) else {
+            return self.count;
+        };
+        let entry = &groups.grouping.groups()[group];
+        let into_rows = y.max(0) - groups.tops[group] - self.metrics.group_header;
+        if into_rows < 0 {
+            return entry.first();
+        }
+        let local = (into_rows / self.line_step()) as usize * self.cross_count();
+        entry.first() + local.min(entry.shown())
     }
 
     /// The cell of the item at `index` after scrolling `scroll` px along the
@@ -321,6 +507,12 @@ impl ViewLayout {
     /// The content length along the scroll axis, padding included. Zero when
     /// the space has no items.
     pub fn extent(&self) -> i32 {
+        if let Some(groups) = &self.groups {
+            return match groups.tops.last() {
+                Some(end) if *end > 0 => self.header_height() + self.metrics.padding * 2 + end,
+                _ => 0,
+            };
+        }
         if self.count == 0 {
             return 0;
         }
@@ -352,6 +544,9 @@ impl ViewLayout {
         if self.count == 0 {
             return None;
         }
+        if let Some(groups) = &self.groups {
+            return self.grouped_index_at(groups, point);
+        }
         let (line, cross) = match self.flow() {
             Flow::Rows => (point.y, point.x),
             Flow::Columns => (point.x, point.y),
@@ -370,10 +565,34 @@ impl ViewLayout {
         (index < self.count && self.rect(index).contains(point)).then_some(index)
     }
 
+    fn grouped_index_at(&self, groups: &GroupedLines, point: Point) -> Option<usize> {
+        let cross = point.x - self.metrics.padding;
+        let y = point.y - self.lines_start();
+        if cross < 0 || y < 0 {
+            return None;
+        }
+        let group = self.group_band_at(y)?;
+        let into_rows = y - groups.tops[group] - self.metrics.group_header;
+        if into_rows < 0 {
+            return None;
+        }
+        let cross = (cross / self.cross_step()) as usize;
+        if cross >= self.cross_count() {
+            return None;
+        }
+        let entry = &groups.grouping.groups()[group];
+        let local = (into_rows / self.line_step()) as usize * self.cross_count() + cross;
+        if local >= entry.shown() {
+            return None;
+        }
+        let index = groups.grouping.item_at(entry.first() + local)?;
+        self.rect(index).contains(point).then_some(index)
+    }
+
     /// The nearest slot for a drag dropped at `point` (relative to the content
     /// area and scrolled into that coordinate space), clamped to the last item.
     pub fn drop_index(&self, point: Point) -> Option<usize> {
-        if self.count == 0 {
+        if self.count == 0 || self.groups.is_some() {
             return None;
         }
         let (line, cross) = match self.flow() {
@@ -388,13 +607,26 @@ impl ViewLayout {
         Some((line as usize * cross_count + cross as usize).min(self.count - 1))
     }
 
-    /// The indices whose lines can be inside a scroll window at `scroll` in a
-    /// content area `content`, in model order. A line may be partly visible,
-    /// so callers still clip each rect to be exact.
+    /// The stored indices of the items that can be inside a scroll window, in
+    /// display order. A line may be partly visible, so callers still clip each
+    /// rect to be exact.
+    pub fn visible_items(&self, scroll: i32, content: Size) -> impl Iterator<Item = usize> + '_ {
+        self.visible(scroll, content)
+            .filter_map(|position| self.item_at(position))
+    }
+
+    /// The display positions whose lines can be inside a scroll window at
+    /// `scroll` in a content area `content`.
     pub fn visible(&self, scroll: i32, content: Size) -> Range<usize> {
         let viewport = self.viewport(content);
         if self.count == 0 || viewport <= 0 {
             return 0..0;
+        }
+        if let Some(groups) = &self.groups {
+            let start = scroll - self.lines_start();
+            let first = self.grouped_position_at(groups, start);
+            let last = self.grouped_position_at(groups, start + viewport);
+            return first..(last + self.cross_count()).min(self.count);
         }
         let lines = self.line_count();
         let header = self.header_height();
@@ -413,6 +645,9 @@ impl ViewLayout {
     /// The scroll offset that brings the item at `index` wholly into view in a
     /// content area `content`, or `None` when it already is.
     pub fn scroll_to_show(&self, index: usize, scroll: i32, content: Size) -> Option<i32> {
+        if !self.is_shown(index) {
+            return None;
+        }
         let rect = self.rect(index);
         let (start, end) = match self.flow() {
             Flow::Rows => (rect.y, rect.bottom()),
@@ -440,11 +675,171 @@ mod tests {
             gap: 10,
             padding: 12,
             header: 0,
+            group_header: 30,
         }
     }
 
     fn layout_of(mode: ViewMode, width: i32, count: usize) -> ViewLayout {
         ViewLayout::new(mode, Size::new(width, 400), count, metrics())
+    }
+
+    /// Groups of the given sizes over stored indices in reverse, so a display
+    /// position is never the stored index by accident.
+    fn grouping_of(sizes: &[usize], folded: &[usize]) -> Arc<Grouping> {
+        let total: usize = sizes.iter().sum();
+        let mut next = total;
+        let groups = sizes
+            .iter()
+            .enumerate()
+            .map(|(group, size)| {
+                let items = (0..*size)
+                    .map(|_| {
+                        next -= 1;
+                        next as u32
+                    })
+                    .collect();
+                (group.to_string(), items)
+            })
+            .collect();
+        let folded: Vec<String> = folded.iter().map(ToString::to_string).collect();
+        Arc::new(Grouping::new(groups, total, |name| {
+            folded.iter().any(|group| group == name)
+        }))
+    }
+
+    fn grouped(mode: ViewMode, width: i32, sizes: &[usize], folded: &[usize]) -> ViewLayout {
+        let total = sizes.iter().sum();
+        ViewLayout::new(mode, Size::new(width, 400), total, metrics())
+            .with_grouping(Some(grouping_of(sizes, folded)))
+    }
+
+    #[test]
+    fn a_header_comes_before_each_group_and_rows_follow_it() {
+        // 3 cells per row; groups of 4 and 2. Rows step 60, headers 30.
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        let first = layout.group_rect(0).unwrap();
+        assert_eq!((first.y, first.height), (12, 30));
+        assert_eq!(layout.rect(5).y, 12 + 30, "stored last, shown first");
+        assert_eq!(layout.rect(4).x, layout.rect(5).x + 110);
+        assert_eq!(layout.rect(2).y, 12 + 30 + 60, "the fourth wraps");
+        let second = layout.group_rect(1).unwrap();
+        assert_eq!(second.y, 12 + 30 + 2 * 60);
+        assert_eq!(layout.rect(1).y, second.y + 30);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30 + 3 * 60);
+    }
+
+    #[test]
+    fn a_grouped_view_keeps_its_details_header_above_the_groups() {
+        let metrics = ViewMetrics {
+            header: 25,
+            gap: 0,
+            ..metrics()
+        };
+        let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 400), 2, metrics)
+            .with_grouping(Some(grouping_of(&[2], &[])));
+        assert_eq!(layout.group_rect(0).unwrap().y, 25 + 12);
+        assert_eq!(layout.rect(1).y, 25 + 12 + 30);
+        assert_eq!(layout.rect(1).width, 360 - 24, "rows stay full width");
+    }
+
+    #[test]
+    fn a_grouped_list_stacks_downward() {
+        let layout = grouped(ViewMode::List, 360, &[4, 2], &[]);
+        assert_eq!(layout.axis(), ScrollAxis::Vertical);
+        assert_eq!(layout.viewport(Size::new(360, 400)), 400);
+        assert_eq!(layout.rect(4).y, layout.rect(5).y, "rows, not columns");
+    }
+
+    #[test]
+    fn a_folded_group_keeps_its_header_and_loses_its_rows() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[0]);
+        assert_eq!(layout.group_rect(1).unwrap().y, 12 + 30);
+        assert_eq!(layout.rect(1).y, 12 + 30 + 30);
+        assert!(!layout.is_shown(5));
+        assert!(layout.is_shown(1));
+        assert_eq!(layout.rect(5), Rect::ZERO);
+        assert_eq!(layout.shown().collect::<Vec<_>>(), [1, 0]);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30 + 60);
+        assert_eq!(layout.scroll_to_show(5, 0, Size::new(360, 100)), None);
+    }
+
+    #[test]
+    fn every_group_folded_still_scrolls_its_headers() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[0, 1]);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30);
+        assert_eq!(layout.visible(0, Size::new(360, 400)), 0..0);
+        assert_eq!(layout.index_at(Point::new(20, 50)), None);
+    }
+
+    #[test]
+    fn a_grouped_space_with_no_groups_is_empty() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[], &[]);
+        assert_eq!(layout.extent(), 0);
+        assert_eq!(layout.group_at(Point::new(20, 20)), None);
+    }
+
+    #[test]
+    fn a_header_row_hits_its_group_and_no_item() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        let second = layout.group_rect(1).unwrap();
+        let on_header = second.center();
+        assert_eq!(layout.group_at(on_header), Some(1));
+        assert_eq!(layout.index_at(on_header), None);
+        let on_row = layout.rect(1).center();
+        assert_eq!(layout.group_at(on_row), None);
+        assert_eq!(layout.index_at(on_row), Some(1));
+    }
+
+    #[test]
+    fn a_grouped_layout_refuses_a_drop_slot() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        assert_eq!(layout.drop_index(Point::new(20, 50)), None);
+    }
+
+    /// Walks every item and header to find what a scroll window should hold.
+    #[test]
+    fn the_visible_window_matches_a_brute_force_walk_on_random_groups() {
+        let mut seed = 0x2545_f491_u32;
+        let mut next = move |limit: u32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed % limit
+        };
+        for _ in 0..200 {
+            let sizes: Vec<usize> = (0..next(12) + 1).map(|_| next(40) as usize).collect();
+            let folded: Vec<usize> = (0..sizes.len()).filter(|_| next(4) == 0).collect();
+            let width = 120 + next(800) as i32;
+            let layout = grouped(ViewMode::SmallIcons, width, &sizes, &folded);
+            let content = Size::new(width, 50 + next(600) as i32);
+            let scroll = next(layout.extent().max(1) as u32 + 100) as i32;
+            let window = Rect::new(0, scroll, width, content.height);
+
+            let visible: Vec<usize> = layout.visible_items(scroll, content).collect();
+            let shown: Vec<usize> = layout.shown().collect();
+            for item in &shown {
+                if layout.rect(*item).intersects(window) {
+                    assert!(
+                        visible.contains(item),
+                        "{sizes:?} folded {folded:?} width {width} scroll {scroll}: {item}"
+                    );
+                }
+            }
+            for group in 0..sizes.len() {
+                let header = layout.group_rect(group).unwrap();
+                if header.intersects(window) {
+                    assert!(
+                        layout.visible_groups(scroll, content).contains(&group),
+                        "{sizes:?} folded {folded:?} scroll {scroll}: header {group}"
+                    );
+                }
+            }
+            // Every shown item is found at its own cell, and no two overlap.
+            for item in &shown {
+                let rect = layout.rect(*item);
+                assert_eq!(layout.index_at(rect.center()), Some(*item));
+            }
+        }
     }
 
     #[test]
@@ -645,8 +1040,8 @@ mod tests {
         );
         // An icon view ignores the display scale; its grid is already scaled.
         assert_eq!(
-            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::Icons), grid, 1.5),
-            ViewMetrics::for_grid(grid)
+            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::Icons), grid, 1.5).cell,
+            ViewMetrics::for_grid(grid).cell
         );
         assert_eq!(crate::view::SMALL_ICON_PX, 16);
     }

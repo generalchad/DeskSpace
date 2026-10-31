@@ -405,6 +405,12 @@ impl App {
         {
             return;
         }
+        // A press on a group's header folds or opens the group.
+        if let Surface::Space(id) = surface
+            && self.group_header_clicked(ui, id, point)
+        {
+            return;
+        }
         // A click on an item's check box either toggles that item in the
         // selection (auto-check-select) or the independent tick set, and moves
         // the highlight to it.
