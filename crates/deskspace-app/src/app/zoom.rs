@@ -164,7 +164,7 @@ impl App {
             return None;
         };
         let view = self.config.desktop.space(id)?.view();
-        (view.mode != ViewMode::Icons).then_some((id, view))
+        (view.mode != ViewMode::Icons).then(|| (id, view.clone()))
     }
 
     /// Applies a view step `view_step` or `zoom_step` decided (W39): one
@@ -179,7 +179,7 @@ impl App {
             .config
             .desktop
             .space(id)
-            .is_some_and(|space| space.view() != view)
+            .is_some_and(|space| *space.view() != view)
         {
             let at = self.space_center(id);
             self.set_space_view(ui, id, view, at);

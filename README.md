@@ -138,6 +138,8 @@ help inspect the look and the desktop layer.
   first and Keep sorted. A normal space sorts once, or holds the order as
   items come and go once Keep sorted is on; a lens always holds it.
   "Folders first" stands in both directions.
+- In Details, right-click the header to choose which columns show. Click a
+  header to sort by it.
 - Click an item to select it (Ctrl+click toggles, Shift+click selects a range,
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space (not one that keeps sorted), or out to another space,

@@ -426,7 +426,7 @@ pub(super) fn new_spaces_page(config: &Config) -> SettingsPage {
 /// (W28), and sort rule. Built for every scope so the form keeps its shape,
 /// but only a space lists it.
 pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
-    let view = space.map_or_else(SpaceView::default, Space::view);
+    let view = space.map_or_else(SpaceView::default, |space| space.view().clone());
     let mut fields = view_fields(&view, &VIEW_PAGE_IDS, space.is_some_and(Space::is_lens));
     // The extension choice sits after the status bar, as in the View menu.
     let after_status = fields
@@ -450,7 +450,7 @@ pub(super) fn view_page(space: Option<&Space>) -> SettingsPage {
 
 /// Global's Lenses page (W23): the defaults a new lens starts with.
 pub(super) fn lenses_page(config: &Config) -> SettingsPage {
-    let defaults = config.window.new_lens;
+    let defaults = &config.window.new_lens;
     let mut fields = view_fields(&defaults.view, &LENSES_PAGE_IDS, true);
     fields.extend([
         Field::heading(field::LENSES_TITLE_HEADING, "Lens"),

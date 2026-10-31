@@ -197,11 +197,15 @@ impl App {
                 ..
             } => {
                 let point = Point::new(x, y);
-                self.select_at(ui, surface, point);
-                self.pointer.right_press = self
-                    .surface_item_at(surface, point)
-                    .map(|item| (surface, item, point));
                 self.pointer.right_dragged = false;
+                // A row can be scrolled under the header, and a press on the
+                // header is for the header's menu, so it leaves the selection.
+                if self.details_header_column(surface, point).is_none() {
+                    self.select_at(ui, surface, point);
+                    self.pointer.right_press = self
+                        .surface_item_at(surface, point)
+                        .map(|item| (surface, item, point));
+                }
             }
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
@@ -239,6 +243,10 @@ impl App {
                 // shortcut menu, so only a plain right click opens DeskSpace's.
                 if self.pointer.right_dragged {
                     self.pointer.right_dragged = false;
+                } else if let (Surface::Space(id), Some(_)) =
+                    (surface, self.details_header_column(surface, point))
+                {
+                    self.show_details_header_menu(ui, id, point);
                 } else {
                     match self.surface_item_at(surface, point) {
                         Some(item) => self.show_item_menu(ui, surface, item, point),
@@ -364,33 +372,39 @@ impl App {
     /// returns true. A click on the column already sorted reverses it, as
     /// Explorer does.
     fn details_header_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(index) = self.details_header_column(Surface::Space(id), point) else {
+            return false;
+        };
         let Some(space) = self.config.desktop.space(id) else {
             return false;
         };
+        let rule = crate::scene::details_rule_after(space.view(), index);
+        let at = space.rect().origin();
+        self.sort_space(ui, id, rule, at);
+        true
+    }
+
+    /// The shown Details column whose header holds `point` on `surface`, if
+    /// any. The desktop layer has no header.
+    fn details_header_column(&self, surface: Surface, point: Point) -> Option<usize> {
+        let Surface::Space(id) = surface else {
+            return None;
+        };
+        let space = self.config.desktop.space(id)?;
         let content = space.content_rect();
         if space.view().mode != ViewMode::Details || !content.contains(point) {
-            return false;
+            return None;
         }
-        let Some(layout) = self.view_layout(id) else {
-            return false;
-        };
-        let Some(details) = crate::scene::details_view(
+        let layout = self.view_layout(id)?;
+        let details = crate::scene::details_view(
             space,
             &layout,
             content.width,
             self.layout_for(id).padding,
             space_dpi(id.0),
-        ) else {
-            return false;
-        };
+        )?;
         let local = Point::new(point.x - content.x, point.y - content.y);
-        let Some(index) = crate::scene::details_header_column_at(&details, local) else {
-            return false;
-        };
-        let rule = crate::scene::details_rule_after(space.view().sort, index);
-        let at = space.rect().origin();
-        self.sort_space(ui, id, rule, at);
-        true
+        crate::scene::details_header_column_at(&details, local)
     }
 
     pub(super) fn begin_interaction(

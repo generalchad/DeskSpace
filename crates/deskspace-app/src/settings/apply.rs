@@ -486,7 +486,7 @@ fn view_edit(
     value: &FieldValue,
 ) -> Option<(SpaceId, Command, FieldEffect)> {
     let space = scope_space(config, session)?;
-    let mut view = space.view();
+    let mut view = space.view().clone();
     match (id, value) {
         (field::VIEW_MODE, FieldValue::Choice(index)) => {
             view.mode = VIEW_MODES.get(*index)?.0;

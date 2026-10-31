@@ -724,7 +724,7 @@ impl App {
             metrics: self.metrics_for(id),
             scale: space_dpi(id.0),
         };
-        let mut details = |item: &Item| view_cells(space.view().mode, item);
+        let mut details = |item: &Item| view_cells(space.view(), item);
         let row_cells = (matches!(
             space.view().mode,
             ViewMode::Details | ViewMode::Tiles | ViewMode::Content
@@ -1059,7 +1059,10 @@ mod tests {
         };
         apply(
             &mut app.config.desktop,
-            Command::SetSpaceView { id, view: sorted },
+            Command::SetSpaceView {
+                id,
+                view: sorted.clone(),
+            },
         );
         assert_eq!(app.view_by_digit(6), None, "no space is current");
 

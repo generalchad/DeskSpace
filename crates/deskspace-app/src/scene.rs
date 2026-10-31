@@ -6,7 +6,7 @@ use deskspace_core::theme::LABEL_SIZE_RANGE;
 use deskspace_core::view_layout::{ScrollAxis, ViewLayout, ViewMetrics};
 use deskspace_core::{
     Backdrop, Color, DesktopLayer, GridSpec, Item, ItemId, LabelShadow, Palette, Point, Rect,
-    SortKey, SortRule, Space, Theme, ViewMode,
+    SortKey, SortRule, Space, SpaceView, Theme, ViewMode,
 };
 use deskspace_platform::{
     DetailsColumnVisual, DetailsView, DropInto, Icon, IconCache, ItemLayout, ItemMetrics,
@@ -596,15 +596,22 @@ pub(crate) fn details_view(
     Some(DetailsView {
         header_height: layout.header_height(),
         cell_pad: (DETAILS_CELL_PAD as f32 * scale).round().max(1.0) as i32,
-        columns: details_columns(content_width, padding, layout.header_height(), scale),
-        sorted: details_sorted(space.view().sort),
+        columns: details_columns(
+            space.view(),
+            content_width,
+            padding,
+            layout.header_height(),
+            scale,
+        ),
+        sorted: details_sorted(space.view()),
     })
 }
 
-/// Explorer's Details columns laid out across `content_width`: Name takes the
-/// width left over, down to `NAME_MIN_WIDTH`, and the rest keep their default
-/// widths. Rects are relative to the content area.
+/// The Details columns `view` shows, laid out across `content_width`: Name
+/// takes the width left over, down to `NAME_MIN_WIDTH`, and the rest keep
+/// their own widths. Rects are relative to the content area.
 pub(crate) fn details_columns(
+    view: &SpaceView,
     content_width: i32,
     padding: i32,
     header_height: i32,
@@ -612,19 +619,19 @@ pub(crate) fn details_columns(
 ) -> Vec<DetailsColumnVisual> {
     let scale = scale.max(0.1);
     let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-    let fixed: i32 = shown_details_columns()
+    let fixed: i32 = shown_details_columns(view)
         .skip(1)
-        .map(|column| scaled(column.width))
+        .map(|(_, width)| scaled(width))
         .sum();
     let name_width = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
     let mut x = padding;
-    shown_details_columns()
+    shown_details_columns(view)
         .enumerate()
-        .map(|(index, column)| {
+        .map(|(index, (column, width))| {
             let width = if index == 0 {
                 name_width
             } else {
-                scaled(column.width)
+                scaled(width)
             };
             let visual = DetailsColumnVisual {
                 rect: Rect::new(x, 0, width, header_height),
@@ -638,10 +645,10 @@ pub(crate) fn details_columns(
 }
 
 /// The column whose header shows Explorer's arrow, and whether it points up.
-fn details_sorted(rule: SortRule) -> Option<(usize, bool)> {
-    shown_details_columns()
-        .position(|column| column.key == rule.key)
-        .map(|index| (index, !rule.descending))
+fn details_sorted(view: &SpaceView) -> Option<(usize, bool)> {
+    shown_details_columns(view)
+        .position(|(column, _)| column.key == view.sort.key)
+        .map(|index| (index, !view.sort.descending))
 }
 
 /// The Details column whose header contains `point`, relative to the content
@@ -652,12 +659,16 @@ pub(crate) fn details_header_column_at(view: &DetailsView, point: Point) -> Opti
         .position(|column| column.rect.contains(point))
 }
 
-/// The sort rule after a click on shown Details column `index`: clicking the
-/// sorted column reverses it, and any other column becomes the key in
-/// ascending order, as Explorer does. An index past the shown columns keeps
-/// the rule.
-pub(crate) fn details_rule_after(rule: SortRule, index: usize) -> SortRule {
-    let Some(key) = shown_details_columns().nth(index).map(|column| column.key) else {
+/// The sort rule after a click on `view`'s shown Details column `index`:
+/// clicking the sorted column reverses it, and any other column becomes the
+/// key in ascending order, as Explorer does. An index past the shown columns
+/// keeps the rule.
+pub(crate) fn details_rule_after(view: &SpaceView, index: usize) -> SortRule {
+    let rule = view.sort;
+    let Some(key) = shown_details_columns(view)
+        .nth(index)
+        .map(|(column, _)| column.key)
+    else {
         return rule;
     };
     if rule.key == key {
@@ -674,12 +685,12 @@ pub(crate) fn details_rule_after(rule: SortRule, index: usize) -> SortRule {
     }
 }
 
-/// The text of one Details row for the shown columns after Name, in display
-/// order. It reads the item's facts only, never the disk.
-pub(crate) fn details_cells(item: &Item) -> Vec<String> {
-    shown_details_columns()
+/// The text of one Details row for the columns `view` shows after Name, in
+/// display order. It reads the item's facts only, never the disk.
+pub(crate) fn details_cells(view: &SpaceView, item: &Item) -> Vec<String> {
+    shown_details_columns(view)
         .skip(1)
-        .map(|column| match column.key {
+        .map(|(column, _)| match column.key {
             SortKey::Modified => item.modified.map(format_date).unwrap_or_default(),
             SortKey::Created => item.created.map(format_date).unwrap_or_default(),
             SortKey::Kind => {
@@ -850,9 +861,9 @@ pub(crate) fn title_tip(space: &Space, shown: &Path, unavailable: bool) -> Optio
 /// The text for a view's secondary lines, made by the app when the scene is
 /// built: a Details row's columns after Name (W18), a tile's type and size
 /// (W21), or a content row's labelled details (W22).
-pub(crate) fn view_cells(mode: ViewMode, item: &Item) -> Vec<String> {
-    match mode {
-        ViewMode::Details => details_cells(item),
+pub(crate) fn view_cells(view: &SpaceView, item: &Item) -> Vec<String> {
+    match view.mode {
+        ViewMode::Details => details_cells(view, item),
         ViewMode::Tiles => tile_cells(item),
         ViewMode::Content => content_cells(item),
         ViewMode::Icons
@@ -1320,8 +1331,12 @@ mod tests {
             "below the header no column is hit"
         );
 
+        let viewed = |sort| SpaceView {
+            sort,
+            ..SpaceView::default()
+        };
         let rule = SortRule::default();
-        let reversed = details_rule_after(rule, 0);
+        let reversed = details_rule_after(&viewed(rule), 0);
         assert_eq!(
             reversed,
             SortRule {
@@ -1330,26 +1345,29 @@ mod tests {
                 folders_first: false,
             }
         );
-        assert_eq!(details_rule_after(reversed, 0), rule);
-        let by_size = details_rule_after(reversed, 3);
+        assert_eq!(details_rule_after(&viewed(reversed), 0), rule);
+        let by_size = details_rule_after(&viewed(reversed), 3);
         assert_eq!(by_size.key, SortKey::Size);
         assert!(!by_size.descending);
     }
 
     #[test]
     fn the_date_created_column_starts_hidden() {
-        let created = SortRule {
-            key: SortKey::Created,
-            ..SortRule::default()
+        let view = SpaceView {
+            sort: SortRule {
+                key: SortKey::Created,
+                ..SortRule::default()
+            },
+            ..SpaceView::default()
         };
         assert_eq!(
-            details_sorted(created),
+            details_sorted(&view),
             None,
             "a hidden column shows no arrow"
         );
         assert_eq!(
-            details_rule_after(created, 4),
-            created,
+            details_rule_after(&view, 4),
+            view.sort,
             "past the shown columns"
         );
         let item = Item::new(
@@ -1360,7 +1378,76 @@ mod tests {
                 ..ItemFacts::default()
             },
         );
-        assert_eq!(details_cells(&item).len(), 3, "Date, Type, and Size");
+        assert_eq!(details_cells(&view, &item).len(), 3, "Date, Type, and Size");
+    }
+
+    #[test]
+    fn the_header_and_rows_show_the_spaces_own_columns_in_its_order() {
+        use deskspace_core::{Column, ColumnSpec};
+
+        let view = SpaceView {
+            columns: ColumnSpec::sanitize(vec![
+                ColumnSpec {
+                    id: Column::Size,
+                    width: Some(200),
+                },
+                ColumnSpec {
+                    id: Column::Created,
+                    width: None,
+                },
+            ]),
+            sort: SortRule {
+                key: SortKey::Size,
+                ..SortRule::default()
+            },
+            ..SpaceView::default()
+        };
+        let columns = details_columns(&view, 1000, 0, 24, 1.0);
+        assert_eq!(
+            columns
+                .iter()
+                .map(|column| column.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Name", "Size", "Date created"]
+        );
+        assert_eq!(columns[1].rect.width, 200, "its own width");
+        assert_eq!(columns[2].rect.width, 130, "the table's default");
+        assert_eq!(columns[0].rect.width, 670, "Name takes the rest");
+        assert_eq!(
+            details_sorted(&view),
+            Some((1, true)),
+            "the arrow follows its column"
+        );
+        assert_eq!(
+            details_rule_after(&view, 2).key,
+            SortKey::Created,
+            "a click sorts by the column at that place"
+        );
+        let item = Item::new(
+            ItemId(1),
+            "C:/a.txt",
+            ItemFacts {
+                size: Some(2048),
+                ..ItemFacts::default()
+            },
+        );
+        assert_eq!(details_cells(&view, &item), ["2 KB", ""]);
+    }
+
+    #[test]
+    fn every_column_has_one_row_in_the_table() {
+        use deskspace_core::Column;
+
+        for id in Column::ALL {
+            assert_eq!(
+                crate::settings::DETAILS_COLUMNS
+                    .iter()
+                    .filter(|row| row.id == id)
+                    .count(),
+                1,
+                "{id:?}"
+            );
+        }
     }
 
     #[test]
@@ -1689,7 +1776,8 @@ mod tests {
         );
         let space = desktop.space(id).unwrap();
         let theme = Theme::default();
-        let mut cells = |item: &Item| view_cells(ViewMode::Tiles, item);
+        let view = SpaceView::default().with_mode(ViewMode::Tiles);
+        let mut cells = |item: &Item| view_cells(&view, item);
         let scene = space_scene_with_details(
             space,
             surface_look(&theme, &theme.palette(true)),
@@ -1719,7 +1807,8 @@ mod tests {
         );
         let space = desktop.space(id).unwrap();
         let theme = Theme::default();
-        let mut cells = |item: &Item| view_cells(ViewMode::Content, item);
+        let view = SpaceView::default().with_mode(ViewMode::Content);
+        let mut cells = |item: &Item| view_cells(&view, item);
         let scene = space_scene_with_details(
             space,
             surface_look(&theme, &theme.palette(true)),

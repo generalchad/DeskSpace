@@ -832,24 +832,6 @@ interest. In phase 4 and 5 terms:
 
 #### Phase 5 tasks
 
-- [ ] **W30. Choose the Details columns (core, app).** **[needs
-  human]** After: W29.
-  - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
-    Option<u16> }>`, in display order; the default is Name, Date
-    modified, Type, Size. `Column` has `#[serde(other)] Unknown`. A pure
-    `ColumnSpec::sanitize(list)` runs on load and after every edit: it
-    drops unknown and repeated ids, keeps Name first, caps the list at
-    `Column::ALL.len()`, and clamps widths to `COLUMN_WIDTH_RANGE`.
-  - A right-click on the header opens Explorer's header menu: a check
-    entry per column, with Name grey and on. Explorer's "Size all columns
-    to fit" needs text measurement, so leave it out and add a **Found
-    while working** line.
-  - Tests: `sanitize` on hostile lists (unknown ids, Name missing or
-    last, repeats, zero and huge widths, a thousand entries); the menu
-    checks the columns shown.
-  - **[needs human]** check: show and hide each column on a lens and a
-    space; the choice survives a restart; Name cannot be hidden.
-
 - [ ] **W31. Resize the Details columns (app).** **[needs human]**
   After: W30.
   - Dragging a header divider sets that column's `width` (Name keeps the
@@ -2126,6 +2108,7 @@ each id is in `archive/TASKS-done.md`.
 | W27 (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
 | W28 (F-07) | On a normal space and a lens: View ▸ "File name extensions" checks what the space shows now and choosing it flips Show and Hide; the View page offers Automatic, Show, and Hide, and Cancel restores. Under Automatic, Match Explorer follows Explorer's own setting (checked and unchecked, with the preset switched while the window is open), Custom hides. F2 on an item selects only the name part while extensions show. |
+| W30 (F-63) | On a normal space and a lens in Details, at 100 % and 150 %: right-click the header. Each column you check or uncheck shows or goes at once, its cells line up under its header, and Name is on and grey. A column brought back lands last. The choice survives a restart, and Ctrl+Z puts it back ("Undo Choose columns"). Right-clicking the header leaves the selection alone, including with rows scrolled under it. Hide the sorted column: the items keep their order and no arrow shows. With every column on in a narrow space, note how the right-hand columns are cut off (no sideways scroll yet). |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 
@@ -2166,10 +2149,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   codebase's grid cell is twice the base 48 px icon (a 96 px cell at 100 %),
   so a fixed 96 px icon gets a 192 px cell. The task/word should say "icon",
   or the fixed views need their own cell rule. Noted while implementing W12.
-- **API consistency:** `Space::view()` returns `SpaceView` by value while
-  `source()` and `look()` return references; harmless because `SpaceView` is
-  `Copy`, but surprising beside its siblings. Suggested task: return
-  `&SpaceView` or document the value return.
 - **app/view.rs:** `base_layout` now takes a `fixed_icon: bool` beside
   `theme`, `grid`, `scale`, and `title_scale`. The call sites are still
   readable, but a small `LayoutScale` (fixed view vs look) would make the
@@ -2204,4 +2183,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   starts an item rename stays over the rename box, the same hole W27
   closes for the title rename (`dismiss_info_tip` in `begin_rename`).
   Suggested: dismiss it there too. Found in W27, 2026-10-30.
+- Details header menu: Explorer's "Size all columns to fit" is left out,
+  since it needs text measurement. Suggested: add it once a column can
+  measure its labels. Found in W30, 2026-10-31.
+- `scene.rs` `details_columns`: columns past the space's width are cut off,
+  because Details has no sideways scroll, and W30 makes that easy to reach
+  (every column on takes 560 px at 96 DPI). Explorer scrolls sideways.
+  Suggested task: a horizontal scroll for Details in `ViewLayout`. Found in
+  W30, 2026-10-31.
 

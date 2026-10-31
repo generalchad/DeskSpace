@@ -300,13 +300,13 @@ mod tests {
                         size: Size::new(240, 120),
                         path: "C:/folder".into(),
                         locked: false,
-                        view,
+                        view: view.clone(),
                     },
                     bounds(),
                 )
                 .is_applied()
         );
-        assert_eq!(desktop.space(id).unwrap().view(), view);
+        assert_eq!(*desktop.space(id).unwrap().view(), view);
     }
 
     #[test]

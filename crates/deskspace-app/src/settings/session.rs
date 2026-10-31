@@ -31,7 +31,7 @@ impl SpaceSnapshot {
             title: space.title().to_owned(),
             custom: space.custom(),
             look: space.look().cloned(),
-            view: space.view(),
+            view: space.view().clone(),
             folder: space.folder_view().cloned(),
         }
     }
@@ -49,7 +49,7 @@ impl SpaceSnapshot {
     pub fn restore_view(&self) -> Command {
         Command::SetSpaceView {
             id: self.id,
-            view: self.view,
+            view: self.view.clone(),
         }
     }
 
@@ -334,11 +334,17 @@ mod tests {
             status_bar: true,
             ..SpaceView::default()
         };
-        apply(&mut config.desktop, Command::SetSpaceView { id, view });
-        assert_eq!(config.desktop.space(id).unwrap().view(), view);
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: view.clone(),
+            },
+        );
+        assert_eq!(*config.desktop.space(id).unwrap().view(), view);
         apply(&mut config.desktop, snapshot.restore_view());
         assert_eq!(
-            config.desktop.space(id).unwrap().view(),
+            *config.desktop.space(id).unwrap().view(),
             SpaceView::default()
         );
     }

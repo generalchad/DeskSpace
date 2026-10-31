@@ -86,7 +86,7 @@ pub struct WindowSettings {
 
 /// The defaults a new lens starts with: its view, how its title follows its
 /// folder, and whether it lists hidden files (W23).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NewLens {
     /// The new lens's view settings. The default turns the status bar on.

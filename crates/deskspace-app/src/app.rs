@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
 use deskspace_core::source::FolderEntry;
-use deskspace_core::{Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
+use deskspace_core::{Column, Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
     Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
@@ -214,10 +214,16 @@ enum MenuId {
     SortByCreated = 74,
     /// The View submenu's "File name extensions" check (W28).
     FileExtensions = 75,
+    /// The Details header menu's check per column (W30).
+    ColumnName = 76,
+    ColumnModified = 77,
+    ColumnKind = 78,
+    ColumnSize = 79,
+    ColumnCreated = 80,
 }
 
 impl MenuId {
-    const ALL: [Self; 56] = [
+    const ALL: [Self; 61] = [
         Self::Fold,
         Self::Lock,
         Self::NewSpace,
@@ -274,6 +280,11 @@ impl MenuId {
         Self::ViewContent,
         Self::SortByCreated,
         Self::FileExtensions,
+        Self::ColumnName,
+        Self::ColumnModified,
+        Self::ColumnKind,
+        Self::ColumnSize,
+        Self::ColumnCreated,
     ];
 
     fn from_id(id: u32) -> Option<Self> {
@@ -336,6 +347,15 @@ const SORT_MENU_IDS: [(MenuId, SortKey); 5] = [
     (MenuId::SortByKind, SortKey::Kind),
     (MenuId::SortBySize, SortKey::Size),
     (MenuId::SortByCreated, SortKey::Created),
+];
+
+/// The Details header menu's entries (W30), in the order it lists them.
+const COLUMN_MENU_IDS: [(MenuId, Column); 5] = [
+    (MenuId::ColumnName, Column::Name),
+    (MenuId::ColumnModified, Column::Modified),
+    (MenuId::ColumnKind, Column::Kind),
+    (MenuId::ColumnSize, Column::Size),
+    (MenuId::ColumnCreated, Column::Created),
 ];
 
 /// The View submenu's choices: one per view, in `VIEW_MODES` order.

@@ -179,7 +179,10 @@ icon and one label line beside it). Small icons wraps the cells into rows and
 scrolls down; List fills a column top to bottom and scrolls sideways. Details
 (W18) gives every item a full-width row under a fixed header whose columns
 sort by the space's `SortRule`; the app formats its column text when it builds
-the scene, so painting never asks the shell or the clock. None of the
+the scene, so painting never asks the shell or the clock. `SpaceView.columns`
+(W30) says which columns a space shows and in what order, Name always first;
+`DETAILS_COLUMNS` holds what each one is. The list is sanitized on load and
+after every edit, and a hand-edited one can never fail the config load. None of the
 order-placed views writes `Item.position`, so a hand arrangement returns when
 the space goes back to an icon view. Tiles (W21) wraps 48 px icons with three
 lines beside each (name, type, size), and Content (W22) puts one item on each
@@ -1557,6 +1560,9 @@ in `ui.rs`. What spans them:
   Escape clears the selection, and F5 refreshes the spaces.
 - Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
   100 %, as the zoom pop-up's buttons do (F-57).
+- A right-click on a Details header opens Explorer's column menu: a check per
+  column shows or hides it (one "Choose columns" undo entry), and Name is on
+  and grey. It leaves the selection alone.
 - Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
   Medium, or Small icons, List, Details, Tiles, or Content, the way the View
   menu does.

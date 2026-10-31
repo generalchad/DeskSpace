@@ -21,9 +21,9 @@ pub use apply::{
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
-    AnimationPage, EDGES, HOTKEY_BINDINGS, HotkeyAction, NAME_MIN_WIDTH, SORT_KEYS, STARTUP_ORDERS,
-    STATUS_BUTTONS, VIEW_MODES, shown_details_columns, step_view, view_for_digit,
-    windows_animation_settings_uri,
+    AnimationPage, DETAILS_COLUMNS, EDGES, HOTKEY_BINDINGS, HotkeyAction, NAME_MIN_WIDTH,
+    SORT_KEYS, STARTUP_ORDERS, STATUS_BUTTONS, VIEW_MODES, shown_details_columns, step_view,
+    view_for_digit, windows_animation_settings_uri,
 };
 
 use std::path::Path;
@@ -40,8 +40,8 @@ use deskspace_core::theme::{
     TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, BorderSource, Color, Command, Extensions, GridSpec, LabelShadow, LensTitle, Palette,
-    Preset, SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
+    Backdrop, BorderSource, Color, Column, Command, Extensions, GridSpec, LabelShadow, LensTitle,
+    Palette, Preset, SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
 };
 use deskspace_platform::{
     ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,

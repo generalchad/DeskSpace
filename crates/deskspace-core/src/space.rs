@@ -183,7 +183,7 @@ impl Serialize for Space {
             title_height: self.title_height,
             user_sized: self.user_sized,
             icon: self.icon.clone(),
-            view: self.view,
+            view: self.view.clone(),
             look: self.look.as_ref(),
             source: (!self.source.is_items()).then_some(&self.source),
             items: (!self.is_lens()).then_some(self.items.as_slice()),
@@ -237,8 +237,8 @@ impl Space {
     }
 
     /// How the space lays its items out (D17).
-    pub fn view(&self) -> SpaceView {
-        self.view
+    pub fn view(&self) -> &SpaceView {
+        &self.view
     }
 
     /// Whether the space mirrors a folder (M4).

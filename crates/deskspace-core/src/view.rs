@@ -1,7 +1,8 @@
 //! A space's view: how its items are laid out and ordered, apart from its
 //! look (D17).
 
-use serde::{Deserialize, Serialize};
+use serde::de::IgnoredAny;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::sort::SortRule;
 
@@ -26,8 +27,128 @@ impl Extensions {
     }
 }
 
+/// A Details column (D18). Its spelling is part of a space's config, so a
+/// variant is never renamed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Column {
+    Name,
+    Modified,
+    Kind,
+    Size,
+    Created,
+    /// A column this version does not know, from a newer or hand-edited file.
+    /// `ColumnSpec::sanitize` drops it.
+    #[serde(other)]
+    Unknown,
+}
+
+impl Column {
+    /// Every column a space can show.
+    pub const ALL: [Self; 5] = [
+        Self::Name,
+        Self::Modified,
+        Self::Kind,
+        Self::Size,
+        Self::Created,
+    ];
+}
+
+/// The widths a column can be given, in pixels at 96 DPI.
+pub const COLUMN_WIDTH_RANGE: (u16, u16) = (40, 2000);
+
+/// One Details column a space shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColumnSpec {
+    pub id: Column,
+    /// Its width at 96 DPI, or `None` for the column's default. Name ignores
+    /// it and takes the width the others leave.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "saturating_width"
+    )]
+    pub width: Option<u16>,
+}
+
+impl ColumnSpec {
+    const fn new(id: Column) -> Self {
+        Self { id, width: None }
+    }
+
+    /// `list` made safe to show: unknown and repeated ids dropped, Name first
+    /// and always there, at most one entry per column, and widths in
+    /// `COLUMN_WIDTH_RANGE`. Runs on load and after every edit, so every
+    /// reader can trust a space's columns.
+    pub fn sanitize(list: Vec<Self>) -> Vec<Self> {
+        let mut kept = vec![Self::new(Column::Name)];
+        let mut named = false;
+        for spec in list {
+            let spec = Self {
+                width: spec
+                    .width
+                    .map(|width| width.clamp(COLUMN_WIDTH_RANGE.0, COLUMN_WIDTH_RANGE.1)),
+                ..spec
+            };
+            if spec.id == Column::Name {
+                if !named {
+                    kept[0] = spec;
+                    named = true;
+                }
+            } else if spec.id != Column::Unknown && !kept.iter().any(|other| other.id == spec.id) {
+                kept.push(spec);
+            }
+        }
+        kept
+    }
+}
+
+/// What a new space shows, as a new Explorer folder does: Date created waits
+/// until the user asks for it.
+fn default_columns() -> Vec<ColumnSpec> {
+    [Column::Name, Column::Modified, Column::Kind, Column::Size]
+        .map(ColumnSpec::new)
+        .into()
+}
+
+fn columns_are_default(columns: &[ColumnSpec]) -> bool {
+    columns == default_columns()
+}
+
+/// A value of `T`, or whatever else the file holds there.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Lenient<T> {
+    Valid(T),
+    Invalid(IgnoredAny),
+}
+
+/// Reads a hand-editable column list so that no value in it can fail the
+/// config load: an entry that makes no sense is dropped, and a field that is
+/// no list at all means the default columns.
+fn lenient_columns<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ColumnSpec>, D::Error> {
+    let Lenient::Valid(list) = Lenient::<Vec<Lenient<ColumnSpec>>>::deserialize(deserializer)?
+    else {
+        return Ok(default_columns());
+    };
+    let specs = list.into_iter().filter_map(|entry| match entry {
+        Lenient::Valid(spec) => Some(spec),
+        Lenient::Invalid(_) => None,
+    });
+    Ok(ColumnSpec::sanitize(specs.collect()))
+}
+
+/// Reads any whole number, so a huge or negative width is clamped by
+/// `sanitize` rather than failing the load.
+fn saturating_width<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<u16>, D::Error> {
+    let width = Option::<i64>::deserialize(deserializer)?;
+    Ok(width.map(|width| width.clamp(0, i64::from(u16::MAX)) as u16))
+}
+
 /// A space's view settings. Every space has one; a lens is not special.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpaceView {
     /// The layout the space uses.
@@ -45,14 +166,57 @@ pub struct SpaceView {
     /// Whether the space's labels show filename extensions (W28).
     #[serde(skip_serializing_if = "Extensions::is_default")]
     pub extensions: Extensions,
+    /// The Details columns the space shows, in display order (D18). Always
+    /// sanitized: `ColumnSpec::sanitize` runs on load and after every edit.
+    #[serde(
+        skip_serializing_if = "columns_are_default",
+        deserialize_with = "lenient_columns"
+    )]
+    pub columns: Vec<ColumnSpec>,
+}
+
+impl Default for SpaceView {
+    fn default() -> Self {
+        Self {
+            mode: ViewMode::default(),
+            sort: SortRule::default(),
+            keep_sorted: false,
+            status_bar: false,
+            extensions: Extensions::default(),
+            columns: default_columns(),
+        }
+    }
 }
 
 impl SpaceView {
     /// This view shown as `mode`, as the View menu and its keys change it. The
     /// sort rule, Keep sorted, and the status bar stay, since a space keeps
     /// its last rule across views (D17).
-    pub fn with_mode(self, mode: ViewMode) -> Self {
-        Self { mode, ..self }
+    pub fn with_mode(&self, mode: ViewMode) -> Self {
+        Self {
+            mode,
+            ..self.clone()
+        }
+    }
+
+    /// This view with `column` shown if it was hidden, or hidden if it was
+    /// shown. A column comes back at the end, at its default width, and Name
+    /// stays (D18).
+    pub fn with_column_toggled(&self, column: Column) -> Self {
+        if column == Column::Name {
+            return self.clone();
+        }
+        let mut columns = self.columns.clone();
+        match columns.iter().position(|spec| spec.id == column) {
+            Some(index) => {
+                columns.remove(index);
+            }
+            None => columns.push(ColumnSpec::new(column)),
+        }
+        Self {
+            columns: ColumnSpec::sanitize(columns),
+            ..self.clone()
+        }
     }
 
     /// Whether this is the default view, which old files leave out.
@@ -168,6 +332,177 @@ mod tests {
         );
     }
 
+    fn ids(columns: &[ColumnSpec]) -> Vec<Column> {
+        columns.iter().map(|spec| spec.id).collect()
+    }
+
+    fn spec(id: Column, width: u16) -> ColumnSpec {
+        ColumnSpec {
+            id,
+            width: Some(width),
+        }
+    }
+
+    #[test]
+    fn a_new_view_shows_explorers_columns_and_leaves_them_out_of_the_file() {
+        let view = SpaceView::default();
+        assert_eq!(
+            ids(&view.columns),
+            [Column::Name, Column::Modified, Column::Kind, Column::Size]
+        );
+        let text = toml::to_string(&view).unwrap();
+        assert!(!text.contains("columns"), "{text}");
+        assert_eq!(toml::from_str::<SpaceView>("").unwrap(), view);
+    }
+
+    #[test]
+    fn chosen_columns_survive_a_round_trip() {
+        let view = SpaceView {
+            columns: vec![
+                ColumnSpec::new(Column::Name),
+                spec(Column::Created, 200),
+                ColumnSpec::new(Column::Size),
+            ],
+            ..SpaceView::default()
+        };
+        let text = toml::to_string(&view).unwrap();
+        assert_eq!(toml::from_str::<SpaceView>(&text).unwrap(), view, "{text}");
+    }
+
+    #[test]
+    fn chosen_columns_survive_a_round_trip_inside_a_space() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 100, 100));
+        space.view = SpaceView::default().with_column_toggled(Column::Created);
+        let text = toml::to_string(&space).unwrap();
+        let back: Space = toml::from_str(&text).unwrap();
+        assert_eq!(*back.view(), space.view, "{text}");
+    }
+
+    #[test]
+    fn sanitize_keeps_name_first_whatever_the_list_says() {
+        for list in [
+            vec![],
+            vec![ColumnSpec::new(Column::Size)],
+            vec![ColumnSpec::new(Column::Size), ColumnSpec::new(Column::Name)],
+        ] {
+            assert_eq!(ColumnSpec::sanitize(list)[0].id, Column::Name);
+        }
+        assert_eq!(
+            ids(&ColumnSpec::sanitize(vec![
+                ColumnSpec::new(Column::Size),
+                ColumnSpec::new(Column::Name),
+                ColumnSpec::new(Column::Kind),
+            ])),
+            [Column::Name, Column::Size, Column::Kind],
+            "the others keep their order"
+        );
+    }
+
+    #[test]
+    fn sanitize_drops_unknown_and_repeated_columns() {
+        assert_eq!(
+            ColumnSpec::sanitize(vec![
+                ColumnSpec::new(Column::Unknown),
+                spec(Column::Size, 90),
+                spec(Column::Size, 300),
+                ColumnSpec::new(Column::Unknown),
+            ]),
+            [ColumnSpec::new(Column::Name), spec(Column::Size, 90)],
+            "the first of a repeated column wins"
+        );
+        assert_eq!(
+            ColumnSpec::sanitize(vec![spec(Column::Name, 90), spec(Column::Name, 300)]),
+            [spec(Column::Name, 90)],
+            "Name's first entry wins too"
+        );
+    }
+
+    #[test]
+    fn sanitize_clamps_widths_and_leaves_a_default_alone() {
+        let (low, high) = COLUMN_WIDTH_RANGE;
+        assert_eq!(
+            ColumnSpec::sanitize(vec![
+                spec(Column::Size, 0),
+                spec(Column::Kind, u16::MAX),
+                ColumnSpec::new(Column::Created),
+            ]),
+            [
+                ColumnSpec::new(Column::Name),
+                spec(Column::Size, low),
+                spec(Column::Kind, high),
+                ColumnSpec::new(Column::Created),
+            ]
+        );
+    }
+
+    #[test]
+    fn sanitize_caps_a_thousand_entries_at_one_per_column() {
+        let list: Vec<ColumnSpec> = Column::ALL
+            .iter()
+            .cycle()
+            .take(1000)
+            .map(|id| ColumnSpec::new(*id))
+            .collect();
+        assert_eq!(ids(&ColumnSpec::sanitize(list)), Column::ALL);
+    }
+
+    /// The columns a config's hand-edited text loads as.
+    fn loaded(text: &str) -> Vec<ColumnSpec> {
+        toml::from_str::<SpaceView>(text).unwrap().columns
+    }
+
+    #[test]
+    fn a_hostile_column_list_never_fails_the_load() {
+        let name = ColumnSpec::new(Column::Name);
+        assert_eq!(
+            loaded("columns = 'wide'"),
+            SpaceView::default().columns,
+            "no list at all means the default"
+        );
+        assert_eq!(loaded("columns = []"), [name], "Name is always shown");
+        assert_eq!(
+            loaded("columns = [1, 'x', { id = 7 }, { width = 3 }, { id = 'size', width = 'y' }]"),
+            [name],
+            "an entry that makes no sense is dropped"
+        );
+        assert_eq!(
+            loaded("columns = [{ id = 'future' }, { id = 'kind' }]"),
+            [name, ColumnSpec::new(Column::Kind)],
+            "a column this version does not know is dropped"
+        );
+        let (low, high) = COLUMN_WIDTH_RANGE;
+        assert_eq!(
+            loaded("columns = [{ id = 'size', width = -5 }, { id = 'kind', width = 99999999 }]"),
+            [name, spec(Column::Size, low), spec(Column::Kind, high)],
+        );
+    }
+
+    #[test]
+    fn toggling_a_column_hides_it_and_brings_it_back_last() {
+        let view = SpaceView::default();
+        let hidden = view.with_column_toggled(Column::Modified);
+        assert_eq!(
+            ids(&hidden.columns),
+            [Column::Name, Column::Kind, Column::Size]
+        );
+        assert_eq!(
+            ids(&hidden.with_column_toggled(Column::Modified).columns),
+            [Column::Name, Column::Kind, Column::Size, Column::Modified]
+        );
+    }
+
+    #[test]
+    fn toggling_name_changes_nothing() {
+        let view = SpaceView {
+            columns: vec![spec(Column::Name, 300), ColumnSpec::new(Column::Size)],
+            ..SpaceView::default()
+        };
+        assert_eq!(
+            ids(&view.with_column_toggled(Column::Name).columns),
+            [Column::Name, Column::Size]
+        );
+    }
+
     #[test]
     fn the_icon_views_have_fixed_sizes() {
         assert_eq!(ViewMode::ExtraLargeIcons.icon_px(), Some(256));
@@ -215,6 +550,7 @@ mod tests {
             keep_sorted: false,
             status_bar: true,
             extensions: Extensions::Hide,
+            columns: vec![ColumnSpec::new(Column::Name)],
         };
         let next = view.with_mode(ViewMode::Details);
         assert_eq!(next.mode, ViewMode::Details);

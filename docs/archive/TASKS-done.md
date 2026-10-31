@@ -4773,3 +4773,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     of its own; the menu id is 75 and the View-page field id 152. Rename
     and the scene's labels flow through `shows_extensions`, so both follow
     the choice with no further change.
+
+- [x] **W30. Choose the Details columns (core, app).** **[needs
+  human]** After: W29.
+  - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
+    Option<u16> }>`, in display order; the default is Name, Date
+    modified, Type, Size. `Column` has `#[serde(other)] Unknown`. A pure
+    `ColumnSpec::sanitize(list)` runs on load and after every edit: it
+    drops unknown and repeated ids, keeps Name first, caps the list at
+    `Column::ALL.len()`, and clamps widths to `COLUMN_WIDTH_RANGE`.
+  - A right-click on the header opens Explorer's header menu: a check
+    entry per column, with Name grey and on. Explorer's "Size all columns
+    to fit" needs text measurement, so leave it out and add a **Found
+    while working** line.
+  - Tests: `sanitize` on hostile lists (unknown ids, Name missing or
+    last, repeats, zero and huge widths, a thousand entries); the menu
+    checks the columns shown.
+  - **[needs human]** check: show and hide each column on a lens and a
+    space; the choice survives a restart; Name cannot be hidden.
+  - Done 2026-10-31. `SpaceView` holds a `Vec`, so it is no longer `Copy`,
+    and `Space::view()` returns a reference. A hostile list cannot fail the
+    load: `lenient_columns` drops an entry that makes no sense and treats a
+    field that is no list as the default, and a width of any whole number
+    reaches `sanitize`. The layout reads a stored width already, ahead of
+    W31's drag. Menu ids 76-80. A right press on the header leaves the
+    selection, since a row can be scrolled under it. A scratch-config run
+    of the real app drove the menu by posted messages: a hostile list
+    loaded, the checks and the grey Name were right, and a choice saved.
