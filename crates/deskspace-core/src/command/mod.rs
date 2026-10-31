@@ -23,6 +23,7 @@ use crate::sort::SortRule;
 use crate::source::{FolderEntry, FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
+use crate::view_layout::ViewMetrics;
 
 pub use crate::item::SortKey;
 pub use touched::Touched;
@@ -30,13 +31,15 @@ pub use touched::Touched;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Creates a space at `at` (its top-left in desktop coordinates) with the
-    /// configured `size`, optionally starting locked.
+    /// configured `size`, optionally starting locked. `view` is the new
+    /// space's view settings (W40).
     CreateSpace {
         title: String,
         at: Point,
         size: Size,
         locked: bool,
         icon: SpaceIcon,
+        view: SpaceView,
     },
     /// Creates a lens: a space that mirrors `path` live (ROADMAP D3, M4).
     /// `path` is only stored; `SyncLens` fills the items. `view` is the new
@@ -109,14 +112,20 @@ pub enum Command {
     },
     /// Drags the grabbed `edges` of a space to `to` (desktop coordinates).
     /// The space becomes user-sized and its items reflow to the new width.
+    /// `metrics` are the cells its view draws, which only the app can work
+    /// out; with `fit_to_grid`, they decide the rows and columns it fits.
     ResizeSpace {
         id: SpaceId,
         edges: ResizeEdges,
         to: Point,
+        metrics: ViewMetrics,
     },
-    /// Drops a user size so the space grows to fit its items again.
+    /// Drops a user size so the space grows to fit its items again. A view
+    /// that places items by order sizes the space once, from `metrics`: the
+    /// cells the space is drawn with, which only the app can work out.
     FitToContents {
         id: SpaceId,
+        metrics: ViewMetrics,
     },
     /// Keeps a space at its current size from now on, as if the user had sized
     /// it, so later re-flows change its columns rather than its rect. An
@@ -274,7 +283,15 @@ impl Desktop {
                 size,
                 locked,
                 icon,
-            } => self.apply_create_space(title, at, size, locked, icon, bounds),
+                view,
+            } => self.apply_create_space(
+                title,
+                Rect::new(at.x, at.y, size.width, size.height),
+                locked,
+                icon,
+                view,
+                bounds,
+            ),
             Command::DeleteSpace { id } => self.apply_delete_space(id),
             Command::RenameSpace { id, title } => self.apply_rename_space(id, title),
             Command::CreateLens {
@@ -302,10 +319,15 @@ impl Desktop {
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
             }
-            Command::ResizeSpace { id, edges, to } => {
-                self.apply_resize_space(id, edges, to, layout, bounds)
+            Command::ResizeSpace {
+                id,
+                edges,
+                to,
+                metrics,
+            } => self.apply_resize_space(id, edges, to, metrics, layout, bounds),
+            Command::FitToContents { id, metrics } => {
+                self.apply_fit_to_contents(id, metrics, layout, bounds)
             }
-            Command::FitToContents { id } => self.apply_fit_to_contents(id, layout, bounds),
             Command::KeepSize { id } => self.apply_keep_size(id),
             Command::Reflow { id } => self.apply_reflow(id, layout),
             Command::SortSpace { id, rule } => self.apply_sort_space(id, rule, layout),
@@ -383,6 +405,8 @@ fn hold_kept_order(space: &mut Space) -> bool {
 mod tests {
     use super::*;
     use crate::item::ItemKind;
+    use crate::view::ViewMode;
+    use crate::view_layout::ViewLayout;
 
     fn bounds() -> Rect {
         Rect::new(0, 0, 1920, 1080)
@@ -398,6 +422,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             },
             bounds(),
         );
@@ -421,6 +446,7 @@ mod tests {
                 size: Size::new(320, 200),
                 locked: true,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             },
             bounds(),
         );
@@ -514,6 +540,7 @@ mod tests {
                 id,
                 edges,
                 to: Point::new(480, 320),
+                metrics: ViewMetrics::for_grid(desktop.layout),
             },
             bounds(),
         );
@@ -540,9 +567,178 @@ mod tests {
         );
         assert!(layout.max_scroll(space.content_rect().size()) > 0);
 
-        desktop.apply(Command::FitToContents { id }, bounds());
+        desktop.apply(
+            Command::FitToContents {
+                id,
+                metrics: ViewMetrics::for_grid(desktop.layout),
+            },
+            bounds(),
+        );
         assert!(!desktop.space(id).unwrap().user_sized);
         assert_ne!(desktop.space(id).unwrap().rect.size(), sized.size());
+    }
+
+    /// A space of `items` items shown as `mode`, at `rect`.
+    fn space_in_view(mode: ViewMode, rect: Rect, items: usize) -> (Desktop, SpaceId) {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", rect);
+        for index in 0..items {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("file{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds(),
+            );
+        }
+        desktop.apply(
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::default().with_mode(mode),
+            },
+            bounds(),
+        );
+        // Adding items sized the space to them, so size it as a user would.
+        let space = desktop.space_mut(id).unwrap();
+        space.rect = rect;
+        space.user_sized = true;
+        (desktop, id)
+    }
+
+    /// Fits the space and returns its rect and how far it can still scroll.
+    fn fit(desktop: &mut Desktop, id: SpaceId, mode: ViewMode) -> (Rect, i32) {
+        let metrics =
+            ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+        assert!(
+            desktop
+                .apply(Command::FitToContents { id, metrics }, bounds())
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        let layout = ViewLayout::for_space(space, metrics);
+        (space.rect, layout.max_scroll(space.content_rect().size()))
+    }
+
+    #[test]
+    fn fitting_a_row_view_keeps_the_width_and_hugs_the_rows() {
+        for mode in [
+            ViewMode::SmallIcons,
+            ViewMode::Details,
+            ViewMode::Tiles,
+            ViewMode::Content,
+        ] {
+            let tall = Rect::new(10, 10, 500, 700);
+            let (mut desktop, id) = space_in_view(mode, tall, 3);
+            let (rect, scroll) = fit(&mut desktop, id, mode);
+            assert_eq!(rect.width, tall.width, "{mode:?}");
+            assert!(rect.height < tall.height, "{mode:?}: {rect:?}");
+            assert_eq!(scroll, 0, "{mode:?}: every row shows");
+            assert_eq!(rect.origin(), tall.origin(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn fitting_a_row_view_stops_at_the_work_area() {
+        let (mut desktop, id) =
+            space_in_view(ViewMode::SmallIcons, Rect::new(10, 300, 300, 200), 500);
+        let (rect, scroll) = fit(&mut desktop, id, ViewMode::SmallIcons);
+        assert_eq!(rect.height, bounds().height);
+        assert_eq!(rect.y, bounds().y, "moved up to stay on the work area");
+        assert!(scroll > 0, "the rest scrolls");
+    }
+
+    #[test]
+    fn fitting_list_keeps_the_height_and_hugs_the_columns() {
+        let wide = Rect::new(10, 10, 900, 200);
+        let (mut desktop, id) = space_in_view(ViewMode::List, wide, 3);
+        let (rect, scroll) = fit(&mut desktop, id, ViewMode::List);
+        assert_eq!(rect.height, wide.height);
+        assert!(rect.width < wide.width, "a few items shrink it: {rect:?}");
+        assert_eq!(scroll, 0);
+
+        let narrow = Rect::new(10, 10, 210, 200);
+        let (mut desktop, id) = space_in_view(ViewMode::List, narrow, 20);
+        let (rect, scroll) = fit(&mut desktop, id, ViewMode::List);
+        assert_eq!(rect.height, narrow.height);
+        assert!(rect.width > narrow.width, "more columns grow it: {rect:?}");
+        assert_eq!(scroll, 0);
+    }
+
+    #[test]
+    fn fitting_counts_the_status_bar_and_an_empty_space_keeps_one_row() {
+        let tall = Rect::new(10, 10, 500, 700);
+        let (mut desktop, id) = space_in_view(ViewMode::SmallIcons, tall, 0);
+        let (empty, _) = fit(&mut desktop, id, ViewMode::SmallIcons);
+        assert!(empty.height > desktop.space(id).unwrap().title_height);
+
+        desktop.apply(
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    status_bar: true,
+                    ..SpaceView::default().with_mode(ViewMode::SmallIcons)
+                },
+            },
+            bounds(),
+        );
+        let (with_bar, scroll) = fit(&mut desktop, id, ViewMode::SmallIcons);
+        assert_eq!(
+            with_bar.height - empty.height,
+            desktop.space(id).unwrap().status_bar_height()
+        );
+        assert_eq!(scroll, 0);
+    }
+
+    #[test]
+    fn a_grouped_space_refuses_a_rearrange_and_leaves_positions_alone() {
+        let (mut desktop, id) = space_in_view(ViewMode::Icons, Rect::new(10, 10, 500, 400), 3);
+        let before: Vec<Point> = desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.position)
+            .collect();
+        let item = desktop.space(id).unwrap().items()[0].id;
+        desktop.apply(
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    group: Some(crate::view::GroupBy {
+                        key: crate::item::SortKey::Name,
+                        descending: false,
+                    }),
+                    ..SpaceView::default()
+                },
+            },
+            bounds(),
+        );
+        assert_eq!(
+            desktop.apply(Command::ReorderItem { id: item, index: 2 }, bounds()),
+            CommandOutcome::Rejected
+        );
+        desktop.apply(Command::Reflow { id }, bounds());
+        let after: Vec<Point> = desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.position)
+            .collect();
+        assert_eq!(after, before, "a hand arrangement waits for ungrouping");
+    }
+
+    #[test]
+    fn a_folded_space_fits_as_it_would_show() {
+        let tall = Rect::new(10, 10, 500, 700);
+        let (mut open, open_id) = space_in_view(ViewMode::Details, tall, 3);
+        let (open_rect, _) = fit(&mut open, open_id, ViewMode::Details);
+
+        let (mut folded, id) = space_in_view(ViewMode::Details, tall, 3);
+        folded.apply(Command::ToggleFold { id }, bounds());
+        let (rect, _) = fit(&mut folded, id, ViewMode::Details);
+        assert_eq!(rect, open_rect);
     }
 
     #[test]
@@ -610,6 +806,7 @@ mod tests {
                     id,
                     edges,
                     to: Point::new(100 + 560, 60),
+                    metrics: ViewMetrics::for_grid(layout),
                 },
                 bounds(),
             ),
@@ -644,6 +841,7 @@ mod tests {
                     id,
                     edges,
                     to: Point::new(300, 320),
+                    metrics: ViewMetrics::for_grid(layout),
                 },
                 bounds(),
             ),
@@ -662,6 +860,197 @@ mod tests {
     }
 
     #[test]
+    fn fitting_an_icon_view_stays_inside_a_small_work_area() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 200, 200));
+        for index in 0..40 {
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: format!("file{index}.txt").into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds(),
+            );
+        }
+        let small = Rect::new(0, 0, 300, 200);
+        let metrics = ViewMetrics::for_grid(desktop.layout);
+        assert!(
+            desktop
+                .apply(Command::FitToContents { id, metrics }, small)
+                .is_applied()
+        );
+        let rect = desktop.space(id).unwrap().rect;
+        assert_eq!(
+            rect,
+            Rect::new(0, 0, 226, 200),
+            "two whole columns fit the width; the rows scroll"
+        );
+        assert!(small.contains(Point::new(rect.right() - 1, rect.bottom() - 1)));
+        assert!(!small.contains(Point::new(rect.right(), rect.bottom())));
+    }
+
+    #[test]
+    fn a_details_resize_fits_whole_rows_and_leaves_the_width_at_the_snap() {
+        let (mut desktop, id) = space_in_view(ViewMode::Details, Rect::new(0, 0, 300, 300), 12);
+        let layout = desktop.layout;
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            layout,
+            1.0,
+        );
+        let edges = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(500, 400),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(
+            space.rect,
+            Rect::new(0, 0, 496, 385),
+            "the width keeps the 16 px snap; the height holds whole Details rows"
+        );
+        assert_ne!(
+            space.rect.height,
+            layout.fit_height(space.rect.height),
+            "the height is not rounded to the icon grid"
+        );
+    }
+
+    #[test]
+    fn a_list_resize_fits_its_own_cells() {
+        let (mut desktop, id) = space_in_view(ViewMode::List, Rect::new(0, 0, 300, 300), 20);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::List),
+            desktop.layout,
+            1.0,
+        );
+        let edges = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(500, 400),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        assert_eq!(
+            desktop.space(id).unwrap().rect,
+            Rect::new(0, 0, 426, 386),
+            "whole 200 x 22 List cells, not 96 px icon cells"
+        );
+    }
+
+    #[test]
+    fn a_fitted_resize_stays_inside_the_work_area() {
+        let (mut desktop, id) = space_in_view(ViewMode::List, Rect::new(0, 0, 200, 300), 20);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::List),
+            desktop.layout,
+            1.0,
+        );
+        let edges = ResizeEdges {
+            left: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(100, 0),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let rect = desktop.space(id).unwrap().rect;
+        assert_eq!(
+            rect,
+            Rect::new(0, 0, 224, 300),
+            "the fit does not leave the screen"
+        );
+    }
+
+    #[test]
+    fn a_status_bar_is_not_clipped_by_the_height_fit() {
+        let (mut desktop, id) = space_in_view(ViewMode::Details, Rect::new(0, 0, 300, 300), 12);
+        let view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default().with_mode(ViewMode::Details)
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::SetSpaceView {
+                        id,
+                        view: view.clone()
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        {
+            let space = desktop.space_mut(id).unwrap();
+            space.rect = Rect::new(0, 0, 300, 300);
+            space.user_sized = true;
+        }
+        let metrics = ViewMetrics::for_view(&view, desktop.layout, 1.0);
+        let edges = ResizeEdges {
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(300, 400),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.status_bar_height(), 24);
+        assert_eq!(
+            space.rect.height, 387,
+            "the bar and the header come off before the rows are fitted"
+        );
+        assert_ne!(
+            space.rect.height,
+            metrics.fit_height(400, space.title_height + metrics.header),
+            "the bar is chrome, not a row"
+        );
+    }
+
+    #[test]
     fn fit_to_grid_can_be_turned_off() {
         let mut desktop = Desktop::new();
         desktop.layout.fit_to_grid = false;
@@ -676,6 +1065,7 @@ mod tests {
                 id,
                 edges,
                 to: Point::new(480, 320),
+                metrics: ViewMetrics::for_grid(desktop.layout),
             },
             bounds(),
         );
@@ -698,6 +1088,7 @@ mod tests {
                 ..ResizeEdges::NONE
             },
             to: Point::new(600, 100),
+            metrics: ViewMetrics::for_grid(desktop.layout),
         };
         desktop.space_mut(id).unwrap().folded = true;
         assert_eq!(
@@ -809,10 +1200,35 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::Automatic,
+                view: SpaceView::default(),
             },
             bounds(),
         );
         assert_eq!(desktop.spaces[0].icon(), &SpaceIcon::Automatic);
+    }
+
+    #[test]
+    fn create_space_takes_the_view() {
+        let mut desktop = Desktop::new();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Files".into(),
+                at: Point::new(0, 0),
+                size: Size::new(240, 120),
+                locked: false,
+                icon: SpaceIcon::None,
+                view: SpaceView {
+                    status_bar: true,
+                    ..SpaceView::default().with_mode(crate::view::ViewMode::Details)
+                },
+            },
+            bounds(),
+        );
+        assert_eq!(
+            desktop.spaces[0].view().mode,
+            crate::view::ViewMode::Details
+        );
+        assert!(desktop.spaces[0].view().status_bar);
     }
 
     #[test]
@@ -1093,7 +1509,7 @@ mod tests {
             desktop.apply(
                 Command::SetSpaceView {
                     id,
-                    view: SpaceView::with_mode(crate::view::ViewMode::SmallIcons),
+                    view: SpaceView::default().with_mode(crate::view::ViewMode::SmallIcons),
                 },
                 bounds()
             ),
@@ -1478,7 +1894,7 @@ mod tests {
                 desktop.apply(
                     Command::SetSpaceView {
                         id,
-                        view: SpaceView::with_mode(ViewMode::LargeIcons),
+                        view: SpaceView::default().with_mode(ViewMode::LargeIcons),
                     },
                     bounds()
                 ),
@@ -1627,6 +2043,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: SpaceIcon::None,
+                view: SpaceView::default(),
             };
             assert!(desktop.apply(create, bounds()).is_applied());
             id

@@ -1,6 +1,8 @@
 //! The settings session: Cancel snapshots, staged hotkey text, and what
 //! a revert needs to reflow or restyle.
 
+use std::collections::HashMap;
+
 use deskspace_core::Rect;
 use deskspace_core::source::FolderView;
 
@@ -29,7 +31,7 @@ impl SpaceSnapshot {
             title: space.title().to_owned(),
             custom: space.custom(),
             look: space.look().cloned(),
-            view: space.view(),
+            view: space.view().clone(),
             folder: space.folder_view().cloned(),
         }
     }
@@ -47,7 +49,7 @@ impl SpaceSnapshot {
     pub fn restore_view(&self) -> Command {
         Command::SetSpaceView {
             id: self.id,
-            view: self.view,
+            view: self.view.clone(),
         }
     }
 
@@ -80,6 +82,9 @@ pub struct Session {
     /// The binding text as typed, per `HOTKEY_BINDINGS`, committed on Apply.
     pub hotkey_texts: [String; HOTKEY_BINDINGS.len()],
     pub hotkey_errors: [Option<String>; HOTKEY_BINDINGS.len()],
+    /// A lens filter field's text as typed, by space and field id, so the
+    /// form shows it back unchanged; the lens holds the parsed list (W35).
+    pub filter_texts: HashMap<(SpaceId, u32), String>,
     pub dirty: bool,
     /// The scope being edited: `None` for Global, or a space.
     pub scope: Option<SpaceId>,
@@ -109,6 +114,7 @@ impl Session {
             saved_layout: config.desktop.layout,
             hotkey_texts: saved_hotkey_texts(&config.window),
             hotkey_errors: Default::default(),
+            filter_texts: HashMap::new(),
             dirty: false,
             scope: None,
             scope_kind: ScopeKind::Global,
@@ -328,11 +334,17 @@ mod tests {
             status_bar: true,
             ..SpaceView::default()
         };
-        apply(&mut config.desktop, Command::SetSpaceView { id, view });
-        assert_eq!(config.desktop.space(id).unwrap().view(), view);
+        apply(
+            &mut config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: view.clone(),
+            },
+        );
+        assert_eq!(*config.desktop.space(id).unwrap().view(), view);
         apply(&mut config.desktop, snapshot.restore_view());
         assert_eq!(
-            config.desktop.space(id).unwrap().view(),
+            *config.desktop.space(id).unwrap().view(),
             SpaceView::default()
         );
     }

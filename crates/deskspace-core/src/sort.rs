@@ -59,6 +59,11 @@ impl SortRule {
                 .unwrap_or(0)
                 .cmp(&b.modified.unwrap_or(0))
                 .then_with(by_name),
+            SortKey::Created => a
+                .created
+                .unwrap_or(0)
+                .cmp(&b.created.unwrap_or(0))
+                .then_with(by_name),
         };
         if self.descending {
             order.reverse()
@@ -191,6 +196,34 @@ mod tests {
         assert_eq!(
             rule(SortKey::Modified, true, false).compare(&small, &large),
             Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn created_orders_by_creation_time_both_ways() {
+        let created = |label: &str, created: u64, modified: u64| Item {
+            created: Some(created),
+            ..item(label, ItemKind::File, 10, modified)
+        };
+        let older = created("banana", 1, 9);
+        let newer = created("apple", 2, 1);
+        assert_eq!(
+            rule(SortKey::Created, false, false).compare(&older, &newer),
+            Ordering::Less,
+            "the creation time decides, not the name or the modified time"
+        );
+        assert_eq!(
+            rule(SortKey::Created, true, false).compare(&older, &newer),
+            Ordering::Greater
+        );
+        let unknown = Item {
+            created: None,
+            ..older.clone()
+        };
+        assert_eq!(
+            rule(SortKey::Created, false, false).compare(&unknown, &newer),
+            Ordering::Less,
+            "an unknown time sorts as the oldest, as Modified does"
         );
     }
 

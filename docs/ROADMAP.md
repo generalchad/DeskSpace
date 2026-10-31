@@ -330,7 +330,9 @@ A native, lightweight, offline Windows desktop organizer that:
     smouldering in the char, warm light ahead of the edge, turbulent
     flames, and ash lifting off; it looks the same at every DPI and
     differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
-    opens on the desktop) is planned after composition (T14). Also
+    opens at its own center) is planned after composition (T14). It
+    needs the composition path; on Windows 10 and the accent path it
+    plays Fade instead (amended 2026-10-29, maintainer). Also
     planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
       work area (Automatic is the top), lands on its place, and settles in
@@ -341,13 +343,21 @@ A native, lightweight, offline Windows desktop organizer that:
       travels toward the edge (Automatic is the top) and grows as it
       winds, so it reads as 3D; in, it unrolls. The rect shrinks as Roll's
       does, so the blur follows it.
-    - **Magic lamp:** the macOS genie. The space narrows along curved sides
-      and pours into a point, and comes back out of it. It warps the
-      shape, which the rect-wide blur cannot follow, so it is drawn on a
-      click-through overlay (as Burn's flames are) while the space's own
-      window is hidden. Where the point is waits on a decision (T21).
+    - **Magic lamp:** a genie returning to its lamp. A spout forms on the
+      space's own title, and the body narrows along curved sides and
+      pours up into it (amended 2026-10-29, maintainer). In Fold, the
+      spout then settles back into the title, which stays. On Delete and
+      Startup's Out (exit and hide), the title, now holding the space,
+      flies into DeskSpace's tray icon. If the icon is hidden in the
+      overflow or on another monitor, it flies to the notification area
+      on the primary monitor, else to the middle of the bottom edge of the
+      space's work area. Startup's In plays it backwards, out of the tray.
+      It warps the shape, which the rect-wide blur cannot follow, so it is
+      drawn on a click-through overlay (as Burn's flames are) while the
+      space's own window is hidden (T21).
 
-    A kind can limit the list: Fold offers only None, Roll, and Scroll.
+    A kind can limit the list: Fold offers only None, Roll, Scroll, and
+    Magic lamp.
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
@@ -717,7 +727,63 @@ A native, lightweight, offline Windows desktop organizer that:
   - *The rest of F-40:* Explorer's desktop offers only icon views, which
     the default view already follows. A check confirms this, then F-40
     closes.
-  - Work items: `TASKS.md` section W, phase 5 (W24-W43).
+  - Work items: `TASKS.md` section W, phase 5 (W24-W49).
+
+- **D19. A lens follows its folder (2026-10-29, maintainer).** Resolves
+  open question 5 and decides F-67.
+  - When a lens's folder is renamed or moved, the lens follows it, but
+    only on the same volume, where a move is a rename the watch's handle
+    follows. It never follows into the Recycle Bin (deleting in Explorer
+    moves a folder there) or into DeskSpace's storage folder (D3). In
+    every other case it says "Folder not available", as today.
+  - Following is one undo entry, as Change folder… is. Ctrl+Z points the
+    lens back at the old path.
+  - The lens says where it went. A bar over its content reads
+    "Folder moved:" and the new path for about 3 s, and a log line records the
+    move. The bar is a general space notice, drawn and timed like the zoom
+    pop-up, so later messages reuse it.
+  - A lens browsed into a subfolder (D18) whose subfolder moves returns
+    to its own folder.
+  - F2 on a lens's title stays a nickname, never a folder rename (W46).
+    Renaming the folder from DeskSpace is a later, explicit
+    "Rename folder…" in the lens menu.
+  - Work items: `TASKS.md` W45.
+
+- **D20. Translation format (2026-10-29, maintainer).** Resolves open
+  question 4 for F-60. Messages use Fluent (`fluent-bundle`), so plurals,
+  named placeholders, and grammar live in the translator's file. Catalogs
+  are embedded in the executable, so the portable zip stays one file. A
+  test checks that every key the code uses has English text. The rest of
+  the design is R18 in `TASKS.md`.
+
+- **D21. Measuring guides (2026-10-29, maintainer).** Decides F-66 (M6
+  item 4). The guides come with snapping (F-35) and share its engine:
+  they show while a space is moved or resized with snapping on. One
+  setting, "Show measuring guides", lives on the General page beside
+  "Snap resized spaces".
+
+- **D22. Resizing follows the view's grid (2026-10-31, maintainer).**
+  Resolves the rest of F-03's whole-cell fit for the views added in D17.
+  - "Snap resized spaces to whole columns and rows" keeps its name, field
+    (`GridSpec::fit_to_grid`), and default, but fits to the current view's
+    cells: icon cells for the icon views; Small icons, List, and Tiles' own
+    cells; Details and Content rows only, with the width left free at the
+    `snap` step. Details' header and a space's status bar count as chrome.
+  - The resize dead zone is half an item's shorter side (a row view uses its
+    row height), never less than half `snap`, so a wide List cell does not
+    make the grab sluggish.
+  - Work items: `TASKS.md` C11.
+
+- **D23. Fit to contents on an item's menu (2026-10-31, maintainer).**
+  - An item's right-click menu in a space offers "Fit to contents" beside
+    DeskSpace's Rename, before Explorer's own entries. It fits the space
+    that holds the item, as the space menu's entry does, and is greyed when
+    the space is locked or already fits. A desktop item's menu does not
+    offer it.
+  - Fit to contents never makes a space larger than the work area of its
+    monitor; an icon view that is capped scrolls. This closes the gap where
+    only the order-placed views were capped.
+  - Work items: `TASKS.md` C12.
 
 ## 3. Guiding principles
 
@@ -749,39 +815,35 @@ update checking, F-45), v0.2.2 (adding shortcuts to spaces, F-50/F-53), v0.2.3
 v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 (D8, D9).
 
-**Done:** M0 (foundations) and M1 (renderer and Windows 11 look).
+**Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
+(lenses, phases 0-5).
 
 **In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
-F-52, and entries that wait on later milestones or design), M4 (phases 1-4
-are done, the last completing v0.3; phase 5 follows in v0.4 or a v0.3.x), and
-M5's space icons (S1-S4 are built; the title icon and the picker follow).
-Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-4) have landed since
+F-52, and entries that wait on later milestones or design), and M5's space
+icons (S1-S4 are built; the title icon and the picker follow).
+Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order:**
 
-1. **Lenses, M4 phase 5** (`TASKS.md` section W, "Where to start").
-   Phases 1-4 are built (2026-10-21 to 2026-10-24); their on-screen checks
-   are in `TASKS.md` section V. Phase 4 (W8-W23, D17) completed v0.3.
-   Phase 5 (W24-W43, D18) follows, except W24 and W25: they fix code that
-   runs today and go first.
-2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
+1. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
    the icon-set library, its cache, and the signed download are built
    (S1-S4, S6-S8, S13); S5 and S9-S12 need a screen.
-3. **L1's on-screen findings** (`TASKS.md` section L): record what each
+2. **L1's on-screen findings** (`TASKS.md` section L): record what each
    drag source offers. The rest of adding items to spaces (F-50,
    F-53..F-55) has landed.
-4. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
+3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
    the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
    built-but-unchecked behaviors before more work builds on them.
-5. **Release dry run on clean machines** (R12) and **code signing** (R10),
+4. **Release dry run on clean machines** (R12) and **code signing** (R10),
    before turning on the update feed.
-6. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
-   `TASKS.md` section T): Bounce and Scroll (T19, T20) are ready, and Magic
-   lamp (T21) awaits a decision. The composition spike (T1) runs alongside.
+5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+   `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
+   ready. The composition spike (T1) runs alongside.
 
-Not next: mapping Explorer's desktop view mode (the rest of F-40). DeskSpace
-now has all eight views; the check that closes F-40 is phase 5's W41.
+Not next: mapping Explorer's desktop view mode. The desktop offers only the
+three icon views, and its Small icons keep labels below, so F-40 closes with
+no mapping.
 
 ## 5. Milestones
 
@@ -851,15 +913,17 @@ Remaining:
    M8 item 4 packaging.
 3. More item presets and preset import/export (F-48). The "Item preset"
    dropdown now seeds the system with `Match Explorer's display` and
-   `Custom`; named presets and Save/Open come later (`TASKS.md` C6).
+   `Custom`; named presets (Compact, Spacious) come later (`TASKS.md` C6).
+   Sharing a preset is a theme file's job (item 4).
 4. Theme files (F-58): save a whole look to a file and load it on Global or
-   a space, so themes can be shared without forking (`TASKS.md` C10; the
-   proposed design awaits the maintainer's decision).
+   a space, so themes can be shared without forking (`TASKS.md` C10). A
+   theme carries the item preset, since it sets icon size and spacing
+   (decided 2026-10-29, maintainer).
 
 Exit criteria: every runtime setting can be edited in the UI, and the tray
 menu can show and hide spaces and open settings.
 
-### M4 - Lenses (folder views)
+### M4 - Lenses (folder views)  **[done]**
 
 Goal: spaces that mirror a folder live. Each phase lands green.
 
@@ -908,12 +972,14 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Deleting a lens removes only the view; its folder and the files in it
     are never deleted or moved (D3). The delete confirmation says so.
   - Double-click to open already works through `Ui::open_path`.
-- **Phase 4 - views and kept sort rules** (decided in D17; `TASKS.md` W8-W23).
+- **Phase 4 - views and kept sort rules. [done]** Decided in D17;
+  `TASKS.md` W8-W23.
   - Lens markers: kind glyphs in the scopes pane, the folder's icon in a
     lens's title bar.
   - Explorer's eight views and icon sizes, for every space (F-09), and
-    their Ctrl+Shift+1..8 keys. Map Explorer's `FOLDERVIEWMODE` onto these
-    views under "Match Explorer" (the rest of F-40).
+    their Ctrl+Shift+1..8 keys. Under "Match Explorer", the desktop's own
+    view needs no mapping: its View menu offers only the three icon views,
+    which the default view already follows (F-40, W41).
   - A kept sort rule for lenses and normal spaces, with Explorer's Sort by
     shape (F-08, F-31).
   - Explorer's status bar: item and selection counts, the Details and
@@ -922,17 +988,18 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     custom text.
   - A View page for every space, a Lens page for each lens, and a Global
     Lenses page with defaults (F-17).
-- **Phase 5 - extras, after v0.3** (decided in D18; `TASKS.md` W24-W43).
+- **Phase 5 - extras, after v0.3. [done]** Decided in D18;
+  `TASKS.md` W24-W49.
   - Two fixes first: a listing carries the folder it read, and the
     storage check moves off the UI thread.
   - Browse into subfolders inside the lens, with a back control (F-64).
-    Until then, subfolders open in Explorer.
   - Group by (F-65); Details columns: choose, resize, reorder, and Date
     created (F-63).
   - Lens filters (part of F-22), per-space file name extensions, compact
     view, the path tip, Ctrl+wheel through the views, and the default
     view for new spaces.
-  - Close F-40 after its desktop check.
+  - F-40 closed: the desktop offers only the three icon views, so no
+    view-mode mapping is needed (W41).
 
 Exit criteria: creating, renaming, or deleting a file in a lens's folder
 updates the lens within about 150 ms, and the sort and view settings persist.
@@ -991,6 +1058,13 @@ Remaining:
 3. Pages: several named layouts per monitor, with a page switcher (F-12).
    A page is a stored layout, so it builds on the snapshot format.
 4. Snapping to other spaces, with alignment guides (F-35).
+   - Optional measuring guides while a space is moved or resized (F-66),
+     like the smart guides in Photoshop. Lines show when an edge or center
+     lines up with another space or the work area. Labels give the gap to
+     each neighbour in pixels, and mark equal gaps and equal sizes, so a
+     layout can be made even by eye. A setting turns them on or off.
+   - They come with snapping, and the setting is on the General page
+     (D21).
 5. A desktop overview map (F-47): a scaled picture of every monitor with
    its wallpaper and miniature spaces.
    - Clicking a miniature selects that space in the F-46 scopes pane.
@@ -1102,7 +1176,7 @@ menus and dialogs (the item menu, conflict prompts, Properties) are already
 in the user's language.
 
 Remaining:
-1. **Design.** Settle open question 4 (`TASKS.md` R18).
+1. **Design.** The format is decided (D20); the rest is `TASKS.md` R18.
 2. **Extraction.** Every user-facing string goes through one lookup, with
    English as the source text and no visible change. The platform takes its
    few strings from the app as arguments, so it holds no catalogs. A test
@@ -1169,13 +1243,13 @@ through `SpaceLook`), and other per-space state in `Space`, as
 |----|---------|-----------|--------|
 | F-01 | Spaces / icon groups | M2 | Done; the desktop takeover is opt-in and its on-screen checks are pending |
 | F-02 | Create / rename / delete space | M2 | Done; undo of a delete awaits its on-screen check (U5) |
-| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`) |
+| F-03 | Resize space | M2, M4 | Done (edges/corners, scroll, fit to contents); whole-column and whole-row fit checked 2026-10-12, gated by the General page's "Snap resized spaces" (`GridSpec.fit_to_grid`), and since D22 it fits the current view's cells (Details and Content rows only); Fit to contents is also on an item's menu and capped to the work area (D23) |
 | F-04 | Fold spaces (formerly roll-up) | M2 (manual), M5 (policy) | Manual done; policy open |
 | F-05 | Lock space | M2 | Done |
 | F-06 | Drag icons in / out / between spaces | M2 | Done for spaces and for loose items on the takeover layer (opt-in); a drop on the takeover desktop opens a new space (D7, amended 2026-10-17); checks pending for the layer |
 | F-07 | Lenses (folder portals) | M4 | Done: lenses work end to end and phase 4 added the views, sort rules, status bar, and lens settings (M4 phases 1-4, W1-W23, 2026-10-24); on-screen checks in `TASKS.md` section V |
 | F-08 | Lens sort rules | M4 | Done: one `SortRule`, Explorer's Sort by (W14), and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
-| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22); checks pending (`TASKS.md` section V) |
+| F-09 | Lens show-as / icon size | M4 | Done: show-as (W11) and all eight Explorer views (W12, W16-W22), with Ctrl+wheel stepping through them (W39); checks pending (`TASKS.md` section V) |
 | F-10 | Hide all on desktop double-click | M5 | Open |
 | F-11 | Auto-hide | M5 | Open |
 | F-12 | Pages / virtual desktops | M6 | Open |
@@ -1188,7 +1262,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-19 | Multi-monitor | M1, M6 | Partial: per-monitor work areas and DPI; monitor assignment open |
 | F-20 | Backup / restore / snapshots | M6 | Open (config file only) |
 | F-21 | Auto-consolidate new icons | M7 | Open |
-| F-22 | Exclude rules / filters | M7 | Open; lens filters planned in M4 phase 5 (D18, `TASKS.md` W34, W35) |
+| F-22 | Exclude rules / filters | M7 | Partial: lens filters are done, check pending (`TASKS.md` V: W35); rules for normal spaces are open; decided in D18 |
 | F-23 | Keyboard navigation | M7 | Partial: within one space (`TASKS.md` G1, G3; check pending); between spaces open |
 | F-24 | Appearance: color, translucency, blur | M1, M3 | Done, globally and per space (a customized space has its own copy of every look setting); border thickness and color and drawn shadows (D15) built 2026-10-19, check pending (`TASKS.md` section V, "Border settings", "Drawn shadows") |
 | F-25 | Icon size | M3 | Done (50-200 %, jumbo icons, per-monitor DPI, per space; Ctrl+wheel per D9); check pending (`TASKS.md` V: F13, Display) |
@@ -1199,14 +1273,14 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | Done: Explorer's Sort by (W14) and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce and Scroll ready and Magic lamp awaiting a decision (T19-T21) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce, Scroll, and Magic lamp ready (T19-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |
 | F-37 | Drag image | M2 | Done; check pending |
 | F-38 | Clipboard cut / copy / paste | M2 | Done; check pending |
 | F-39 | Delete to the Recycle Bin | M2 | Done; check pending |
-| F-40 | Explorer icon size and view mode | M2, M4 | Icon size done; view mode waits for M4 phase 4 views, then closes after a desktop check (D18, `TASKS.md` W41) |
+| F-40 | Explorer icon size and view mode | M2, M4 | Done: icon size follows the desktop, whose View menu offers only Large, Medium, and Small icons, with labels below in Small icons (Windows 11, 2026-10-31; Windows 10 unverified, `TASKS.md` section V), so no view-mode mapping is needed (D18, W41) |
 | F-41 | Independent item check boxes | M2 | Done; check pending |
 | F-42 | Rubber-band, Ctrl+A, multi-item drag | M2 | Done within one space; check pending |
 | F-43 | Info tips, compressed/encrypted colors, Explorer spacing | M2 | Done; check pending |
@@ -1214,7 +1288,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-45 | Auto-update from GitHub Releases | M8 | Done (D6; `TASKS.md` E8-E11); check pending; the minisign key is a maintainer setup step |
 | F-46 | Per-space looks in the settings window (scopes pane, Customize switch, highlight) | M3 | Done; check pending (`TASKS.md` H5, H4) |
 | F-47 | Desktop overview map (monitors, wallpaper, miniature spaces) | M6 | Open; after F-19 and F-12 |
-| F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); import/export open (C6) |
+| F-48 | Item display presets (Match Explorer / Custom; more presets and import/export later) | M3, M6 | Partial: `Match Explorer's display` / `Custom` dropdown (`TASKS.md` C5); named presets open (C6), sharing through theme files (C10) |
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending (`TASKS.md` V: L2; L1 findings) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done, and redesigned after the mockup: acrylic, hue and opacity sliders, hex/RGB/HSL entry, copy and paste, an eyedropper, and recent colors; check pending (`TASKS.md` V: F14) |
@@ -1224,14 +1298,16 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |
 | F-56 | Explorer "Send to" / "Add to a DeskSpace space" entry | M3, M8 | Deferred; needs an instance hand-off and, for the Windows 11 menu, M8 item 4 |
 | F-57 | Zoom pop-up: the icon size as a percentage at the top center of the screen, with zoom out, zoom in, and Reset | M3 | Done; check pending (`TASKS.md` V) |
-| F-58 | Theme files: save, load, and share a look | M3 | Open; design awaits a decision (`TASKS.md` C10) |
+| F-58 | Theme files: save, load, and share a look | M3 | Open (`TASKS.md` C10) |
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
-| F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; design awaits open question 4 (`TASKS.md` R18) |
+| F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
 | F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S4, S6-S8, S13); the picker follows (S5, S9-S12), decided in D16 |
-| F-63 | Details columns: choose, resize, reorder, Date created | M4 | Open; decided in D18 (`TASKS.md` W29-W32) |
-| F-64 | Browse into subfolders inside a lens | M4 | Open; decided in D18 (`TASKS.md` W24, W25, W42, W43) |
-| F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
+| F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
+| F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
+| F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
+| F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |
+| F-67 | A lens follows its folder when it is renamed or moved | M4 | Done; check pending (`TASKS.md` V: W45); decided in D19 |
 
 
 ## 8. Open questions
@@ -1241,22 +1317,8 @@ Resolve each one during the milestone that raises it.
 1. **Takeover safety (M2).** *Resolved:* D8.
 2. **Desktop layer vs blur (M2).** *Resolved:* D8.
 3. **Undo model (M2).** *Resolved:* D11.
-4. **Translation format (M9).** Which message format, and where do the
-   catalogs live?
-   - *Fluent* (`fluent-bundle`): plurals, named placeholders, and grammar
-     live in the translator's file, and the tooling is mature. It adds
-     dependencies for `cargo deny` to clear, and its keys are strings, so a
-     test or a generated enum must check them.
-   - *A hand-rolled table:* a message enum with English in the code and one
-     TOML file per language, checked by tests. The compiler checks every key
-     and nothing is added to the dependency tree, but each language's plural
-     rules are written by hand.
-   - *gettext `.po`:* the format translators know best, but the pure-Rust
-     readers are less maintained.
-   - Catalogs embedded in the executable keep the portable zip one file;
-     catalogs beside it let a translator try a change without building.
-   - Proposed, awaiting the maintainer: Fluent, embedded, with a test that
-     every key the code uses has English text.
+4. **Translation format (M9).** *Resolved:* D20.
+5. **A lens whose folder is renamed or moved (M4).** *Resolved:* D19.
 
 Every other question raised so far is answered by a decision in section 2.
 

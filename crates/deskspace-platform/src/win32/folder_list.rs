@@ -59,7 +59,10 @@ pub(crate) fn list_folder(path: &Path) -> Result<Vec<FolderEntry>, PlatformError
                 &name,
                 data.dwFileAttributes,
                 size,
-                data.ftLastWriteTime,
+                Times {
+                    last_write: data.ftLastWriteTime,
+                    creation: data.ftCreationTime,
+                },
             ));
         }
         // SAFETY: `find.0` is the live handle from `FindFirstFileExW`, and
@@ -86,6 +89,12 @@ impl Drop for FindHandle {
     }
 }
 
+/// A find result's timestamps, as `FILETIME`s.
+struct Times {
+    last_write: FILETIME,
+    creation: FILETIME,
+}
+
 /// The entry for one `WIN32_FIND_DATAW` result. Pure, so every attribute and
 /// timestamp rule is tested without a real folder.
 fn entry_from(
@@ -93,7 +102,7 @@ fn entry_from(
     name: &OsStr,
     attributes: u32,
     size: u64,
-    last_write: FILETIME,
+    times: Times,
 ) -> FolderEntry {
     let is_folder = attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
     let path = folder.join(name);
@@ -103,7 +112,8 @@ fn entry_from(
         label: String::new(),
         kind,
         size: (!is_folder).then_some(size),
-        modified: unix_seconds(last_write),
+        modified: unix_seconds(times.last_write),
+        created: unix_seconds(times.creation),
         hidden: attributes & (FILE_ATTRIBUTE_HIDDEN.0 | FILE_ATTRIBUTE_SYSTEM.0) != 0,
     }
 }
@@ -138,6 +148,14 @@ mod tests {
         }
     }
 
+    /// Times with both stamps at `seconds`.
+    fn times(seconds: u64) -> Times {
+        Times {
+            last_write: filetime(seconds),
+            creation: filetime(seconds),
+        }
+    }
+
     #[test]
     fn a_file_carries_its_name_size_and_modification_time() {
         let entry = entry_from(
@@ -145,12 +163,16 @@ mod tests {
             OsStr::new("report.txt"),
             0,
             42,
-            filetime(1_700_000_000),
+            Times {
+                last_write: filetime(1_700_000_000),
+                creation: filetime(1_600_000_000),
+            },
         );
         assert_eq!(entry.path, Path::new("C:/folder/report.txt"));
         assert_eq!(entry.kind, ItemKind::File);
         assert_eq!(entry.size, Some(42));
         assert_eq!(entry.modified, Some(1_700_000_000));
+        assert_eq!(entry.created, Some(1_600_000_000));
         assert!(!entry.hidden);
         assert_eq!(entry.label, "", "the item falls back to the file stem");
     }
@@ -162,7 +184,7 @@ mod tests {
             OsStr::new("sub"),
             FILE_ATTRIBUTE_DIRECTORY.0,
             4096,
-            filetime(1_700_000_000),
+            times(1_700_000_000),
         );
         assert_eq!(entry.kind, ItemKind::Folder);
         assert_eq!(entry.size, None);
@@ -176,10 +198,21 @@ mod tests {
                 OsStr::new("secret.txt"),
                 attributes,
                 1,
-                filetime(0),
+                times(0),
             );
             assert!(entry.hidden, "{attributes:#x} should be hidden");
         }
+    }
+
+    #[test]
+    fn an_unset_creation_time_has_no_created_value() {
+        let unset = Times {
+            last_write: filetime(1_700_000_000),
+            creation: FILETIME::default(),
+        };
+        let entry = entry_from(Path::new("C:/folder"), OsStr::new("a.txt"), 0, 1, unset);
+        assert_eq!(entry.created, None);
+        assert_eq!(entry.modified, Some(1_700_000_000));
     }
 
     #[test]
@@ -201,7 +234,7 @@ mod tests {
             OsStr::new("tool.lnk"),
             0,
             1,
-            filetime(0),
+            times(0),
         );
         assert_eq!(entry.kind, ItemKind::Shortcut);
     }

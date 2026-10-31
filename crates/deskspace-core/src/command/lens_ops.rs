@@ -7,7 +7,7 @@ use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::geometry::Rect;
 use crate::id::SpaceId;
-use crate::item::Item;
+use crate::item::{Item, ItemKind};
 use crate::layout::{GridSpec, arrange_space, clamp_to_bounds};
 use crate::source::{FolderEntry, FolderView, LensTitle, SpaceSource};
 use crate::view::SpaceView;
@@ -46,9 +46,15 @@ impl Desktop {
             let SpaceSource::Folder(view) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
-            view.path = path;
+            // The items belong to the folder, so pointing a lens at the
+            // folder it already shows keeps them. Their watch posts no new
+            // listing for an unchanged path, so clearing would empty it for
+            // good.
+            if view.path != path {
+                view.path = path;
+                space.items.clear();
+            }
             space.title = title;
-            space.items.clear();
             CommandOutcome::Applied
         })
     }
@@ -74,14 +80,14 @@ impl Desktop {
             let SpaceSource::Folder(current) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
-            *current = view;
+            *current = view.clamped();
             CommandOutcome::Applied
         })
     }
 
     /// Reconciles `entries` with the lens's current items by path, then sorts
-    /// and lays them out. Include/exclude filters are F-22 and are not applied
-    /// yet.
+    /// and lays them out. Hidden entries and those the view's filters leave
+    /// out (`FolderView::shows`) are skipped.
     pub(super) fn apply_sync_lens(
         &mut self,
         id: SpaceId,
@@ -108,11 +114,16 @@ impl Desktop {
             if !seen.insert(entry.path.clone()) || (entry.hidden && !view.show_hidden) {
                 continue;
             }
+            let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
+            if !view.shows(&name, entry.kind == ItemKind::Folder) {
+                continue;
+            }
             let path = entry.path.clone();
             let label = entry.label.clone();
             let kind = entry.kind;
             let size = entry.size;
             let modified = entry.modified;
+            let created = entry.created;
             let mut item = match existing.remove(&path) {
                 Some(item) => item,
                 None => entry.into_item(self.take_item_id()),
@@ -123,6 +134,7 @@ impl Desktop {
             item.kind = kind;
             item.size = size;
             item.modified = modified;
+            item.created = created;
             items.push(item);
         }
 
@@ -174,6 +186,7 @@ mod tests {
             kind,
             size: Some(1),
             modified: Some(2),
+            created: Some(1),
             hidden: false,
         }
     }
@@ -249,6 +262,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -292,13 +306,13 @@ mod tests {
                         size: Size::new(240, 120),
                         path: "C:/folder".into(),
                         locked: false,
-                        view,
+                        view: view.clone(),
                     },
                     bounds(),
                 )
                 .is_applied()
         );
-        assert_eq!(desktop.space(id).unwrap().view(), view);
+        assert_eq!(*desktop.space(id).unwrap().view(), view);
     }
 
     #[test]
@@ -369,11 +383,13 @@ mod tests {
         changed.label = "Renamed".into();
         changed.size = Some(99);
         changed.modified = Some(7);
+        changed.created = Some(6);
         sync(&mut desktop, id, vec![changed]);
         let item = &desktop.space(id).unwrap().items()[0];
         assert_eq!(item.label, "Renamed");
         assert_eq!(item.kind, ItemKind::Folder);
         assert_eq!((item.size, item.modified), (Some(99), Some(7)));
+        assert_eq!(item.created, Some(6));
     }
 
     #[test]
@@ -447,6 +463,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -487,6 +504,27 @@ mod tests {
         assert_eq!(space.folder_view().unwrap().path, PathBuf::from("C:/other"));
         assert_eq!(space.title(), "Other");
         assert!(space.items().is_empty());
+    }
+
+    #[test]
+    fn rebinding_a_lens_to_the_folder_it_shows_keeps_its_items() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        assert_eq!(
+            desktop.apply(
+                Command::SetLensFolder {
+                    id,
+                    path: "C:/folder".into(),
+                    title: "Folder".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.title(), "Folder", "the title still updates");
+        assert_eq!(labels(&desktop, id), ["a"], "the folder's items stay");
     }
 
     #[test]
@@ -608,6 +646,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -675,6 +714,7 @@ mod tests {
                 size: Size::new(240, 120),
                 locked: false,
                 icon: crate::icon::SpaceIcon::None,
+                view: crate::view::SpaceView::default(),
             },
             bounds(),
         );
@@ -717,5 +757,121 @@ mod tests {
             "the rejected move changed nothing"
         );
         assert_eq!(desktop.space_containing(lens_item), Some(lens_id));
+    }
+
+    fn filter(desktop: &mut Desktop, id: SpaceId, include: &[&str], exclude: &[&str]) {
+        let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+        view.include = include.iter().map(|p| p.to_string()).collect();
+        view.exclude = exclude.iter().map(|p| p.to_string()).collect();
+        assert!(
+            desktop
+                .apply(Command::SetLensView { id, view }, bounds())
+                .is_applied()
+        );
+    }
+
+    fn filter_entries() -> Vec<FolderEntry> {
+        vec![
+            entry("a.pdf", ItemKind::File),
+            entry("b.txt", ItemKind::File),
+            entry("c.tmp", ItemKind::File),
+            entry("Sub", ItemKind::Folder),
+            entry("Old", ItemKind::Folder),
+        ]
+    }
+
+    #[test]
+    fn show_only_keeps_matching_files_and_every_folder() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        filter(&mut desktop, id, &["*.PDF"], &[]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["a.pdf", "Old", "Sub"]);
+    }
+
+    #[test]
+    fn hide_drops_matching_files_and_folders() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        filter(&mut desktop, id, &[], &["*.tmp", "old"]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["a.pdf", "b", "Sub"]);
+    }
+
+    #[test]
+    fn hide_wins_over_show_only_and_names_not_paths_are_matched() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        // "folder" is in every entry's path but no entry's name.
+        filter(&mut desktop, id, &["*.pdf", "*folder*"], &["a.*"]);
+        sync(&mut desktop, id, filter_entries());
+        assert_eq!(labels(&desktop, id), ["Old", "Sub"]);
+    }
+
+    #[test]
+    fn filter_lists_are_capped_trimmed_and_deduplicated() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let mut many: Vec<String> = (0..40).map(|n| format!("*.{n}")).collect();
+        many.insert(0, "  *.pdf  ".into());
+        many.insert(1, "*.pdf".into());
+        many.insert(2, "   ".into());
+        many.insert(3, "x".repeat(300));
+        let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+        view.include = many;
+        desktop.apply(Command::SetLensView { id, view }, bounds());
+        let include = &desktop.space(id).unwrap().folder_view().unwrap().include;
+        assert_eq!(include.len(), crate::source::MAX_PATTERNS);
+        assert_eq!(include[0], "*.pdf", "trimmed, and its repeat dropped");
+        assert_eq!(include[1].chars().count(), crate::source::MAX_PATTERN_LEN);
+        assert_eq!(include[2], "*.0", "the blank pattern is dropped");
+    }
+
+    /// Run by hand in release for the Performance rule's dated timing:
+    /// `cargo test --release -p deskspace-core -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a timing, for release builds; run by hand"]
+    fn time_a_filtered_sync_of_fifty_thousand_entries() {
+        let entries = || -> Vec<FolderEntry> {
+            (0..50_000)
+                .map(|n| {
+                    entry(
+                        &format!("quarterly report {n} final draft.pdf"),
+                        ItemKind::File,
+                    )
+                })
+                .collect()
+        };
+        // 32 "Hide" patterns, each tried on every entry and matching none, so
+        // every entry is still listed: one set the end check rejects at
+        // once, as most real patterns are, and one whose end matches so the
+        // whole pattern is tried.
+        let hide = |pattern: fn(usize) -> String| (0..32).map(pattern).collect::<Vec<_>>();
+        let cases = [
+            ("no filters", Vec::new()),
+            (
+                "32 patterns, end differs",
+                hide(|n| format!("*report*draft{n}?.tmp")),
+            ),
+            (
+                "32 patterns, end matches",
+                hide(|n| format!("*quarterly*report*{n}x*.pdf")),
+            ),
+        ];
+        for (label, exclude) in cases {
+            let mut desktop = Desktop::new();
+            let id = lens(&mut desktop, "C:/folder");
+            let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
+            view.exclude = exclude;
+            desktop.apply(Command::SetLensView { id, view }, bounds());
+            let entries = entries();
+            let start = std::time::Instant::now();
+            sync(&mut desktop, id, entries);
+            println!(
+                "SyncLens, {label}, 50,000 entries: {:?} ({} kept)",
+                start.elapsed(),
+                desktop.space(id).unwrap().items().len()
+            );
+        }
     }
 }

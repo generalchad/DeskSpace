@@ -1,19 +1,24 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use deskspace_core::animation::Kind;
 use deskspace_core::geometry::{Point, Rect};
+use deskspace_core::grouping::{Grouping, LocalDay};
 use deskspace_core::layout::GridSpec;
 use deskspace_core::theme::ICON_SIZE_RANGE;
 use deskspace_core::view_layout::{ViewLayout, ViewMetrics};
-use deskspace_core::{Color, Command, Item, ItemId, Palette, SpaceId, SpaceView, Theme, ViewMode};
+use deskspace_core::{
+    Color, Command, Extensions, GroupBy, Item, ItemId, ItemKind, Palette, Space, SpaceId,
+    SpaceView, Theme, ViewMode,
+};
 use deskspace_platform::{
     CheckBoxMode, DesktopEntry, ITEM_ICON_SIZE, ItemMetrics, ShellDisplay, SpaceScene, SpaceStyle,
     Ui, Way, arm_watchdog, desktop_display_since, enumerate_desktop_items, foreground_window,
-    hide_desktop_icons, rehide_desktop_icons, restore_desktop_icons, space_dpi,
-    system_accent_color, system_animations, system_uses_dark_mode, virtual_desktop_rect,
+    hide_desktop_icons, local_today, rehide_desktop_icons, restore_desktop_icons, space_dpi,
+    system_accent_color, system_animations, system_uses_dark_mode, type_name, virtual_desktop_rect,
     work_area_at,
 };
 
@@ -108,9 +113,100 @@ pub(crate) struct ViewCache {
     /// or `App::icon_scale`'s, without DPI. A change to it can keep the
     /// space's size first (`App::keep_size_on_zoom`).
     icon_scales: HashMap<SpaceId, f32>,
+    /// A grouped space's display order, until what it was made from changes.
+    groupings: HashMap<SpaceId, CachedGrouping>,
+    /// The names of each space's folded groups, for the session (D18).
+    folded_groups: HashMap<SpaceId, HashSet<String>>,
+}
+
+/// A display order and a digest of what it was made from.
+#[derive(Debug)]
+struct CachedGrouping {
+    stamp: u64,
+    grouping: Arc<Grouping>,
+}
+
+/// A word-at-a-time digest, because every repaint of a grouped space pays for
+/// one and SipHash took about 5 ms on 50,000 items. Nothing here is keyed by
+/// outside input, so it needs no defense against collisions on purpose.
+/// Adapted from rustc-hash: https://github.com/rust-lang/rustc-hash
+#[derive(Default)]
+struct StampHasher(u64);
+
+impl StampHasher {
+    const ROTATE: u32 = 5;
+    const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+
+    fn word(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(Self::ROTATE) ^ word).wrapping_mul(Self::SEED);
+    }
+
+    fn bytes(&mut self, bytes: &[u8]) {
+        // The length keeps "ab", "c" apart from "a", "bc".
+        self.word(bytes.len() as u64);
+        let (words, rest) = bytes.as_chunks::<8>();
+        for word in words {
+            self.word(u64::from_le_bytes(*word));
+        }
+        let mut last = [0; 8];
+        last[..rest.len()].copy_from_slice(rest);
+        self.word(u64::from_le_bytes(last));
+    }
+
+    fn optional(&mut self, value: Option<u64>) {
+        self.word(u64::from(value.is_some()));
+        self.word(value.unwrap_or(0));
+    }
+}
+
+/// A digest of everything a space's groups read: its items and their facts, the
+/// grouping, today, and what is folded. Comparing it costs a walk of the items
+/// but no sorting and no shell calls, and any change to a space reaches it
+/// without each change having to say so.
+fn grouping_stamp(
+    items: &[Item],
+    group: GroupBy,
+    today: LocalDay,
+    folded: &HashSet<String>,
+) -> u64 {
+    let mut stamp = StampHasher::default();
+    stamp.word(group.key as u64);
+    stamp.word(u64::from(group.descending));
+    stamp.word(today.midnight);
+    let mut names: Vec<&String> = folded.iter().collect();
+    names.sort();
+    for name in names {
+        stamp.bytes(name.as_bytes());
+    }
+    stamp.word(items.len() as u64);
+    for item in items {
+        stamp.word(item.id.0);
+        stamp.bytes(item.path.as_os_str().as_encoded_bytes());
+        stamp.bytes(item.label.as_bytes());
+        stamp.optional(item.size);
+        stamp.optional(item.modified);
+        stamp.optional(item.created);
+    }
+    stamp.0
 }
 
 impl ViewCache {
+    /// The display order of a grouped space, once `App::sync_grouping` has made
+    /// one.
+    pub(super) fn grouping(&self, id: SpaceId) -> Option<Arc<Grouping>> {
+        self.groupings
+            .get(&id)
+            .map(|cached| Arc::clone(&cached.grouping))
+    }
+
+    /// Folds group `name` of space `id` if it is open, or opens it.
+    pub(super) fn toggle_group(&mut self, id: SpaceId, name: &str) {
+        let folded = self.folded_groups.entry(id).or_default();
+        if !folded.remove(name) {
+            folded.insert(name.to_owned());
+        }
+    }
+
     /// The stored scroll offset, unclamped; 0 when never scrolled.
     pub(super) fn scroll_of(&self, id: SpaceId) -> i32 {
         self.scroll.get(&id).copied().unwrap_or(0)
@@ -127,6 +223,8 @@ impl ViewCache {
 
     /// Drops everything kept for a deleted space.
     pub(super) fn forget(&mut self, id: SpaceId) {
+        self.groupings.remove(&id);
+        self.folded_groups.remove(&id);
         self.scroll.remove(&id);
         self.icon_scales.remove(&id);
     }
@@ -211,6 +309,15 @@ impl App {
     pub(super) fn view_for(&self, surface: Surface) -> ViewState {
         let check_boxes = self.surface_check_box_mode(surface);
         ViewState {
+            grouping: match surface {
+                Surface::Space(id) => self
+                    .config
+                    .desktop
+                    .space(id)
+                    .and_then(|space| self.shown_grouping(space)),
+                Surface::Desktop => None,
+            },
+            column_drop: self.column_drop_on(surface),
             hovered: self.pointer.hovered_item_on(surface),
             selected: if self.selection.surface == Some(surface) {
                 self.selection.items.clone()
@@ -246,11 +353,23 @@ impl App {
                 Surface::Space(id) => self.unavailable_lenses.contains(&id),
                 Surface::Desktop => false,
             },
+            filtered_out: match surface {
+                Surface::Space(id) => self.filtered_out(id),
+                Surface::Desktop => false,
+            },
+            subfolder: match surface {
+                Surface::Space(id) => self.subfolder_of(id),
+                Surface::Desktop => PathBuf::new(),
+            },
             hovered_status: self
                 .pointer
                 .status_hover
                 .filter(|(owner, _)| *owner == surface)
                 .map(|(_, index)| index),
+            notice: match surface {
+                Surface::Space(id) => self.notices.get(&id).cloned(),
+                Surface::Desktop => None,
+            },
         }
     }
 
@@ -412,9 +531,94 @@ impl App {
     /// scale the scene builder uses.
     pub(super) fn view_layout(&self, id: SpaceId) -> Option<ViewLayout> {
         let space = self.config.desktop.space(id)?;
-        let metrics =
-            ViewMetrics::for_view(space.view().mode, self.layout_for(id), space_dpi(id.0));
-        Some(ViewLayout::for_space(space, metrics))
+        let metrics = ViewMetrics::for_view(space.view(), self.layout_for(id), space_dpi(id.0));
+        Some(ViewLayout::for_space(space, metrics).with_grouping(self.shown_grouping(space)))
+    }
+
+    /// The display order `space` is drawn in, if it groups its items.
+    fn shown_grouping(&self, space: &Space) -> Option<Arc<Grouping>> {
+        space.view().group?;
+        self.view_cache.grouping(space.id)
+    }
+
+    /// Brings a grouped space's display order up to date, and drops from the
+    /// selection any item that is now folded, so a delete never acts on files
+    /// the user cannot see (D18). A repaint reaches here after every change to
+    /// a space, so date groups move on at the next one after midnight.
+    pub(super) fn sync_grouping(&mut self, id: SpaceId) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let Some(group) = space.view().group else {
+            self.view_cache.groupings.remove(&id);
+            return;
+        };
+        let today = local_today();
+        let no_folds = HashSet::new();
+        let folded = self.view_cache.folded_groups.get(&id).unwrap_or(&no_folds);
+        let stamp = grouping_stamp(space.items(), group, today, folded);
+        if self
+            .view_cache
+            .groupings
+            .get(&id)
+            .is_some_and(|cached| cached.stamp == stamp)
+        {
+            return;
+        }
+        let mut type_of =
+            |item: &Item| type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default();
+        let groups = crate::grouping::groups(
+            space.items(),
+            group,
+            &mut crate::grouping::GroupFacts {
+                today,
+                type_name: &mut type_of,
+            },
+        );
+        let grouping = Arc::new(Grouping::new(groups, space.items().len(), |name| {
+            folded.contains(name)
+        }));
+        let hidden: Vec<ItemId> = space
+            .items()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| grouping.position_of(*index).is_none())
+            .map(|(_, item)| item.id)
+            .collect();
+        self.view_cache
+            .groupings
+            .insert(id, CachedGrouping { stamp, grouping });
+        if self.selection.surface == Some(Surface::Space(id)) {
+            self.selection.drop_items(&hidden);
+        }
+    }
+
+    /// Folds or opens the group whose header holds `point`, if any.
+    pub(super) fn group_header_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(name) = self.group_name_at(id, point) else {
+            return false;
+        };
+        self.view_cache.toggle_group(id, &name);
+        self.selection.surface = Some(Surface::Space(id));
+        self.refresh_space(ui, id);
+        true
+    }
+
+    /// The name of the group whose header holds `point`, if any.
+    fn group_name_at(&self, id: SpaceId, point: Point) -> Option<String> {
+        let space = self.config.desktop.space(id)?;
+        let content = space.content_rect();
+        if !content.contains(point) {
+            return None;
+        }
+        let grouping = self.shown_grouping(space)?;
+        let layout = self.view_layout(id)?;
+        let local = layout.layout_point(
+            Point::new(point.x - content.x, point.y - content.y),
+            self.scroll_of(id),
+        );
+        let group = layout.group_at(local)?;
+        Some(grouping.groups().get(group)?.name.clone())
     }
 
     /// Re-reads Explorer's display options and repaints if they changed. A
@@ -680,14 +884,25 @@ impl App {
         }
     }
 
-    /// Whether a surface's labels show filename extensions: Explorer's own
-    /// option, on a surface that mirrors Explorer's display.
+    /// Whether a surface's labels show filename extensions: the space's own
+    /// choice (W28), or under `Automatic` Explorer's own option on a surface
+    /// that mirrors Explorer's display.
     pub(super) fn shows_extensions(&self, surface: Surface) -> bool {
+        if let Surface::Space(id) = surface
+            && let Some(space) = self.config.desktop.space(id)
+        {
+            match space.view().extensions {
+                Extensions::Show => return true,
+                Extensions::Hide => return false,
+                Extensions::Automatic => {}
+            }
+        }
         self.surface_match_explorer(surface) && self.system.shell().show_extensions
     }
 
     /// Pushes the space's current geometry and draw list to its window.
     pub(super) fn refresh_space(&mut self, ui: &mut Ui, id: SpaceId) {
+        self.sync_grouping(id);
         let view = self.view_for(Surface::Space(id));
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -700,7 +915,7 @@ impl App {
             metrics: self.metrics_for(id),
             scale: space_dpi(id.0),
         };
-        let mut details = |item: &Item| view_cells(space.view().mode, item);
+        let mut details = |item: &Item| view_cells(space.view(), item);
         let row_cells = (matches!(
             space.view().mode,
             ViewMode::Details | ViewMode::Tiles | ViewMode::Content
@@ -782,6 +997,20 @@ impl App {
         self.refresh_space(ui, id);
     }
 
+    /// The command that fits space `id` to its contents, with the cells it is
+    /// drawn with.
+    pub(super) fn fit_command(&self, id: SpaceId) -> Command {
+        let view = self
+            .config
+            .desktop
+            .space(id)
+            .map_or_else(SpaceView::default, |space| space.view().clone());
+        Command::FitToContents {
+            id,
+            metrics: ViewMetrics::for_view(&view, self.layout_for(id), space_dpi(id.0)),
+        }
+    }
+
     /// Applies a view choice to space `id` as one undo entry named `label`,
     /// reflows that space alone, and keeps an open settings window's
     /// snapshot. Shared by the View menu, the Ctrl+Shift keys, and the status
@@ -824,14 +1053,21 @@ impl App {
     /// its `VIEW_MODES` digit names. A digit with no view yet, or no space
     /// current, does nothing.
     pub(super) fn set_view_by_digit(&mut self, ui: &mut Ui, digit: u8) {
-        let Some(Surface::Space(id)) = self.selection.surface else {
-            return;
-        };
-        let Some(mode) = view_for_digit(digit) else {
+        let Some((id, view)) = self.view_by_digit(digit) else {
             return;
         };
         let at = self.space_center(id);
-        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
+        self.set_space_view(ui, id, view, at);
+    }
+
+    /// The current space and the view Ctrl+Shift+`digit` gives it, without a
+    /// `Ui`, so tests can check it.
+    fn view_by_digit(&self, digit: u8) -> Option<(SpaceId, SpaceView)> {
+        let Some(Surface::Space(id)) = self.selection.surface else {
+            return None;
+        };
+        let mode = view_for_digit(digit)?;
+        Some((id, self.config.desktop.space(id)?.view().with_mode(mode)))
     }
 
     /// When `id`'s icon factor changed since its last re-flow (a zoom, a view
@@ -930,9 +1166,254 @@ mod tests {
     use crate::fixtures::{apply, create_space};
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::geometry::Size;
+    use deskspace_core::{Extensions, SpaceView, ViewMode};
     use deskspace_core::{ItemFacts, Preset};
-    use deskspace_core::{SpaceView, ViewMode};
     use deskspace_platform::ShellDisplay;
+
+    /// An app with one space grouped by Name, holding `apple` and `avocado` in
+    /// one group and `zebra`, stored between them, in another.
+    fn grouped_app() -> (App, SpaceId, [ItemId; 3]) {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let desktop = &mut app.config.desktop;
+        let id = create_space(desktop, "Grouped", Rect::new(0, 0, 600, 400));
+        let items = [
+            crate::fixtures::add_item(desktop, id, "C:/missing/apple.txt"),
+            crate::fixtures::add_item(desktop, id, "C:/missing/zebra.txt"),
+            crate::fixtures::add_item(desktop, id, "C:/missing/avocado.txt"),
+        ];
+        apply(
+            desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView {
+                    group: Some(GroupBy {
+                        key: deskspace_core::SortKey::Name,
+                        descending: false,
+                    }),
+                    ..SpaceView::default().with_mode(ViewMode::SmallIcons)
+                },
+            },
+        );
+        app.sync_grouping(id);
+        (app, id, items)
+    }
+
+    fn shown_ids(app: &App, id: SpaceId) -> Vec<ItemId> {
+        app.surface_shown_items(Surface::Space(id))
+            .iter()
+            .map(|item| item.id)
+            .collect()
+    }
+
+    #[test]
+    fn a_grouped_space_shows_its_groups_and_keeps_its_stored_order() {
+        let (app, id, [apple, zebra, avocado]) = grouped_app();
+        assert_eq!(shown_ids(&app, id), [apple, avocado, zebra]);
+        let stored: Vec<ItemId> = app
+            .config
+            .desktop
+            .space(id)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.id)
+            .collect();
+        assert_eq!(stored, [apple, zebra, avocado], "the stored order stands");
+    }
+
+    #[test]
+    fn hit_tests_find_the_item_a_grouped_cell_shows() {
+        let (app, id, [_, zebra, _]) = grouped_app();
+        let surface = Surface::Space(id);
+        let cell = app
+            .surface_cells(surface)
+            .into_iter()
+            .find(|(item, _)| *item == zebra)
+            .map(|(_, rect)| rect)
+            .unwrap();
+        assert_eq!(app.surface_item_at(surface, cell.center()), Some(zebra));
+    }
+
+    #[test]
+    fn folding_a_group_drops_its_items_from_the_selection_and_the_cells() {
+        let (mut app, id, [apple, zebra, avocado]) = grouped_app();
+        let surface = Surface::Space(id);
+        app.selection.select_items(surface, vec![apple, zebra]);
+        app.selection.checked = vec![avocado];
+        app.selection.focused = Some(apple);
+
+        app.view_cache.toggle_group(id, "A - H");
+        app.sync_grouping(id);
+
+        assert_eq!(app.selection.items, [zebra]);
+        assert!(app.selection.checked.is_empty());
+        assert_eq!(app.selection.focused, None);
+        assert_eq!(shown_ids(&app, id), [zebra], "Ctrl+A reads this list");
+        let cells = app.surface_cells(surface);
+        assert_eq!(cells.len(), 1, "the marquee and the arrows read these");
+        assert_eq!(cells[0].0, zebra);
+
+        app.view_cache.toggle_group(id, "A - H");
+        app.sync_grouping(id);
+        assert_eq!(shown_ids(&app, id), [apple, avocado, zebra]);
+        assert_eq!(app.selection.items, [zebra], "opening selects nothing back");
+    }
+
+    #[test]
+    fn a_group_header_click_finds_its_group_under_the_scroll() {
+        let (app, id, _) = grouped_app();
+        let space = app.config.desktop.space(id).unwrap();
+        let content = space.content_rect();
+        let layout = app.view_layout(id).unwrap();
+        let header = layout.group_rect(1).unwrap().center();
+        let point = Point::new(content.x + header.x, content.y + header.y);
+        assert_eq!(app.group_name_at(id, point).as_deref(), Some("Q - Z"));
+        let row = Point::new(content.x + 20, content.y + layout.rect(0).center().y);
+        assert_eq!(app.group_name_at(id, row), None);
+    }
+
+    #[test]
+    fn a_grouping_is_rebuilt_only_when_what_it_reads_changes() {
+        let (mut app, id, [apple, zebra, avocado]) = grouped_app();
+        let first = app.view_cache.grouping(id).unwrap();
+        app.sync_grouping(id);
+        assert!(
+            Arc::ptr_eq(&first, &app.view_cache.grouping(id).unwrap()),
+            "nothing changed, so nothing is rebuilt"
+        );
+        apply(
+            &mut app.config.desktop,
+            Command::RenameItem {
+                id: apple,
+                path: "C:/missing/yak.txt".into(),
+                label: "yak".into(),
+            },
+        );
+        app.sync_grouping(id);
+        assert!(!Arc::ptr_eq(&first, &app.view_cache.grouping(id).unwrap()));
+        assert_eq!(
+            shown_ids(&app, id),
+            [avocado, apple, zebra],
+            "the renamed item moved to its new group"
+        );
+    }
+
+    /// Run by hand in a release build: `cargo test --release -p deskspace-app
+    /// time_grouping -- --ignored --nocapture`. Every repaint of a grouped space
+    /// pays this.
+    #[test]
+    #[ignore = "a timing, not a check"]
+    fn time_grouping_stamp_of_fifty_thousand_items() {
+        let items: Vec<Item> = (0..50_000)
+            .map(|index| {
+                Item::new(
+                    ItemId(index),
+                    format!("C:/Users/someone/Downloads/file{index}.txt"),
+                    ItemFacts {
+                        size: Some(index),
+                        modified: Some(index),
+                        ..ItemFacts::default()
+                    },
+                )
+            })
+            .collect();
+        let group = GroupBy {
+            key: deskspace_core::SortKey::Name,
+            descending: false,
+        };
+        let today = local_today();
+        let started = std::time::Instant::now();
+        let stamp = grouping_stamp(&items, group, today, &HashSet::new());
+        eprintln!("stamp: {:?} ({stamp:x})", started.elapsed());
+    }
+
+    #[test]
+    fn the_stamp_notices_everything_a_grouping_reads() {
+        let item = |label: &str, size| {
+            Item::new(
+                ItemId(1),
+                format!("C:/a/{label}.txt"),
+                ItemFacts {
+                    size,
+                    ..ItemFacts::default()
+                },
+            )
+        };
+        let group = GroupBy {
+            key: deskspace_core::SortKey::Name,
+            descending: false,
+        };
+        let today = LocalDay {
+            year: 2026,
+            month: 10,
+            day: 31,
+            weekday: 6,
+            midnight: 1_000,
+        };
+        let none = HashSet::new();
+        let base = grouping_stamp(&[item("apple", None)], group, today, &none);
+        assert_eq!(
+            base,
+            grouping_stamp(&[item("apple", None)], group, today, &none)
+        );
+        let folded: HashSet<String> = ["A - H".to_owned()].into();
+        for changed in [
+            grouping_stamp(&[item("zpple", None)], group, today, &none),
+            grouping_stamp(&[item("apple", Some(0))], group, today, &none),
+            grouping_stamp(&[], group, today, &none),
+            grouping_stamp(
+                &[item("apple", None)],
+                GroupBy {
+                    descending: true,
+                    ..group
+                },
+                today,
+                &none,
+            ),
+            grouping_stamp(
+                &[item("apple", None)],
+                group,
+                LocalDay {
+                    midnight: 2_000,
+                    ..today
+                },
+                &none,
+            ),
+            grouping_stamp(&[item("apple", None)], group, today, &folded),
+        ] {
+            assert_ne!(base, changed);
+        }
+    }
+
+    #[test]
+    fn ungrouping_forgets_the_display_order() {
+        let (mut app, id, [apple, zebra, avocado]) = grouped_app();
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::default().with_mode(ViewMode::SmallIcons),
+            },
+        );
+        app.sync_grouping(id);
+        assert!(app.view_cache.grouping(id).is_none());
+        assert_eq!(shown_ids(&app, id), [apple, zebra, avocado]);
+    }
+
+    #[test]
+    fn a_stale_display_order_is_never_read_once_ungrouped() {
+        let (mut app, id, [apple, zebra, avocado]) = grouped_app();
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: SpaceView::default().with_mode(ViewMode::SmallIcons),
+            },
+        );
+        // Before the next repaint brings the cache up to date.
+        assert_eq!(shown_ids(&app, id), [apple, zebra, avocado]);
+    }
 
     #[test]
     fn only_items_modified_at_the_same_path_changed_in_place() {
@@ -971,6 +1452,77 @@ mod tests {
         app.config.window.take_over_desktop = false;
         app.layer.session_takeover = Some(true);
         assert!(app.desktop_takeover());
+    }
+
+    #[test]
+    fn each_extension_choice_decides_its_space_and_automatic_follows_explorer() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = create_space(&mut app.config.desktop, "A", Rect::new(0, 0, 100, 100));
+        let surface = Surface::Space(id);
+        app.system.set_shell(ShellDisplay {
+            show_extensions: true,
+            ..ShellDisplay::default()
+        });
+        // Automatic is today's rule, so Explorer's option counts only while
+        // the space mirrors Explorer's display.
+        assert!(app.config.theme.match_explorer(), "the default preset");
+        assert!(app.shows_extensions(surface));
+        app.config.theme.preset = Preset::Custom;
+        assert!(!app.shows_extensions(surface), "hidden under Custom");
+        app.system.set_shell(ShellDisplay::default());
+        assert!(!app.shows_extensions(surface), "Explorer hides them too");
+        // Show and Hide decide for the space, whatever Explorer does.
+        for (extensions, shown) in [(Extensions::Show, true), (Extensions::Hide, false)] {
+            apply(
+                &mut app.config.desktop,
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        extensions,
+                        ..SpaceView::default()
+                    },
+                },
+            );
+            assert_eq!(
+                app.shows_extensions(surface),
+                shown,
+                "{extensions:?} decides over both presets"
+            );
+        }
+    }
+
+    #[test]
+    fn a_view_key_keeps_the_sort_rule() {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        let mut app = App::new(Config::new(), store, false, false);
+        let id = create_space(&mut app.config.desktop, "A", Rect::new(0, 0, 100, 100));
+        let sorted = SpaceView {
+            sort: deskspace_core::SortRule {
+                key: deskspace_core::SortKey::Modified,
+                descending: true,
+                folders_first: false,
+            },
+            keep_sorted: false,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        apply(
+            &mut app.config.desktop,
+            Command::SetSpaceView {
+                id,
+                view: sorted.clone(),
+            },
+        );
+        assert_eq!(app.view_by_digit(6), None, "no space is current");
+
+        app.selection.surface = Some(Surface::Space(id));
+        let (target, view) = app.view_by_digit(6).unwrap();
+        assert_eq!(target, id);
+        assert_eq!(view, sorted.with_mode(ViewMode::Details));
+        assert_eq!(view.sort, sorted.sort);
+        assert!(!view.keep_sorted);
+        assert!(view.status_bar);
     }
 
     #[test]
@@ -1098,7 +1650,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
         // Large icons are 96 px at 96 DPI; the grid cell is twice the base
@@ -1123,7 +1675,7 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
         let before = (app.metrics_for(id), app.layout_for(id));

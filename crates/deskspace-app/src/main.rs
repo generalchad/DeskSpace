@@ -10,6 +10,7 @@ mod cli;
 mod debug_log;
 #[cfg(test)]
 mod fixtures;
+mod grouping;
 mod scene;
 mod settings;
 mod storage;

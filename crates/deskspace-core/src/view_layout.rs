@@ -7,38 +7,60 @@
 //! `Item.position`, so switching back to an icon view restores the hand
 //! arrangement (D17).
 //!
-//! Layout is arithmetic: [`ViewLayout::rect`] is `O(1)`, and
+//! Layout is arithmetic: [`ViewLayout::rect`] is `O(1)` (`O(log groups)` in a
+//! grouped space), and
 //! [`ViewLayout::visible`] finds the items in a scroll window without walking
 //! every item.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::geometry::{Point, Rect, Size};
-use crate::layout::{GridSpec, columns_for};
-use crate::space::Space;
-use crate::view::ViewMode;
+use crate::grouping::Grouping;
+use crate::layout::{GridSpec, columns_for, fit_length};
+use crate::space::{ResizeEdges, Space};
+use crate::view::{SpaceView, ViewMode};
 
-/// Explorer's inline cell for Small icons at 96 DPI: a 16 px icon with one
-/// label line beside it. The width is provisional until W16's on-screen check
-/// measures Explorer's own.
-const SMALL_ICON_CELL_WIDTH: i32 = 200;
-const SMALL_ICON_CELL_HEIGHT: i32 = 22;
-/// Explorer's List column at 96 DPI: the same inline cell, filled top to
-/// bottom. The width is provisional until W17's on-screen check measures
-/// Explorer's own.
-const LIST_COLUMN_WIDTH: i32 = 200;
-const LIST_CELL_HEIGHT: i32 = 22;
-/// The space between inline cells, horizontally and vertically.
-const INLINE_GAP: i32 = 2;
-/// Explorer's Details row and header heights at 96 DPI. Provisional until
-/// W18's on-screen check measures Explorer's own.
-const DETAILS_ROW_HEIGHT: i32 = 22;
-pub const DETAILS_HEADER_HEIGHT: i32 = 25;
-/// Explorer's Tiles cell and Content row at 96 DPI (W21, W22). Provisional
-/// until their on-screen checks measure Explorer's own.
-const TILE_WIDTH: i32 = 210;
-const TILE_HEIGHT: i32 = 60;
-const CONTENT_ROW_HEIGHT: i32 = 32;
+/// The cells of the views that place items by order, at 96 DPI. Provisional
+/// until their on-screen checks measure Explorer's own (W16-W22, W33).
+struct OrderedCells {
+    /// Small icons: a 16 px icon with one label line beside it.
+    small_icons: (i32, i32),
+    /// List: the same inline cell, filled top to bottom.
+    list: (i32, i32),
+    details_row: i32,
+    details_header: i32,
+    /// A group's header row, in every view.
+    group_header: i32,
+    tile: (i32, i32),
+    content_row: i32,
+    /// The space between inline cells, horizontally and vertically.
+    gap: i32,
+}
+
+const NORMAL_CELLS: OrderedCells = OrderedCells {
+    small_icons: (200, 22),
+    list: (200, 22),
+    details_row: 22,
+    details_header: 25,
+    group_header: 30,
+    tile: (210, 60),
+    content_row: 32,
+    gap: 2,
+};
+
+/// Explorer's Compact view tightens only these views; the icon views keep the
+/// Layout page's spacing, so there is one spacing control per view (D18).
+const COMPACT_CELLS: OrderedCells = OrderedCells {
+    small_icons: (200, 18),
+    list: (200, 18),
+    details_row: 18,
+    details_header: 22,
+    group_header: 24,
+    tile: (210, 52),
+    content_row: 26,
+    gap: 0,
+};
 
 /// Which way a view's content flows when it does not fit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,50 +117,46 @@ pub struct ViewMetrics {
     /// The fixed header row above the items; 0 for every view but Details
     /// (W18).
     pub header: i32,
+    /// A group's header row, when the space groups its items.
+    pub group_header: i32,
 }
 
 impl ViewMetrics {
-    /// The metrics for `mode` on a display of `display_scale` (1.0 is 96 DPI).
+    /// The metrics for `view` on a display of `display_scale` (1.0 is 96 DPI).
     /// An icon view hands off to `grid` as it is; an order-placed view uses its
-    /// own inline cell, scaled for the display rather than the look.
-    pub fn for_view(mode: ViewMode, grid: GridSpec, display_scale: f32) -> Self {
+    /// own cell, scaled for the display rather than the look.
+    pub fn for_view(view: &SpaceView, grid: GridSpec, display_scale: f32) -> Self {
         let scale = display_scale.max(0.1);
         let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
-        if mode == ViewMode::Details || mode == ViewMode::Content {
+        let cells = if view.compact {
+            &COMPACT_CELLS
+        } else {
+            &NORMAL_CELLS
+        };
+        let (cell, gap, header) = match view.mode {
+            ViewMode::Icons
+            | ViewMode::ExtraLargeIcons
+            | ViewMode::LargeIcons
+            | ViewMode::MediumIcons => {
+                return Self {
+                    group_header: scaled(NORMAL_CELLS.group_header),
+                    ..Self::for_grid(grid)
+                };
+            }
+            ViewMode::SmallIcons => (cells.small_icons, cells.gap, 0),
+            ViewMode::List => (cells.list, cells.gap, 0),
+            ViewMode::Tiles => (cells.tile, cells.gap, 0),
             // Rows touch, as Explorer's do; the width is the content width,
             // worked out by the layout.
-            return Self {
-                cell: Size::new(
-                    1,
-                    scaled(if mode == ViewMode::Details {
-                        DETAILS_ROW_HEIGHT
-                    } else {
-                        CONTENT_ROW_HEIGHT
-                    }),
-                ),
-                gap: 0,
-                padding: grid.padding,
-                header: if mode == ViewMode::Details {
-                    scaled(DETAILS_HEADER_HEIGHT)
-                } else {
-                    0
-                },
-            };
-        }
-        if let Some((width, height)) = inline_cell(mode) {
-            Self {
-                cell: Size::new(scaled(width), scaled(height)),
-                gap: scaled(INLINE_GAP),
-                padding: grid.padding,
-                header: 0,
-            }
-        } else {
-            Self {
-                cell: grid.cell(),
-                gap: grid.gap,
-                padding: grid.padding,
-                header: 0,
-            }
+            ViewMode::Details => ((1, cells.details_row), 0, cells.details_header),
+            ViewMode::Content => ((1, cells.content_row), 0, 0),
+        };
+        Self {
+            cell: Size::new(scaled(cell.0), scaled(cell.1)),
+            gap: if gap == 0 { 0 } else { scaled(gap) },
+            padding: grid.padding,
+            header: if header == 0 { 0 } else { scaled(header) },
+            group_header: scaled(cells.group_header),
         }
     }
 
@@ -150,34 +168,83 @@ impl ViewMetrics {
             gap: grid.gap,
             padding: grid.padding,
             header: 0,
+            group_header: NORMAL_CELLS.group_header,
         }
+    }
+
+    /// `width` rounded down to whole cell columns with equal edge padding.
+    pub fn fit_width(&self, width: i32) -> i32 {
+        fit_length(width, self.cell.width, self.gap, self.padding)
+    }
+
+    /// `height` rounded down to whole cell rows below `chrome`, the height
+    /// that is not items: a title bar, a status bar, and any header.
+    pub fn fit_height(&self, height: i32, chrome: i32) -> i32 {
+        chrome + fit_length(height - chrome, self.cell.height, self.gap, self.padding)
+    }
+
+    /// `rect` rounded to whole cells along the dragged `edges`, keeping the
+    /// opposite edge fixed. `fit_columns` is false for a view whose rows fill
+    /// the width, so only its height fits (D22).
+    pub fn fit_rect(self, rect: Rect, edges: ResizeEdges, chrome: i32, fit_columns: bool) -> Rect {
+        let mut rect = rect;
+        if fit_columns && (edges.left || edges.right) {
+            let width = self.fit_width(rect.width);
+            rect = if edges.left {
+                Rect::new(rect.right() - width, rect.y, width, rect.height)
+            } else {
+                Rect::new(rect.x, rect.y, width, rect.height)
+            };
+        }
+        if edges.top || edges.bottom {
+            let height = self.fit_height(rect.height, chrome);
+            rect = if edges.top {
+                Rect::new(rect.x, rect.bottom() - height, rect.width, height)
+            } else {
+                Rect::new(rect.x, rect.y, rect.width, height)
+            };
+        }
+        rect
     }
 }
 
-/// The order-placed views' inline cells at 96 DPI (`width`, `height`), or
-/// `None` for an icon view, which uses the look's grid. Details ignores the
-/// width: each row fills the content, and only its height is a cell side.
-fn inline_cell(mode: ViewMode) -> Option<(i32, i32)> {
-    match mode {
-        ViewMode::SmallIcons => Some((SMALL_ICON_CELL_WIDTH, SMALL_ICON_CELL_HEIGHT)),
-        ViewMode::List => Some((LIST_COLUMN_WIDTH, LIST_CELL_HEIGHT)),
-        ViewMode::Details => Some((1, DETAILS_ROW_HEIGHT)),
-        ViewMode::Tiles => Some((TILE_WIDTH, TILE_HEIGHT)),
-        ViewMode::Content => Some((1, CONTENT_ROW_HEIGHT)),
-        ViewMode::Icons
-        | ViewMode::ExtraLargeIcons
-        | ViewMode::LargeIcons
-        | ViewMode::MediumIcons => None,
+/// The size that shows all of `space`'s items in a view that places them by
+/// order: rows keep the width and take the height they need, and List's columns
+/// keep the height and take the width. An empty space keeps room for one line.
+/// It reads the space's rect rather than its content area, which a fold empties.
+pub fn fit_size(space: &Space, metrics: ViewMetrics) -> Size {
+    let rect = space.rect();
+    let chrome = space.title_height + space.unfolded_status_bar_height();
+    let content = Size::new(rect.width, (rect.height - chrome).max(0));
+    let mode = space.view().mode;
+    let layout = ViewLayout::new(mode, content, space.items().len().max(1), metrics);
+    match layout.axis() {
+        ScrollAxis::Vertical => Size::new(rect.width, chrome + layout.extent()),
+        ScrollAxis::Horizontal => Size::new(layout.extent(), rect.height),
     }
 }
 
 /// The placement of `count` items in a space's content area.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Indices are the items' stored indices, in a grouped space as in any other;
+/// only this type knows the display order that puts them in groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewLayout {
     mode: ViewMode,
     content: Size,
+    /// How many items are shown; in a grouped space, those not folded.
     count: usize,
     metrics: ViewMetrics,
+    groups: Option<GroupedLines>,
+}
+
+/// A grouped layout's arithmetic: where each group begins along the scroll axis,
+/// below the column header and padding, so a lookup is a binary search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GroupedLines {
+    grouping: Arc<Grouping>,
+    /// One per group, then the end of the last.
+    tops: Vec<i32>,
 }
 
 impl ViewLayout {
@@ -187,7 +254,34 @@ impl ViewLayout {
             content,
             count,
             metrics,
+            groups: None,
         }
+    }
+
+    /// This layout with its items in `grouping`'s order, under its headers.
+    /// Groups stack downward in every view, as Explorer's do, so List wraps
+    /// into rows while it is grouped. `None` leaves the layout as it is.
+    pub fn with_grouping(mut self, grouping: Option<Arc<Grouping>>) -> Self {
+        let Some(grouping) = grouping else {
+            return self;
+        };
+        self.count = grouping.shown();
+        self.groups = Some(GroupedLines {
+            tops: Vec::new(),
+            grouping: Arc::clone(&grouping),
+        });
+        let cross_count = self.cross_count();
+        let line_step = self.line_step();
+        let mut tops = Vec::with_capacity(grouping.groups().len() + 1);
+        let mut top = 0;
+        tops.push(top);
+        for group in grouping.groups() {
+            let lines = group.shown().div_ceil(cross_count) as i32;
+            top += self.metrics.group_header + lines * line_step;
+            tops.push(top);
+        }
+        self.groups = Some(GroupedLines { tops, grouping });
+        self
     }
 
     /// The layout of a space's items under `metrics`.
@@ -201,7 +295,53 @@ impl ViewLayout {
     }
 
     fn flow(&self) -> Flow {
-        Flow::of(self.mode)
+        if self.groups.is_some() {
+            Flow::Rows
+        } else {
+            Flow::of(self.mode)
+        }
+    }
+
+    /// The display position of the item stored at `index`, or `None` while it
+    /// is folded or past the items.
+    fn position_of(&self, index: usize) -> Option<usize> {
+        match &self.groups {
+            Some(groups) => groups.grouping.position_of(index),
+            None => (index < self.count).then_some(index),
+        }
+    }
+
+    /// The stored index of the item at display `position`.
+    fn item_at(&self, position: usize) -> Option<usize> {
+        match &self.groups {
+            Some(groups) => groups.grouping.item_at(position),
+            None => (position < self.count).then_some(position),
+        }
+    }
+
+    /// Whether the item stored at `index` is shown, not folded away.
+    pub fn is_shown(&self, index: usize) -> bool {
+        self.position_of(index).is_some()
+    }
+
+    /// The stored indices of the items shown, in display order.
+    pub fn shown(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.count).filter_map(|position| self.item_at(position))
+    }
+
+    /// Where the rows start along the scroll axis, inside the content area.
+    fn lines_start(&self) -> i32 {
+        self.header_height() + self.metrics.padding
+    }
+
+    /// The group whose band holds `y`, measured from `lines_start`.
+    fn group_band_at(&self, y: i32) -> Option<usize> {
+        let groups = self.groups.as_ref()?;
+        let band = groups
+            .tops
+            .partition_point(|top| *top <= y)
+            .checked_sub(1)?;
+        (band < groups.grouping.groups().len()).then_some(band)
     }
 
     /// The cell side across the flow: a row's width, or a column's height.
@@ -268,6 +408,9 @@ impl ViewLayout {
     /// The cell of the item at `index`, relative to the content area's origin.
     /// `index` must be below the item count.
     pub fn rect(&self, index: usize) -> Rect {
+        if let Some(groups) = &self.groups {
+            return self.grouped_rect(groups, index);
+        }
         debug_assert!(index < self.count, "item index out of the layout");
         let cross_count = self.cross_count();
         let line = (index / cross_count) as i32;
@@ -286,6 +429,86 @@ impl ViewLayout {
             },
             self.metrics.cell.height,
         )
+    }
+
+    /// A grouped item's cell, or an empty rect while it is folded.
+    fn grouped_rect(&self, groups: &GroupedLines, index: usize) -> Rect {
+        let grouping = &groups.grouping;
+        let Some((position, group)) = grouping
+            .position_of(index)
+            .and_then(|position| Some((position, grouping.group_at(position)?)))
+        else {
+            return Rect::ZERO;
+        };
+        let cross_count = self.cross_count();
+        let local = position - grouping.groups()[group].first();
+        let line = (local / cross_count) as i32;
+        let cross = (local % cross_count) as i32;
+        Rect::new(
+            self.metrics.padding + cross * self.cross_step(),
+            self.lines_start()
+                + groups.tops[group]
+                + self.metrics.group_header
+                + line * self.line_step(),
+            if matches!(self.mode, ViewMode::Details | ViewMode::Content) {
+                self.cross_cell()
+            } else {
+                self.metrics.cell.width
+            },
+            self.metrics.cell.height,
+        )
+    }
+
+    /// Group `group`'s header row across the content, relative to the content
+    /// area's origin, before scrolling.
+    pub fn group_rect(&self, group: usize) -> Option<Rect> {
+        let groups = self.groups.as_ref()?;
+        Some(Rect::new(
+            self.metrics.padding,
+            self.lines_start() + groups.tops.get(group)?,
+            (self.content.width - self.metrics.padding * 2).max(1),
+            self.metrics.group_header,
+        ))
+    }
+
+    /// The group whose header row holds `point`, relative to the content area
+    /// and scrolled into that coordinate space.
+    pub fn group_at(&self, point: Point) -> Option<usize> {
+        let y = point.y - self.lines_start();
+        let group = self.group_band_at(y)?;
+        self.group_rect(group)?.contains(point).then_some(group)
+    }
+
+    /// The groups whose bands can be inside a scroll window.
+    pub fn visible_groups(&self, scroll: i32, content: Size) -> Range<usize> {
+        let Some(groups) = &self.groups else {
+            return 0..0;
+        };
+        let start = scroll - self.lines_start();
+        let end = start + self.viewport(content);
+        let first = self
+            .group_band_at(start.max(0))
+            .unwrap_or(groups.tops.len());
+        let count = groups.grouping.groups().len();
+        let last = self
+            .group_band_at(end.max(0))
+            .map_or(count, |last| last + 1);
+        first.min(count)..last
+    }
+
+    /// The display position `y` reaches in a grouped layout: the first item at
+    /// or after it, measured from `lines_start`.
+    fn grouped_position_at(&self, groups: &GroupedLines, y: i32) -> usize {
+        let Some(group) = self.group_band_at(y.max(0)) else {
+            return self.count;
+        };
+        let entry = &groups.grouping.groups()[group];
+        let into_rows = y.max(0) - groups.tops[group] - self.metrics.group_header;
+        if into_rows < 0 {
+            return entry.first();
+        }
+        let local = (into_rows / self.line_step()) as usize * self.cross_count();
+        entry.first() + local.min(entry.shown())
     }
 
     /// The cell of the item at `index` after scrolling `scroll` px along the
@@ -319,6 +542,12 @@ impl ViewLayout {
     /// The content length along the scroll axis, padding included. Zero when
     /// the space has no items.
     pub fn extent(&self) -> i32 {
+        if let Some(groups) = &self.groups {
+            return match groups.tops.last() {
+                Some(end) if *end > 0 => self.header_height() + self.metrics.padding * 2 + end,
+                _ => 0,
+            };
+        }
         if self.count == 0 {
             return 0;
         }
@@ -350,6 +579,9 @@ impl ViewLayout {
         if self.count == 0 {
             return None;
         }
+        if let Some(groups) = &self.groups {
+            return self.grouped_index_at(groups, point);
+        }
         let (line, cross) = match self.flow() {
             Flow::Rows => (point.y, point.x),
             Flow::Columns => (point.x, point.y),
@@ -368,10 +600,34 @@ impl ViewLayout {
         (index < self.count && self.rect(index).contains(point)).then_some(index)
     }
 
+    fn grouped_index_at(&self, groups: &GroupedLines, point: Point) -> Option<usize> {
+        let cross = point.x - self.metrics.padding;
+        let y = point.y - self.lines_start();
+        if cross < 0 || y < 0 {
+            return None;
+        }
+        let group = self.group_band_at(y)?;
+        let into_rows = y - groups.tops[group] - self.metrics.group_header;
+        if into_rows < 0 {
+            return None;
+        }
+        let cross = (cross / self.cross_step()) as usize;
+        if cross >= self.cross_count() {
+            return None;
+        }
+        let entry = &groups.grouping.groups()[group];
+        let local = (into_rows / self.line_step()) as usize * self.cross_count() + cross;
+        if local >= entry.shown() {
+            return None;
+        }
+        let index = groups.grouping.item_at(entry.first() + local)?;
+        self.rect(index).contains(point).then_some(index)
+    }
+
     /// The nearest slot for a drag dropped at `point` (relative to the content
     /// area and scrolled into that coordinate space), clamped to the last item.
     pub fn drop_index(&self, point: Point) -> Option<usize> {
-        if self.count == 0 {
+        if self.count == 0 || self.groups.is_some() {
             return None;
         }
         let (line, cross) = match self.flow() {
@@ -386,13 +642,26 @@ impl ViewLayout {
         Some((line as usize * cross_count + cross as usize).min(self.count - 1))
     }
 
-    /// The indices whose lines can be inside a scroll window at `scroll` in a
-    /// content area `content`, in model order. A line may be partly visible,
-    /// so callers still clip each rect to be exact.
+    /// The stored indices of the items that can be inside a scroll window, in
+    /// display order. A line may be partly visible, so callers still clip each
+    /// rect to be exact.
+    pub fn visible_items(&self, scroll: i32, content: Size) -> impl Iterator<Item = usize> + '_ {
+        self.visible(scroll, content)
+            .filter_map(|position| self.item_at(position))
+    }
+
+    /// The display positions whose lines can be inside a scroll window at
+    /// `scroll` in a content area `content`.
     pub fn visible(&self, scroll: i32, content: Size) -> Range<usize> {
         let viewport = self.viewport(content);
         if self.count == 0 || viewport <= 0 {
             return 0..0;
+        }
+        if let Some(groups) = &self.groups {
+            let start = scroll - self.lines_start();
+            let first = self.grouped_position_at(groups, start);
+            let last = self.grouped_position_at(groups, start + viewport);
+            return first..(last + self.cross_count()).min(self.count);
         }
         let lines = self.line_count();
         let header = self.header_height();
@@ -411,6 +680,9 @@ impl ViewLayout {
     /// The scroll offset that brings the item at `index` wholly into view in a
     /// content area `content`, or `None` when it already is.
     pub fn scroll_to_show(&self, index: usize, scroll: i32, content: Size) -> Option<i32> {
+        if !self.is_shown(index) {
+            return None;
+        }
         let rect = self.rect(index);
         let (start, end) = match self.flow() {
             Flow::Rows => (rect.y, rect.bottom()),
@@ -438,11 +710,272 @@ mod tests {
             gap: 10,
             padding: 12,
             header: 0,
+            group_header: 30,
         }
+    }
+
+    #[test]
+    fn fitting_uses_the_cells_it_is_given() {
+        let metrics = metrics();
+        assert_eq!(metrics.fit_width(480), 454);
+        assert_eq!(metrics.fit_height(300, 28), 282);
+    }
+
+    #[test]
+    fn fitting_keeps_the_grabbed_edge() {
+        let metrics = metrics();
+        let rect = Rect::new(10, 20, 480, 300);
+        let right_bottom = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(rect, right_bottom, 28, true),
+            Rect::new(10, 20, 454, 282)
+        );
+        let left_top = ResizeEdges {
+            left: true,
+            top: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(rect, left_top, 28, true),
+            Rect::new(36, 38, 454, 282),
+            "the far edges stay put"
+        );
+    }
+
+    #[test]
+    fn a_row_view_fits_only_its_height() {
+        let metrics = metrics();
+        let corner = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert_eq!(
+            metrics.fit_rect(Rect::new(10, 20, 480, 300), corner, 28, false),
+            Rect::new(10, 20, 480, 282)
+        );
     }
 
     fn layout_of(mode: ViewMode, width: i32, count: usize) -> ViewLayout {
         ViewLayout::new(mode, Size::new(width, 400), count, metrics())
+    }
+
+    /// Groups of the given sizes over stored indices in reverse, so a display
+    /// position is never the stored index by accident.
+    fn grouping_of(sizes: &[usize], folded: &[usize]) -> Arc<Grouping> {
+        let total: usize = sizes.iter().sum();
+        let mut next = total;
+        let groups = sizes
+            .iter()
+            .enumerate()
+            .map(|(group, size)| {
+                let items = (0..*size)
+                    .map(|_| {
+                        next -= 1;
+                        next as u32
+                    })
+                    .collect();
+                (group.to_string(), items)
+            })
+            .collect();
+        let folded: Vec<String> = folded.iter().map(ToString::to_string).collect();
+        Arc::new(Grouping::new(groups, total, |name| {
+            folded.iter().any(|group| group == name)
+        }))
+    }
+
+    fn grouped(mode: ViewMode, width: i32, sizes: &[usize], folded: &[usize]) -> ViewLayout {
+        let total = sizes.iter().sum();
+        ViewLayout::new(mode, Size::new(width, 400), total, metrics())
+            .with_grouping(Some(grouping_of(sizes, folded)))
+    }
+
+    #[test]
+    fn a_header_comes_before_each_group_and_rows_follow_it() {
+        // 3 cells per row; groups of 4 and 2. Rows step 60, headers 30.
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        let first = layout.group_rect(0).unwrap();
+        assert_eq!((first.y, first.height), (12, 30));
+        assert_eq!(layout.rect(5).y, 12 + 30, "stored last, shown first");
+        assert_eq!(layout.rect(4).x, layout.rect(5).x + 110);
+        assert_eq!(layout.rect(2).y, 12 + 30 + 60, "the fourth wraps");
+        let second = layout.group_rect(1).unwrap();
+        assert_eq!(second.y, 12 + 30 + 2 * 60);
+        assert_eq!(layout.rect(1).y, second.y + 30);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30 + 3 * 60);
+    }
+
+    #[test]
+    fn a_grouped_view_keeps_its_details_header_above_the_groups() {
+        let metrics = ViewMetrics {
+            header: 25,
+            gap: 0,
+            ..metrics()
+        };
+        let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 400), 2, metrics)
+            .with_grouping(Some(grouping_of(&[2], &[])));
+        assert_eq!(layout.group_rect(0).unwrap().y, 25 + 12);
+        assert_eq!(layout.rect(1).y, 25 + 12 + 30);
+        assert_eq!(layout.rect(1).width, 360 - 24, "rows stay full width");
+    }
+
+    #[test]
+    fn a_grouped_list_stacks_downward() {
+        let layout = grouped(ViewMode::List, 360, &[4, 2], &[]);
+        assert_eq!(layout.axis(), ScrollAxis::Vertical);
+        assert_eq!(layout.viewport(Size::new(360, 400)), 400);
+        assert_eq!(layout.rect(4).y, layout.rect(5).y, "rows, not columns");
+    }
+
+    #[test]
+    fn a_folded_group_keeps_its_header_and_loses_its_rows() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[0]);
+        assert_eq!(layout.group_rect(1).unwrap().y, 12 + 30);
+        assert_eq!(layout.rect(1).y, 12 + 30 + 30);
+        assert!(!layout.is_shown(5));
+        assert!(layout.is_shown(1));
+        assert_eq!(layout.rect(5), Rect::ZERO);
+        assert_eq!(layout.shown().collect::<Vec<_>>(), [1, 0]);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30 + 60);
+        assert_eq!(layout.scroll_to_show(5, 0, Size::new(360, 100)), None);
+    }
+
+    #[test]
+    fn every_group_folded_still_scrolls_its_headers() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[0, 1]);
+        assert_eq!(layout.extent(), 12 * 2 + 2 * 30);
+        assert_eq!(layout.visible(0, Size::new(360, 400)), 0..0);
+        assert_eq!(layout.index_at(Point::new(20, 50)), None);
+    }
+
+    #[test]
+    fn a_grouped_space_with_no_groups_is_empty() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[], &[]);
+        assert_eq!(layout.extent(), 0);
+        assert_eq!(layout.group_at(Point::new(20, 20)), None);
+    }
+
+    #[test]
+    fn a_header_row_hits_its_group_and_no_item() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        let second = layout.group_rect(1).unwrap();
+        let on_header = second.center();
+        assert_eq!(layout.group_at(on_header), Some(1));
+        assert_eq!(layout.index_at(on_header), None);
+        let on_row = layout.rect(1).center();
+        assert_eq!(layout.group_at(on_row), None);
+        assert_eq!(layout.index_at(on_row), Some(1));
+    }
+
+    #[test]
+    fn a_grouped_layout_refuses_a_drop_slot() {
+        let layout = grouped(ViewMode::SmallIcons, 360, &[4, 2], &[]);
+        assert_eq!(layout.drop_index(Point::new(20, 50)), None);
+    }
+
+    /// Walks every item and header to find what a scroll window should hold.
+    #[test]
+    fn the_visible_window_matches_a_brute_force_walk_on_random_groups() {
+        let mut seed = 0x2545_f491_u32;
+        let mut next = move |limit: u32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed % limit
+        };
+        for _ in 0..200 {
+            let sizes: Vec<usize> = (0..next(12) + 1).map(|_| next(40) as usize).collect();
+            let folded: Vec<usize> = (0..sizes.len()).filter(|_| next(4) == 0).collect();
+            let width = 120 + next(800) as i32;
+            let layout = grouped(ViewMode::SmallIcons, width, &sizes, &folded);
+            let content = Size::new(width, 50 + next(600) as i32);
+            let scroll = next(layout.extent().max(1) as u32 + 100) as i32;
+            let window = Rect::new(0, scroll, width, content.height);
+
+            let visible: Vec<usize> = layout.visible_items(scroll, content).collect();
+            let shown: Vec<usize> = layout.shown().collect();
+            for item in &shown {
+                if layout.rect(*item).intersects(window) {
+                    assert!(
+                        visible.contains(item),
+                        "{sizes:?} folded {folded:?} width {width} scroll {scroll}: {item}"
+                    );
+                }
+            }
+            for group in 0..sizes.len() {
+                let header = layout.group_rect(group).unwrap();
+                if header.intersects(window) {
+                    assert!(
+                        layout.visible_groups(scroll, content).contains(&group),
+                        "{sizes:?} folded {folded:?} scroll {scroll}: header {group}"
+                    );
+                }
+            }
+            // Every shown item is found at its own cell, and no two overlap.
+            for item in &shown {
+                let rect = layout.rect(*item);
+                assert_eq!(layout.index_at(rect.center()), Some(*item));
+            }
+        }
+    }
+
+    #[test]
+    fn compact_rows_are_shorter_in_every_order_placed_view() {
+        let grid = GridSpec::default();
+        for mode in [
+            ViewMode::SmallIcons,
+            ViewMode::List,
+            ViewMode::Details,
+            ViewMode::Tiles,
+            ViewMode::Content,
+        ] {
+            let normal = SpaceView::default().with_mode(mode);
+            let compact = SpaceView {
+                compact: true,
+                ..normal.clone()
+            };
+            let (normal, compact) = (
+                ViewMetrics::for_view(&normal, grid, 1.0),
+                ViewMetrics::for_view(&compact, grid, 1.0),
+            );
+            assert!(compact.cell.height < normal.cell.height, "{mode:?}");
+            assert_eq!(compact.cell.width, normal.cell.width, "{mode:?}");
+            assert!(compact.gap <= normal.gap, "{mode:?}");
+        }
+        let details = |compact| SpaceView {
+            compact,
+            ..SpaceView::default().with_mode(ViewMode::Details)
+        };
+        assert!(
+            ViewMetrics::for_view(&details(true), grid, 1.0).header
+                < ViewMetrics::for_view(&details(false), grid, 1.0).header
+        );
+    }
+
+    #[test]
+    fn compact_leaves_the_icon_views_alone() {
+        let grid = GridSpec::default();
+        for mode in [
+            ViewMode::Icons,
+            ViewMode::ExtraLargeIcons,
+            ViewMode::LargeIcons,
+            ViewMode::MediumIcons,
+        ] {
+            let normal = SpaceView::default().with_mode(mode);
+            let compact = SpaceView {
+                compact: true,
+                ..normal.clone()
+            };
+            assert_eq!(
+                ViewMetrics::for_view(&compact, grid, 1.5),
+                ViewMetrics::for_view(&normal, grid, 1.5),
+                "{mode:?}"
+            );
+        }
     }
 
     #[test]
@@ -566,8 +1099,16 @@ mod tests {
     #[test]
     fn inline_metrics_scale_with_the_display_not_the_look() {
         let grid = GridSpec::default();
-        let base = ViewMetrics::for_view(ViewMode::SmallIcons, grid, 1.0);
-        let large = ViewMetrics::for_view(ViewMode::SmallIcons, grid, 1.5);
+        let base = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::SmallIcons),
+            grid,
+            1.0,
+        );
+        let large = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::SmallIcons),
+            grid,
+            1.5,
+        );
         assert_eq!(base.cell, Size::new(200, 22));
         assert_eq!(large.cell, Size::new(300, 33));
         assert_eq!(base.gap, 2);
@@ -575,13 +1116,13 @@ mod tests {
         assert_eq!(base.padding, grid.padding, "the look's edge padding");
         // List is an inline cell too.
         assert_eq!(
-            ViewMetrics::for_view(ViewMode::List, grid, 1.0).cell,
+            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::List), grid, 1.0).cell,
             Size::new(200, 22)
         );
         // An icon view ignores the display scale; its grid is already scaled.
         assert_eq!(
-            ViewMetrics::for_view(ViewMode::Icons, grid, 1.5),
-            ViewMetrics::for_grid(grid)
+            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::Icons), grid, 1.5).cell,
+            ViewMetrics::for_grid(grid).cell
         );
         assert_eq!(crate::view::SMALL_ICON_PX, 16);
     }
@@ -590,26 +1131,30 @@ mod tests {
     fn details_rows_run_full_width_under_a_fixed_header() {
         let grid = GridSpec::default();
         let padding = grid.padding;
-        let metrics = ViewMetrics::for_view(ViewMode::Details, grid, 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            grid,
+            1.0,
+        );
         let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 5, metrics);
-        assert_eq!(layout.header_height(), DETAILS_HEADER_HEIGHT);
+        assert_eq!(layout.header_height(), NORMAL_CELLS.details_header);
         assert_eq!(layout.cross_count(), 1);
         assert_eq!(layout.axis(), ScrollAxis::Vertical);
-        assert_eq!(layout.scroll_step(), DETAILS_ROW_HEIGHT);
+        assert_eq!(layout.scroll_step(), NORMAL_CELLS.details_row);
         let row = layout.rect(0);
         assert_eq!(
             row,
             Rect::new(
                 padding,
-                DETAILS_HEADER_HEIGHT + padding,
+                NORMAL_CELLS.details_header + padding,
                 360 - padding * 2,
-                DETAILS_ROW_HEIGHT
+                NORMAL_CELLS.details_row
             )
         );
-        assert_eq!(layout.rect(1).y, row.y + DETAILS_ROW_HEIGHT);
+        assert_eq!(layout.rect(1).y, row.y + NORMAL_CELLS.details_row);
         assert_eq!(
             layout.extent(),
-            DETAILS_HEADER_HEIGHT + padding * 2 + 5 * DETAILS_ROW_HEIGHT
+            NORMAL_CELLS.details_header + padding * 2 + 5 * NORMAL_CELLS.details_row
         );
         // The header row itself holds no item.
         assert_eq!(layout.index_at(Point::new(row.center().x, 5)), None);
@@ -618,15 +1163,27 @@ mod tests {
 
     #[test]
     fn details_scale_their_rows_and_header_with_the_display() {
-        let base = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0);
-        let large = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.5);
+        let base = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            GridSpec::default(),
+            1.0,
+        );
+        let large = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            GridSpec::default(),
+            1.5,
+        );
         assert_eq!((base.header, base.cell.height), (25, 22));
         assert_eq!((large.header, large.cell.height), (38, 33));
     }
 
     #[test]
     fn details_scroll_below_the_header_and_still_show_the_first_rows() {
-        let metrics = ViewMetrics::for_view(ViewMode::Details, GridSpec::default(), 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            GridSpec::default(),
+            1.0,
+        );
         let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 20, metrics);
         assert_eq!(
             layout.visible(0, Size::new(360, 100)),
@@ -641,7 +1198,11 @@ mod tests {
 
     #[test]
     fn tiles_wrap_into_rows_with_their_own_cell() {
-        let metrics = ViewMetrics::for_view(ViewMode::Tiles, GridSpec::default(), 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Tiles),
+            GridSpec::default(),
+            1.0,
+        );
         assert_eq!(metrics.cell, Size::new(210, 60));
         let layout = ViewLayout::new(ViewMode::Tiles, Size::new(460, 300), 5, metrics);
         assert_eq!(layout.axis(), ScrollAxis::Vertical);
@@ -654,7 +1215,11 @@ mod tests {
 
     #[test]
     fn content_rows_fill_the_width_and_touch() {
-        let metrics = ViewMetrics::for_view(ViewMode::Content, GridSpec::default(), 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Content),
+            GridSpec::default(),
+            1.0,
+        );
         let layout = ViewLayout::new(ViewMode::Content, Size::new(360, 200), 3, metrics);
         assert_eq!(layout.header_height(), 0);
         assert_eq!(layout.cross_count(), 1);

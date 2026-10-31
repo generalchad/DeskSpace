@@ -1,10 +1,10 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, SpaceView, ViewLayout, ViewMode};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout};
 
 use deskspace_platform::{
-    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
+    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
 };
 
 use crate::settings::STATUS_BUTTONS;
@@ -83,9 +83,18 @@ pub(super) struct PointerState {
     pub(super) hovered: Option<(Surface, ItemId)>,
     /// The status-bar view button the pointer is over, and its surface (W19).
     pub(super) status_hover: Option<(Surface, usize)>,
+    /// The lens whose title bar the pointer is over, when no item or status
+    /// button is: it shows the folder on display as a tip after the usual
+    /// delay (W27). A normal space's title shows nothing.
+    pub(super) title_hover: Option<SpaceId>,
     pub(super) dragged: Option<(Surface, Vec<ItemId>)>,
     pub(super) marquee: Option<(Surface, Rect)>,
     pub(super) drag_image: Option<DragImage>,
+    /// The space whose Back button took the last left press. The press may
+    /// have gone back to the lens's own folder, where the button is gone, so
+    /// the double-click that follows finds it here instead of folding the
+    /// space (W43).
+    pub(super) back_press: Option<SpaceId>,
 }
 
 impl PointerState {
@@ -151,11 +160,14 @@ impl App {
             return;
         }
         // Clicking anywhere commits a rename in progress before the click is
-        // handled, as clicking away from a title does elsewhere.
+        // handled, as clicking away from a title does elsewhere; so does the
+        // mouse's back button, which empties the lens the rename is in.
         if self.edit.is_active()
             && matches!(
                 &event,
-                SpaceEvent::MouseDown { .. } | SpaceEvent::DoubleClick { .. }
+                SpaceEvent::MouseDown { .. }
+                    | SpaceEvent::DoubleClick { .. }
+                    | SpaceEvent::BackButton
             )
         {
             self.finish_rename(ui, true);
@@ -164,6 +176,8 @@ impl App {
         // click here is made to behave like one on the desktop: focus it and
         // clear its icon selection.
         if matches!(&event, SpaceEvent::MouseDown { .. }) {
+            // A new press starts over; one on the Back button sets it again.
+            self.pointer.back_press = None;
             self.dismiss_info_tip(ui);
             self.refresh_shell_display(ui);
             ui.on_desktop_click();
@@ -183,11 +197,15 @@ impl App {
                 ..
             } => {
                 let point = Point::new(x, y);
-                self.select_at(ui, surface, point);
-                self.pointer.right_press = self
-                    .surface_item_at(surface, point)
-                    .map(|item| (surface, item, point));
                 self.pointer.right_dragged = false;
+                // A row can be scrolled under the header, and a press on the
+                // header is for the header's menu, so it leaves the selection.
+                if self.details_header_column(surface, point).is_none() {
+                    self.select_at(ui, surface, point);
+                    self.pointer.right_press = self
+                        .surface_item_at(surface, point)
+                        .map(|item| (surface, item, point));
+                }
             }
             SpaceEvent::MouseMove { x, y } => {
                 let point = Point::new(x, y);
@@ -200,7 +218,7 @@ impl App {
             }
             SpaceEvent::Wheel { x, y, delta, ctrl } => {
                 if ctrl {
-                    self.adjust_icon_size(ui, delta);
+                    self.adjust_icon_size(ui, surface, delta);
                 } else if let Surface::Space(id) = surface {
                     self.scroll_by(ui, id, Point::new(x, y), delta);
                 }
@@ -212,6 +230,7 @@ impl App {
             SpaceEvent::CaptureLost => {
                 self.pointer.right_press = None;
                 self.pointer.right_dragged = false;
+                self.cancel_column_gesture(ui);
                 self.end_drag(ui);
             }
             SpaceEvent::MouseUp {
@@ -225,6 +244,10 @@ impl App {
                 // shortcut menu, so only a plain right click opens DeskSpace's.
                 if self.pointer.right_dragged {
                     self.pointer.right_dragged = false;
+                } else if let (Surface::Space(id), Some(_)) =
+                    (surface, self.details_header_column(surface, point))
+                {
+                    self.show_details_header_menu(ui, id, point);
                 } else {
                     match self.surface_item_at(surface, point) {
                         Some(item) => self.show_item_menu(ui, surface, item, point),
@@ -232,7 +255,21 @@ impl App {
                     }
                 }
             }
-            SpaceEvent::DoubleClick { x, y } => self.double_click(ui, surface, Point::new(x, y)),
+            // A double-click's second press arrives as the double-click
+            // alone, so on the Back button it goes up again, as two clicks
+            // would, rather than fold the space.
+            SpaceEvent::DoubleClick { x, y } => {
+                let point = Point::new(x, y);
+                let back = matches!(surface, Surface::Space(id) if self.back_button_clicked(ui, id, point));
+                if !back {
+                    self.double_click(ui, surface, point);
+                }
+            }
+            SpaceEvent::BackButton => {
+                if let Surface::Space(id) = surface {
+                    self.browse_up(ui, id);
+                }
+            }
             SpaceEvent::MouseLeave => {
                 self.dismiss_info_tip(ui);
                 let mut repaint = false;
@@ -250,6 +287,14 @@ impl App {
                     .is_some_and(|(owner, _)| owner == surface)
                 {
                     self.pointer.status_hover = None;
+                    repaint = true;
+                }
+                if self
+                    .pointer
+                    .title_hover
+                    .is_some_and(|owner| Surface::of(owner) == surface)
+                {
+                    self.pointer.title_hover = None;
                     repaint = true;
                 }
                 if repaint {
@@ -283,6 +328,29 @@ impl App {
         }
     }
 
+    /// If `point` is on space `id`'s Back button, makes the lens current,
+    /// shows the parent of the subfolder it is browsed into, and returns true
+    /// (D18). A resize edge under the button wins, as the cursor shows.
+    fn back_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let shown = self.is_browsed(id) || self.pointer.back_press == Some(id);
+        let on_button = self.config.desktop.space(id).is_some_and(|space| {
+            space.resize_edges_at(point, RESIZE_BORDER) == ResizeEdges::NONE
+                && crate::scene::back_button_at(space, shown, point)
+        });
+        if !on_button {
+            return false;
+        }
+        self.pointer.back_press = Some(id);
+        if self.selection.surface != Some(Surface::Space(id)) {
+            if let Some(previous) = self.selection.take() {
+                self.refresh_surface(ui, previous);
+            }
+            self.selection.surface = Some(Surface::Space(id));
+        }
+        self.browse_up(ui, id);
+        true
+    }
+
     /// If `point` is on a status-bar view button, switches the space to that
     /// view and returns true (W19).
     fn status_button_clicked(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
@@ -295,42 +363,9 @@ impl App {
         let Some(button) = STATUS_BUTTONS.get(index) else {
             return false;
         };
-        let mode = button.mode;
+        let view = space.view().with_mode(button.mode);
         let at = space.rect().origin();
-        self.set_space_view(ui, id, SpaceView::with_mode(mode), at);
-        true
-    }
-
-    /// If `point` is in a Details header, sorts space `id` by that column and
-    /// returns true. A click on the column already sorted reverses it, as
-    /// Explorer does.
-    fn details_header_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
-        let Some(space) = self.config.desktop.space(id) else {
-            return false;
-        };
-        let content = space.content_rect();
-        if space.view().mode != ViewMode::Details || !content.contains(point) {
-            return false;
-        }
-        let Some(layout) = self.view_layout(id) else {
-            return false;
-        };
-        let Some(details) = crate::scene::details_view(
-            space,
-            &layout,
-            content.width,
-            self.layout_for(id).padding,
-            space_dpi(id.0),
-        ) else {
-            return false;
-        };
-        let local = Point::new(point.x - content.x, point.y - content.y);
-        let Some(index) = crate::scene::details_header_column_at(&details, local) else {
-            return false;
-        };
-        let rule = crate::scene::details_rule_after(space.view().sort, index);
-        let at = space.rect().origin();
-        self.sort_space(ui, id, rule, at);
+        self.set_space_view(ui, id, view, at);
         true
     }
 
@@ -342,6 +377,13 @@ impl App {
         ctrl: bool,
         shift: bool,
     ) {
+        // A click on a browsed lens's Back button shows the parent folder,
+        // before the title bar can start a move.
+        if let Surface::Space(id) = surface
+            && self.back_button_clicked(ui, id, point)
+        {
+            return;
+        }
         // A click on a status-bar view button switches this space's view
         // (W19).
         if let Surface::Space(id) = surface
@@ -349,10 +391,23 @@ impl App {
         {
             return;
         }
-        // A click on a Details header sorts by its column, through the same
-        // sort path as the menu (W18).
+        // A press on a Details divider resizes its column, so it must not also
+        // sort.
         if let Surface::Space(id) = surface
-            && self.details_header_click(ui, id, point)
+            && self.begin_column_resize(ui, id, point)
+        {
+            return;
+        }
+        // A press on a Details header waits for its release: a click sorts,
+        // and a drag moves the column.
+        if let Surface::Space(id) = surface
+            && self.begin_header_press(ui, id, point)
+        {
+            return;
+        }
+        // A press on a group's header folds or opens the group.
+        if let Surface::Space(id) = surface
+            && self.group_header_clicked(ui, id, point)
         {
             return;
         }
@@ -507,7 +562,12 @@ impl App {
             .map_or(ResizeEdges::NONE, |space| {
                 space.resize_edges_at(point, RESIZE_BORDER)
             });
-        ui.set_space_cursor(id.0, cursor_for(edges));
+        let cursor = if !edges.any() && self.details_divider_at(id, point).is_some() {
+            CursorShape::SizeWestEast
+        } else {
+            cursor_for(edges)
+        };
+        ui.set_space_cursor(id.0, cursor);
     }
 
     pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
@@ -545,15 +605,32 @@ impl App {
                 .map(|index| (surface, index)),
             _ => None,
         };
-        if hovered == self.pointer.hovered && status_hover == self.pointer.status_hover {
+        // A lens's title bar tips the folder it displays (W27). While that
+        // space is being renamed the tip would cover the edit, so it is not
+        // armed then.
+        let title_hover = match (surface, hovered, status_hover) {
+            (Surface::Space(id), None, None) => self
+                .config
+                .desktop
+                .space(id)
+                .filter(|space| space.is_lens() && space.title_bar().contains(point))
+                .filter(|_| self.edit.surface() != Some(surface))
+                .map(|_| id),
+            _ => None,
+        };
+        if hovered == self.pointer.hovered
+            && status_hover == self.pointer.status_hover
+            && title_hover == self.pointer.title_hover
+        {
             return;
         }
         let previous = std::mem::replace(&mut self.pointer.hovered, hovered);
         let previous_status = std::mem::replace(&mut self.pointer.status_hover, status_hover);
+        let previous_title = std::mem::replace(&mut self.pointer.title_hover, title_hover);
         // A different item (or none) cancels any shown tip and its delay.
         ui.hide_info_tip();
         Self::clear_timer(ui, Timer::InfoTip);
-        if hovered.is_some() || status_hover.is_some() {
+        if hovered.is_some() || status_hover.is_some() || title_hover.is_some() {
             Self::set_timer(ui, Timer::InfoTip, INFO_TIP_DELAY_MS);
         }
         if let Some((owner, _)) = previous.filter(|(owner, _)| *owner != surface) {
@@ -561,6 +638,9 @@ impl App {
         }
         if let Some((owner, _)) = previous_status.filter(|(owner, _)| *owner != surface) {
             self.refresh_surface(ui, owner);
+        }
+        if let Some(owner) = previous_title.filter(|owner| Surface::of(*owner) != surface) {
+            self.refresh_surface(ui, Surface::of(owner));
         }
         self.refresh_surface(ui, surface);
     }
@@ -589,11 +669,7 @@ impl App {
                     self.toggle_fold(ui, id);
                 }
             }
-            DoubleClickTarget::Item(item) => {
-                if let Some(path) = self.config.desktop.item(item).map(|item| item.path.clone()) {
-                    ui.open_path(&path);
-                }
-            }
+            DoubleClickTarget::Item(item) => self.open_item(ui, item),
             DoubleClickTarget::Nothing => {}
         }
     }
@@ -631,22 +707,37 @@ fn right_drag_started(press: Point, now: Point, threshold: Size) -> bool {
     (now.x - press.x).abs() >= threshold.width || (now.y - press.y).abs() >= threshold.height
 }
 
+/// The movement that starts a resize on each axis: half an item's shorter
+/// side, so a wide inline cell does not make the grab sluggish, and never
+/// less than half the fine `snap` step. A row view has no cell width to
+/// measure, so its row height sets the zone.
+pub(super) fn resize_dead_zone(cell: Size, snap: i32) -> Size {
+    let side = if cell.width > 1 {
+        cell.width.min(cell.height)
+    } else {
+        cell.height
+    }
+    .max(1);
+    let zone = (side / 2).max((snap / 2).max(1));
+    Size::new(zone, zone)
+}
+
 /// The edges a resize moves right now. An axis joins only once the pointer has
-/// left a half-cell dead zone around the grab point, so a click or a tiny drag
-/// on a border never resizes the space; once joined, the axis stays active so
-/// its edge tracks the pointer back. Returns the effective edges and the
-/// updated `(active_x, active_y)` flags.
+/// left the dead zone around the grab point, so a click or a tiny drag on a
+/// border never resizes the space; once joined, the axis stays active so its
+/// edge tracks the pointer back. Returns the effective edges and the updated
+/// `(active_x, active_y)` flags.
 pub(super) fn resize_edges_now(
     edges: ResizeEdges,
     origin: Point,
     point: Point,
-    cell: Size,
+    dead_zone: Size,
     active: (bool, bool),
 ) -> (ResizeEdges, (bool, bool)) {
     let active_x =
-        active.0 || ((edges.left || edges.right) && (point.x - origin.x).abs() > cell.width / 2);
+        active.0 || ((edges.left || edges.right) && (point.x - origin.x).abs() > dead_zone.width);
     let active_y =
-        active.1 || ((edges.top || edges.bottom) && (point.y - origin.y).abs() > cell.height / 2);
+        active.1 || ((edges.top || edges.bottom) && (point.y - origin.y).abs() > dead_zone.height);
     let edges = ResizeEdges {
         left: edges.left && active_x,
         right: edges.right && active_x,
@@ -789,8 +880,16 @@ mod tests {
     }
 
     #[test]
-    fn resize_waits_out_a_half_cell_dead_zone() {
-        let cell = Size::new(80, 100);
+    fn the_dead_zone_is_half_a_cells_shorter_side_and_at_least_half_the_snap() {
+        assert_eq!(resize_dead_zone(Size::new(200, 22), 16), Size::new(11, 11));
+        assert_eq!(resize_dead_zone(Size::new(1, 22), 16), Size::new(11, 11));
+        assert_eq!(resize_dead_zone(Size::new(96, 104), 16), Size::new(48, 48));
+        assert_eq!(resize_dead_zone(Size::new(1, 4), 16), Size::new(8, 8));
+    }
+
+    #[test]
+    fn resize_waits_out_the_dead_zone() {
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let grabbed = ResizeEdges {
             right: true,
             ..ResizeEdges::NONE
@@ -798,19 +897,19 @@ mod tests {
         let origin = Point::new(200, 100);
         // Inside the dead zone (half of 80 is 40): nothing moves.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(230, 100), cell, (false, false));
+            resize_edges_now(grabbed, origin, Point::new(230, 100), zone, (false, false));
         assert_eq!(edges, ResizeEdges::NONE);
         assert_eq!(active, (false, false));
         // Past it, the axis joins.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(241, 100), cell, (false, false));
+            resize_edges_now(grabbed, origin, Point::new(241, 100), zone, (false, false));
         assert!(edges.right);
         assert_eq!(active, (true, false));
     }
 
     #[test]
     fn a_corner_resizes_only_the_axis_that_moved() {
-        let cell = Size::new(80, 100);
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let corner = ResizeEdges {
             right: true,
             bottom: true,
@@ -819,19 +918,19 @@ mod tests {
         let origin = Point::new(200, 100);
         // Horizontal movement only: width resizes, height stays.
         let (edges, active) =
-            resize_edges_now(corner, origin, Point::new(260, 110), cell, (false, false));
+            resize_edges_now(corner, origin, Point::new(260, 110), zone, (false, false));
         assert!(edges.right && !edges.bottom);
         assert_eq!(active, (true, false));
         // A vertical move then joins the bottom too.
         let (edges, active) =
-            resize_edges_now(corner, origin, Point::new(260, 200), cell, (true, false));
+            resize_edges_now(corner, origin, Point::new(260, 200), zone, (true, false));
         assert!(edges.right && edges.bottom);
         assert_eq!(active, (true, true));
     }
 
     #[test]
     fn a_joined_axis_stays_active_inside_the_dead_zone() {
-        let cell = Size::new(80, 100);
+        let zone = resize_dead_zone(Size::new(80, 100), 16);
         let grabbed = ResizeEdges {
             right: true,
             ..ResizeEdges::NONE
@@ -839,7 +938,7 @@ mod tests {
         let origin = Point::new(200, 100);
         // Back at the grab point, the edge still tracks rather than stopping.
         let (edges, active) =
-            resize_edges_now(grabbed, origin, Point::new(200, 100), cell, (true, false));
+            resize_edges_now(grabbed, origin, Point::new(200, 100), zone, (true, false));
         assert!(edges.right);
         assert_eq!(active, (true, false));
     }

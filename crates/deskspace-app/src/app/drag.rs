@@ -4,13 +4,16 @@
 use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
+use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId, ViewMetrics};
 
 use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_desktop_rect};
 
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
-use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
+use super::columns::{ColumnResize, HeaderPress};
+use super::pointer::{
+    PendingClickOutcome, resize_dead_zone, resize_edges_now, resolve_pending_click,
+};
 use super::undo::move_items_label;
 use super::{App, Surface};
 
@@ -50,6 +53,10 @@ pub(super) enum Drag {
         /// Ctrl/Shift: add to the selection instead of replacing it.
         additive: bool,
     },
+    /// A Details header divider is being dragged.
+    ColumnResize(Box<ColumnResize>),
+    /// The left button went down on a Details header: a click or a reorder.
+    HeaderPress(HeaderPress),
 }
 
 impl App {
@@ -125,6 +132,14 @@ impl App {
                 }
                 true
             }
+            Drag::ColumnResize(_) => {
+                self.resize_column_to(ui, point);
+                true
+            }
+            Drag::HeaderPress(_) => {
+                self.drag_header_to(ui, point);
+                true
+            }
         }
     }
 
@@ -158,7 +173,21 @@ impl App {
         point: Point,
     ) -> bool {
         let layout = self.layout_for(id);
-        let (active_edges, active) = resize_edges_now(edges, origin, point, layout.cell(), active);
+        let Some(metrics) = self
+            .config
+            .desktop
+            .space(id)
+            .map(|space| ViewMetrics::for_view(space.view(), layout, space_dpi(id.0)))
+        else {
+            return false;
+        };
+        let (active_edges, active) = resize_edges_now(
+            edges,
+            origin,
+            point,
+            resize_dead_zone(metrics.cell, layout.snap),
+            active,
+        );
         self.pointer.drag = Drag::Resize {
             id,
             edges,
@@ -174,6 +203,7 @@ impl App {
             id,
             edges: active_edges,
             to: point,
+            metrics,
         };
         self.undo.begin_if_none("Resize space");
         // Not `commit`: runs on every pointer move; `end_drag` saves once.
@@ -240,6 +270,8 @@ impl App {
                 self.undo.finish(&self.config.desktop);
                 self.schedule_save(ui);
             }
+            Drag::ColumnResize(resize) => self.finish_column_resize(ui, *resize),
+            Drag::HeaderPress(press) => self.finish_header_press(ui, press),
         }
     }
 
@@ -341,7 +373,7 @@ impl App {
             .config
             .desktop
             .space(space)
-            .is_some_and(|space| space.keeps_sorted())
+            .is_some_and(|space| space.order_is_fixed())
         {
             return false;
         }

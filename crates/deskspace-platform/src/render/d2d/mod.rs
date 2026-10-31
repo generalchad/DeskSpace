@@ -90,7 +90,7 @@ use canvas::{Canvas, HwndCanvas, SurfaceCanvas};
 use effects::Effects;
 use geometry::{
     PIXEL_DPI, PREMULTIPLIED_BGRA, bitmap_properties, color_f, draw_text, fill_rounded, inset,
-    rect_f, render_target_properties, to_rect_f, upload_icon,
+    notice_rect, rect_f, render_target_properties, to_rect_f, upload_icon,
 };
 use graphics::{GRAPHICS, Graphics, graphics};
 use item::{draw_item, draw_marquee};
@@ -101,6 +101,12 @@ const SCROLL_THUMB_ALPHA: u8 = 110;
 const PLACEHOLDER_ALPHA: u8 = 153;
 /// Space kept between the placeholder text and the item area's edges.
 const PLACEHOLDER_INSET: f32 = 12.0;
+/// The notice bar's text padding and corner radius.
+const NOTICE_PADDING: f32 = 6.0;
+const NOTICE_RADIUS: f32 = 6.0;
+/// The notice bar's least fill opacity, so its text reads over the items
+/// even on a clear look.
+const NOTICE_MIN_ALPHA: u8 = 0xE0;
 /// Opacity of an item's slot while the item itself is dragged.
 const DRAGGED_ALPHA: u8 = 90;
 /// Opacity of a cut item, shown ghosted until it is pasted, as Explorer does.
@@ -116,6 +122,9 @@ const HIGHLIGHT_WIDTH: f32 = 2.0;
 /// sorted Details header's arrow.
 const SORT_UP_GLYPH: &[u16] = &[0xE70E];
 const SORT_DOWN_GLYPH: &[u16] = &[0xE70D];
+/// The dragged header's insertion mark, as a share of the header's height, so
+/// it scales with the display.
+const DROP_MARK_WIDTH_RATIO: f32 = 0.08;
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -198,6 +207,8 @@ pub struct Painter {
     icons: HashMap<u64, ID2D1Bitmap>,
     /// What an animation's frames are drawn with.
     effects: Effects,
+    /// The last title cut from its start, so a repaint measures nothing.
+    title_cut: Option<title::TitleCut>,
 }
 
 impl Painter {
@@ -522,6 +533,7 @@ impl Painter {
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 self.draw_items(ctx, prepared);
+                self.draw_group_headers(ctx, prepared, width);
                 if let Some(text) = &prepared.placeholder {
                     draw_text(
                         target,
@@ -536,6 +548,27 @@ impl Painter {
                         scene
                             .text_shadow
                             .map(|shadow| shadow.fade(PLACEHOLDER_ALPHA)),
+                    );
+                }
+                if let Some(text) = &prepared.notice {
+                    let area = rect_f(0.0, items_top, width, content_bottom);
+                    let bar = notice_rect(area, scene.title_height as f32);
+                    let fill = scene.title_fill;
+                    fill_rounded(
+                        target,
+                        brush,
+                        bar,
+                        NOTICE_RADIUS,
+                        fill.with_alpha(fill.a.max(NOTICE_MIN_ALPHA)),
+                    );
+                    draw_text(
+                        target,
+                        brush,
+                        text,
+                        &ctx.graphics.placeholder_format,
+                        inset(bar, NOTICE_PADDING),
+                        scene.title_text,
+                        None,
                     );
                 }
                 if let Some(marquee) = scene.marquee {
@@ -666,6 +699,67 @@ impl Painter {
                     rect_f(column.rect.x as f32 + pad, top, right, bottom),
                     scene.item_text.fade(190),
                     scene.text_shadow,
+                );
+            }
+            if let Some(mark) = details.drop_mark {
+                let mark = mark as f32;
+                brush.SetColor(&color_f(scene.item_text));
+                target.DrawLine(
+                    Vector2::new(mark, top),
+                    Vector2::new(mark, bottom),
+                    brush,
+                    (height * DROP_MARK_WIDTH_RATIO).round().max(1.0),
+                    None,
+                );
+            }
+        }
+    }
+
+    /// Draws each group's header row: a chevron, its name and count, and a rule
+    /// along its bottom to the edge.
+    unsafe fn draw_group_headers(&self, ctx: DrawContext, prepared: &PreparedScene, width: f32) {
+        let DrawContext {
+            graphics,
+            target,
+            brush,
+        } = ctx;
+        let scene = &prepared.scene;
+        for (header, label) in scene.group_headers.iter().zip(&prepared.group_labels) {
+            let rect = to_rect_f(header.rect);
+            let glyph_width = (rect.bottom - rect.top) * 0.8;
+            // SAFETY: caller is inside BeginDraw/EndDraw.
+            unsafe {
+                if let Some(format) = &graphics.glyph_format {
+                    brush.SetColor(&color_f(scene.item_text.fade(200)));
+                    target.DrawText(
+                        if header.folded {
+                            SORT_DOWN_GLYPH
+                        } else {
+                            SORT_UP_GLYPH
+                        },
+                        format,
+                        &rect_f(rect.left, rect.top, rect.left + glyph_width, rect.bottom),
+                        brush,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
+                    );
+                }
+                draw_text(
+                    target,
+                    brush,
+                    label,
+                    &graphics.details_format,
+                    rect_f(rect.left + glyph_width, rect.top, rect.right, rect.bottom),
+                    scene.item_text,
+                    scene.text_shadow,
+                );
+                brush.SetColor(&color_f(scene.item_text.fade(80)));
+                target.DrawLine(
+                    Vector2::new(rect.left, rect.bottom - 0.5),
+                    Vector2::new(width, rect.bottom - 0.5),
+                    brush,
+                    1.0,
+                    None,
                 );
             }
         }

@@ -12,6 +12,7 @@ mod ids;
 mod pages;
 mod session;
 mod tables;
+mod view_fields;
 
 pub use apply::{
     apply_animation_edit, apply_field, apply_shadow_edit, customize_space, match_global,
@@ -20,9 +21,9 @@ pub use apply::{
 pub use ids::{field, page};
 pub use session::{Session, SpaceSnapshot, needs_relayout, needs_restyle};
 pub use tables::{
-    AnimationPage, DETAILS_COLUMNS, EDGES, HOTKEY_BINDINGS, HotkeyAction, NAME_MIN_WIDTH,
-    SORT_KEYS, STARTUP_ORDERS, STATUS_BUTTONS, VIEW_MODES, view_for_digit,
-    windows_animation_settings_uri,
+    AnimationPage, DETAILS_COLUMNS, EDGES, GROUP_NONE, HOTKEY_BINDINGS, HotkeyAction,
+    NAME_MIN_WIDTH, SORT_KEYS, STARTUP_ORDERS, STATUS_BUTTONS, VIEW_MODES, shown_details_columns,
+    step_view, view_for_digit, windows_animation_settings_uri,
 };
 
 use std::path::Path;
@@ -39,8 +40,9 @@ use deskspace_core::theme::{
     TINT_OPACITY_RANGE, TITLE_SHADING_RANGE, corner,
 };
 use deskspace_core::{
-    Backdrop, BorderSource, Color, Command, GridSpec, LabelShadow, LensTitle, Palette, Preset,
-    SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode, ViewMode,
+    Backdrop, BorderSource, Color, Column, Command, Extensions, GridSpec, GroupBy, LabelShadow,
+    LensTitle, Palette, Preset, SortKey, Space, SpaceId, SpaceLook, SpaceView, Theme, ThemeMode,
+    ViewMode,
 };
 use deskspace_platform::{
     ColumnAlign, Field, FieldValue, SettingsButton, SettingsForm, SettingsHeader, SettingsNav,
@@ -206,14 +208,14 @@ pub fn build_form(
     // the space menu's "Fit to contents".
     pages[page::LAYOUT].fields.push(
         Field::button(field::FIT_CONTENTS, "", "Fit to contents")
-            .enabled(space.is_some_and(|space| space.user_sized() && !space.locked())),
+            .enabled(space.is_some_and(Space::can_fit)),
     );
     pages.push(general_page(config));
     pages.push(new_spaces_page(config));
     pages.push(hotkeys_page(session));
     pages.push(about_page(config_path));
     pages.push(shortcuts_page(preview));
-    pages.push(lens_page(space, lens_available));
+    pages.push(lens_page(space, lens_available, session));
     debug_assert_eq!(pages.len(), page::ANIMATIONS);
     pages.extend(animation_pages(
         &config.window.animations,
@@ -350,6 +352,9 @@ pub enum FieldEffect {
     Layout,
     /// The lens's view changed; list its folder again.
     Lens,
+    /// The lens's filters changed; filter the listing it already has again,
+    /// without reading the folder (W35).
+    Refilter,
     /// Only pending (unapplied) settings changed.
     Pending,
 }
@@ -571,6 +576,10 @@ mod tests {
         let (mut config, session) = setup();
         config.window.new_space_title = "Inbox".into();
         config.window.new_space_width = 300;
+        config.window.new_space_view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default().with_mode(ViewMode::List)
+        };
         let form = build_form(
             &config,
             &session,
@@ -585,6 +594,18 @@ mod tests {
             form.field(field::NEW_SPACE_TITLE).unwrap().label,
             "Default title"
         );
+        let list = VIEW_MODES
+            .iter()
+            .position(|(mode, ..)| *mode == ViewMode::List)
+            .unwrap();
+        assert!(matches!(
+            form.field(field::NEW_SPACE_VIEW_MODE).unwrap().kind,
+            FieldKind::Choice { selected, .. } if selected == list
+        ));
+        assert!(matches!(
+            form.field(field::NEW_SPACE_STATUS_BAR).unwrap().kind,
+            FieldKind::Toggle { on: true }
+        ));
     }
 
     #[test]
@@ -835,6 +856,53 @@ mod tests {
         assert!(!space_pages.contains(&"Lens"));
         assert!(!listed_pages(ScopeKind::Space).contains(&page::LENS));
         assert!(listed_pages(ScopeKind::Lens).contains(&page::LENS));
+    }
+
+    #[test]
+    fn filter_patterns_round_trip_through_their_text() {
+        use super::pages::{format_patterns, parse_patterns};
+        assert_eq!(parse_patterns(" *.pdf;*.docx ;; "), ["*.pdf", "*.docx"]);
+        assert!(parse_patterns("").is_empty());
+        assert!(parse_patterns(" ; ").is_empty());
+        let patterns = vec!["*.pdf".to_owned(), "report ?.txt".to_owned()];
+        assert_eq!(format_patterns(&patterns), "*.pdf; report ?.txt");
+        assert_eq!(parse_patterns(&format_patterns(&patterns)), patterns);
+    }
+
+    #[test]
+    fn the_filter_fields_show_the_lens_lists_or_the_text_as_typed() {
+        let (mut config, _) = config_with_space("Work");
+        let lens = create_lens(
+            &mut config.desktop,
+            "Downloads",
+            Rect::new(300, 0, 200, 200),
+            "C:/Temp/lens-test",
+        );
+        let mut view = config
+            .desktop
+            .space(lens)
+            .unwrap()
+            .folder_view()
+            .unwrap()
+            .clone();
+        view.include = vec!["*.pdf".into(), "*.docx".into()];
+        apply(&mut config.desktop, Command::SetLensView { id: lens, view });
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let text = |session: &Session, id| match &form(&config, session).field(id).unwrap().kind {
+            FieldKind::Text { value, .. } => value.clone(),
+            other => panic!("expected a text field, got {other:?}"),
+        };
+        assert_eq!(text(&session, field::LENS_SHOW_ONLY), "*.pdf; *.docx");
+        assert_eq!(text(&session, field::LENS_HIDE), "");
+        session
+            .filter_texts
+            .insert((lens, field::LENS_SHOW_ONLY), "*.pdf;  ".into());
+        assert_eq!(
+            text(&session, field::LENS_SHOW_ONLY),
+            "*.pdf;  ",
+            "mid-edit text is never rewritten"
+        );
     }
 
     #[test]

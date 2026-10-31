@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Size};
-use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, STATUS_BAR_HEIGHT, Space};
+use crate::space::{DEFAULT_TITLE_HEIGHT, ResizeEdges, Space};
 
 /// The bounds grid `gap` and `padding` are clamped to, in logical pixels.
 pub const GAP_RANGE: (i32, i32) = (0, 24);
@@ -118,7 +118,7 @@ impl GridSpec {
     /// `width` rounded down to whole columns, so a user-sized space has the
     /// same padding on both sides instead of the remainder on the right.
     pub fn fit_width(&self, width: i32) -> i32 {
-        self.width_for_columns(self.columns_for(width))
+        fit_length(width, self.cell_width, self.gap, self.padding)
     }
 
     /// How many cell rows fit in a space `height` pixels tall, below the title
@@ -138,7 +138,13 @@ impl GridSpec {
     /// `height` rounded down to whole rows, so a user-sized space has the same
     /// padding above and below the grid instead of the remainder at the bottom.
     pub fn fit_height(&self, height: i32) -> i32 {
-        self.height_for_rows(self.rows_for(height))
+        self.title_height
+            + fit_length(
+                height - self.title_height,
+                self.cell_height,
+                self.gap,
+                self.padding,
+            )
     }
 
     /// The smallest space a user can resize to: one cell plus padding.
@@ -198,36 +204,18 @@ pub fn resize_rect(
     Rect::new(left, top, right - left, bottom - top)
 }
 
-/// Rounds `rect`'s width down to whole columns, keeping equal edge padding.
-/// The grabbed edge stays put, so a left resize moves the left edge and any
-/// other resize moves the right one.
-pub fn fit_rect_width(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect {
-    let width = spec.fit_width(rect.width);
-    if edges.left {
-        Rect::new(rect.right() - width, rect.y, width, rect.height)
-    } else {
-        Rect::new(rect.x, rect.y, width, rect.height)
-    }
-}
-
-/// Rounds `rect`'s height down to whole rows below the title bar, keeping equal
-/// top and bottom padding. The grabbed edge stays put, so a top resize moves
-/// the top edge and any other resize moves the bottom one.
-pub fn fit_rect_height(rect: Rect, edges: ResizeEdges, spec: &GridSpec) -> Rect {
-    let height = spec.fit_height(rect.height);
-    if edges.top {
-        Rect::new(rect.x, rect.bottom() - height, rect.width, height)
-    } else {
-        Rect::new(rect.x, rect.y, rect.width, height)
-    }
-}
-
 /// How many cells of `cell` px with `gap` and `padding` fit along `length`
 /// (at least 1). Shared by the icon grid and the order-placed views, which use
 /// it on the width or the height according to their flow.
 pub(crate) fn columns_for(length: i32, cell: i32, gap: i32, padding: i32) -> i32 {
     let step = (cell + gap).max(1);
     ((length - padding * 2 + gap) / step).max(1)
+}
+
+/// `length` rounded down to whole `cell` steps with `padding` at both ends,
+/// the last step without a trailing `gap` (at least one cell).
+pub(crate) fn fit_length(length: i32, cell: i32, gap: i32, padding: i32) -> i32 {
+    padding * 2 + columns_for(length, cell, gap, padding) * (cell + gap) - gap
 }
 
 /// Sizes the space to fit its items (unless the user sized it) and lays the
@@ -240,7 +228,7 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     // The title height follows the grid even for user-sized spaces, so an icon
     // or DPI change reaches every space.
     space.title_height = spec.title_height;
-    if space.view().mode.places_by_order() {
+    if space.view().places_by_order() {
         return;
     }
     if space.user_sized {
@@ -252,14 +240,8 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
     let width = spec.padding * 2
         + spec.columns.max(1) * spec.cell_width
         + (spec.columns.max(1) - 1) * spec.gap;
-    let status = if space.view().status_bar {
-        (STATUS_BAR_HEIGHT as f32 * spec.title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).round()
-            as i32
-    } else {
-        0
-    };
     let height = spec.title_height
-        + status
+        + space.unfolded_status_bar_height()
         + spec.padding * 2
         + rows * spec.cell_height
         + (rows - 1) * spec.gap;
@@ -273,7 +255,7 @@ pub fn arrange_space(space: &mut Space, spec: GridSpec) {
 /// use as many columns as their width allows; others use `spec.columns`. A view
 /// that places items by order leaves the positions alone (D17).
 pub fn position_items(space: &mut Space, spec: GridSpec) {
-    if space.view().mode.places_by_order() {
+    if space.view().places_by_order() {
         return;
     }
     let columns = if space.user_sized {
@@ -462,31 +444,6 @@ mod tests {
     }
 
     #[test]
-    fn fit_rect_width_keeps_the_grabbed_edge() {
-        let spec = GridSpec::default();
-        let rect = Rect::new(100, 20, 480, 200);
-        let right = fit_rect_width(
-            rect,
-            ResizeEdges {
-                right: true,
-                ..ResizeEdges::NONE
-            },
-            &spec,
-        );
-        assert_eq!(right, Rect::new(100, 20, 438, 200));
-        let left = fit_rect_width(
-            rect,
-            ResizeEdges {
-                left: true,
-                ..ResizeEdges::NONE
-            },
-            &spec,
-        );
-        assert_eq!(left.right(), rect.right(), "the far edge stays put");
-        assert_eq!(left.width, 438);
-    }
-
-    #[test]
     fn height_fits_whole_rows() {
         let spec = GridSpec::default();
         // Title bar and padding, then rows of 114; the last row has no gap.
@@ -495,31 +452,6 @@ mod tests {
         assert_eq!(spec.fit_height(320), 270);
         assert_eq!(spec.fit_height(270), 270, "already exact");
         assert_eq!(spec.fit_height(100), spec.min_space_size().height);
-    }
-
-    #[test]
-    fn fit_rect_height_keeps_the_grabbed_edge() {
-        let spec = GridSpec::default();
-        let rect = Rect::new(100, 20, 438, 320);
-        let bottom = fit_rect_height(
-            rect,
-            ResizeEdges {
-                bottom: true,
-                ..ResizeEdges::NONE
-            },
-            &spec,
-        );
-        assert_eq!(bottom, Rect::new(100, 20, 438, 270));
-        let top = fit_rect_height(
-            rect,
-            ResizeEdges {
-                top: true,
-                ..ResizeEdges::NONE
-            },
-            &spec,
-        );
-        assert_eq!(top.bottom(), rect.bottom(), "the far edge stays put");
-        assert_eq!(top.height, 270);
     }
 
     #[test]

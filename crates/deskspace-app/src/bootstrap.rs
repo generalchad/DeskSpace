@@ -59,6 +59,7 @@ fn seed_space(desktop: &mut Desktop, entries: Vec<SeedEntry>, bounds: Rect) {
         size: INITIAL_RECT.size(),
         locked: false,
         icon: deskspace_core::SpaceIcon::None,
+        view: deskspace_core::SpaceView::default(),
     };
     if !apply_seed(desktop, create, bounds) {
         return;

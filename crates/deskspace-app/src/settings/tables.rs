@@ -83,53 +83,142 @@ pub fn view_for_digit(digit: u8) -> Option<ViewMode> {
         .map(|(mode, ..)| *mode)
 }
 
+/// The view `steps` places from `mode` in the View menu's order, stopping at
+/// the ends (W39): Ctrl+wheel and Ctrl+Plus and Minus walk Explorer's views.
+/// "Settings icon size" is not on the walk — it never steps, and Ctrl+0 is
+/// the way back to it — so the caller zooms a space there as D9 says.
+pub fn step_view(mode: ViewMode, steps: i32) -> ViewMode {
+    if mode == ViewMode::Icons {
+        return mode;
+    }
+    let Some(current) = VIEW_MODES
+        .iter()
+        .position(|(candidate, ..)| *candidate == mode)
+    else {
+        return mode;
+    };
+    let last = VIEW_MODES.len() - 1;
+    VIEW_MODES[(current as i32 + steps).clamp(1, last as i32) as usize].0
+}
+
+/// A space's file name extension choices (W28): Explorer's own option under
+/// `Automatic`, or its own answer.
+pub const EXTENSIONS_OPTIONS: [(Extensions, &str); 3] = [
+    (Extensions::Automatic, "Automatic"),
+    (Extensions::Show, "Show"),
+    (Extensions::Hide, "Hide"),
+];
+
 /// Explorer's Sort by keys, in its order and words (D17). The Sort by menu,
 /// the View page, and the Lenses defaults page read it.
-pub const SORT_KEYS: [(SortKey, &str); 4] = [
+pub const SORT_KEYS: [(SortKey, &str); 5] = [
     (SortKey::Name, "Name"),
     (SortKey::Modified, "Date modified"),
     (SortKey::Kind, "Type"),
     (SortKey::Size, "Size"),
+    (SortKey::Created, "Date created"),
 ];
 
-/// Explorer's Details columns in display order (W18): its header label, the
-/// sort key a click on the header uses, its default width at 96 DPI, and how
-/// its values align. Name takes the width left over, down to
-/// `NAME_MIN_WIDTH`. Widths are provisional until W18's on-screen check
-/// measures Explorer's own.
+/// The Group by menu's and pages' first choice.
+pub const GROUP_NONE: &str = "(None)";
+
+/// The Group by choices the pages offer: (None), then the keys.
+pub(super) fn group_labels() -> Vec<&'static str> {
+    std::iter::once(GROUP_NONE)
+        .chain(SORT_KEYS.iter().map(|(_, label)| *label))
+        .collect()
+}
+
+/// The page choice showing `group`.
+pub(super) fn group_choice(group: Option<GroupBy>) -> usize {
+    group
+        .and_then(|group| SORT_KEYS.iter().position(|(key, _)| *key == group.key))
+        .map_or(0, |index| index + 1)
+}
+
+/// The grouping a page's choice `index` makes from `current`, which gives it
+/// its direction. `None` for a choice past the list.
+pub(super) fn group_from_choice(index: usize, current: Option<GroupBy>) -> Option<Option<GroupBy>> {
+    if index == 0 {
+        return Some(None);
+    }
+    let (key, _) = SORT_KEYS.get(index - 1)?;
+    Some(Some(GroupBy {
+        key: *key,
+        descending: current.is_some_and(|group| group.descending),
+    }))
+}
+
+/// `current` with the direction a page's choice `index` names; no grouping stays
+/// none.
+pub(super) fn group_with_order(current: Option<GroupBy>, index: usize) -> Option<GroupBy> {
+    current.map(|group| GroupBy {
+        descending: index == 1,
+        ..group
+    })
+}
+
+/// Explorer's Details columns (W18): which column it is, its header label,
+/// the sort key a click on the header uses, its default width at 96 DPI, and
+/// how its values align. A space's `SpaceView.columns` says which it shows and
+/// in what order. Name takes the width left over, down to `NAME_MIN_WIDTH`.
+/// Widths are provisional until W18's on-screen check measures Explorer's own.
 pub struct DetailsColumn {
+    pub id: Column,
     pub label: &'static str,
     pub key: SortKey,
     pub width: i32,
     pub align: ColumnAlign,
 }
 
-pub const DETAILS_COLUMNS: [DetailsColumn; 4] = [
+pub const DETAILS_COLUMNS: [DetailsColumn; 5] = [
     DetailsColumn {
+        id: Column::Name,
         label: "Name",
         key: SortKey::Name,
         width: 0,
         align: ColumnAlign::Left,
     },
     DetailsColumn {
+        id: Column::Modified,
         label: "Date modified",
         key: SortKey::Modified,
         width: 130,
         align: ColumnAlign::Left,
     },
     DetailsColumn {
+        id: Column::Kind,
         label: "Type",
         key: SortKey::Kind,
         width: 100,
         align: ColumnAlign::Left,
     },
     DetailsColumn {
+        id: Column::Size,
         label: "Size",
         key: SortKey::Size,
         width: 80,
         align: ColumnAlign::Right,
     },
+    DetailsColumn {
+        id: Column::Created,
+        label: "Date created",
+        key: SortKey::Created,
+        width: 130,
+        align: ColumnAlign::Left,
+    },
 ];
+
+/// The Details columns `view` shows, in its order, each with its width at
+/// 96 DPI. Name is always first.
+pub fn shown_details_columns(
+    view: &SpaceView,
+) -> impl Iterator<Item = (&'static DetailsColumn, i32)> + '_ {
+    view.columns.iter().filter_map(|spec| {
+        let column = DETAILS_COLUMNS.iter().find(|row| row.id == spec.id)?;
+        Some((column, spec.width.map_or(column.width, i32::from)))
+    })
+}
 
 /// The narrowest Name column, so a small space keeps a readable name.
 pub const NAME_MIN_WIDTH: i32 = 120;
@@ -377,6 +466,27 @@ pub fn windows_animation_settings_uri(build: Option<u32>) -> &'static str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_page_choice_round_trips_through_every_key() {
+        assert_eq!(group_labels().len(), SORT_KEYS.len() + 1);
+        assert_eq!(group_choice(None), 0);
+        assert_eq!(group_from_choice(0, None), Some(None));
+        for index in 1..=SORT_KEYS.len() {
+            let group = group_from_choice(index, None).unwrap();
+            assert_eq!(group_choice(group), index);
+        }
+        assert_eq!(group_from_choice(SORT_KEYS.len() + 1, None), None);
+    }
+
+    #[test]
+    fn a_key_keeps_the_direction_and_a_direction_needs_a_key() {
+        let down = group_with_order(group_from_choice(1, None).unwrap(), 1);
+        assert!(down.unwrap().descending);
+        assert!(group_from_choice(2, down).unwrap().unwrap().descending);
+        assert_eq!(group_with_order(None, 1), None);
+        assert_eq!(group_from_choice(0, down), Some(None));
+    }
+
     fn setup() -> (Config, Session) {
         let config = Config::new();
         let session = Session::new(&config);
@@ -430,6 +540,34 @@ mod tests {
         digits.sort_unstable();
         digits.dedup();
         assert_eq!(digits.len(), count, "one view per shortcut digit");
+    }
+
+    #[test]
+    fn a_view_step_walks_the_menu_order_and_stops_at_the_ends() {
+        use deskspace_core::ViewMode::{
+            Content, Details, ExtraLargeIcons, Icons, LargeIcons, MediumIcons,
+        };
+        assert_eq!(step_view(LargeIcons, 1), MediumIcons, "one step down");
+        assert_eq!(step_view(MediumIcons, -1), LargeIcons, "one step up");
+        assert_eq!(
+            step_view(LargeIcons, 6),
+            Content,
+            "a big wheel delta covers several steps"
+        );
+        assert_eq!(step_view(Content, 1), Content, "stops at the last view");
+        assert_eq!(
+            step_view(ExtraLargeIcons, -1),
+            ExtraLargeIcons,
+            "stops at the first"
+        );
+        assert_eq!(
+            step_view(Details, 100),
+            Content,
+            "clamped from beyond the end"
+        );
+        assert_eq!(step_view(ExtraLargeIcons, -100), ExtraLargeIcons);
+        assert_eq!(step_view(Icons, 1), Icons, "Settings icon size never steps");
+        assert_eq!(step_view(Icons, -3), Icons);
     }
 
     #[test]

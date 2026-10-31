@@ -2,12 +2,14 @@
 //! directly, and a space's edits become Commands.
 
 use super::ids::field;
+use super::pages::parse_patterns;
 use super::session::Session;
 use super::tables::{
-    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, HOTKEY_BINDINGS,
-    ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES, MODES,
-    NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
+    ANIMATION_PAGES, AnimationPage, BACKDROPS, BORDER_SOURCES, EDGES, EXTENSIONS_OPTIONS,
+    HOTKEY_BINDINGS, ICON_DOWNLOAD_OPTIONS, LABEL_LINES_OPTIONS, LABEL_SHADOW_OPTIONS, LENS_TITLES,
+    MODES, NEW_SPACE_ICON_OPTIONS, PRESETS, STARTUP_ORDERS, is_hotkey_field,
 };
+use super::tables::{group_from_choice, group_with_order};
 use super::*;
 use super::{FieldEffect, scope_space};
 use deskspace_core::source::{LensTitle, lens_title};
@@ -234,6 +236,40 @@ pub fn apply_field(
                     .map_or(config.window.new_space_icon, |entry| entry.0);
                 FieldEffect::Pending
             }
+            // The New spaces page's view defaults (W40) apply to the next
+            // new space.
+            (field::NEW_SPACE_VIEW_MODE, FieldValue::Choice(index)) => {
+                if let Some((mode, ..)) = VIEW_MODES.get(index) {
+                    config.window.new_space_view.mode = *mode;
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_STATUS_BAR, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.status_bar = on;
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_SORT_KEY, FieldValue::Choice(index)) => {
+                if let Some((key, _)) = SORT_KEYS.get(index) {
+                    config.window.new_space_view.sort.key = *key;
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_ORDER, FieldValue::Choice(index)) => {
+                match index {
+                    0 => config.window.new_space_view.sort.descending = false,
+                    1 => config.window.new_space_view.sort.descending = true,
+                    _ => {}
+                }
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_FOLDERS_FIRST, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.sort.folders_first = on;
+                FieldEffect::Pending
+            }
+            (field::NEW_SPACE_KEEP_SORTED, FieldValue::Toggle(on)) => {
+                config.window.new_space_view.keep_sorted = on;
+                FieldEffect::Pending
+            }
             (field::ICON_DOWNLOADS, FieldValue::Choice(index)) => {
                 config.window.icon_downloads = ICON_DOWNLOAD_OPTIONS
                     .get(index)
@@ -267,6 +303,18 @@ pub fn apply_field(
             }
             (field::LENSES_FOLDERS_FIRST, FieldValue::Toggle(on)) => {
                 config.window.new_lens.view.sort.folders_first = on;
+                FieldEffect::Pending
+            }
+            (field::LENSES_GROUP, FieldValue::Choice(index)) => {
+                let group = &mut config.window.new_lens.view.group;
+                if let Some(next) = group_from_choice(index, *group) {
+                    *group = next;
+                }
+                FieldEffect::Pending
+            }
+            (field::LENSES_GROUP_ORDER, FieldValue::Choice(index)) => {
+                let group = &mut config.window.new_lens.view.group;
+                *group = group_with_order(*group, index);
                 FieldEffect::Pending
             }
             (field::LENSES_SHOW_HIDDEN, FieldValue::Toggle(on)) => {
@@ -394,6 +442,20 @@ fn lens_edit(
                 FieldEffect::Lens,
             )
         }
+        (field::LENS_SHOW_ONLY | field::LENS_HIDE, FieldValue::Text(text)) => {
+            let mut view = space.folder_view()?.clone();
+            let patterns = parse_patterns(text);
+            if id == field::LENS_SHOW_ONLY {
+                view.include = patterns;
+            } else {
+                view.exclude = patterns;
+            }
+            session.filter_texts.insert((space.id, id), text.clone());
+            (
+                Command::SetLensView { id: space.id, view },
+                FieldEffect::Refilter,
+            )
+        }
         (field::LENS_TITLE_MODE, FieldValue::Choice(index)) => {
             let (title, _) = LENS_TITLES.get(*index)?;
             let mut next = space.folder_view()?.clone();
@@ -437,12 +499,22 @@ fn view_edit(
     value: &FieldValue,
 ) -> Option<(SpaceId, Command, FieldEffect)> {
     let space = scope_space(config, session)?;
-    let mut view = space.view();
+    let mut view = space.view().clone();
     match (id, value) {
         (field::VIEW_MODE, FieldValue::Choice(index)) => {
             view.mode = VIEW_MODES.get(*index)?.0;
         }
         (field::VIEW_STATUS_BAR, FieldValue::Toggle(on)) => view.status_bar = *on,
+        (field::VIEW_COMPACT, FieldValue::Toggle(on)) => view.compact = *on,
+        (field::VIEW_GROUP, FieldValue::Choice(index)) => {
+            view.group = group_from_choice(*index, view.group)?;
+        }
+        (field::VIEW_GROUP_ORDER, FieldValue::Choice(index)) => {
+            view.group = group_with_order(view.group, *index);
+        }
+        (field::VIEW_EXTENSIONS, FieldValue::Choice(index)) => {
+            view.extensions = EXTENSIONS_OPTIONS.get(*index)?.0;
+        }
         (field::VIEW_SORT_KEY, FieldValue::Choice(index)) => {
             view.sort.key = SORT_KEYS.get(*index)?.0;
         }
@@ -897,6 +969,35 @@ mod tests {
             FieldEffect::Pending
         );
         assert!(config.window.new_space_locked);
+        let details = VIEW_MODES
+            .iter()
+            .position(|(mode, ..)| *mode == deskspace_core::ViewMode::Details)
+            .unwrap();
+        assert_eq!(
+            apply_field(
+                &mut config,
+                &mut session,
+                field::NEW_SPACE_VIEW_MODE,
+                FieldValue::Choice(details),
+                true,
+            ),
+            FieldEffect::Pending
+        );
+        assert_eq!(
+            config.window.new_space_view.mode,
+            deskspace_core::ViewMode::Details
+        );
+        for (id, on) in [
+            (field::NEW_SPACE_STATUS_BAR, true),
+            (field::NEW_SPACE_KEEP_SORTED, true),
+        ] {
+            assert_eq!(
+                apply_field(&mut config, &mut session, id, FieldValue::Toggle(on), true),
+                FieldEffect::Pending
+            );
+        }
+        assert!(config.window.new_space_view.status_bar);
+        assert!(config.window.new_space_view.keep_sorted);
         assert!(session.dirty);
     }
 
@@ -1149,6 +1250,52 @@ mod tests {
             .is_none(),
             "General is Global only"
         );
+    }
+
+    #[test]
+    fn a_filter_field_sets_the_lens_lists_and_keeps_the_text_as_typed() {
+        let (config, lens) = config_with_lens("Downloads");
+        let mut session = Session::new(&config);
+        session.select_scope(Some(lens), ScopeKind::Lens);
+        let typed = " *.pdf;  *.docx; ";
+        let (id, command, effect) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_SHOW_ONLY,
+            FieldValue::Text(typed.into()),
+            true,
+            Path::new(""),
+        )
+        .expect("the filter field has a command");
+        assert_eq!(id, lens);
+        assert_eq!(effect, FieldEffect::Refilter, "no new listing");
+        let Command::SetLensView { view, .. } = command else {
+            panic!("expected SetLensView, got {command:?}");
+        };
+        assert_eq!(view.include, ["*.pdf", "*.docx"]);
+        assert!(view.exclude.is_empty());
+        assert_eq!(
+            session
+                .filter_texts
+                .get(&(lens, field::LENS_SHOW_ONLY))
+                .map(String::as_str),
+            Some(typed),
+            "the form shows the text back unchanged"
+        );
+
+        let (_, command, _) = space_edit(
+            &config,
+            &mut session,
+            field::LENS_HIDE,
+            FieldValue::Text("*.tmp".into()),
+            true,
+            Path::new(""),
+        )
+        .unwrap();
+        let Command::SetLensView { view, .. } = command else {
+            panic!("expected SetLensView, got {command:?}");
+        };
+        assert_eq!(view.exclude, ["*.tmp"]);
     }
 
     #[test]

@@ -28,6 +28,22 @@ impl App {
         self.view_cache.scroll_of(id).clamp(0, max)
     }
 
+    /// The items a surface shows, in display order: a grouped space's folded
+    /// groups are left out, since nothing may select them (D18).
+    pub(super) fn surface_shown_items(&self, surface: Surface) -> Vec<&Item> {
+        let items = self.surface_items(surface);
+        let Surface::Space(id) = surface else {
+            return items.iter().collect();
+        };
+        let Some(layout) = self.view_layout(id) else {
+            return items.iter().collect();
+        };
+        layout
+            .shown()
+            .filter_map(|index| items.get(index))
+            .collect()
+    }
+
     /// A surface's items, in model order.
     pub(super) fn surface_items(&self, surface: Surface) -> &[Item] {
         match surface {
@@ -185,10 +201,9 @@ impl App {
                     return Vec::new();
                 };
                 let scroll = self.scroll_of(id);
-                space
-                    .items()
-                    .iter()
-                    .enumerate()
+                layout
+                    .shown()
+                    .filter_map(|index| Some((index, space.items().get(index)?)))
                     .map(|(index, item)| {
                         let cell = layout.scrolled(index, scroll);
                         (
@@ -365,6 +380,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(
@@ -395,6 +411,7 @@ mod tests {
             kind: ItemKind::Other,
             size: None,
             modified: None,
+            created: None,
             hidden: false,
         };
         fixtures::apply(
@@ -459,7 +476,8 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::SmallIcons),
+                view: deskspace_core::SpaceView::default()
+                    .with_mode(deskspace_core::ViewMode::SmallIcons),
             },
         );
         app.system.set_shell(ShellDisplay {
@@ -498,7 +516,8 @@ mod tests {
             &mut app.config.desktop,
             Command::SetSpaceView {
                 id,
-                view: deskspace_core::SpaceView::with_mode(deskspace_core::ViewMode::List),
+                view: deskspace_core::SpaceView::default()
+                    .with_mode(deskspace_core::ViewMode::List),
             },
         );
         let items: Vec<ItemId> = (0..7)

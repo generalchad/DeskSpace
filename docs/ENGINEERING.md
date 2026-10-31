@@ -78,7 +78,10 @@ Four rules come first, because the rest follow from them:
   between files: small functions with descriptive names, early returns, named
   constants instead of magic numbers, one concept per module. When a file
   passes about 800 lines of non-test code, split it along its existing seams
-  (`TASKS.md` section K) rather than adding to it.
+  (`TASKS.md` section K) rather than adding to it. The limit is enforced:
+  `crates/deskspace-app/tests/file_size.rs` fails on a file past it unless
+  the file is in its `ALLOWED` table with a reason, and with its task once
+  one is written.
 - **Maintainable.** One source of truth per fact. Tables drive menus
   (`OPACITY_PRESETS`, `SORT_MENU_IDS`), option lists (`(value, label)` pairs in
   `settings/tables.rs`), and hotkeys (`HOTKEY_BINDINGS`), so a new entry is one
@@ -170,6 +173,10 @@ https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
    issue (`// see issue #1425`), so the workaround can be re-evaluated.
 9. Mark incomplete work as `// TODO(name):` or `// FIXME(name):` with a short
    description and an issue when one exists. Reuse existing markers.
+10. Keep task ids (`W3c`, `T12`) and dates out of new comments: say the why
+    in the comment and put the id in the commit message. Ids are decoded
+    only through `TASKS.md` and its archive, and they age as tasks are
+    archived. Existing ones go when their code is next touched.
 
 Rust specifics: `///` doc comments are expected on non-obvious public library
 items, kept concise. Every `unsafe` block carries a `// SAFETY:` comment saying
@@ -188,6 +195,13 @@ says why; the diff already shows what. Run the gates (section 1) first.
 
 ## 6. Gotchas
 
+- **Never wait on something only you can complete.** A canceled overlapped
+  read finishes only when its packet leaves the I/O completion port, and
+  only the worker's own wait takes it off. Waiting for it in
+  `GetOverlappedResult` on that same thread hung the folder watch, and with
+  it Ctrl+C and exit. Hand the buffer to the thread that receives the packet
+  and bound every wait. A hung exit looks like an ignored signal; read the
+  stacks first (`TOOLS.md` section 4).
 - **Spaces are never activated**, so anything that depends on activation does
   not work for them. `DWMWA_SYSTEMBACKDROP_TYPE` (Mica/Acrylic system
   backdrops) renders a flat color on inactive windows; the blur comes from
@@ -229,14 +243,16 @@ says why; the diff already shows what. Run the gates (section 1) first.
   hook's flags: `EDITING` (inline rename; consumes every editing key, and an
   Alt or Win combination cancels the rename and passes through),
   `WATCH_SELECTION` (an item is selected), and `WATCH_PASTE` (a space is
-  current; the name is historical). `Ui::watch_selection_keys` sets the last
-  two.
+  current; the name is historical), and `WATCH_BACK` (the current space is a
+  lens shown below its own folder, D18). `Ui::watch_selection_keys` sets the
+  last three.
 
   | Flag | Keys |
   |------|------|
   | either watch flag | F2, Alt+Enter, Ctrl+A, Esc, F5, the Menu key, Shift+F10, Ctrl+Plus, Ctrl+Minus, Ctrl+0 (zoom; main and keypad) |
   | `WATCH_SELECTION` | Enter, Delete, Shift+Delete, Ctrl+C, Ctrl+X |
   | `WATCH_PASTE` | Ctrl+V, Ctrl+Z, Ctrl+Y, Ctrl+Shift+1..8 (Explorer's views), the arrow keys (Shift extends, Ctrl moves the focus only), Home, End, PageUp, PageDown, typed characters (type-to-select) |
+| `WATCH_BACK` | Backspace, Alt+Left, Alt+Up (the parent folder; otherwise they pass through, and the Alt arrows never move the selection) |
 
   Every other key passes through. The watch consumes keys only while the
   desktop shell has the foreground (`desktop_is_foreground`), so other apps
@@ -254,7 +270,8 @@ not own it links to it instead of copying it.
 |------|------|
 | Types, fields, defaults, ranges, variants, ids, timers, messages | The code, with `///` docs; the `ALL` lists and uniqueness tests guard ids |
 | Architecture, where code lives, non-obvious behavior, Windows quirks | `CONTEXT.md` |
-| Rules, commands, gotchas | This file |
+| Rules, gate commands, gotchas | This file |
+| Tools, scripts, diagnostics | `TOOLS.md` |
 | Decisions (`Dx`), milestones, feature status (`F-xx`) | `ROADMAP.md` |
 | Open work, recipes, on-screen checks | `TASKS.md` |
 | What a user sees and does | `README.md` |

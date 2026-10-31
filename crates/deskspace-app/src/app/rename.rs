@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use deskspace_core::{Command, ItemId, ItemKind, SpaceId};
+use deskspace_core::{Command, ItemId, ItemKind, LensTitle, Space, SpaceId, lens_title};
 use deskspace_platform::{EditKey, EditOutcome, TextEdit, Ui};
 
 use crate::scene::item_label;
@@ -29,7 +29,6 @@ pub(super) enum EditTarget {
 pub(super) struct EditSession {
     pub(super) surface: Surface,
     pub(super) target: EditTarget,
-    pub(super) original: String,
     pub(super) text: TextEdit,
 }
 
@@ -121,12 +120,14 @@ impl App {
         let Some(space) = self.config.desktop.space(id) else {
             return;
         };
-        let original = space.title().to_owned();
+        let title = space.title().to_owned();
+        // The pointer may rest on this title with its tip already shown
+        // (W27); the edit takes its place.
+        self.dismiss_info_tip(ui);
         self.edit.begin(EditSession {
             surface: Surface::Space(id),
             target: EditTarget::Title,
-            original: original.clone(),
-            text: TextEdit::new(original),
+            text: TextEdit::new(title),
         });
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
         ui.capture_text_input(true);
@@ -154,13 +155,12 @@ impl App {
         };
         let original = item_label(entry, show_extensions);
         let shows_extension = show_extensions && entry.kind == ItemKind::File;
-        let mut text = TextEdit::new(original.clone());
-        if shows_extension {
-            // Select the base name and leave the extension unselected, as
-            // Explorer does when file extensions are shown.
-            if let Some(dot) = original.rfind('.') {
-                text.select_range(0, dot);
-            }
+        // Select the base name and leave the extension unselected, as
+        // Explorer does when file extensions are shown.
+        let base_end = original.rfind('.').filter(|_| shows_extension);
+        let mut text = TextEdit::new(original);
+        if let Some(dot) = base_end {
+            text.select_range(0, dot);
         }
         self.edit.begin(EditSession {
             surface,
@@ -168,7 +168,6 @@ impl App {
                 id: item,
                 shows_extension,
             },
-            original,
             text,
         });
         Self::set_timer(ui, Timer::Caret, CARET_BLINK_MS);
@@ -194,8 +193,8 @@ impl App {
         }
     }
 
-    /// Ends the rename. An empty or unchanged title is dropped on commit, so
-    /// pressing Enter without editing never changes or clears the name.
+    /// Ends the rename; on commit, `title_commit` decides what the typed
+    /// title does.
     pub(super) fn finish_rename(&mut self, ui: &mut Ui, commit: bool) {
         let Some(session) = self.edit.take() else {
             return;
@@ -208,13 +207,15 @@ impl App {
                 let Surface::Space(id) = surface else {
                     return;
                 };
-                if commit {
-                    let title = session.text.text().trim().to_string();
-                    if !title.is_empty() && title != session.original {
-                        let effects = self.rename_space(id, title);
-                        self.run(ui, effects);
-                        self.resnapshot_settings(ui, id);
-                    }
+                let default = self.config.window.new_lens.title;
+                if commit
+                    && let Some(command) = self.config.desktop.space(id).and_then(|space| {
+                        title_commit(space, session.text.text(), default, &self.profile)
+                    })
+                {
+                    let effects = self.commit_title(id, command);
+                    self.run(ui, effects);
+                    self.resnapshot_settings(ui, id);
                 }
             }
             EditTarget::Item {
@@ -229,18 +230,14 @@ impl App {
         self.refresh_surface(ui, surface);
     }
 
-    pub(super) fn rename_space(
+    /// Records a title change as one "Rename space" undo entry.
+    pub(super) fn commit_title(
         &mut self,
         id: SpaceId,
-        title: String,
+        command: Command,
     ) -> Vec<super::effect::Effect> {
         let near = self.space_center(id);
-        self.record_effects(
-            "Rename space",
-            Command::RenameSpace { id, title },
-            near,
-            Vec::new(),
-        )
+        self.record_effects("Rename space", command, near, Vec::new())
     }
 
     /// Renames an item's file to the edited text and updates the model. The
@@ -422,6 +419,37 @@ impl App {
 
 /// The file name to rename to, preserving the original extension when the
 /// edited label did not show it, as Explorer does.
+/// What a committed title edit on `space` does. A typed title renames it,
+/// which makes a lens's title custom. An empty one on a custom lens makes the
+/// title follow the folder again, as `default` (the Lenses page's "Show as")
+/// says, or by the folder's name when that default is itself custom. An empty
+/// title anywhere else, or an unchanged one, does nothing, so Enter without
+/// editing never changes or clears a name.
+fn title_commit(space: &Space, typed: &str, default: LensTitle, profile: &Path) -> Option<Command> {
+    let typed = typed.trim();
+    if !typed.is_empty() {
+        return (typed != space.title()).then(|| Command::RenameSpace {
+            id: space.id,
+            title: typed.to_owned(),
+        });
+    }
+    let view = space.folder_view()?;
+    if view.title != LensTitle::Custom {
+        return None;
+    }
+    let title = match default {
+        LensTitle::Custom => LensTitle::FolderName,
+        follows => follows,
+    };
+    let mut next = view.clone();
+    next.title = title;
+    Some(Command::SetLensTitle {
+        id: space.id,
+        title,
+        text: lens_title(&next, space.title(), profile),
+    })
+}
+
 fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> String {
     if shows_extension {
         return typed.to_string();
@@ -439,7 +467,87 @@ fn renamed_file_name(original: &Path, typed: &str, shows_extension: bool) -> Str
 
 #[cfg(test)]
 mod tests {
+    use deskspace_core::{Desktop, Rect};
+
     use super::*;
+    use crate::fixtures;
+
+    const PROFILE: &str = r"C:\Users\me";
+
+    /// A desktop with a lens on `Documents\Work` titled "Nickname" by hand.
+    fn custom_lens() -> (Desktop, SpaceId) {
+        let mut desktop = Desktop::default();
+        let rect = Rect::new(0, 0, 300, 200);
+        let id = fixtures::create_lens(&mut desktop, "Work", rect, r"C:\Users\me\Documents\Work");
+        fixtures::apply(
+            &mut desktop,
+            Command::RenameSpace {
+                id,
+                title: "Nickname".to_owned(),
+            },
+        );
+        (desktop, id)
+    }
+
+    fn commit(desktop: &Desktop, id: SpaceId, typed: &str, default: LensTitle) -> Option<Command> {
+        let space = desktop.space(id).expect("the space exists");
+        title_commit(space, typed, default, Path::new(PROFILE))
+    }
+
+    #[test]
+    fn an_empty_title_makes_a_custom_lens_follow_its_folder_again() {
+        let (desktop, id) = custom_lens();
+        for typed in ["", "   "] {
+            assert_eq!(
+                commit(&desktop, id, typed, LensTitle::ProfilePath),
+                Some(Command::SetLensTitle {
+                    id,
+                    title: LensTitle::ProfilePath,
+                    text: r"Documents\Work".to_owned(),
+                }),
+                "typed {typed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_custom_default_falls_back_to_the_folder_name() {
+        let (desktop, id) = custom_lens();
+        assert_eq!(
+            commit(&desktop, id, "", LensTitle::Custom),
+            Some(Command::SetLensTitle {
+                id,
+                title: LensTitle::FolderName,
+                text: "Work".to_owned(),
+            }),
+        );
+    }
+
+    #[test]
+    fn a_typed_title_renames_and_an_unchanged_one_does_nothing() {
+        let (desktop, id) = custom_lens();
+        assert_eq!(
+            commit(&desktop, id, "  Projects ", LensTitle::FolderName),
+            Some(Command::RenameSpace {
+                id,
+                title: "Projects".to_owned(),
+            }),
+        );
+        assert_eq!(
+            commit(&desktop, id, "Nickname", LensTitle::FolderName),
+            None
+        );
+    }
+
+    #[test]
+    fn an_empty_title_changes_nothing_on_a_space_or_a_following_lens() {
+        let mut desktop = Desktop::default();
+        let rect = Rect::new(0, 0, 300, 200);
+        let space = fixtures::create_space(&mut desktop, "Games", rect);
+        let lens = fixtures::create_lens(&mut desktop, "Work", rect, r"C:\Users\me\Work");
+        assert_eq!(commit(&desktop, space, "", LensTitle::FolderName), None);
+        assert_eq!(commit(&desktop, lens, "", LensTitle::FullPath), None);
+    }
 
     #[test]
     fn the_explorer_rename_watch_gives_up_after_its_last_look() {

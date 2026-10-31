@@ -7,7 +7,8 @@ use deskspace_core::geometry::{Point, Rect, Size};
 use deskspace_core::placement::{DEFAULT_SPACE_GAP, drop_space_origin, new_space_origin};
 use deskspace_core::source::{FolderView, lens_title};
 use deskspace_core::{
-    Command, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook, SpaceView, Theme,
+    Column, Command, Extensions, GroupBy, ItemId, Palette, SortRule, Space, SpaceId, SpaceLook,
+    SpaceView, Theme,
 };
 use deskspace_platform::{
     DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
@@ -16,10 +17,11 @@ use deskspace_update::InstallMode;
 
 use super::files::ShortcutSource;
 use super::{
-    App, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES, NewShortcut, OPACITY_PRESETS,
-    SORT_MENU_IDS, SpaceColor, Surface, VIEW_PRESETS, delete_needs_confirmation,
+    App, COLUMN_MENU_IDS, GROUP_MENU_IDS, ICON_SIZE_PRESETS, MenuId, NEW_SHORTCUT_ENTRIES,
+    NewShortcut, OPACITY_PRESETS, SORT_MENU_IDS, SpaceColor, Surface, VIEW_PRESETS,
+    delete_needs_confirmation,
 };
-use crate::settings::{SORT_KEYS, VIEW_MODES};
+use crate::settings::{DETAILS_COLUMNS, GROUP_NONE, SORT_KEYS, VIEW_MODES};
 
 impl App {
     /// Opens the context menu for the focused item, or for the current space
@@ -155,7 +157,7 @@ impl App {
             return;
         };
         if space.is_lens() {
-            let mut view = space.view();
+            let mut view = space.view().clone();
             view.sort = rule;
             if self.set_space_view_labelled(ui, id, view, at, "Sort lens") {
                 self.restart_lens_watch(ui, id);
@@ -185,12 +187,7 @@ impl App {
         id: SpaceId,
         at: Point,
     ) -> Vec<super::effect::Effect> {
-        let effects = self.record_effects(
-            "Fit to contents",
-            Command::FitToContents { id },
-            at,
-            Vec::new(),
-        );
+        let effects = self.record_effects("Fit to contents", self.fit_command(id), at, Vec::new());
         if !effects.is_empty() {
             self.view_cache.set_scroll(id, 0);
         }
@@ -209,11 +206,11 @@ impl App {
         self.record_effects(label, Command::ToggleLock { id }, at, Vec::new())
     }
 
-    /// Opens lens `id`'s folder in Explorer. The menu and the Lens page share
-    /// this.
+    /// Opens the folder lens `id` shows in Explorer. The menu and the Lens
+    /// page share this.
     pub(super) fn open_lens_folder(&mut self, ui: &mut Ui, id: SpaceId) {
-        if let Some(view) = self.config.desktop.space(id).and_then(Space::folder_view) {
-            ui.open_path(&view.path);
+        if let Some(folder) = self.lens_folder(id) {
+            ui.open_path(&folder);
         }
     }
 
@@ -238,14 +235,24 @@ impl App {
             ui.alert("Change folder", &self.storage_refusal());
             return;
         }
+        let same_folder = folder == view.path;
+        let browsed = self.is_browsed(id);
         let mut next = view;
         next.path = folder.clone();
         let title = lens_title(&next, &current, &self.profile);
-        let (applied, effects) = self.set_lens_folder(id, folder, title, at);
+        let (applied, effects) = self.set_lens_folder(id, folder.clone(), title, at);
         self.run(ui, effects);
         if applied {
             self.unavailable_lenses.remove(&id);
-            self.sync_watches(ui);
+            if same_folder && browsed {
+                // The items are the subfolder's, so Change folder… to the
+                // lens's own folder returns home as browsing up does.
+                self.show_subfolder(ui, id, folder, PathBuf::new());
+            } else {
+                // Change folder… always returns to the lens's own folder.
+                self.forget_browse(id);
+                self.sync_watches(ui);
+            }
             self.resnapshot_settings(ui, id);
         }
     }
@@ -313,15 +320,31 @@ impl App {
         };
         // Removing an item is Explorer's own Delete in the same menu (to the
         // Recycle Bin, as the Delete key does), and taking one back to the
-        // desktop is a drag, so DeskSpace adds only its inline Rename, which
-        // Explorer leaves out of a menu without a view to rename in.
-        let entries = [menu_item(MenuId::RenameItem, "Rename")];
+        // desktop is a drag, so DeskSpace adds its inline Rename, which
+        // Explorer leaves out of a menu without a view to rename in, and Fit
+        // to contents for the space that holds it (D23).
+        let mut entries = vec![menu_item(MenuId::RenameItem, "Rename")];
+        if let Surface::Space(id) = surface {
+            let can_fit = self
+                .config
+                .desktop
+                .space(id)
+                .is_some_and(|space| space.can_fit());
+            entries.push(menu_item(MenuId::Fit, "Fit to contents").enabled(can_fit));
+        }
         match ui.item_menu(&path, &entries, at) {
-            Some(ItemMenuChoice::App(choice))
-                if MenuId::from_id(choice) == Some(MenuId::RenameItem) =>
-            {
-                self.begin_item_rename(ui, surface, item);
-            }
+            Some(ItemMenuChoice::App(choice)) => match MenuId::from_id(choice) {
+                Some(MenuId::RenameItem) => self.begin_item_rename(ui, surface, item),
+                Some(MenuId::Fit) => {
+                    if let Surface::Space(id) = surface
+                        && self.config.desktop.space(id).is_some()
+                    {
+                        let effects = self.fit_space_to_contents(id, at);
+                        self.run(ui, effects);
+                    }
+                }
+                _ => {}
+            },
             Some(ItemMenuChoice::Shell) => {
                 self.icons.invalidate(&path);
                 match surface {
@@ -332,7 +355,7 @@ impl App {
                     Surface::Desktop => self.resync_desktop_layer(ui),
                 }
             }
-            _ => {}
+            None => {}
         }
     }
 
@@ -361,6 +384,28 @@ impl App {
         }
     }
 
+    /// Explorer's menu for a Details header: a check per column, which shows
+    /// or hides it. The menu pumps messages, so the space is looked up again
+    /// after it.
+    pub(super) fn show_details_header_menu(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let entries = details_header_menu(space.view());
+        let Some(column) = ui
+            .popup_menu(&entries, at)
+            .and_then(MenuId::from_id)
+            .and_then(column_choice)
+        else {
+            return;
+        };
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let view = space.view().with_column_toggled(column);
+        self.set_space_view_labelled(ui, id, view, at, "Choose columns");
+    }
+
     pub(super) fn show_space_menu(&mut self, ui: &mut Ui, id: SpaceId, at: Point) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -375,7 +420,7 @@ impl App {
             menu_item(MenuId::Rename, "Rename"),
             menu_item(MenuId::Lock, "Lock position").checked(space.locked()),
         ];
-        if space.user_sized() && !space.locked() {
+        if space.can_fit() {
             entries.push(menu_item(MenuId::Fit, "Fit to contents"));
         }
         entries.push(MenuEntry::Separator);
@@ -392,8 +437,12 @@ impl App {
             space,
             space.theme(&self.config.theme),
         ));
-        entries.push(space_view_menu(space));
+        entries.push(space_view_menu(
+            space,
+            self.shows_extensions(Surface::Space(space.id)),
+        ));
         entries.push(space_sort_menu(space.view(), space.folder_view()));
+        entries.push(space_group_menu(space.view()));
         entries.push(MenuEntry::Separator);
         // The ellipsis promises a dialog, which only non-empty spaces show.
         let delete = if delete_needs_confirmation(space) {
@@ -410,7 +459,7 @@ impl App {
             menu_item(MenuId::Exit, "Exit DeskSpace"),
         ]);
         let lens_view = space.folder_view().cloned();
-        let view = space.view();
+        let view = space.view().clone();
         let rule = view.sort;
         match ui.popup_menu(&entries, at).and_then(MenuId::from_id) {
             Some(MenuId::OpenFolder) => self.open_lens_folder(ui, id),
@@ -438,10 +487,27 @@ impl App {
                         ..view
                     };
                     self.set_space_view(ui, id, next, at);
-                } else if let Some((_, mode)) =
-                    VIEW_PRESETS.iter().find(|(preset, _)| *preset == choice)
-                {
-                    self.set_space_view(ui, id, SpaceView::with_mode(*mode), at);
+                } else if choice == MenuId::CompactView {
+                    let next = SpaceView {
+                        compact: !view.compact,
+                        ..view
+                    };
+                    self.set_space_view(ui, id, next, at);
+                } else if choice == MenuId::FileExtensions {
+                    // The entry checks what the space shows now, so choosing
+                    // it flips to the opposite (W28); `Automatic` is the View
+                    // page's to choose.
+                    let extensions = if self.shows_extensions(Surface::Space(id)) {
+                        Extensions::Hide
+                    } else {
+                        Extensions::Show
+                    };
+                    let next = SpaceView { extensions, ..view };
+                    self.set_space_view(ui, id, next, at);
+                } else if let Some(next) = group_after(&view, choice) {
+                    self.set_space_view(ui, id, next, at);
+                } else if let Some(next) = view_after(&view, choice) {
+                    self.set_space_view(ui, id, next, at);
                 } else if let Some(view) = lens_view
                     .as_ref()
                     .and_then(|view| lens_view_after(view, choice))
@@ -450,7 +516,7 @@ impl App {
                     self.set_lens_view(ui, id, view, at);
                 } else if let Some(next) = sort_rule_after(rule, choice) {
                     self.sort_space(ui, id, next, at);
-                } else if let Some(next) = keep_sorted_after(view, choice, lens_view.is_some()) {
+                } else if let Some(next) = keep_sorted_after(&view, choice, lens_view.is_some()) {
                     self.set_space_view(ui, id, next, at);
                 } else if let Some((_, _, percent)) = OPACITY_PRESETS
                     .iter()
@@ -651,7 +717,7 @@ impl App {
     /// page's defaults (W23). Pure, so the defaults are tested without a
     /// folder dialog.
     fn new_lens_settings(&self, path: PathBuf) -> (FolderView, SpaceView) {
-        let defaults = self.config.window.new_lens;
+        let defaults = self.config.window.new_lens.clone();
         (
             FolderView {
                 path,
@@ -783,7 +849,8 @@ pub(super) fn menu_item(id: MenuId, label: impl Into<String>) -> MenuEntry {
 }
 
 /// The command a new space is made with, from the window's defaults: its
-/// title, place, size, lock, and the icon the New spaces page asks for.
+/// title, place, size, lock, view, and the icon the New spaces page asks
+/// for.
 fn new_space_command(
     window: &deskspace_config::WindowSettings,
     origin: Point,
@@ -796,6 +863,7 @@ fn new_space_command(
         size,
         locked: window.new_space_locked,
         icon: window.new_space_icon.space_icon(),
+        view: window.new_space_view.clone(),
     }
 }
 
@@ -861,8 +929,10 @@ fn new_shortcut_choice(choice: MenuId) -> Option<NewShortcut> {
 }
 
 /// The "View" submenu: one radio item per icon view, checking the space's
-/// current mode.
-fn space_view_menu(space: &Space) -> MenuEntry {
+/// current mode, then the status bar and file-extension checks. The
+/// extension entry checks what the space shows now, which `Automatic`
+/// decides with Explorer's own option (W28).
+fn space_view_menu(space: &Space, shows_extensions: bool) -> MenuEntry {
     let mut entries: Vec<MenuEntry> = VIEW_PRESETS
         .iter()
         .map(|(id, mode)| {
@@ -875,15 +945,43 @@ fn space_view_menu(space: &Space) -> MenuEntry {
         .collect();
     entries.extend([
         MenuEntry::Separator,
+        menu_item(MenuId::CompactView, "Compact view").checked(space.view().compact),
         menu_item(MenuId::StatusBar, "Status bar").checked(space.view().status_bar),
+        menu_item(MenuId::FileExtensions, "File name extensions").checked(shows_extensions),
     ]);
     MenuEntry::submenu("View", entries)
+}
+
+/// The Details header's menu: a check per column, on for the ones `view` shows.
+/// Name is always shown, so its entry is on and grey (D18).
+fn details_header_menu(view: &SpaceView) -> Vec<MenuEntry> {
+    COLUMN_MENU_IDS
+        .iter()
+        .map(|(id, column)| {
+            let label = DETAILS_COLUMNS
+                .iter()
+                .find(|row| row.id == *column)
+                .map_or("", |row| row.label);
+            let shown = view.columns.iter().any(|spec| spec.id == *column);
+            menu_item(*id, label)
+                .checked(shown)
+                .enabled(*column != Column::Name)
+        })
+        .collect()
+}
+
+/// The column a Details header menu choice names, or `None` for any other id.
+fn column_choice(choice: MenuId) -> Option<Column> {
+    COLUMN_MENU_IDS
+        .iter()
+        .find(|(id, _)| *id == choice)
+        .map(|(_, column)| *column)
 }
 
 /// The "Sort by" submenu (D17): Explorer's four keys as radio items, the
 /// direction, then Folders first and Keep sorted. A lens also gets its
 /// hidden-files toggle, which DeskSpace has no other menu for.
-fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
+fn space_sort_menu(view: &SpaceView, lens: Option<&FolderView>) -> MenuEntry {
     let rule = view.sort;
     let mut entries: Vec<MenuEntry> = SORT_MENU_IDS
         .iter()
@@ -911,16 +1009,78 @@ fn space_sort_menu(view: SpaceView, lens: Option<&FolderView>) -> MenuEntry {
     MenuEntry::submenu("Sort by", entries)
 }
 
+/// The "Group by" submenu, as Explorer's: (None), the keys, then the direction,
+/// which means nothing until a key is chosen.
+fn space_group_menu(view: &SpaceView) -> MenuEntry {
+    let group = view.group;
+    let mut entries = vec![menu_item(MenuId::GroupNone, GROUP_NONE).checked(group.is_none())];
+    entries.extend(GROUP_MENU_IDS.iter().map(|(id, key)| {
+        let label = SORT_KEYS
+            .iter()
+            .find(|(row, _)| row == key)
+            .map_or("", |(_, label)| *label);
+        menu_item(*id, label).checked(group.is_some_and(|group| group.key == *key))
+    }));
+    entries.extend([
+        MenuEntry::Separator,
+        menu_item(MenuId::GroupAscending, "Ascending")
+            .checked(group.is_some_and(|group| !group.descending))
+            .enabled(group.is_some()),
+        menu_item(MenuId::GroupDescending, "Descending")
+            .checked(group.is_some_and(|group| group.descending))
+            .enabled(group.is_some()),
+    ]);
+    MenuEntry::submenu("Group by", entries)
+}
+
+/// The view a Group by choice leaves, or `None` when `choice` is not one. A key
+/// keeps the direction, and a direction needs a key.
+fn group_after(view: &SpaceView, choice: MenuId) -> Option<SpaceView> {
+    let with_group = |group| SpaceView {
+        group,
+        ..view.clone()
+    };
+    if let Some((_, key)) = GROUP_MENU_IDS.iter().find(|(id, _)| *id == choice) {
+        let descending = view.group.is_some_and(|group| group.descending);
+        return Some(with_group(Some(GroupBy {
+            key: *key,
+            descending,
+        })));
+    }
+    let direction = |descending| {
+        view.group.map(|group| {
+            with_group(Some(GroupBy {
+                descending,
+                ..group
+            }))
+        })
+    };
+    match choice {
+        MenuId::GroupNone => Some(with_group(None)),
+        MenuId::GroupAscending => direction(false),
+        MenuId::GroupDescending => direction(true),
+        _ => None,
+    }
+}
+
 /// The view a Keep sorted choice leaves, or `None` when it is not that
 /// choice. A lens is always kept sorted, so its entry is greyed and changes
 /// nothing (D17).
-fn keep_sorted_after(view: SpaceView, choice: MenuId, lens: bool) -> Option<SpaceView> {
+/// The view a View ▸ choice leaves, or `None` when `choice` is not a view.
+fn view_after(view: &SpaceView, choice: MenuId) -> Option<SpaceView> {
+    VIEW_PRESETS
+        .iter()
+        .find(|(preset, _)| *preset == choice)
+        .map(|(_, mode)| view.with_mode(*mode))
+}
+
+fn keep_sorted_after(view: &SpaceView, choice: MenuId, lens: bool) -> Option<SpaceView> {
     if choice != MenuId::KeepSorted || lens {
         return None;
     }
     Some(SpaceView {
         keep_sorted: !view.keep_sorted,
-        ..view
+        ..view.clone()
     })
 }
 
@@ -1020,6 +1180,31 @@ mod tests {
     }
 
     #[test]
+    fn a_new_space_takes_the_configured_view() {
+        use deskspace_core::{Desktop, SpaceView, ViewMode};
+
+        let mut config = Config::new();
+        config.window.new_space_view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default().with_mode(ViewMode::Details)
+        };
+        let mut desktop = Desktop::new();
+        let id = desktop.next_space_id();
+        fixtures::apply(
+            &mut desktop,
+            new_space_command(
+                &config.window,
+                Point::new(0, 0),
+                Size::new(240, 120),
+                "Files".to_owned(),
+            ),
+        );
+        let view = desktop.space(id).unwrap().view();
+        assert_eq!(view.mode, ViewMode::Details);
+        assert!(view.status_bar);
+    }
+
+    #[test]
     fn the_new_shortcut_menu_maps_each_entry_back() {
         let MenuEntry::Submenu { label, entries, .. } = new_shortcut_menu(false) else {
             panic!("expected a submenu");
@@ -1066,15 +1251,15 @@ mod tests {
             .collect()
     }
 
-    fn sort_entries(view: SpaceView, lens: Option<&FolderView>) -> Vec<MenuEntry> {
+    fn sort_entries(view: &SpaceView, lens: Option<&FolderView>) -> Vec<MenuEntry> {
         match space_sort_menu(view, lens) {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
         }
     }
 
-    fn view_entries(space: &Space) -> Vec<MenuEntry> {
-        match space_view_menu(space) {
+    fn view_entries(space: &Space, shows_extensions: bool) -> Vec<MenuEntry> {
+        match space_view_menu(space, shows_extensions) {
             MenuEntry::Submenu { entries, .. } => entries,
             _ => panic!("expected a submenu"),
         }
@@ -1112,15 +1297,15 @@ mod tests {
             &mut desktop,
             Command::SetSpaceView {
                 id,
-                view: SpaceView::with_mode(ViewMode::LargeIcons),
+                view: SpaceView::default().with_mode(ViewMode::LargeIcons),
             },
         );
-        let entries = view_entries(desktop.space(id).unwrap());
+        let entries = view_entries(desktop.space(id).unwrap(), false);
         let checks = item_checks(&entries);
         assert_eq!(
             checks.len(),
-            VIEW_PRESETS.len() + 1,
-            "the views and the Status bar toggle"
+            VIEW_PRESETS.len() + 3,
+            "the views and the three checks"
         );
         assert_eq!(
             checks.iter().filter(|(_, checked)| *checked).count(),
@@ -1142,8 +1327,31 @@ mod tests {
             })
             .collect();
         let mut expected: Vec<&str> = VIEW_MODES.iter().map(|(_, label, _)| *label).collect();
+        expected.push("Compact view");
         expected.push("Status bar");
+        expected.push("File name extensions");
         assert_eq!(labels, expected);
+    }
+
+    #[test]
+    fn the_view_menu_extension_check_follows_what_the_space_shows() {
+        use crate::fixtures::create_space;
+        use deskspace_core::Desktop;
+
+        let mut desktop = Desktop::new();
+        let id = create_space(&mut desktop, "A", Rect::new(0, 0, 100, 100));
+        let space = desktop.space(id).unwrap();
+        for (shows, checked) in [(true, true), (false, false)] {
+            let entries = view_entries(space, shows);
+            assert_eq!(
+                item_checks(&entries)
+                    .into_iter()
+                    .find(|(id, _)| *id == Some(MenuId::FileExtensions))
+                    .map(|(_, checked)| checked),
+                Some(checked),
+                "the check follows what the space shows now ({shows})"
+            );
+        }
     }
 
     #[test]
@@ -1176,7 +1384,7 @@ mod tests {
             folders_first: true,
         };
         let entries = sort_entries(
-            SpaceView {
+            &SpaceView {
                 sort: rule,
                 ..SpaceView::default()
             },
@@ -1209,7 +1417,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            checked(&sort_entries(SpaceView::default(), None)),
+            checked(&sort_entries(&SpaceView::default(), None)),
             [MenuId::SortByName, MenuId::SortAscending]
         );
     }
@@ -1220,9 +1428,9 @@ mod tests {
             show_hidden: true,
             ..FolderView::default()
         };
-        let checks = item_checks(&sort_entries(SpaceView::default(), Some(&view)));
+        let checks = item_checks(&sort_entries(&SpaceView::default(), Some(&view)));
         assert!(checks.contains(&(Some(MenuId::ShowHidden), true)));
-        let normal = item_checks(&sort_entries(SpaceView::default(), None));
+        let normal = item_checks(&sort_entries(&SpaceView::default(), None));
         assert!(
             !normal.iter().any(|(id, _)| *id == Some(MenuId::ShowHidden)),
             "a normal space has no hidden-files choice"
@@ -1245,13 +1453,13 @@ mod tests {
             keep_sorted: true,
             ..SpaceView::default()
         };
-        let checks = item_checks(&sort_entries(kept, None));
+        let checks = item_checks(&sort_entries(&kept, None));
         assert!(checks.contains(&(Some(MenuId::KeepSorted), true)));
-        let normal = sort_entries(SpaceView::default(), None);
+        let normal = sort_entries(&SpaceView::default(), None);
         assert_eq!(item_enabled(&normal, MenuId::KeepSorted), Some(true));
         assert!(item_checks(&normal).contains(&(Some(MenuId::KeepSorted), false)));
 
-        let lens = sort_entries(kept, Some(&FolderView::default()));
+        let lens = sort_entries(&kept, Some(&FolderView::default()));
         assert_eq!(item_enabled(&lens, MenuId::KeepSorted), Some(false));
         assert!(
             item_checks(&lens).contains(&(Some(MenuId::KeepSorted), true)),
@@ -1260,15 +1468,161 @@ mod tests {
     }
 
     #[test]
+    fn a_view_choice_keeps_the_sort_rule_and_the_status_bar() {
+        let view = SpaceView {
+            sort: SortRule {
+                key: SortKey::Modified,
+                descending: true,
+                folders_first: false,
+            },
+            keep_sorted: false,
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        let next = view_after(&view, MenuId::ViewDetails).unwrap();
+        assert_eq!(next.mode, deskspace_core::ViewMode::Details);
+        assert_eq!(next.sort, view.sort);
+        assert!(!next.keep_sorted);
+        assert!(next.status_bar);
+        assert_eq!(view_after(&view, MenuId::KeepSorted), None);
+    }
+
+    #[test]
+    fn the_group_menu_checks_the_current_grouping() {
+        let entries = |view: &SpaceView| match space_group_menu(view) {
+            MenuEntry::Submenu { entries, .. } => entries,
+            _ => panic!("expected a submenu"),
+        };
+        let view = SpaceView::default();
+        let checked = |entries: &[MenuEntry]| -> Vec<MenuId> {
+            item_checks(entries)
+                .into_iter()
+                .filter(|(_, checked)| *checked)
+                .filter_map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(checked(&entries(&view)), [MenuId::GroupNone]);
+        assert_eq!(
+            item_enabled(&entries(&view), MenuId::GroupAscending),
+            Some(false),
+            "no direction without a key"
+        );
+
+        let grouped = group_after(&view, MenuId::GroupBySize).unwrap();
+        assert_eq!(
+            checked(&entries(&grouped)),
+            [MenuId::GroupBySize, MenuId::GroupAscending]
+        );
+        assert_eq!(
+            item_enabled(&entries(&grouped), MenuId::GroupDescending),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn a_group_choice_keeps_the_rest_of_the_view() {
+        use deskspace_core::SortKey;
+
+        let view = SpaceView {
+            status_bar: true,
+            ..SpaceView::default()
+        };
+        assert_eq!(group_after(&view, MenuId::Fold), None);
+        assert_eq!(
+            group_after(&view, MenuId::GroupDescending),
+            None,
+            "a direction needs a key"
+        );
+        let by_size = group_after(&view, MenuId::GroupBySize).unwrap();
+        assert!(by_size.status_bar);
+        let down = group_after(&by_size, MenuId::GroupDescending).unwrap();
+        assert_eq!(
+            down.group,
+            Some(GroupBy {
+                key: SortKey::Size,
+                descending: true
+            })
+        );
+        let by_name = group_after(&down, MenuId::GroupByName).unwrap();
+        assert_eq!(
+            by_name.group,
+            Some(GroupBy {
+                key: SortKey::Name,
+                descending: true
+            }),
+            "a key keeps the direction"
+        );
+        assert_eq!(
+            group_after(&by_name, MenuId::GroupNone).unwrap().group,
+            None
+        );
+    }
+
+    #[test]
+    fn every_sort_key_can_group() {
+        for (key, _) in SORT_KEYS {
+            assert!(GROUP_MENU_IDS.iter().any(|(_, row)| *row == key), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn the_header_menu_checks_the_columns_shown_and_greys_name() {
+        let view = SpaceView::default();
+        let entries = details_header_menu(&view);
+        assert_eq!(
+            item_checks(&entries),
+            [
+                (Some(MenuId::ColumnName), true),
+                (Some(MenuId::ColumnModified), true),
+                (Some(MenuId::ColumnKind), true),
+                (Some(MenuId::ColumnSize), true),
+                (Some(MenuId::ColumnCreated), false),
+            ]
+        );
+        assert_eq!(item_enabled(&entries, MenuId::ColumnName), Some(false));
+        assert_eq!(item_enabled(&entries, MenuId::ColumnSize), Some(true));
+
+        let shown = view.with_column_toggled(Column::Created);
+        let hidden = shown.with_column_toggled(Column::Size);
+        assert_eq!(
+            item_checks(&details_header_menu(&hidden)),
+            [
+                (Some(MenuId::ColumnName), true),
+                (Some(MenuId::ColumnModified), true),
+                (Some(MenuId::ColumnKind), true),
+                (Some(MenuId::ColumnSize), false),
+                (Some(MenuId::ColumnCreated), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_header_menu_choice_names_its_column() {
+        assert_eq!(column_choice(MenuId::ColumnSize), Some(Column::Size));
+        assert_eq!(column_choice(MenuId::ColumnCreated), Some(Column::Created));
+        assert_eq!(column_choice(MenuId::Fold), None);
+    }
+
+    #[test]
+    fn every_column_has_a_header_menu_entry() {
+        for column in Column::ALL {
+            assert!(
+                COLUMN_MENU_IDS.iter().any(|(_, row)| *row == column),
+                "{column:?}"
+            );
+        }
+    }
+
+    #[test]
     fn keep_sorted_toggles_a_normal_space_only() {
         let view = SpaceView::default();
-        let on = keep_sorted_after(view, MenuId::KeepSorted, false).unwrap();
+        let on = keep_sorted_after(&view, MenuId::KeepSorted, false).unwrap();
         assert!(on.keep_sorted);
         assert_eq!(on.sort, view.sort, "the rule is kept");
-        let off = keep_sorted_after(on, MenuId::KeepSorted, false).unwrap();
+        let off = keep_sorted_after(&on, MenuId::KeepSorted, false).unwrap();
         assert!(!off.keep_sorted);
-        assert_eq!(keep_sorted_after(view, MenuId::KeepSorted, true), None);
-        assert_eq!(keep_sorted_after(view, MenuId::FoldersFirst, false), None);
+        assert_eq!(keep_sorted_after(&view, MenuId::KeepSorted, true), None);
+        assert_eq!(keep_sorted_after(&view, MenuId::FoldersFirst, false), None);
     }
 
     #[test]
@@ -1410,7 +1764,13 @@ mod tests {
             ]
         );
 
-        app.rename_space(id, "Work".to_string());
+        app.commit_title(
+            id,
+            Command::RenameSpace {
+                id,
+                title: "Work".to_string(),
+            },
+        );
         assert_eq!(
             app.undo_entries(),
             [

@@ -201,6 +201,7 @@ mod tests {
             size: deskspace_core::Size::new(100, 100),
             locked: false,
             icon: deskspace_core::SpaceIcon::None,
+            view: deskspace_core::SpaceView::default(),
         };
         let bounds = deskspace_core::Rect::new(0, 0, 1920, 1040);
         assert!(config.desktop.apply(create, bounds).is_applied());

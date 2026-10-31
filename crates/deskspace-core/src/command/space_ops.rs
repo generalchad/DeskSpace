@@ -4,33 +4,35 @@ use std::collections::HashSet;
 
 use super::CommandOutcome;
 use crate::desktop::Desktop;
-use crate::geometry::{Point, Rect, Size};
+use crate::geometry::{Point, Rect};
 use crate::icon::SpaceIcon;
 use crate::id::SpaceId;
 use crate::layout::{
-    GridSpec, arrange_space, clamp_to_bounds, fit_rect_height, fit_rect_width, position_items,
-    resize_rect, resolve_collisions, snap_rect,
+    GridSpec, arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions,
+    snap_rect,
 };
 use crate::sort::SortRule;
 use crate::source::{LensTitle, SpaceSource};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
+use crate::view_layout::{ViewMetrics, fit_size};
 
 impl Desktop {
     pub(super) fn apply_create_space(
         &mut self,
         title: String,
-        at: Point,
-        size: Size,
+        rect: Rect,
         locked: bool,
         icon: SpaceIcon,
+        view: SpaceView,
         bounds: Rect,
     ) -> CommandOutcome {
-        let rect = clamp_to_bounds(Rect::new(at.x, at.y, size.width, size.height), bounds);
+        let rect = clamp_to_bounds(rect, bounds);
         let id = self.add_space(title, rect);
         if let Some(space) = self.space_mut(id) {
             space.locked = locked;
             space.icon = icon;
+            space.view = view;
         }
         CommandOutcome::Applied
     }
@@ -165,6 +167,7 @@ impl Desktop {
         id: SpaceId,
         edges: ResizeEdges,
         to: Point,
+        metrics: ViewMetrics,
         layout: GridSpec,
         bounds: Rect,
     ) -> CommandOutcome {
@@ -175,7 +178,13 @@ impl Desktop {
             let min = layout.min_space_size();
             let resized = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
             space.rect = if layout.fit_to_grid {
-                fit_to_whole_cells(resized, edges, &layout)
+                let chrome =
+                    space.title_height + space.unfolded_status_bar_height() + metrics.header;
+                let fit_columns = !space.view().mode.rows_fill_width();
+                clamp_to_bounds(
+                    metrics.fit_rect(resized, edges, chrome, fit_columns),
+                    bounds,
+                )
             } else {
                 resized
             };
@@ -188,6 +197,7 @@ impl Desktop {
     pub(super) fn apply_fit_to_contents(
         &mut self,
         id: SpaceId,
+        metrics: ViewMetrics,
         layout: GridSpec,
         bounds: Rect,
     ) -> CommandOutcome {
@@ -197,6 +207,22 @@ impl Desktop {
             }
             space.user_sized = false;
             arrange_space(space, layout);
+            if space.view.places_by_order() {
+                let size = fit_size(space, metrics);
+                space.rect.width = size.width;
+                space.rect.height = size.height;
+            } else {
+                // Fit an icon grid into a narrower work area with whole
+                // columns, then let it scroll down (D23).
+                let columns = layout.columns_for(bounds.width);
+                if columns < layout.columns {
+                    arrange_space(space, GridSpec { columns, ..layout });
+                }
+            }
+            // No fitted space is larger than its work area; items beyond it
+            // scroll (D23).
+            space.rect.width = space.rect.width.min(bounds.width);
+            space.rect.height = space.rect.height.min(bounds.height);
             space.rect = clamp_to_bounds(space.rect, bounds);
             CommandOutcome::Applied
         })
@@ -294,21 +320,5 @@ impl Desktop {
         }
         resolve_collisions(&mut self.spaces, layout.gap, bounds);
         CommandOutcome::Applied
-    }
-}
-
-/// With `fit_to_grid`, a resize lands on whole columns and rows along the
-/// dragged axes, so the padding is even all round instead of the remainder
-/// sitting on one edge.
-fn fit_to_whole_cells(rect: Rect, edges: ResizeEdges, layout: &GridSpec) -> Rect {
-    let rect = if edges.left || edges.right {
-        fit_rect_width(rect, edges, layout)
-    } else {
-        rect
-    };
-    if edges.top || edges.bottom {
-        fit_rect_height(rect, edges, layout)
-    } else {
-        rect
     }
 }

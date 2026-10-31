@@ -15,10 +15,14 @@ pub struct PreparedScene {
     pub(super) cells: Vec<Vec<Vec<u16>>>,
     /// The Details header labels, encoded once.
     pub(super) header: Vec<Vec<u16>>,
+    /// The group headers' labels, encoded once.
+    pub(super) group_labels: Vec<Vec<u16>>,
     /// The status bar's segments joined with Explorer's gaps, encoded once.
     pub(super) status_segments: Vec<u16>,
     /// `scene.placeholder`, encoded once.
     pub(super) placeholder: Option<Vec<u16>>,
+    /// `scene.notice`, encoded once.
+    pub(super) notice: Option<Vec<u16>>,
 }
 
 impl PreparedScene {
@@ -58,6 +62,11 @@ impl PreparedScene {
                     .collect()
             })
             .unwrap_or_default();
+        let group_labels = scene
+            .group_headers
+            .iter()
+            .map(|header| header.label.encode_utf16().collect())
+            .collect();
         let status_segments = scene
             .status
             .as_ref()
@@ -65,6 +74,10 @@ impl PreparedScene {
             .unwrap_or_default();
         let placeholder = scene
             .placeholder
+            .as_ref()
+            .map(|text| text.encode_utf16().collect());
+        let notice = scene
+            .notice
             .as_ref()
             .map(|text| text.encode_utf16().collect());
         Self {
@@ -75,8 +88,10 @@ impl PreparedScene {
             labels,
             cells,
             header,
+            group_labels,
             status_segments,
             placeholder,
+            notice,
         }
     }
 

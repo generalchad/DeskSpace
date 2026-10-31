@@ -232,6 +232,16 @@ impl Desktop {
         }
     }
 
+    /// Caps every lens's filter lists (`FolderView::clamped`), so a
+    /// hand-edited config cannot make listing a folder slow.
+    pub fn clamp_lens_views(&mut self) {
+        for space in &mut self.spaces {
+            if let crate::source::SpaceSource::Folder(view) = &mut space.source {
+                *view = std::mem::take(view).clamped();
+            }
+        }
+    }
+
     /// Drops items a hand-edited file listed for a lens. Lens items are a live
     /// view of the folder and are never persisted (M4), so the next sync fills
     /// them again.

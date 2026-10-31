@@ -120,6 +120,18 @@ pub mod field {
     pub const LENS_TITLE_HEADING: u32 = 116;
     pub const LENS_TITLE_MODE: u32 = 117;
     pub const LENS_TITLE_TEXT: u32 = 118;
+    pub const LENS_FILTER_HEADING: u32 = 141;
+    pub const LENS_SHOW_ONLY: u32 = 142;
+    pub const LENS_HIDE: u32 = 143;
+
+    pub const NEW_SPACES_VIEW_HEADING: u32 = 144;
+    pub const NEW_SPACE_VIEW_MODE: u32 = 145;
+    pub const NEW_SPACE_STATUS_BAR: u32 = 146;
+    pub const NEW_SPACES_SORT_HEADING: u32 = 147;
+    pub const NEW_SPACE_SORT_KEY: u32 = 148;
+    pub const NEW_SPACE_ORDER: u32 = 149;
+    pub const NEW_SPACE_FOLDERS_FIRST: u32 = 150;
+    pub const NEW_SPACE_KEEP_SORTED: u32 = 151;
 
     pub const VIEW_HEADING: u32 = 119;
     pub const VIEW_MODE: u32 = 120;
@@ -129,6 +141,10 @@ pub mod field {
     pub const VIEW_ORDER: u32 = 124;
     pub const VIEW_FOLDERS_FIRST: u32 = 125;
     pub const VIEW_KEEP_SORTED: u32 = 126;
+    pub const VIEW_EXTENSIONS: u32 = 152;
+    pub const VIEW_COMPACT: u32 = 153;
+    pub const VIEW_GROUP: u32 = 154;
+    pub const VIEW_GROUP_ORDER: u32 = 155;
 
     pub const LENSES_VIEW_HEADING: u32 = 127;
     pub const LENSES_VIEW_MODE: u32 = 128;
@@ -140,6 +156,8 @@ pub mod field {
     pub const LENSES_SHOW_HIDDEN: u32 = 134;
     pub const LENSES_TITLE_HEADING: u32 = 135;
     pub const LENSES_TITLE_MODE: u32 = 136;
+    pub const LENSES_GROUP: u32 = 156;
+    pub const LENSES_GROUP_ORDER: u32 = 157;
 }
 
 /// The pages, in build order. The first `LOOK_PAGE_COUNT` hold look settings,

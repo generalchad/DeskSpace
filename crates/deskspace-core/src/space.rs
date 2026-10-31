@@ -183,7 +183,7 @@ impl Serialize for Space {
             title_height: self.title_height,
             user_sized: self.user_sized,
             icon: self.icon.clone(),
-            view: self.view,
+            view: self.view.clone(),
             look: self.look.as_ref(),
             source: (!self.source.is_items()).then_some(&self.source),
             items: (!self.is_lens()).then_some(self.items.as_slice()),
@@ -237,8 +237,8 @@ impl Space {
     }
 
     /// How the space lays its items out (D17).
-    pub fn view(&self) -> SpaceView {
-        self.view
+    pub fn view(&self) -> &SpaceView {
+        &self.view
     }
 
     /// Whether the space mirrors a folder (M4).
@@ -310,11 +310,33 @@ impl Space {
     /// The status bar's height, scaled with the title bar (so a zoom leaves it
     /// alone), or 0 while the view hides it or the space is folded.
     pub fn status_bar_height(&self) -> i32 {
-        if self.folded || !self.view.status_bar {
+        if self.folded {
+            return 0;
+        }
+        self.unfolded_status_bar_height()
+    }
+
+    /// The status bar's height once the space is open, folded or not, for
+    /// sizing a space that may be unfolded later.
+    pub(crate) fn unfolded_status_bar_height(&self) -> i32 {
+        if !self.view.status_bar {
             return 0;
         }
         (STATUS_BAR_HEIGHT as f32 * self.title_height as f32 / DEFAULT_TITLE_HEIGHT as f32).round()
             as i32
+    }
+
+    /// Whether Fit to contents would do anything: an icon view already fits a
+    /// space the user has not sized, while a view that places items by order
+    /// fits only when asked, so it can always be asked again.
+    pub fn can_fit(&self) -> bool {
+        !self.locked && (self.user_sized || self.view.places_by_order())
+    }
+
+    /// Whether dragging may not rearrange the items: the space holds its sort,
+    /// or groups them (D18).
+    pub fn order_is_fixed(&self) -> bool {
+        self.keeps_sorted() || self.view.group.is_some()
     }
 
     /// The edges a resize grabbed at `point` would move. Corners are wider
@@ -448,6 +470,33 @@ mod tests {
             Rect::new(10, 20, 200, DEFAULT_TITLE_HEIGHT)
         );
         assert!(space.content_rect().is_empty());
+    }
+
+    #[test]
+    fn a_kept_order_or_a_grouping_fixes_the_order() {
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(10, 20, 200, 300));
+        assert!(!space.order_is_fixed());
+        space.view.keep_sorted = true;
+        assert!(space.order_is_fixed());
+        space.view.keep_sorted = false;
+        space.view.group = Some(crate::view::GroupBy {
+            key: crate::item::SortKey::Name,
+            descending: false,
+        });
+        assert!(space.order_is_fixed());
+    }
+
+    #[test]
+    fn only_a_fit_that_would_do_something_is_offered() {
+        let mut space = Space::new(SpaceId(1), "F", Rect::new(10, 20, 200, 300));
+        assert!(!space.can_fit(), "an icon view already fits");
+        space.user_sized = true;
+        assert!(space.can_fit());
+        space.user_sized = false;
+        space.view = SpaceView::default().with_mode(crate::view::ViewMode::List);
+        assert!(space.can_fit(), "an order-placed view fits only when asked");
+        space.locked = true;
+        assert!(!space.can_fit());
     }
 
     #[test]

@@ -4387,3 +4387,652 @@ until I5-I6 all land, so no partial build hides the desktop.
     only the new method and its callers' use of its result.
   - Done 2026-10-27: `shows_extensions` is in `app/view.rs`; the
     rename, selection, settings-preview, and scene builders call it.
+
+- [x] **W24. A listing carries the folder it read (platform, app).**
+  Any time.
+  - Why: `FolderListing::Listed` has no path, and `WatchKey::Space(id)`
+    keeps its key when a lens changes folder. So a listing posted for the
+    old folder, still in the queue when Change folder… runs, is applied
+    to the new one. W42 makes this happen on every step into a
+    subfolder.
+  - `input.rs`: `Event::FolderChanged` gains `folder: PathBuf`, the path
+    the worker listed (or found unavailable). `win32/folder_watch.rs`
+    fills it from the watch's own record.
+  - `app/lens.rs`: a pure `listing_is_current(listed: &Path, shown:
+    &Path) -> bool` (without case, `/` and `\` alike). A stale listing is
+    dropped with a `debug!` line. The desktop layer's listing gets the
+    same check against the Desktop folder.
+  - Tests: the pure check (same path, another case, other slashes,
+    another folder); the controller decode keeps the path.
+  - Done when: also `CONTEXT.md` section 6 (Desktop shell) says a
+    listing names its folder.
+  - Done 2026-10-29: `Event::FolderChanged` carries `folder`, the path
+    of the slot that listed it. The stale listing came through the
+    runtime's pending queue: a change decoded during `pick_folder`'s pump
+    waited there until after Change folder… had re-pointed the watch.
+    `on_lens_listing` drops a listing whose folder the lens no longer
+    shows (`lens_shows`, tested without a `Ui`). `on_desktop_listing`
+    re-points the watch instead, since a mismatch there means the Desktop
+    moved. The controller's decode has no test: it needs a live runtime.
+
+- [x] **W25. The storage check runs off the UI thread (platform, app).**
+  Any time.
+  - Why: `ItemStore::allows_lens` calls `std::fs::canonicalize` on the
+    lens's folder and on the store, on the UI thread. `sync_watches`
+    calls it twice for every lens, through `desired_watches` and
+    `refused_lenses`, each time the watches are reconciled. On an
+    unreachable network share, `canonicalize` can block until the SMB
+    timeout, freezing every space. It is also the only junction guard,
+    so it must not simply be dropped.
+  - Canonicalize the store once, at startup (`ItemStore::new`), and keep
+    it.
+  - `win32/folder_watch.rs`: when the worker opens a watched folder's
+    handle, it asks for the handle's final path
+    (`GetFinalPathNameByHandleW`, Microsoft Learn link beside it) and
+    refuses a folder that is the store or inside it. It posts the refusal
+    as a new `FolderListing::Refused`. That costs no extra IO, since the
+    handle is already open. The store root is passed in when the watch
+    starts.
+  - `app/lens.rs`: `desired_watches` and `refused_lenses` stop calling
+    `allows_lens`; a `Refused` listing marks the lens unavailable, as
+    `refused_lenses` does today. `allows_lens` stays only where a user
+    has just picked a folder (New lens…, Change folder…), and it
+    compares against the stored root.
+  - Tests: a pure `inside_store(final_path, root)` (without case, with
+    the `\\?\` prefix `GetFinalPathNameByHandleW` adds); the app turns
+    `Refused` into an unavailable lens. One platform test makes a
+    junction into a temp "store" with `cmd /c mklink /J`, which needs no
+    admin rights, and expects `Refused`.
+  - **[needs human]** check: a lens on a share whose server is off
+    leaves the other spaces responsive at startup; a lens on a junction
+    into the store shows "Folder not available".
+  - Done 2026-10-29. Settled with the maintainer before coding: the store
+    travels with each watch (`Ui::watch_folder(key, path, store)`); the
+    drop, paste, and New shortcut checks keep `allows_lens`, since each runs
+    once per user action and dropping them would let a drop through a
+    junction into the store; a store not created yet resolves through its
+    parent; a refused folder retries on the 5 s cadence like a missing one.
+    `is_inside` moved to the platform (`win32/names.rs`) and compares
+    `\\?\` and plain drives and shares alike; the task's `inside_store` is
+    that function. A folder whose final path cannot be read is checked by
+    the path as given, as `canonicalize`'s fallback always did.
+
+- [x] **W42. Browse into a subfolder (app).** **[needs human]** After:
+  W24, W25.
+  - `App` keeps, per lens, the folder shown below its own one: session
+    state, a relative path, empty by default. `App::lens_folder(id)`
+    joins the two. A pure `browse_into(root, shown, entry) ->
+    Option<PathBuf>` refuses anything that is not a directory entry of
+    the folder shown, refuses a shortcut, and refuses a result that does
+    not stay inside `root` (D18).
+  - Every app read of `FolderView.path` that means "where the files go"
+    switches to `lens_folder`: `drop_into_lens`, paste, the shortcut
+    writer's lens path, delete, Open folder, and `desired_watches`.
+    List each switched site in the commit body; leave W10 and W11's
+    reads alone.
+  - Double-clicking a directory in a lens browses into it. That empties
+    the selection, re-points the lens's watch (W24 drops the old
+    listing), and scrolls to the top. The title bar shows `Root › Sub ›
+    Sub2`, clipped from the left when too long, from a pure
+    `browse_title`.
+  - Change folder…, a restart, and deleting the lens forget the folder
+    shown.
+  - Tests: `browse_into` (a directory, a file, a `.lnk`, a name with
+    `..` in it, a different case); `browse_title`; each switched site
+    reads the folder shown.
+  - **[needs human]** check: browse two levels down in a Downloads
+    lens; drop, paste, New shortcut, and Delete there all act on the
+    subfolder; deleting the subfolder in Explorer while it is shown shows
+    "Folder not available"; a junction to DeskSpace's store inside the
+    lens shows unavailable when browsed into (W25).
+  - Done 2026-10-29. Settled with the maintainer before coding: the
+    title is cut from its start by the painter (`title_keeps_end`, measured
+    once per title and width), a small platform change beyond "(app)"; and
+    Enter on a folder browses too, sharing `App::open_item` with
+    double-click. `App::browsed` keeps the lens folder each browse was made
+    under, so a changed folder ignores it at once and `sync_watches` drops
+    it; that covers Change folder…, its undo, and deleting the lens without
+    a call at each, and Change folder… also drops it for the same folder.
+    `lens_folder` moved to `app/lens.rs`. After review: the title icon
+    follows the folder shown, so it and the unavailable flag agree; a
+    browse keeps the lens current, so the keys still reach it; the cut
+    measures DirectWrite clusters once per title, so it splits no
+    character and a resize recuts without layout.
+
+- [x] **W43. Back and Up (app, platform).** **[needs human]** After:
+  W42.
+  - A Back button at the left of the title bar, before the folder icon,
+    only while a lens shows a subfolder (a `SpaceScene` field, the "new
+    visual" recipe). Clicking it shows the parent. So do Alt+Left,
+    Backspace, Alt+Up (the key recipe, under `WATCH_PASTE`, so they act
+    only while a space is current), and the mouse's back button
+    (`XBUTTON1`, a new `SpaceEvent` field). At the lens's own folder they
+    do nothing, and Backspace passes on to type-to-select as today.
+  - Docs: the `ENGINEERING.md` Keys table, `CONTEXT.md` section 8, and
+    `README.md` Controls.
+  - Tests: the parent of each depth; nothing above the root; the keys'
+    `keys_for_*` rows.
+  - **[needs human]** check: each way back at 100 % and 150 %; the
+    button is gone at the root; Backspace in a rename edits the text and
+    does not go back.
+  - Done 2026-10-29. Settled before coding, as the maintainer asked:
+    the hook takes the keys only under a new `WATCH_BACK` flag (the current
+    space is browsed), since it decides before the app is asked; at a
+    lens's own folder Backspace passes through as before, and the Alt
+    arrows pass through instead of moving the selection, as in Explorer.
+    Back and Up both show the parent (D18 keeps no forward history). A
+    double-click on the button goes up twice rather than folding the
+    space. The mouse's back button acts on the lens under the pointer.
+    The button's size is provisional and it has no hover highlight.
+    After review: the press on the button is remembered, so the
+    double-click that follows never folds the space even when the press
+    reached the lens's own folder; a resize edge under the button wins; a
+    click on it makes the lens current; the mouse's back button finishes a
+    rename first; and Alt leaves the scroll keys as they were.
+
+- [x] **W34. Lens filters: the matcher (core).** After: W14.
+  - `deskspace-core/src/wildcard.rs`: `fn matches(pattern: &str, name:
+    &str) -> bool` for `*` and `?`, without case, in time linear in the
+    two lengths (the greedy matcher that remembers the last `*`; cite
+    its source beside it). Compare by `char`, folding with
+    `to_lowercase` per char; no allocation per call.
+  - `FolderView.include` and `exclude` (already reserved): caps
+    `MAX_PATTERNS` (32) and `MAX_PATTERN_LEN` (260 chars), applied by
+    `FolderView::clamped` on load and on edit. An empty pattern is
+    dropped.
+  - `SyncLens` applies them (D18): "Show only" to files, "Hide" to every
+    entry, both by name only, never by full path.
+  - Tests: the matcher on the usual cases and on hostile ones (thousands
+    of `*`, a 260-char pattern against a 260-char name, which must stay
+    fast in a debug test), non-ASCII names, case; `SyncLens` with each
+    list; the caps. Time `SyncLens` with 32 patterns on 50,000 entries
+    (see Performance).
+  - Done 2026-10-29. The matcher's bound is pattern x name steps, not
+    linear as written above; the caps keep it to about 68,000. It checks
+    the text after the last star against the name's end first, and
+    compares ASCII without Unicode folding. Patterns are also trimmed and
+    deduplicated. Release timings of `SyncLens` on 50,000 entries: 44-46
+    ms with no filters (already over the 8 ms budget before W34), 62-65 ms
+    with 32 typical patterns, 309 ms with 32 whose end matches and middle
+    fails. Taken to the maintainer before merging, as the Performance
+    rule asks.
+
+- [x] **W35. Lens filters on the Lens page (app).** **[needs human]**
+  After: W10, W34.
+  - A "Filter" heading with two text fields, "Show only" and "Hide",
+    each a `;`-separated list (`*.pdf; *.docx`). A pure
+    `parse_patterns(text) -> Vec<String>` trims spaces and drops
+    empties; `format_patterns` writes it back. Edits preview and Cancel
+    undoes them (W10's snapshot).
+  - A lens whose filters hide every entry shows "No items match the
+    filter" in `SpaceScene::placeholder`, so it never looks broken.
+  - Changing a filter re-filters the listing the app already has; it
+    does not re-list the folder.
+  - Tests: `parse_patterns` round trip; the placeholder.
+  - **[needs human]** check: filter a Downloads lens to `*.pdf`; Hide
+    `*.tmp`; a filter that matches nothing shows the message; typing
+    quickly in the field stays smooth on a 50,000-file lens.
+  - Done 2026-10-29. The window rewrites a text field whose value
+    differs from the form, so the fields show the text as typed
+    (`Session::filter_texts`, as `hotkey_texts` does), and the lens's
+    list only when the page is built. `App::listings` keeps each lens's
+    last listing with its folder, and a re-filter uses it only while the
+    lens still shows that folder. Show hidden files still re-lists, as
+    before. Every keystroke re-filters on the UI thread; B37 covers the
+    cost on big folders.
+
+- [x] **W46. An empty title follows the folder again (app).** **[urgent]**
+  **[needs human]** After: W11.
+  - Why: renaming a lens's title (F2 with nothing selected, or a
+    double-click on the title) quietly switches its "Show as" to Custom,
+    so the title stops following the folder, and committing an empty
+    title is ignored. The only way back is the Lens page. Raised by the
+    maintainer, 2026-10-29: F2 on the title stays a nickname, never a
+    folder rename, but the nickname must be easy to undo.
+  - `app/rename.rs`, where a title rename commits: on a lens, an empty
+    (or all-space) title becomes `SetLensTitle` with the Lenses defaults
+    page's "Show as" (`WindowSettings.new_lens.title`, W23; Folder name
+    unless changed), or Folder name when that default is Custom, and the
+    title text `lens_title` gives for it. One undo entry, as a rename is
+    now. A normal space keeps ignoring an empty title.
+  - Decide it in a pure function, for example `title_commit(space,
+    typed, default) -> Option<Command>`, so the cases are tested without
+    a `Ui`.
+  - Tests: a lens with an empty title, an all-space title, and a typed
+    title; a normal space with an empty title; the default Custom case.
+  - Docs: `CONTEXT.md` section 8 (the F2 and title-rename lines) and
+    `README.md` Controls say that clearing a lens's title returns it to
+    following the folder.
+  - **[needs human]** check: F2 on a lens's title, clear it, Enter: the
+    title shows the folder's name and the Lens page shows "Folder name";
+    Ctrl+Z gives the old nickname back.
+  - Done 2026-10-29. An empty title on a lens that already follows its
+    folder is ignored too, so clearing it never swaps one "Show as" for
+    another.
+
+- [x] **W45. A lens follows its folder when it is renamed or moved
+  (platform, app).** **[urgent]** **[needs human]** ROADMAP D19 is the
+  spec. After: W24, W25, W42.
+  - Why: renaming or moving a lens's folder in Explorer makes the lens
+    "Folder not available" within 5 s, though the watch's open handle
+    follows the folder to its new path. A lens that follows its folder
+    is also the safe way to offer renaming it: rename in Explorer, or
+    through an explicit "Rename folder…" (a later task), never through
+    F2 on the title (see W46).
+  - Platform: in `check_paths`, when an open folder's path no longer
+    names it, the worker reads the handle's final path (`final_path`,
+    W25) and posts a new `FolderListing::Moved { to }` instead of
+    `Unavailable` when `to` is a real folder, outside the Recycle Bin (a
+    `$Recycle.Bin` component, without case), outside the store (W25), and
+    on the same volume. Decide that in a pure function.
+  - App: re-point the lens with `SetLensFolder` (its title follows when
+    "Show as" follows the folder), as one undo entry, and the watch moves
+    with it. A browsed lens (W42) whose subfolder moved returns to its
+    own folder. Log the move with one `tracing::info!` line.
+  - The notice: a general space notice, a translucent bar over the
+    space's content showing "Folder moved:" and the new path, hidden
+    about 3 s later. Draw and time it as the zoom pop-up is (`app/zoom.rs`,
+    `render/zoom_bar.rs`), as a `SpaceScene` field the platform paints,
+    so later messages reuse it. If no extension point fits, stop and ask.
+  - Tests: the pure "should the lens follow" check (a rename, a move on
+    the same volume, into the Recycle Bin, into the store, onto another
+    volume); a platform test that renames a watched scratch folder and
+    expects `Moved`; the app turns `Moved` into the new folder and a
+    notice, and a browsed lens returns to its own folder.
+  - **[needs human]** check: rename a lens's folder in Explorer: within
+    5 s the lens shows the new path, keeps its items, and shows "Folder
+    moved:" with the path for about 3 s; delete it in Explorer: the lens
+    says "Folder not available", and never lists the Recycle Bin; Ctrl+Z
+    points it back.
+  - Done 2026-10-29. The notice is `SpaceScene::notice`, a bar two title
+    bars high along the bottom of the item area in the title bar's colors
+    (`notice_rect`), set from `App::notices` and cleared by
+    `Timer::Notice`. A lens browsed into a subfolder sees only the
+    subfolder's watch, so when its own folder is the one renamed it
+    returns there and shows "Folder not available" rather than following.
+
+- [x] **W47. A view change keeps the sort rule (core).** **[needs human]**
+  - Why: `SpaceView::with_mode` gives the default sort rule, so a View
+    menu choice or a Ctrl+Shift digit resets a space's sort rule and its
+    Keep sorted choice, though D17 says a space keeps its last rule
+    (confirmed by the maintainer, 2026-10-29).
+  - Build the new view from the current one and change only the mode.
+    Every caller of `with_mode` gets this; if one needs the default rule,
+    stop and ask.
+  - Tests: a space sorted by date, descending, with Keep sorted off,
+    keeps all three across a mode change, by the View menu's path and by
+    the Ctrl+Shift path.
+  - **[needs human]** check: sort a space by Date, descending, then press
+    Ctrl+Shift+6 and Ctrl+Shift+2: Sort by ▸ still shows Date and
+    Descending.
+  - Done 2026-10-29. `SpaceView::with_mode` is now a method on the
+    current view, so the View menu (`view_after`), the Ctrl+Shift keys
+    (`view_by_digit`), and the status bar's view buttons all keep the
+    sort rule, Keep sorted, and the status bar. The status bar was reset
+    too, so its own view buttons used to hide it.
+
+- [x] **W29. Date created (core, platform, app).** After: W18.
+  - `FolderEntry.created` and `ItemFacts.created` (seconds since the
+    epoch, `Option`). `folder_list.rs` reads `ftCreationTime` from the
+    record it already has; `item_facts` reads it from the metadata call it
+    already makes. No new IO.
+  - `SortKey::Created` (saved as `created`), a `SORT_KEYS` row after
+    Size, and a `DETAILS_COLUMNS` row, hidden by default; W30 lets the
+    user show it.
+  - Tests: the conversion (copy `unix_seconds`'s tests); sorting by it.
+  - Done 2026-10-29. `Item`, `ItemFacts`, and `FolderEntry` carry
+    `created`; a lens's sync refreshes it with the other facts. The
+    Details row is hidden through a `shown` flag on `DetailsColumn`, and
+    the header, the cells, and the sort arrow read
+    `shown_details_columns`, so W30 replaces that one function with the
+    space's own list. Sort by ▸ Date created is menu id 74.
+
+- [x] **W27. The lens's path as a tip on its title (app).** **[needs
+  human]** After: W9.
+  - Hovering a lens's title shows its full path through the existing hover
+    tip (`app/info_tip.rs`). An unavailable lens adds "Folder not
+    available". After W42, it shows the folder on display. The text
+    comes from the model; no disk access.
+  - A pure `title_tip(space, unavailable) -> Option<String>`; `None` for
+    a normal space. Hovering the title of a normal space shows no tip, as
+    today.
+  - Tests: the tip for a lens, an unavailable lens, and a normal space.
+  - **[needs human]** check: the tip appears after the usual delay and
+    leaves with the pointer; it does not cover the title while you are
+    renaming.
+  - Done 2026-10-30. The pure function is `scene::title_tip(space, shown,
+    unavailable)`: it takes the folder the lens displays as an argument,
+    because since W42 that is session state (`App::lens_folder`) the
+    space cannot know. `PointerState::title_hover` arms the same
+    `Timer::InfoTip`; `update_hover` does not arm it while its space is
+    being renamed, and `show_info_tip` holds back an already-armed tip for
+    the same reason, since F2 starts a rename with no pointer move to
+    re-check the hover. `begin_rename` also dismisses a tip already shown
+    when F2 starts the rename. The item tip has the same hole on an item
+    rename; noted under **Found while working**.
+
+- [x] **W40. The default view for new spaces (config, app).** After:
+  W23.
+  - `WindowSettings.new_space_view: SpaceView`, defaulting to
+    `SpaceView::default()`, so nothing changes until the user changes it.
+    `CreateSpace` takes a `view`, as `CreateLens` does since W19. Fields
+    on the New spaces page, through W23's shared builder.
+  - Tests: the config's missing-field default; a new space gets the
+    setting.
+  - Done 2026-10-30. The New spaces page's view and sort fields are the
+    shared builder's third user, so `ViewIds`, the three pages' id sets,
+    and `view_fields` moved to `settings/view_fields.rs`; `pages.rs` had
+    reached the 800-line guideline (K's rule, not an `ALLOWED` entry).
+    `apply_create_space` takes the rect instead of `at` and `size`, as
+    `apply_create_lens` does, to stay under `too_many_arguments`. The
+    seed space keeps `SpaceView::default()`, as it keeps its own title
+    and size. The C8 row in section V now covers the view.
+
+- [x] **W39. Ctrl+wheel through the views (app).** **[needs human]**
+  After: W22.
+  - A pure `step_view(mode, steps: i32) -> ViewMode`. It walks
+    `VIEW_MODES` in menu order, stops at the ends, and returns
+    `ViewMode::Icons` unchanged (D18). `app/zoom.rs` calls it first for a
+    space whose mode is not `Icons`, and on a step dispatches
+    `SetSpaceView` and shows no pop-up. Ctrl+Plus and Ctrl+Minus step the
+    same way; Ctrl+0 sets `Icons`.
+  - Tests: steps both ways, the ends, `Icons` unchanged, a big wheel
+    delta that is more than one notch.
+  - **[needs human]** check: Ctrl+wheel on a space in Large icons walks
+    to Content and back and stops; a space on "Settings icon size" zooms
+    as before (the F13 row still passes).
+  - Done 2026-10-30. `step_view` lives beside `view_for_digit` in
+    `settings/tables.rs`. Positive steps walk forward in menu order, so
+    zooming in — wheel up, Ctrl+Plus — runs against it, toward the bigger
+    views, as Explorer's Ctrl+wheel does; the wheel's notches are negated
+    at `adjust_icon_size`. A step goes through `set_space_view`, so it is
+    one "Change view" undo entry like the View menu's; an end-stop or a
+    partial notch changes nothing and never zooms instead, since a fixed
+    view never zooms. The keys read `selection.surface` at handle time,
+    and the wheel takes the surface the event named.
+
+- [x] **W28. File name extensions per space (core, app).** **[needs
+  human]** After: W20, W26.
+  - `SpaceView.extensions: Extensions { Automatic, Show, Hide }`;
+    `Automatic` is the default (D18). `App::shows_extensions` (W26) reads
+    it first and falls back to today's rule for `Automatic`.
+  - View ▸ "File name extensions": a check entry showing what the space
+    shows now. Choosing it sets `Show` or `Hide`. The View page offers all
+    three in a choice.
+  - Rename already selects the name without its extension when one
+    shows; check that it still does.
+  - Tests: each value under both presets; the menu check follows the
+    effective value.
+  - **[needs human]** check: Show and Hide on a normal space and a lens,
+    Automatic under Match Explorer with Explorer's setting on and off;
+    F2 selects only the name part.
+  - Done 2026-10-30. `Extensions` lives beside `SpaceView` in core
+    `view.rs`, serialized as `automatic` / `show` / `hide` and left out
+    when default, like `SortRule`. `space_view_menu` takes the effective
+    answer from `App::shows_extensions` so the check needs no system state
+    of its own; the menu id is 75 and the View-page field id 152. Rename
+    and the scene's labels flow through `shows_extensions`, so both follow
+    the choice with no further change.
+
+- [x] **W30. Choose the Details columns (core, app).** **[needs
+  human]** After: W29.
+  - `SpaceView.columns: Vec<ColumnSpec { id: Column, width:
+    Option<u16> }>`, in display order; the default is Name, Date
+    modified, Type, Size. `Column` has `#[serde(other)] Unknown`. A pure
+    `ColumnSpec::sanitize(list)` runs on load and after every edit: it
+    drops unknown and repeated ids, keeps Name first, caps the list at
+    `Column::ALL.len()`, and clamps widths to `COLUMN_WIDTH_RANGE`.
+  - A right-click on the header opens Explorer's header menu: a check
+    entry per column, with Name grey and on. Explorer's "Size all columns
+    to fit" needs text measurement, so leave it out and add a **Found
+    while working** line.
+  - Tests: `sanitize` on hostile lists (unknown ids, Name missing or
+    last, repeats, zero and huge widths, a thousand entries); the menu
+    checks the columns shown.
+  - **[needs human]** check: show and hide each column on a lens and a
+    space; the choice survives a restart; Name cannot be hidden.
+  - Done 2026-10-31. `SpaceView` holds a `Vec`, so it is no longer `Copy`,
+    and `Space::view()` returns a reference. A hostile list cannot fail the
+    load: `lenient_columns` drops an entry that makes no sense and treats a
+    field that is no list as the default, and a width of any whole number
+    reaches `sanitize`. The layout reads a stored width already, ahead of
+    W31's drag. Menu ids 76-80. A right press on the header leaves the
+    selection, since a row can be scrolled under it. A scratch-config run
+    of the real app drove the menu by posted messages: a hostile list
+    loaded, the checks and the grey Name were right, and a choice saved.
+
+- [x] **W48. Fit to contents in the views that place by order (core,
+  app).** **[needs human]**
+  - Why: on a space in Small icons or List, Fit to contents changes
+    nothing, because those views keep the space's size. Decided by the
+    maintainer, 2026-10-29: fit the content extent.
+  - Small icons and the other row-placed views keep the width and set the
+    height to fit the rows; List keeps the height and sets the width to
+    fit the columns. The result stays within the work area, as for the
+    icon views. Compute the size from `ViewLayout`'s extent in a pure
+    function.
+  - Tests: Small icons with a few items shrinks the height, with many it
+    stops at the work area; List grows the width to its columns.
+  - **[needs human]** check: Fit to contents on a space in Small icons,
+    List, and Details hugs its items.
+  - Done 2026-10-31. `FitToContents` carries the `ViewMetrics` the space is
+    drawn with, since core cannot know the display's scale, and `fit_size`
+    in `view_layout.rs` is the pure function. It sizes once: `arrange_space`
+    still leaves an order-placed view's size alone. So the menu and the
+    Layout page's button also offer the fit on a space the user has not
+    sized (`Space::can_fit`), or a fit could not be repeated after adding
+    items. An empty space keeps room for one line, and a folded one fits as
+    it would show. A scratch-config run of the real app fitted Small icons,
+    Details, and List through the menu: width kept and height shrunk, or
+    the reverse for List.
+
+- [x] **W31. Resize the Details columns (app).** **[needs human]**
+  After: W30.
+  - Dragging a header divider sets that column's `width` (Name keeps the
+    rest). The pointer shows the resize cursor over a divider. Each move
+    re-lays out the visible rows (arithmetic, see Performance); the
+    `SetSpaceView` is committed and saved once, on release. Esc during
+    the drag puts the width back.
+  - A pure `divider_at(x, columns, scale) -> Option<usize>` with a hit
+    slop scaled for DPI.
+  - Tests: `divider_at` at each edge and in between; widths clamp.
+  - **[needs human]** check: resize each column at 100 % and 150 %;
+    smooth on a 50,000-file lens; Esc cancels; a listing that arrives
+    mid-drag does not end it.
+  - Done 2026-10-31; the maintainer reviewed the plan and chose how a
+    divider behaves. Name takes the rest, so widening a column would leave
+    its divider behind the pointer. Name is held at its width for the drag
+    and takes the rest again on release, so the columns shift flush then;
+    the divider right of Name resizes the next column instead. Each move
+    updates the model with a bare dispatch, like Move and Resize space, which
+    differs from the task's "committed once": one undo entry and one save
+    still come on release. Name's width exists only during a drag, and a file
+    never brings one back. A scratch-config run of the real app dragged
+    dividers by posted messages, with the results read from the saved file.
+    One of four runs failed with a stray sort and a wrong width, and three
+    clean runs followed; real mouse input over the topmost window is the
+    likely cause, not proven.
+
+- [x] **W32. Reorder the Details columns (app).** **[needs human]**
+  After: W31.
+  - Dragging a header (not its divider) moves the column, with an
+    insertion mark between headers. Name stays first (D18). Committed on
+    release, as W31.
+  - A pure `column_drop_index(x, columns) -> usize`.
+  - Tests: drop indices, and that Name never moves.
+  - **[needs human]** check: reorder at 100 % and 150 %; Esc cancels; a
+    click without a drag still sorts.
+  - Done 2026-10-31; the maintainer reviewed the plan. A press on a header
+    now waits for its release, so a drag does not sort, which moves a
+    header sort from press to release. During a drag only the insertion mark
+    changes (`DetailsView.drop_mark`); the columns change once, on release.
+    Dragging Name shows no mark and does not sort. A release that changes
+    nothing records nothing. A scratch-config run of the real app dragged
+    headers by posted messages, with the real pointer checked to be off the
+    window: every check passed.
+
+- [x] **W33. Compact view (core, app).** **[needs human]** After: W22.
+  - `SpaceView.compact: bool`, off by default. The order-placed views
+    (Small icons, List, Details, Tiles, Content) take their row and cell
+    padding from one metrics struct in `view_layout.rs`, which has a
+    compact variant measured from Explorer's Compact view. The icon
+    views are unchanged (D18).
+  - View ▸ "Compact view" (a check entry) and a View page toggle.
+  - Tests: compact rows are shorter in each order-placed view and the
+    same in the icon views.
+  - **[needs human]** check: against Explorer's Compact view in each
+    view, at 100 % and 150 %.
+  - Done 2026-10-31. The maintainer chose provisional sizes over measuring
+    Explorer now, so `COMPACT_CELLS` in `view_layout.rs` is not yet "measured
+    from Explorer's Compact view": section V carries the comparison. `NORMAL_CELLS`
+    holds the old values unchanged, also never measured, so a space not in
+    compact looks as before. Menu id 81, field id 153. The toggle is on the
+    View page only, not the two defaults pages, as the task asks.
+
+- [x] **W36. Group by: the groups (core, app).** After: W15, W18.
+  - Core: `SpaceView.group: Option<GroupBy { key: SortKey, descending
+    }>`. `Space::order_is_fixed()` replaces W15's reorder check: it is
+    true while the space keeps sorted *or* is grouped, and
+    `ReorderItem` reads it (D18).
+  - App, pure: `groups(items, group_by, facts) -> Vec<Group { name,
+    range }>` over items already sorted by the sort rule, with each
+    group's items kept together. Group names follow Explorer, and the
+    implementer checks each one on screen:
+    - Name: letter ranges (for example "A - H", "I - P", "Q - Z") and
+      "0 - 9";
+    - Type: the W18 type name;
+    - Size: Explorer's buckets, from Empty and Tiny through Gigantic;
+    - Date modified: Today, Yesterday, Earlier this week, Last week,
+      Earlier this month, Last month, Earlier this year, A long time ago.
+      Pass the local date in, never read the clock inside.
+  - Tests: each key's groups and order, both directions; date buckets
+    across a week, month, and year boundary; an empty space has no
+    groups; `order_is_fixed`.
+
+- [x] **W37. Group by: headers and folding (core, app, platform).**
+  **[needs human]** After: W36, W17.
+  - `view_layout.rs`: a header row before each group, in every view
+    (an icon view places grouped items by order, as D18 says). Prefix
+    sums and binary search keep a scroll window O(log groups)
+    (Performance).
+  - Painting: Explorer's header (name, count, a chevron, and a rule to
+    the edge).
+  - A click on a header folds or unfolds it. The fold state is per space
+    in `ViewCache` (session only). Folding drops the group's items from
+    the selection; Ctrl+A, the marquee, and the arrow keys skip folded
+    items (D18).
+  - Tests: layout with folded and open groups; the visible-window lookup
+    against a brute-force walk on random group sizes; folding clears the
+    selection; Ctrl+A skips folded items.
+  - **[needs human]** check: group a 50,000-file lens by Type and scroll
+    fast; fold and unfold; Ctrl+A then Delete after folding a group:
+    the question counts only visible items.
+  - Done 2026-10-31, as one commit, since W36's code has no caller before
+    W37; the maintainer reviewed the plan and chose where the order lives.
+    The stored item order stays as it is, and the app derives a display order
+    (`Grouping`, core; `crate::grouping`, app), cached per space behind a digest
+    of what it reads, so ungrouping restores a hand arrangement and undo is not
+    involved. Only `ViewLayout` maps between stored index and display position,
+    so its readers still speak stored indices. Within a group items keep their
+    stored order, which for a lens is its sort rule. A grouped List stacks
+    downward as rows. The chevron sits at the left and the rule runs along the
+    bottom of the row. Release build, 2026-10-31, 50,000 items, on the UI thread:
+    grouping 1.9-4.6 ms by key, and the digest each repaint pays about 1.9 ms
+    (SipHash took 4.8 ms, so it is a word-at-a-time hash).
+
+- [x] **W38. Group by: the menu and the settings (app).** After: W37,
+  W23.
+  - Group by ▸ beside Sort by ▸, as Explorer: (None), then the keys from
+    `SORT_KEYS`, then Ascending and Descending. Rows on the View page
+    and the Lenses defaults page, through the shared builder.
+  - Tests: the menu checks the current grouping; the page fields have
+    handlers.
+  - Done 2026-10-31. Menu ids 82-89; field ids 154-157. The direction's field
+    is grey until a key is chosen. The New spaces page has no group rows, as
+    the task lists only the View and Lenses pages, though it shares the
+    builder.
+
+- [x] **W49. Picking a lens's own folder keeps its items (core, app).**
+  After: W42.
+  - Why: Change folder… on the folder a lens already shows (and is not
+    browsed below) leaves it empty. `SetLensFolder` clears the items, and
+    the watch for that path is already running, so it posts no listing.
+  - Fix: `apply_set_lens_folder` keeps the items when the path is the one
+    the lens shows, since they belong to that folder. Change folder… on a
+    browsed lens still returns home by clearing the subfolder's items.
+  - Done when: on an idle lens, picking its own folder changes nothing but
+    the title; on a browsed lens, it returns home and lists the folder's
+    own items; picking another folder still empties the lens until its
+    listing arrives.
+  - Done 2026-10-31. `change_lens_folder` returns a browsed lens home
+    through `show_subfolder`, so the subfolder's items and selection go as
+    they do on Backspace. A core test covers the same-folder pick.
+
+- [x] **W41. Close F-40: the desktop's view modes (docs).** **[needs
+  human]** After: W12.
+  - Check (maintainer): on Windows 10 and 11, the desktop's View menu
+    offers only Large, Medium, and Small icons. In Small icons, are the
+    desktop's labels below or beside the icon? Record it beside
+    `display_settings.rs`'s `FVM_SMALLICON` branch.
+  - If the labels sit below, nothing changes: the default view already
+    follows the desktop's size. Close F-40 in ROADMAP. If they sit
+    beside, add a task to show a matching space as Small icons under
+    Match Explorer.
+  - Done when: the finding is recorded and F-40 is closed or has its
+    task.
+  - Done 2026-10-31. Windows 11 (maintainer): the desktop's View menu lists
+    Large icons, Medium icons, and Small icons, plus Auto arrange icons,
+    Align icons to grid, and Show desktop icons; it offers no List,
+    Details, Tiles, or Content. Small icons keep their labels below the
+    icon, so the default view already matches and F-40 closes with no
+    view-mode mapping. No Windows 10 machine was available; section V
+    keeps that half of the check open.
+
+- [x] **C11. Resize a space to its view's rows and columns (core, app).**
+  Decided by the maintainer, 2026-10-31 (ROADMAP D22).
+  - Why: `GridSpec::fit_to_grid` rounds every resize to the icon grid, which
+    Details, List, Tiles, and Content do not use, so their rows can still be
+    cut in half. The height fit ignores the status bar, and the resize dead
+    zone is half an icon cell in every view.
+  - Fix: `Command::ResizeSpace` carries the space's `ViewMetrics`, as
+    `FitToContents` does, so core can fit against the cells the space is
+    drawn with. With `fit_to_grid` on, fit the dragged axes to that view's
+    cells; Details and Content fit height only (`ViewMode::rows_fill_width`)
+    and keep the width at the `snap` step. Include the status bar and
+    Details' header in the height fit. Make the dead zone half an item's
+    shorter side, never less than half `snap`.
+  - Done when: resizing each view lands on whole rows and columns of that
+    view; Details and Content leave the width free; a space's status bar is
+    never clipped by the height fit; icon views keep today's result;
+    `fit_to_grid` off still keeps the dragged size. Tests cover each view
+    family, the status bar, and the dead zone. `CONTEXT.md` section 4 and
+    the F-03 row say the new rule.
+  - Done 2026-10-31. `ViewMetrics::fit_rect` fits the view's cells, and the
+    status bar and Details' header are chrome. Details and Content keep the
+    `snap`-stepped width. The dead zone is half the shorter real cell side,
+    or half the row height in a row view, and never less than half `snap`.
+    Tests: the three fit tests in `view_layout.rs`; Details, List, keeping
+    the fit in bounds, and the status bar in `command/mod.rs`; and the
+    dead-zone tests in `pointer.rs`.
+
+- [x] **C12. Fit to contents on an item's menu (app, core).**
+  Decided by the maintainer, 2026-10-31 (ROADMAP D23).
+  - Why: the space menu already offers Fit to contents, but an item's
+    right-click menu does not; an icon view can also be fitted larger than
+    the work area, so part of it clips.
+  - Fix: `App::show_item_menu` adds "Fit to contents" for an item in a
+    space, enabled from `Space::can_fit`, and fits that space when chosen.
+    `apply_fit_to_contents` caps the width and height to `bounds` in every
+    view, not only the order-placed ones.
+  - Done when: right-clicking an item in a space shows the entry (greyed on
+    a locked or already-fitting space), choosing it fits the space and
+    records one "Fit to contents" undo entry, a desktop item's menu does not
+    show it, and no fitted space exceeds the work area. A test covers the
+    cap; the menu itself is on-screen checked.
+  - Done 2026-10-31. `show_item_menu` adds the entry for an item in a space,
+    enabled from `Space::can_fit`, and chooses the same
+    `fit_space_to_contents` path as the space menu, so it is one undo
+    entry. `apply_fit_to_contents` caps the width and height to `bounds` in
+    every view; an icon view reflows into whole columns and then scrolls. A
+    core test covers the cap. The menu's placement, greyed state, and
+    desktop absence are in section V.

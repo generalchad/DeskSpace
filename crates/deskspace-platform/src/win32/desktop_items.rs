@@ -5,8 +5,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use deskspace_core::geometry::Point;
+use deskspace_core::grouping::LocalDay;
 use deskspace_core::item::ItemFacts;
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::Globalization::{
@@ -17,6 +19,7 @@ use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_SYSTEM, FileTimeToLocalFileTime,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Time::FileTimeToSystemTime;
 use windows::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Profile, IFolderView, IShellFolder, IShellItem, KF_FLAG_DEFAULT,
@@ -141,14 +144,18 @@ pub fn item_facts(path: &Path) -> ItemFacts {
     ItemFacts {
         is_folder: metadata.is_dir(),
         size: metadata.is_file().then_some(metadata.len()),
-        modified: metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|elapsed| elapsed.as_secs()),
+        modified: metadata.modified().ok().and_then(epoch_seconds),
+        created: metadata.created().ok().and_then(epoch_seconds),
         compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
         encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
     }
+}
+
+/// `time` in seconds since the Unix epoch, or `None` before it.
+fn epoch_seconds(time: std::time::SystemTime) -> Option<u64> {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
 }
 
 thread_local! {
@@ -218,6 +225,25 @@ fn wide_text(text: &[u16]) -> String {
         .position(|unit| *unit == 0)
         .unwrap_or(text.len());
     String::from_utf16_lossy(&text[..end])
+}
+
+/// Today as the user's clock reads it, for the date groups. It reads the clock
+/// and nothing else, so it is cheap enough for a repaint.
+pub fn local_today() -> LocalDay {
+    // SAFETY: GetLocalTime only fills the structure it returns.
+    let now = unsafe { GetLocalTime() };
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let into_day =
+        u64::from(now.wHour) * 3600 + u64::from(now.wMinute) * 60 + u64::from(now.wSecond);
+    LocalDay {
+        year: i32::from(now.wYear),
+        month: u32::from(now.wMonth),
+        day: u32::from(now.wDay),
+        weekday: u32::from(now.wDayOfWeek),
+        midnight: unix.saturating_sub(into_day),
+    }
 }
 
 /// Explorer's Details date and time for `seconds` since the Unix epoch, in the
@@ -488,6 +514,17 @@ mod tests {
     }
 
     #[test]
+    fn a_time_before_the_epoch_has_no_seconds() {
+        use std::time::{Duration, UNIX_EPOCH};
+        assert_eq!(epoch_seconds(UNIX_EPOCH), Some(0));
+        assert_eq!(
+            epoch_seconds(UNIX_EPOCH + Duration::from_secs(1_700_000_000)),
+            Some(1_700_000_000)
+        );
+        assert_eq!(epoch_seconds(UNIX_EPOCH - Duration::from_secs(1)), None);
+    }
+
+    #[test]
     fn item_facts_reads_files_and_folders_and_defaults_when_missing() {
         let folder = std::env::temp_dir().join(format!("deskspace-facts-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
@@ -502,6 +539,7 @@ mod tests {
         assert!(!file_facts.is_folder);
         assert_eq!(file_facts.size, Some(5));
         assert!(file_facts.modified.is_some());
+        assert!(file_facts.created.is_some());
         assert!(folder_facts.is_folder);
         assert_eq!(folder_facts.size, None);
         assert_eq!(missing_facts, ItemFacts::default());
