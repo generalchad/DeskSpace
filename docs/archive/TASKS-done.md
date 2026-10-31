@@ -5036,3 +5036,46 @@ until I5-I6 all land, so no partial build hides the desktop.
     every view; an icon view reflows into whole columns and then scrolls. A
     core test covers the cap. The menu's placement, greyed state, and
     desktop absence are in section V.
+
+- [x] **B31. Test only the crates a change affects (scripts).**
+  - Why: `cargo test --workspace` runs every crate's tests. A change to
+    `deskspace-config` can only break `config` and `app`, the crates that
+    depend on it, so while working the rest can be skipped. Cargo has no
+    built-in way to do this. `ENGINEERING.md` section 3 already names
+    the switch this task adds.
+  - `scripts/dev.ps1`: add a `-Changed` switch. Without `-Check` it does
+    nothing. With `-Check`, the test step runs `cargo test --locked -p
+    <crate> ...` for the affected crates only; fmt and clippy are
+    unchanged. Add an example to the script's comment-based help.
+  - Which crates are affected. Write each step as its own small
+    PowerShell function, so each can be read and tried alone:
+    1. **Changed files:** `git diff --name-only main...HEAD`, plus `git
+       diff --name-only HEAD` (uncommitted), plus untracked files from
+       `git ls-files --others --exclude-standard`. Add a `-Base` parameter
+       for the branch to compare with, default `main`.
+    2. **Changed crates:** a file under `crates/<dir>/` belongs to the
+       package in that folder. Read the package names from `cargo
+       metadata --format-version 1 --no-deps --locked` (each package's
+       `manifest_path`), never from a list in the script, so a new crate
+       needs no edit. A change to `Cargo.toml`, `Cargo.lock`,
+       `rust-toolchain.toml`, or anything under `.cargo/` affects every
+       crate. Any other file (docs, scripts, workflows) affects none.
+    3. **Dependents:** from the same metadata, a crate's dependencies
+       are its `dependencies` entries that have a `path`. Repeat until
+       nothing new is added: every crate that depends on an affected
+       crate is affected too.
+    4. If nothing is affected, print "No crate changed; no tests to
+       run." and skip the test step.
+  - Print the affected crates before testing, so the user sees what was
+    skipped.
+  - `ENGINEERING.md` section 1: add the switch to the list after `-Check`.
+  - Done when: these runs print the expected crates (try each, then
+    undo the change):
+    - edit a comment in `deskspace-app`: `deskspace-app` only;
+    - in `deskspace-config`: `deskspace-config`, `deskspace-app`;
+    - in `deskspace-core`: all five;
+    - in `docs/TASKS.md` only: none;
+    - in `Cargo.toml`: all five.
+
+    No unit tests: the repository has no PowerShell test framework, and
+    adding one is out of scope.
