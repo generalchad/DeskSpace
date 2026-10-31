@@ -39,6 +39,24 @@ Notable changes to DeskSpace, newest first. The format follows
 - Sort by now has Explorer's shape: Name, Date modified, Type, and Size;
   Ascending or Descending; Folders first; and Keep sorted, which holds a
   space's order as items change.
+- Browsing inside a lens: double-click a folder to show it in place, and go
+  back with the title bar's Back button, Backspace, Alt+Left, Alt+Up, or the
+  mouse's back button. A lens never goes above its own folder.
+- Group by for every space, with Explorer's keys and group names, and groups
+  that fold.
+- Lens filters: "Show only" and "Hide" lists of `*` and `?` wildcards on
+  Settings > Lens.
+- A lens follows its folder when it is renamed or moved on the same volume,
+  says where it went, and Ctrl+Z points it back.
+- Details columns: choose them from the header's menu, drag a divider to
+  resize, and drag a header to reorder. Date created joins as a column and a
+  sort key.
+- A compact view per space, file name extensions per space (Automatic, Show,
+  or Hide), and a default view for new spaces on Settings > New spaces.
+- Ctrl+wheel and Ctrl+Plus/Minus step through the views on a space set to one
+  of them, and Ctrl+0 goes back to "Settings icon size".
+- Hovering a lens's title shows its folder's path.
+- "Fit to contents" on an item's menu in a space.
 
 - Undo and redo for layout changes, file moves, item removal, space creation
   and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
@@ -59,6 +77,10 @@ Notable changes to DeskSpace, newest first. The format follows
 - The window border is white in dark mode and black in light mode, as
   Explorer's borders are. "Use Windows accent color" now colors the selection
   only, unless "Border color" is set to the Windows accent.
+- "Snap resized spaces to whole columns and rows" fits the current view's
+  cells: Details and Content snap to rows only.
+- Fit to contents never makes a space larger than its monitor's work area; a
+  space that is capped scrolls.
 
 ### Fixed
 
