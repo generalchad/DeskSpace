@@ -678,8 +678,9 @@ A native, lightweight, offline Windows desktop organizer that:
   - Work items: `TASKS.md` section W, phase 4 (W8-W23).
 
 - **D18. Lens and view extras, M4 phase 5 (2026-10-21, maintainer).**
-  Builds on D17 and ships after v0.3 (section 6), so it never holds up
-  the lens release.
+  Builds on D17. It was planned to ship after v0.3 so it would never hold
+  up the lens release; it landed first, so v0.3.0 includes it (amended
+  2026-10-31, maintainer).
   - *Browsing into subfolders:* double-clicking a real folder in a lens
     shows that folder in place, as Explorer does. A shortcut to a folder
     still opens as today, because a shortcut can point anywhere. A Back
@@ -824,19 +825,22 @@ icons (S1-S4 are built; the title icon and the picker follow).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
-**Next, in order:**
+**Next, in order** (decided 2026-10-31, maintainer: performance first, then
+the release path):
 
-1. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
+1. **Lens performance** (`TASKS.md` B31, then B33 and B37): no slow folder
+   or big lens stalls the spaces.
+2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
    the icon-set library, its cache, and the signed download are built
-   (S1-S4, S6-S8, S13); S5 and S9-S12 need a screen.
-2. **L1's on-screen findings** (`TASKS.md` section L): record what each
-   drag source offers. The rest of adding items to spaces (F-50,
-   F-53..F-55) has landed.
-3. **On-screen verification pass** (`TASKS.md` section V, R7), starting with
-   the checks a script can make (`TASKS.md` section O, O1 first). Confirm the
-   built-but-unchecked behaviors before more work builds on them.
-4. **Release dry run on clean machines** (R12) and **code signing** (R10),
-   before turning on the update feed.
+   (S1-S4, S6-S8, S13). The maintainer's minisign key (`RELEASING.md`) comes
+   first: without it, or a published set, no icon can download (S14). Then
+   S5 and S9-S12, which need a screen.
+3. **On-screen verification pass** (`TASKS.md` section V, R7), lens rows
+   first, starting with the checks a script can make (`TASKS.md` section O).
+   Confirm the built-but-unchecked behaviors before more work builds on them.
+   L1's findings (`TASKS.md` section L) can be recorded in the same pass.
+4. **Release dry run on clean machines** (R12), then **v0.3.0**. **Code
+   signing** (R10) comes before turning on the update feed.
 5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
    ready. The composition spike (T1) runs alongside.
@@ -988,7 +992,7 @@ Goal: spaces that mirror a folder live. Each phase lands green.
     custom text.
   - A View page for every space, a Lens page for each lens, and a Global
     Lenses page with defaults (F-17).
-- **Phase 5 - extras, after v0.3. [done]** Decided in D18;
+- **Phase 5 - extras. [done]** Decided in D18;
   `TASKS.md` W24-W49.
   - Two fixes first: a listing carries the folder it read, and the
     storage check moves off the UI thread.
@@ -1221,8 +1225,7 @@ catalog.
   of M2 and M3, with takeover opt-in (D8, D9). The rest of M2 and M3 (the
   stored-file watch, the desktop verbs) ships in a v0.2.x release or with
   v0.3, as the maintainer decides. Undo (D11) landed after v0.2.4.
-- **v0.3 "Lenses"**: M4 phases 0-4. Phase 5 (D18) follows in a v0.3.x
-  release or with v0.4.
+- **v0.3 "Lenses"**: M4, phases 0-5 (D18, amended 2026-10-31).
 - **v0.4 "Flow"**: M5.
 - **v0.5 "Rooms"**: M6, M7.
 - **v1.0**: M8.
