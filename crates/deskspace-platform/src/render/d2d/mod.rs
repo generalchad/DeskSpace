@@ -122,6 +122,9 @@ const HIGHLIGHT_WIDTH: f32 = 2.0;
 /// sorted Details header's arrow.
 const SORT_UP_GLYPH: &[u16] = &[0xE70E];
 const SORT_DOWN_GLYPH: &[u16] = &[0xE70D];
+/// The dragged header's insertion mark, as a share of the header's height, so
+/// it scales with the display.
+const DROP_MARK_WIDTH_RATIO: f32 = 0.08;
 
 /// D2DERR_RECREATE_TARGET: the device was lost and every device-dependent
 /// resource must be recreated.
@@ -695,6 +698,17 @@ impl Painter {
                     rect_f(column.rect.x as f32 + pad, top, right, bottom),
                     scene.item_text.fade(190),
                     scene.text_shadow,
+                );
+            }
+            if let Some(mark) = details.drop_mark {
+                let mark = mark as f32;
+                brush.SetColor(&color_f(scene.item_text));
+                target.DrawLine(
+                    Vector2::new(mark, top),
+                    Vector2::new(mark, bottom),
+                    brush,
+                    (height * DROP_MARK_WIDTH_RATIO).round().max(1.0),
+                    None,
                 );
             }
         }

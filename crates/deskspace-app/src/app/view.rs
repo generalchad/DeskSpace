@@ -213,6 +213,7 @@ impl App {
     pub(super) fn view_for(&self, surface: Surface) -> ViewState {
         let check_boxes = self.surface_check_box_mode(surface);
         ViewState {
+            column_drop: self.column_drop_on(surface),
             hovered: self.pointer.hovered_item_on(surface),
             selected: if self.selection.surface == Some(surface) {
                 self.selection.items.clone()

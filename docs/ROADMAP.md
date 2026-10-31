@@ -1281,7 +1281,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
 | F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S4, S6-S8, S13); the picker follows (S5, S9-S12), decided in D16 |
-| F-63 | Details columns: choose, resize, reorder, Date created | M4 | Partial: choosing, resizing, and Date created are done, check pending (`TASKS.md` V: W30, W31); reorder is open (W32); decided in D18 |
+| F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Open; decided in D18 (`TASKS.md` W36-W38) |
 | F-66 | Measuring guides while moving or resizing a space: alignment lines, gaps in pixels, and equal-gap and equal-size marks (optional) | M6 | Open; decided in D21 (M6 item 4) |

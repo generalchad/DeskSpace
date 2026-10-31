@@ -369,22 +369,6 @@ impl App {
         true
     }
 
-    /// If `point` is in a Details header, sorts space `id` by that column and
-    /// returns true. A click on the column already sorted reverses it, as
-    /// Explorer does.
-    fn details_header_click(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
-        let Some(index) = self.details_header_column(Surface::Space(id), point) else {
-            return false;
-        };
-        let Some(space) = self.config.desktop.space(id) else {
-            return false;
-        };
-        let rule = crate::scene::details_rule_after(space.view(), index);
-        let at = space.rect().origin();
-        self.sort_space(ui, id, rule, at);
-        true
-    }
-
     pub(super) fn begin_interaction(
         &mut self,
         ui: &mut Ui,
@@ -414,10 +398,10 @@ impl App {
         {
             return;
         }
-        // A click on a Details header sorts by its column, through the same
-        // sort path as the menu (W18).
+        // A press on a Details header waits for its release: a click sorts,
+        // and a drag moves the column.
         if let Surface::Space(id) = surface
-            && self.details_header_click(ui, id, point)
+            && self.begin_header_press(ui, id, point)
         {
             return;
         }

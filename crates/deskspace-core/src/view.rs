@@ -222,6 +222,29 @@ impl SpaceView {
         }
     }
 
+    /// This view with `column` moved to before the column now at `insert_at`,
+    /// or to the end past the last. Name stays first and does not move (D18).
+    pub fn with_column_moved(&self, column: Column, insert_at: usize) -> Self {
+        let mut columns = self.columns.clone();
+        let Some(from) = columns.iter().position(|spec| spec.id == column) else {
+            return self.clone();
+        };
+        if column == Column::Name {
+            return self.clone();
+        }
+        let spec = columns.remove(from);
+        let to = if insert_at > from {
+            insert_at - 1
+        } else {
+            insert_at
+        };
+        columns.insert(to.min(columns.len()), spec);
+        Self {
+            columns: ColumnSpec::sanitize(columns),
+            ..self.clone()
+        }
+    }
+
     /// This view with `column` at `width` pixels at 96 DPI, in range.
     pub fn with_column_width(&self, column: Column, width: u16) -> Self {
         let columns = self
@@ -506,6 +529,37 @@ mod tests {
             loaded("columns = [{ id = 'size', width = -5 }, { id = 'kind', width = 99999999 }]"),
             [name, spec(Column::Size, low), spec(Column::Kind, high)],
         );
+    }
+
+    #[test]
+    fn moving_a_column_inserts_it_before_the_one_at_that_place() {
+        let view = SpaceView::default();
+        let moved = |column, insert_at| ids(&view.with_column_moved(column, insert_at).columns);
+        let [name, date, kind, size] = [Column::Name, Column::Modified, Column::Kind, Column::Size];
+        assert_eq!(moved(size, 1), [name, size, date, kind], "leftward");
+        assert_eq!(moved(date, 3), [name, kind, date, size], "rightward");
+        assert_eq!(moved(date, 4), [name, kind, size, date], "to the end");
+        assert_eq!(moved(date, 99), [name, kind, size, date], "past the end");
+        assert_eq!(moved(kind, 2), [name, date, kind, size], "before itself");
+        assert_eq!(moved(kind, 3), [name, date, kind, size], "after itself");
+    }
+
+    #[test]
+    fn name_never_moves_and_nothing_goes_before_it() {
+        let view = SpaceView::default();
+        assert_eq!(view.with_column_moved(Column::Name, 3), view);
+        assert_eq!(
+            ids(&view.with_column_moved(Column::Size, 0).columns),
+            [Column::Name, Column::Size, Column::Modified, Column::Kind]
+        );
+    }
+
+    #[test]
+    fn moving_a_column_keeps_its_width_and_ignores_one_not_shown() {
+        let view = SpaceView::default().with_column_width(Column::Size, 150);
+        let moved = view.with_column_moved(Column::Size, 1);
+        assert_eq!(moved.columns[1], spec(Column::Size, 150));
+        assert_eq!(view.with_column_moved(Column::Created, 1), view);
     }
 
     #[test]

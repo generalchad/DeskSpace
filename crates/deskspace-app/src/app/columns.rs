@@ -1,4 +1,6 @@
-//! `App` Details columns: dragging a header divider to resize a column.
+//! `App` Details columns: dragging a header's divider to resize a column, and
+//! the header itself to reorder it. A click that never becomes a drag sorts,
+//! so sorting waits for the release.
 //!
 //! Name takes the width the other columns leave, so a divider cannot simply
 //! move: widening a column would shrink Name and leave the divider behind the
@@ -8,7 +10,7 @@
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Column, Command, SpaceId, SpaceView, ViewMode};
-use deskspace_platform::{DetailsColumnVisual, DetailsView, Ui, space_dpi};
+use deskspace_platform::{DetailsColumnVisual, DetailsView, Ui, drag_threshold, space_dpi};
 
 use super::drag::Drag;
 use super::{App, RESIZE_BORDER, Surface};
@@ -28,6 +30,58 @@ pub(crate) fn divider_at(x: i32, columns: &[DetailsColumnVisual], scale: f32) ->
     columns
         .iter()
         .position(|column| (x - column.rect.right()).abs() <= slop)
+}
+
+/// The index to insert a dragged column at when the pointer is at `x`, relative
+/// to the content area: before the first column whose middle is past `x`, and
+/// never before Name (D18).
+pub(crate) fn column_drop_index(x: i32, columns: &[DetailsColumnVisual]) -> usize {
+    (1..columns.len())
+        .find(|index| x < columns[*index].rect.center().x)
+        .unwrap_or_else(|| columns.len().max(1))
+}
+
+/// A left press on a header. Sorting or moving is decided on release.
+#[derive(Clone, Copy)]
+pub(super) struct HeaderPress {
+    id: SpaceId,
+    column: Column,
+    origin: Point,
+    /// Whether the pointer has passed the drag threshold, so the release is no
+    /// longer a click.
+    dragged: bool,
+    /// Where the column would land. Name never has one, since it cannot move.
+    drop: Option<usize>,
+}
+
+/// What releasing a header press does.
+#[derive(Debug, PartialEq, Eq)]
+enum HeaderRelease {
+    /// A click: sort by the column at this place.
+    Sort(usize),
+    /// A drag: show the view with the column moved.
+    Reorder(SpaceView),
+    Nothing,
+}
+
+/// Decides a release against the view as it is now, so a column that has gone
+/// since the press does nothing.
+fn header_release(press: &HeaderPress, view: &SpaceView) -> HeaderRelease {
+    let Some(index) = view.columns.iter().position(|spec| spec.id == press.column) else {
+        return HeaderRelease::Nothing;
+    };
+    if !press.dragged {
+        return HeaderRelease::Sort(index);
+    }
+    let Some(insert_at) = press.drop else {
+        return HeaderRelease::Nothing;
+    };
+    let moved = view.with_column_moved(press.column, insert_at);
+    if moved == *view {
+        HeaderRelease::Nothing
+    } else {
+        HeaderRelease::Reorder(moved)
+    }
 }
 
 /// A divider drag in progress. It holds the column by id, and notices when
@@ -101,6 +155,19 @@ fn logical(pixels: i32, scale: f32) -> u16 {
 }
 
 impl App {
+    /// The Details header drawn in space `id`, when it shows one.
+    fn details_header(&self, id: SpaceId) -> Option<DetailsView> {
+        let space = self.config.desktop.space(id)?;
+        let layout = self.view_layout(id)?;
+        crate::scene::details_view(
+            space,
+            &layout,
+            space.content_rect().width,
+            self.layout_for(id).padding,
+            space_dpi(id.0),
+        )
+    }
+
     /// The Details header drawn in space `id`, and `point` relative to the
     /// content area, when `point` is on the header row.
     fn details_header_at(&self, id: SpaceId, point: Point) -> Option<(DetailsView, Point)> {
@@ -109,20 +176,12 @@ impl App {
         if space.view().mode != ViewMode::Details || !content.contains(point) {
             return None;
         }
-        let layout = self.view_layout(id)?;
         let local = Point::new(point.x - content.x, point.y - content.y);
         // Checked before building the header, which runs on every pointer move.
-        if local.y >= layout.header_height() {
+        if local.y >= self.view_layout(id)?.header_height() {
             return None;
         }
-        let details = crate::scene::details_view(
-            space,
-            &layout,
-            content.width,
-            self.layout_for(id).padding,
-            space_dpi(id.0),
-        )?;
-        Some((details, local))
+        Some((self.details_header(id)?, local))
     }
 
     /// The shown Details column whose header holds `point` on `surface`, if
@@ -146,9 +205,111 @@ impl App {
         divider_at(local.x, &details.columns, space_dpi(id.0))
     }
 
-    /// Starts resizing a column if `point` is on a divider. The space becomes
-    /// current so the keyboard hook reports Esc; the selection stays unless it
-    /// was on another surface.
+    /// Makes space `id` current so the keyboard hook reports Esc during a
+    /// column gesture. The selection stays unless it was on another surface.
+    fn make_current_for_column_gesture(&mut self, ui: &mut Ui, id: SpaceId) {
+        let surface = Surface::Space(id);
+        let previous = self.selection.surface.replace(surface);
+        if let Some(previous) = previous.filter(|previous| *previous != surface) {
+            self.selection.clear_items();
+            self.refresh_surface(ui, previous);
+        }
+    }
+
+    /// Starts a header press if `point` is on a header, leaving the space's own
+    /// resize border to the space.
+    pub(super) fn begin_header_press(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
+        let Some(index) = self.details_header_column(Surface::Space(id), point) else {
+            return false;
+        };
+        let Some(space) = self.config.desktop.space(id) else {
+            return false;
+        };
+        if space.resize_edges_at(point, RESIZE_BORDER).any() {
+            return false;
+        }
+        let Some(column) = space.view().columns.get(index).map(|spec| spec.id) else {
+            return false;
+        };
+        self.pointer.drag = Drag::HeaderPress(HeaderPress {
+            id,
+            column,
+            origin: point,
+            dragged: false,
+            drop: None,
+        });
+        self.make_current_for_column_gesture(ui, id);
+        true
+    }
+
+    /// Follows a header press: past the drag threshold it stops being a click,
+    /// and a column other than Name shows where it would land. The columns do
+    /// not change until the release.
+    pub(super) fn drag_header_to(&mut self, ui: &mut Ui, point: Point) {
+        let Drag::HeaderPress(mut press) = self.pointer.drag else {
+            return;
+        };
+        let threshold = drag_threshold();
+        if !press.dragged
+            && (point.x - press.origin.x).abs() < threshold.width
+            && (point.y - press.origin.y).abs() < threshold.height
+        {
+            return;
+        }
+        press.dragged = true;
+        let Some(details) = self.details_header(press.id) else {
+            self.cancel_column_gesture(ui);
+            return;
+        };
+        let Some(space) = self.config.desktop.space(press.id) else {
+            self.cancel_column_gesture(ui);
+            return;
+        };
+        let local = point.x - space.content_rect().x;
+        let drop =
+            (press.column != Column::Name).then(|| column_drop_index(local, &details.columns));
+        let changed = drop != press.drop;
+        press.drop = drop;
+        self.pointer.drag = Drag::HeaderPress(press);
+        if changed {
+            self.refresh_space(ui, press.id);
+        }
+    }
+
+    /// Ends a header press: a click sorts, as Explorer does, reversing the
+    /// column already sorted, and a drag moves the column as one undo entry.
+    pub(super) fn finish_header_press(&mut self, ui: &mut Ui, press: HeaderPress) {
+        let id = press.id;
+        let Some(space) = self.config.desktop.space(id) else {
+            return;
+        };
+        let view = space.view();
+        let at = space.rect().origin();
+        match header_release(&press, view) {
+            HeaderRelease::Sort(index) => {
+                let rule = crate::scene::details_rule_after(view, index);
+                self.sort_space(ui, id, rule, at);
+            }
+            HeaderRelease::Reorder(view) => {
+                self.set_space_view_labelled(ui, id, view, at, "Reorder columns");
+            }
+            HeaderRelease::Nothing => {
+                if press.drop.is_some() {
+                    self.refresh_space(ui, id);
+                }
+            }
+        }
+    }
+
+    /// Where a dragged header on `surface` would land, for the scene.
+    pub(super) fn column_drop_on(&self, surface: Surface) -> Option<usize> {
+        match self.pointer.drag {
+            Drag::HeaderPress(press) if surface == Surface::Space(press.id) => press.drop,
+            _ => None,
+        }
+    }
+
+    /// Starts resizing a column if `point` is on a divider.
     pub(super) fn begin_column_resize(&mut self, ui: &mut Ui, id: SpaceId, point: Point) -> bool {
         let Some(divider) = self.details_divider_at(id, point) else {
             return false;
@@ -170,12 +331,7 @@ impl App {
             return false;
         };
         self.pointer.drag = Drag::ColumnResize(Box::new(resize));
-        let surface = Surface::Space(id);
-        let previous = self.selection.surface.replace(surface);
-        if let Some(previous) = previous.filter(|previous| *previous != surface) {
-            self.selection.clear_items();
-            self.refresh_surface(ui, previous);
-        }
+        self.make_current_for_column_gesture(ui, id);
         true
     }
 
@@ -238,10 +394,17 @@ impl App {
         self.schedule_save(ui);
     }
 
-    /// Cancels a column drag, as Esc does and as losing the mouse does, and
-    /// puts the view back unless something else has changed it since. Returns
-    /// whether there was a drag to cancel.
+    /// Cancels a column gesture, as Esc does and as losing the mouse does: a
+    /// header press does nothing, and a resize puts the view back unless
+    /// something else has changed it since. Returns whether there was one.
     pub(super) fn cancel_column_gesture(&mut self, ui: &mut Ui) -> bool {
+        if let Drag::HeaderPress(press) = self.pointer.drag {
+            self.pointer.drag = Drag::None;
+            if press.drop.is_some() {
+                self.refresh_space(ui, press.id);
+            }
+            return true;
+        }
         if !matches!(self.pointer.drag, Drag::ColumnResize(_)) {
             return false;
         }
@@ -303,6 +466,90 @@ mod tests {
             .iter()
             .find(|spec| spec.id == column)
             .and_then(|spec| spec.width)
+    }
+
+    fn press(column: Column, dragged: bool, drop: Option<usize>) -> HeaderPress {
+        HeaderPress {
+            id: SpaceId(1),
+            column,
+            origin: Point::new(0, 0),
+            dragged,
+            drop,
+        }
+    }
+
+    #[test]
+    fn the_drop_index_is_the_nearest_gap_and_never_before_name() {
+        let columns = columns();
+        // Name 12-312, Date 312-442, Type 442-542, Size 542-622.
+        assert_eq!(column_drop_index(0, &columns), 1, "left of everything");
+        assert_eq!(column_drop_index(100, &columns), 1, "over Name");
+        assert_eq!(column_drop_index(376, &columns), 1, "Date's left half");
+        assert_eq!(column_drop_index(377, &columns), 2, "Date's right half");
+        assert_eq!(column_drop_index(500, &columns), 3, "Type's right half");
+        assert_eq!(column_drop_index(590, &columns), 4, "Size's right half");
+        assert_eq!(column_drop_index(5000, &columns), 4, "past the last column");
+    }
+
+    #[test]
+    fn showing_only_name_drops_after_it() {
+        let mut columns = columns();
+        columns.truncate(1);
+        assert_eq!(column_drop_index(5000, &columns), 1);
+    }
+
+    #[test]
+    fn a_click_sorts_by_the_column_at_its_place_now() {
+        let view = SpaceView::default();
+        assert_eq!(
+            header_release(&press(Column::Kind, false, None), &view),
+            HeaderRelease::Sort(2)
+        );
+        assert_eq!(
+            header_release(&press(Column::Name, false, None), &view),
+            HeaderRelease::Sort(0),
+            "Name still sorts"
+        );
+    }
+
+    #[test]
+    fn a_drag_moves_the_column_and_does_not_sort() {
+        let view = SpaceView::default();
+        assert_eq!(
+            header_release(&press(Column::Size, true, Some(1)), &view),
+            HeaderRelease::Reorder(view.with_column_moved(Column::Size, 1))
+        );
+    }
+
+    #[test]
+    fn name_never_moves_and_a_drag_of_it_does_not_sort() {
+        assert_eq!(
+            header_release(&press(Column::Name, true, None), &SpaceView::default()),
+            HeaderRelease::Nothing
+        );
+    }
+
+    #[test]
+    fn a_drag_back_to_its_place_does_nothing() {
+        let view = SpaceView::default();
+        for drop in [2, 3] {
+            assert_eq!(
+                header_release(&press(Column::Kind, true, Some(drop)), &view),
+                HeaderRelease::Nothing,
+                "{drop}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_column_gone_since_the_press_does_nothing() {
+        let view = SpaceView::default().with_column_toggled(Column::Kind);
+        for gesture in [
+            press(Column::Kind, false, None),
+            press(Column::Kind, true, Some(1)),
+        ] {
+            assert_eq!(header_release(&gesture, &view), HeaderRelease::Nothing);
+        }
     }
 
     #[test]

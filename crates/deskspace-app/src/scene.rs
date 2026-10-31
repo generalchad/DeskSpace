@@ -59,6 +59,8 @@ pub struct SurfaceLook<'a> {
 /// Transient view state that affects how one space is drawn.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ViewState {
+    /// Where a dragged Details header would land, as an index to insert at.
+    pub column_drop: Option<usize>,
     pub hovered: Option<ItemId>,
     /// The selected items, which may be several (Ctrl/Shift click).
     pub selected: Vec<ItemId>,
@@ -310,7 +312,14 @@ pub fn space_scene_with_details(
         }),
         notice: view.notice.clone(),
         focused_item: view.focused.map(|id| id.0),
-        details: details_view(space, &view_layout, content.width, layout.padding, scale),
+        details: details_view(space, &view_layout, content.width, layout.padding, scale).map(
+            |mut details| {
+                details.drop_mark = view
+                    .column_drop
+                    .and_then(|insert_at| drop_mark_x(&details.columns, insert_at));
+                details
+            },
+        ),
         status: status_bar(space, &view),
         editing: None,
         editing_item: None,
@@ -604,7 +613,17 @@ pub(crate) fn details_view(
             scale,
         ),
         sorted: details_sorted(space.view()),
+        drop_mark: None,
     })
+}
+
+/// The x of the insertion mark before column `insert_at`, or after the last
+/// column past it.
+pub(crate) fn drop_mark_x(columns: &[DetailsColumnVisual], insert_at: usize) -> Option<i32> {
+    columns
+        .get(insert_at)
+        .map(|column| column.rect.x)
+        .or_else(|| columns.last().map(|column| column.rect.right()))
 }
 
 /// The Details columns `view` shows, laid out across `content_width`: Name
@@ -1451,6 +1470,34 @@ mod tests {
         assert_eq!(columns[1].rect.right(), 700, "and its divider follows");
         let released = details_columns(&view.with_name_held(None), 500, 0, 24, 1.0);
         assert_eq!(released[0].rect.width, 120, "Name takes the rest again");
+    }
+
+    #[test]
+    fn the_scene_marks_where_a_dragged_header_would_land() {
+        let subject = details_space();
+        let theme = Theme::default();
+        let scene = |column_drop| {
+            space_scene(
+                &subject,
+                surface_look(&theme, &theme.palette(true)),
+                ViewState {
+                    column_drop,
+                    ..ViewState::default()
+                },
+                &mut IconCache::new(),
+            )
+            .details
+            .unwrap()
+        };
+        assert_eq!(scene(None).drop_mark, None);
+        let details = scene(Some(2));
+        assert_eq!(details.drop_mark, Some(details.columns[2].rect.x));
+        let details = scene(Some(4));
+        assert_eq!(
+            details.drop_mark,
+            Some(details.columns[3].rect.right()),
+            "past the last column"
+        );
     }
 
     #[test]

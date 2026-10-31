@@ -202,6 +202,9 @@ pub struct DetailsView {
     /// The column whose header shows Explorer's sort arrow, and whether it
     /// points up (ascending).
     pub sorted: Option<(usize, bool)>,
+    /// Where a dragged header would land: the insertion mark's x, relative to
+    /// the content area.
+    pub drop_mark: Option<i32>,
 }
 
 /// One Details column's header rect, label, and value alignment.

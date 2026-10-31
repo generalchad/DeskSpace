@@ -4852,3 +4852,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     One of four runs failed with a stray sort and a wrong width, and three
     clean runs followed; real mouse input over the topmost window is the
     likely cause, not proven.
+
+- [x] **W32. Reorder the Details columns (app).** **[needs human]**
+  After: W31.
+  - Dragging a header (not its divider) moves the column, with an
+    insertion mark between headers. Name stays first (D18). Committed on
+    release, as W31.
+  - A pure `column_drop_index(x, columns) -> usize`.
+  - Tests: drop indices, and that Name never moves.
+  - **[needs human]** check: reorder at 100 % and 150 %; Esc cancels; a
+    click without a drag still sorts.
+  - Done 2026-10-31; the maintainer reviewed the plan. A press on a header
+    now waits for its release, so a drag does not sort, which moves a
+    header sort from press to release. During a drag only the insertion mark
+    changes (`DetailsView.drop_mark`); the columns change once, on release.
+    Dragging Name shows no mark and does not sort. A release that changes
+    nothing records nothing. A scratch-config run of the real app dragged
+    headers by posted messages, with the real pointer checked to be off the
+    window: every check passed.

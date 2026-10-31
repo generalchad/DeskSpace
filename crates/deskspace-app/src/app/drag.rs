@@ -10,7 +10,7 @@ use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_deskt
 
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
-use super::columns::ColumnResize;
+use super::columns::{ColumnResize, HeaderPress};
 use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
 use super::undo::move_items_label;
 use super::{App, Surface};
@@ -53,6 +53,8 @@ pub(super) enum Drag {
     },
     /// A Details header divider is being dragged.
     ColumnResize(Box<ColumnResize>),
+    /// The left button went down on a Details header: a click or a reorder.
+    HeaderPress(HeaderPress),
 }
 
 impl App {
@@ -130,6 +132,10 @@ impl App {
             }
             Drag::ColumnResize(_) => {
                 self.resize_column_to(ui, point);
+                true
+            }
+            Drag::HeaderPress(_) => {
+                self.drag_header_to(ui, point);
                 true
             }
         }
@@ -248,6 +254,7 @@ impl App {
                 self.schedule_save(ui);
             }
             Drag::ColumnResize(resize) => self.finish_column_resize(ui, *resize),
+            Drag::HeaderPress(press) => self.finish_header_press(ui, press),
         }
     }
 
