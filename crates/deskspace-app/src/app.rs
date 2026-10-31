@@ -16,6 +16,7 @@ use effect::Effect;
 
 mod animation;
 mod clipboard;
+mod columns;
 mod debug;
 mod drag;
 mod effect;
@@ -214,7 +215,7 @@ enum MenuId {
     SortByCreated = 74,
     /// The View submenu's "File name extensions" check (W28).
     FileExtensions = 75,
-    /// The Details header menu's check per column (W30).
+    /// The Details header menu's check per column.
     ColumnName = 76,
     ColumnModified = 77,
     ColumnKind = 78,
@@ -349,7 +350,7 @@ const SORT_MENU_IDS: [(MenuId, SortKey); 5] = [
     (MenuId::SortByCreated, SortKey::Created),
 ];
 
-/// The Details header menu's entries (W30), in the order it lists them.
+/// The Details header menu's entries, in the order it lists them.
 const COLUMN_MENU_IDS: [(MenuId, Column); 5] = [
     (MenuId::ColumnName, Column::Name),
     (MenuId::ColumnModified, Column::Modified),
@@ -606,7 +607,11 @@ impl App {
     fn on_selection_key(&mut self, ui: &mut Ui, key: SelectionKey) {
         match key {
             SelectionKey::Open => self.open_selected_item(ui),
-            SelectionKey::Clear => self.clear_selection(ui),
+            SelectionKey::Clear => {
+                if !self.cancel_column_gesture(ui) {
+                    self.clear_selection(ui);
+                }
+            }
             SelectionKey::PermanentDelete => self.delete_selected_items(ui, true),
             SelectionKey::Refresh => self.refresh_spaces(ui),
             SelectionKey::Menu => self.open_context_menu(ui),

@@ -91,6 +91,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `pointer` | `PointerState`, mouse events, resize, hover, marquee |
   | `zoom` | icon-size zoom (`ZoomLevel`), Ctrl+wheel, Reset, and the zoom pop-up |
   | `drag` | `Drag`, drag-to-rearrange, the drag image, and drag out |
+  | `columns` | dragging a Details header's dividers |
   | `rename` | `EditState`, inline rename of titles and items |
   | `files` | drops, delete, prune, `resync_desktop_layer` |
   | `clipboard` | cut / copy / paste |
@@ -182,7 +183,10 @@ sort by the space's `SortRule`; the app formats its column text when it builds
 the scene, so painting never asks the shell or the clock. `SpaceView.columns`
 (W30) says which columns a space shows and in what order, Name always first;
 `DETAILS_COLUMNS` holds what each one is. The list is sanitized on load and
-after every edit, and a hand-edited one can never fail the config load. None of the
+after every edit, and a hand-edited one can never fail the config load. Dragging
+a header divider sets a column's width live (`app/columns.rs`): Name is held at
+its width for the drag, so the divider follows the pointer, and takes the rest
+again on release. None of the
 order-placed views writes `Item.position`, so a hand arrangement returns when
 the space goes back to an icon view. Tiles (W21) wraps 48 px icons with three
 lines beside each (name, type, size), and Content (W22) puts one item on each
@@ -1565,6 +1569,9 @@ in `ui.rs`. What spans them:
 - A right-click on a Details header opens Explorer's column menu: a check per
   column shows or hides it (one "Choose columns" undo entry), and Name is on
   and grey. It leaves the selection alone.
+- Dragging a Details header's divider resizes a column, and the divider right
+  of Name resizes the next column. Esc during the drag, or losing the mouse,
+  puts the width back. It is one "Resize column" undo entry on release.
 - Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
   Medium, or Small icons, List, Details, Tiles, or Content, the way the View
   menu does.

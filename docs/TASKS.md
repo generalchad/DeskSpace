@@ -76,6 +76,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
 | Ctrl+wheel, zoom, the zoom pop-up's behavior | `deskspace-app/src/app/zoom.rs` |
 | Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
+| Dragging a Details header's dividers | `deskspace-app/src/app/columns.rs` |
 | Selection, arrow keys, type-to-select | `deskspace-app/src/app/selection.rs` |
 | Inline rename | `deskspace-app/src/app/rename.rs` |
 | Drops, delete, prune | `deskspace-app/src/app/files.rs` |
@@ -831,20 +832,6 @@ interest. In phase 4 and 5 terms:
   expected in this phase.
 
 #### Phase 5 tasks
-
-- [ ] **W31. Resize the Details columns (app).** **[needs human]**
-  After: W30.
-  - Dragging a header divider sets that column's `width` (Name keeps the
-    rest). The pointer shows the resize cursor over a divider. Each move
-    re-lays out the visible rows (arithmetic, see Performance); the
-    `SetSpaceView` is committed and saved once, on release. Esc during
-    the drag puts the width back.
-  - A pure `divider_at(x, columns, scale) -> Option<usize>` with a hit
-    slop scaled for DPI.
-  - Tests: `divider_at` at each edge and in between; widths clamp.
-  - **[needs human]** check: resize each column at 100 % and 150 %;
-    smooth on a 50,000-file lens; Esc cancels; a listing that arrives
-    mid-drag does not end it.
 
 - [ ] **W32. Reorder the Details columns (app).** **[needs human]**
   After: W31.
@@ -2095,6 +2082,7 @@ each id is in `archive/TASKS-done.md`.
 | W28 (F-07) | On a normal space and a lens: View ▸ "File name extensions" checks what the space shows now and choosing it flips Show and Hide; the View page offers Automatic, Show, and Hide, and Cancel restores. Under Automatic, Match Explorer follows Explorer's own setting (checked and unchecked, with the preset switched while the window is open), Custom hides. F2 on an item selects only the name part while extensions show. |
 | W30 (F-63) | On a normal space and a lens in Details, at 100 % and 150 %: right-click the header. Each column you check or uncheck shows or goes at once, its cells line up under its header, and Name is on and grey. A column brought back lands last. The choice survives a restart, and Ctrl+Z puts it back ("Undo Choose columns"). Right-clicking the header leaves the selection alone, including with rows scrolled under it. Hide the sorted column: the items keep their order and no arrow shows. With every column on in a narrow space, note how the right-hand columns are cut off (no sideways scroll yet). |
 | W48 (D17) | Fill a space, then in Small icons, Tiles, Details, Content, and List, at 100 % and 150 %, choose Fit to contents from the menu and from the Layout page: the space hugs its items with no scroll bar and no clipped last row (List keeps its height and takes the width; the rest keep their width), with the status bar on and off. With more items than fit, it stops at the work area and scrolls. Ctrl+Z restores the size. A very short result is allowed to be shorter than a resize would allow: note whether that looks wrong. Add items and Fit again: it is still offered. |
+| W31 (F-63) | On a space and a lens in Details, at 100 % and 150 %: over a header divider the pointer is the resize cursor. Drag a column's right divider: it follows the pointer, the rows follow, the columns may pass the edge, and on release Name takes the rest and the columns shift flush: judge that shift. The divider right of Name resizes the next column with no shift. Esc during a drag puts the width back and leaves the selection. A divider press does not sort; a click elsewhere on a header still does. Smooth on a 50,000-file lens, and a listing arriving mid-drag (copy files into the folder) does not end it. One Ctrl+Z restores the width, and it survives a restart. Compare the grab distance with Explorer's (provisional 4 px each way). |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 

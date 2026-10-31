@@ -61,8 +61,9 @@ pub const COLUMN_WIDTH_RANGE: (u16, u16) = (40, 2000);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColumnSpec {
     pub id: Column,
-    /// Its width at 96 DPI, or `None` for the column's default. Name ignores
-    /// it and takes the width the others leave.
+    /// Its width at 96 DPI, or `None` for the column's default. Name's is
+    /// `None`, so it takes the width the others leave, except while a divider
+    /// drag holds it still; a file never brings one back.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -137,7 +138,9 @@ fn lenient_columns<'de, D: Deserializer<'de>>(
         Lenient::Valid(spec) => Some(spec),
         Lenient::Invalid(_) => None,
     });
-    Ok(ColumnSpec::sanitize(specs.collect()))
+    let mut columns = ColumnSpec::sanitize(specs.collect());
+    columns[0].width = None;
+    Ok(columns)
 }
 
 /// Reads any whole number, so a huge or negative width is clamped by
@@ -217,6 +220,34 @@ impl SpaceView {
             columns: ColumnSpec::sanitize(columns),
             ..self.clone()
         }
+    }
+
+    /// This view with `column` at `width` pixels at 96 DPI, in range.
+    pub fn with_column_width(&self, column: Column, width: u16) -> Self {
+        let columns = self
+            .columns
+            .iter()
+            .map(|spec| ColumnSpec {
+                width: if spec.id == column {
+                    Some(width)
+                } else {
+                    spec.width
+                },
+                ..*spec
+            })
+            .collect();
+        Self {
+            columns: ColumnSpec::sanitize(columns),
+            ..self.clone()
+        }
+    }
+
+    /// This view with Name held at `width` at 96 DPI, or taking the width the
+    /// others leave when `None`. Not clamped, so holding Name never moves it.
+    pub fn with_name_held(&self, width: Option<u16>) -> Self {
+        let mut view = self.clone();
+        view.columns[0].width = width;
+        view
     }
 
     /// Whether this is the default view, which old files leave out.
@@ -475,6 +506,45 @@ mod tests {
             loaded("columns = [{ id = 'size', width = -5 }, { id = 'kind', width = 99999999 }]"),
             [name, spec(Column::Size, low), spec(Column::Kind, high)],
         );
+    }
+
+    #[test]
+    fn a_file_never_brings_back_a_width_for_name() {
+        assert_eq!(
+            loaded("columns = [{ id = 'name', width = 300 }, { id = 'size', width = 90 }]"),
+            [ColumnSpec::new(Column::Name), spec(Column::Size, 90)],
+        );
+    }
+
+    #[test]
+    fn setting_a_width_clamps_it_and_changes_only_that_column() {
+        let (low, high) = COLUMN_WIDTH_RANGE;
+        let view = SpaceView::default();
+        let size = |view: &SpaceView| view.columns[3];
+        assert_eq!(
+            size(&view.with_column_width(Column::Size, 150)),
+            spec(Column::Size, 150)
+        );
+        assert_eq!(
+            size(&view.with_column_width(Column::Size, 0)),
+            spec(Column::Size, low)
+        );
+        assert_eq!(
+            size(&view.with_column_width(Column::Size, u16::MAX)),
+            spec(Column::Size, high)
+        );
+        assert_eq!(
+            view.with_column_width(Column::Size, 150).columns[1],
+            view.columns[1]
+        );
+    }
+
+    #[test]
+    fn holding_name_is_not_clamped_and_letting_go_restores_it() {
+        let view = SpaceView::default();
+        let held = view.with_name_held(Some(3000));
+        assert_eq!(held.columns[0], spec(Column::Name, 3000));
+        assert_eq!(held.with_name_held(None), view);
     }
 
     #[test]

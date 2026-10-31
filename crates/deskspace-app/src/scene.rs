@@ -608,8 +608,9 @@ pub(crate) fn details_view(
 }
 
 /// The Details columns `view` shows, laid out across `content_width`: Name
-/// takes the width left over, down to `NAME_MIN_WIDTH`, and the rest keep
-/// their own widths. Rects are relative to the content area.
+/// takes the width left over, down to `NAME_MIN_WIDTH`, unless a divider drag
+/// holds it, and the rest keep their own widths. Rects are relative to the
+/// content area.
 pub(crate) fn details_columns(
     view: &SpaceView,
     content_width: i32,
@@ -623,7 +624,12 @@ pub(crate) fn details_columns(
         .skip(1)
         .map(|(_, width)| scaled(width))
         .sum();
-    let name_width = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
+    let rest = ((content_width - padding * 2 - fixed).max(scaled(NAME_MIN_WIDTH))).max(1);
+    let name_width = view
+        .columns
+        .first()
+        .and_then(|name| name.width)
+        .map_or(rest, |held| scaled(i32::from(held)));
     let mut x = padding;
     shown_details_columns(view)
         .enumerate()
@@ -1432,6 +1438,19 @@ mod tests {
             },
         );
         assert_eq!(details_cells(&view, &item), ["2 KB", ""]);
+    }
+
+    #[test]
+    fn a_held_name_keeps_its_width_so_the_columns_may_pass_the_edge() {
+        let view = SpaceView::default()
+            .with_column_width(deskspace_core::Column::Modified, 400)
+            .with_name_held(Some(300));
+        let columns = details_columns(&view, 500, 0, 24, 1.0);
+        assert_eq!(columns[0].rect.width, 300);
+        assert_eq!(columns[1].rect.x, 300, "its left edge stays put");
+        assert_eq!(columns[1].rect.right(), 700, "and its divider follows");
+        let released = details_columns(&view.with_name_held(None), 500, 0, 24, 1.0);
+        assert_eq!(released[0].rect.width, 120, "Name takes the rest again");
     }
 
     #[test]

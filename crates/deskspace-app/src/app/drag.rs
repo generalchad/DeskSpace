@@ -10,6 +10,7 @@ use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_deskt
 
 use crate::scene::{SurfaceLook, desktop_layer_drag_scene, drag_scene};
 
+use super::columns::ColumnResize;
 use super::pointer::{PendingClickOutcome, resize_edges_now, resolve_pending_click};
 use super::undo::move_items_label;
 use super::{App, Surface};
@@ -50,6 +51,8 @@ pub(super) enum Drag {
         /// Ctrl/Shift: add to the selection instead of replacing it.
         additive: bool,
     },
+    /// A Details header divider is being dragged.
+    ColumnResize(Box<ColumnResize>),
 }
 
 impl App {
@@ -123,6 +126,10 @@ impl App {
                 if self.resize_space_to(id, edges, origin, (active_x, active_y), point) {
                     self.refresh_space(ui, id);
                 }
+                true
+            }
+            Drag::ColumnResize(_) => {
+                self.resize_column_to(ui, point);
                 true
             }
         }
@@ -240,6 +247,7 @@ impl App {
                 self.undo.finish(&self.config.desktop);
                 self.schedule_save(ui);
             }
+            Drag::ColumnResize(resize) => self.finish_column_resize(ui, *resize),
         }
     }
 

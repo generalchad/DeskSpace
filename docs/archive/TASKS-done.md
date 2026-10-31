@@ -4825,3 +4825,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     it would show. A scratch-config run of the real app fitted Small icons,
     Details, and List through the menu: width kept and height shrunk, or
     the reverse for List.
+
+- [x] **W31. Resize the Details columns (app).** **[needs human]**
+  After: W30.
+  - Dragging a header divider sets that column's `width` (Name keeps the
+    rest). The pointer shows the resize cursor over a divider. Each move
+    re-lays out the visible rows (arithmetic, see Performance); the
+    `SetSpaceView` is committed and saved once, on release. Esc during
+    the drag puts the width back.
+  - A pure `divider_at(x, columns, scale) -> Option<usize>` with a hit
+    slop scaled for DPI.
+  - Tests: `divider_at` at each edge and in between; widths clamp.
+  - **[needs human]** check: resize each column at 100 % and 150 %;
+    smooth on a 50,000-file lens; Esc cancels; a listing that arrives
+    mid-drag does not end it.
+  - Done 2026-10-31; the maintainer reviewed the plan and chose how a
+    divider behaves. Name takes the rest, so widening a column would leave
+    its divider behind the pointer. Name is held at its width for the drag
+    and takes the rest again on release, so the columns shift flush then;
+    the divider right of Name resizes the next column instead. Each move
+    updates the model with a bare dispatch, like Move and Resize space, which
+    differs from the task's "committed once": one undo entry and one save
+    still come on release. Name's width exists only during a drag, and a file
+    never brings one back. A scratch-config run of the real app dragged
+    dividers by posted messages, with the results read from the saved file.
+    One of four runs failed with a stray sort and a wrong width, and three
+    clean runs followed; real mouse input over the topmost window is the
+    likely cause, not proven.

@@ -1,10 +1,10 @@
 //! `App` pointer: space events, selection gestures, hover, and resizing (R1).
 
 use deskspace_core::geometry::{Point, Rect, Size};
-use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout, ViewMode};
+use deskspace_core::{ItemId, ResizeEdges, Space, SpaceId, ViewLayout};
 
 use deskspace_platform::{
-    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold, space_dpi,
+    CheckBoxMode, CursorShape, DragImage, MouseButton, SpaceEvent, Ui, drag_threshold,
 };
 
 use crate::settings::STATUS_BUTTONS;
@@ -230,6 +230,7 @@ impl App {
             SpaceEvent::CaptureLost => {
                 self.pointer.right_press = None;
                 self.pointer.right_dragged = false;
+                self.cancel_column_gesture(ui);
                 self.end_drag(ui);
             }
             SpaceEvent::MouseUp {
@@ -384,29 +385,6 @@ impl App {
         true
     }
 
-    /// The shown Details column whose header holds `point` on `surface`, if
-    /// any. The desktop layer has no header.
-    fn details_header_column(&self, surface: Surface, point: Point) -> Option<usize> {
-        let Surface::Space(id) = surface else {
-            return None;
-        };
-        let space = self.config.desktop.space(id)?;
-        let content = space.content_rect();
-        if space.view().mode != ViewMode::Details || !content.contains(point) {
-            return None;
-        }
-        let layout = self.view_layout(id)?;
-        let details = crate::scene::details_view(
-            space,
-            &layout,
-            content.width,
-            self.layout_for(id).padding,
-            space_dpi(id.0),
-        )?;
-        let local = Point::new(point.x - content.x, point.y - content.y);
-        crate::scene::details_header_column_at(&details, local)
-    }
-
     pub(super) fn begin_interaction(
         &mut self,
         ui: &mut Ui,
@@ -426,6 +404,13 @@ impl App {
         // (W19).
         if let Surface::Space(id) = surface
             && self.status_button_clicked(ui, id, point)
+        {
+            return;
+        }
+        // A press on a Details divider resizes its column, so it must not also
+        // sort.
+        if let Surface::Space(id) = surface
+            && self.begin_column_resize(ui, id, point)
         {
             return;
         }
@@ -587,7 +572,12 @@ impl App {
             .map_or(ResizeEdges::NONE, |space| {
                 space.resize_edges_at(point, RESIZE_BORDER)
             });
-        ui.set_space_cursor(id.0, cursor_for(edges));
+        let cursor = if !edges.any() && self.details_divider_at(id, point).is_some() {
+            CursorShape::SizeWestEast
+        } else {
+            cursor_for(edges)
+        };
+        ui.set_space_cursor(id.0, cursor);
     }
 
     pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
