@@ -7,6 +7,7 @@ use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect};
 use crate::icon::SpaceIcon;
 use crate::id::SpaceId;
+use crate::item::Item;
 use crate::layout::{
     GridSpec, arrange_space, clamp_to_bounds, position_items, resize_rect, resolve_collisions,
     snap_rect,
@@ -50,12 +51,18 @@ impl Desktop {
     pub(super) fn apply_restore_spaces(
         &mut self,
         mut spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
+        layout: GridSpec,
     ) -> CommandOutcome {
         if !self.can_restore(&spaces) {
             return CommandOutcome::Rejected;
         }
-        for (id, _) in &spaces {
-            self.remove_space(*id);
+        for (id, state) in &mut spaces {
+            let Some(removed) = self.remove_space(*id) else {
+                continue;
+            };
+            let restored = state.as_mut().map(|(_, space)| space);
+            let items = keep_lens_items(removed, restored, layout);
+            self.retire_items(items);
         }
         spaces.sort_by_key(|(_, state)| state.as_ref().map(|(index, _)| *index));
         for (index, space) in spaces.into_iter().filter_map(|(_, state)| state) {
@@ -321,4 +328,32 @@ impl Desktop {
         resolve_collisions(&mut self.spaces, layout.gap, bounds);
         CommandOutcome::Applied
     }
+}
+
+/// Gives `restored`, a lens undo brought back without items, the ones `removed`
+/// holds if it shows the same folder, and returns the items nothing keeps: the
+/// folder has not changed, so they are still right, and the lens's worker
+/// builds a new list if its rules did. They are placed again if the size
+/// changed, since a resized space flows them into other columns.
+fn keep_lens_items(
+    mut removed: Space,
+    restored: Option<&mut Space>,
+    layout: GridSpec,
+) -> Vec<Item> {
+    let items = std::mem::take(&mut removed.items);
+    let Some(restored) = restored else {
+        return if removed.is_lens() { items } else { Vec::new() };
+    };
+    if !restored.is_lens() {
+        return Vec::new();
+    }
+    if removed.folder_view().map(|view| &view.path) != restored.folder_view().map(|view| &view.path)
+    {
+        return items;
+    }
+    restored.items = items;
+    if removed.rect.size() != restored.rect.size() {
+        position_items(restored, layout);
+    }
+    Vec::new()
 }

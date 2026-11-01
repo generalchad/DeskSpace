@@ -167,7 +167,9 @@ pub enum Command {
     /// removes it. The layout is not applied: a restore is an exact copy.
     /// `Rejected`, changing nothing, if an id is listed twice, a space does
     /// not carry its listed id, or a restored item's id is held by a space
-    /// not listed, by another restored space, or by the desktop layer.
+    /// not listed, by another restored space, or by the desktop layer. A lens
+    /// keeps the items it holds while it shows the same folder, because undo
+    /// does not store them (`Space::undo_snapshot`).
     RestoreSpaces {
         spaces: Vec<(SpaceId, Option<(usize, Space)>)>,
     },
@@ -334,7 +336,7 @@ impl Desktop {
             Command::SetSpaceLook { id, custom, look } => {
                 self.apply_set_space_look(id, custom, look)
             }
-            Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces),
+            Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces, layout),
             Command::ToggleLock { id } => self.apply_toggle_lock(id),
             Command::ToggleFold { id } => self.apply_toggle_fold(id),
             Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),

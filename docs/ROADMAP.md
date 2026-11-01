@@ -285,7 +285,11 @@ A native, lightweight, offline Windows desktop organizer that:
     state the same way. Anything else changed them since (a prune, a look
     edit, a re-flow that moved items, a file moved outside DeskSpace), so
     the entry is stale: it is dropped with a message naming it, and nothing
-    is changed. All checks run before the first file is touched.
+    is changed. All checks run before the first file is touched. A lens's
+    items are not part of this (amended 2026-10-31, maintainer): they are a
+    live view of its folder, replaced by every listing, so an entry neither
+    stores nor compares them. A lens brought back keeps showing what it holds,
+    or lists its folder if it shows another.
   - *Model:* a restore is a `Command` that puts back exactly the stored
     spaces, so the model still changes only through `Command`s. Ids are
     never reused within a session, so a restored space or item cannot

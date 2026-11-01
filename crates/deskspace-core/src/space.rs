@@ -257,6 +257,35 @@ impl Space {
         self.source.folder()
     }
 
+    /// This space as undo stores and compares it (D11). A lens's items are a
+    /// live view of its folder, not something a user action made: its worker
+    /// replaces them with every list, so storing them would make every undo
+    /// entry naming the lens stale, and copy them on the UI thread for nothing.
+    pub fn undo_snapshot(&self) -> Self {
+        if !self.is_lens() {
+            return self.clone();
+        }
+        Self {
+            id: self.id,
+            title: self.title.clone(),
+            rect: self.rect,
+            source: self.source.clone(),
+            view: self.view.clone(),
+            items: Vec::new(),
+            locked: self.locked,
+            icon: self.icon.clone(),
+            folded: self.folded,
+            custom: self.custom,
+            look: self.look.clone(),
+            legacy_opacity: self.legacy_opacity,
+            legacy_tint: self.legacy_tint,
+            legacy_text: self.legacy_text,
+            legacy_icon_size: self.legacy_icon_size,
+            title_height: self.title_height,
+            user_sized: self.user_sized,
+        }
+    }
+
     /// What decides which entries this lens lists and in what order, or `None`
     /// for a normal space.
     pub fn lens_rules(&self) -> Option<crate::lens_build::LensRules> {

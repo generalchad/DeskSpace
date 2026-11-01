@@ -271,7 +271,7 @@ fn space_state(desktop: &Desktop, id: SpaceId) -> Option<(usize, Space)> {
         .iter()
         .enumerate()
         .find(|(_, space)| space.id == id)
-        .map(|(index, space)| (index, space.clone()))
+        .map(|(index, space)| (index, space.undo_snapshot()))
 }
 
 /// Outcome of an undo or redo step.
@@ -1504,5 +1504,79 @@ mod tests {
             PathBuf::from("C:/docs")
         );
         assert_eq!(lens_space.title(), "Docs");
+    }
+
+    fn lens_with_two_files(app: &mut App) -> (SpaceId, Vec<deskspace_core::source::FolderEntry>) {
+        let lens = create_lens(&mut app.config.desktop, "L", sample_rect(16), "C:/L");
+        let entry = |name: &str, size| deskspace_core::source::FolderEntry {
+            path: PathBuf::from(format!("C:/L/{name}")),
+            label: name.into(),
+            kind: deskspace_core::item::ItemKind::File,
+            size: Some(size),
+            modified: None,
+            created: None,
+            hidden: false,
+        };
+        let listing = vec![entry("a", 1), entry("b", 2)];
+        crate::fixtures::sync_lens(&mut app.config.desktop, lens, listing.clone());
+        (lens, listing)
+    }
+
+    fn sorted_by_size(app: &App, lens: SpaceId) -> SpaceView {
+        let mut view = app.config.desktop.space(lens).unwrap().view().clone();
+        view.sort.key = SortKey::Size;
+        view.sort.descending = true;
+        view
+    }
+
+    /// A lens's items are replaced by the list its worker builds after a sort,
+    /// which used to make the entry stale, so a lens's sort could never undo.
+    #[test]
+    fn a_lens_sort_undoes_and_redoes_after_its_new_list_arrives() {
+        let mut app = test_app();
+        let (lens, listing) = lens_with_two_files(&mut app);
+        let view = sorted_by_size(&app, lens);
+        app.change_view(lens, view, Point::default(), "Sort lens");
+        crate::fixtures::sync_lens(&mut app.config.desktop, lens, listing.clone());
+        assert_eq!(
+            app.config.desktop.space(lens).unwrap().items()[0].label,
+            "b",
+            "the new list is in the new order"
+        );
+
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        let space = app.config.desktop.space(lens).unwrap();
+        assert_eq!(space.view().sort.key, SortKey::Name);
+        assert_eq!(space.items().len(), 2, "the lens keeps showing its files");
+
+        crate::fixtures::sync_lens(&mut app.config.desktop, lens, listing);
+        assert!(matches!(app.apply_redo(), StepOutcome::Applied { .. }));
+        assert_eq!(
+            app.config.desktop.space(lens).unwrap().view().sort.key,
+            SortKey::Size
+        );
+    }
+
+    #[test]
+    fn a_file_changing_in_a_lens_leaves_its_undo_entries_good() {
+        let mut app = test_app();
+        let (lens, mut listing) = lens_with_two_files(&mut app);
+        let view = sorted_by_size(&app, lens);
+        app.change_view(lens, view, Point::default(), "Sort lens");
+        listing.pop();
+        crate::fixtures::sync_lens(&mut app.config.desktop, lens, listing);
+        assert!(matches!(app.apply_undo(), StepOutcome::Applied { .. }));
+        assert_eq!(app.config.desktop.space(lens).unwrap().items().len(), 1);
+    }
+
+    #[test]
+    fn an_undo_entry_stores_no_lens_items() {
+        let mut app = test_app();
+        let (lens, _) = lens_with_two_files(&mut app);
+        let view = sorted_by_size(&app, lens);
+        app.change_view(lens, view, Point::default(), "Sort lens");
+        let change = &app.undo.undo.last().unwrap().spaces[0];
+        assert!(change.before.as_ref().unwrap().1.items().is_empty());
+        assert!(change.after.as_ref().unwrap().1.items().is_empty());
     }
 }

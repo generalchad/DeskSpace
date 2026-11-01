@@ -474,6 +474,138 @@ mod tests {
         assert!(desktop.reserve_item_ids().next >= block.end);
     }
 
+    /// The state undo stores for lens `id`, as `App` records it.
+    fn undo_state(
+        desktop: &Desktop,
+        id: SpaceId,
+    ) -> Vec<(SpaceId, Option<(usize, crate::space::Space)>)> {
+        vec![(id, Some((0, desktop.space(id).unwrap().undo_snapshot())))]
+    }
+
+    #[test]
+    fn a_normal_spaces_snapshot_keeps_its_items_and_a_lenss_does_not() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        let space = desktop.space(id).unwrap();
+        let snapshot = space.undo_snapshot();
+        assert!(snapshot.items().is_empty());
+        assert_eq!(snapshot.title(), space.title());
+        assert_eq!(snapshot.folder_view(), space.folder_view());
+
+        let normal = desktop.next_space_id();
+        desktop.apply(
+            Command::CreateSpace {
+                title: "Space".into(),
+                at: Point::new(400, 0),
+                size: Size::new(240, 120),
+                locked: false,
+                icon: crate::icon::SpaceIcon::None,
+                view: SpaceView::default(),
+            },
+            bounds(),
+        );
+        desktop.apply(
+            Command::AddItem {
+                space: normal,
+                path: "C:/x/a.txt".into(),
+                facts: ItemFacts::default(),
+            },
+            bounds(),
+        );
+        let space = desktop.space(normal).unwrap();
+        assert_eq!(&space.undo_snapshot(), space);
+    }
+
+    #[test]
+    fn restoring_a_lens_on_the_same_folder_keeps_the_items_it_holds() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        let spaces = undo_state(&desktop, id);
+        sync(&mut desktop, id, vec![entry("new.txt", ItemKind::File)]);
+        desktop.take_retired_items();
+
+        assert_eq!(
+            desktop.apply(Command::RestoreSpaces { spaces }, bounds()),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["new"], "what the folder holds now");
+        assert!(desktop.take_retired_items().is_empty());
+    }
+
+    #[test]
+    fn restoring_a_lens_on_another_folder_empties_it_until_its_list_comes() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let spaces = undo_state(&desktop, id);
+        desktop.apply(
+            Command::SetLensFolder {
+                id,
+                path: "C:/other".into(),
+                title: "Other".into(),
+            },
+            bounds(),
+        );
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+
+        assert_eq!(
+            desktop.apply(Command::RestoreSpaces { spaces }, bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(
+            space.folder_view().unwrap().path,
+            PathBuf::from("C:/folder")
+        );
+        assert!(space.items().is_empty());
+        assert_eq!(
+            desktop.take_retired_items()[0][0].label,
+            "a",
+            "freed off the UI thread"
+        );
+    }
+
+    #[test]
+    fn restoring_a_lens_at_another_size_places_its_items_again() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let entries = (0..6)
+            .map(|index| entry(&format!("file{index}.txt"), ItemKind::File))
+            .collect();
+        sync(&mut desktop, id, entries);
+        let spaces = undo_state(&desktop, id);
+        desktop.apply(
+            Command::SetSpaceRect {
+                id,
+                rect: Rect::new(10, 10, 900, 400),
+            },
+            bounds(),
+        );
+        assert_eq!(
+            desktop.apply(Command::RestoreSpaces { spaces }, bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.items().len(), 6);
+        assert_eq!(space.items()[5].position, desktop.layout.grid_position(5));
+    }
+
+    #[test]
+    fn deleting_a_restored_lens_frees_its_items_off_the_ui_thread() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        desktop.apply(
+            Command::RestoreSpaces {
+                spaces: vec![(id, None)],
+            },
+            bounds(),
+        );
+        assert!(desktop.space(id).is_none());
+        assert_eq!(desktop.take_retired_items()[0][0].label, "a");
+    }
+
     #[test]
     fn sync_lens_with_no_entries_empties_it() {
         let mut desktop = Desktop::new();
