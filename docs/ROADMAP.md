@@ -557,6 +557,10 @@ A native, lightweight, offline Windows desktop organizer that:
     O3 checks.)
   - *Animations:* the shadow follows the window's rect (Roll, Fly, Bounce,
     CRT). It fades with any frame that leaves the window see-through.
+    (Amended 2026-10-31: Fly and Bounce cast none while the
+    work area clips them. A shadow of a new size reaches the screen a frame
+    after its window, and it is hollow, so crossing the edge left an empty
+    outlined box.)
   - *Debug window (amends D14):* a "Shadow settings" box edits the three
     settings as the settings window does, and saves them at once, as the
     animation settings box does. Two session-only toggles outline every

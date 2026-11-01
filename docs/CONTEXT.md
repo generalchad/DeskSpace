@@ -774,7 +774,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   `render/shadow.rs`; ROADMAP D15) kept directly below its space and above
   the desktop layer. Its corner tile is cached and its frame is filled from
   the tile and per-axis Gaussian profiles; it follows the space's rect
-  (Roll, Fly, Bounce, CRT) and fades with `TransitionFrame::shadow_strength`. The painter rounds every composition
+  (Roll, Fly, Bounce, CRT) and fades with `TransitionFrame::shadow_strength`,
+  which is none while the work area clips Fly or Bounce. The painter rounds every composition
   space, every Clear space, Solid spaces with other radii, chrome-less
   windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
   so the opaque fill does not show past the corners (`Frame` in

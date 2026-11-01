@@ -190,6 +190,9 @@ pub struct TransitionFrame {
     pub mask: Mask,
     /// How the contents are drawn.
     pub content: Content,
+    /// The work area cuts this frame's window short of the space (Fly,
+    /// Bounce), so it changes size however fast the space moves.
+    pub clipped: bool,
 }
 
 impl TransitionFrame {
@@ -203,9 +206,14 @@ impl TransitionFrame {
     /// How strongly the space casts its shadow, 0 to 1 (ROADMAP D15). A
     /// frame that only moves the window casts it whole, since the shadow
     /// follows the rect. One that leaves the window see-through fades it as
-    /// far as the space has faded, or as far as it has gone.
+    /// far as the space has faded, or as far as it has gone. A clipped one
+    /// casts none: a shadow of a new size reaches the screen a frame after
+    /// its window, and it is hollow, so a space crossing the edge left an
+    /// empty outlined box behind it (seen 2026-10-31).
     pub fn shadow_strength(&self) -> f32 {
-        if self.covers_window() {
+        if self.clipped {
+            0.0
+        } else if self.covers_window() {
             1.0
         } else {
             self.opacity.min(self.shown).clamp(0.0, 1.0)
@@ -379,6 +387,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
         opacity: 1.0,
         mask: Mask::None,
         content: Content::Whole,
+        clipped: false,
     };
     let gone = 1.0 - shown;
     match play.effect {
@@ -435,6 +444,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             TransitionFrame {
                 rect,
                 content_offset: offset_of(moved, rect),
+                clipped: rect != moved,
                 ..whole
             }
         }
@@ -660,10 +670,45 @@ mod tests {
             assert_eq!(transition.frame(ms(0)).shadow_strength(), 1.0, "{effect:?}");
             let midway = transition.frame(ms(100));
             let strength = midway.shadow_strength();
-            if midway.covers_window() {
+            if midway.clipped {
+                assert_eq!(strength, 0.0, "{effect:?} is crossing the edge");
+            } else if midway.covers_window() {
                 assert_eq!(strength, 1.0, "{effect:?} only moves the window");
             } else {
                 assert!((0.0..1.0).contains(&strength), "{effect:?}: {strength}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_space_casts_no_shadow_while_the_work_area_clips_it() {
+        for effect in [Effect::Fly, Effect::Bounce] {
+            let transition = start(effect, Way::Out);
+            let mut clipped = 0;
+            for step in 0..=200 {
+                let frame = transition.frame(ms(step));
+                let inside = frame.rect == geometry().rect.offset(0, frame.rect.y - 100);
+                assert_eq!(frame.clipped, !inside, "{effect:?} at {step}: {frame:?}");
+                if frame.clipped {
+                    clipped += 1;
+                    assert_eq!(frame.shadow_strength(), 0.0, "{effect:?} at {step}");
+                } else {
+                    assert_eq!(frame.shadow_strength(), 1.0, "{effect:?} at {step}");
+                }
+            }
+            assert!(clipped > 0, "{effect:?} crosses the edge");
+        }
+    }
+
+    #[test]
+    fn only_the_work_area_clips_a_frame() {
+        for effect in every_effect() {
+            if matches!(effect, Effect::Fly | Effect::Bounce) {
+                continue;
+            }
+            for step in 0..=40 {
+                let frame = start(effect, Way::Out).frame(ms(step * 5));
+                assert!(!frame.clipped, "{effect:?} at {step}");
             }
         }
     }
