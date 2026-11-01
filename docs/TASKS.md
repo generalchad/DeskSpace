@@ -233,17 +233,6 @@ user-visible change is expected. Do them in any order. The exceptions are
 B32-B36, from a review on 2026-10-21: they fix performance and correctness,
 and B33 and B36 change behavior on purpose, as each says.
 
-- [ ] **B13. One child-control helper.** `win32/dialog.rs` `control` and
-  `win32/settings_window/build.rs` `Builder::control` are near-copies, both
-  allowed `too_many_arguments` (8).
-  - Add `pub(crate) struct ControlSpec<'a> { class: PCWSTR, text: &'a str,
-    style: u32, ex_style: WINDOW_EX_STYLE, bounds: (i32, i32, i32, i32), id:
-    usize }` in `dialog.rs`; `control(chrome, parent, spec)` creates the
-    window and sets the font. `Builder::control` calls it with its own font.
-  - Done when: both allows are gone and **Found while working** no longer
-    lists `too_many_arguments`. **[needs human]** check: the settings window
-    and the custom shortcut dialog look as before.
-
 - [ ] **B14. Split `Builder::field` by field kind.**
   `win32/settings_window/build.rs` `Builder::field` is about 260 lines: one
   `match` over `FieldKind` (Heading, Note, Choice, Toggle, Slider, Color,
@@ -1752,6 +1741,7 @@ each id is in `archive/TASKS-done.md`.
 | Spaces above the layer | With takeover on, press Win+D twice, switch tasks a few times, and hide and show the spaces: each space still takes clicks, the wheel, and a drag from Explorer or Start (no "no" cursor). |
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
+| B13 | The settings window, the custom shortcut dialog, and the installed-apps picker look as before at 100 % and 150 % in light and dark mode: every control keeps its size, font, place, colors, and tab order. |
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Rechecked after the rail fix: "Animations" reads as a semibold header with its pages (Startup, Delete, Fold since T15) indented under it; the "Windows settings…" button's caption fits; Detail shows a plain number. Then the rest: nothing clipped at 100 % and 150 %; each effect greys the options it does not use, Delete's "Same as startup" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; the button opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |

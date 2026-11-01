@@ -5260,3 +5260,14 @@ until I5-I6 all land, so no partial build hides the desktop.
     already lives).
   - Pure move: no behavior change, no new `pub(super)` beyond what the moved
     methods need. Done when: `on_space_event` is under about 50 lines.
+
+- [x] **B13. One child-control helper.** `win32/dialog.rs` `control` and
+  `win32/settings_window/build.rs` `Builder::control` are near-copies, both
+  allowed `too_many_arguments` (8).
+  - Add `pub(crate) struct ControlSpec<'a> { class: PCWSTR, text: &'a str,
+    style: u32, ex_style: WINDOW_EX_STYLE, bounds: (i32, i32, i32, i32), id:
+    usize }` in `dialog.rs`; `control(chrome, parent, spec)` creates the
+    window and sets the font. `Builder::control` calls it with its own font.
+  - Done when: both allows are gone and **Found while working** no longer
+    lists `too_many_arguments`. **[needs human]** check: the settings window
+    and the custom shortcut dialog look as before.
