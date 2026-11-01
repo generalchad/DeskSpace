@@ -909,117 +909,74 @@ in `ui.rs`. What spans them:
 
 ## 8. Controls (current)
 
+`README.md` "Controls" is the user's list, and `ENGINEERING.md`'s Keys table
+owns when each key is watched. This section keeps only what those leave out:
+exact steps, ranges, edge cases, and the code behind them.
+
 **Spaces**
 
-- Drag a space's title bar to move it (snaps to the grid); double-click it to
-  fold or unfold the space.
-- Drag an edge or corner to resize; the wheel scrolls overflowing content.
-- Ctrl+wheel changes the icon size. Under the default "Match Explorer's
-  display" preset it changes the desktop's own icon size (8 px a notch,
-  16-256 px), as Ctrl+wheel on the desktop does, and the matching spaces
-  follow (ROADMAP D9); under Custom it changes the global icon size (10 % a
-  notch). A space with its own Custom look or a fixed icon view keeps its
-  icon size. Every space keeps its size and re-flows its icons into more or
-  fewer columns (scrolling when they no longer fit), as an Explorer window
-  does; "Fit to contents" sizes it to its items again.
+- Moving snaps to the grid; resizing follows the view's cells (ROADMAP D22).
+- Ctrl+wheel: under the default "Match Explorer's display" preset it sets
+  the desktop's own icon size, 8 px a notch between 16 and 256, and matching
+  spaces follow (ROADMAP D9); under Custom it changes the global size 10 % a
+  notch. A space with its own Custom look or a fixed icon view keeps its
+  size. Every space re-flows its icons into more or fewer columns;
+  "Fit to contents" sizes it to its items again.
 - On a space set to one of Explorer's views, Ctrl+wheel, Ctrl+Plus, and
-  Ctrl+Minus step it through the views in the View menu's order, zooming in
-  toward the bigger ones, and stop at the ends; Ctrl+0 returns it to
-  "Settings icon size". Each step is one "Change view" undo entry, and no
-  zoom pop-up shows for it (W39).
-- Every zoom shows the zoom pop-up at the top center of the monitor under the
-  pointer (F-57): the size as a percentage (the desktop's 48 px "Medium
-  icons" is 100 %), zoom out and in (one notch each), and Reset (back to
-  100 %). Buttons grey out at the ends of the range, and Reset at 100 %. It
-  hides 2 s after the last zoom, or once the pointer leaves it.
-- Rename a space from its right-click menu: the title is edited in place
-  (Enter commits, Escape cancels, clicking away commits). A typed title on a
-  lens is a nickname that stops the title following the folder. Committing an
-  empty title makes it follow again, as the Lenses page's "Show as" says
-  (Folder name when that is Custom), as one undo entry. An empty title on a
-  normal space, or on a lens that already follows its folder, is ignored.
+  Ctrl+Minus step through the View menu's order, stop at the ends, and each
+  step is one "Change view" undo entry; no zoom pop-up shows for it (W39).
+  Ctrl+0 returns to "Settings icon size".
+- The zoom pop-up (F-57) shows the size as a percentage (the desktop's
+  48 px "Medium icons" is 100 %), greys its buttons at the range ends and
+  Reset at 100 %, and hides 2 s after the last zoom or when the pointer
+  leaves it.
+- Renaming a space (menu or F2) commits on Enter or a click away and cancels
+  on Escape. A typed title on a lens is a nickname that stops the title
+  following the folder. An empty one follows again, as the Lenses page's
+  "Show as" says (Folder name when that is Custom), as one undo entry; on a
+  normal space, or on a lens that already follows its folder, it is ignored.
 
 **Menus**
 
-- Right-click a space (`App::show_space_menu`, `app/menus.rs`): Undo and Redo
-  (named for the top entry, such as "Undo Move 3 items", and greyed when empty);
-  Fold/Unfold, Rename, Lock position, Fit to contents (unlocked spaces that
-  are resized or in a view that places items by order); New shortcut…, Add files…, Appearance…, View…, Sort by…, Group by…; Delete space
-  (asks first unless the space is empty); New space, New lens…; Settings…,
-  Hide/Show spaces, Exit DeskSpace.
-- A lens's menu adds Open folder and Change folder… (`Ui::pick_folder`; a
-  folder `ItemStore::allows_lens` refuses gets a message instead) after the
-  first group. Its Sort by… checks the space's rule and keeps it as files come
-  and go (`SetSpaceView`), and adds Show hidden files (`SetLensView`). Folders
-  first is part of the rule for both kinds. A sort or hidden-files change
-  goes to the lens's worker, which builds its list again in the new order.
-- New space, from any menu or the hotkey, opens beside the top row of spaces
-  on the monitor of the click or the pointer, one typical gutter to the
-  right (ROADMAP D10).
-- New lens… (`App::create_lens`), under New space in the space menu, the
-  tray, and the desktop layer's menu (`new_entries`), asks for a folder
-  (`Ui::pick_folder`), refuses DeskSpace's storage folder with a message,
-  and opens a `CreateLens` where New space would put a space, titled with
-  the folder's name. It then starts the lens's watch (`sync_watches`).
-- **Appearance ▸** sets a tint-opacity preset (100/80/60/40/20 %), an icon size
-  (Small 75, Medium 100, Large 150, Extra large 200 %), or a custom tint or
-  text color. Each customizes the space, starting from what it shows now; "Use
-  global appearance" (greyed unless customized) makes it follow Global again
-  (keeping its look for later), and "Space settings…" opens the settings
-  window on that space. **View ▸** picks "Settings icon size" (the look's
-  size), Extra large, Large, Medium, Small icons, or List; the three large
-  views set that space's icon size at 256, 96, or 48 px at 96 DPI and leave it
-  out of Ctrl+wheel and Match Explorer, while Small icons (W16) and List (W17)
-  draw 16 px icons in inline cells. Small icons wraps the cells into rows and
-  scrolls down; List fills a column top to bottom and scrolls sideways, wheel
-  included. **Sort by ▸** is Explorer's folder menu:
-  the `SORT_KEYS` keys as radio items, then Ascending and
-  Descending, then Folders first and Keep sorted, then, on a lens, Show
-  hidden files. Keep sorted is checked and greyed on a lens. A key
-  keeps the direction, a direction keeps the key, and Folders first toggles,
-  all through one `SortRule`. A normal space sorts once with the new rule, or
-  holds the order once Keep sorted is on; a lens always holds it, and its
-  worker builds its list again. The menus are built from tables:
-  `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
-  in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
-  words in `SORT_KEYS` in `settings/tables.rs`.
-- **New shortcut ▸** (F-53, F-54; `NEW_SHORTCUT_ENTRIES` in `app.rs`, also
-  enabled on a locked space): "From installed apps…", a picker listing every
-  app in the Applications folder (Store apps included) with a check box per
-  row and a search box; "Custom shortcut…", a dialog for a target (file,
-  folder, program, or web address, with Browse…), optional arguments, and a
-  name that follows the target until edited; and, after a separator, "Paste
-  shortcut", enabled when the clipboard holds shell items
-  (`Ui::clipboard_shell_items`), which leaves the clipboard, its files, and any
-  cut ghosting untouched. A typed path is resolved as the Run dialog does
-  (`%VARIABLES%`, a bare program name on the search path), and a missing
-  target is reported in the dialog. A web address becomes a `.url`,
-  everything else a `.lnk` (a copied `.lnk` or `.url` is duplicated into the
-  store). All three end in `App::add_shortcuts`, which writes into the space
-  storage and lists the shortcuts at the end of the space; for a lens it
-  writes them into the lens's folder and lists nothing, since the watch does.
-  The same choices
-  open from the + tile on a space's Settings page "Shortcuts", whose preview
-  also deletes an item from its X (after asking).
-- **Add files…** (F-55) picks files in the standard Open dialog
-  (`Ui::pick_files`, an `IFileOpenDialog` with multi-select, started on the
-  Desktop folder) and moves them in through the drop path (`App::add_dropped`,
-  ROADMAP D3), so a picked file is relocated exactly like a dragged one.
-  Cancelling adds nothing.
-- Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Undo and Redo, Settings…, Hide/Show spaces, New space, New lens…,
-  Check for updates… (or "Restart to update to X" once an automatic update is
-  downloaded), and Exit DeskSpace, and, with `--debug`, Debug…. A space
-  created from the tray opens on the monitor of the pointer, and creating a
-  space while spaces are hidden shows them.
+- The space and tray menus are listed in README and built in `app/menus.rs`.
+  Rules README leaves out: Undo and Redo are named for the top entry and
+  greyed when empty; Fit to contents is offered only on an unlocked space
+  that is resized or in an order-placed view; Delete space asks first unless
+  the space is empty; a lens's Change folder… refuses a folder
+  `ItemStore::allows_lens` rejects with a message, and its Sort by… and Show
+  hidden files rebuild the list on the worker. With `--debug`, the tray adds
+  Debug… (D14).
+- New space opens beside the monitor's top row, one typical gutter right
+  (ROADMAP D10); a space from the tray opens on the pointer's monitor, and
+  creating one while hidden shows the spaces. New lens… (`App::create_lens`)
+  asks for a folder (`Ui::pick_folder`), refuses the store, opens where New
+  space would, and starts the watch (`sync_watches`).
+- Appearance presets: tint opacity 100/80/60/40/20 % and icon size Small 75,
+  Medium 100, Large 150, Extra large 200 %. "Use global appearance" is greyed
+  unless customized and keeps the look for later. View presets set 256, 96,
+  or 48 px at 96 DPI (out of Ctrl+wheel and Match Explorer); Small icons and
+  List draw 16 px inline cells. In Sort by, a key keeps the direction, a
+  direction keeps the key, Folders first toggles, and Keep sorted is checked
+  and greyed on a lens. The tables are `OPACITY_PRESETS`,
+  `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, `SORT_MENU_IDS`, and
+  `NEW_SHORTCUT_ENTRIES` in `app.rs`, with `VIEW_MODES` and `SORT_KEYS` in
+  `settings/tables.rs`.
+- New shortcut ▸ offers installed apps, a custom target, and Paste shortcut,
+  enabled only when the clipboard holds shell items, which it leaves
+  untouched. A typed target resolves as the Run dialog does (`%VARIABLES%`,
+  a bare program on the search path); a missing one is reported in the
+  dialog. A web address becomes `.url`, anything else `.lnk`. All paths end
+  in `App::add_shortcuts`, which writes into the store or the lens's folder.
+- Add files… uses `Ui::pick_files` (multi-select, starting on the Desktop)
+  and moves through the drop path (`App::add_dropped`); Cancel adds nothing.
 
 **Settings**
 
-- Pick Global or a space in the left pane. Global edits apply to every space
-  that is not customized. A space's pages show the global values, greyed,
-  until "Customize this space" is ticked; its edits then apply to that space
-  alone. A space's header also has a "Delete space" button. Selecting a space
-  highlights it on the desktop for about 1.2 s.
+- Global edits apply to every space that is not customized. A space's pages
+  show the global values, greyed, until "Customize this space" is ticked; its
+  edits then apply to that space alone. A space's header also has a "Delete
+  space" button. Selecting a space highlights it on the desktop for about
+  1.2 s.
 - Edits preview live. Icon size, spacing, and edge padding re-flow every
   space; icon size scales the icon and its grid cell, defaults to 100 %
   (Windows' 48 px desktop icon), and can be typed as a percentage. The shell
@@ -1027,158 +984,51 @@ in `ui.rs`. What spans them:
   80 %; 100 % matches Explorer). The Layout page's "Fit to contents" button
   (grey unless a resized, unlocked space is selected) commits at once like
   the menu entry.
-- The pages (`settings/pages.rs`, one builder function each). "Look" pages
-  appear for Global and every space, Shortcuts only for a space, the rest
-  only for Global:
-
-  | Page | Scope | Fields |
-  |------|-------|--------|
-  | Appearance | look | Color mode, Background material, Corner radius, Tint opacity, Title bar shading, Show window border, Border thickness, Show shadow, Shadow size, Shadow opacity, Item preset |
-  | Labels | look | Label lines, Label size, Label shadow |
-  | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
-  | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
-  | Advanced | look | Shortcut overlay size |
-  | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now, Icon downloads |
-  | New spaces | Global | Default title, width, height, Start new spaces locked, Icon, and the view and sort a new space starts with (affect only spaces created afterwards) |
-  | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
-  | About | Global | Version, summary, license, configuration file path |
-  | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
-  | Animations › one page per kind | Global | Built from `ANIMATION_PAGES` and the core tables (ROADMAP D12): the Windows note and "Open Windows animation settings…", Effect, Duration, and the options the kind offers, greyed when the effect does not use them; Startup adds the startup order and delay. Everything is greyed while Windows' "Animation effects" is off, which `Event::SystemAnimationsChanged` follows live |
+- The pages, scopes, and fields are `settings/pages.rs`; every editable field
+  has a handler (`settings/apply.rs`), and the uniqueness and coverage tests
+  point at a missing one. Animations are one page per kind from
+  `ANIMATION_PAGES` (D12); everything greys while Windows' "Animation
+  effects" is off, which `Event::SystemAnimationsChanged` follows live.
 
 **Items**
 
-- Drop files from Explorer or the desktop onto a space to move them into it;
-  hold Shift to leave them in place and only show them in the space, or Alt to
-  add a shortcut instead. A right drag onto a space shows a menu to move,
-  copy, link, or just show the files (G5b, G5c). An app dragged from the Start menu or
-  the taskbar (or any drag that offers only a link) becomes a shortcut in the
-  space, as Explorer does on a folder; a dropped shortcut file is copied, and
-  its original stays.
-- Click an item to select it; Ctrl+click adds or removes it, Shift+click
-  selects the range from the last click. Drag from empty space to rubber-band
-  select (Ctrl or Shift adds), and Ctrl+A selects every item in the current
-  space. Clicking empty space in a space or the desktop clears the selection
-  (so do hiding spaces and folding one); clicking another application keeps
-  it, as Explorer keeps a desktop selection. Clicking anywhere on a space acts
-  like a desktop click: it focuses the desktop (deactivating the app in
-  front) and clears the desktop icon selection, leaving any selection inside
-  an Explorer window alone.
-- Double-click an item to open it (a folder in a lens shows in place,
-  D18); click a selected item again (a slow double-click) to rename it
-  inline. Right-click it for Explorer's context
-  menu with DeskSpace's "Rename" and "Fit to contents" on top (Fit is greyed
-  when the space cannot fit; D23); Explorer's own Delete there sends the
-  file to the Recycle Bin (ROADMAP D3); right-clicking an item in a
-  multi-selection keeps the selection. Loose items on the desktop layer
-  rename the same ways. Rest the pointer on an item for Explorer's info tip.
-- Right-click an empty spot of the desktop layer (or press the Menu key with
-  nothing selected there) for "New space", "New lens…", "DeskSpace settings…", and
-  Hide/Show spaces above Explorer's own desktop background menu
-  (`App::show_desktop_menu`). Takeover hides Explorer's view, so without it
-  that menu would be unreachable. A shell command re-syncs the layer, and
-  for a moment after it the app looks for a rename Explorer started in
-  its hidden view (New › Folder does): `take_explorer_rename` cancels it and
-  DeskSpace's own rename opens on the same icon instead. When
-  the view's menu adds nothing, the Desktop folder's own background menu
-  (New, Display settings, Personalize; no View or Sort by) stands in, so the
-  menu never ends after DeskSpace's entries.
-- Item check boxes follow Explorer's mode (when the desktop shows them and the
-  `MatchExplorer` preset is on). A checked box is filled with the Windows
-  accent under a white tick (`Palette::check_fill`; Windows blue when the
-  accent is unknown), independent of the space's selection colors; an
-  unchecked box is a bordered light box. With auto-check-select, hovering
-  reveals the box and it mirrors the selection; clicking an item ticks it and
-  unticks the others, Ctrl+click ticks several, and clicking the box toggles
-  one. With independent check boxes, the boxes always show, clicking a box
-  toggles a persistent tick and moves the highlight, the ticks survive
-  empty-space and desktop clicks, and delete, copy, cut, and drag act on the
-  ticked items.
-- Drag an item within its space to rearrange it (`ReorderItem`); dragging one
-  member of a multi-selection moves the whole block (`ReorderItems`). The
-  selection's drag image follows the pointer and every member's slot fades;
-  the new order sticks until a Sort by reorders it. A space that keeps sorted
-  (a lens, or Keep sorted on) refuses the rearrangement and keeps its order.
-- Drag an item out: into a folder or app like an Explorer item, onto another
-  space to move it there, or onto the desktop to take it out of the space.
-  With takeover on, a drop on the desktop instead opens a new space at the
-  drop point, clear of the other spaces and the taskbar, holding what was
-  dropped, whatever its source (ROADMAP D7, amended 2026-10-17).
-  When the grabbed item is part of the selection, the whole selection drags.
-- A right-button press on an item selects it; dragging past the drag
-  threshold starts a shell drag (ROADMAP D9, `TASKS.md` G5a) that never
-  rearranges inside the space, so a right drag onto Explorer or the desktop
-  shows the shell's Move / Copy / Create shortcut menu. A right drag onto a
-  space shows DeskSpace's Move here / Copy here / Create shortcuts here /
-  Show here without moving / Cancel menu (G5b, G5c): "Copy here" copies the
-  files into the store and leaves the originals, "Create shortcuts here" adds
-  a shortcut to each (a dropped shortcut file is copied) and is grey when the
-  source refuses a link, "Show here without moving" lists them where they
-  are, and Cancel drops nothing. A right click without moving still opens the
-  item or space menu.
-- Delete sends the selected items' files to the Recycle Bin (no prompt), as
-  Explorer does, and Undo restores them; Shift+Delete removes them for good
-  and records no undo. A stored file
-  goes back to the desktop only by dragging it there (not with takeover on)
-  or deleting its space.
-- Ctrl+X, Ctrl+C, and Ctrl+V cut, copy, and paste. Cut items are ghosted until
-  pasted; paste goes into the current space, moving (cut) or duplicating
-  (copy) the files through the shell's file operation.
+- A right drop greys an entry the source refuses; a dropped shortcut file is
+  copied rather than linked to.
+- Clicking anywhere on a space focuses the desktop and clears its icon
+  selection, leaving an Explorer window's selection alone. Empty-space and
+  desktop clicks clear the space selection; hiding spaces and folding too.
+- A right press selects; past the drag threshold it starts a shell drag, and
+  a right click without moving opens the menu.
+- Delete has no prompt and is undoable; Shift+Delete is permanent and records
+  no undo. A stored file leaves only by dragging it to the desktop (not with
+  takeover on) or deleting its space.
+- The desktop layer's menu has DeskSpace's entries above Explorer's; a shell
+  command re-syncs the layer, and `take_explorer_rename` hands New › Folder's
+  rename to DeskSpace. If the view's menu adds nothing, the Desktop folder's
+  own menu stands in, so the menu never ends after DeskSpace's entries.
 
 **Keys** (`ENGINEERING.md`'s Keys table says when each is watched)
 
-- F2 renames the selected item's file inline (Enter commits, Escape cancels,
-  clicking away commits; the extension is kept when the label hides it), or
-  the current space's title with no item selected (an empty lens title
-  follows the folder again, as under Menus). F2 never renames a lens's
-  folder.
-- Alt+Enter opens the selected item's Properties, or DeskSpace Settings with
-  nothing selected. With an item selected, Enter opens it, and the Menu key or
-  Shift+F10 opens its context menu (the space's menu with no item selected).
-  Escape clears the selection, and F5 refreshes the spaces.
-- Ctrl+Plus and Ctrl+Minus zoom in and out one notch and Ctrl+0 resets to
-  100 %, as the zoom pop-up's buttons do (F-57).
-- A right-click on a Details header opens Explorer's column menu: a check per
-  column shows or hides it (one "Choose columns" undo entry), and Name is on
-  and grey. It leaves the selection alone.
-- Dragging a Details header's divider resizes a column, and the divider right
-  of Name resizes the next column. Esc during the drag, or losing the mouse,
-  puts the width back. It is one "Resize column" undo entry on release.
-- "Group by" (in a space's menu and on the View page) is Explorer's: (None),
-  the keys, and the direction. A click on a group's header folds or opens the
-  group (session only).
-- Dragging a Details header moves its column, with a mark where it would land
-  (one "Reorder columns" undo entry on release; Esc cancels). Name stays first.
-  A click that never becomes a drag sorts, on release.
-- Ctrl+Shift+1 through 8 switch the current space to Extra large, Large,
-  Medium, or Small icons, List, Details, Tiles, or Content, the way the View
-  menu does.
-- While the current space is a lens shown below its own folder, Backspace,
-  Alt+Left, and Alt+Up show the parent folder (`SelectionKey::Back`, under
-  the hook's `WATCH_BACK`), as do the title bar's Back button (a click, or
-  each press of a double-click) and the mouse's back button over the lens
-  (`SpaceEvent::BackButton`). At the lens's own folder there is no button
-  and the keys pass through (D18).
-- With a space current, Ctrl+Z undoes the last action and Ctrl+Y redoes it
-  (passing through to Explorer when no space is current); typing selects the
-  next item whose label starts with
-  the typed letters (the buffer clears after about a second); Home, End,
-  PageUp, and PageDown scroll the space to the start, the end, or one page
-  along its view's axis; and the arrow keys move the selection across the
-  cells (Shift extends, Ctrl moves the dotted focus rectangle only).
+- F2 keeps a hidden extension when it renames an item and never renames a
+  lens's folder. With no space current, Ctrl+Z and Ctrl+Y pass through to
+  Explorer. Type-to-select clears its buffer after about a second.
+- In Details, right-clicking the header opens Explorer's column menu (Name on
+  and grey; one "Choose columns" undo entry); dragging a divider resizes a
+  column (Esc or losing the mouse restores; one "Resize column" entry on
+  release); dragging a header reorders with a drop mark (Esc cancels; one
+  "Reorder columns" entry on release, Name stays first). A click that never
+  becomes a drag sorts on release.
+- A group header click folds or opens its group (session only). README covers
+  the Back rules; `WATCH_BACK` is the hook state that enables them.
 
 **Hotkeys and the command line**
 
-- Settings → Hotkeys binds the global hotkeys: show/hide spaces
-  (`Ctrl+Alt+D` by default), a new space on the pointer's monitor, and open settings
-  (both unbound). While spaces are hidden, the desktop's right-click menu has
-  "Show DeskSpace spaces" (a per-user `DesktopBackground\Shell` verb, removed
-  once they are shown). It runs the executable with `--show`, which signals
-  the running instance instead of starting a second copy.
-- CLI flags (`cli.rs`): `--config`, `--placement` (`top-level` |
-  `desktop-background` | `desktop-foreground`), `--reset`, `--hidden`,
-  `--show`, `--settings`, `--no-icons`, `--click-through`, `-v` / `-vv`, and
-  the hidden development flags `--on-top`, `--takeover-layer`,
-  `--takeover`, and `--debug`.
+- The Hotkeys page binds show/hide (`Ctrl+Alt+D`), a new space on the
+  pointer's monitor, and Settings; the last two start unbound. While spaces
+  are hidden, the desktop verb "Show DeskSpace spaces" runs `--show`, which
+  signals the running instance instead of starting a second.
+- CLI flags are in README; the hidden `--debug` (D14) is not, and `cli.rs` is
+  the source of truth for all of them.
 
 ## 9. Feature parity
 

@@ -181,8 +181,8 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
 3. `deskspace-app/src/app.rs`: handle it in `App::on_selection_key`, calling
    a method in the `app/` module that owns the behavior.
 4. Add the key to the `ENGINEERING.md` Keys table (the one flag-by-key
-   list), what it does to `CONTEXT.md` section 8, and a user-facing line to
-   `README.md` Controls.
+   list) and a user-facing line to `README.md` Controls. Add an exact step,
+   range, or edge case to `CONTEXT.md` section 8 only if it has one.
 
 ### Recipe: a new global hotkey
 
@@ -205,7 +205,8 @@ through `theme_for(id)`, `grid_for(id)`, and `palette_for(id)`, never
    `show_tray_menu`, `show_item_menu`, or the submenu helper) and an arm for
    the chosen id. Entries shared by the tray and the space menu go through
    `run_common_menu`.
-3. Update the menu lists in `CONTEXT.md` section 8 and `README.md` Controls.
+3. Update the user-facing menu list in `README.md` Controls; add a rule,
+   range, or edge case to `CONTEXT.md` section 8 only if the entry has one.
 
 ### Recipe: a new visual in a space
 
@@ -1478,14 +1479,6 @@ Rules for every Q task:
 6. Done when: the gates pass, the subsection is at most half its length
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
-
-- [ ] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
-  `README.md` "Controls" describe the same controls, one for contributors
-  and one for users. Decided by the maintainer, 2026-10-29: README keeps
-  the user prose, and section 8 keeps only the rules README leaves out
-  (exact steps, ranges, and edge cases), linking to README for the rest.
-  The key recipe and the menu-entry recipe then name the one place to
-  edit.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
