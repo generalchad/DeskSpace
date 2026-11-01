@@ -154,7 +154,11 @@ A native, lightweight, offline Windows desktop organizer that:
     the release page and never replaces its own files.
   - *Signing:* SignPath Foundation (free for open source), wired into
     `release.yml` through `cargo-packager`'s `windows.signCommand`. Signing
-    ships before or together with auto-update.
+    ships before or together with auto-update. Amended 2026-10-31
+    (maintainer): the update feed turns on in v0.3.0, ahead of signing. The
+    minisign signature already proves an update is ours, and waiting would
+    tie the release to SignPath's approval. Installers show SmartScreen's
+    warning until R10 lands.
 
 - **D7. Desktop takeover model (2026-10-10).**
   - The desktop's loose icons - the Desktop-folder files that are not in any
@@ -828,22 +832,24 @@ Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order** (decided 2026-10-31, maintainer: performance first, then
-the release path):
+the release path; amended the same day: the icon picker moves after v0.3.0,
+and the update feed no longer waits for signing):
 
-1. **Lens performance** (`TASKS.md` B31, then B33 and B37): no slow folder
-   or big lens stalls the spaces.
-2. **Space icons** (M5 item 7, F-62, `TASKS.md` section S). The model,
-   the icon-set library, its cache, and the signed download are built
-   (S1-S4, S6-S8, S13). The maintainer's minisign key (`RELEASING.md`) comes
-   first: without it, or a published set, no icon can download (S14). Then
-   S5 and S9-S12, which need a screen.
+1. **Lens performance** (`TASKS.md` B37): no slow folder or big lens stalls
+   the spaces.
+2. **The signing key and the icon set.** The maintainer's minisign key
+   (`RELEASING.md`), then the "Publish icon set" workflow (S5). The key turns
+   on the update feed (D6), and the set makes the automatic title icons of
+   new spaces work, which a keyed build otherwise offers and fails to fetch.
 3. **On-screen verification pass** (`TASKS.md` section V, R7), lens rows
-   first, starting with the checks a script can make (`TASKS.md` section O).
+   first, starting with the checks a script can make (`TASKS.md` section O),
+   once `smoke.ps1`'s capture failure is understood.
    Confirm the built-but-unchecked behaviors before more work builds on them.
    L1's findings (`TASKS.md` section L) can be recorded in the same pass.
-4. **Release dry run on clean machines** (R12), then **v0.3.0**. **Code
-   signing** (R10) comes before turning on the update feed.
-5. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
+4. **Release dry run on clean machines** (R12), then **v0.3.0**.
+5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which needs a
+   screen, and **code signing** (R10), when SignPath approves it.
+6. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
    ready. The composition spike (T1) runs alongside.
 
@@ -1307,7 +1313,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S4, S6-S8, S13); the picker follows (S5, S9-S12), decided in D16 |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S8, S13, S14); the picker follows v0.3.0 (S9-S12), decided in D16 |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
