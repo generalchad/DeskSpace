@@ -27,15 +27,32 @@ that no update channel is configured.
 One-time setup (maintainer):
 
 1. `cargo install cargo-packager --locked --version 0.11.8` (matches CI), then
-   `cargo packager signer generate` (add `--ci` to skip prompts). It writes a
-   private key file and a `.pub` file beside it.
+   `cargo packager signer generate --ci`, which skips the password prompts; the
+   workflows pass no password. It writes a private key file and a `.pub` file
+   beside it.
 2. Store the **private** key file's contents as the repository secret
-   `DESKSPACE_MINISIGN_KEY` (Settings -> Secrets and variables -> Actions).
+   `DESKSPACE_MINISIGN_KEY` (Settings -> Secrets and variables -> Actions), and
+   keep a copy somewhere safe, such as a password manager.
 3. Paste the **public** key file's contents (one base64 line) into
    `crates/deskspace-update/src/lib.rs` as `UPDATE_PUBKEY`.
 
 Never commit the private key. The updater verifies the feed with the compiled
-public key, so both halves must be rotated together.
+public key, so both halves must be rotated together. Losing the private key
+means every installed copy rejects new updates and icon sets until it is
+reinstalled by hand.
+
+## Publishing an icon set
+
+Icon sets are signed pre-releases of their own (ROADMAP D16). To add or update
+one:
+
+1. Bump or add its row in `ICON_SETS` (`crates/deskspace-config/src/icons.rs`).
+2. Run the example's `trim` on the upstream `icons.json`:
+   `cargo run -p deskspace-config --example icon_set -- trim <prefix> <icons.json> <out dir>`.
+3. Commit the row and `assets/icons/<prefix>-names.txt`.
+4. Run the "Publish icon set" workflow (`icons.yml`) with the prefix.
+
+Never delete an `icons-*` release: shipped builds download it by its revision.
 
 ## Checklist
 

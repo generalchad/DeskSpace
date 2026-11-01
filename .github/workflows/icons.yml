@@ -1,0 +1,83 @@
+name: Publish icon set
+
+# Publishes one row of `ICON_SETS` as a signed pre-release (ROADMAP D16). It must
+# be a pre-release: the update feed reads `releases/latest/download/latest.json`,
+# which a newer full release would take over.
+
+on:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: The icon set's prefix in ICON_SETS
+        default: fluent
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: trim, sign, and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked --version 0.11.8
+      - name: Read the set's row
+        id: spec
+        shell: pwsh
+        env:
+          PREFIX: ${{ inputs.prefix }}
+        run: cargo run --locked -p deskspace-config --example icon_set -- spec "$env:PREFIX" >> $env:GITHUB_OUTPUT
+      # Shipped builds pin a set's revision, so a published set is never replaced.
+      - name: Refuse a set already published
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.spec.outputs.tag }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) { throw "$env:TAG is already published; bump the row's revision instead" }
+          exit 0
+      - name: Download and trim the upstream package
+        shell: pwsh
+        env:
+          PREFIX: ${{ inputs.prefix }}
+          UPSTREAM: ${{ steps.spec.outputs.upstream }}
+        run: |
+          $package = npm pack $env:UPSTREAM
+          tar -xzf $package
+          cargo run --locked -p deskspace-config --example icon_set -- trim "$env:PREFIX" package/icons.json published
+      # The commit that bumped the row must already carry its names file.
+      - name: Check the names file is committed
+        run: git diff --exit-code assets/icons
+      - name: Sign the set
+        shell: pwsh
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.DESKSPACE_MINISIGN_KEY }}
+          FILE: ${{ steps.spec.outputs.file }}
+        run: |
+          if (-not $env:CARGO_PACKAGER_SIGN_PRIVATE_KEY) {
+            throw "The DESKSPACE_MINISIGN_KEY secret is empty; RELEASING.md has the one-time setup"
+          }
+          cargo packager signer sign "published/$env:FILE"
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.spec.outputs.tag }}
+          FILE: ${{ steps.spec.outputs.file }}
+          LABEL: ${{ steps.spec.outputs.label }}
+          REVISION: ${{ steps.spec.outputs.revision }}
+          UPSTREAM: ${{ steps.spec.outputs.upstream }}
+        run: |
+          gh release create $env:TAG "published/$env:FILE" "published/$env:FILE.sig" `
+            --prerelease --latest=false --target $env:GITHUB_SHA `
+            --title "Icon set: $env:LABEL r$env:REVISION" `
+            --notes "Trimmed from $env:UPSTREAM. This is not an app release; DeskSpace downloads it when you allow icon downloads."
