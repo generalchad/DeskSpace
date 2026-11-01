@@ -27,8 +27,9 @@ const FALLBACK_REFRESH: Duration = Duration::from_millis(16);
 /// A wait shorter than this did not wait for a composition.
 const SHORTEST_WAIT: Duration = Duration::from_millis(4);
 
-/// Process state: the animating windows and whether the thread runs. The
-/// thread reads it after every composition, the UI thread on every change.
+// Process state: the animating windows and whether the frame thread runs. The
+// thread reads it after every composition and the UI thread on every change;
+// it lives for the process.
 static CLOCK: Mutex<Clock> = Mutex::new(Clock {
     windows: Subscribers::new(),
     running: false,

@@ -299,12 +299,10 @@ impl SpaceDropTarget {
 }
 
 thread_local! {
-    /// The shell's drag-image manager, shared by every space. A drop target
-    /// must forward its four calls to it, or the source's drag image is not
-    /// drawn while the pointer is over the target's window.
-    /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idroptargethelper
-    /// Created on first use; released by `release_image_helper` before OLE
-    /// is uninitialized.
+    // Process state: the shell's drag-image manager, shared by every space. A
+    // drop target must forward its calls, or the source's image is not drawn.
+    // Created on first use; `release_image_helper` drops it before OLE.
+    // https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-idroptargethelper
     static IMAGE_HELPER: RefCell<Option<IDropTargetHelper>> = const { RefCell::new(None) };
 }
 

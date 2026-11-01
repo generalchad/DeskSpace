@@ -36,8 +36,9 @@ use crate::win32::window_class::{self, WindowClass};
 const CLASS_NAME: PCWSTR = w!("DeskSpaceShadow");
 
 thread_local! {
-    /// The debug window's switch: every shadow's edge drawn, so its window
-    /// can be seen. Session only (ROADMAP D14).
+    // Process state: the debug window's "outline every shadow" switch, read by
+    // each shadow's window procedure. `set_outlined` sets it for the session;
+    // nothing clears it short of a restart.
     static OUTLINED: Cell<bool> = const { Cell::new(false) };
 }
 

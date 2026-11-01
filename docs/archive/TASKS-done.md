@@ -5212,3 +5212,30 @@ until I5-I6 all land, so no partial build hides the desktop.
     150 %: it drops in, bounces about three times shrinking, and settles
     exactly in place; it never shows on a second monitor or over the
     taskbar.
+
+- [x] **B22. Mark the process-wide state where it lives.** The platform keeps
+  a number of `static`s and `thread_local!`s. Most are needed, because hooks
+  and Win32 callbacks get no context pointer. But none says why, which makes
+  the runtime the hardest part to reason about. Explain each one in a
+  comment beside it, not in a doc table, which would drift (`ENGINEERING.md`
+  section 7).
+  1. List them: `rg -n "^\s*(pub(\(crate\))? )?static |thread_local!"
+     crates/deskspace-platform/src`. Skip `static` string or number
+     constants that never change; they are not state.
+  2. Above each remaining one, write a comment that starts with
+     `// Process state:` and gives, in at most three lines:
+     - what it holds;
+     - why it cannot be passed instead (for example, "a `WH_KEYBOARD_LL`
+       hook procedure gets no user pointer");
+     - who sets it and who clears it.
+
+     For a `thread_local!` block, comment each entry.
+  3. If you cannot say why one cannot be passed, do not guess. Write
+     `// Process state: TODO(B22): no stated reason` and add a line under
+     **Found while working**.
+  4. In `CONTEXT.md` section 6, at the end of "Runtime", add one bullet:
+     "Process-wide state: every `static` or `thread_local!` that holds state
+     is marked `// Process state:` with what it holds, why it cannot be
+     passed, and who clears it; `rg -n "Process state:"` lists them."
+  - Comments only; no code changes. Make one commit for the platform crate.
+  - Done when: every match from step 1 that holds state has the comment.

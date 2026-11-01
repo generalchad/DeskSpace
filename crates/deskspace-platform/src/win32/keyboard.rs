@@ -95,19 +95,29 @@ const KIND_SELECT_WORD_LEFT: usize = 18;
 const KIND_SELECT_WORD_RIGHT: usize = 19;
 
 thread_local! {
+    // Process state: the low-level keyboard hook, while one is installed. A
+    // hook procedure gets no context; `refresh` installs it and `stop` removes
+    // it.
     static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
+    // Process state: the controller window key messages are posted to. A hook
+    // procedure gets no context; `refresh` sets it and `stop` clears it.
     static CONTROLLER: Cell<Option<HWND>> = const { Cell::new(None) };
-    /// Capturing every editing keystroke (inline rename).
+    // Process state: whether inline editing consumes every key. A hook
+    // procedure gets no context; `capture` sets it and `stop` clears it.
     static EDITING: Cell<bool> = const { Cell::new(false) };
-    /// Watching while an item is selected.
+    // Process state: whether the selection keys are watched. A hook procedure
+    // gets no context; `watch_selection` sets it and `stop` clears it.
     static WATCH_SELECTION: Cell<bool> = const { Cell::new(false) };
-    /// Watching while a space is current (the name is historical).
+    // Process state: whether the keys that need a current space are watched.
+    // `watch_selection` sets it and `stop` clears it.
     static WATCH_PASTE: Cell<bool> = const { Cell::new(false) };
-    /// Watching while the current space is a lens shown below its own
-    /// folder, so the keys that go back have somewhere to go (D18).
+    // Process state: whether the keys that go back are watched, while a lens
+    // is shown below its own folder. `watch_selection` sets it; `stop` clears
+    // it.
     static WATCH_BACK: Cell<bool> = const { Cell::new(false) };
-    /// A popup menu is being tracked, so every key belongs to it; the hook
-    /// passes everything through until it closes.
+    // Process state: whether a popup menu is being tracked, so the hook passes
+    // every key through. `set_menu_open` sets it and the menu's owner clears
+    // it when tracking ends.
     static MENU_OPEN: Cell<bool> = const { Cell::new(false) };
 }
 

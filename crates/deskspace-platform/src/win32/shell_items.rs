@@ -43,10 +43,9 @@ const SHELL_FIRST_ID: u32 = 0x8000;
 const SHELL_LAST_ID: u32 = 0xEFFF;
 
 thread_local! {
-    /// The shell menu being tracked. Owner-drawn and lazily filled submenus
-    /// ("Open with", "Send to") only work if the owner window forwards menu
-    /// messages to it; the controller does that through
-    /// `forward_menu_message`.
+    // Process state: the shell menu being tracked. Owner-drawn, lazily filled
+    // submenus ("Open with", "Send to") need the owner to forward menu messages
+    // to it; `track_shell_menu` sets and clears it around the track.
     static ACTIVE_MENU: RefCell<Option<IContextMenu>> = const { RefCell::new(None) };
 }
 

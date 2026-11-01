@@ -59,6 +59,9 @@ struct Composition {
 }
 
 thread_local! {
+    // Process state: this thread's compositor and its devices. A compositor is
+    // per thread and needed from every space window, which gets no state
+    // pointer. `start` sets it and `release` drops it.
     static COMPOSITION: RefCell<Option<Composition>> = const { RefCell::new(None) };
 }
 

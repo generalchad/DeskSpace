@@ -595,6 +595,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   the color picker, MessageBox) re-enter window procedures; events raised
   then are queued and delivered by the outermost `dispatch`. Runtime state is
   borrowed only in short sections (`with_runtime`) that never call into Win32.
+- Process-wide state: every `static` or `thread_local!` that holds state is
+  marked `// Process state:` with what it holds, why it cannot be passed, and
+  who clears it; `rg -n "Process state:"` lists them.
 
 ### Controller (`win32/controller.rs`, `win32/tray.rs`, `win32/console.rs`)
 
