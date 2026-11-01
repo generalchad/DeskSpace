@@ -6,6 +6,8 @@
 //! `EFFECTS` says which options each effect uses, and `KINDS` says which
 //! effects and options each kind offers.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 /// How a space appears or goes away. Every effect has an "in" and an "out",
@@ -63,6 +65,9 @@ pub struct EffectSpec {
     /// Where "Automatic" goes, for an effect that uses `Direction`: the top
     /// unless the row says otherwise.
     pub auto_edge: AutoEdge,
+    /// How long it plays, in percent of the chosen duration, so an effect
+    /// that needs more time takes it without a special case.
+    pub stretch_percent: u16,
 }
 
 use EffectOption::{Detail, Direction};
@@ -78,7 +83,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Fly, "fly", &[Direction]).auto_edge(AutoEdge::Nearest),
     effect(Effect::Crt, "crt", &[]),
     effect(Effect::Burn, "burn", &[Detail]),
-    effect(Effect::Bounce, "bounce", &[Direction]),
+    effect(Effect::Bounce, "bounce", &[Direction]).stretch_percent(200),
 ];
 
 const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOption]) -> EffectSpec {
@@ -87,12 +92,25 @@ const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOpti
         key,
         options,
         auto_edge: AutoEdge::Top,
+        stretch_percent: 100,
     }
 }
 
 impl EffectSpec {
     const fn auto_edge(self, auto_edge: AutoEdge) -> Self {
         Self { auto_edge, ..self }
+    }
+
+    const fn stretch_percent(self, stretch_percent: u16) -> Self {
+        Self {
+            stretch_percent,
+            ..self
+        }
+    }
+
+    /// How long the effect plays when `chosen` is the chosen duration.
+    pub fn stretched(&self, chosen: Duration) -> Duration {
+        chosen * u32::from(self.stretch_percent) / 100
     }
 }
 

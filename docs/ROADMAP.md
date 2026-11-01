@@ -344,8 +344,9 @@ A native, lightweight, offline Windows desktop organizer that:
     the shared list (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
       work area (Automatic is the top), lands on its place, and settles in
-      a few shrinking bounces; out, it plays that backwards. It moves the
-      window's rect, as Fly does, so the blur follows it.
+      two shrinking rebounds, playing at twice the chosen duration so each
+      one can be seen (amended 2026-10-31); out, it plays that backwards.
+      It moves the window's rect, as Fly does, so the blur follows it.
     - **Scroll:** the space rolls up like a paper scroll. The body curls
       into a shaded cylinder, with the contents wrapped around it, that
       travels toward the edge (Automatic is the top) and grows as it

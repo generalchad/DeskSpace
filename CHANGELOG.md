@@ -59,8 +59,9 @@ Notable changes to DeskSpace, newest first. The format follows
 - "Fit to contents" on an item's menu in a space.
 - A Bounce animation: a space drops in from beyond an edge of its monitor's
   work area and settles in shrinking bounces, and hides the same way
-  backwards. Settings > Animations offers it for Startup and Delete, with its
-  own edge.
+  backwards. It plays at twice the chosen duration, so each bounce can be
+  seen. Settings > Animations offers it for Startup and Delete, with its own
+  edge.
 
 - Undo and redo for layout changes, file moves, item removal, space creation
   and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while

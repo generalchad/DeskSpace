@@ -1085,7 +1085,9 @@ one arm in `App::on_event`, whose match is exhaustive.
   A `Transition` tracks one linear progress and a direction, and every
   frame is a function of the effect's curve of that progress alone
   (smoothstep but for Bounce's `bounce_ease`), so an Out is the In played
-  backwards and `reverse` continues from the very frame it is on.
+  backwards and `reverse` continues from the very frame it is on. An effect's
+  `EFFECTS` row can stretch the chosen duration (`EffectSpec::stretched`),
+  which the app applies when it makes the `Play`.
   A `TransitionFrame` gives the window rect (Roll, Fly, Bounce, and CRT
   move or crop it; Fly and Bounce are clipped to the work area), where the
   space's content sits in it, and the opacity, mask, and `Content` (how the
