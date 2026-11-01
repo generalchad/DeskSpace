@@ -83,7 +83,10 @@ checks.
 --hidden                 Start with spaces hidden
 --show                   Ask the running instance to show its spaces, or start
                          with the spaces shown when none is running
---settings               Open the settings window on start
+--new-space              Ask the running instance for a new space, or start
+                         with one when none is running
+--settings               Ask the running instance to open settings, or start
+                         with them open
 --no-icons               Do not populate spaces from the desktop folder
 --click-through          Make spaces click-through (display only)
 -v, --verbose            More logging: -v debug, -vv trace (RUST_LOG overrides)

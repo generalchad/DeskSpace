@@ -815,7 +815,7 @@ impl App {
         // The spaces appear as their windows are created, below; this
         // only settles whether they start hidden.
         ui.set_spaces_visible(self.visible, Play::instant(Way::In));
-        self.sync_desktop_show_entry();
+        self.sync_desktop_verbs();
         // Keep the stored Run path current after an install moves.
         if self.config.window.start_with_windows {
             self.sync_start_with_windows(true);
@@ -884,6 +884,10 @@ impl EventHandler for App {
                 }
             }
             Event::ShowSpaces => self.set_visible(ui, true),
+            Event::NewSpace => {
+                self.create_space(ui, cursor_pos());
+            }
+            Event::OpenSettings => self.open_settings(ui),
             // A watched folder changed (I8): re-read the shell's loose items
             // and reconcile the layer. A no-op when the layer is not drawn.
             Event::FolderChanged {

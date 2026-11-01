@@ -354,6 +354,12 @@ pub enum Event {
     /// Another launch asked this instance to show its spaces (the desktop
     /// right-click "Show spaces" entry, or a shortcut).
     ShowSpaces,
+    /// Another launch asked for a new space on the pointer's monitor (the
+    /// desktop right-click "New space" entry, or `--new-space`).
+    NewSpace,
+    /// Another launch asked to open Settings (the desktop right-click
+    /// "DeskSpace Settings" entry, or `--settings` while running).
+    OpenSettings,
     /// A folder watched with `Ui::watch_folder` changed. The app re-reads the
     /// folder and reconciles what it draws. M2 watches the Desktop folder for
     /// the desktop layer; M4 reuses it for a lens's bound folder.

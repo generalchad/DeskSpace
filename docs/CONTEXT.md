@@ -560,7 +560,7 @@ exhaustive match:
 
 | Ids | Where | Guard |
 |-----|-------|-------|
-| `WM_APP + n` messages to the controller (and `FRAME` to space windows) | `win32/messages.rs` (each says who posts it; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
+| `WM_APP + n` messages to the controller (and `FRAME` to space windows) | `win32/messages.rs` (each says who posts it; `SHOW_SPACES`, `NEW_SPACE`, and `OPEN_SETTINGS` cross processes; `TaskbarCreated` is a registered message outside the range) | the `ALL` list in its tests |
 | App timers | `enum Timer` in `deskspace-app/src/app.rs`, delivered as `Event::Timer` and set through `App::set_timer` / `clear_timer`; each delay is a constant in the module that starts it | `Timer::ALL` and the exhaustive `App::on_timer` |
 | Menu ids | `enum MenuId` in `deskspace-app/src/app.rs`, below `0x8000` (`shell_items::SHELL_FIRST_ID`, where the shell's item-menu ids start); a chosen id becomes a `MenuId` through `MenuId::from_id` | `menu_ids_round_trip` and `menu_ids_stay_below_the_shell_range` |
 | Settings field ids | `settings/ids.rs`'s `mod field` | `field_ids_are_unique` |
@@ -610,9 +610,10 @@ one arm in `App::on_event`, whose match is exhaustive.
   spaces' Startup Out. A second Exit, a console close, and `WM_ENDSESSION`
   converge on one `CloseRequested`. `console.rs` bounds its wait because
   Windows ends the process soon after a console close handler returns.
-- The desktop verb and the `--show` hand-off are one re-launch path
-  (`desktop_entry.rs`): a running instance is found by class and told to
-  show, else the new process starts shown.
+- The desktop verbs and their flags are one re-launch path
+  (`desktop_entry.rs`): New space, DeskSpace Settings, and Show spaces (only
+  while hidden) each find the running instance by class and post their
+  message, else the new process starts and does it.
 - The tray, settings, and debug windows take their icons from the embedded
   resource (`app_icon`); each window owns its big and small sizes, and the
   debug window's copy carries its badge.
@@ -1024,9 +1025,11 @@ exact steps, ranges, edge cases, and the code behind them.
 **Hotkeys and the command line**
 
 - The Hotkeys page binds show/hide (`Ctrl+Alt+D`), a new space on the
-  pointer's monitor, and Settings; the last two start unbound. While spaces
-  are hidden, the desktop verb "Show DeskSpace spaces" runs `--show`, which
-  signals the running instance instead of starting a second.
+  pointer's monitor, and Settings; the last two start unbound. The desktop
+  background menu offers "New space", "DeskSpace Settings", and, while spaces
+  are hidden, "Show DeskSpace spaces"; each runs its flag (`--new-space`,
+  `--settings`, `--show`), which signals the running instance instead of
+  starting a second.
 - CLI flags are in README; the hidden `--debug` (D14) is not, and `cli.rs` is
   the source of truth for all of them.
 

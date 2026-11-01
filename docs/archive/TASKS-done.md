@@ -5323,3 +5323,29 @@ until I5-I6 all land, so no partial build hides the desktop.
   (exact steps, ranges, and edge cases), linking to README for the rest.
   The key recipe and the menu-entry recipe then name the one place to
   edit.
+
+- [x] **C9. Spaces entries on the desktop background menu (F-52).**
+  The entries below were approved by the maintainer, 2026-10-29. Today `win32/desktop_entry.rs` writes only "Show DeskSpace spaces", while
+  spaces are hidden (`App::sync_desktop_show_entry`).
+  - Platform, `win32/desktop_entry.rs`: replace
+    `set_desktop_show_entry(enabled, label, command, icon)` with
+    `set_desktop_verbs(verbs: &[DesktopVerb])`, where `DesktopVerb { key,
+    label, command, icon }` are `&'static str` and each `key` is a child of
+    `DesktopBackground\Shell` under a common `DeskSpace` prefix. Delete each
+    known key (`RegDeleteTreeW`), then write them; keep the `create` /
+    `set_string` helpers.
+  - Each verb re-launches the executable with a flag the running instance
+    handles, as `--show` does: `--settings` exists; add `--new-space` (a
+    `cli.rs` field; `bootstrap.rs` posts a new `controller::NEW_SPACE`, the
+    next free `WM_APP` id, and exits; the controller raises an event the app
+    handles by creating a space on the pointer's monitor).
+  - App, `app/visibility.rs`: `App::sync_desktop_verbs` writes "New space",
+    "DeskSpace Settings", and, only while hidden, "Show DeskSpace spaces";
+    `remove_desktop_show_entry` becomes `remove_desktop_verbs`. Call it on
+    `Started` and on every visibility change.
+  - Docs: `CONTEXT.md` sections 6 (the `WM_APP` table) and 8 (CLI flags), and
+    the `ROADMAP.md` F-52 row.
+  - Done when: CI is green (registry writes stay behind `cfg(test)`) and the
+    flag/event round trip is unit-tested. **[needs human]** check: right-click
+    the desktop and use "New space" and "DeskSpace Settings"; the entries are
+    gone after a clean exit.

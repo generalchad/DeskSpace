@@ -108,6 +108,8 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
         WM_CLIPBOARDUPDATE => Event::ClipboardChanged,
         messages::TRAY_CALLBACK => tray_event(wparam, lparam)?,
         messages::SHOW_SPACES => Event::ShowSpaces,
+        messages::NEW_SPACE => Event::NewSpace,
+        messages::OPEN_SETTINGS => Event::OpenSettings,
         messages::FOLDER_CHANGE => {
             let (key, folder, listing) = runtime::folder_change(wparam.0)?;
             Event::FolderChanged {
@@ -261,6 +263,11 @@ mod tests {
             Some(Event::SelectionKey(SelectionKey::Open))
         );
         assert_eq!(event(messages::SHOW_SPACES, 0, 0), Some(Event::ShowSpaces));
+        assert_eq!(event(messages::NEW_SPACE, 0, 0), Some(Event::NewSpace));
+        assert_eq!(
+            event(messages::OPEN_SETTINGS, 0, 0),
+            Some(Event::OpenSettings)
+        );
     }
 
     #[test]
