@@ -257,6 +257,18 @@ impl Space {
         self.source.folder()
     }
 
+    /// What decides which entries this lens lists and in what order, or `None`
+    /// for a normal space.
+    pub fn lens_rules(&self) -> Option<crate::lens_build::LensRules> {
+        let view = self.folder_view()?;
+        Some(crate::lens_build::LensRules {
+            show_hidden: view.show_hidden,
+            include: view.include.clone(),
+            exclude: view.exclude.clone(),
+            sort: self.view.sort,
+        })
+    }
+
     pub fn locked(&self) -> bool {
         self.locked
     }

@@ -96,21 +96,6 @@ impl FolderView {
         self.exclude = clamp_patterns(self.exclude);
         self
     }
-
-    /// Whether an entry named `name` passes the filters (D18): "Hide" drops
-    /// any match, and "Show only", when it has patterns, keeps only the
-    /// files that match one. Names only, never full paths.
-    pub fn shows(&self, name: &str, is_folder: bool) -> bool {
-        let any = |patterns: &[String]| {
-            patterns
-                .iter()
-                .any(|pattern| crate::wildcard::matches(pattern, name))
-        };
-        if any(&self.exclude) {
-            return false;
-        }
-        is_folder || self.include.is_empty() || any(&self.include)
-    }
 }
 
 fn clamp_patterns(patterns: Vec<String>) -> Vec<String> {
@@ -173,7 +158,7 @@ fn full_path(path: &Path) -> String {
 }
 
 /// One entry the platform read from a lens's folder. Core does no IO, so the
-/// app passes these to `Command::SyncLens`.
+/// watch worker hands these to a `LensBuilder`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderEntry {
     pub path: PathBuf,

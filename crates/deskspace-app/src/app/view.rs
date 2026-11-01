@@ -1,6 +1,7 @@
 //! `App` view: space windows, scenes, layout, and the desktop layer (R1).
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -565,8 +566,21 @@ impl App {
         {
             return;
         }
-        let mut type_of =
-            |item: &Item| type_name(&item.path, item.kind == ItemKind::Folder).unwrap_or_default();
+        // One shell lookup per extension: this walks every item of a lens on the
+        // UI thread, and `type_name` builds its cache key for each call.
+        let mut by_extension: HashMap<OsString, String> = HashMap::new();
+        let mut type_of = |item: &Item| {
+            if item.kind == ItemKind::Folder {
+                return type_name(&item.path, true).unwrap_or_default();
+            }
+            let extension = item.path.extension().unwrap_or_default();
+            if let Some(name) = by_extension.get(extension) {
+                return name.clone();
+            }
+            let name = type_name(&item.path, false).unwrap_or_default();
+            by_extension.insert(extension.to_owned(), name.clone());
+            name
+        };
         let groups = crate::grouping::groups(
             space.items(),
             group,

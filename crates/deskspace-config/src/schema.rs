@@ -239,7 +239,10 @@ mod tests {
     use deskspace_core::SortRule;
     use deskspace_core::layout::{GAP_RANGE, SNAP_RANGE};
     use deskspace_core::theme::{ICON_SIZE_RANGE, OVERLAY_SIZE_RANGE, corner};
-    use deskspace_core::{Backdrop, Command, FolderEntry, ItemKind, Point, Rect, Size, SortKey};
+    use deskspace_core::{
+        Backdrop, Command, FolderEntry, ItemKind, LensBuilder, LensRules, Point, Rect, Size,
+        SortKey,
+    };
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
@@ -966,16 +969,14 @@ show_border = true
                 .is_applied()
         );
         let id = config.desktop.spaces()[0].id;
+        let ids = config.desktop.reserve_item_ids();
+        let items = LensBuilder::new(LensRules::default(), ids, &[])
+            .listed(vec![entry("a.txt")])
+            .items;
         assert!(
             config
                 .desktop
-                .apply(
-                    Command::SyncLens {
-                        id,
-                        entries: vec![entry("a.txt")],
-                    },
-                    bounds(),
-                )
+                .apply(Command::SyncLens { id, items }, bounds())
                 .is_applied()
         );
         assert_eq!(config.desktop.spaces()[0].items().len(), 1);

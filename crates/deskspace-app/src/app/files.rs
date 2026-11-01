@@ -1085,20 +1085,18 @@ mod tests {
             deskspace_core::Rect::new(0, 0, 300, 200),
             &root.to_string_lossy(),
         );
-        crate::fixtures::apply(
+        crate::fixtures::sync_lens(
             &mut desktop,
-            Command::SyncLens {
-                id: lens,
-                entries: vec![deskspace_core::source::FolderEntry {
-                    path: file,
-                    label: String::new(),
-                    kind: deskspace_core::item::ItemKind::Other,
-                    size: None,
-                    modified: None,
-                    created: None,
-                    hidden: false,
-                }],
-            },
+            lens,
+            vec![deskspace_core::source::FolderEntry {
+                path: file,
+                label: String::new(),
+                kind: deskspace_core::item::ItemKind::Other,
+                size: None,
+                modified: None,
+                created: None,
+                hidden: false,
+            }],
         );
         let space = desktop.space(lens).unwrap();
         assert_eq!(space.items().len(), 1);

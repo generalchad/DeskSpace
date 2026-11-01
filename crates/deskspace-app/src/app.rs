@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use deskspace_config::{Config, ConfigStore, IconDownloads, IconSetSpec};
 use deskspace_core::geometry::Point;
-use deskspace_core::source::FolderEntry;
 use deskspace_core::{Column, Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
     ClipboardAction, Event, EventHandler, IconCache, IconUser, Play, SelectionKey, TrayEvent, Ui,
@@ -554,10 +553,9 @@ pub struct App {
     unavailable_lenses: HashSet<SpaceId>,
     /// The subfolder each browsed lens shows (W42). Session-only.
     browsed: HashMap<SpaceId, lens::Browsed>,
-    /// The last listing of the folder each lens shows, before its filters,
-    /// so a filter edit filters it again without reading the folder (W35).
-    /// Session-only.
-    listings: HashMap<SpaceId, (PathBuf, Vec<FolderEntry>)>,
+    /// The folder each lens's last list came from, and whether it held
+    /// anything before the lens's filters (W35). Session-only.
+    listed: HashMap<SpaceId, (PathBuf, bool)>,
     /// The message each space shows on its notice bar until `Timer::Notice`
     /// clears it. Session-only.
     notices: HashMap<SpaceId, String>,
@@ -602,7 +600,7 @@ impl App {
             view_cache: ViewCache::default(),
             unavailable_lenses: HashSet::new(),
             browsed: HashMap::new(),
-            listings: HashMap::new(),
+            listed: HashMap::new(),
             notices: HashMap::new(),
             visible: !hidden,
             hotkeys: Hotkeys::default(),

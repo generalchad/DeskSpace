@@ -835,8 +835,8 @@ v0.2.4 and ship in the next release. Section 5 lists what each has done.
 the release path; amended the same day: the icon picker moves after v0.3.0,
 and the update feed no longer waits for signing):
 
-1. **Lens performance** (`TASKS.md` B37): no slow folder or big lens stalls
-   the spaces.
+1. **[done] Lens performance** (`TASKS.md` B37, archived): a big lens's list
+   is built off the UI thread, and swapping in 50,000 items takes about 0.3 ms.
 2. **The signing key and the icon set.** The maintainer's minisign key
    (`RELEASING.md`), then the "Publish icon set" workflow (S5). The key turns
    on the update feed (D6), and the set makes the automatic title icons of
@@ -954,8 +954,9 @@ Goal: spaces that mirror a folder live. Each phase lands green.
   - Entries come from the platform, so `core` does no IO: `FolderEntry { path,
     label, kind, size, modified, hidden }`.
   - New commands: `CreateLens`, `SetLensFolder`, `SetLensView`, and
-    `SyncLens { id, entries }`. `SyncLens` filters, sorts by the space's
-    `SortRule`, and reconciles by path, so `ItemId`s survive refreshes.
+    `SyncLens { id, items }`. A `LensBuilder` on the watch worker filters,
+    sorts by the space's `SortRule`, and reconciles by path, so `ItemId`s
+    survive refreshes (B37).
   - `AddItem` / `MoveItem` into a lens are `Rejected`.
   - Lens items are not persisted (F-07, F-08).
 - **Phase 2 - platform. [done]**

@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use deskspace_config::IconDownloads;
 use deskspace_core::geometry::{Point, Rect};
 use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{
-    FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, WatchKey, windows_build,
-};
+use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build};
 
 use crate::scene::item_label;
 use crate::settings::{self, ButtonAction, FieldEffect, ScopeKind, Session, SpaceSnapshot};
@@ -360,19 +358,13 @@ impl App {
                         .space(id)
                         .is_some_and(|space| space.is_lens())
                 {
-                    // A lens sorts and filters while listing, so it needs a
-                    // fresh listing for its new rule (W20).
-                    ui.unwatch_folder(WatchKey::Space(id));
+                    // A lens's worker sorts its list, so it needs the new
+                    // rule (W20).
                     self.sync_watches(ui);
                 }
                 match effect {
                     FieldEffect::Layout => self.schedule_preview(ui, Preview::relayout(id)),
-                    FieldEffect::Lens => {
-                        // A changed hidden-files choice needs a fresh listing.
-                        ui.unwatch_folder(WatchKey::Space(id));
-                        self.sync_watches(ui);
-                    }
-                    FieldEffect::Refilter => self.refilter_lens(ui, id),
+                    FieldEffect::Lens => self.sync_watches(ui),
                     _ => self.schedule_preview(ui, Preview::restyle(id)),
                 }
             }
@@ -529,8 +521,7 @@ impl App {
                 self.restyle_space(ui, snapshot.id);
                 self.reflow_space(ui, snapshot.id);
             }
-            if folder_restored {
-                ui.unwatch_folder(WatchKey::Space(snapshot.id));
+            if folder_restored || view_restored {
                 self.sync_watches(ui);
             }
         }

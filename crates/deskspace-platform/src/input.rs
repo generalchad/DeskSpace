@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use deskspace_core::SpaceId;
-use deskspace_core::source::FolderEntry;
+use deskspace_core::{LensList, SpaceId};
 
 use crate::ui::{FieldValue, LogLevel};
 
@@ -75,11 +74,13 @@ pub enum WatchKey {
 }
 
 /// What a watched folder held when its last change settled. The worker lists
-/// the folder itself, so the app never does IO for a watch.
+/// the folder and builds a lens's item list itself, so the app never does IO or
+/// sorts for a watch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FolderListing {
-    /// The folder's entries, as the worker just read them.
-    Listed(Vec<FolderEntry>),
+    /// The folder's contents, as a lens's finished list. A watch that builds
+    /// no list (the Desktop's) posts an empty one.
+    Listed(LensList),
     /// The folder is missing or cannot be read; the worker keeps retrying.
     Unavailable,
     /// The folder was renamed or moved to `to` on the same volume, outside

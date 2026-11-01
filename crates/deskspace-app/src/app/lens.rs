@@ -5,8 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use deskspace_core::source::FolderEntry;
-use deskspace_core::{Command, Item, ItemId, ItemKind, SpaceId, lens_title};
+use deskspace_core::{Command, Item, ItemId, ItemKind, LensBuilder, LensList, SpaceId, lens_title};
 use deskspace_platform::{FolderListing, Ui, WatchKey, desktop_directory, is_inside};
 
 use super::{App, Surface, Timer};
@@ -18,6 +17,9 @@ const NOTICE_MS: u32 = 3_000;
 /// The first line of the notice a lens shows after following its folder;
 /// the new path follows on the second.
 const FOLDER_MOVED_NOTICE: &str = "Folder moved:";
+
+/// Below this many items, freeing a list costs less than starting a thread.
+const FREE_OFF_THREAD_FROM: usize = 1_000;
 
 /// What lens `follow_moved_folder` decided about a moved folder.
 #[derive(Debug)]
@@ -172,7 +174,7 @@ impl App {
                 .and_then(|space| space.folder_view())
                 .is_some_and(|view| view.path == browsed.root)
         });
-        self.listings
+        self.listed
             .retain(|id, _| spaces.space(*id).is_some_and(|space| space.is_lens()));
         let desktop = if self.layer_active() {
             match desktop_directory() {
@@ -194,8 +196,33 @@ impl App {
         // The worker refuses a folder that resolves to the store, off this
         // thread: resolving a path can block on an unreachable share.
         for (key, path) in wanted {
-            ui.watch_folder(key, &path, self.storage.final_root());
+            if ui.is_watching_folder(key, &path) {
+                if let WatchKey::Space(id) = key
+                    && let Some(rules) = self
+                        .config
+                        .desktop
+                        .space(id)
+                        .and_then(|space| space.lens_rules())
+                {
+                    ui.set_lens_rules(key, rules);
+                }
+                continue;
+            }
+            let builder = match key {
+                WatchKey::Desktop => None,
+                WatchKey::Space(id) => self.new_lens_builder(id),
+            };
+            ui.watch_folder(key, &path, self.storage.final_root(), builder);
         }
+    }
+
+    /// What a new watch on lens `id` builds its lists with: the lens's rules,
+    /// ids reserved for it, and the ids of what the lens holds now, such as
+    /// items an undo brought back.
+    fn new_lens_builder(&mut self, id: SpaceId) -> Option<LensBuilder> {
+        let ids = self.config.desktop.reserve_item_ids();
+        let space = self.config.desktop.space(id)?;
+        Some(LensBuilder::new(space.lens_rules()?, ids, space.items()))
     }
 
     /// The watches the model wants. Pure: the caller passes the Desktop folder
@@ -245,23 +272,63 @@ impl App {
                 listed = %folder.display(),
                 "dropped a listing for a folder the lens no longer shows"
             );
+            free_off_thread(items_of(listing));
             return;
         }
         if let FolderListing::Moved { to } = listing {
             self.on_lens_moved(ui, id, &to);
             return;
         }
+        if let FolderListing::Listed(list) = &listing
+            && !self.list_is_current(id, list)
+        {
+            // The worker builds again for the current rules. Telling it here
+            // too means no change of rules can leave a lens waiting for good.
+            tracing::debug!(space = %id, "dropped a list built under older rules");
+            free_off_thread(items_of(listing));
+            self.sync_watches(ui);
+            return;
+        }
         match &listing {
-            FolderListing::Listed(entries) => {
-                self.listings
-                    .insert(id, (folder.to_path_buf(), entries.clone()));
+            FolderListing::Listed(list) => {
+                self.listed
+                    .insert(id, (folder.to_path_buf(), list.listed_any));
             }
             FolderListing::Unavailable | FolderListing::Refused | FolderListing::Moved { .. } => {
-                self.listings.remove(&id);
+                self.listed.remove(&id);
             }
         }
-        let entries = self.take_listing(id, listing);
-        self.sync_lens(ui, id, entries);
+        let items = self.take_listing(id, listing);
+        self.sync_lens(ui, id, items);
+    }
+
+    /// Whether `list` was built under the rules lens `id` has now.
+    fn list_is_current(&self, id: SpaceId, list: &LensList) -> bool {
+        self.config
+            .desktop
+            .space(id)
+            .and_then(|space| space.lens_rules())
+            .is_some_and(|rules| rules == list.rules)
+    }
+
+    /// Tells lens `id`'s worker where an item the model re-pointed now is, so
+    /// the next listing keeps its id. A rename's new path is otherwise unknown
+    /// to the worker, and a normal space has no worker to tell.
+    pub(super) fn note_renamed_lens_item(&self, ui: &mut Ui, item: ItemId) {
+        let desktop = &self.config.desktop;
+        let Some(id) = desktop.space_containing(item) else {
+            return;
+        };
+        if desktop.space(id).is_some_and(|space| space.is_lens())
+            && let Some(entry) = desktop.item(item)
+        {
+            ui.note_lens_item(
+                WatchKey::Space(id),
+                entry.path.clone(),
+                item,
+                entry.modified,
+            );
+        }
     }
 
     /// Acts on the folder lens `id` shows having moved to `to` (ROADMAP D19).
@@ -319,22 +386,6 @@ impl App {
         }
     }
 
-    /// Filters lens `id`'s last listing again after its filters changed,
-    /// without reading the folder (W35). A listing of a folder the lens no
-    /// longer shows (Change folder…, a browse) is left alone: the new one is
-    /// on its way.
-    pub(super) fn refilter_lens(&mut self, ui: &mut Ui, id: SpaceId) {
-        let Some(entries) = self
-            .listings
-            .get(&id)
-            .filter(|(folder, _)| self.lens_shows(id, folder))
-            .map(|(_, entries)| entries.clone())
-        else {
-            return;
-        };
-        self.sync_lens(ui, id, entries);
-    }
-
     /// Whether lens `id`'s filters leave none of its listing's entries, so
     /// its placeholder says so instead of looking broken (W35).
     pub(super) fn filtered_out(&self, id: SpaceId) -> bool {
@@ -347,30 +398,24 @@ impl App {
         filtered
             && space.items().is_empty()
             && self
-                .listings
+                .listed
                 .get(&id)
-                .is_some_and(|(folder, entries)| !entries.is_empty() && self.lens_shows(id, folder))
+                .is_some_and(|(folder, listed_any)| *listed_any && self.lens_shows(id, folder))
     }
 
     /// Notes what `listing` says about lens `id` (whether its folder is
-    /// available, and which icons went stale) and returns the entries the lens
+    /// available, and which icons went stale) and returns the items the lens
     /// holds now.
-    fn take_listing(&mut self, id: SpaceId, listing: FolderListing) -> Vec<FolderEntry> {
+    fn take_listing(&mut self, id: SpaceId, listing: FolderListing) -> Vec<Item> {
         match listing {
-            FolderListing::Listed(entries) => {
+            FolderListing::Listed(list) => {
                 // The icon cache keeps an icon until it is told to drop it, so
                 // a file rewritten in place would keep its old icon.
-                let changed = self
-                    .config
-                    .desktop
-                    .space(id)
-                    .map(|space| rewritten_paths(space.items(), &entries))
-                    .unwrap_or_default();
-                for path in changed {
-                    self.icons.invalidate(&path);
+                for path in &list.rewritten {
+                    self.icons.invalidate(path);
                 }
                 self.unavailable_lenses.remove(&id);
-                entries
+                list.items
             }
             // A move the lens follows never reaches here (`on_lens_listing`).
             FolderListing::Unavailable | FolderListing::Moved { .. } => {
@@ -399,9 +444,9 @@ impl App {
             .is_some_and(|shown| listing_is_current(folder, &shown))
     }
 
-    /// Replaces lens `id`'s items from `entries` and repaints it. The items are
-    /// not persisted, so this needs no save.
-    fn sync_lens(&mut self, ui: &mut Ui, id: SpaceId, entries: Vec<FolderEntry>) {
+    /// Swaps in lens `id`'s finished list and repaints it. The items are not
+    /// persisted, so this needs no save.
+    fn sync_lens(&mut self, ui: &mut Ui, id: SpaceId, items: Vec<Item>) {
         let Some(at) = self
             .config
             .desktop
@@ -411,7 +456,7 @@ impl App {
             return;
         };
         if self
-            .dispatch(Command::SyncLens { id, entries }, at)
+            .dispatch(Command::SyncLens { id, items }, at)
             .is_applied()
         {
             self.refresh_space(ui, id);
@@ -419,24 +464,26 @@ impl App {
     }
 }
 
-/// The paths in `entries` that `items` already holds with another modified
-/// time. This runs on the UI thread for every listing, so it indexes the items
-/// once: comparing each entry with each item stalled every space for 9.7 s on a
-/// lens of 10,000 files.
-fn rewritten_paths(items: &[Item], entries: &[FolderEntry]) -> Vec<PathBuf> {
-    let modified: HashMap<&Path, Option<u64>> = items
-        .iter()
-        .map(|item| (item.path.as_path(), item.modified))
-        .collect();
-    entries
-        .iter()
-        .filter(|entry| {
-            modified
-                .get(entry.path.as_path())
-                .is_some_and(|held| *held != entry.modified)
-        })
-        .map(|entry| entry.path.clone())
-        .collect()
+/// The items a dropped listing carries.
+fn items_of(listing: FolderListing) -> Vec<Vec<Item>> {
+    match listing {
+        FolderListing::Listed(list) => vec![list.items],
+        FolderListing::Unavailable | FolderListing::Refused | FolderListing::Moved { .. } => {
+            Vec::new()
+        }
+    }
+}
+
+/// Frees item lists without holding up the UI thread: freeing a 50,000-item
+/// list takes several milliseconds of a frame's 8. A small list is not worth a
+/// thread. If the thread cannot start, the lists are freed here.
+pub(super) fn free_off_thread(lists: Vec<Vec<Item>>) {
+    if lists.iter().map(Vec::len).sum::<usize>() < FREE_OFF_THREAD_FROM {
+        return;
+    }
+    let _ = std::thread::Builder::new()
+        .name("deskspace-free-items".into())
+        .spawn(move || drop(lists));
 }
 
 /// Whether a listing of `listed` is for `shown`, the folder a surface shows
@@ -479,6 +526,7 @@ mod tests {
 
     use deskspace_config::{Config, ConfigStore};
     use deskspace_core::Rect;
+    use deskspace_core::source::FolderEntry;
 
     use crate::app::LayerState;
     use crate::fixtures;
@@ -504,41 +552,39 @@ mod tests {
     }
 
     #[test]
-    fn only_a_held_file_with_a_new_time_counts_as_rewritten() {
-        let held = |path: &str, modified| {
-            let mut item = entry(path, ItemKind::File);
-            item.modified = modified;
-            item
-        };
-        let listed = |path: &str, modified| FolderEntry {
-            path: path.into(),
-            label: String::new(),
-            kind: ItemKind::File,
-            size: Some(1),
-            modified,
-            created: None,
-            hidden: false,
-        };
-        let items = [
-            held(r"C:\f\same.txt", Some(1)),
-            held(r"C:\f\new-time.txt", Some(1)),
-            held(r"C:\f\lost-time.txt", Some(1)),
-            held(r"C:\f\gone.txt", Some(1)),
-        ];
-        let entries = [
-            listed(r"C:\f\same.txt", Some(1)),
-            listed(r"C:\f\new-time.txt", Some(2)),
-            listed(r"C:\f\lost-time.txt", None),
-            listed(r"C:\f\just-added.txt", Some(9)),
-        ];
-        assert_eq!(
-            rewritten_paths(&items, &entries),
-            [
-                PathBuf::from(r"C:\f\new-time.txt"),
-                PathBuf::from(r"C:\f\lost-time.txt"),
-            ]
+    fn a_list_built_under_older_rules_is_not_current() {
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
         );
-        assert!(rewritten_paths(&[], &entries).is_empty(), "a first listing");
+        let rules = app
+            .config
+            .desktop
+            .space(lens)
+            .and_then(|space| space.lens_rules())
+            .unwrap();
+        let list = LensList {
+            rules,
+            ..LensList::default()
+        };
+        assert!(app.list_is_current(lens, &list));
+        let mut view = app
+            .config
+            .desktop
+            .space(lens)
+            .unwrap()
+            .folder_view()
+            .unwrap()
+            .clone();
+        view.include = vec!["*.pdf".into()];
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetLensView { id: lens, view },
+        );
+        assert!(!app.list_is_current(lens, &list));
     }
 
     #[test]
@@ -645,11 +691,10 @@ mod tests {
             hidden: false,
         };
         // An empty folder, with no filter: nothing to say.
-        app.listings.insert(lens, (folder.clone(), Vec::new()));
+        app.listed.insert(lens, (folder.clone(), false));
         assert!(!app.filtered_out(lens));
         // A file the "Show only" list leaves out.
-        app.listings
-            .insert(lens, (folder.clone(), vec![entry.clone()]));
+        app.listed.insert(lens, (folder.clone(), true));
         let mut view = app
             .config
             .desktop
@@ -663,17 +708,11 @@ mod tests {
             &mut app.config.desktop,
             Command::SetLensView { id: lens, view },
         );
-        fixtures::apply(
-            &mut app.config.desktop,
-            Command::SyncLens {
-                id: lens,
-                entries: vec![entry.clone()],
-            },
-        );
+        fixtures::sync_lens(&mut app.config.desktop, lens, vec![entry]);
         assert!(app.filtered_out(lens));
         // A listing of a folder the lens no longer shows proves nothing.
-        app.listings
-            .insert(lens, (PathBuf::from(r"C:\Elsewhere"), vec![entry]));
+        app.listed
+            .insert(lens, (PathBuf::from(r"C:\Elsewhere"), true));
         assert!(!app.filtered_out(lens));
     }
 
@@ -839,7 +878,7 @@ mod tests {
         assert!(app.take_listing(lens, FolderListing::Refused).is_empty());
         assert!(app.unavailable_lenses.contains(&lens));
         assert!(
-            app.take_listing(lens, FolderListing::Listed(Vec::new()))
+            app.take_listing(lens, FolderListing::Listed(LensList::default()))
                 .is_empty()
         );
         assert!(
@@ -916,5 +955,82 @@ mod tests {
             !app.lens_shows(space, Path::new("C:/Users/me/Documents")),
             "a normal space shows no folder"
         );
+    }
+
+    /// Run by hand in release for the Performance rule's dated timing of what
+    /// stays on the UI thread for a big lens:
+    /// `cargo test --release -p deskspace-app -- --ignored --nocapture time_the_ui`.
+    #[test]
+    #[ignore = "a timing, for release builds; run by hand"]
+    fn time_the_ui_threads_share_of_a_fifty_thousand_entry_lens() {
+        let time = |label: &str, work: &mut dyn FnMut()| {
+            let start = std::time::Instant::now();
+            work();
+            println!("{label}: {:?}", start.elapsed());
+        };
+        let entries: Vec<FolderEntry> = (0..50_000)
+            .map(|n| FolderEntry {
+                path: PathBuf::from(format!(
+                    r"C:\Users\me\Big\quarterly report {n} final.{}",
+                    ["pdf", "docx", "png", "txt", "zip", "exe", "lnk"][n as usize % 7]
+                )),
+                label: format!("quarterly report {n} final"),
+                kind: ItemKind::File,
+                size: Some(n),
+                modified: Some(n),
+                created: Some(n),
+                hidden: false,
+            })
+            .collect();
+        let mut app = app();
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Big",
+        );
+        let mut builder = app.new_lens_builder(lens).unwrap();
+        let mut list = builder.listed(entries.clone());
+        time("swap, a first list", &mut || {
+            let items = std::mem::take(&mut list.items);
+            app.dispatch(Command::SyncLens { id: lens, items }, Default::default());
+        });
+        let mut list = builder.listed(entries.clone());
+        time("swap, replacing a list", &mut || {
+            let items = std::mem::take(&mut list.items);
+            app.dispatch(Command::SyncLens { id: lens, items }, Default::default());
+        });
+        time("the undo snapshot of the lens", &mut || {
+            app.undo.begin("Timing");
+            app.undo.note_space(&app.config.desktop, lens);
+            app.undo.cancel();
+        });
+        for key in [
+            deskspace_core::SortKey::Name,
+            deskspace_core::SortKey::Kind,
+            deskspace_core::SortKey::Size,
+            deskspace_core::SortKey::Modified,
+            deskspace_core::SortKey::Created,
+        ] {
+            let mut view = app.config.desktop.space(lens).unwrap().view().clone();
+            view.group = Some(deskspace_core::view::GroupBy {
+                key,
+                descending: false,
+            });
+            fixtures::apply(
+                &mut app.config.desktop,
+                Command::SetSpaceView { id: lens, view },
+            );
+            time(&format!("sync_grouping by {key:?}, built"), &mut || {
+                app.sync_grouping(lens);
+            });
+            time(&format!("sync_grouping by {key:?}, unchanged"), &mut || {
+                app.sync_grouping(lens);
+            });
+            app.view_cache.toggle_group(lens, "no such group");
+            time(&format!("sync_grouping by {key:?}, again"), &mut || {
+                app.sync_grouping(lens);
+            });
+        }
     }
 }

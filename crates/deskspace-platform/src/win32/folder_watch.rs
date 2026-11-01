@@ -3,7 +3,8 @@
 //!
 //! `ReadDirectoryChangesW` runs with overlapped I/O on one worker thread that
 //! serves every watch through an I/O completion port. The worker also lists
-//! each folder, so a burst costs the UI thread nothing but a repaint. A burst
+//! each folder and builds a lens's finished item list (`LensBuilder`), so a
+//! burst costs the UI thread only swapping the list in and a repaint. A burst
 //! of changes (a copy, an extract, an Explorer move) is debounced per folder
 //! into a single posted listing, so the app restyles once rather than once per
 //! file. M2 uses this for the Desktop folder; M4 phase 2 uses it for every
@@ -18,6 +19,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use deskspace_core::{ItemId, LensBuilder, LensList, LensRules};
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_IO_PENDING, HANDLE, HWND, INVALID_HANDLE_VALUE, LPARAM, MAX_PATH,
     WAIT_TIMEOUT, WPARAM,
@@ -78,15 +80,25 @@ const BUFFER_BYTES: usize = 8 * 1024;
 const ADD_KEY: usize = 0;
 const REMOVE_KEY: usize = 1;
 const STOP_KEY: usize = 2;
-const FIRST_SLOT: usize = 3;
+const UPDATE_KEY: usize = 3;
+const FIRST_SLOT: usize = 4;
 
 /// Folder reads also start above the control keys. A fresh key per open keeps
 /// a canceled read's late packet from being taken for the next read's.
-const FIRST_READ_KEY: usize = 3;
+const FIRST_READ_KEY: usize = 4;
 
 /// The listing a worker left for the UI thread, which takes it when the
 /// posted change arrives.
 type SharedListing = Arc<Mutex<Option<FolderListing>>>;
+
+/// What the UI has told a lens's watch since the worker last looked, by slot.
+/// The newest rules replace older ones, so a burst of edits (typing in a filter
+/// field) builds the list once.
+#[derive(Default)]
+struct LensUpdate {
+    rules: Option<LensRules>,
+    items: Vec<(PathBuf, ItemId, Option<u64>)>,
+}
 
 /// The watches and the worker that serves them. Dropping it stops the worker
 /// and joins it.
@@ -96,6 +108,8 @@ pub(crate) struct FolderWatch {
     /// The paths and listings for add packets the worker has not handled yet,
     /// by slot.
     additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
+    /// The lens updates the worker has not handled yet, by slot.
+    updates: Arc<Mutex<HashMap<usize, LensUpdate>>>,
     /// The slot and path behind each app-level key.
     active: HashMap<WatchKey, ActiveWatch>,
     /// The app-level key behind each slot, to decode a posted change.
@@ -111,12 +125,16 @@ struct PendingWatch {
     path: PathBuf,
     store: PathBuf,
     listing: SharedListing,
+    builder: Option<LensBuilder>,
 }
 
 /// One key's watch, as the UI thread remembers it.
 struct ActiveWatch {
     slot: usize,
     path: PathBuf,
+    /// The rules last sent to the worker, so unchanged ones build nothing.
+    /// `None` for a watch that builds no list.
+    rules: Option<LensRules>,
 }
 
 impl FolderWatch {
@@ -128,6 +146,8 @@ impl FolderWatch {
         let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, None, 0, 0) }?;
         let additions = Arc::new(Mutex::new(HashMap::new()));
         let pending = Arc::clone(&additions);
+        let updates = Arc::new(Mutex::new(HashMap::new()));
+        let pending_updates = Arc::clone(&updates);
         // A raw `HWND`/`HANDLE` is not `Send`, so carry them as `isize` and
         // rebuild them on the worker, which only ever posts to the window.
         let target_raw = target.0 as isize;
@@ -140,6 +160,7 @@ impl FolderWatch {
                     target: HWND(target_raw as *mut c_void),
                     message,
                     additions: pending,
+                    updates: pending_updates,
                     folders: HashMap::new(),
                     by_read: HashMap::new(),
                     canceled: HashMap::new(),
@@ -157,6 +178,7 @@ impl FolderWatch {
                 port,
                 thread: Some(thread),
                 additions,
+                updates,
                 active: HashMap::new(),
                 slots: HashMap::new(),
                 listings: HashMap::new(),
@@ -173,21 +195,28 @@ impl FolderWatch {
         }
     }
 
+    /// Whether `key` watches `path` now.
+    pub(crate) fn is_watching(&self, key: WatchKey, path: &Path) -> bool {
+        self.active
+            .get(&key)
+            .is_some_and(|active| active.path == path)
+    }
+
     /// Watches `path` for `key`, refusing it when it resolves to `store` or
-    /// inside it. Does nothing when that key already watches the same path;
-    /// another path replaces the key's watch.
+    /// inside it. `builder` turns a lens's listings into its item list; a
+    /// watch without one posts empty lists. Does nothing when that key already
+    /// watches the same path; another path replaces the key's watch.
     pub(crate) fn watch(
         &mut self,
         key: WatchKey,
         path: &Path,
         store: &Path,
+        builder: Option<LensBuilder>,
     ) -> Result<(), PlatformError> {
-        if let Some(active) = self.active.get(&key) {
-            if active.path == path {
-                return Ok(());
-            }
-            self.unwatch(key);
+        if self.is_watching(key, path) {
+            return Ok(());
         }
+        self.unwatch(key);
         let slot = self.next_slot;
         self.next_slot += 1;
         let listing: SharedListing = Arc::new(Mutex::new(None));
@@ -196,6 +225,7 @@ impl FolderWatch {
             ActiveWatch {
                 slot,
                 path: path.to_path_buf(),
+                rules: builder.as_ref().map(|builder| builder.rules().clone()),
             },
         );
         self.slots.insert(slot, key);
@@ -209,6 +239,7 @@ impl FolderWatch {
                     path: path.to_path_buf(),
                     store: store.to_path_buf(),
                     listing,
+                    builder,
                 },
             );
         if let Err(error) = self.post(ADD_KEY, slot) {
@@ -218,6 +249,49 @@ impl FolderWatch {
         Ok(())
     }
 
+    /// Has the worker build `key`'s list under `rules`, without reading the
+    /// folder. Rules the worker already has send nothing.
+    pub(crate) fn set_lens_rules(&mut self, key: WatchKey, rules: LensRules) {
+        let Some(active) = self.active.get_mut(&key) else {
+            return;
+        };
+        if active.rules.as_ref() == Some(&rules) {
+            return;
+        }
+        active.rules = Some(rules.clone());
+        let slot = active.slot;
+        self.send_update(slot, |update| update.rules = Some(rules));
+    }
+
+    /// Tells `key`'s worker that item `id` now has `path`, so the next listing
+    /// keeps its id.
+    pub(crate) fn note_lens_item(
+        &self,
+        key: WatchKey,
+        path: PathBuf,
+        id: ItemId,
+        modified: Option<u64>,
+    ) {
+        if let Some(active) = self.active.get(&key) {
+            self.send_update(active.slot, |update| {
+                update.items.push((path, id, modified));
+            });
+        }
+    }
+
+    fn send_update(&self, slot: usize, change: impl FnOnce(&mut LensUpdate)) {
+        change(
+            self.updates
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(slot)
+                .or_default(),
+        );
+        if let Err(error) = self.post(UPDATE_KEY, slot) {
+            tracing::warn!(%error, "could not update a lens's watch");
+        }
+    }
+
     /// Stops the watch for `key`, if it has one.
     pub(crate) fn unwatch(&mut self, key: WatchKey) {
         let Some(active) = self.active.remove(&key) else {
@@ -225,6 +299,10 @@ impl FolderWatch {
         };
         self.slots.remove(&active.slot);
         self.listings.remove(&active.slot);
+        self.updates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&active.slot);
         if let Err(error) = self.post(REMOVE_KEY, active.slot) {
             tracing::warn!(%error, "could not remove a folder watch");
         }
@@ -314,6 +392,7 @@ struct Worker {
     target: HWND,
     message: u32,
     additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
+    updates: Arc<Mutex<HashMap<usize, LensUpdate>>>,
     folders: HashMap<usize, Folder>,
     /// The slot behind each open read's completion key.
     by_read: HashMap<usize, usize>,
@@ -361,6 +440,7 @@ impl Worker {
                 Ok(()) if key == ADD_KEY => self.add(transferred as usize),
                 Ok(()) if key == REMOVE_KEY => self.remove(transferred as usize),
                 Ok(()) if key == STOP_KEY => return Ok(()),
+                Ok(()) if key == UPDATE_KEY => self.update(transferred as usize),
                 // Any other key is a folder's read, registered with the port
                 // when the read's folder was opened. A read that failed or
                 // was canceled still sends its packet, as an error with the
@@ -387,6 +467,7 @@ impl Worker {
             path,
             store,
             listing,
+            builder,
         }) = pending
         else {
             tracing::warn!(slot, "folder watch add had no path");
@@ -396,6 +477,7 @@ impl Worker {
             path,
             store,
             listing,
+            builder,
             open: None,
             retry_at: None,
         };
@@ -434,6 +516,32 @@ impl Worker {
         }
         self.bursts.add(slot);
         self.publish(slot, listing);
+    }
+
+    /// Takes what the UI told a lens's watch, and posts the list again when
+    /// its rules changed. An earlier packet may already have taken it all.
+    fn update(&mut self, slot: usize) {
+        let update = self
+            .updates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&slot);
+        let Some(update) = update else {
+            return;
+        };
+        let Some(builder) = self
+            .folders
+            .get_mut(&slot)
+            .and_then(|folder| folder.builder.as_mut())
+        else {
+            return;
+        };
+        for (path, id, modified) in update.items {
+            builder.note_item(path, id, modified);
+        }
+        if let Some(list) = update.rules.and_then(|rules| builder.set_rules(rules)) {
+            self.publish(slot, FolderListing::Listed(list));
+        }
     }
 
     /// Stops one folder's watch.
@@ -573,9 +681,9 @@ impl Worker {
                     continue;
                 };
                 match folder.list() {
-                    FolderListing::Listed(entries) => {
+                    FolderListing::Listed(list) => {
                         folder.retry_at = None;
-                        Some(FolderListing::Listed(entries))
+                        Some(FolderListing::Listed(list))
                     }
                     FolderListing::Unavailable
                     | FolderListing::Refused
@@ -641,10 +749,17 @@ impl Worker {
     }
 
     /// Leaves `listing` for the UI thread and wakes it with the folder's slot.
-    fn publish(&self, slot: usize, listing: FolderListing) {
-        let Some(folder) = self.folders.get(&slot) else {
+    /// A list the UI has not taken yet is replaced and freed here, off its
+    /// thread.
+    fn publish(&mut self, slot: usize, listing: FolderListing) {
+        let Some(folder) = self.folders.get_mut(&slot) else {
             return;
         };
+        if !matches!(listing, FolderListing::Listed(_))
+            && let Some(builder) = folder.builder.as_mut()
+        {
+            builder.folder_gone();
+        }
         *folder
             .listing
             .lock()
@@ -724,6 +839,9 @@ struct Folder {
     /// its own final path is this or inside it.
     store: PathBuf,
     listing: SharedListing,
+    /// Turns a lens's listings into its item list. The Desktop's watch has
+    /// none: the layer re-reads the shell.
+    builder: Option<LensBuilder>,
     /// `None` while the folder is missing and waiting for a retry.
     open: Option<OpenFolder>,
     /// When to try the folder again, in milliseconds since the worker started.
@@ -783,10 +901,24 @@ impl Folder {
             .then_some(FolderListing::Refused)
     }
 
-    /// The folder's current contents, or `Unavailable` with the reason logged.
-    fn list(&self) -> FolderListing {
+    /// The folder's current contents as a finished list, or `Unavailable` with
+    /// the reason logged.
+    fn list(&mut self) -> FolderListing {
         match list_folder(&self.path) {
-            Ok(entries) => FolderListing::Listed(entries),
+            Ok(entries) => {
+                let Some(builder) = self.builder.as_mut() else {
+                    return FolderListing::Listed(LensList::default());
+                };
+                let start = Instant::now();
+                let list = builder.listed(entries);
+                tracing::debug!(
+                    items = list.items.len(),
+                    elapsed = ?start.elapsed(),
+                    path = %self.path.display(),
+                    "built a lens's list"
+                );
+                FolderListing::Listed(list)
+            }
             Err(error) => {
                 tracing::debug!(%error, path = %self.path.display(), "could not list the folder");
                 FolderListing::Unavailable
@@ -1141,6 +1273,19 @@ mod tests {
         first_change(watch, slot).map(|(_, _, listing)| listing)
     }
 
+    /// Waits up to `millis` for a listing of `slot`, for a test that expects
+    /// none.
+    fn first_change_within(watch: &FolderWatch, slot: usize, millis: u64) -> Option<FolderListing> {
+        let deadline = Instant::now() + std::time::Duration::from_millis(millis);
+        while Instant::now() < deadline {
+            if let Some((_, _, listing)) = watch.change_for_slot(slot) {
+                return Some(listing);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        None
+    }
+
     /// Waits up to 8 s, past one path check, for a change on `slot` that is
     /// not a listing.
     fn first_non_listing(watch: &FolderWatch, slot: usize) -> Option<FolderListing> {
@@ -1182,7 +1327,7 @@ mod tests {
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &watched, &no_store())
+                .watch(WatchKey::Desktop, &watched, &no_store(), None)
                 .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             std::fs::rename(&watched, &renamed).unwrap();
@@ -1224,7 +1369,9 @@ mod tests {
         let path = folder.clone();
         let stopped = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(WatchKey::Desktop, &path, &no_store()).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &path, &no_store(), None)
+                .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             watch.stop();
         });
@@ -1242,11 +1389,11 @@ mod tests {
         let served = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &old_path, &no_store())
+                .watch(WatchKey::Desktop, &old_path, &no_store(), None)
                 .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             watch
-                .watch(WatchKey::Desktop, &new_path, &no_store())
+                .watch(WatchKey::Desktop, &new_path, &no_store(), None)
                 .unwrap();
             assert!(matches!(
                 first_listing(&watch, FIRST_SLOT + 1),
@@ -1262,6 +1409,53 @@ mod tests {
         );
     }
 
+    /// New rules build the list again from the last listing, and the same
+    /// rules again build nothing.
+    #[test]
+    fn new_rules_rebuild_the_list_from_the_last_listing() {
+        let folder = scratch_folder("rules");
+        std::fs::write(folder.join("a.txt"), "").unwrap();
+        std::fs::write(folder.join("b.pdf"), "").unwrap();
+        let path = folder.clone();
+        let lists = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&lists);
+        let finished = finishes(move || {
+            let key = WatchKey::Space(deskspace_core::SpaceId(7));
+            let builder = LensBuilder::new(
+                LensRules::default(),
+                deskspace_core::Desktop::new().reserve_item_ids(),
+                &[],
+            );
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch.watch(key, &path, &no_store(), Some(builder)).unwrap();
+            let first = first_listing(&watch, FIRST_SLOT);
+            let rules = LensRules {
+                include: vec!["*.pdf".into()],
+                ..LensRules::default()
+            };
+            watch.set_lens_rules(key, rules.clone());
+            let second = first_listing(&watch, FIRST_SLOT);
+            watch.set_lens_rules(key, rules);
+            let third = first_change_within(&watch, FIRST_SLOT, 300);
+            watch.stop();
+            *seen.lock().unwrap() = vec![first, second, third];
+        });
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(finished, "the watch did not finish");
+        let lists = lists.lock().unwrap();
+        let labels = |listing: &FolderListing| match listing {
+            FolderListing::Listed(list) => list
+                .items
+                .iter()
+                .map(|item| item.label.clone())
+                .collect::<Vec<_>>(),
+            other => panic!("expected a list, got {other:?}"),
+        };
+        assert_eq!(labels(lists[0].as_ref().unwrap()), ["a", "b"]);
+        assert_eq!(labels(lists[1].as_ref().unwrap()), ["b"]);
+        assert_eq!(lists[2], None, "unchanged rules post nothing");
+    }
+
     /// A change names the folder its slot watches, so the app can drop a
     /// listing that waited in the queue while the key moved to another folder.
     #[test]
@@ -1272,7 +1466,9 @@ mod tests {
         let seen = std::sync::Arc::clone(&named);
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(WatchKey::Desktop, &path, &no_store()).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &path, &no_store(), None)
+                .unwrap();
             *seen.lock().unwrap() =
                 first_change(&watch, FIRST_SLOT).map(|(key, folder, _)| (key, folder));
             watch.stop();
@@ -1317,7 +1513,9 @@ mod tests {
         let seen = Arc::clone(&listed);
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(WatchKey::Desktop, &link, &final_store).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &link, &final_store, None)
+                .unwrap();
             *seen.lock().unwrap() = first_listing(&watch, FIRST_SLOT);
             watch.stop();
         });
@@ -1335,6 +1533,7 @@ mod tests {
             path: path.to_path_buf(),
             store: final_store.clone(),
             listing: Arc::new(Mutex::new(None)),
+            builder: None,
             open: None,
             retry_at: None,
         };

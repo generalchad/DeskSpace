@@ -5155,3 +5155,41 @@ until I5-I6 all land, so no partial build hides the desktop.
     a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
     repository's "Latest" badge still points at the app. A second run fails
     at step 2.
+
+- [x] **B37. Refresh a big lens off the UI thread (core, platform,
+  app).** The split below was decided by the maintainer, 2026-10-29, and amended 2026-10-31.
+  - Why: `Command::SyncLens` filters, reconciles, sorts, and lays out
+    every entry on the UI thread. On 50,000 entries in a release build it
+    took 44-46 ms with no filters and 62-65 ms with 32 typical filter
+    patterns, and 309 ms with 32 patterns built so each is tried in full
+    (2026-10-29, `time_a_filtered_sync_of_fifty_thousand_entries` in
+    `command/lens_ops.rs`). The Performance rule in section W allows 8 ms.
+    Accepted for W34 by the maintainer on that date, with this task to
+    follow.
+  - Measured again, 2026-10-31: those timings used names already in sorted
+    order. In NTFS-like order `sort_items` alone takes about 330 ms on 50,000
+    items, against 24 ms sorted, and the whole `SyncLens` 430-490 ms on a
+    scattered listing. Moving only the filter and the sort cannot reach 8 ms:
+    reconciling ids by path costs about 38 ms (build the map 20, look up 12,
+    drop it 6), and `rewritten_paths` (B38) 21 ms. Feed the timing test
+    entries in listing order.
+  - Design (amended by the maintainer, 2026-10-31): the watch worker, which
+    already lists the folder off the UI thread, builds the finished item list.
+    It filters, sorts, reconciles ids, and finds the rewritten paths with
+    pure functions from `deskspace-core`, using the view's rules passed in
+    with the watch (as W25 passes the store). The UI thread only swaps the
+    list in, and the old list is dropped off it. A filter or sort change sends
+    the new rules to the worker, which redoes the work there.
+  - To settle while building, and ask if a choice changes this design:
+    - Ids. `Desktop` hands them out and they are never reused (D11), so the
+      worker needs a block of reserved ids and its own map from path to id.
+    - A list built under old rules, or before an undo restored the lens, must
+      not be swapped in. Tag each list with what it was built from.
+    - `App::filtered_out` needs to know the listing was not empty, and
+      `refilter_lens`'s copy of the listing moves to the worker.
+    - `App::sync_grouping` also walks every item on the UI thread for a
+      grouped lens. Measure it, and move it with the rest if it is over budget.
+  - Measure with the timing test above before and after; record both.
+  - Done when: swapping in a 50,000-entry list stays under 8 ms on the UI
+    thread with 32 patterns, and a lens of that size refreshes without a
+    visible hitch (**[needs human]**).

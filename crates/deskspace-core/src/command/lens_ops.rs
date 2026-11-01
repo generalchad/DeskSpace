@@ -1,15 +1,14 @@
 //! Commands that create and refresh a lens, a space that mirrors a folder.
 
-use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::geometry::Rect;
 use crate::id::SpaceId;
-use crate::item::{Item, ItemKind};
-use crate::layout::{GridSpec, arrange_space, clamp_to_bounds};
-use crate::source::{FolderEntry, FolderView, LensTitle, SpaceSource};
+use crate::item::Item;
+use crate::layout::{GridSpec, arrange_space, clamp_to_bounds, position_items};
+use crate::source::{FolderView, LensTitle, SpaceSource};
 use crate::view::SpaceView;
 
 impl Desktop {
@@ -42,7 +41,8 @@ impl Desktop {
         path: PathBuf,
         title: String,
     ) -> CommandOutcome {
-        self.with_space(id, |space| {
+        let mut replaced = Vec::new();
+        let outcome = self.with_space(id, |space| {
             let SpaceSource::Folder(view) = &mut space.source else {
                 return CommandOutcome::Rejected;
             };
@@ -52,11 +52,13 @@ impl Desktop {
             // good.
             if view.path != path {
                 view.path = path;
-                space.items.clear();
+                replaced = std::mem::take(&mut space.items);
             }
             space.title = title;
             CommandOutcome::Applied
-        })
+        });
+        self.retire_items(replaced);
+        outcome
     }
 
     pub(super) fn apply_set_lens_title(
@@ -85,65 +87,29 @@ impl Desktop {
         })
     }
 
-    /// Reconciles `entries` with the lens's current items by path, then sorts
-    /// and lays them out. Hidden entries and those the view's filters leave
-    /// out (`FolderView::shows`) are skipped.
+    /// Swaps in `items`, a list a `LensBuilder` finished, and lays them out.
+    /// This runs on the UI thread, so it does nothing that grows with the list
+    /// but place it. A locked lens keeps its size, and its items still need
+    /// places, as `Reflow` gives them.
     pub(super) fn apply_sync_lens(
         &mut self,
         id: SpaceId,
-        entries: Vec<FolderEntry>,
+        items: Vec<Item>,
         layout: GridSpec,
     ) -> CommandOutcome {
-        let Some(space) = self.space(id) else {
-            return CommandOutcome::NotFound;
-        };
-        let Some(view) = space.folder_view().cloned() else {
-            return CommandOutcome::Rejected;
-        };
-        let rule = space.view().sort;
-        let mut existing: HashMap<PathBuf, Item> = space
-            .items()
-            .iter()
-            .cloned()
-            .map(|item| (item.path.clone(), item))
-            .collect();
-
-        let mut seen = HashSet::new();
-        let mut items = Vec::new();
-        for entry in entries {
-            if !seen.insert(entry.path.clone()) || (entry.hidden && !view.show_hidden) {
-                continue;
-            }
-            let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
-            if !view.shows(&name, entry.kind == ItemKind::Folder) {
-                continue;
-            }
-            let path = entry.path.clone();
-            let label = entry.label.clone();
-            let kind = entry.kind;
-            let size = entry.size;
-            let modified = entry.modified;
-            let created = entry.created;
-            let mut item = match existing.remove(&path) {
-                Some(item) => item,
-                None => entry.into_item(self.take_item_id()),
-            };
-            if !label.is_empty() {
-                item.label = label;
-            }
-            item.kind = kind;
-            item.size = size;
-            item.modified = modified;
-            item.created = created;
-            items.push(item);
-        }
-
-        rule.sort_items(&mut items);
         let Some(space) = self.space_mut(id) else {
             return CommandOutcome::NotFound;
         };
-        space.items = items;
-        arrange_space(space, layout);
+        if !space.is_lens() {
+            return CommandOutcome::Rejected;
+        }
+        let replaced = std::mem::replace(&mut space.items, items);
+        if space.locked {
+            position_items(space, layout);
+        } else {
+            arrange_space(space, layout);
+        }
+        self.retire_items(replaced);
         CommandOutcome::Applied
     }
 }
@@ -154,7 +120,9 @@ mod tests {
     use crate::command::{Command, CommandOutcome};
     use crate::geometry::{Point, Size};
     use crate::item::{ItemFacts, ItemKind, SortKey};
+    use crate::lens_build::{LensBuilder, LensRules};
     use crate::sort::SortRule;
+    use crate::source::FolderEntry;
 
     fn bounds() -> Rect {
         Rect::new(0, 0, 1920, 1080)
@@ -191,8 +159,21 @@ mod tests {
         }
     }
 
+    /// What the worker does for a listing, then what the UI thread does with
+    /// the result.
     fn sync(desktop: &mut Desktop, id: SpaceId, entries: Vec<FolderEntry>) -> CommandOutcome {
-        desktop.apply(Command::SyncLens { id, entries }, bounds())
+        let ids = desktop.reserve_item_ids();
+        let (rules, items) = desktop.space(id).map_or_else(
+            || (LensRules::default(), Vec::new()),
+            |space| {
+                (
+                    space.lens_rules().unwrap_or_default(),
+                    space.items().to_vec(),
+                )
+            },
+        );
+        let items = LensBuilder::new(rules, ids, &items).listed(entries).items;
+        desktop.apply(Command::SyncLens { id, items }, bounds())
     }
 
     fn labels(desktop: &Desktop, id: SpaceId) -> Vec<String> {
@@ -442,6 +423,55 @@ mod tests {
             ],
         );
         assert_eq!(labels(&desktop, id).len(), 1);
+    }
+
+    #[test]
+    fn sync_lens_places_the_items_of_a_locked_lens_and_keeps_its_size() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        desktop.apply(Command::ToggleLock { id }, bounds());
+        let rect = desktop.space(id).unwrap().rect();
+        let entries = (0..6)
+            .map(|index| entry(&format!("file{index}.txt"), ItemKind::File))
+            .collect();
+        sync(&mut desktop, id, entries);
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.rect(), rect);
+        assert_eq!(space.items()[5].position, desktop.layout.grid_position(5));
+    }
+
+    #[test]
+    fn replaced_lists_wait_to_be_freed_off_the_ui_thread() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        assert!(desktop.take_retired_items().is_empty(), "nothing replaced");
+        sync(&mut desktop, id, vec![entry("b.txt", ItemKind::File)]);
+        let retired = desktop.take_retired_items();
+        assert_eq!(retired.len(), 1);
+        assert_eq!(retired[0][0].label, "a");
+        desktop.apply(
+            Command::SetLensFolder {
+                id,
+                path: "C:/other".into(),
+                title: "Other".into(),
+            },
+            bounds(),
+        );
+        assert_eq!(desktop.take_retired_items()[0][0].label, "b");
+    }
+
+    #[test]
+    fn a_reserved_block_is_never_handed_out_again() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(&mut desktop, id, vec![entry("a.txt", ItemKind::File)]);
+        let high = desktop.space(id).unwrap().items()[0].id;
+        let block = desktop.reserve_item_ids();
+        assert!(block.next > high.0, "above every id present");
+        let above = desktop.next_item_id();
+        assert!(above.0 >= block.end, "above the whole block");
+        assert!(desktop.reserve_item_ids().next >= block.end);
     }
 
     #[test]
@@ -832,15 +862,19 @@ mod tests {
     #[test]
     #[ignore = "a timing, for release builds; run by hand"]
     fn time_a_filtered_sync_of_fifty_thousand_entries() {
+        // In the order NTFS lists them: by code unit, so `10` comes before
+        // `9`, which natural sort has to untangle.
         let entries = || -> Vec<FolderEntry> {
-            (0..50_000)
+            let mut entries: Vec<FolderEntry> = (0..50_000)
                 .map(|n| {
                     entry(
                         &format!("quarterly report {n} final draft.pdf"),
                         ItemKind::File,
                     )
                 })
-                .collect()
+                .collect();
+            entries.sort_by(|a, b| a.path.cmp(&b.path));
+            entries
         };
         // 32 "Hide" patterns, each tried on every entry and matching none, so
         // every entry is still listed: one set the end check rejects at
@@ -864,14 +898,31 @@ mod tests {
             let mut view = desktop.space(id).unwrap().folder_view().unwrap().clone();
             view.exclude = exclude;
             desktop.apply(Command::SetLensView { id, view }, bounds());
-            let entries = entries();
-            let start = std::time::Instant::now();
-            sync(&mut desktop, id, entries);
-            println!(
-                "SyncLens, {label}, 50,000 entries: {:?} ({} kept)",
-                start.elapsed(),
-                desktop.space(id).unwrap().items().len()
-            );
+            let rules = desktop.space(id).unwrap().lens_rules().unwrap();
+            let mut builder = LensBuilder::new(rules, desktop.reserve_item_ids(), &[]);
+            for pass in ["first listing", "refresh"] {
+                let entries = entries();
+                let start = std::time::Instant::now();
+                let list = builder.listed(entries);
+                let built = start.elapsed();
+                let kept = list.items.len();
+                let start = std::time::Instant::now();
+                desktop.apply(
+                    Command::SyncLens {
+                        id,
+                        items: list.items,
+                    },
+                    bounds(),
+                );
+                let swapped = start.elapsed();
+                let start = std::time::Instant::now();
+                drop(desktop.take_retired_items());
+                println!(
+                    "{label}, {pass}, {kept} of 50,000 kept: worker {built:?}, \
+                     UI thread swap {swapped:?}, freeing the old list {:?}",
+                    start.elapsed()
+                );
+            }
         }
     }
 }

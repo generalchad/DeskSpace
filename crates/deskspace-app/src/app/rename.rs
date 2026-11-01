@@ -254,6 +254,7 @@ impl App {
             if self.rename_space_item(id, shows_extension, typed, |path, new_name| {
                 ui.rename_path(path, new_name)
             }) {
+                self.note_renamed_lens_item(ui, id);
                 self.refresh_tray(ui);
                 self.save(ui);
             }
