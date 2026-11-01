@@ -967,6 +967,18 @@ impl App {
         scene.caret_visible = self.edit.caret_visible();
     }
 
+    /// The work behind `Event::SystemThemeChanged`: re-read Windows' look and
+    /// repaint what it changes.
+    pub(super) fn on_system_theme_changed(&mut self, ui: &mut Ui) {
+        self.system.refresh();
+        ui.set_ui_dark(self.ui_dark());
+        // The desktop view can change its icon size with the theme;
+        // refresh its display options, then restyle for dark mode.
+        self.refresh_shell_display(ui);
+        self.restyle_all(ui);
+        self.refresh_settings(ui);
+    }
+
     /// Re-applies every space's style and repaints them and the desktop
     /// layer.
     pub(super) fn restyle_all(&mut self, ui: &mut Ui) {

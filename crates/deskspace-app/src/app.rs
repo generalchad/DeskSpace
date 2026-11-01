@@ -803,61 +803,65 @@ impl App {
             HotkeyAction::OpenSettings => self.open_settings(ui),
         }
     }
+
+    /// The startup work behind `Event::Started`: settle the UI mode, restore
+    /// the desktop state, and create the spaces' windows.
+    fn on_started(&mut self, ui: &mut Ui) {
+        // DeskSpace's own menus and settings window follow the
+        // `ui_mode` setting; the spaces follow their own Color mode.
+        ui.set_ui_dark(self.ui_dark());
+        ui.set_recent_colors(self.config.recent_colors.clone());
+        self.hotkeys.register_all(ui, &self.config.window);
+        // The spaces appear as their windows are created, below; this
+        // only settles whether they start hidden.
+        ui.set_spaces_visible(self.visible, Play::instant(Way::In));
+        self.sync_desktop_show_entry();
+        // Keep the stored Run path current after an install moves.
+        if self.config.window.start_with_windows {
+            self.sync_start_with_windows(true);
+        }
+        // OLE is up by now, so the desktop view can be queried.
+        let display = desktop_display_since(self.system.shell().check_boxes);
+        self.system.set_shell(display);
+        self.refresh_desktop_entries();
+        self.apply_takeover(ui);
+        // Building the debug window blocks this thread for a few
+        // hundred milliseconds, so it opens before the spaces start
+        // their startup plays; opened after, they had ended unseen.
+        // Its tables fill in on the next `Timer::DebugRefresh`.
+        if self.debug.is_some() {
+            self.open_debug(ui);
+        }
+        self.sync_windows_at_startup(ui);
+        // Positions are derived from the grid; recompute them so a
+        // stored layout from another icon size or DPI is refreshed.
+        self.relayout_all(ui);
+        self.prune_all_missing(ui);
+        tracing::info!(
+            spaces = self.config.desktop.spaces().len(),
+            dark = self.system.dark(),
+            "spaces created"
+        );
+        if std::mem::take(&mut self.open_settings_on_start) {
+            self.open_settings(ui);
+        }
+        self.sync_update_schedule(ui);
+        // Read the title icons' sets off this thread; a missing set
+        // asks or downloads, and the wake repaints the spaces.
+        for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
+            self.need_icon_set(ui, spec);
+        }
+        // Warm the installed-apps list, so "New shortcut ▸ From
+        // installed apps…" opens at once.
+        ui.prefetch_apps();
+    }
 }
 
 impl EventHandler for App {
     fn on_event(&mut self, event: Event, ui: &mut Ui) {
         self.trace_event(&event);
         match event {
-            Event::Started => {
-                // DeskSpace's own menus and settings window follow the
-                // `ui_mode` setting; the spaces follow their own Color mode.
-                ui.set_ui_dark(self.ui_dark());
-                ui.set_recent_colors(self.config.recent_colors.clone());
-                self.hotkeys.register_all(ui, &self.config.window);
-                // The spaces appear as their windows are created, below; this
-                // only settles whether they start hidden.
-                ui.set_spaces_visible(self.visible, Play::instant(Way::In));
-                self.sync_desktop_show_entry();
-                // Keep the stored Run path current after an install moves.
-                if self.config.window.start_with_windows {
-                    self.sync_start_with_windows(true);
-                }
-                // OLE is up by now, so the desktop view can be queried.
-                let display = desktop_display_since(self.system.shell().check_boxes);
-                self.system.set_shell(display);
-                self.refresh_desktop_entries();
-                self.apply_takeover(ui);
-                // Building the debug window blocks this thread for a few
-                // hundred milliseconds, so it opens before the spaces start
-                // their startup plays; opened after, they had ended unseen.
-                // Its tables fill in on the next `Timer::DebugRefresh`.
-                if self.debug.is_some() {
-                    self.open_debug(ui);
-                }
-                self.sync_windows_at_startup(ui);
-                // Positions are derived from the grid; recompute them so a
-                // stored layout from another icon size or DPI is refreshed.
-                self.relayout_all(ui);
-                self.prune_all_missing(ui);
-                tracing::info!(
-                    spaces = self.config.desktop.spaces().len(),
-                    dark = self.system.dark(),
-                    "spaces created"
-                );
-                if std::mem::take(&mut self.open_settings_on_start) {
-                    self.open_settings(ui);
-                }
-                self.sync_update_schedule(ui);
-                // Read the title icons' sets off this thread; a missing set
-                // asks or downloads, and the wake repaints the spaces.
-                for spec in SpaceIcons::sets_in_use(self.config.desktop.spaces()) {
-                    self.need_icon_set(ui, spec);
-                }
-                // Warm the installed-apps list, so "New shortcut ▸ From
-                // installed apps…" opens at once.
-                ui.prefetch_apps();
-            }
+            Event::Started => self.on_started(ui),
             Event::Space { id, event } => self.on_space_event(ui, SpaceId(id), event),
             Event::EditKey(key) => self.apply_edit_key(ui, key),
             Event::DeleteSelection => self.delete_selected_items(ui, false),
@@ -930,15 +934,7 @@ impl EventHandler for App {
                 self.config.recent_colors = colors;
                 self.schedule_save(ui);
             }
-            Event::SystemThemeChanged => {
-                self.system.refresh();
-                ui.set_ui_dark(self.ui_dark());
-                // The desktop view can change its icon size with the theme;
-                // refresh its display options, then restyle for dark mode.
-                self.refresh_shell_display(ui);
-                self.restyle_all(ui);
-                self.refresh_settings(ui);
-            }
+            Event::SystemThemeChanged => self.on_system_theme_changed(ui),
             Event::SystemColorChanged => {
                 if self.system.refresh() {
                     ui.set_ui_dark(self.ui_dark());
@@ -950,18 +946,7 @@ impl EventHandler for App {
                 self.system.refresh_animations();
                 self.refresh_settings(ui);
             }
-            Event::CloseRequested => {
-                self.hotkeys.unregister_all(ui);
-                // A rename in progress and unapplied settings edits are
-                // discarded.
-                self.cancel_edit(ui);
-                self.cancel_settings(ui);
-                // A config the debug window made read-only must take this
-                // last save and stay writable (ROADMAP D14).
-                self.restore_config_writable();
-                self.flush_save_on_close(ui);
-                self.remove_desktop_show_entry();
-            }
+            Event::CloseRequested => self.on_close_requested(ui),
         }
         // The keyboard hook is on only while it is needed: editing captures
         // keys, a selection or current space watches the item keys, and a

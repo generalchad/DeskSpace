@@ -271,15 +271,6 @@ and B33 and B36 change behavior on purpose, as each says.
   - Pure move: no behavior change, no new `pub(super)` beyond what the moved
     methods need. Done when: `on_space_event` is under about 50 lines.
 
-- [ ] **B25. Name `App::on_event`'s long arms.** `app.rs` `on_event` is a
-  good dispatch `match` except for `Event::Started` (about 40 lines),
-  `Event::SystemThemeChanged`, and `Event::CloseRequested`. Move each into
-  `on_started`, `on_system_theme_changed`, and `on_close_requested`, in the
-  module that owns most of what they touch (`app/view.rs` for the theme,
-  `app/persist.rs` or `app.rs` for start and close; follow `CONTEXT.md`
-  section 7's runtime-flow steps 3 and 6, which describe them). Pure move.
-  Done when: every arm of `on_event` is one call.
-
 - [ ] **B26. Split `settings_window::build` and `update`.**
   `win32/settings_window/build.rs` `build` (about 210 lines) and
   `update.rs` `update` (about 125 lines) each build or diff the panes, the

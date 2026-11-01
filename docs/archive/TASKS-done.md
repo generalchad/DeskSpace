@@ -5239,3 +5239,12 @@ until I5-I6 all land, so no partial build hides the desktop.
      passed, and who clears it; `rg -n "Process state:"` lists them."
   - Comments only; no code changes. Make one commit for the platform crate.
   - Done when: every match from step 1 that holds state has the comment.
+
+- [x] **B25. Name `App::on_event`'s long arms.** `app.rs` `on_event` is a
+  good dispatch `match` except for `Event::Started` (about 40 lines),
+  `Event::SystemThemeChanged`, and `Event::CloseRequested`. Move each into
+  `on_started`, `on_system_theme_changed`, and `on_close_requested`, in the
+  module that owns most of what they touch (`app/view.rs` for the theme,
+  `app/persist.rs` or `app.rs` for start and close; follow `CONTEXT.md`
+  section 7's runtime-flow steps 3 and 6, which describe them). Pure move.
+  Done when: every arm of `on_event` is one call.
