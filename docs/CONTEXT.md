@@ -403,7 +403,10 @@ ones a variant's doc cannot show.
   changes. Every space has a `Space.view`, so a lens needs no separate command.
 - `RestoreSpaces { spaces }` is undo's and redo's way back (ROADMAP D11): it
   puts recorded spaces back exactly, each at its recorded index, without
-  applying the layout, and changes nothing if any item id would clash.
+  applying the layout, and changes nothing if any item id would clash. Undo
+  stores no lens items (`Space::undo_snapshot`), so a lens brought back keeps
+  the items it holds while it shows the same folder, and its worker lists or
+  rebuilds as `App::sync_watches` tells it to.
 
 ### Theme (`theme.rs`)
 
