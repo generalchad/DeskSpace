@@ -13,7 +13,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- Q2-Q6;
+- Q3-Q6;
 - section S: S9-S12 need a screen or
   a reviewer.
 
@@ -1480,10 +1480,6 @@ Rules for every Q task:
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
 
-- [ ] **Q2. "Selection, display matching, keys, and clipboard"**
-  (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
-  `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The
-  ENGINEERING.md Keys table stays where it is.
 - [ ] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
   the desktop-layer and `Surface` paragraph (bucket c).
 - [ ] **Q4. "Desktop shell, shell items, DPI, hotkeys"**

@@ -908,115 +908,41 @@ one arm in `App::on_event`, whose match is exhaustive.
 ### Selection, display matching, keys, and clipboard
 
 - **Clicking a space acts like clicking the desktop**
-  (`win32/shell_selection.rs`, `Ui::on_desktop_click`): spaces never take
-  activation, so the shell's desktop window (`GetShellWindow`) is made active
-  (the app in front goes inactive) and the desktop icon selection is cleared
-  through its `IShellView` (`SelectItem(NULL, SVSI_DESELECTOTHERS)`, found
-  through `IShellWindows` and the `SID_STopLevelBrowser` service). A selection
-  inside an Explorer window is left alone, as Windows only changes a
-  selection within the view that was clicked. The enumerator is cached and
-  released before `OleUninitialize`.
-- **Explorer display settings** (`win32/display_settings.rs`) are read from
-  the desktop's `IShellView` (`win32/shell_view.rs`, shared with the click
-  code) and `SHGetSetSettings`: `FWF_CHECKSELECT` / `FWF_AUTOCHECKSELECT`
-  (item check boxes), `SSF_SHOWALLOBJECTS` / `SSF_SHOWSUPERHIDDEN` (hidden
-  files), `SSF_SHOWEXTENSIONS`, `SSF_SHOWCOMPCOLOR`,
-  `IFolderView2::GetViewModeAndIconSize` (the desktop's icon size), and
-  `IFolderView::GetSpacing` (item spacing), all carried in `ShellDisplay`.
-  The snapshot is re-read at startup, on `Event::SystemThemeChanged`, and on
-  every space click; a change repaints every space. When
-  `Theme::match_explorer()` is on (the default), the app overlays them:
-  - The desktop icon size and spacing replace DeskSpace's icon-size and grid
-    settings and drive the jumbo icon fetch and the per-monitor scale, so
-    matching is 1:1.
-  - `ShellDisplay.check_boxes` is a `CheckBoxMode`: `FWF_CHECKSELECT` gives
-    `Independent`, `FWF_AUTOCHECKSELECT` `Selection`, neither `Hidden`.
-    `SpaceScene.show_check_boxes` draws an Explorer-style box at each icon's
-    corner; a checked box is filled with `SpaceScene.check_fill` (the Windows
-    accent, or Windows blue when unknown) under a white tick. In `Selection`
-    mode the box shows on hover and while selected and its tick mirrors the
-    selection; in `Independent` mode it always shows and its tick is a
-    session-only set, separate from the selection, which is then the operand
-    for delete, copy, cut, and drag (`active_items`). A plain click ticks one
-    item and unticks the rest, Ctrl+click ticks several, and clicking the box
-    itself toggles one (`render::item_check_box_hit` is its clickable region).
-    `desktop_display_since` keeps the stored mode when the view read fails
-    (briefly, for example while Explorer restarts), so a transient failure
-    does not hide the boxes; `desktop_display` is the same read starting from
-    `Hidden`.
-  - `scene::item_label` shows a file's full name when extensions are on,
-    except for shortcuts, whose `.lnk` / `.url` Explorer never shows; both
-    forms come from the path, so the option can be toggled either way.
-    `SSF_SHOWCOMPCOLOR` colors compressed labels blue and encrypted ones green
-    (`Item::compressed` / `encrypted`, read at creation).
-  - Icons carry the shell's overlay (`SHGFI_ADDOVERLAYS`, plus
-    `SHGFI_LINKOVERLAY` for `.lnk` / `.url` only), so shortcut arrows and sync
-    badges appear; labels come from
-    `IShellItem::GetDisplayName(SIGDN_NORMALDISPLAY)`, and seeding skips
-    hidden or protected items Explorer would hide.
+  (`win32/shell_selection.rs`, `Ui::on_desktop_click`): the shell's desktop
+  window is focused and its icon selection cleared; a selection in an Explorer
+  window is left alone. The shell view is cached and released before
+  `OleUninitialize` (`win32/shell_view.rs`).
+- **Explorer display settings** (`win32/display_settings.rs`) are read into
+  `ShellDisplay` from the desktop's `IShellView` and `SHGetSetSettings`, then
+  re-read at startup, on `Event::SystemThemeChanged`, and on every space
+  click; a change repaints every space. Under `Theme::match_explorer()`, the
+  app overlays them: icon size and spacing drive the grid, the jumbo icon
+  fetch, and the per-monitor scale, while `CheckBoxMode` drives the check
+  boxes and the shell's options drive labels, colors, overlays, and display
+  names.
 - **Inline rename** (`edit.rs`, `win32/keyboard.rs`): the app owns a pure
-  `TextEdit` buffer and pushes it in the scene's `editing` (a space title) or
-  `editing_item` (an item's label). The painter draws Explorer's rename field:
-  an opaque bordered box around the laid-out text, the selection in the
-  system highlight, and a blinking caret. An item's box wraps the whole name
-  in the label's width and grows downward over the items below, as
-  Explorer's does; a title's stays on one line. Spaces are never activated and
-  cannot receive `WM_CHAR`, so a `WH_KEYBOARD_LL` hook (installed while
-  editing or while either selection watch is on) turns key presses during a
-  rename into `Event::EditKey` and consumes them (an Alt or Win combination
-  cancels the rename and passes through). The thread never removes keyboard
-  messages, so `GetKeyboardState` is frozen: the hook reads each held modifier
-  from `GetAsyncKeyState`'s sign bit and Caps Lock's toggle from
-  `GetKeyState`'s low bit (`GetAsyncKeyState`'s low bit is an unrelated
-  "pressed since the last call" flag), so Shift and Caps stay predictable.
-  F2 renames the focused item, or the current space's title with no item
-  selected, and a second click on a selected item (a slow double-click)
-  starts an item rename. An item rename is committed with
-  `IFileOperation::RenameItem` (undoable; the extension is kept when the
-  label hid it). A space applies it through `Command::RenameItem`, which updates the
-  item's path and label; the desktop layer, a cache of the Desktop folder,
-  re-syncs and keeps the renamed item selected.
-- **Other keys**: the same hook watches keys outside a rename
-  (`Ui::watch_selection_keys`); `ENGINEERING.md`'s Keys table is the one list
-  of which key needs which flag, and section 8 says what each does. The arrow
-  keys raise `Event::Navigate` (the nearest item in that direction, scrolled
-  into view; Shift extends from the anchor), typed characters `Event::Typed`
-  (type-to-select with a short timeout buffer), and the focused item is drawn
-  with a dotted rectangle (`SpaceScene.focused_item`). Alt+Enter calls
-  `Ui::show_properties`. The watch is limited to the desktop's foreground
-  because the selection is kept when another app is focused, as Explorer
-  keeps a desktop selection; otherwise DeskSpace would steal that app's own
-  Ctrl+C/V. Each watched key is posted to the controller as its own `WM_APP`
-  message (table above) and becomes one `Event`; a new key either reuses
-  `SELECTION_KEY` with a new `SelectionKey` variant (the simplest path) or, if
-  it carries data, gets its own message.
-- **Clipboard** (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X put the
-  selected items on the shell clipboard as `CF_HDROP` with a "Preferred
-  DropEffect" (`MOVE` for a cut), the formats Explorer uses, so they paste
-  into Explorer and other apps; cut items render ghosted (`ItemVisual::cut`).
-  Ctrl+V pastes into the current space: an item already in a space is
-  re-pointed (`MoveItem`), while external files and copies go through
-  `IFileOperation` into the store (`FOF_RENAMEONCOLLISION` keeps Explorer's
-  Replace dialog off the shared store; `FOF_ALLOWUNDO` records an undo), and
-  an `IFileOperationProgressSink` returns each created path so the pasted
-  items are listed and selected. `Ui::clipboard_shell_items` reads the
-  clipboard's shell items through `OleGetClipboard` and
-  `drop_target::shell_items` (sharing `open_clipboard`'s retry) for "New
-  shortcut ▸ Paste shortcut" (F-54). The controller registers
-  `AddClipboardFormatListener`; `Event::ClipboardChanged` clears cut ghosting
-  when another app or the desktop replaces the clipboard and prunes items
-  whose files a paste elsewhere moved away. A clipboard read that fails
-  (another process holds it) keeps the ghost.
-- **Delete** sends the selection to the Recycle Bin (`Ui::delete_files(paths,
-  permanent)`, `IFileOperation::DeleteItem` with `FOF_ALLOWUNDO |
-  FOF_NOCONFIRMATION`: no prompt, undoable; Shift+Delete passes `permanent`,
-  which drops `FOF_ALLOWUNDO`) and drops the items whose files are gone: a
-  space removes them, and the desktop layer re-reads the Desktop folder.
-  `Ui::restore_recycled(original, since)` (`file_op::restore_recycled`)
-  enumerates `FOLDERID_RecycleBinFolder`, matches the newest item whose
-  `System.Recycle.DeletedFrom` + display name equals `original` and whose
-  `System.Recycle.DateDeleted` is at or after `since`, and restores it with
-  the shell's `"undelete"` context-menu verb.
+  `TextEdit` and the painter draws the field. A `WH_KEYBOARD_LL` hook turns
+  keys into `Event::EditKey` because spaces never receive `WM_CHAR`, and reads
+  modifiers live because `GetKeyboardState` is frozen. F2 renames the focused
+  item, or the title with no item selected; a slow second click starts an item
+  rename. An item rename goes through `IFileOperation::RenameItem` and
+  `Command::RenameItem`; the desktop layer re-syncs and keeps it selected.
+- **Other keys**: `Ui::watch_selection_keys` watches outside a rename, and
+  `ENGINEERING.md`'s Keys table owns which key needs which flag. The watch
+  runs only while the desktop has the foreground, so another app keeps
+  Ctrl+C/V. New keys join the `SELECTION_KEY` message or get their own when
+  they carry data.
+- **Clipboard** (`win32/clipboard.rs`, `win32/file_op.rs`): Ctrl+C/X write a
+  `CF_HDROP` and "Preferred DropEffect" (`MOVE` for cut); cut items are drawn
+  ghosted. Ctrl+V moves a listed item or copies external files through
+  `IFileOperation`, whose progress sink returns the created paths so they are
+  listed and selected. Clipboard changes clear stale ghosting and prune files
+  a paste moved away; a failed read keeps the ghost.
+- **Delete** sends the selection to the Recycle Bin through
+  `IFileOperation::DeleteItem` without a prompt; Shift+Delete passes
+  `permanent`. Items whose files are gone are dropped, and `restore_recycled`
+  finds the newest matching Recycle Bin entry and restores it with the shell's
+  `"undelete"` verb.
 
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 
