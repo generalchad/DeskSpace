@@ -100,7 +100,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | An animation effect | `deskspace-core/src/animation.rs` (the tables), `deskspace-platform/src/render/transition.rs` (frame math), `render/d2d/` (drawing), `win32/space_animation.rs` (playing it on a window), `win32/overlay.rs` (windows beside the space); the recipe is section T |
 | Drawing | `deskspace-platform/src/render/scene.rs`, `render/d2d/` (`mod.rs` the `Painter`, `effects.rs` an animation's resources, `prepared.rs` the `PreparedScene`, `drag_image.rs` the drag image) |
 | The zoom pop-up window and its layout | `deskspace-platform/src/win32/zoom_bar.rs`, `render/zoom_bar.rs`, `render/d2d/zoom_bar.rs` |
-| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
+| Settings window controls | `deskspace-platform/src/win32/settings_window/` (`mod.rs`, `build.rs`, `field.rs`, `update.rs`, `nav.rs`, `paint.rs`, `commands.rs`, `preview.rs`) |
 | The debug window (`--debug`) | `deskspace-platform/src/win32/debug_window/` (`mod.rs`, `build.rs`, `layout.rs`, `pages.rs`, `console.rs`); the console's pure model in `deskspace-platform/src/debug_console.rs`; the log capture in `deskspace-app/src/debug_log.rs`; the panel and actions in `deskspace-app/src/app/debug/` |
 | The color picker popup | `deskspace-platform/src/win32/color_picker/` (`mod.rs` the window, `state.rs` its input, `format.rs` the value box's text, `draw.rs` the settings swatch), `render/color_picker.rs` (layout), `render/d2d/color_picker/` (`mod.rs` the painter, whose ignored `render_preview` test writes PNGs; `pen.rs` its drawing kit) |
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
@@ -233,29 +233,14 @@ user-visible change is expected. Do them in any order. The exceptions are
 B32-B36, from a review on 2026-10-21: they fix performance and correctness,
 and B33 and B36 change behavior on purpose, as each says.
 
-- [ ] **B14. Split `Builder::field` by field kind.**
-  `win32/settings_window/build.rs` `Builder::field` is about 260 lines: one
-  `match` over `FieldKind` (Heading, Note, Choice, Toggle, Slider, Color,
-  Text, Button, SpacePreview) with layout literals (`self.s(184)`,
-  `self.s(12)`, `self.s(28)`, `self.s(16)`).
-  - Turn each arm into a `Builder` method (`heading_field`, `choice_field`,
-    ...) returning its height; `field` keeps the shared setup and the
-    dispatch.
-  - Name the literals as `const`s at the top of `build.rs` (`LABEL_WIDTH`,
-    `LABEL_GAP`, `ROW_HEIGHT`, `EDGE`, ...) in 96-DPI pixels, scaled through
-    `self.s`. Same values, so the layout does not move.
-  - Done when: no method in `build.rs` is over about 80 lines.
-    **[needs human]** check: every settings page looks as before at 100 %
-    and 150 %.
-
 - [ ] **B26. Split `settings_window::build` and `update`.**
   `win32/settings_window/build.rs` `build` (about 210 lines) and
   `update.rs` `update` (about 125 lines) each build or diff the panes, the
   header, and the pages in one body. Split each into `*_panes`, `*_header`,
   and `*_pages` helpers in the same file, in the order the body already runs
-  them. Do it after B14 (same file). Pure move. Done when: no function in
-  either file is over about 80 lines. **[needs human]** check: the settings
-  window opens, switches scopes and pages, and previews as before.
+  them. Pure move. Done when: no function in either file is over about 80
+  lines. **[needs human]** check: the settings window opens, switches scopes
+  and pages, and previews as before.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
@@ -569,8 +554,8 @@ Work that collides when run in parallel:
     a column resize on release, not per move). If it has not, add the
     new actions to U3's list. Browsing and folding a group are session
     state and record nothing.
-  - B14 and B26 rework `settings_window/build.rs`, where W8 adds a font.
-    Do B14 first, or keep W8's edit inside one function.
+  - B26 reworks `settings_window/build.rs`, where W8 adds a font. Keep W8's
+    edit inside one function.
   - R14 (table-driven settings fields) would rewrite the pages W10, W20,
     W23, W35, and W38 build. Do not start R14 while those are open.
   - Section K: `win32/space_window.rs` is already over the 800-line
@@ -782,7 +767,7 @@ Rules for every S task:
   - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
     s(16), left of the label, after the indent, dimmed with dimmed rows.
   - Header: put the new code in a new `settings_window/header.rs`, so it
-    does not collide with B14 or B26. An owner-drawn `BUTTON` of s(20)
+    does not collide with B26. An owner-drawn `BUTTON` of s(20)
     square at `title_x` draws the icon. It stays disabled, and so takes no
     click or Tab stop, until S12. The title moves right by s(20) + s(8)
     while there is an icon, and `apply_header` shows, hides, and moves
@@ -1592,8 +1577,8 @@ the ROADMAP decision ids (`D1`-`D9`).
     custom shortcut dialog, right-drop menu, info tip) reach it without the
     platform holding catalogs;
   - the fallback chain (region, language, English) and plural rules;
-  - how the settings window fits longer labels (measure or wrap; B14 names
-    the layout constants first).
+  - how the settings window fits longer labels (measure or wrap; start from
+    the layout constants in `settings_window/build.rs`).
 
   Then split M9 items 2-5 into one-commit tasks here. If R14 lands first, a
   field's label belongs in its row.
@@ -1742,6 +1727,7 @@ each id is in `archive/TASKS-done.md`.
 | R3 | Nothing should change: shortcut arrows and other overlays look as before at every icon size; hover, click, double-click, wheel, and right-click in a space and on the desktop layer; the tray icon's click and menu; the settings window's controls and dark-mode colors; the color picker's swatches, sliders, hover, OK, Cancel, and Custom toggle. |
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
 | B13 | The settings window, the custom shortcut dialog, and the installed-apps picker look as before at 100 % and 150 % in light and dark mode: every control keeps its size, font, place, colors, and tab order. |
+| B14 | Every settings page looks as before at 100 % and 150 % in light and dark mode: each field kind (heading, note, choice, toggle, slider with and without marks, color, text, button, space preview) keeps its size, label, spacing, and control position. |
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Rechecked after the rail fix: "Animations" reads as a semibold header with its pages (Startup, Delete, Fold since T15) indented under it; the "Windows settings…" button's caption fits; Detail shows a plain number. Then the rest: nothing clipped at 100 % and 150 %; each effect greys the options it does not use, Delete's "Same as startup" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; the button opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |

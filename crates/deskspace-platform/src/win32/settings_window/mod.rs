@@ -11,6 +11,7 @@
 
 mod build;
 mod commands;
+mod field;
 mod nav;
 mod paint;
 mod preview;
@@ -136,6 +137,7 @@ const MARK_LABEL_HEIGHT: i32 = 16;
 const SWATCH_RADIUS: i32 = 4;
 
 /// The controls created for one field.
+#[derive(Default)]
 pub(super) struct FieldControls {
     label: Option<HWND>,
     main: Option<HWND>,

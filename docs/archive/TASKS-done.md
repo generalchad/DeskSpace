@@ -5271,3 +5271,18 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: both allows are gone and **Found while working** no longer
     lists `too_many_arguments`. **[needs human]** check: the settings window
     and the custom shortcut dialog look as before.
+
+- [x] **B14. Split `Builder::field` by field kind.**
+  `win32/settings_window/build.rs` `Builder::field` is about 260 lines: one
+  `match` over `FieldKind` (Heading, Note, Choice, Toggle, Slider, Color,
+  Text, Button, SpacePreview) with layout literals (`self.s(184)`,
+  `self.s(12)`, `self.s(28)`, `self.s(16)`).
+  - Turn each arm into a `Builder` method (`heading_field`, `choice_field`,
+    ...) returning its height; `field` keeps the shared setup and the
+    dispatch.
+  - Name the literals as `const`s at the top of `build.rs` (`LABEL_WIDTH`,
+    `LABEL_GAP`, `ROW_HEIGHT`, `EDGE`, ...) in 96-DPI pixels, scaled through
+    `self.s`. Same values, so the layout does not move.
+  - Done when: no method in `build.rs` is over about 80 lines.
+    **[needs human]** check: every settings page looks as before at 100 %
+    and 150 %.

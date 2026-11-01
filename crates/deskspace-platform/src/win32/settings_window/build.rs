@@ -14,6 +14,37 @@ pub(super) fn scaled(value: i32, dpi: u32) -> i32 {
     (value as i64 * dpi as i64 / 96) as i32
 }
 
+/// Field layout units, at 96 DPI, scaled through `Builder::s`.
+pub(super) const EDGE: i32 = 16;
+pub(super) const LABEL_WIDTH: i32 = 184;
+pub(super) const LABEL_GAP: i32 = 12;
+pub(super) const ROW_HEIGHT: i32 = 28;
+pub(super) const HEADING_GAP: i32 = 10;
+pub(super) const HEADING_HEIGHT: i32 = 28;
+pub(super) const HEADING_ADVANCE: i32 = 34;
+pub(super) const NOTE_GAP: i32 = 10;
+pub(super) const COMBO_HEIGHT: i32 = 240;
+pub(super) const CHOICE_ADVANCE: i32 = 38;
+pub(super) const TOGGLE_ADVANCE: i32 = 34;
+pub(super) const VALUE_WIDTH: i32 = 52;
+pub(super) const SLIDER_INSET: i32 = 6;
+pub(super) const VALUE_GAP: i32 = 4;
+pub(super) const VALUE_EDIT_TOP: i32 = 2;
+pub(super) const VALUE_EDIT_HEIGHT: i32 = 24;
+pub(super) const SLIDER_ADVANCE: i32 = 38;
+pub(super) const MARKS_GAP: i32 = 14;
+pub(super) const SWATCH_SIZE: i32 = 26;
+pub(super) const SWATCH_GAP: i32 = 12;
+pub(super) const COLOR_VALUE_WIDTH: i32 = 96;
+pub(super) const COLOR_ADVANCE: i32 = 38;
+pub(super) const TEXT_EDIT_TOP: i32 = 2;
+pub(super) const TEXT_EDIT_HEIGHT: i32 = 24;
+pub(super) const TEXT_ADVANCE: i32 = 38;
+pub(super) const BUTTON_WIDTH: i32 = 180;
+pub(super) const BUTTON_HEIGHT: i32 = 30;
+pub(super) const BUTTON_ADVANCE: i32 = 40;
+pub(super) const PREVIEW_GAP: i32 = 10;
+
 /// The window's fonts at `dpi`.
 struct Fonts {
     /// The UI font (Segoe UI 9pt on Windows 11).
@@ -43,23 +74,45 @@ unsafe fn create_fonts(dpi: u32) -> Fonts {
     }
 }
 
-struct Builder {
+/// One field row's shared geometry, ids, and controls.
+pub(super) struct FieldRow<'a> {
+    pub(super) page: HWND,
+    pub(super) field: &'a Field,
+    pub(super) y: i32,
+    pub(super) x: i32,
+    pub(super) full: i32,
+    pub(super) label_width: i32,
+    pub(super) control_x: i32,
+    pub(super) control_width: i32,
+    pub(super) row_height: i32,
+    pub(super) id_main: usize,
+    pub(super) id_secondary: usize,
+    pub(super) tab: u32,
+    pub(super) controls: FieldControls,
+}
+
+pub(super) struct Builder {
     dpi: u32,
     font: HFONT,
-    heading_font: HFONT,
+    pub(super) heading_font: HFONT,
 }
 
 impl Builder {
-    fn s(&self, value: i32) -> i32 {
+    pub(super) fn s(&self, value: i32) -> i32 {
         scaled(value, self.dpi)
     }
 
-    unsafe fn control(&self, parent: HWND, spec: ControlSpec<'_>) -> Option<HWND> {
+    pub(super) unsafe fn control(&self, parent: HWND, spec: ControlSpec<'_>) -> Option<HWND> {
         // SAFETY: creating a child control of our own window.
         unsafe { dialog::control(self.font, parent, spec) }
     }
 
-    unsafe fn label(&self, parent: HWND, text: &str, bounds: (i32, i32, i32, i32)) -> Option<HWND> {
+    pub(super) unsafe fn label(
+        &self,
+        parent: HWND,
+        text: &str,
+        bounds: (i32, i32, i32, i32),
+    ) -> Option<HWND> {
         // SAFETY: see `control`.
         unsafe {
             self.control(
@@ -82,7 +135,7 @@ impl Builder {
     /// channel insets, and is only as wide as the space to its neighbors so
     /// labels never overlap. Labels at the ends of the range are aligned
     /// inward so they stay inside the page.
-    unsafe fn slider_marks(
+    pub(super) unsafe fn slider_marks(
         &self,
         page: HWND,
         slider: HWND,
@@ -160,7 +213,7 @@ impl Builder {
         }
         labels
     }
-    unsafe fn text_height(&self, parent: HWND, text: &str, width: i32) -> i32 {
+    pub(super) unsafe fn text_height(&self, parent: HWND, text: &str, width: i32) -> i32 {
         let mut buffer: Vec<u16> = text.encode_utf16().collect();
         let mut bounds = RECT {
             left: 0,
@@ -194,277 +247,40 @@ impl Builder {
         y: i32,
         width: i32,
     ) -> (FieldControls, i32) {
-        let x = self.s(16);
-        let full = width - 2 * x;
-        let label_width = self.s(184);
-        let control_x = x + label_width + self.s(12);
-        let control_width = width - control_x - x;
-        let id_main = CONTROL_BASE + index * 4 + PART_MAIN;
-        let id_secondary = CONTROL_BASE + index * 4 + PART_SECONDARY;
-        let tab = WS_TABSTOP.0;
-        let mut controls = FieldControls {
-            label: None,
-            main: None,
-            value_text: None,
-            value_edit: None,
-            swatch: None,
-            marks: Vec::new(),
+        let x = self.s(EDGE);
+        let label_width = self.s(LABEL_WIDTH);
+        let control_x = x + label_width + self.s(LABEL_GAP);
+        let mut row = FieldRow {
+            page,
+            field,
+            y,
+            x,
+            full: width - 2 * x,
+            label_width,
+            control_x,
+            control_width: width - control_x - x,
+            row_height: self.s(ROW_HEIGHT),
+            id_main: CONTROL_BASE + index * 4 + PART_MAIN,
+            id_secondary: CONTROL_BASE + index * 4 + PART_SECONDARY,
+            tab: WS_TABSTOP.0,
+            controls: FieldControls::default(),
         };
-        let row = self.s(28);
-        let label_bounds = (x, y, label_width, row);
 
         // SAFETY: all controls are children of our page window.
         let height = unsafe {
             match &field.kind {
-                FieldKind::Heading => {
-                    let top = if y > self.s(16) { self.s(10) } else { 0 };
-                    let label = self.label(page, &field.label, (x, y + top, full, self.s(28)));
-                    if let Some(label) = label {
-                        SendMessageW(
-                            label,
-                            WM_SETFONT,
-                            Some(WPARAM(self.heading_font.0 as usize)),
-                            Some(LPARAM(1)),
-                        );
-                    }
-                    controls.label = label;
-                    top + self.s(34)
-                }
-                FieldKind::Note => {
-                    let text_height = self.text_height(page, &field.label, full);
-                    controls.label = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_STATICW,
-                            text: &field.label,
-                            style: SS_NOPREFIX,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (x, y, full, text_height),
-                            id: 0,
-                        },
-                    );
-                    text_height + self.s(10)
-                }
-                FieldKind::Choice { options, selected } => {
-                    controls.label = self.label(page, &field.label, label_bounds);
-                    // A drop-down list's height includes the open list.
-                    let combo = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_COMBOBOXW,
-                            text: "",
-                            style: CBS_DROPDOWNLIST as u32 | tab,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (control_x, y, control_width, self.s(240)),
-                            id: id_main,
-                        },
-                    );
-                    if let Some(combo) = combo {
-                        for option in options {
-                            let text = wide(option);
-                            SendMessageW(
-                                combo,
-                                CB_ADDSTRING,
-                                None,
-                                Some(LPARAM(text.as_ptr() as isize)),
-                            );
-                        }
-                        SendMessageW(combo, CB_SETCURSEL, Some(WPARAM(*selected)), None);
-                    }
-                    controls.main = combo;
-                    self.s(38)
-                }
-                FieldKind::Toggle { on } => {
-                    let check = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_BUTTONW,
-                            text: &field.label,
-                            style: BS_AUTOCHECKBOX as u32 | tab,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (x, y, full, row),
-                            id: id_main,
-                        },
-                    );
-                    if let Some(check) = check {
-                        SendMessageW(check, BM_SETCHECK, Some(WPARAM(*on as usize)), None);
-                    }
-                    controls.main = check;
-                    self.s(34)
-                }
-                FieldKind::Slider {
-                    min,
-                    max,
-                    value,
-                    suffix,
-                    editable,
-                    marks,
-                } => {
-                    controls.label = self.label(page, &field.label, label_bounds);
-                    let value_width = self.s(52);
-                    let ticks = if marks.is_empty() { TBS_NOTICKS } else { 0 };
-                    let slider_x = control_x - self.s(6);
-                    let slider = self.control(
-                        page,
-                        ControlSpec {
-                            class: TRACKBAR_CLASSW,
-                            text: "",
-                            style: TBS_HORZ | ticks | tab,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (slider_x, y, control_width - value_width, row),
-                            id: id_main,
-                        },
-                    );
-                    if let Some(slider) = slider {
-                        SendMessageW(
-                            slider,
-                            TBM_SETRANGEMIN,
-                            Some(WPARAM(0)),
-                            Some(LPARAM(*min as isize)),
-                        );
-                        SendMessageW(
-                            slider,
-                            TBM_SETRANGEMAX,
-                            Some(WPARAM(0)),
-                            Some(LPARAM(*max as isize)),
-                        );
-                        if !marks.is_empty() {
-                            controls.marks = self.slider_marks(
-                                page,
-                                slider,
-                                slider_x,
-                                y + row,
-                                (*min, *max),
-                                marks,
-                            );
-                        }
-                        SendMessageW(
-                            slider,
-                            TBM_SETPOS,
-                            Some(WPARAM(1)),
-                            Some(LPARAM(*value as isize)),
-                        );
-                    }
-                    controls.main = slider;
-                    let value_bounds = (
-                        control_x + control_width - value_width + self.s(4),
-                        y,
-                        value_width,
-                        row,
-                    );
-                    if *editable {
-                        controls.value_edit = self.control(
-                            page,
-                            ControlSpec {
-                                class: WC_EDITW,
-                                text: &value.to_string(),
-                                style: ES_RIGHT as u32
-                                    | ES_NUMBER as u32
-                                    | ES_AUTOHSCROLL as u32
-                                    | tab,
-                                ex_style: WS_EX_CLIENTEDGE,
-                                bounds: (value_bounds.0, y + self.s(2), value_bounds.2, self.s(24)),
-                                id: id_secondary,
-                            },
-                        );
-                    } else {
-                        controls.value_text =
-                            self.label(page, &format!("{value}{suffix}"), value_bounds);
-                    }
-                    if marks.is_empty() {
-                        self.s(38)
-                    } else {
-                        row + self.s(MARK_LABEL_HEIGHT + 14)
-                    }
-                }
-                FieldKind::Color { color } => {
-                    controls.label = self.label(page, &field.label, label_bounds);
-                    let swatch_size = self.s(26);
-                    // The swatch is the button: an owner-draw control that
-                    // draws the color box and an eyedropper glyph.
-                    let swatch = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_BUTTONW,
-                            text: "",
-                            style: BS_OWNERDRAW as u32 | tab,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (
-                                control_x,
-                                y + (row - swatch_size) / 2,
-                                swatch_size,
-                                swatch_size,
-                            ),
-                            id: id_main,
-                        },
-                    );
-                    controls.main = swatch;
-                    controls.swatch = swatch;
-                    controls.value_text = self.label(
-                        page,
-                        &color.to_rgb_hex(),
-                        (control_x + swatch_size + self.s(12), y, self.s(96), row),
-                    );
-                    self.s(38)
-                }
-                FieldKind::Text { value, read_only } => {
-                    controls.label = self.label(page, &field.label, label_bounds);
-                    let mut style = ES_AUTOHSCROLL as u32 | tab;
-                    if *read_only {
-                        style |= ES_READONLY as u32;
-                    }
-                    controls.main = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_EDITW,
-                            text: value,
-                            style,
-                            ex_style: WS_EX_CLIENTEDGE,
-                            bounds: (control_x, y + self.s(2), control_width, self.s(24)),
-                            id: id_main,
-                        },
-                    );
-                    self.s(38)
-                }
-                FieldKind::Button { caption } => {
-                    let left = if field.label.is_empty() {
-                        x
-                    } else {
-                        controls.label = self.label(page, &field.label, label_bounds);
-                        control_x
-                    };
-                    controls.main = self.control(
-                        page,
-                        ControlSpec {
-                            class: WC_BUTTONW,
-                            text: caption,
-                            style: BS_PUSHBUTTON as u32 | tab,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (left, y, self.s(180), self.s(30)),
-                            id: id_main,
-                        },
-                    );
-                    self.s(40)
-                }
-                FieldKind::SpacePreview(_) => {
-                    // The preview reads its data from this field in the
-                    // window's state, found through the control id.
-                    controls.main = self.control(
-                        page,
-                        ControlSpec {
-                            class: PREVIEW_CLASS,
-                            text: "",
-                            style: 0,
-                            ex_style: WINDOW_EX_STYLE(0),
-                            bounds: (x, y, full, self.s(super::preview::PREVIEW_HEIGHT)),
-                            id: id_main,
-                        },
-                    );
-                    self.s(super::preview::PREVIEW_HEIGHT + 10)
-                }
+                FieldKind::Heading => self.heading_field(&mut row),
+                FieldKind::Note => self.note_field(&mut row),
+                FieldKind::Choice { .. } => self.choice_field(&mut row),
+                FieldKind::Toggle { .. } => self.toggle_field(&mut row),
+                FieldKind::Slider { .. } => self.slider_field(&mut row),
+                FieldKind::Color { .. } => self.color_field(&mut row),
+                FieldKind::Text { .. } => self.text_field(&mut row),
+                FieldKind::Button { .. } => self.button_field(&mut row),
+                FieldKind::SpacePreview(_) => self.space_preview_field(&mut row),
             }
         };
-        (controls, height)
+        (row.controls, height)
     }
 }
 
