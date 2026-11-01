@@ -5307,3 +5307,8 @@ until I5-I6 all land, so no partial build hides the desktop.
 
 - [x] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
   `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).
+
+- [x] **Q4. "Desktop shell, shell items, DPI, hotkeys"**
+  (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
+  `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
+  `system.rs`, `info_tip.rs`, `hotkey.rs`).
