@@ -5079,3 +5079,23 @@ until I5-I6 all land, so no partial build hides the desktop.
 
     No unit tests: the repository has no PowerShell test framework, and
     adding one is out of scope.
+
+- [x] **B33. Load icons off the UI thread (platform, app).** The design
+  below was approved by the maintainer, 2026-10-29.
+  - Why: `IconCache::icon_for` loads a missing icon synchronously while
+    `space_scene` builds a scene, through the shell's image factory. A
+    lens on a slow or network folder, or the first scroll through a big
+    one, stalls every space until each icon is loaded. Explorer draws a
+    generic icon at once and fills the real one in later.
+  - Design: `icon_for` returns the cached icon, or a generic one for
+    the item's `ItemKind` and queues the path. One worker thread (COM
+    initialized as STA, as the image factory needs) loads queued icons
+    and posts a `WM_APP` message (next free id) that becomes
+    `Event::IconsLoaded { paths }`. The app refreshes only the spaces
+    that list those paths. The queue drops paths that scrolled out of
+    view before the worker reaches them.
+  - Pure parts to test: the queue (dedupes, keeps the newest request per
+    path, drops a path that is no longer wanted) and which spaces a
+    loaded path refreshes.
+  - **[needs human]** check: a lens on a folder of a few thousand images
+    scrolls without stalls, and its icons fill in.

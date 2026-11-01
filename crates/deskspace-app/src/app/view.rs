@@ -31,7 +31,7 @@ use crate::storage::path_key;
 
 use super::animation::Arrival;
 use super::rename::EditTarget;
-use super::{App, Surface, Timer};
+use super::{App, IconUser, Surface, Timer};
 
 /// How often, while takeover is on, to re-hide Explorer's icon layer in case
 /// it recreated it without broadcasting `TaskbarCreated`.
@@ -864,6 +864,7 @@ impl App {
             metrics: self.surface_metrics(Surface::Desktop),
             scale: 1.0,
         };
+        self.icons.begin_scene(IconUser::DesktopLayer);
         let mut scene = desktop_layer_scene(
             self.config.desktop.layer(),
             rect.origin(),
@@ -871,6 +872,7 @@ impl App {
             view,
             &mut self.icons,
         );
+        self.icons.end_scene();
         self.show_edit(&mut scene, Surface::Desktop);
         ui.set_desktop_layer_rect(rect);
         ui.set_desktop_layer_scene(scene);
@@ -924,8 +926,10 @@ impl App {
         let title_icon = self
             .space_icons
             .space_icon(space, palette.title_text, space.title_height);
+        self.icons.begin_scene(IconUser::Space(id.0));
         let mut scene =
             space_scene_with_details(space, look, view, row_cells, &mut self.icons, title_icon);
+        self.icons.end_scene();
         let rect = space.visible_rect();
         self.show_edit(&mut scene, Surface::Space(id));
         ui.set_space_rect(id.0, rect);

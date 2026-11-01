@@ -105,7 +105,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Shell: open, item menu, drag out | `deskspace-platform/src/win32/shell_items.rs` |
 | Shortcuts from dropped shell items, custom targets | `deskspace-platform/src/win32/shortcuts.rs` |
 | The installed-apps picker and its cache, the custom shortcut dialog | `deskspace-platform/src/win32/{app_picker,app_catalog,shortcut_dialog,dialog}.rs` |
-| Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` |
+| Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` (the cache and its load worker), `icon_queue.rs` (what the worker loads next) |
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
 | CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
@@ -314,26 +314,6 @@ and B33 and B36 change behavior on purpose, as each says.
   them. Do it after B14 (same file). Pure move. Done when: no function in
   either file is over about 80 lines. **[needs human]** check: the settings
   window opens, switches scopes and pages, and previews as before.
-
-- [ ] **B33. Load icons off the UI thread (platform, app).** The design
-  below was approved by the maintainer, 2026-10-29.
-  - Why: `IconCache::icon_for` loads a missing icon synchronously while
-    `space_scene` builds a scene, through the shell's image factory. A
-    lens on a slow or network folder, or the first scroll through a big
-    one, stalls every space until each icon is loaded. Explorer draws a
-    generic icon at once and fills the real one in later.
-  - Design: `icon_for` returns the cached icon, or a generic one for
-    the item's `ItemKind` and queues the path. One worker thread (COM
-    initialized as STA, as the image factory needs) loads queued icons
-    and posts a `WM_APP` message (next free id) that becomes
-    `Event::IconsLoaded { paths }`. The app refreshes only the spaces
-    that list those paths. The queue drops paths that scrolled out of
-    view before the worker reaches them.
-  - Pure parts to test: the queue (dedupes, keeps the newest request per
-    path, drops a path that is no longer wanted) and which spaces a
-    loaded path refreshes.
-  - **[needs human]** check: a lens on a folder of a few thousand images
-    scrolls without stalls, and its icons fill in.
 
 - [ ] **B37. Refresh a big lens off the UI thread (core, platform,
   app).** The split below was decided by the maintainer, 2026-10-29.
@@ -1947,6 +1927,7 @@ each id is in `archive/TASKS-done.md`.
 | W37, W38 (F-65) | Group by ▸ beside Sort by ▸ and the View page agree, Cancel restores, and the Lenses page's choice reaches the next new lens. Compare the group names, order, and header with Explorer on the same folder, at 100 % and 150 %, in every view; a grouped List stacks downward. Week start is Sunday: check another locale. The rule runs along the row's bottom rather than from the text as Explorer's does: judge it. A click on a header folds and opens it. Ctrl+A after folding, then Delete: the question counts only visible items; the marquee and arrows skip folded items. Dragging to rearrange is refused and an icon view's hand arrangement returns on ungrouping. A 50,000-file lens grouped by Type scrolls and hovers with no hitch. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
+| B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
@@ -2042,4 +2023,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   shrink to one row even though its fit uses rows, and a fit at that minimum
   can land below it. Suggested: a view-aware minimum (one cell, or one row in
   a row view) and clamp the fitted rect to it. Found in C11, 2026-10-31.
-
+- `win32/icons.rs` `load_folder_icon`, through `IconCache::folder_icon`: a lens's title icon still loads on the UI thread while its scene is built, so a lens on a slow folder can stall every space there. Suggested: give it to the icon worker, drawing the generic folder icon first. Found in B33, 2026-10-31.
+- `app/settings_session.rs` `space_preview`: the Shortcuts page loads an icon for every item of the space on the UI thread (`icon_now`), so opening it on a big lens stalls. Suggested: show only the visible items, or load them on the worker and update the preview. Found in B33, 2026-10-31.
+- `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.

@@ -339,6 +339,9 @@ pub enum Event {
     Wake {
         id: usize,
     },
+    /// The icon worker has loaded icons. `IconCache::take_loaded` collects
+    /// them and names the windows to draw again.
+    IconsLoaded,
     /// A mouse button went down outside every space (on the desktop, another
     /// app, or the taskbar). Only reported while `Ui::watch_outside_clicks`
     /// is on.

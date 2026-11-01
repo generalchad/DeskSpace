@@ -6,8 +6,8 @@ use deskspace_core::geometry::Point;
 use deskspace_core::source::FolderEntry;
 use deskspace_core::{Column, Command, Desktop, ItemId, SortKey, Space, SpaceId, ViewMode};
 use deskspace_platform::{
-    ClipboardAction, Event, EventHandler, IconCache, Play, SelectionKey, TrayEvent, Ui, WatchKey,
-    Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
+    ClipboardAction, Event, EventHandler, IconCache, IconUser, Play, SelectionKey, TrayEvent, Ui,
+    WatchKey, Way, ZoomAction, cursor_pos, desktop_display_since, profile_directory,
 };
 
 use crate::settings::{self, HotkeyAction};
@@ -918,6 +918,14 @@ impl EventHandler for App {
                 }
             }
             Event::Wake { .. } => {}
+            Event::IconsLoaded => {
+                for user in self.icons.take_loaded() {
+                    match user {
+                        IconUser::Space(id) => self.refresh_space(ui, SpaceId(id)),
+                        IconUser::DesktopLayer => self.refresh_desktop_layer(ui),
+                    }
+                }
+            }
             Event::Zoom(action) => self.zoom(ui, action),
             Event::RecentColors(colors) => {
                 self.config.recent_colors = colors;

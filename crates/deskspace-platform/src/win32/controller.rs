@@ -114,6 +114,7 @@ fn event_for(message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
             }
         }
         messages::WAKE => Event::Wake { id: wparam.0 },
+        messages::ICONS_LOADED => Event::IconsLoaded,
         messages::EDIT_KEY => Event::EditKey(keyboard::decode(wparam.0, lparam.0)?),
         messages::DELETE_KEY => Event::DeleteSelection,
         messages::CLIPBOARD_KEY => Event::Clipboard(keyboard::clipboard_action(wparam.0)?),
