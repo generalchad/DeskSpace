@@ -5295,3 +5295,8 @@ until I5-I6 all land, so no partial build hides the desktop.
   them. Pure move. Done when: no function in either file is over about 80
   lines. **[needs human]** check: the settings window opens, switches scopes
   and pages, and previews as before.
+
+- [x] **Q2. "Selection, display matching, keys, and clipboard"**
+  (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
+  `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The
+  ENGINEERING.md Keys table stays where it is.
