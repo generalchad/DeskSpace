@@ -48,6 +48,8 @@ fn print_spec(spec: &IconSetSpec) {
     println!("tag={}", spec.release_tag());
     println!("file={}", spec.file_name());
     println!("upstream={}@{}", spec.upstream, spec.upstream_version);
+    println!("label={}", spec.label);
+    println!("revision={}", spec.revision);
 }
 
 fn names_file(spec: &IconSetSpec) -> PathBuf {

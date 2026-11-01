@@ -108,7 +108,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | Desktop enumeration, icons | `deskspace-platform/src/win32/desktop_items.rs`, `win32/icons.rs` (the cache and its load worker), `icon_queue.rs` (what the worker loads next) |
 | Icon-set glyphs (SVG to pixels) | `deskspace-platform/src/render/glyph.rs` (the document), `render/d2d/glyph.rs` (the rasterizer), `win32/glyphs.rs` (the cache) |
 | Takeover: hide icons, watchdog | `deskspace-platform/src/win32/{desktop_icons,watchdog}.rs` |
-| CI and release | `.github/workflows/{ci,release}.yml`, `crates/deskspace-app/build.rs` |
+| CI and release | `.github/workflows/{ci,release,icons}.yml`, `crates/deskspace-app/build.rs` |
 | The file-size limit and its exceptions | `deskspace-app/tests/file_size.rs` (`ALLOWED`) |
 
 Ids (`WM_APP` messages, timers, menu ids, `field::` ids): never renumber
@@ -777,36 +777,6 @@ Rules for every S task:
 7. **One undo entry.** Changing an icon (S10, S11) records one entry
    through `App::record_effects`, labelled "Change icon", so Ctrl+Z puts
    the old icon back; `SetSpaceIcon` is already in `touched_by`.
-
-- [ ] **S5. Publishing an icon set (ci).** **[needs human]**
-  - `.github/workflows/icons.yml`, `workflow_dispatch` with a `prefix`
-    input (default `fluent`), on `windows-latest`, copying `release.yml`'s
-    toolchain and `cargo install cargo-packager` steps:
-    1. `cargo run -p deskspace-config --example icon_set -- spec <prefix>`
-       into `$GITHUB_OUTPUT`.
-    2. Fail if `gh release view <tag>` finds the release. A published set is
-       never replaced, because shipped builds pin its revision.
-    3. Download and extract the upstream package, run `trim`, then `git diff
-       --exit-code assets/icons`. The commit that bumped the row must
-       already carry its names file.
-    4. Sign the file with `cargo packager signer sign`, using
-       `CARGO_PACKAGER_SIGN_PRIVATE_KEY` from `DESKSPACE_MINISIGN_KEY`. Stop
-       with a clear error while the secret is empty.
-    5. `gh release create <tag> <file> <file>.sig --prerelease
-       --latest=false`, titled "Icon set: `label` r`revision`", with notes
-       naming the upstream package and saying it is not an app release.
-       It must be a pre-release: the update feed reads
-       `releases/latest/download/latest.json`, which a newer full release
-       would take over.
-  - `RELEASING.md`: a short "Publishing an icon set" section. To add or
-    update a set, bump or add its row, run the example's `trim`, commit the
-    row and names file, then run the workflow. Never delete an `icons-*`
-    release. `actionlint` must pass.
-  - **[needs human]** check (maintainer, once `DESKSPACE_MINISIGN_KEY` and
-    `UPDATE_PUBKEY` are set): run the workflow for `fluent`. The release is
-    a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
-    repository's "Latest" badge still points at the app. A second run fails
-    at step 2.
 
 - [ ] **S9. The icon picker (platform).** Lands in the same commit as S10,
   its first caller, which holds the on-screen check.
@@ -1916,6 +1886,7 @@ each id is in `archive/TASKS-done.md`.
 | W37, W38 (F-65) | Group by ▸ beside Sort by ▸ and the View page agree, Cancel restores, and the Lenses page's choice reaches the next new lens. Compare the group names, order, and header with Explorer on the same folder, at 100 % and 150 %, in every view; a grouped List stacks downward. Week start is Sunday: check another locale. The rule runs along the row's bottom rather than from the text as Explorer's does: judge it. A click on a header folds and opens it. Ctrl+A after folding, then Delete: the question counts only visible items; the marquee and arrows skip folded items. Dragging to rearrange is refused and an icon view's hand arrangement returns on ungrouping. A 50,000-file lens grouped by Type scrolls and hovers with no hitch. |
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
+| S5 (F-62) | Once `DESKSPACE_MINISIGN_KEY` and `UPDATE_PUBKEY` are set, run "Publish icon set" for `fluent`: the release is a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`, and the repository's "Latest" badge still points at the app. A second run fails at the check for an existing release. Then a keyed build's new space asks once, downloads, and shows its title icon. |
 | B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |

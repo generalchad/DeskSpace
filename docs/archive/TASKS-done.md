@@ -5125,3 +5125,33 @@ until I5-I6 all land, so no partial build hides the desktop.
   be saved for it), or whether the key and S5 are simply required before any
   release. Tests, if the code changes: `next_step` for a build with no key.
   - Decided (maintainer, 2026-10-31): a build without a key skips the question.
+
+- [x] **S5. Publishing an icon set (ci).** **[needs human]**
+  - `.github/workflows/icons.yml`, `workflow_dispatch` with a `prefix`
+    input (default `fluent`), on `windows-latest`, copying `release.yml`'s
+    toolchain and `cargo install cargo-packager` steps:
+    1. `cargo run -p deskspace-config --example icon_set -- spec <prefix>`
+       into `$GITHUB_OUTPUT`.
+    2. Fail if `gh release view <tag>` finds the release. A published set is
+       never replaced, because shipped builds pin its revision.
+    3. Download and extract the upstream package, run `trim`, then `git diff
+       --exit-code assets/icons`. The commit that bumped the row must
+       already carry its names file.
+    4. Sign the file with `cargo packager signer sign`, using
+       `CARGO_PACKAGER_SIGN_PRIVATE_KEY` from `DESKSPACE_MINISIGN_KEY`. Stop
+       with a clear error while the secret is empty.
+    5. `gh release create <tag> <file> <file>.sig --prerelease
+       --latest=false`, titled "Icon set: `label` r`revision`", with notes
+       naming the upstream package and saying it is not an app release.
+       It must be a pre-release: the update feed reads
+       `releases/latest/download/latest.json`, which a newer full release
+       would take over.
+  - `RELEASING.md`: a short "Publishing an icon set" section. To add or
+    update a set, bump or add its row, run the example's `trim`, commit the
+    row and names file, then run the workflow. Never delete an `icons-*`
+    release. `actionlint` must pass.
+  - **[needs human]** check (maintainer, once `DESKSPACE_MINISIGN_KEY` and
+    `UPDATE_PUBKEY` are set): run the workflow for `fluent`. The release is
+    a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`. The
+    repository's "Latest" badge still points at the app. A second run fails
+    at step 2.
