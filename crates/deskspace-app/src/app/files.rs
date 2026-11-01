@@ -46,6 +46,36 @@ pub(super) enum StoredFiles {
 }
 
 impl App {
+    /// A file drop on `surface`: moves, keeps, or copies the files into the
+    /// space, or opens a space at the desktop layer.
+    pub(super) fn on_files_dropped(
+        &mut self,
+        ui: &mut Ui,
+        surface: Surface,
+        at: Point,
+        paths: Vec<PathBuf>,
+        action: DropAction,
+    ) {
+        self.drop_onto(ui, surface, at, |app, ui, space| {
+            app.add_dropped(ui, space, at, paths, action);
+        });
+    }
+
+    /// A dropped shell item (a Start-menu or taskbar app) becomes a shortcut
+    /// in the space, or in a new space at the desktop layer.
+    pub(super) fn on_shell_items_dropped(
+        &mut self,
+        ui: &mut Ui,
+        surface: Surface,
+        at: Point,
+        items: Vec<ShellItem>,
+    ) {
+        let sources = items.into_iter().map(ShortcutSource::Shell).collect();
+        self.drop_onto(ui, surface, at, |app, ui, space| {
+            app.add_shortcuts(ui, space, at, sources);
+        });
+    }
+
     /// Runs `add` on the space a drop on `surface` at `at` goes into: that
     /// space, or, for the desktop layer, a new space opened at the drop point
     /// (ROADMAP D7). A new space the drop left empty, because nothing could

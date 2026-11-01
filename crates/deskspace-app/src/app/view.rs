@@ -1145,6 +1145,13 @@ impl App {
         self.schedule_save(ui);
     }
 
+    /// `on_dpi_changed` for a space event, which may name the desktop layer.
+    pub(super) fn on_surface_dpi_changed(&mut self, ui: &mut Ui, surface: Surface) {
+        if let Surface::Space(id) = surface {
+            self.on_dpi_changed(ui, id);
+        }
+    }
+
     pub(super) fn refresh_tray(&self, ui: &mut Ui) {
         ui.set_tray_tooltip(&self.tray_text());
     }

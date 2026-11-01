@@ -259,18 +259,6 @@ and B33 and B36 change behavior on purpose, as each says.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
 
-- [ ] **B24. Split `App::on_space_event`.** `app/pointer.rs`
-  `on_space_event` is about 135 lines: a preamble (the surface still exists,
-  commit a rename, act like a desktop click) and a `match` over
-  `SpaceEvent` whose arms run up to 25 lines.
-  - Move the preamble into `fn prepare_space_event(&mut self, ui, surface,
-    &event) -> bool` (false means ignore), and each arm longer than about
-    five lines into a named method in the module that owns it (`pointer.rs`
-    for mouse arms; the drop arms call into `files.rs`, where the logic
-    already lives).
-  - Pure move: no behavior change, no new `pub(super)` beyond what the moved
-    methods need. Done when: `on_space_event` is under about 50 lines.
-
 - [ ] **B26. Split `settings_window::build` and `update`.**
   `win32/settings_window/build.rs` `build` (about 210 lines) and
   `update.rs` `update` (about 125 lines) each build or diff the panes, the
@@ -761,10 +749,10 @@ Rules for every S task:
   - `CursorShape::Hand` (`IDC_HAND`; map it beside the others), shown
     while the pointer is over the button during a rename.
     `PointerState` tracks the hover so the scene can draw it.
-  - `app/pointer.rs` `on_space_event`, before the click commits the rename:
-    a left press inside the button of the title being renamed opens the
-    picker and returns, leaving the rename open. Add the check as one
-    named method (`title_icon_pressed`), so B24 can still move the preamble.
+  - `app/pointer.rs` `prepare_space_event`, before the click commits the
+    rename: a left press inside the button of the title being renamed opens
+    the picker and returns false, leaving the rename open. Add the check as
+    one named method (`title_icon_pressed`).
   - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
     off (`ui.capture_text_input(false)`) so the picker's search box gets
     keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
