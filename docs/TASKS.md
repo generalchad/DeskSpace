@@ -1952,10 +1952,13 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   groups, so Fit to contents on a grouped space falls short by its header rows
   and scrolls. Suggested: carry the extent, not the metrics, in the command.
   Found in W37, 2026-10-31.
-- `scripts/onscreen/smoke.ps1` fails on the maintainer's machine as run by an
-  agent (2026-10-31): the screen capture reads the wallpaper rather than the
-  backdrop and the space, though both windows report visible at their rects.
-  `shadows.ps1 -Pixels` will be affected too. Not yet understood. Found in W37.
+- `scripts/onscreen/smoke.ps1` once failed as run by an agent (2026-10-31, W37):
+  the capture read the wallpaper rather than the backdrop and the space, though
+  both windows reported visible at their rects. It did not happen again the same
+  day: five runs of `smoke.ps1`, in the agent's shell and in a child `pwsh`, and
+  `shadows.ps1 -Pixels` all read the right pixels (session 1, the console, with
+  `Default` as the input desktop). The cause is unknown. If it returns, read the
+  input desktop and whether the display is asleep or locked at that moment.
 - `command/space_ops.rs` `apply_resize_space`: the minimum is still one icon
   cell (`GridSpec::min_space_size`), so a Details or Content space cannot
   shrink to one row even though its fit uses rows, and a fit at that minimum
