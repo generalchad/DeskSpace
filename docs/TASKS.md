@@ -1486,9 +1486,6 @@ Rules for every Q task:
   (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
   `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
   `system.rs`, `info_tip.rs`, `hotkey.rs`).
-- [ ] **Q5. "Drops" and "Drag out and the drag image"**
-  (`win32/drop_target.rs`, `shell_items.rs`, `drag_image.rs`,
-  `drag_ghost.rs`).
 - [ ] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
   `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).
 - [ ] **Q7. One home for the controls.** `CONTEXT.md` section 8 and

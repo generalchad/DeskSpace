@@ -5300,3 +5300,7 @@ until I5-I6 all land, so no partial build hides the desktop.
   (`win32/shell_selection.rs`, `win32/display_settings.rs`, `edit.rs`,
   `win32/keyboard.rs`, `win32/clipboard.rs`, `win32/file_op.rs`). The
   ENGINEERING.md Keys table stays where it is.
+
+- [x] **Q5. "Drops" and "Drag out and the drag image"**
+  (`win32/drop_target.rs`, `shell_items.rs`, `drag_image.rs`,
+  `drag_ghost.rs`).
