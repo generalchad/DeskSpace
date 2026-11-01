@@ -5113,3 +5113,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: the scan is gone and the gates pass. On 50,000 entries it takes
     21 ms, where the old loop scaled to about 248 s; that is still over the
     Performance rule's 8 ms, and B37 moves the work off the UI thread.
+
+- [x] **S14. Do not offer a download that cannot work (app).** **[needs
+  decision]** Found 2026-10-31: `next_step` (`app/space_icons.rs`) never asks
+  `deskspace_update::is_configured`. So a build with an empty `UPDATE_PUBKEY`
+  still asks "Show icons on spaces?" for a new space with an automatic icon,
+  then `fetch_signed` returns `NotConfigured` and no icon shows. Setting the
+  key alone does not cure it: the download also fails until S5 has published
+  the set. To decide: whether a build without a key skips the question (the
+  update controls already grey out this way, and a declined consent must not
+  be saved for it), or whether the key and S5 are simply required before any
+  release. Tests, if the code changes: `next_step` for a build with no key.
+  - Decided (maintainer, 2026-10-31): a build without a key skips the question.

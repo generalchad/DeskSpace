@@ -588,7 +588,9 @@ A native, lightweight, offline Windows desktop organizer that:
     from GitHub, and saves the answer (allowed or declined); the General
     page can change it. The first-run seed space starts with no icon, so
     the very first launch never asks. Declined, spaces show no icon and
-    the picker says so.
+    the picker says so. A build with no signing key cannot verify a set, so
+    it does not ask, saves no answer, and greys the General page's choice
+    (amended 2026-10-31, maintainer).
   - *Matching:* pure and unit-tested, outside the platform. The space's
     title is split into words and scored against a curated table of
     English words to icon names ("games", "work", "photos", "school"), then

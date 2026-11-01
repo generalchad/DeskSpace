@@ -54,12 +54,19 @@ pub(super) enum IconStep {
 
 /// The next step for a set in `state`, with the user's consent and whether the
 /// question already showed. Only `Allowed` downloads; a failure waits for the
-/// next start.
-pub(super) fn next_step(state: Option<&SetState>, consent: IconDownloads, asked: bool) -> IconStep {
+/// next start. A build with no signing key (`can_download` false) cannot verify
+/// a set, so it neither downloads nor asks, and no answer is saved for it.
+pub(super) fn next_step(
+    state: Option<&SetState>,
+    consent: IconDownloads,
+    asked: bool,
+    can_download: bool,
+) -> IconStep {
     match state {
         None => IconStep::Load,
         Some(SetState::Loading | SetState::Ready(_)) => IconStep::Nothing,
         Some(SetState::Failed(_)) => IconStep::Unavailable,
+        Some(SetState::Missing) if !can_download => IconStep::Unavailable,
         Some(SetState::Missing) => match consent {
             IconDownloads::Allowed => IconStep::Fetch,
             IconDownloads::Declined => IconStep::Unavailable,
@@ -409,15 +416,32 @@ mod tests {
         let ready = SetState::Ready(Arc::new(games()));
         let failed = SetState::Failed("no".to_owned());
 
-        assert_eq!(next_step(None, Ask, false), Load);
-        assert_eq!(next_step(None, Allowed, false), Load);
-        assert_eq!(next_step(Some(&loading), Allowed, false), Nothing);
-        assert_eq!(next_step(Some(&ready), Ask, false), Nothing);
-        assert_eq!(next_step(Some(&failed), Allowed, false), Unavailable);
+        assert_eq!(next_step(None, Ask, false, true), Load);
+        assert_eq!(next_step(None, Allowed, false, true), Load);
+        assert_eq!(next_step(Some(&loading), Allowed, false, true), Nothing);
+        assert_eq!(next_step(Some(&ready), Ask, false, true), Nothing);
+        assert_eq!(next_step(Some(&failed), Allowed, false, true), Unavailable);
 
-        assert_eq!(next_step(Some(&missing), Allowed, false), Fetch);
-        assert_eq!(next_step(Some(&missing), Declined, false), Unavailable);
-        assert_eq!(next_step(Some(&missing), Ask, false), AskStep);
-        assert_eq!(next_step(Some(&missing), Ask, true), Nothing);
+        assert_eq!(next_step(Some(&missing), Allowed, false, true), Fetch);
+        assert_eq!(
+            next_step(Some(&missing), Declined, false, true),
+            Unavailable
+        );
+        assert_eq!(next_step(Some(&missing), Ask, false, true), AskStep);
+        assert_eq!(next_step(Some(&missing), Ask, true, true), Nothing);
+    }
+
+    #[test]
+    fn a_build_with_no_key_neither_asks_nor_downloads() {
+        use IconDownloads::{Allowed, Ask, Declined};
+        let missing = SetState::Missing;
+        for consent in [Ask, Allowed, Declined] {
+            assert_eq!(
+                next_step(Some(&missing), consent, false, false),
+                IconStep::Unavailable
+            );
+        }
+        // A cached set was verified when it was saved, so it still loads.
+        assert_eq!(next_step(None, Ask, false, false), IconStep::Load);
     }
 }
