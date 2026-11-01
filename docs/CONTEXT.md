@@ -217,12 +217,22 @@ extensions" check shows what the space shows now and flips to the
 opposite; the View page offers all three. Hit tests, the marquee, keyboard
 navigation, the drag drop index, and the scroll indicator all read the same
 layout. `FolderEntry` is what the platform reads from the folder.
-A lens's items are a live cache: the watch worker lists the folder and posts
-`Event::FolderChanged`, and the app dispatches `Command::SyncLens`, which
-filters hidden entries and the view's "Show only" and "Hide" patterns
-(`FolderView::shows`, `wildcard::matches`), sorts by the space's
-`SortRule`, and reconciles by
-path so an `ItemId` survives a refresh. They are never written to the config,
+A lens's items are a live cache, built off the UI thread, because filtering and
+sorting a big folder takes far longer than a frame. The watch worker lists the
+folder and gives the entries to the lens's `LensBuilder` (`lens_build.rs`, pure),
+which filters hidden entries and the view's "Show only" and "Hide" patterns
+(`wildcard::matches`), sorts by the space's `SortRule`, and reconciles by path so
+an `ItemId` survives a refresh. Ids come from a block the watch reserved
+(`Desktop::reserve_item_ids`), and an item the model re-points tells the worker
+(`App::note_renamed_lens_item`). The worker posts the finished `LensList`, and the
+app swaps it in with `Command::SyncLens`, which only places the items; the list
+it replaces is freed off the UI thread (`Desktop::take_retired_items`, in
+`App::dispatch`). A list names the `LensRules` it was built under, and one that
+no longer matches the lens, like one for a folder it no longer shows, is dropped.
+A change of rules goes to the worker through `App::sync_watches`, and it builds
+again from its last listing without reading the folder. A grouped lens's display
+order stays on the UI thread: on 50,000 items it takes about 3.5 ms, 7.4 ms by
+Type, and 14 ms the first time each extension is seen (2026-10-31). They are never written to the config,
 and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 `MoveItem` into a lens are `Rejected`; file changes there are shell
 operations: a drop on a lens moves
@@ -373,10 +383,10 @@ ones a variant's doc cannot show.
   changes; pointing it at the folder it already shows keeps them.
   `SetLensTitle { id, title, text }` sets how the title follows the folder
   (D17); `SetLensView { id, view }` replaces its folder view; `SyncLens { id,
-  entries }` reconciles the listed items by path, keeping ids, filtering
-  hidden entries unless the view shows them, and sorting by the space's
-  `SortRule` (natural names, so `file2` comes before `file10`; folders first
-  when asked). "Show only"
+  items }` swaps in a list a `LensBuilder` finished. The builder keeps ids by
+  path, drops hidden entries unless the view shows them, and sorts by the
+  space's `SortRule` (natural names, so `file2` comes before `file10`; folders
+  first when asked). "Show only"
   (`include`) keeps only files whose name matches, and "Hide" (`exclude`)
   drops any match, file or folder (D18). The lists are capped by
   `FolderView::clamped` when the config loads and in `SetLensView`.
@@ -1145,9 +1155,8 @@ in `ui.rs`. What spans them:
   preview through `SetLensTitle`), Show hidden files, which previews
   through `SetLensView`, and its Filter: "Show only" and "Hide", each a
   `;`-separated list (`settings::pages::parse_patterns`). A filter edit
-  is a `SetLensView` that re-filters the lens's last listing, kept per lens
-  in `App::listings` with the folder it came from, without reading the
-  folder (`FieldEffect::Refilter`); the field shows the text as typed
+  is a `SetLensView` whose new rules the worker applies to its last listing,
+  without reading the folder (`FieldEffect::Lens`); the field shows the text as typed
   (`Session::filter_texts`), so the form never rewrites it mid-edit. A
   lens whose filters leave no entry says "No items match the filter".
   Global edits write `Config` directly; a space's edits
@@ -1214,9 +1223,12 @@ in `ui.rs`. What spans them:
   (a junction put in a renamed folder's place). `is_inside` compares
   paths for it and for the app: whole components, without case, and a drive
   or share alike with or without the `\\?\` prefix. A refused folder is
-  retried like a missing one. `Ui::watch_folder(key, path, store)` adds or
-  replaces that key's watch (idempotent for the same path) and
-  `Ui::unwatch_folder(key)` stops it. A change posts `FOLDER_CHANGE` with the
+  retried like a missing one. `Ui::watch_folder(key, path, store, builder)` adds
+  or replaces that key's watch (idempotent for the same path) and
+  `Ui::unwatch_folder(key)` stops it. A lens's watch owns its `LensBuilder`, so
+  the worker hands the app a finished list (section 4), and `Ui::set_lens_rules`
+  has it build again. A packet carries only numbers, so the rules wait in a map
+  by slot, and a burst of edits builds once. A change posts `FOLDER_CHANGE` with the
   watch's slot in `wParam`; the worker leaves the listing in a shared slot,
   and the controller raises `Event::FolderChanged { key, folder, listing }`.
   A listing names the folder it read, because a posted change can wait in
@@ -1407,8 +1419,7 @@ in `ui.rs`. What spans them:
   first group. Its Sort by… checks the space's rule and keeps it as files come
   and go (`SetSpaceView`), and adds Show hidden files (`SetLensView`). Folders
   first is part of the rule for both kinds. A sort or hidden-files change
-  starts the lens's watch again, so the folder is listed afresh in the new
-  order.
+  goes to the lens's worker, which builds its list again in the new order.
 - New space, from any menu or the hotkey, opens beside the top row of spaces
   on the monitor of the click or the pointer, one typical gutter to the
   right (ROADMAP D10).
@@ -1434,8 +1445,8 @@ in `ui.rs`. What spans them:
   hidden files. Keep sorted is checked and greyed on a lens. A key
   keeps the direction, a direction keeps the key, and Folders first toggles,
   all through one `SortRule`. A normal space sorts once with the new rule, or
-  holds the order once Keep sorted is on; a lens always holds it and lists its
-  folder again. The menus are built from tables:
+  holds the order once Keep sorted is on; a lens always holds it, and its
+  worker builds its list again. The menus are built from tables:
   `OPACITY_PRESETS`, `ICON_SIZE_PRESETS`, `VIEW_PRESETS`, and `SORT_MENU_IDS`
   in `app.rs`, with the view labels in `VIEW_MODES` and the sort keys and
   words in `SORT_KEYS` in `settings/tables.rs`.

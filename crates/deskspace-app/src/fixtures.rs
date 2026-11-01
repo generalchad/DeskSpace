@@ -1,6 +1,7 @@
 //! Test fixtures that build the model the way the app does, through `Command`s.
 
-use deskspace_core::{Command, Desktop, ItemFacts, ItemId, Rect, SpaceId};
+use deskspace_core::source::FolderEntry;
+use deskspace_core::{Command, Desktop, ItemFacts, ItemId, LensBuilder, Rect, SpaceId};
 
 /// A work area that holds every fixture rect, so `CreateSpace` keeps it as is.
 pub const BOUNDS: Rect = Rect::new(0, 0, 1920, 1040);
@@ -46,6 +47,17 @@ pub fn create_lens(desktop: &mut Desktop, title: &str, rect: Rect, path: &str) -
         },
     );
     id
+}
+
+/// What the watch worker and the UI thread do with a listing of lens `id`.
+pub fn sync_lens(desktop: &mut Desktop, id: SpaceId, entries: Vec<FolderEntry>) {
+    let ids = desktop.reserve_item_ids();
+    let space = desktop.space(id).expect("the lens exists");
+    let rules = space.lens_rules().expect("a lens has rules");
+    let items = LensBuilder::new(rules, ids, space.items())
+        .listed(entries)
+        .items;
+    apply(desktop, Command::SyncLens { id, items });
 }
 
 /// Lists `path` in `space`, laid out on the grid, and returns the item's id.

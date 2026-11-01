@@ -84,6 +84,9 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- A lens on a very large folder no longer stalls every space when it refreshes
+  or when its sort or filters change: its list is built in the background.
+- A locked lens places its items instead of stacking them.
 - A slow or network folder no longer stalls every space while its icons load.
   An item shows a generic icon at once, and its own fills in, as in Explorer.
 - With the desktop takeover on: a taskbar that ended up under the desktop

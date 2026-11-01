@@ -134,7 +134,7 @@ mod tests {
         let (desktop, a, _, _) = desktop_with_item();
         let touched = desktop.touched_by(&Command::SyncLens {
             id: a,
-            entries: Vec::new(),
+            items: Vec::new(),
         });
         assert_eq!(touched, Touched::spaces([a]));
     }

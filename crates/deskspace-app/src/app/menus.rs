@@ -11,7 +11,7 @@ use deskspace_core::{
     SpaceView, Theme,
 };
 use deskspace_platform::{
-    DropAction, ItemMenuChoice, MenuEntry, Ui, WatchKey, monitor_dpi_at, scale_for, work_area_at,
+    DropAction, ItemMenuChoice, MenuEntry, Ui, monitor_dpi_at, scale_for, work_area_at,
 };
 use deskspace_update::InstallMode;
 
@@ -150,8 +150,8 @@ impl App {
     }
 
     /// Applies a Sort by choice (D17). A normal space sorts once and keeps the
-    /// rule; a lens keeps the rule and lists its folder again, so the new
-    /// order applies now rather than at the next change.
+    /// rule; a lens keeps the rule and its worker builds its list again, so the
+    /// new order applies now rather than at the next change.
     pub(super) fn sort_space(&mut self, ui: &mut Ui, id: SpaceId, rule: SortRule, at: Point) {
         let Some(space) = self.config.desktop.space(id) else {
             return;
@@ -160,7 +160,7 @@ impl App {
             let mut view = space.view().clone();
             view.sort = rule;
             if self.set_space_view_labelled(ui, id, view, at, "Sort lens") {
-                self.restart_lens_watch(ui, id);
+                self.sync_watches(ui);
             }
         } else {
             let effects = self.sort_space_items(id, rule, at);
@@ -273,14 +273,14 @@ impl App {
         )
     }
 
-    /// Replaces lens `id`'s view as one undo entry and lists its folder again,
-    /// so the new order and the hidden-files choice apply now rather than at
-    /// the next change.
+    /// Replaces lens `id`'s view as one undo entry and has its worker build its
+    /// list again, so the hidden-files choice applies now rather than at the
+    /// next change.
     fn set_lens_view(&mut self, ui: &mut Ui, id: SpaceId, view: FolderView, at: Point) {
         let (applied, effects) = self.change_lens_view(id, view, at);
         self.run(ui, effects);
         if applied {
-            self.restart_lens_watch(ui, id);
+            self.sync_watches(ui);
             self.resnapshot_settings(ui, id);
         }
     }
@@ -298,14 +298,6 @@ impl App {
             at,
             Vec::new(),
         )
-    }
-
-    /// Lists a lens's folder again by starting its watch over: a watch lists
-    /// its folder when it starts, so this is a fresh listing through the same
-    /// path as every other.
-    fn restart_lens_watch(&mut self, ui: &mut Ui, id: SpaceId) {
-        ui.unwatch_folder(WatchKey::Space(id));
-        self.sync_watches(ui);
     }
 
     pub(super) fn show_item_menu(

@@ -383,13 +383,7 @@ mod tests {
             created: None,
             hidden: false,
         };
-        fixtures::apply(
-            desktop,
-            Command::SyncLens {
-                id: lens,
-                entries: vec![entry],
-            },
-        );
+        fixtures::sync_lens(desktop, lens, vec![entry]);
         let path = Path::new("C:/x/a.txt");
         assert_eq!(app.find_item_by_file(path), None, "only the lens lists it");
 
@@ -414,13 +408,7 @@ mod tests {
             created: None,
             hidden: false,
         };
-        fixtures::apply(
-            desktop,
-            Command::SyncLens {
-                id: lens,
-                entries: vec![entry],
-            },
-        );
+        fixtures::sync_lens(desktop, lens, vec![entry]);
         let key = path_key(Path::new("C:/x/a.txt"));
         assert_eq!(app.item_index().get(&key), None, "only the lens lists it");
 

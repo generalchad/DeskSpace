@@ -39,6 +39,7 @@ impl App {
         if !outcome.is_applied() {
             tracing::debug!(?outcome, "command not applied");
         }
+        super::lens::free_off_thread(self.config.desktop.take_retired_items());
         outcome
     }
 

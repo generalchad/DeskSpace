@@ -55,6 +55,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | To change... | Look in |
 |--------------|---------|
 | The model (spaces, items, views, the desktop layer) | `deskspace-core/src/{space,view,item,desktop,desktop_layer}.rs` |
+| A lens's list: filter, sort, ids, built on the watch worker | `deskspace-core/src/lens_build.rs` (`LensBuilder`, `LensRules`), `App::sync_watches` in `app/lens.rs` |
 | Item ordering, both kinds | `deskspace-core/src/sort.rs` (`SortRule`) |
 | A model mutation | `deskspace-core/src/command/` (`Command` and the dispatch in `mod.rs`; one `apply_<variant>` method each in `space_ops.rs`, `item_ops.rs`, `lens_ops.rs`, `layer_ops.rs`) |
 | A lens's folder view and entries | `deskspace-core/src/source.rs` (`SpaceSource`, `FolderView`, `FolderEntry`) |
@@ -315,44 +316,6 @@ and B33 and B36 change behavior on purpose, as each says.
   either file is over about 80 lines. **[needs human]** check: the settings
   window opens, switches scopes and pages, and previews as before.
 
-- [ ] **B37. Refresh a big lens off the UI thread (core, platform,
-  app).** The split below was decided by the maintainer, 2026-10-29, and amended 2026-10-31.
-  - Why: `Command::SyncLens` filters, reconciles, sorts, and lays out
-    every entry on the UI thread. On 50,000 entries in a release build it
-    took 44-46 ms with no filters and 62-65 ms with 32 typical filter
-    patterns, and 309 ms with 32 patterns built so each is tried in full
-    (2026-10-29, `time_a_filtered_sync_of_fifty_thousand_entries` in
-    `command/lens_ops.rs`). The Performance rule in section W allows 8 ms.
-    Accepted for W34 by the maintainer on that date, with this task to
-    follow.
-  - Measured again, 2026-10-31: those timings used names already in sorted
-    order. In NTFS-like order `sort_items` alone takes about 330 ms on 50,000
-    items, against 24 ms sorted, and the whole `SyncLens` 430-490 ms on a
-    scattered listing. Moving only the filter and the sort cannot reach 8 ms:
-    reconciling ids by path costs about 38 ms (build the map 20, look up 12,
-    drop it 6), and `rewritten_paths` (B38) 21 ms. Feed the timing test
-    entries in listing order.
-  - Design (amended by the maintainer, 2026-10-31): the watch worker, which
-    already lists the folder off the UI thread, builds the finished item list.
-    It filters, sorts, reconciles ids, and finds the rewritten paths with
-    pure functions from `deskspace-core`, using the view's rules passed in
-    with the watch (as W25 passes the store). The UI thread only swaps the
-    list in, and the old list is dropped off it. A filter or sort change sends
-    the new rules to the worker, which redoes the work there.
-  - To settle while building, and ask if a choice changes this design:
-    - Ids. `Desktop` hands them out and they are never reused (D11), so the
-      worker needs a block of reserved ids and its own map from path to id.
-    - A list built under old rules, or before an undo restored the lens, must
-      not be swapped in. Tag each list with what it was built from.
-    - `App::filtered_out` needs to know the listing was not empty, and
-      `refilter_lens`'s copy of the listing moves to the worker.
-    - `App::sync_grouping` also walks every item on the UI thread for a
-      grouped lens. Measure it, and move it with the rest if it is over budget.
-  - Measure with the timing test above before and after; record both.
-  - Done when: swapping in a 50,000-entry list stays under 8 ms on the UI
-    thread with 32 patterns, and a lens of that size refreshes without a
-    visible hitch (**[needs human]**).
-
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
 `settings/mod.rs` `build_form` (about 105). They are long because a field is
@@ -488,7 +451,7 @@ no separate `Lens` type (D5). Four `Command`s change a lens:
 - `SetLensFolder` points it at another folder.
 - `SetLensView` changes its hidden and filter settings; `SetSpaceView`,
   which every space has, changes its sort rule.
-- `SyncLens { id, entries }` replaces its items with a fresh listing of
+- `SyncLens { id, items }` swaps in the list the watch worker built from
   the folder. Nothing adds items to a lens one by one: `AddItem` and
   `MoveItem` into a lens return `Rejected`.
 
@@ -725,7 +688,7 @@ these are the ones phase 4 and 5 code most often breaks.
   titles, and status text read the model. Nothing calls the disk on the
   UI thread per item or per event; the folder watch checks the store on
   its worker (W25).
-- **Measure what could be slow.** A task that touches `SyncLens`,
+- **Measure what could be slow.** A task that touches `LensBuilder`, `SyncLens`,
   sorting, filtering, or grouping times it on 50,000 entries with a
   release build and records the dated result in its commit body. Over
   8 ms (half a 60 Hz frame) on the UI thread means stop and ask before
@@ -1885,7 +1848,7 @@ each id is in `archive/TASKS-done.md`.
 | W25 (F-07) | Start with a lens on a share whose server is off (or a disconnected network drive): the other spaces draw and respond at once, and that lens shows "Folder not available". Make a junction into the storage folder of a `dev.ps1` scratch config (`mklink /J C:\Temp\into-store "%TEMP%\deskspace-dev\storage"`; drop a file on a space first so the folder exists). Change folder… to it: a message refuses it. Hand-edit a lens's path to it and restart: the lens shows "Folder not available" and lists nothing. |
 | W42 (F-64) | In a Downloads lens, double-click a folder, then one inside it (and once with Enter): each shows in place, the selection clears, the list starts at the top, and the title reads `Downloads › A › B`. Narrow the lens until the title is too long: it is cut from the left (`… › B`). Drop, paste, New shortcut, and Delete there all act on `B`; Open folder opens `B`. A `.lnk` to a folder still opens Explorer. Delete `B` in Explorer while it is shown: "Folder not available" with `B`'s path. A junction to the storage folder inside the lens shows unavailable when browsed into. Change folder…, its undo, and a restart each return to the lens's own folder. F2 on the browsed lens's title edits the lens's own nickname, so its box shows `Downloads`, not the bar's `Downloads › A › B`: confirm that reads clearly. |
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
-| W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens re-filters on every keystroke (about 60 ms each, B37): note whether it stutters. |
+| W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens never stalls the spaces; the list follows about a quarter of a second behind (B37), and half a second with many patterns: note whether that lag reads as slow. |
 | W46 (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
 | W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. |
 | W47 (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
@@ -1901,6 +1864,7 @@ each id is in `archive/TASKS-done.md`.
 | Space icons (D16, S7) | Make the cache by hand first (S3's `trim fluent <upstream icons.json> %TEMP%\deskspace-dev\icons`). With a scratch config, set `icon = "fluent:games"` on one space and `icon = "automatic"` on spaces titled "Games", "Photos", and "Stuff": the first three show their icon left of the title in the title's color, and follow a dark/light switch; "Stuff" and spaces without the key show none and look as before. Renaming a space keeps its icon and the box starts after it; hovering or clicking the icon does what the title bar does. Check at 100 % and 150 %, on Acrylic, Blur, Solid, and Clear, and with a lock. With the cache deleted, nothing shows and nothing fails. |
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 | S5 (F-62) | Once `DESKSPACE_MINISIGN_KEY` and `UPDATE_PUBKEY` are set, run "Publish icon set" for `fluent`: the release is a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`, and the repository's "Latest" badge still points at the app. A second run fails at the check for an existing release. Then a keyed build's new space asks once, downloads, and shows its title icon. |
+| B37 | With a `dev.ps1` scratch config, a lens on a folder of 50,000 files, ungrouped and grouped by Type: copy files into the folder, change Sort by, toggle Show hidden files, and type in Show only. Other spaces keep responding and the lens never hitches; its list follows a moment later. The selection survives a refresh, and an item renamed with F2 stays selected once the listing arrives. Sort by, then Cancel in Settings, returns the old order. A locked lens places its items instead of stacking them. Change folder…, a browse, and Exit during a big refresh leave no stray list and do not hang. |
 | B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
@@ -1997,6 +1961,10 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   shrink to one row even though its fit uses rows, and a fit at that minimum
   can land below it. Suggested: a view-aware minimum (one cell, or one row in
   a row view) and clamp the fitted rect to it. Found in C11, 2026-10-31.
+- `app/undo.rs` `can_undo`: `Space` equality includes a lens's items, and an undo entry's `after` is read before the lens's new list arrives, so "Undo Sort lens" always reports that the space changed (a test that sorts, syncs, and undoes returned `Stale`, 2026-10-31), and any file change in a lens stales every entry naming it. Section V's W44 row will fail on it. Suggested task: leave a lens's items out of what undo stores and compares, which also removes the next line's cost. Found in B37.
+- `app/undo.rs` `space_state`: each undo snapshot of a lens clones its items, 6-8 ms on 50,000 (2026-10-31), so one "Sort lens" entry costs about twice that on the UI thread, plus comparing them. Found in B37.
+- `command/item_ops.rs` `apply_rename_item`: renaming an item in a lens re-sorts the whole list on the UI thread (`hold_kept_order`), about 24 ms on 50,000 already sorted items. Suggested: move the one item by binary search, which a lens's kept order allows. Found in B37.
+- `win32/folder_watch.rs` `FolderWatch::unwatch`: a finished list still waiting in the slot is freed on the UI thread when its watch stops. Rare, and at most about 5 ms. Found in B37.
 - `win32/icons.rs` `load_folder_icon`, through `IconCache::folder_icon`: a lens's title icon still loads on the UI thread while its scene is built, so a lens on a slow folder can stall every space there. Suggested: give it to the icon worker, drawing the generic folder icon first. Found in B33, 2026-10-31.
 - `app/settings_session.rs` `space_preview`: the Shortcuts page loads an icon for every item of the space on the UI thread (`icon_now`), so opening it on a big lens stalls. Suggested: show only the visible items, or load them on the worker and update the preview. Found in B33, 2026-10-31.
 - `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.

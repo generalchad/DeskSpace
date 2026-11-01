@@ -20,7 +20,7 @@ use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, arrange_space, position_items};
 use crate::sort::SortRule;
-use crate::source::{FolderEntry, FolderView, LensTitle};
+use crate::source::{FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
 use crate::view::SpaceView;
 use crate::view_layout::ViewMetrics;
@@ -71,13 +71,12 @@ pub enum Command {
         id: SpaceId,
         view: FolderView,
     },
-    /// Replaces a lens's items from the folder's current `entries`. Hidden
-    /// entries are dropped unless the view shows them; the result is sorted
-    /// with natural name order. A path that survives keeps its `ItemId`, a new
-    /// path gets a fresh id, and a path that is gone is dropped.
+    /// Swaps in a lens's finished item list, which a `LensBuilder` filtered,
+    /// sorted, and gave ids to off the UI thread. This only lays it out. The
+    /// list it replaces is left for `Desktop::take_retired_items`.
     SyncLens {
         id: SpaceId,
-        entries: Vec<FolderEntry>,
+        items: Vec<Item>,
     },
     DeleteSpace {
         id: SpaceId,
@@ -314,7 +313,7 @@ impl Desktop {
             }
             Command::SetLensTitle { id, title, text } => self.apply_set_lens_title(id, title, text),
             Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
-            Command::SyncLens { id, entries } => self.apply_sync_lens(id, entries, layout),
+            Command::SyncLens { id, items } => self.apply_sync_lens(id, items, layout),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)
