@@ -5248,3 +5248,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   `app/persist.rs` or `app.rs` for start and close; follow `CONTEXT.md`
   section 7's runtime-flow steps 3 and 6, which describe them). Pure move.
   Done when: every arm of `on_event` is one call.
+
+- [x] **B24. Split `App::on_space_event`.** `app/pointer.rs`
+  `on_space_event` is about 135 lines: a preamble (the surface still exists,
+  commit a rename, act like a desktop click) and a `match` over
+  `SpaceEvent` whose arms run up to 25 lines.
+  - Move the preamble into `fn prepare_space_event(&mut self, ui, surface,
+    &event) -> bool` (false means ignore), and each arm longer than about
+    five lines into a named method in the module that owns it (`pointer.rs`
+    for mouse arms; the drop arms call into `files.rs`, where the logic
+    already lives).
+  - Pure move: no behavior change, no new `pub(super)` beyond what the moved
+    methods need. Done when: `on_space_event` is under about 50 lines.
