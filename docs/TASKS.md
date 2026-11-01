@@ -14,7 +14,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
-- section S: S5 and S9-S12 need a screen or
+- section S: S9-S12 need a screen or
   a reviewer.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
@@ -316,7 +316,7 @@ and B33 and B36 change behavior on purpose, as each says.
   window opens, switches scopes and pages, and previews as before.
 
 - [ ] **B37. Refresh a big lens off the UI thread (core, platform,
-  app).** The split below was decided by the maintainer, 2026-10-29.
+  app).** The split below was decided by the maintainer, 2026-10-29, and amended 2026-10-31.
   - Why: `Command::SyncLens` filters, reconciles, sorts, and lays out
     every entry on the UI thread. On 50,000 entries in a release build it
     took 44-46 ms with no filters and 62-65 ms with 32 typical filter
@@ -325,15 +325,31 @@ and B33 and B36 change behavior on purpose, as each says.
     `command/lens_ops.rs`). The Performance rule in section W allows 8 ms.
     Accepted for W34 by the maintainer on that date, with this task to
     follow.
-  - Design: filtering and sorting a listing are pure functions in
-    `deskspace-core`. The platform's watch worker, which already lists
-    the folder off the UI thread, calls them with the view's rules,
-    passed in with the watch (as W25 passes the store), so `SyncLens`
-    only reconciles ids and places items. A filter or sort change sends
-    the new rules to the worker, which re-filters and re-sorts there,
-    not on the UI thread.
+  - Measured again, 2026-10-31: those timings used names already in sorted
+    order. In NTFS-like order `sort_items` alone takes about 330 ms on 50,000
+    items, against 24 ms sorted, and the whole `SyncLens` 430-490 ms on a
+    scattered listing. Moving only the filter and the sort cannot reach 8 ms:
+    reconciling ids by path costs about 38 ms (build the map 20, look up 12,
+    drop it 6), and `rewritten_paths` (B38) 21 ms. Feed the timing test
+    entries in listing order.
+  - Design (amended by the maintainer, 2026-10-31): the watch worker, which
+    already lists the folder off the UI thread, builds the finished item list.
+    It filters, sorts, reconciles ids, and finds the rewritten paths with
+    pure functions from `deskspace-core`, using the view's rules passed in
+    with the watch (as W25 passes the store). The UI thread only swaps the
+    list in, and the old list is dropped off it. A filter or sort change sends
+    the new rules to the worker, which redoes the work there.
+  - To settle while building, and ask if a choice changes this design:
+    - Ids. `Desktop` hands them out and they are never reused (D11), so the
+      worker needs a block of reserved ids and its own map from path to id.
+    - A list built under old rules, or before an undo restored the lens, must
+      not be swapped in. Tag each list with what it was built from.
+    - `App::filtered_out` needs to know the listing was not empty, and
+      `refilter_lens`'s copy of the listing moves to the worker.
+    - `App::sync_grouping` also walks every item on the UI thread for a
+      grouped lens. Measure it, and move it with the rest if it is over budget.
   - Measure with the timing test above before and after; record both.
-  - Done when: `SyncLens` on 50,000 entries stays under 8 ms on the UI
+  - Done when: swapping in a 50,000-entry list stays under 8 ms on the UI
     thread with 32 patterns, and a lens of that size refreshes without a
     visible hitch (**[needs human]**).
 
@@ -1630,11 +1646,9 @@ the ROADMAP decision ids (`D1`-`D9`).
   repository and build). Add their GitHub Actions integration to
   `release.yml`: sign `deskspace.exe` before both the zip and the installer,
   and the installer through cargo-packager's `windows.signCommand` (a shell
-  command with `%1` for the path); credentials as Actions secrets. Sign
-  before turning on the update feed (which waits for the
-  `DESKSPACE_MINISIGN_KEY` secret and `UPDATE_PUBKEY` in
-  `deskspace-update/src/lib.rs`), because unsigned updates trigger
-  SmartScreen on every version.
+  command with `%1` for the path); credentials as Actions secrets. The
+  update feed does not wait for this (D6, amended 2026-10-31), so until it
+  lands unsigned updates trigger SmartScreen on every version.
 - **R11. Windows 11 top-level context menu (ROADMAP M8 item 4).** Needs R10;
   M2 may make it unnecessary.
 - **R12. Release dry run on clean machines (maintainer).** Do it before the
