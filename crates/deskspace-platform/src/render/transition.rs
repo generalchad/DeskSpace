@@ -209,7 +209,7 @@ impl TransitionFrame {
     /// far as the space has faded, or as far as it has gone. A clipped one
     /// casts none: a shadow of a new size reaches the screen a frame after
     /// its window, and it is hollow, so a space crossing the edge left an
-    /// empty outlined box behind it (seen 2026-10-31).
+    /// empty outlined box behind it.
     pub fn shadow_strength(&self) -> f32 {
         if self.clipped {
             0.0
