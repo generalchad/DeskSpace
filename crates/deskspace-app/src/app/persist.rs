@@ -108,7 +108,7 @@ impl App {
         // and stay writable (ROADMAP D14).
         self.restore_config_writable();
         self.flush_save_on_close(ui);
-        self.remove_desktop_show_entry();
+        self.remove_desktop_verbs();
     }
 
     /// Applies `command`, then, when it applied, repaints what it changed

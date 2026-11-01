@@ -14,7 +14,7 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
 - section B (code health);
-- section S (S9-S12), C9, C10, and K8, without waiting for their checks;
+- section S (S9-S12), C10, and K8, without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
 
@@ -279,32 +279,6 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
     per-space looks. Keep `Preset` forward-compatible (`#[serde(default)]`).
     It grows with the remaining Explorer item settings (hidden/protected
     files once F-22 exists).
-
-- [ ] **C9. Spaces entries on the desktop background menu (F-52).**
-  The entries below were approved by the maintainer, 2026-10-29. Today `win32/desktop_entry.rs` writes only "Show DeskSpace spaces", while
-  spaces are hidden (`App::sync_desktop_show_entry`).
-  - Platform, `win32/desktop_entry.rs`: replace
-    `set_desktop_show_entry(enabled, label, command, icon)` with
-    `set_desktop_verbs(verbs: &[DesktopVerb])`, where `DesktopVerb { key,
-    label, command, icon }` are `&'static str` and each `key` is a child of
-    `DesktopBackground\Shell` under a common `DeskSpace` prefix. Delete each
-    known key (`RegDeleteTreeW`), then write them; keep the `create` /
-    `set_string` helpers.
-  - Each verb re-launches the executable with a flag the running instance
-    handles, as `--show` does: `--settings` exists; add `--new-space` (a
-    `cli.rs` field; `bootstrap.rs` posts a new `controller::NEW_SPACE`, the
-    next free `WM_APP` id, and exits; the controller raises an event the app
-    handles by creating a space on the pointer's monitor).
-  - App, `app/visibility.rs`: `App::sync_desktop_verbs` writes "New space",
-    "DeskSpace Settings", and, only while hidden, "Show DeskSpace spaces";
-    `remove_desktop_show_entry` becomes `remove_desktop_verbs`. Call it on
-    `Started` and on every visibility change.
-  - Docs: `CONTEXT.md` sections 6 (the `WM_APP` table) and 8 (CLI flags), and
-    the `ROADMAP.md` F-52 row.
-  - Done when: CI is green (registry writes stay behind `cfg(test)`) and the
-    flag/event round trip is unit-tested. **[needs human]** check: right-click
-    the desktop and use "New space" and "DeskSpace Settings"; the entries are
-    gone after a clean exit.
 
 - [ ] **C10. Theme files: save, load, and share a look (F-58).**
   Distinct from C6: C6 is built-in named *item* presets; C10 is a file
@@ -1683,6 +1657,7 @@ for a machine that has it.
 | W7 (F-07) | Create a lens with "New lens…" from the space menu, the tray menu, and the desktop layer's menu (takeover on): each asks for a folder and opens a lens titled with the folder's name beside the top row of spaces, filled within a moment. Picking DeskSpace's storage folder shows a message and creates nothing. Cancelling creates nothing. |
 | New space placement (D10) | With a few spaces in a row at the top of a monitor, New space from the space menu, the tray, the desktop menu, and the hotkey each opens to the right of the row, its top in line, with the same gutter as the others; with the row full to the screen edge it goes to the next row or under all of them; it never covers another space; on a second monitor it opens on the monitor of the click or the pointer; on an empty monitor it opens near the top-left corner; on a 150 % monitor the gutter looks the same. |
 | Desktop menu (F-14) | With takeover on, right-click an empty spot of the desktop: New space, DeskSpace settings…, and Hide/Show spaces sit above Explorer's desktop menu; each DeskSpace entry works; View, Sort by, Refresh, New › Text Document, Paste, Display settings, and Personalize work, and the layer shows the result; the Menu key and Shift+F10 with nothing selected open the same menu; a right-click on a loose icon still shows its item menu, and on a space the space menu. Run elevated once too: the menu still shows New, Display settings, and Personalize below the DeskSpace entries, with masked icons and no separator dangling under Hide spaces; with `-Verbosity 1` any fallback logs a warning naming the step that failed. |
+| C9 (F-52) | With the app running (not elevated), right-click an empty spot of the desktop: "New space" and "DeskSpace Settings" sit above Explorer's entries. "New space" opens a space on the pointer's monitor; "DeskSpace Settings" opens the running instance's window instead of starting a second copy. With the spaces hidden, "Show DeskSpace spaces" appears, and hiding/showing updates the menu. After a clean exit all three are gone. |
 | Menu at the click | With takeover on and "Auto arrange" off, right-click an empty spot far from other icons: Paste (after copying a file) and New › Text Document each put the new icon at the click, not in the next free slot; a space's item menu commands (Open, Properties, Delete) work as before. If Explorer ignores the point, record it here. |
 | New on the desktop | With takeover on, right-click an empty spot of the desktop: New › Folder, and New › Text Document with extensions shown and hidden, each make the item and open DeskSpace's rename box on it, with "New folder" (or the base name) selected; typing a name and Enter names it; Esc keeps "New folder"; a second New › Folder gives "New folder (2)" its own box. Paste and View › Refresh open no box. With takeover off (`--layer` only), Explorer's own box shows, as before. |
 | Layer rename | With takeover on, a loose desktop icon renames like a space item: F2, a slow second click, and "Rename" on its right-click menu each open the rename box on the icon (the base name selected when extensions show); Enter renames the file, which stays selected and in place; Esc and a click elsewhere behave as in a space; Ctrl+Z in Explorer undoes it. |

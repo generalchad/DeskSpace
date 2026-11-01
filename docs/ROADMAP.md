@@ -834,10 +834,10 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 **Done:** M0 (foundations), M1 (renderer and Windows 11 look), and M4
 (lenses, phases 0-5).
 
-**In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
-F-52, and entries that wait on later milestones or design), and M5's space
-icons (the title icon and the download consent are built; the picker may run
-alongside the human test compendium).
+**In progress:** M2 (only the stored-file watch remains), M3 (entries that
+wait on later milestones or design), and M5's space icons (the title icon and
+the download consent are built; the picker may run alongside the human test
+compendium).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
@@ -920,17 +920,15 @@ Done (status in section 7; the full list is archived with M0's): the tray
 (F-16), the space menu (F-14, F-24, F-31), the settings window (F-17) with
 per-space looks (F-46), every `WindowSettings` field wired (F-18), dark mode
 for DeskSpace's own chrome (F-30), the zoom pop-up (F-57), the color picker
-(F-51), and the ways to add items without a drag (F-53..F-55).
+(F-51), the ways to add items without a drag (F-53..F-55), and the desktop
+background verbs (F-52).
 
 Remaining:
 1. Tray and menu entries:
    - pause takeover (unblocked now that the takeover exists);
    - new lens (M4);
    - snapshots (M6);
-   - an Arrange submenu;
-   - spaces entries on the desktop's own background menu - "New space",
-     "DeskSpace Settings", and the like - beside the existing "Show spaces"
-     verb, so the desktop is a control surface like the tray (F-52).
+   - an Arrange submenu.
 2. An Explorer "Send to" or right-click "Add to a DeskSpace space" entry
    (F-56). Deferred: it needs a hand-off to the running instance (the
    `--show` verb is the model) and, for the Windows 11 top-level menu, the
@@ -1317,7 +1315,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-49 | Tabs in spaces (per-space pagination, off by default) | M6 | Open (`TASKS.md` section J) |
 | F-50 | Accept non-file shell drags (Start menu / taskbar apps) as shortcuts | M2 | Done; check pending (`TASKS.md` V: L2; L1 findings) |
 | F-51 | Modern color picker (replace the dated system `ChooseColor` dialog) | M3 | Done, and redesigned after the mockup: acrylic, hue and opacity sliders, hex/RGB/HSL entry, copy and paste, an eyedropper, and recent colors; check pending (`TASKS.md` V: F14) |
-| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Open (`TASKS.md` C9); the "Show spaces" verb exists while spaces are hidden (M8 item 4 moves it into the Windows 11 top-level menu) |
+| F-52 | Spaces entries on the desktop background context menu (New space, DeskSpace Settings, ...) | M3 | Done: New space, DeskSpace Settings, and Show spaces (only while hidden) on the desktop background menu, each handing off to the running instance; check pending (`TASKS.md` section V: C9). M8 item 4 may move them into the Windows 11 top-level menu |
 | F-53 | "New shortcut ▸": pick installed apps (Store apps included), or describe a custom target, to add as shortcuts | M3 | Done: the space menu's submenu and a space's Settings page "Shortcuts" (a preview with an X per item and a + tile); checked on screen 2026-10-13 |
 | F-54 | "Paste shortcut" into a space, as in Explorer | M3 | Done; check pending (`TASKS.md` L5) |
 | F-55 | "Add files…": pick files to add to a space | M3 | Done; check pending (`TASKS.md` V: L6) |

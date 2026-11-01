@@ -54,7 +54,16 @@ pub struct Cli {
     )]
     pub show: bool,
 
-    #[arg(long, help = "Open the settings window on start")]
+    #[arg(
+        long,
+        help = "Open a new space: signal a running DeskSpace, or start with one"
+    )]
+    pub new_space: bool,
+
+    #[arg(
+        long,
+        help = "Open settings: signal a running DeskSpace, or start with them open"
+    )]
     pub settings: bool,
 
     #[arg(long, help = "Do not populate spaces from the desktop folder")]

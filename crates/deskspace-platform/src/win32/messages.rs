@@ -57,13 +57,21 @@ pub(crate) const FRAME: u32 = WM_APP + 15;
 /// The icon worker loaded icons for `IconCache::take_loaded` to collect.
 pub(crate) const ICONS_LOADED: u32 = WM_APP + 16;
 
+/// Posted by a second launch to ask this instance for a new space
+/// (`--new-space`).
+pub(crate) const NEW_SPACE: u32 = WM_APP + 17;
+
+/// Posted by a second launch to ask this instance to open Settings
+/// (`--settings`).
+pub(crate) const OPEN_SETTINGS: u32 = WM_APP + 18;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Every message above. A new one must be added here too, so the checks
     /// below cover it.
-    const ALL: [u32; 16] = [
+    const ALL: [u32; 18] = [
         TRAY_CALLBACK,
         OUTSIDE_PROBE,
         EDIT_KEY,
@@ -80,6 +88,8 @@ mod tests {
         FOLDER_CHANGE,
         FRAME,
         ICONS_LOADED,
+        NEW_SPACE,
+        OPEN_SETTINGS,
     ];
 
     #[test]

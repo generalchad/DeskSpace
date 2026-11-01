@@ -33,7 +33,9 @@ pub use win32::debug_info::{
     HookState, MonitorRow, ProcessStats, TaskbarRow, WindowRow, foreground_window, monitors,
     process_stats,
 };
-pub use win32::desktop_entry::{set_desktop_show_entry, signal_show_spaces};
+pub use win32::desktop_entry::{
+    DesktopVerb, set_desktop_verbs, signal_new_space, signal_open_settings, signal_show_spaces,
+};
 pub use win32::desktop_icons::{
     hide as hide_desktop_icons, rehide_if_active as rehide_desktop_icons,
     restore as restore_desktop_icons, take_explorer_rename,
