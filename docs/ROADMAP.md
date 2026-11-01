@@ -836,14 +836,15 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 
 **In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
 F-52, and entries that wait on later milestones or design), and M5's space
-icons (the title icon and the download consent are built; the picker follows
-v0.3.0).
+icons (the title icon and the download consent are built; the picker may run
+alongside the human test compendium).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
 **Next, in order** (decided 2026-10-31, maintainer: performance first, then
 the release path; amended the same day: the icon picker moves after v0.3.0,
-and the update feed no longer waits for signing):
+and the update feed no longer waits for signing; amended 2026-11-01: human
+checks collect in `TASKS.md` section V and no longer block work):
 
 1. **[done] Lens performance** (`TASKS.md` B37, archived): a big lens's list
    is built off the UI thread, and swapping in 50,000 items takes about 0.3 ms.
@@ -851,13 +852,14 @@ and the update feed no longer waits for signing):
    (`RELEASING.md`), then the "Publish icon set" workflow (S5). The key turns
    on the update feed (D6), and the set makes the automatic title icons of
    new spaces work, which a keyed build otherwise offers and fails to fetch.
-3. **On-screen verification pass** (`TASKS.md` section V, R7), lens rows
-   first, starting with the checks a script can make (`TASKS.md` section O).
-   Confirm the built-but-unchecked behaviors before more work builds on them.
-   L1's findings (`TASKS.md` section L) can be recorded in the same pass.
+3. **Human test compendium** (`TASKS.md` section V, R7), lens rows first,
+   starting with the checks a script can make (`TASKS.md` section O). Work
+   continues while rows await a person; a release still waits for the rows it
+   covers. L1's findings (`TASKS.md` section L) join the compendium.
 4. **Release dry run on clean machines** (R12), then **v0.3.0**.
-5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which needs a
-   screen, and **code signing** (R10), when SignPath approves it.
+5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which may run
+   alongside the compendium, and **code signing** (R10), when SignPath
+   approves it.
 6. **Animations beyond the effects that landed** (M5 item 5, D12, D13;
    `TASKS.md` section T): Bounce is built and awaits its check (T19); Scroll
    and Magic lamp (T20-T21) are ready. The composition spike (T1) runs
@@ -1325,7 +1327,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-59 | Scripting verbs for the running instance (out-of-process extension point) | M7 | Open; needs design (`TASKS.md` R16) |
 | F-60 | Translation: the UI follows the Windows display language, with a Language override | M9 | Open; format decided in D20, the rest of the design is `TASKS.md` R18 |
 | F-61 | Debug window (`--debug`): live log console, test-space tools, diagnostics, and simulations | Tooling | Built; awaiting on-screen check (`TASKS.md` section V, X4-X20 and extras) |
-| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S8, S13, S14); the picker follows v0.3.0 (S9-S12), decided in D16 |
+| F-62 | Space icons: an icon beside the title, matched from the space's name, changeable in the rename box and the space's settings | M5 | Partial: the model, the icon-set library, the cache, the signed download, the title icon, and the download consent are built (S1-S8, S13, S14); the picker and the settings icons are next (S9-S12), decided in D16, with their checks in `TASKS.md` section V |
 | F-63 | Details columns: choose, resize, reorder, Date created | M4 | Done; check pending (`TASKS.md` V: W30, W31, W32); decided in D18 |
 | F-64 | Browse into subfolders inside a lens | M4 | Done; check pending (`TASKS.md` V: W42, W43); decided in D18 |
 | F-65 | Group by, as Explorer (every space) | M4 | Done; check pending (`TASKS.md` V: W37, W38); decided in D18 |
