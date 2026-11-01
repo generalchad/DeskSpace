@@ -25,6 +25,9 @@ impl Placement {
     }
 }
 
+// Process state: the wallpaper `WorkerW` the enumeration last found. An
+// `EnumWindows` callback gets no context pointer; `wallpaper_worker` resets it
+// before the walk and reads the result after.
 static FOUND_WORKER: AtomicIsize = AtomicIsize::new(0);
 
 pub fn find_host(placement: Placement) -> Option<HWND> {

@@ -36,7 +36,13 @@ pub(crate) struct CatalogApp {
     pub icon: Option<Icon>,
 }
 
+// Process state: the installed apps, once a background listing finishes. The
+// listing runs off the UI thread and the picker reads it from here, so it
+// cannot be passed; the worker replaces it and nothing clears it.
 static CATALOG: Mutex<Option<Arc<Vec<CatalogApp>>>> = Mutex::new(None);
+// Process state: whether a background listing is already running, so a second
+// request does nothing. `refresh_in_background` sets it and its worker clears
+// it, including when the thread cannot be spawned.
 static REFRESHING: AtomicBool = AtomicBool::new(false);
 
 /// The cached apps, if a listing has finished.

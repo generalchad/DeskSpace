@@ -21,8 +21,16 @@ use windows::core::BOOL;
 /// Stays under the system's ~5 s `CTRL_CLOSE_EVENT` deadline.
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(4500);
 
+// Process state: the controller window the console handler posts `WM_CLOSE`
+// to. The handler runs on a system thread with no context, so it cannot be
+// passed one. `install` sets it and `message_loop_finished` clears it.
 static TARGET: AtomicIsize = AtomicIsize::new(0);
+// Process state: whether the message loop has ended, for the handler's bounded
+// wait. The handler gets no context to wait on otherwise. Set by
+// `message_loop_finished`; `install` resets it at startup.
 static LOOP_FINISHED: Mutex<bool> = Mutex::new(false);
+// Process state: wakes the handler's wait when `LOOP_FINISHED` changes. A bare
+// mutex cannot wake a handler that is not polled; only `notify_all` does.
 static LOOP_FINISHED_CHANGED: Condvar = Condvar::new();
 
 pub(crate) fn install(window: HWND) {

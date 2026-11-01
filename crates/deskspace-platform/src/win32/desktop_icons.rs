@@ -38,8 +38,9 @@ const WORKER_W: &str = "WorkerW";
 const DEF_VIEW: &str = "SHELLDLL_DefView";
 const LIST_VIEW: &str = "SysListView32";
 
-/// Whether DeskSpace is currently hiding Explorer's icon layer. Set by `hide`
-/// and cleared by `restore`, so a re-hide is skipped when takeover is off.
+// Process state: whether DeskSpace wants Explorer's icon layer hidden, so a
+// re-hide is skipped while takeover is off. `hide` sets it and `restore`
+// clears it; `rehide_if_active` only reads it.
 static HIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// Hides the desktop listview of every monitor. Idempotent.

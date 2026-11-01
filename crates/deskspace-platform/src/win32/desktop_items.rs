@@ -159,9 +159,9 @@ fn epoch_seconds(time: std::time::SystemTime) -> Option<u64> {
 }
 
 thread_local! {
-    /// Process state: `type_name`'s answer per extension, because Explorer's
-    /// type name is stable for the life of the process and `SHGetFileInfoW` is
-    /// far too slow to run once per visible Details row. Never cleared.
+    // Process state: `type_name`'s answer per extension, because Explorer's
+    // type name is stable for the process and `SHGetFileInfoW` is too slow per
+    // Details row. Filled lazily by `type_name`; never cleared.
     static TYPE_NAMES: RefCell<HashMap<String, Option<String>>> = RefCell::new(HashMap::new());
 }
 

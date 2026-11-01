@@ -34,6 +34,9 @@ pub(crate) const CLASS_NAME: PCWSTR = w!("DeskSpaceController");
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw
 const NIN_KEYSELECT: u32 = NIN_SELECT | 0x1;
 
+// Process state: the `TaskbarCreated` message id, assigned only by
+// `RegisterWindowMessageW` and needed from the window procedure, which gets no
+// context. `create` sets it; it never changes afterwards.
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 /// The registered `TaskbarCreated` message, which Explorer broadcasts when

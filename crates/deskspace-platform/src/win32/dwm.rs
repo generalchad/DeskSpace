@@ -105,6 +105,9 @@ type SetWindowCompositionAttribute =
     unsafe extern "system" fn(HWND, *mut WindowCompositionAttributeData) -> BOOL;
 
 fn set_window_composition_attribute() -> Option<SetWindowCompositionAttribute> {
+    // Process state: the optional `SetWindowCompositionAttribute` export,
+    // resolved once. user32 stays loaded and every space asks for it; first
+    // use fills it, and it is never cleared.
     static FUNCTION: OnceLock<Option<SetWindowCompositionAttribute>> = OnceLock::new();
     *FUNCTION.get_or_init(|| {
         // SAFETY: user32 is always loaded in a GUI process. The export, when

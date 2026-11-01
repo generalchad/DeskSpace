@@ -16,9 +16,9 @@ use crate::win32::{app_icon, messages};
 
 const TRAY_ID: u32 = 1;
 
-/// The icon loaded from the executable's resource, created once and destroyed
-/// in `remove`. Zero when not created yet or when the stock icon is in use
-/// (shared icons must not be passed to DestroyIcon).
+// Process state: the tray icon loaded from our resource (zero: none yet, or
+// the shared stock icon, which must not be destroyed), because the tray carries
+// no context. `tray_icon` sets it; `remove` clears and destroys it.
 static OWNED_ICON: AtomicIsize = AtomicIsize::new(0);
 
 fn tray_icon() -> HICON {

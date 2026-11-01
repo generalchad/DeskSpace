@@ -118,6 +118,9 @@ struct Runtime {
 }
 
 thread_local! {
+    // Process state: the single UI runtime, because window procedures get no
+    // context pointer. `run` sets it and takes it back on teardown after the
+    // message loop ends.
     static RUNTIME: RefCell<Option<Runtime>> = const { RefCell::new(None) };
 }
 
