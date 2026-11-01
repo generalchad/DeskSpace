@@ -619,12 +619,6 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 ### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
-- One window per space, created by `Ui::create_space`, with its state in a
-  `Box<SpaceState>` behind `GWLP_USERDATA`, freed in `WM_NCDESTROY`.
-  `set_style`, `set_rect`, and `set_scene` return early when the value is
-  unchanged (the style is kept in the state, the rect read back from the
-  window, the scene compared with the stored one), so restyling every space
-  on a settings edit only touches the ones that changed.
 - **The desktop layer** (`Ui::create_desktop_layer`,
   `set_desktop_layer_rect` / `_scene`, `destroy_desktop_layer`) reuses this
   window with a `chrome: false` style. It spans the
@@ -659,132 +653,12 @@ one arm in `App::on_event`, whose match is exhaustive.
     nothing on the layer. A drop on the layer opens a new space at the drop
     point and drops into it (`App::drop_onto`; ROADMAP D7, amended
     2026-10-17); a drop that adds nothing closes that space again.
-- **Animations** (ROADMAP D12; `win32/space_animation.rs`): a window keeps
-  its running `Animation` in its `SpaceState`, and while it runs gets a
-  `messages::FRAME` after every DWM composition, so one per display
-  refresh (`win32/frame_clock.rs`: a thread waiting on `DwmFlush` that
-  lives while any window animates). A 15 ms `WM_TIMER` drifted against
-  the refresh, so frames were dropped or doubled and every animation
-  stuttered, and it held a 144 Hz display to about 60 frames. Each
-  frame moves the window to the frame's rect (hidden while it is empty) and
-  repaints through the frame; the app is not called per frame. A request
-  that finds an animation heading the other way reverses it, `set_rect`
-  while animating moves its target instead of the window, and a window on
-  its way out refuses drops (`DragKind::None`). `Ui::set_spaces_visible`
-  and `Ui::fold_space` take the `Play` the app built (`app/animation.rs`);
-  the accent blur is there for the whole show and gone at the end of a hide,
-  while a composition space's follows each frame (D12, "The blur"). With Windows' "Transparency effects" off, Windows
-  draws the material flat, which left a dark box under a fading space, so
-  while a frame leaves the window see-through (`TransitionFrame::
-  covers_window` is false: the effects that fade or mask pixels) the material
-  steps aside, and comes back when the animation ends. The border DWM
-  draws steps aside then too, whatever the switch, since it cannot fade
-  either (`space_window::Backing`, `show_backing`). A fold is a Roll between the space's rect and its title
-  bar: `App::toggle_fold` runs `Effect::FoldSpace` before the repaint, whose
-  `set_rect` to the same rect then leaves the roll be, and a folding window
-  keeps drawing its unfolded scene (the folded one has no items) until the
-  fold ends (`Animation::defer`). Hiding a space mid-fold ends the fold
-  first. A new window is created hidden; `App::sync_windows` (the one place
-  space windows are made) pushes its scene, then `Ui::show_space` brings it
-  in with Startup's play, staggered at startup only (`sync_windows_at_startup`,
-  `startup_delays`). A window waiting its turn stays hidden, blur included.
-  Every show goes through `space_window::show`, which paints the window
-  once more about 100 ms later: the first frame presented right after a
-  show is sometimes lost, which left a space blank (blur only) until a
-  hover repainted it.
-  A deleted space's window leaves the runtime's spaces map at once, so it
-  is gone to every lookup, and waits in `Runtime::dying` while it plays
-  Delete's Out (a space still arriving turns around instead); its input no
-  longer reaches the app, it refuses drops, and it destroys itself at the
-  end, or with the rest at teardown.
-- **Top-level placement:** `WS_POPUP` + `WS_EX_TOOLWINDOW |
-  WS_EX_NOACTIVATE`, kept at `HWND_BOTTOM` through `WM_WINDOWPOSCHANGING`, and
-  never activated (`MA_NOACTIVATE`). A space ignores `WM_SYSCOMMAND` /
-  `SC_MINIMIZE`, so Show Desktop cannot minimize it: survival never depends on
-  the shell's undocumented tool-window exclusion, and the accent blur is never
-  torn down. `dwm::apply_style` extends the frame over the client area, sets
-  dark mode, corner preference, and border color, and turns on the blur with
-  the undocumented accent policy (`SetWindowCompositionAttribute`,
-  `ACCENT_ENABLE_ACRYLICBLURBEHIND` / `ACCENT_ENABLE_BLURBEHIND`). Clear uses
-  a fully transparent `ACCENT_ENABLE_TRANSPARENTGRADIENT`, because disabling
-  the accent after a blur turned the space black until it was recreated. The
-  documented `DWMWA_SYSTEMBACKDROP_TYPE` was tried first and does not work:
-  system backdrops render only on active windows.
-- **Composition** (`win32/composition.rs`, ROADMAP D12, TASKS T12): on
-  Windows 11 a top-level space is made with `WS_EX_NOREDIRECTIONBITMAP`
-  and shows a visual tree instead of the accent blur: a root clipped to the
-  space's corners, a sprite with the host backdrop brush (shown for Acrylic
-  and Blur; `DWMWA_USE_HOSTBACKDROPBRUSH`), and a sprite showing the drawing
-  surface the painter draws into. The rest of `dwm::apply_style` (corners,
-  dark mode) applies as before. `composition::start` decides once,
-  at startup, and logs it: Windows 10, "Transparency effects" off (the host
-  backdrop ignores the switch, T1), desktop-hosted or click-through spaces,
-  and a failure to start keep the accent blur, and the desktop layer always
-  does; a window whose tree cannot be built is made again with it. The
-  compositor and its devices are per thread, released in the teardown
-  before `OleUninitialize`. While a frame leaves the window see-through,
-  the painter also draws its opacity and mask into a second surface, the
-  blur's mask, and after that paint the backdrop sprite swaps its brush for
-  an effect brush that shows the backdrop through the mask's alpha
-  (`win32/alpha_mask.rs`, D2D's AlphaMask; T13). At rest it shows the plain
-  backdrop brush again, so an idle space costs no effect.
-- **Desktop-hosted placement** (`--placement desktop-*`, a visible CLI option
-  with no config setting since the "Keep spaces on the desktop" toggle was
-  removed): a `WS_CHILD` of Progman / WorkerW, painted opaque and rounded with
-  a (non-anti-aliased) window region. With no host found, `run` warns and
-  falls back to top-level.
-- **Corners, border, and shadow:** DWM rounds accent-blurred and Solid spaces with
-  square, 4 px, or 8 px corners (`SpaceStyle::dwm_draws_frame`), but never
-  a composition space (`dwm::Material::dwm_rounds`): DWM's corners bring
-  the Windows 11 shadow, which cannot fade, so it stayed behind every
-  animation as a ghost box and kept Roll from rolling thinner than twice
-  the radius. A composition space is clipped to its corners in its visual
-  tree, so DWM casts no shadow for it. Instead, each space that DWM casts
-  no shadow for (composition spaces, and accent spaces whose corners DWM
-  does not round; never Clear, desktop-hosted, or the desktop layer) gets a
-  layered, click-through shadow window (`win32/shadow_window.rs`,
-  `render/shadow.rs`; ROADMAP D15) kept directly below its space and above
-  the desktop layer. Its corner tile is cached and its frame is filled from
-  the tile and per-axis Gaussian profiles; it follows the space's rect
-  (Roll, Fly, Bounce, CRT) and fades with `TransitionFrame::shadow_strength`,
-  which is none while the work area clips Fly or Bounce. The painter rounds every composition
-  space, every Clear space, Solid spaces with other radii, chrome-less
-  windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
-  so the opaque fill does not show past the corners (`Frame` in
-  `space_window.rs`). The painter draws every space's border, never DWM
-  (`dwm::BorderOwner`), so the border goes through an animation's opacity
-  and mask with the rest of the space. Where DWM rounds, the border follows
-  DWM's corners, which DWM scales with the window's DPI; Windows 10 has no
-  DWM corners, so there the border is square. The zoom pop-up still takes
-  DWM's border. The blur fills the whole window rectangle
-  and ignores both the window region and the `DwmEnableBlurBehindWindow` blur
-  region (tried on build 26300), so Acrylic and Blur spaces use the nearest
-  DWM radius at or below the chosen one (`Theme::effective_corner_radius`).
-  Larger blurred radii need a composition backdrop (M5).
-- **Mouse input** arrives as `SpaceEvent`s in desktop coordinates;
-  `TrackMouseEvent` provides `MouseLeave`, and capture is held from button
-  down to the last button up. Ctrl and Shift come from the message's `MK_*`
-  flags (`space_window::modifiers`), never `GetKeyState`, which reports the
-  state as of the last keyboard message the thread read, and a space's thread
-  reads none (Ctrl+wheel did nothing until this was fixed on 2026-10-16).
-  `WM_MOUSEWHEEL` (screen coordinates, with the Ctrl state) becomes
-  `SpaceEvent::Wheel`; it reaches never-focused spaces through Windows'
-  "scroll inactive windows" setting (on by default). Ctrl+wheel calls
-  `App::adjust_icon_size` (section 8 and ROADMAP D9 give the behavior; under
-  "Match Explorer's display" it sets the desktop's own size through
-  `set_desktop_icon_size`, `IFolderView2::SetViewModeAndIconSize`).
-- **Resizing** is app-driven like moving: the app hit-tests the edges and sets
-  the pointer with `Ui::set_space_cursor(CursorShape)`, which the window
-  applies at once (`WM_SETCURSOR` is not sent while the mouse is captured)
-  and on `WM_SETCURSOR`. The border band is 6 px on edges and 12 px at
-  corners; locked or folded spaces cannot be resized. A press on a border
-  resizes only once the pointer leaves a half-cell dead zone around the grab
-  (`pointer::resize_edges_now`), so a click or a tiny drag never resizes, and
-  each axis joins separately: a corner grab that moves on one axis resizes
-  only that axis.
-- `--on-top` (hidden CLI flag) makes spaces topmost so their look can be
-  checked without uncovering the desktop. It never applies to the desktop
-  layer: a topmost window spanning every monitor would take every click.
+- Everything else about a space window lives where it happens: `dwm.rs` owns
+  the material, corners, and border; `composition.rs` the visual tree and
+  the startup choice; `space_animation.rs` and `frame_clock.rs` the frames;
+  `space_window.rs` the backing, resizing, and mouse modifiers; and
+  `shadow_window.rs` / `render/shadow.rs` the shadow. ROADMAP D12 and D15
+  give the decisions.
 
 ### Drops (`win32/drop_target.rs`)
 

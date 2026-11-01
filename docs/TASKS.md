@@ -13,7 +13,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
-- Q3-Q6;
 - section S: S9-S12 need a screen or
   a reviewer.
 
@@ -1480,8 +1479,6 @@ Rules for every Q task:
    before, and `rg -n "<a distinctive phrase from each moved sentence>"
    crates` finds it in the code.
 
-- [ ] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
-  the desktop-layer and `Surface` paragraph (bucket c).
 - [ ] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
   `README.md` "Controls" describe the same controls, one for contributors
   and one for users. Decided by the maintainer, 2026-10-29: README keeps
