@@ -1129,7 +1129,7 @@ ash, and looks the same at every DPI. One commit each, in order.
     - `pub enum Curve { Smooth, Kindle, Bounce }`, with a `///` doc on each,
       and `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's
       `smoothstep`; move it and its comment from `render/math.rs` here.
-      `Bounce` is T19's `bounce_ease`; move it here too. `Kindle` is
+      `Bounce` is `bounce_ease` with its constants; move them here too. `Kindle` is
       `1 - (1 - u)²`, where `u` is how much of the space is shown. An out
       (u from 1 to 0) starts slowly and ends fast; an in starts fast and
       settles.
@@ -1137,18 +1137,19 @@ ash, and looks the same at every DPI. One commit each, in order.
       `pub const PACE_NORMAL: Pace` (100, `Smooth`), `pub const
       PACE_STRETCH_RANGE: (u16, u16) = (50, 300)`, and `pub fn
       stretch(self, duration: Duration) -> Duration`.
-    - `EffectSpec` gains `pace: Pace`, and `effect()` takes it as a fourth
-      argument. Every row gets `PACE_NORMAL` except Burn, which gets
+    - `EffectSpec` gains `pace: Pace` in place of its `stretch_percent`, and
+      `effect()` takes it as a fourth argument. Every row gets `PACE_NORMAL`
+      except Burn, which gets
       `Pace { stretch_percent: 200, curve: Curve::Kindle }`, and Bounce,
-      which gets `Pace { stretch_percent: 100, curve: Curve::Bounce }`.
+      which gets `Pace { stretch_percent: 200, curve: Curve::Bounce }`.
   - `render/transition.rs`: `Transition::frame` applies
     `self.play.effect.spec().pace.curve` in place of the `match` that
     chooses `bounce_ease` or `smoothstep`. Delete that match and both local
     curve functions.
-  - `deskspace-app/src/app/animation.rs`: `play_for` stretches the chosen
-    duration (`spec().pace.stretch`) before `tweak.slow`. The exit
-    stagger (`exit_delays`) already uses `play.duration`, so it then
-    allows for the stretch with no further change.
+  - `deskspace-app/src/app/animation.rs`: `play_for` already stretches the
+    chosen duration before `tweak.slow`; have it read
+    `spec().pace.stretch`. The exit stagger (`exit_delays`) uses
+    `play.duration`, so it allows for the stretch with no further change.
   - The settings page does not change: the Duration control still shows
     the chosen time.
   - Tests:
@@ -1803,7 +1804,7 @@ each id is in `archive/TASKS-done.md`.
 | T4 (D12) | Rechecked after the rail fix: "Animations" reads as a semibold header with its pages (Startup, Delete, Fold since T15) indented under it; the "Windows settings…" button's caption fits; Detail shows a plain number. Then the rest: nothing clipped at 100 % and 150 %; each effect greys the options it does not use, Delete's "Same as startup" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; the button opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
 | T8 (D12) | Each Startup effect, on hiding and showing (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn, Bounce), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows; checked at ¼× too (`--debug`, Animations → Speed), and with "Animate even when Windows' Animation effects is off" on, hiding and showing animate while Windows' switch is off (X17). |
-| T19 (D12) | Bounce on Startup (show, a new space, startup) and Delete from each edge, on Acrylic and Solid at 100 % and 150 %: it drops in, bounces about three times shrinking, and settles exactly in place; it never shows on a second monitor or over the taskbar. |
+| T19 (D12) | Bounce on Startup (show, a new space, startup) and Delete from each edge, on Acrylic and Solid at 100 % and 150 %: at 250 ms it plays for about half a second, drops in already moving, lands three times with two clearly shrinking rebounds, and settles exactly in place; it never shows on a second monitor or over the taskbar. Fly and Bounce: nothing flashes where the space was as it leaves, no outlined box shows as it crosses an edge, and the shadow is back once the whole space is on screen. |
 | T9 (D12) | Fold and unfold from the space menu and a title double-click on each backdrop: the body rolls up into the title bar with its items in place, and rolls down showing them; a second double-click mid-way turns it around; Fold set to None folds at once; moving a space right after folding it is not fought by the roll; hiding a space mid-fold hides it folded (or unfolded) and shows it the same way. |
 | T10 (D12) | Each Startup effect on a new space from the space menu, the tray, the hotkey, and a drop on the taken-over desktop: the space appears with it and no empty frame or early blur shows first; at startup with several spaces, "One after another" brings them in reading order at the set delay and "All at once" together; "Start with spaces hidden" shows nothing until shown; Fly from each edge and on a second monitor; hiding during the startup stagger hides every space, waiting ones included. |
 | T11 (D12) | Each Delete effect, and "Same as startup", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |
@@ -1957,4 +1958,6 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `win32/folder_watch.rs` `FolderWatch::unwatch`: a finished list still waiting in the slot is freed on the UI thread when its watch stops. Rare, and at most about 5 ms. Found in B37.
 - `win32/icons.rs` `load_folder_icon`, through `IconCache::folder_icon`: a lens's title icon still loads on the UI thread while its scene is built, so a lens on a slow folder can stall every space there. Suggested: give it to the icon worker, drawing the generic folder icon first. Found in B33, 2026-10-31.
 - `app/settings_session.rs` `space_preview`: the Shortcuts page loads an icon for every item of the space on the UI thread (`icon_now`), so opening it on a big lens stalls. Suggested: show only the visible items, or load them on the worker and update the preview. Found in B33, 2026-10-31.
+- `app/debug/mod.rs` `refresh_debug`: while the debug window is open, its 1 Hz refresh stalls every running animation on the UI thread, about 20-60 ms in a debug build (2026-10-31, measured frame by frame), so a preview's motion hitches once a second that a real play does not have. Suggested: skip the refresh while a space animates. Found while tuning Bounce, 2026-10-31.
+- `win32/space_animation.rs` `apply`: a composition surface of a new size reaches the screen a composition or two after `SetWindowPos`, so while Roll, Fly, or Bounce changes the window's size its content can trail its edge. Before Bounce was slowed, the first frame past the screen's edge showed a title-less box for one frame (captured 2026-10-31). Moving a whole-size window under a region instead would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which the app answers by reflowing the model. Found while tuning Bounce, 2026-10-31.
 - `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.

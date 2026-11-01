@@ -489,24 +489,41 @@ fn fly_rect(rect: Rect, work_area: Rect, side: Side, gone: f32) -> Rect {
     }
 }
 
-/// Robert Penner's easeOutBounce: a fall that lands and settles in three
-/// shrinking bounces. Four parabolic arcs, as on
-/// https://easings.net/#easeOutBounce.
+/// How much of the fall's distance its speed at the start covers: the space
+/// crosses the edge already moving, so an Out leaves the screen rather than
+/// hanging at its edge.
+const BOUNCE_ENTRY: f32 = 0.25;
+/// How much of its speed each landing keeps.
+const BOUNCE_KEPT: f32 = 1.0 / 3.0;
+/// How much of the play the first rebound lasts, per unit of the fall.
+const BOUNCE_REBOUND: f32 = BOUNCE_KEPT * (2.0 - BOUNCE_ENTRY) / (1.0 - BOUNCE_ENTRY);
+/// When the space lands: the end of the fall and of the first rebound. The
+/// second rebound lands at 1.
+const BOUNCE_LANDINGS: [f32; 2] = {
+    let fall = 1.0 / (1.0 + BOUNCE_REBOUND + BOUNCE_REBOUND * BOUNCE_KEPT);
+    [fall, fall * (1.0 + BOUNCE_REBOUND)]
+};
+/// The acceleration that carries the fall, which the rebounds share.
+const BOUNCE_GRAVITY: f32 = 2.0 * (1.0 - BOUNCE_ENTRY) / (BOUNCE_LANDINGS[0] * BOUNCE_LANDINGS[0]);
+
+/// A fall that lands and settles in two shrinking rebounds, one parabola
+/// each under one gravity. Penner's easeOutBounce (four arcs, a first rebound
+/// a quarter of the fall) left its last arcs a frame or two at the usual
+/// durations and read as jitter.
 fn bounce_ease(t: f32) -> f32 {
-    const N1: f32 = 7.5625;
-    const D1: f32 = 2.75;
-    if t < 1.0 / D1 {
-        N1 * t * t
-    } else if t < 2.0 / D1 {
-        let t = t - 1.5 / D1;
-        N1 * t * t + 0.75
-    } else if t < 2.5 / D1 {
-        let t = t - 2.25 / D1;
-        N1 * t * t + 0.9375
-    } else {
-        let t = t - 2.625 / D1;
-        N1 * t * t + 0.984375
+    let [fall, first] = BOUNCE_LANDINGS;
+    if t < fall {
+        let t = t / fall;
+        return BOUNCE_ENTRY * t + (1.0 - BOUNCE_ENTRY) * t * t;
     }
+    let (start, end) = if t < first {
+        (fall, first)
+    } else {
+        (first, 1.0)
+    };
+    let half = (end - start) / 2.0;
+    let from_peak = t - (start + half);
+    1.0 - BOUNCE_GRAVITY / 2.0 * (half * half - from_peak * from_peak)
 }
 
 /// Where the space's content starts: the offset of `content` (the rect the
@@ -518,7 +535,7 @@ fn offset_of(content: Rect, window: Rect) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deskspace_core::animation::EFFECTS;
+    use deskspace_core::animation::{DURATION_MS_DEFAULT, EFFECTS};
 
     /// Every effect, from the table, so a new one is tested without an edit
     /// here.
@@ -902,14 +919,47 @@ mod tests {
             let value = bounce_ease(t);
             assert!((0.0..=1.0).contains(&value), "at {t}: {value}");
         }
-        assert!(bounce_ease(0.5) < 1.0, "rebounds after the first landing");
-        // The branch boundaries are the landings; the task asks for three.
-        let landings = [1.0 / 2.75, 2.0 / 2.75, 2.5 / 2.75, 1.0];
+        let [fall, first] = BOUNCE_LANDINGS;
+        assert!(bounce_ease((fall + first) / 2.0) < 1.0, "rebounds");
+        assert!(bounce_ease((first + 1.0) / 2.0) < 1.0, "rebounds again");
+        let landings = [fall, first, 1.0];
         let touched = landings
             .iter()
             .filter(|&&t| (bounce_ease(t) - 1.0).abs() < 1e-5)
             .count();
-        assert!(touched >= 3, "touched 1 only {touched} times");
+        assert_eq!(touched, 3, "touched 1 only {touched} times");
+    }
+
+    #[test]
+    fn bounce_ease_moves_at_its_ends_and_every_landing_keeps_the_same_speed() {
+        // The slope of `bounce_ease` at `t`, measured just inside its arc.
+        let slope = |t: f32, sign: f32| (bounce_ease(t + sign * 1e-3) - bounce_ease(t)) / 1e-3;
+        assert!(slope(0.0, 1.0) > 0.2, "enters already moving");
+        let [fall, first] = BOUNCE_LANDINGS;
+        let (lands, leaves) = (slope(fall, -1.0), -slope(fall, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+        let (lands, leaves) = (slope(first, -1.0), -slope(first, 1.0));
+        assert!(
+            (leaves / lands + BOUNCE_KEPT).abs() < 0.02,
+            "{lands} {leaves}"
+        );
+    }
+
+    #[test]
+    fn every_bounce_is_long_enough_to_see_at_the_default_duration() {
+        // At 60 Hz, the slowest common refresh, a shorter arc shows as a
+        // twitch rather than a bounce.
+        const REFRESH_MS: f32 = 1000.0 / 60.0;
+        const FRAMES: f32 = 3.0;
+        let chosen = Duration::from_millis(DURATION_MS_DEFAULT.into());
+        let played = Effect::Bounce.spec().stretched(chosen).as_secs_f32() * 1000.0;
+        let [fall, first] = BOUNCE_LANDINGS;
+        for arc in [fall, first - fall, 1.0 - first] {
+            assert!(arc * played >= FRAMES * REFRESH_MS, "{arc} of {played} ms");
+        }
     }
 
     #[test]

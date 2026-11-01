@@ -168,9 +168,10 @@ fn exit_delays(
     staggered(ids, order, stagger)
 }
 
-/// The `Play` for `kind` going `way`: what the settings say, or nothing at
-/// all while Windows' "Animation effects" is off (`system_on`), unless the
-/// debug `tweak` ignores that switch; its speed stretches the duration.
+/// The `Play` for `kind` going `way`: what the settings say, at the pace the
+/// effect's row sets, or nothing at all while Windows' "Animation effects" is
+/// off (`system_on`), unless the debug `tweak` ignores that switch; its speed
+/// stretches the duration.
 fn play_for(
     animations: &Animations,
     system_on: bool,
@@ -182,10 +183,11 @@ fn play_for(
         return Play::instant(way);
     }
     let resolved = animations.resolve(kind);
+    let chosen = Duration::from_millis(resolved.duration_ms.into());
     Play {
         effect: resolved.effect,
         way,
-        duration: tweak.slow(Duration::from_millis(resolved.duration_ms.into())),
+        duration: tweak.slow(resolved.effect.spec().stretched(chosen)),
         delay: Duration::ZERO,
         detail: resolved.detail,
         edge: resolved.direction,
@@ -197,6 +199,19 @@ mod tests {
     use super::*;
     use crate::app::effect::Effect as AppEffect;
     use deskspace_core::animation::{Edge, Effect, EffectChoice};
+
+    #[test]
+    fn an_effects_row_stretches_the_chosen_duration() {
+        let normal = AnimationTweak::default();
+        let duration_of = |effect| {
+            let mut animations = Animations::default();
+            animations.startup_exit.effect = EffectChoice::Effect(effect);
+            animations.startup_exit.duration_ms = 250;
+            play_for(&animations, true, normal, Kind::Startup, Way::In).duration
+        };
+        assert_eq!(duration_of(Effect::Roll), Duration::from_millis(250));
+        assert_eq!(duration_of(Effect::Bounce), Duration::from_millis(500));
+    }
 
     #[test]
     fn the_settings_become_the_play() {
