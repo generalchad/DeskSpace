@@ -5099,3 +5099,17 @@ until I5-I6 all land, so no partial build hides the desktop.
     loaded path refreshes.
   - **[needs human]** check: a lens on a folder of a few thousand images
     scrolls without stalls, and its icons fill in.
+
+- [x] **B38. Check for rewritten files without comparing every pair (app).**
+  Found by review, 2026-10-31.
+  - Why: `App::take_listing` compared each listed entry with each of the
+    lens's items on the UI thread, and an unchanged file never ended the
+    search early. Every listing after a lens's first stalled every space: 95
+    ms at 1,000 files, 2.4 s at 5,000, and 9.7 s at 10,000 (release build,
+    2026-10-31). The timing test for B37 covers only `SyncLens`, so it did
+    not show.
+  - `rewritten_paths(items, entries)` in `app/lens.rs` indexes the items by
+    path once and looks each entry up. Pure, and tested on plain data.
+  - Done when: the scan is gone and the gates pass. On 50,000 entries it takes
+    21 ms, where the old loop scaled to about 248 s; that is still over the
+    Performance rule's 8 ms, and B37 moves the work off the UI thread.
