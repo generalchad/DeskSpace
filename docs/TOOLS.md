@@ -35,6 +35,10 @@ missing one with its helper (`cargo-deny-install`, `cargo-hack-install`,
 (`RELEASING.md`; `TASKS.md` R10-R13) also uses `gh`, `actionlint`, and
 `cargo-packager` (the NSIS installer, installed with `cargo install`).
 
+`.opencode/` holds optional role definitions for OpenCode (primary agents and
+subagents); its `README.md` says how to run and change them. They add no rules
+and nothing in the build depends on them.
+
 ## 2. Scripts
 
 `Get-Help ./scripts/<name>.ps1 -Full` is the reference for each script's
