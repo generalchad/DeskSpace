@@ -1486,8 +1486,6 @@ Rules for every Q task:
   (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
   `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
   `system.rs`, `info_tip.rs`, `hotkey.rs`).
-- [ ] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
-  `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).
 - [ ] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
   `README.md` "Controls" describe the same controls, one for contributors
   and one for users. Decided by the maintainer, 2026-10-29: README keeps

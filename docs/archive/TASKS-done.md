@@ -5304,3 +5304,6 @@ until I5-I6 all land, so no partial build hides the desktop.
 - [x] **Q5. "Drops" and "Drag out and the drag image"**
   (`win32/drop_target.rs`, `shell_items.rs`, `drag_image.rs`,
   `drag_ghost.rs`).
+
+- [x] **Q6. "Rendering" and "Controller"** (`render/`, `win32/controller.rs`,
+  `tray.rs`, `console.rs`, `outside_click.rs`, `desktop_entry.rs`).

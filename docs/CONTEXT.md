@@ -601,52 +601,21 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 ### Controller (`win32/controller.rs`, `win32/tray.rs`, `win32/console.rs`)
 
-- A hidden top-level window (not message-only, so it receives broadcasts).
-  It owns hotkeys (`WM_HOTKEY`), timers (`Ui::set_timer` / `clear_timer`, via
-  `WM_TIMER` to `Event::Timer`), the tray callback (`NOTIFYICON_VERSION_4`:
-  left click `TrayEvent::Activated`, right click `TrayEvent::MenuRequested`,
-  keyboard select (`NIN_KEYSELECT`) opens Settings), `TaskbarCreated` (re-adds
-  the icon after Explorer restarts), `WM_SETTINGCHANGE` "ImmersiveColorSet"
-  (`Event::SystemThemeChanged`), `WM_DWMCOLORIZATIONCOLORCHANGED`
-  (`Event::SystemColorChanged`, which restyles only when dark mode or the
-  accent really changed), and session end.
-- Outside clicks (`win32/outside_click.rs`): spaces are never activated, so a
-  `WH_MOUSE_LL` hook is the only way to see clicks on the desktop or other
-  apps. While the app asks for it (`Ui::watch_outside_clicks`: an item is
-  selected, a rename is active, or a surface is current), the hook posts each
-  button press to the controller, which raises
-  `Event::PointerDownOutside { on_desktop }` unless the press hit a space,
-  the desktop layer, or a popup menu (`is_surface_window`). Those handle
-  their own presses.
-- Graceful exit (ROADMAP D13): Exit and the update install call
-  `App::exit`, which hands `Ui::quit_after` each shown space's Startup Out
-  (reverse reading order, the stagger shrunk to fit `EXIT_LIMIT`). The
-  spaces play it; the last one to finish (`runtime::space_left`), or a
-  thread timer at the limit, posts the same `WM_CLOSE` as `Ui::quit`, so
-  the teardown, and the takeover restore after it, run only once the
-  spaces have left. A second Exit while leaving closes at once.
-- `Ui::quit`, console Ctrl+C or close (`console.rs` posts `WM_CLOSE` and waits
-  up to 4.5 s; meaningful only with a console attached, as in debug builds),
-  and `WM_ENDSESSION` all lead to exactly one `Event::CloseRequested`; then
-  the space and settings windows are destroyed, the tray icon removed, and
-  the loop ends.
-- Desktop verb (`win32/desktop_entry.rs`): while spaces are hidden, the app
-  writes a per-user `DesktopBackground\Shell` verb, "Show DeskSpace spaces",
-  that re-launches the executable with `--show`. On start, `--show` posts
-  `SHOW_SPACES` to the running instance's controller window (found by class)
-  and exits, or starts with the spaces shown when none is running. The verb is
-  removed when spaces are shown and on a clean exit.
-- The tray, settings-window, and debug-window icon is the `.ico` that
-  `deskspace-app`'s build script embeds (`winresource`, from
-  `assets/deskspace.ico`), loaded as resource 1 by `app_icon::load`. The tray
-  loads it at the small-icon size. Each window owns its own big and small
-  icons (`app_icon::WindowIcons`, at its DPI), because the taskbar and
-  Alt+Tab draw `ICON_BIG` and a small icon there left the windows without a
-  usable taskbar icon. They are set on the window's class too: the taskbar
-  asks the window with a timeout, and while startup keeps the UI thread busy
-  it falls back to the class icon. The debug window's copy carries a bug on an amber disc
-  (`Badge::Debug`, drawn by `render::d2d::debug_badge`), so it stands apart
-  from the settings window.
+- The controller is a hidden top-level window because a message-only window
+  would miss broadcasts such as `TaskbarCreated` (its module doc). Every
+  process-wide input source lands here; `outside_click.rs` explains why
+  outside presses need a hook at all, and `tray.rs` owns the icon.
+- Exit and the update install leave through one path (`App::exit` →
+  `Ui::quit_after`), so the teardown and the takeover restore wait for the
+  spaces' Startup Out. A second Exit, a console close, and `WM_ENDSESSION`
+  converge on one `CloseRequested`. `console.rs` bounds its wait because
+  Windows ends the process soon after a console close handler returns.
+- The desktop verb and the `--show` hand-off are one re-launch path
+  (`desktop_entry.rs`): a running instance is found by class and told to
+  show, else the new process starts shown.
+- The tray, settings, and debug windows take their icons from the embedded
+  resource (`app_icon`); each window owns its big and small sizes, and the
+  debug window's copy carries its badge.
 
 ### Space windows (`win32/space_window.rs`, `win32/dwm.rs`)
 
@@ -883,109 +852,22 @@ one arm in `App::on_event`, whose match is exhaustive.
 ### Rendering (`render/scene.rs`, `render/d2d/`)
 
 - `SpaceScene` and `SpaceStyle` are the contract between app and renderer.
-  `SpaceScene` carries everything a space draws: chrome, title, resolved
-  colors, item metrics, `item_layout`, and the visible `ItemVisual`s in
-  window-local coordinates. `SpaceStyle` carries the window-level attributes.
-  Both are documented field by field in `render/scene.rs`. A new visual is one
-  `SpaceScene` field, filled in
-  `deskspace-app/src/scene.rs` and drawn in `d2d/`; a `SpaceStyle` field is
-  for window-level attributes only (it re-applies DWM state).
-- `item_layout` tells the painter how a cell places its icon and label: the
-  grid centers the icon over a wrapped label below it; `Inline` (Small icons
-  and List) puts the check box, the icon, and one left-aligned ellipsized label
-  line in a row, all vertically centered. The check-box hit test takes the
-  same layout, so the painted box and the clickable box always agree.
-- The app scrolls by offsetting the rects `ViewLayout` gives, along the axis
-  the layout reports, and includes only the lines its `visible` range names;
-  the renderer clips items to the content area.
-  Scenes are pushed only on change, and the window stores a `PreparedScene`
-  with strings pre-encoded to UTF-16, so painting does not allocate.
-  `chrome: false` (the desktop layer) draws no title bar or border and fills
-  the window with items; the painter reads the scene's `chrome` for the title
-  and scroll thumb and the window's `Frame` reads the style's, so both are set
-  together, and `SpaceStyle::dwm_draws_frame` is then false.
-- `Icon` is an `Arc` of owned premultiplied-BGRA pixels with a never-reused
-  id. The main path decodes the `IShellItemImageFactory` HBITMAP through WIC
-  (`d2d::decode_bitmap`); the classic fallback and overlays decode an HICON
-  through WIC (`d2d::decode_icon`, which applies a legacy icon's AND mask) and
-  destroy it at once, so scenes never point at freed handles.
-- Icon-set glyphs (ROADMAP D16) become `Icon`s the same way. `render/glyph.rs`
-  wraps an Iconify body as an SVG document at the glyph's own viewBox, in the
-  title text's color: the root's `fill` plus a replacement of every
-  `currentColor` (Direct2D's SVG support has none), and the document's
-  `opacity` when the color is translucent. `d2d/glyph.rs::rasterize` draws it
-  with `ID2D1DeviceContext5::CreateSvgDocument` and `DrawSvgDocument` into a
-  target bitmap, copies that to a CPU-readable one, and returns an `Icon`. A
-  Windows without `ID2D1DeviceContext5` (10 before 1703) fails, so no icon
-  shows. `win32/glyphs.rs`, `GlyphCache`, keeps the results keyed by glyph,
-  pixel size, and color (256 entries, least-recently-used) and logs a failed
-  draw once per glyph at debug.
-- The title bar (`d2d/title.rs`) draws the scene's `TitleIcon` at its
-  window-local rect, a lens's folder icon or a space's glyph, then the title
-  text or rename box a gap after it, scaled with the bar, and the lock glyph.
-  Without an icon the text starts at `TITLE_INSET`, so a space without one
-  looks as it did.
-- `Painter` draws on a `Canvas` (`d2d/canvas.rs`; premultiplied alpha, 96
-  DPI so one DIP is one pixel) with a brush and a per-target bitmap cache
-  keyed by `Icon::id`, pruned to the current scene's icons on every scene.
-  The canvas is the window's own `ID2D1HwndRenderTarget` (`HwndCanvas`,
-  which the zoom pop-up uses too), or a composition space's drawing
-  surface (`SurfaceCanvas`), whose Direct2D context exists only during a
-  draw and sits at an offset in a shared atlas, so the painter draws
-  relative to the origin the canvas gives it. The factories and text
-  formats are shared per thread (`Graphics`, released in the runtime
-  teardown). A lost device (`D2DERR_RECREATE_TARGET`, or the Direct3D
-  device under a surface removed or reset) drops device resources and
-  invalidates the window, so the next paint recreates them; without that,
-  the lost frame left the window blank until a click repainted it. The
-  first surface to find its device lost gives the composition graphics
-  device a new one, and every space repaints (`runtime::invalidate_spaces`).
-- Text uses DirectWrite (Segoe UI Variable Text when installed; the lock glyph
-  from Segoe Fluent Icons or MDL2): grayscale antialiasing on translucent
-  surfaces and ClearType on opaque ones, ellipsis trimming, one or two wrapped
-  label lines at the configured size (formats cached per 10 % size step), and
-  a 1 px shadow when the scene asks (label shadow `Auto` below 25 % tint
-  alpha, or `On`).
-- Animations (ROADMAP D12): `render/transition.rs` is the pure frame math.
-  A `Transition` tracks one linear progress and a direction, and every
-  frame is a function of the effect's curve of that progress alone
-  (smoothstep but for Bounce's `bounce_ease`), so an Out is the In played
-  backwards and `reverse` continues from the very frame it is on. An effect's
-  `EFFECTS` row can stretch the chosen duration (`EffectSpec::stretched`),
-  which the app applies when it makes the `Play`.
-  A `TransitionFrame` gives the window rect (Roll, Fly, Bounce, and CRT
-  move or crop it; Fly and Bounce are clipped to the work area), where the
-  space's content sits in it, and the opacity, mask, and `Content` (how the
-  contents are drawn: whole, pixelated, or lit) the painter applies.
-  The cell effects keep their math pure, on a `render::math::Grid` of
-  cells covering the space, and the painter only uploads what it writes.
-  Dissolve is `render/dissolve.rs`: a fixed noise value per grain-sized
-  cell. Burn's paper is `render/burn.rs`: a field of smooth noise biased to
-  burn the bottom first, and per cell the stage at the current front (gone,
-  glowing, charred, scorched, whole), written into two smooth cell
-  bitmaps: the contents' opacity mask and the marks over it.
-  Its flames rise past the frame, where the space's own window would put
-  blur behind them, so they are drawn on an overlay (`win32/overlay.rs`: what
-  an effect draws beside the space's window, chosen per effect, made when the
-  effect starts, following the space if it moves, and dropped when it ends).
-  The flames' overlay is `win32/flame_overlay.rs`: a layered, click-through
-  window owned by the space window (so it stays above it and dies with it),
-  placed directly above it when made (`place_above_owner`: Windows puts a new
-  owned window at the top of the non-topmost band) and shown in that slot
-  again whenever it shows if the space moved (`space_window::window_above`).
-  `render/flames.rs` (pure) stands tongues on the burning edge and shades them
-  on the CPU into its DIB section each frame.
-- The zoom pop-up (F-57, `win32/zoom_bar.rs`) is a topmost, never-activated
-  `WS_POPUP` with the space material (`dwm::apply_style` from the global
-  look; a Clear backdrop becomes Acrylic and the tint is at least 160/255 so
-  the text stays readable). `ZoomBarPainter` (`d2d/zoom_bar.rs`) draws the
-  `ZoomBar` the app sends in 96-DPI units under a scale transform for the
-  monitor under the pointer: zoom out and in (Segoe Fluent glyphs), the
-  percentage, a divider, and Reset, with a hover fill and dimmed disabled
-  buttons. `Ui::show_zoom_bar` places it at the top center of that monitor's
-  work area; a click (press and release on the same button) raises
-  `Event::Zoom`. The app hides it after `Timer::ZoomBar` unless
-  `Ui::is_zoom_bar_hovered`.
+  `render/scene.rs` documents both field by field: a scene carries everything
+  a space draws, and a style only the window-level attributes. Scenes are
+  pushed only on change, and the window stores its `PreparedScene`, so a
+  repaint allocates nothing.
+- `Icon` is an owned bitmap shared by a never-reused id. `d2d/` holds the
+  painters, their per-target caches, and the shared Direct2D and DirectWrite
+  factories; canvas, text, glyph, and title-bar details belong to the module
+  that owns them. A lost device is replaced once and every space repaints
+  (`runtime::invalidate_spaces`).
+- Animations are pure frame math in `render/`; the window applies each frame,
+  and an effect that draws past the window gets an overlay
+  (`win32/overlay.rs`). An effect's row may stretch the chosen duration, which
+  the app applies when it makes the `Play`. `TASKS.md` section T has the
+  recipe.
+- The zoom pop-up is its own topmost, never-activated window using the space
+  material; `win32/zoom_bar.rs` and `render/zoom_bar.rs` own it.
 
 ### Native UI (`ui.rs`, `win32/menu.rs`, `win32/settings_window/`)
 
