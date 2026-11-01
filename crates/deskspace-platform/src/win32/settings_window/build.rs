@@ -5,6 +5,7 @@ use super::commands::show_page;
 use super::nav::{NavRow, entry_row, nav_rows};
 use super::update::{apply_enabled, apply_header};
 use super::*;
+use crate::win32::dialog::{self, ControlSpec};
 use crate::win32::system::message_logfont;
 use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
 
@@ -43,7 +44,6 @@ unsafe fn create_fonts(dpi: u32) -> Fonts {
 }
 
 struct Builder {
-    instance: HINSTANCE,
     dpi: u32,
     font: HFONT,
     heading_font: HFONT,
@@ -54,43 +54,9 @@ impl Builder {
         scaled(value, self.dpi)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    unsafe fn control(
-        &self,
-        parent: HWND,
-        class: PCWSTR,
-        text: &str,
-        style: u32,
-        ex_style: WINDOW_EX_STYLE,
-        bounds: (i32, i32, i32, i32),
-        id: usize,
-    ) -> Option<HWND> {
-        let text = wide(text);
+    unsafe fn control(&self, parent: HWND, spec: ControlSpec<'_>) -> Option<HWND> {
         // SAFETY: creating a child control of our own window.
-        unsafe {
-            let hwnd = CreateWindowExW(
-                ex_style,
-                class,
-                PCWSTR(text.as_ptr()),
-                WS_CHILD | WS_VISIBLE | WINDOW_STYLE(style),
-                bounds.0,
-                bounds.1,
-                bounds.2,
-                bounds.3,
-                Some(parent),
-                Some(HMENU(id as *mut core::ffi::c_void)),
-                Some(self.instance),
-                None,
-            )
-            .ok()?;
-            SendMessageW(
-                hwnd,
-                WM_SETFONT,
-                Some(WPARAM(self.font.0 as usize)),
-                Some(LPARAM(1)),
-            );
-            Some(hwnd)
-        }
+        unsafe { dialog::control(self.font, parent, spec) }
     }
 
     unsafe fn label(&self, parent: HWND, text: &str, bounds: (i32, i32, i32, i32)) -> Option<HWND> {
@@ -98,12 +64,14 @@ impl Builder {
         unsafe {
             self.control(
                 parent,
-                WC_STATICW,
-                text,
-                SS_NOPREFIX | SS_CENTERIMAGE,
-                WINDOW_EX_STYLE(0),
-                bounds,
-                0,
+                ControlSpec {
+                    class: WC_STATICW,
+                    text,
+                    style: SS_NOPREFIX | SS_CENTERIMAGE,
+                    ex_style: WINDOW_EX_STYLE(0),
+                    bounds,
+                    id: 0,
+                },
             )
         }
     }
@@ -179,12 +147,14 @@ impl Builder {
             labels.extend(unsafe {
                 self.control(
                     page,
-                    WC_STATICW,
-                    &mark.label,
-                    SS_NOPREFIX | align,
-                    WINDOW_EX_STYLE(0),
-                    (x, top, width, self.s(MARK_LABEL_HEIGHT)),
-                    0,
+                    ControlSpec {
+                        class: WC_STATICW,
+                        text: &mark.label,
+                        style: SS_NOPREFIX | align,
+                        ex_style: WINDOW_EX_STYLE(0),
+                        bounds: (x, top, width, self.s(MARK_LABEL_HEIGHT)),
+                        id: 0,
+                    },
                 )
             });
         }
@@ -264,12 +234,14 @@ impl Builder {
                     let text_height = self.text_height(page, &field.label, full);
                     controls.label = self.control(
                         page,
-                        WC_STATICW,
-                        &field.label,
-                        SS_NOPREFIX,
-                        WINDOW_EX_STYLE(0),
-                        (x, y, full, text_height),
-                        0,
+                        ControlSpec {
+                            class: WC_STATICW,
+                            text: &field.label,
+                            style: SS_NOPREFIX,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (x, y, full, text_height),
+                            id: 0,
+                        },
                     );
                     text_height + self.s(10)
                 }
@@ -278,12 +250,14 @@ impl Builder {
                     // A drop-down list's height includes the open list.
                     let combo = self.control(
                         page,
-                        WC_COMBOBOXW,
-                        "",
-                        CBS_DROPDOWNLIST as u32 | tab,
-                        WINDOW_EX_STYLE(0),
-                        (control_x, y, control_width, self.s(240)),
-                        id_main,
+                        ControlSpec {
+                            class: WC_COMBOBOXW,
+                            text: "",
+                            style: CBS_DROPDOWNLIST as u32 | tab,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (control_x, y, control_width, self.s(240)),
+                            id: id_main,
+                        },
                     );
                     if let Some(combo) = combo {
                         for option in options {
@@ -303,12 +277,14 @@ impl Builder {
                 FieldKind::Toggle { on } => {
                     let check = self.control(
                         page,
-                        WC_BUTTONW,
-                        &field.label,
-                        BS_AUTOCHECKBOX as u32 | tab,
-                        WINDOW_EX_STYLE(0),
-                        (x, y, full, row),
-                        id_main,
+                        ControlSpec {
+                            class: WC_BUTTONW,
+                            text: &field.label,
+                            style: BS_AUTOCHECKBOX as u32 | tab,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (x, y, full, row),
+                            id: id_main,
+                        },
                     );
                     if let Some(check) = check {
                         SendMessageW(check, BM_SETCHECK, Some(WPARAM(*on as usize)), None);
@@ -330,12 +306,14 @@ impl Builder {
                     let slider_x = control_x - self.s(6);
                     let slider = self.control(
                         page,
-                        TRACKBAR_CLASSW,
-                        "",
-                        TBS_HORZ | ticks | tab,
-                        WINDOW_EX_STYLE(0),
-                        (slider_x, y, control_width - value_width, row),
-                        id_main,
+                        ControlSpec {
+                            class: TRACKBAR_CLASSW,
+                            text: "",
+                            style: TBS_HORZ | ticks | tab,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (slider_x, y, control_width - value_width, row),
+                            id: id_main,
+                        },
                     );
                     if let Some(slider) = slider {
                         SendMessageW(
@@ -377,12 +355,17 @@ impl Builder {
                     if *editable {
                         controls.value_edit = self.control(
                             page,
-                            WC_EDITW,
-                            &value.to_string(),
-                            ES_RIGHT as u32 | ES_NUMBER as u32 | ES_AUTOHSCROLL as u32 | tab,
-                            WS_EX_CLIENTEDGE,
-                            (value_bounds.0, y + self.s(2), value_bounds.2, self.s(24)),
-                            id_secondary,
+                            ControlSpec {
+                                class: WC_EDITW,
+                                text: &value.to_string(),
+                                style: ES_RIGHT as u32
+                                    | ES_NUMBER as u32
+                                    | ES_AUTOHSCROLL as u32
+                                    | tab,
+                                ex_style: WS_EX_CLIENTEDGE,
+                                bounds: (value_bounds.0, y + self.s(2), value_bounds.2, self.s(24)),
+                                id: id_secondary,
+                            },
                         );
                     } else {
                         controls.value_text =
@@ -401,17 +384,19 @@ impl Builder {
                     // draws the color box and an eyedropper glyph.
                     let swatch = self.control(
                         page,
-                        WC_BUTTONW,
-                        "",
-                        BS_OWNERDRAW as u32 | tab,
-                        WINDOW_EX_STYLE(0),
-                        (
-                            control_x,
-                            y + (row - swatch_size) / 2,
-                            swatch_size,
-                            swatch_size,
-                        ),
-                        id_main,
+                        ControlSpec {
+                            class: WC_BUTTONW,
+                            text: "",
+                            style: BS_OWNERDRAW as u32 | tab,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (
+                                control_x,
+                                y + (row - swatch_size) / 2,
+                                swatch_size,
+                                swatch_size,
+                            ),
+                            id: id_main,
+                        },
                     );
                     controls.main = swatch;
                     controls.swatch = swatch;
@@ -430,12 +415,14 @@ impl Builder {
                     }
                     controls.main = self.control(
                         page,
-                        WC_EDITW,
-                        value,
-                        style,
-                        WS_EX_CLIENTEDGE,
-                        (control_x, y + self.s(2), control_width, self.s(24)),
-                        id_main,
+                        ControlSpec {
+                            class: WC_EDITW,
+                            text: value,
+                            style,
+                            ex_style: WS_EX_CLIENTEDGE,
+                            bounds: (control_x, y + self.s(2), control_width, self.s(24)),
+                            id: id_main,
+                        },
                     );
                     self.s(38)
                 }
@@ -448,12 +435,14 @@ impl Builder {
                     };
                     controls.main = self.control(
                         page,
-                        WC_BUTTONW,
-                        caption,
-                        BS_PUSHBUTTON as u32 | tab,
-                        WINDOW_EX_STYLE(0),
-                        (left, y, self.s(180), self.s(30)),
-                        id_main,
+                        ControlSpec {
+                            class: WC_BUTTONW,
+                            text: caption,
+                            style: BS_PUSHBUTTON as u32 | tab,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (left, y, self.s(180), self.s(30)),
+                            id: id_main,
+                        },
                     );
                     self.s(40)
                 }
@@ -462,12 +451,14 @@ impl Builder {
                     // window's state, found through the control id.
                     controls.main = self.control(
                         page,
-                        PREVIEW_CLASS,
-                        "",
-                        0,
-                        WINDOW_EX_STYLE(0),
-                        (x, y, full, self.s(super::preview::PREVIEW_HEIGHT)),
-                        id_main,
+                        ControlSpec {
+                            class: PREVIEW_CLASS,
+                            text: "",
+                            style: 0,
+                            ex_style: WINDOW_EX_STYLE(0),
+                            bounds: (x, y, full, self.s(super::preview::PREVIEW_HEIGHT)),
+                            id: id_main,
+                        },
                     );
                     self.s(super::preview::PREVIEW_HEIGHT + 10)
                 }
@@ -492,7 +483,6 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
 
         let fonts = create_fonts(dpi);
         let builder = Builder {
-            instance,
             dpi,
             font: fonts.body,
             heading_font: fonts.heading,
@@ -580,21 +570,25 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         }
         let header_button = builder.control(
             hwnd,
-            WC_BUTTONW,
-            "",
-            BS_OWNERDRAW as u32 | WS_TABSTOP.0,
-            WINDOW_EX_STYLE(0),
-            (button_x, margin, button_width, header_height),
-            ID_HEADER_BUTTON,
+            ControlSpec {
+                class: WC_BUTTONW,
+                text: "",
+                style: BS_OWNERDRAW as u32 | WS_TABSTOP.0,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (button_x, margin, button_width, header_height),
+                id: ID_HEADER_BUTTON,
+            },
         );
         let header_switch = builder.control(
             hwnd,
-            WC_BUTTONW,
-            "",
-            BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
-            WINDOW_EX_STYLE(0),
-            (switch_x, margin, switch_width, header_height),
-            ID_HEADER_SWITCH,
+            ControlSpec {
+                class: WC_BUTTONW,
+                text: "",
+                style: BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (switch_x, margin, switch_width, header_height),
+                id: ID_HEADER_SWITCH,
+            },
         );
         apply_header(header_title, header_switch, header_button, header);
 
@@ -632,12 +626,14 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
                 | WS_TABSTOP.0;
             let hwnd = builder.control(
                 hwnd,
-                WC_BUTTONW,
-                caption,
-                style,
-                WINDOW_EX_STYLE(0),
-                (x, button_y, button_width, button_height),
-                id,
+                ControlSpec {
+                    class: WC_BUTTONW,
+                    text: caption,
+                    style,
+                    ex_style: WINDOW_EX_STYLE(0),
+                    bounds: (x, button_y, button_width, button_height),
+                    id,
+                },
             );
             x += button_width + gap;
             hwnd
@@ -737,12 +733,16 @@ unsafe fn rail_list(
     unsafe {
         let list = builder.control(
             parent,
-            WC_LISTBOXW,
-            "",
-            (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32 | WS_VSCROLL.0 | WS_TABSTOP.0,
-            WINDOW_EX_STYLE(0),
-            bounds,
-            id,
+            ControlSpec {
+                class: WC_LISTBOXW,
+                text: "",
+                style: (LBS_OWNERDRAWFIXED | LBS_NOTIFY | LBS_HASSTRINGS) as u32
+                    | WS_VSCROLL.0
+                    | WS_TABSTOP.0,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds,
+                id,
+            },
         )?;
         SendMessageW(
             list,

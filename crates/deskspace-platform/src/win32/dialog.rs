@@ -188,32 +188,32 @@ pub(crate) unsafe fn show(dialog: HWND, dark: bool) {
     }
 }
 
-/// Creates a child control of `parent` with the dialog's font.
-#[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn control(
-    chrome: &DialogChrome,
-    parent: HWND,
-    class: PCWSTR,
-    text: &str,
-    style: u32,
-    ex_style: WINDOW_EX_STYLE,
-    bounds: (i32, i32, i32, i32),
-    id: usize,
-) -> Option<HWND> {
-    let text = wide(text);
+/// The parts of a child control that vary between callers.
+pub(crate) struct ControlSpec<'a> {
+    pub class: PCWSTR,
+    pub text: &'a str,
+    pub style: u32,
+    pub ex_style: WINDOW_EX_STYLE,
+    pub bounds: (i32, i32, i32, i32),
+    pub id: usize,
+}
+
+/// Creates a child control of `parent` with `font`.
+pub(crate) unsafe fn control(font: HFONT, parent: HWND, spec: ControlSpec<'_>) -> Option<HWND> {
+    let text = wide(spec.text);
     // SAFETY: creating a child of our own window; `text` outlives the call.
     unsafe {
         let hwnd = CreateWindowExW(
-            ex_style,
-            class,
+            spec.ex_style,
+            spec.class,
             PCWSTR(text.as_ptr()),
-            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(style),
-            bounds.0,
-            bounds.1,
-            bounds.2,
-            bounds.3,
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(spec.style),
+            spec.bounds.0,
+            spec.bounds.1,
+            spec.bounds.2,
+            spec.bounds.3,
             Some(parent),
-            Some(HMENU(id as *mut core::ffi::c_void)),
+            Some(HMENU(spec.id as *mut core::ffi::c_void)),
             instance(),
             None,
         )
@@ -221,7 +221,7 @@ pub(crate) unsafe fn control(
         SendMessageW(
             hwnd,
             WM_SETFONT,
-            Some(WPARAM(chrome.font.0 as usize)),
+            Some(WPARAM(font.0 as usize)),
             Some(LPARAM(1)),
         );
         Some(hwnd)

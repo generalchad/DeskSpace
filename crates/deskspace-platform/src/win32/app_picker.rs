@@ -36,7 +36,7 @@ use crate::error::PlatformError;
 use crate::input::ShellItem;
 use crate::render::Icon;
 use crate::win32::app_catalog;
-use crate::win32::dialog::{self, DialogChrome, ID_CANCEL, ID_OK, window_text};
+use crate::win32::dialog::{self, ControlSpec, DialogChrome, ID_CANCEL, ID_OK, window_text};
 use crate::win32::drag_image::dib;
 use crate::win32::icons::{resample, shell_item_icon};
 use crate::win32::settings_window::colorref;
@@ -175,14 +175,16 @@ unsafe fn build(window: HWND, state: &mut PickerState, client: (i32, i32)) {
     // SAFETY: every control is a child of our live window.
     unsafe {
         state.search = dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Edit"),
-            "",
-            ES_AUTOHSCROLL as u32 | tab,
-            WS_EX_CLIENTEDGE,
-            (margin, margin, width, s(26)),
-            ID_SEARCH,
+            ControlSpec {
+                class: w!("Edit"),
+                text: "",
+                style: ES_AUTOHSCROLL as u32 | tab,
+                ex_style: WS_EX_CLIENTEDGE,
+                bounds: (margin, margin, width, s(26)),
+                id: ID_SEARCH,
+            },
         );
         if let Some(search) = state.search {
             let cue = wide("Search apps");
@@ -194,45 +196,51 @@ unsafe fn build(window: HWND, state: &mut PickerState, client: (i32, i32)) {
             );
         }
         state.list = dialog::control(
-            chrome,
+            chrome.font,
             window,
-            WC_LISTVIEWW,
-            "",
-            LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS | LVS_SINGLESEL | tab,
-            WS_EX_CLIENTEDGE,
-            (margin, list_top, width, buttons_y - s(12) - list_top),
-            ID_LIST,
+            ControlSpec {
+                class: WC_LISTVIEWW,
+                text: "",
+                style: LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SHOWSELALWAYS | LVS_SINGLESEL | tab,
+                ex_style: WS_EX_CLIENTEDGE,
+                bounds: (margin, list_top, width, buttons_y - s(12) - list_top),
+                id: ID_LIST,
+            },
         );
         if let Some(list) = state.list {
             configure_list(list, state);
         }
         state.add = dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Button"),
-            &add_caption(0),
-            BS_DEFPUSHBUTTON as u32 | tab,
-            WINDOW_EX_STYLE(0),
-            (
-                client.0 - margin - 2 * button.0 - s(8),
-                buttons_y,
-                button.0,
-                button.1,
-            ),
-            ID_OK,
+            ControlSpec {
+                class: w!("Button"),
+                text: &add_caption(0),
+                style: BS_DEFPUSHBUTTON as u32 | tab,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (
+                    client.0 - margin - 2 * button.0 - s(8),
+                    buttons_y,
+                    button.0,
+                    button.1,
+                ),
+                id: ID_OK,
+            },
         );
         if let Some(add) = state.add {
             let _ = EnableWindow(add, false);
         }
         dialog::control(
-            chrome,
+            chrome.font,
             window,
-            w!("Button"),
-            "Cancel",
-            BS_PUSHBUTTON as u32 | tab,
-            WINDOW_EX_STYLE(0),
-            (client.0 - margin - button.0, buttons_y, button.0, button.1),
-            ID_CANCEL,
+            ControlSpec {
+                class: w!("Button"),
+                text: "Cancel",
+                style: BS_PUSHBUTTON as u32 | tab,
+                ex_style: WINDOW_EX_STYLE(0),
+                bounds: (client.0 - margin - button.0, buttons_y, button.0, button.1),
+                id: ID_CANCEL,
+            },
         );
     }
 }
