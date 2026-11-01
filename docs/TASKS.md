@@ -804,7 +804,7 @@ Rules for every S task:
   - `App::pick_space_icon(ui, id)` (in `space_icons.rs`): turn key capture
     off (`ui.capture_text_input(false)`) so the picker's search box gets
     keys. Build the request: every `ICON_SETS` row, with `need_icon_set`'s
-    state as each set's note ("Downloading the iconsΓÇª", "Icon downloads
+    state as each set's note ("Downloading the icons…", "Icon downloads
     are off. Turn them on in Settings > General.", or the failure). Then
     `ui.pick_icon`, then capture back on. A choice commits `SetSpaceIcon`
     at once (`self.commit`) and refreshes the space; the rename goes on,

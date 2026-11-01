@@ -97,10 +97,13 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `clipboard` | cut / copy / paste |
   | `menus` | space, item, and tray menus, `create_space` |
   | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, the glyph cache, and the download consent (D16) |
+  | `lens` | keeping folder watches in line with the model, swapping in a lens's list, browsing into subfolders |
+  | `undo` | `UndoStack`, recording an action, and undoing or redoing it (ROADMAP D11) |
+  | `animation` | turning the settings and Windows' switch into each window's `Play` (ROADMAP D12) |
+  | `settings_session` | the settings window's open, preview, Apply, and Cancel |
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
-  | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, and the glyph cache (D16) |
   | `debug` | the debug window's panel and actions, and the log console's feed (ROADMAP D14) |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
@@ -1474,9 +1477,9 @@ in `ui.rs`. What spans them:
   ROADMAP D3), so a picked file is relocated exactly like a dragged one.
   Cancelling adds nothing.
 - Tray icon: left-click (or keyboard select) opens Settings; right-click
-  offers Undo and Redo, Settings., Hide/Show spaces, New space, New lens.,
-  Check for updates. (or "Restart to update to X" once an automatic update is
-  downloaded), and Exit DeskSpace, and, with `--debug`, Debug.. A space
+  offers Undo and Redo, Settings…, Hide/Show spaces, New space, New lens…,
+  Check for updates… (or "Restart to update to X" once an automatic update is
+  downloaded), and Exit DeskSpace, and, with `--debug`, Debug…. A space
   created from the tray opens on the monitor of the pointer, and creating a
   space while spaces are hidden shows them.
 
@@ -1505,12 +1508,12 @@ in `ui.rs`. What spans them:
   | Layout | look | Icon size, Icon spacing, Edge padding, Fit to contents |
   | Colors | look | Use custom colors, Background tint, Text, Use Windows accent (the selection), Border color (Automatic, Windows accent, Custom), Custom border color, Border opacity, Selection box color, Show selection box border, Restore default / Match global appearance |
   | Advanced | look | Shortcut overlay size |
-  | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now |
+  | General | Global | Start with spaces hidden, Snap to grid, Snap resized spaces to whole columns and rows, Start DeskSpace when you sign in, Take over the desktop, Settings and menus (theme), Check for updates automatically, Install updates automatically, Check for updates now, Icon downloads |
   | New spaces | Global | Default title, width, height, Start new spaces locked, Icon, and the view and sort a new space starts with (affect only spaces created afterwards) |
   | Hotkeys | Global | Show or hide spaces (`Ctrl+Alt+D` by default), Create a new space (on the pointer's monitor), Open settings (both unbound by default) |
   | About | Global | Version, summary, license, configuration file path |
   | Shortcuts | space | A note, and a preview of the space: an X on each item (delete, after a confirmation) and a + tile (New shortcut) |
-  | Animations › one page per kind | Global | Built from `ANIMATION_PAGES` and the core tables (ROADMAP D12): the Windows note and "Open Windows animation settings…", Effect, Duration, and the options the kind offers, greyed when the effect does not use them; New space adds the startup order and delay. Everything is greyed while Windows' "Animation effects" is off, which `Event::SystemAnimationsChanged` follows live |
+  | Animations › one page per kind | Global | Built from `ANIMATION_PAGES` and the core tables (ROADMAP D12): the Windows note and "Open Windows animation settings…", Effect, Duration, and the options the kind offers, greyed when the effect does not use them; Startup adds the startup order and delay. Everything is greyed while Windows' "Animation effects" is off, which `Event::SystemAnimationsChanged` follows live |
 
 **Items**
 
@@ -1709,9 +1712,9 @@ section numbers stable.
   active layout's printable characters and navigation keys only; composition
   (Japanese, Chinese, ...) is deferred. An item rename goes through the shell,
   so a name clash shows Explorer's conflict prompt.
-- **Explorer display matching is broad but not total.** Explorer's view mode
-  (list/details) is not mapped (it waits for M4 phase 4), and only the
-  desktop's own options are read, so a check-box setting enabled in one
+- **Explorer display matching is broad but not total.** Only the desktop's own
+  options are read, and its view has only icon sizes to follow (F-40), so a
+  check-box setting enabled in one
   Explorer window is not reflected. Matching is part of the look, so a
   customized space can turn it off for itself.
 - **Selection is within one space.** A selection cannot span spaces, and
