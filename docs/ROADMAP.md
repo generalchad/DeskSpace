@@ -340,8 +340,8 @@ A native, lightweight, offline Windows desktop organizer that:
     differs from play to play; `TASKS.md` T24-T33). Black hole (the space swallowed by a hole that
     opens at its own center) is planned after composition (T14). It
     needs the composition path; on Windows 10 and the accent path it
-    plays Fade instead (amended 2026-10-29, maintainer). Also
-    planned (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
+    plays Fade instead (amended 2026-10-29, maintainer). Also in
+    the shared list (amended 2026-10-18, maintainer; `TASKS.md` T19-T21):
     - **Bounce:** the space drops in from beyond an edge of its monitor's
       work area (Automatic is the top), lands on its place, and settles in
       a few shrinking bounces; out, it plays that backwards. It moves the
@@ -369,11 +369,11 @@ A native, lightweight, offline Windows desktop organizer that:
   - *Controls:* each kind has the common ones: its effect and a duration
     (100 to 1000 ms). An effect adds only the options it uses: Detail (the
     block size, grain, or edge width) for Pixelate, Dissolve, and Burn, and
-    Direction (which edge; Automatic is the effect's own: the top for Roll
-    and Gradient, the nearest for Fly) for Roll, Gradient, and Fly. A control the
-    chosen effect does not use is greyed, so each page keeps its shape. The
-    controls live in a Global-only Animations group of pages, one per kind,
-    so no page grows too tall for a 1080-pixel display. Each effect sets
+    Direction (which edge; Automatic is the effect's own: the top for Roll,
+    Gradient, and Bounce, the nearest for Fly) for Roll, Gradient, Fly, and
+    Bounce. A control the chosen effect does not use is greyed, so each page
+    keeps its shape. The controls live in a Global-only Animations group of
+    pages, one per kind, so no page grows too tall for a 1080-pixel display. Each effect sets
     its own pace (amended 2026-10-22, maintainer): its row stretches the
     chosen duration and picks its progress curve, so an effect that needs
     longer, or a different rhythm, is one value in its row, not a special
@@ -413,9 +413,9 @@ A native, lightweight, offline Windows desktop organizer that:
     never adds a branch on one effect's name.
   - *The blur:* the Acrylic and Blur material is drawn by DWM behind the
     whole window (the accent policy, D2) and can only be on or off. Roll,
-    Fly, and CRT's opening change the window's rect, so the blur follows
-    them exactly. The other effects change pixels: the painter applies them
-    to the tint and the contents, the same on every path. For the blur to
+    Fly, Bounce, and CRT's opening change the window's rect, so the blur
+    follows them exactly. The other effects change pixels: the painter applies
+    them to the tint and the contents, the same on every path. For the blur to
     follow those too, spaces move to the Windows composition engine
     (`Windows.UI.Composition`), where the blur is a host backdrop brush
     that takes the same opacity and masks (T12, T13). The painter draws
@@ -555,8 +555,8 @@ A native, lightweight, offline Windows desktop organizer that:
     not the darkest pixel. The blur leaves its peak at about three quarters
     of it below the space and half beside it; this is what shipped and what
     O3 checks.)
-  - *Animations:* the shadow follows the window's rect (Roll, Fly, CRT).
-    It fades with any frame that leaves the window see-through.
+  - *Animations:* the shadow follows the window's rect (Roll, Fly, Bounce,
+    CRT). It fades with any frame that leaves the window see-through.
   - *Debug window (amends D14):* a "Shadow settings" box edits the three
     settings as the settings window does, and saves them at once, as the
     animation settings box does. Two session-only toggles outline every
@@ -853,9 +853,10 @@ and the update feed no longer waits for signing):
 4. **Release dry run on clean machines** (R12), then **v0.3.0**.
 5. **The icon picker** (M5 item 7, F-62, `TASKS.md` S9-S12), which needs a
    screen, and **code signing** (R10), when SignPath approves it.
-6. **Animations beyond the eight that landed** (M5 item 5, D12, D13;
-   `TASKS.md` section T): Bounce, Scroll, and Magic lamp (T19-T21) are
-   ready. The composition spike (T1) runs alongside.
+6. **Animations beyond the effects that landed** (M5 item 5, D12, D13;
+   `TASKS.md` section T): Bounce is built and awaits its check (T19); Scroll
+   and Magic lamp (T20-T21) are ready. The composition spike (T1) runs
+   alongside.
 
 Not next: mapping Explorer's desktop view mode. The desktop offers only the
 three icon views, and its Small icons keep labels below, so F-40 closes with
@@ -1290,7 +1291,7 @@ through `SpaceLook`), and other per-space state in `Space`, as
 | F-30 | Settings and menu theme override | M3 | Done; check pending |
 | F-31 | Sort items in normal spaces | M3, M4 | Done: Explorer's Sort by (W14) and Keep sorted (W15); check pending (`TASKS.md` V: W15) |
 | F-32 | Hover opacity | M5 | Open |
-| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with eight effects (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce, Scroll, and Magic lamp ready (T19-T21) |
+| F-33 | Animations: startup and exit, hide/show, new space, delete, fold | M5 | Partial: built for Startup, Delete, and Fold with the effects in `EFFECTS` (D12; `TASKS.md` section T), awaiting the on-screen checks in section V; Bounce is built and awaits its check (T19); Scroll and Magic lamp are ready (T20-T21) |
 | F-34 | Start with Windows | M3, M8 | Done; check pending |
 | F-35 | Snap to other spaces | M6 | Open |
 | F-36 | Explorer-parity drag (move default, OLE drop target, right-button drag per D9) | M2 | Done (G5a-G5c); check pending |

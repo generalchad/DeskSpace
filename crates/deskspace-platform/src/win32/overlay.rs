@@ -30,7 +30,8 @@ fn kind_for(effect: Effect) -> Option<OverlayKind> {
         | Effect::Gradient
         | Effect::Dissolve
         | Effect::Fly
-        | Effect::Crt => None,
+        | Effect::Crt
+        | Effect::Bounce => None,
     }
 }
 

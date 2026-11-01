@@ -57,6 +57,10 @@ Notable changes to DeskSpace, newest first. The format follows
   of them, and Ctrl+0 goes back to "Settings icon size".
 - Hovering a lens's title shows its folder's path.
 - "Fit to contents" on an item's menu in a space.
+- A Bounce animation: a space drops in from beyond an edge of its monitor's
+  work area and settles in shrinking bounces, and hides the same way
+  backwards. Settings > Animations offers it for Startup and Delete, with its
+  own edge.
 
 - Undo and redo for layout changes, file moves, item removal, space creation
   and deletion, copies, pastes, and new shortcuts. Ctrl+Z and Ctrl+Y act while
