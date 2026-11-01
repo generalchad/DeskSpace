@@ -961,129 +961,31 @@ in `ui.rs`. What spans them:
 
 ### Desktop shell, shell items, DPI, hotkeys
 
-- `folder_watch.rs` watches folders off the UI thread with one worker for
-  every watch, on an I/O completion port. A watch is keyed by `WatchKey`
-  (`Desktop`, or a lens's `Space(id)`); `ReadDirectoryChangesW` reports into
-  the port, and the worker lists the folder itself with `folder_list.rs`, so
-  the UI thread does no IO. Changes are debounced per folder by up to 150 ms
-  (the pure `Coalescer`) so a multi-file copy wakes the app once. A folder
-  that is missing or cannot be read posts `FolderListing::Unavailable` and is
-  tried again every 5 s on the worker. An open folder's path is checked on the
-  same cadence: renaming a watched folder moves its handle with it, so the
-  pending read may never fail. When the path no longer names a folder, the
-  worker reads where the handle went and posts `FolderListing::Moved { to }`
-  when a lens may follow it (`follows_to`: the same volume, outside a Recycle
-  Bin and the store; D19), else `Unavailable`. Each time the worker opens a folder it asks
-  for the handle's final path (`GetFinalPathNameByHandleW`) and refuses one
-  that is the store or inside it, posting `FolderListing::Refused`; the
-  5 s path check also refuses a path that has come to lead into the store
-  (a junction put in a renamed folder's place). `is_inside` compares
-  paths for it and for the app: whole components, without case, and a drive
-  or share alike with or without the `\\?\` prefix. A refused folder is
-  retried like a missing one. `Ui::watch_folder(key, path, store, builder)` adds
-  or replaces that key's watch (idempotent for the same path) and
-  `Ui::unwatch_folder(key)` stops it. A lens's watch owns its `LensBuilder`, so
-  the worker hands the app a finished list (section 4), and `Ui::set_lens_rules`
-  has it build again. A packet carries only numbers, so the rules wait in a map
-  by slot, and a burst of edits builds once. A change posts `FOLDER_CHANGE` with the
-  watch's slot in `wParam`; the worker leaves the listing in a shared slot,
-  and the controller raises `Event::FolderChanged { key, folder, listing }`.
-  A listing names the folder it read, because a posted change can wait in
-  the event queue (for example during `pick_folder`'s message pump) while
-  the key's watch moves to another folder. A lens drops a listing whose
-  folder is not the one it shows now; the desktop layer, which re-reads
-  the shell instead, takes one from another folder to mean the Desktop
-  moved and re-points its watch. M2 watches the Desktop folder while
-  the layer is drawn (a change makes the app re-enumerate and `SyncDesktop`)
-  and ignores the listing; M4 uses it for a lens's folder.
-- `desktop_shell.rs` finds Progman or the wallpaper `WorkerW` (through the
-  `0x052C` spawn trick) for hosted placements.
-- `desktop_icons.rs` hides and restores Explorer's icon layer for the
-  takeover: `hide` / `restore` hide or show every `SysListView32` under a
-  `SHELLDLL_DefView`, re-enumerating each time so a recreated listview is
-  found, and `rehide_if_active` re-hides only while takeover is on. The walk
-  recurses the desktop shell's (`Progman` / `WorkerW`) whole subtree, because
-  on some builds the icon `SHELLDLL_DefView` is nested (for example
-  `Progman -> WorkerW -> SHELLDLL_DefView`), and only that subtree, because an
-  Explorer window also contains a `SHELLDLL_DefView`. Only the listview is
-  hidden, never the `SHELLDLL_DefView`, so `find_host` and the shell-view COM
-  reads keep working. `restore` runs in the `run` teardown before
-  `OleUninitialize`; `rehide_if_active` runs on `TaskbarCreated` and from the
-  app's health timer.
-- `watchdog.rs` is the crash-safety half of the takeover (D8). Before hiding
-  the icons the app calls `arm_watchdog`, which creates a per-pid clean-exit
-  event and launches `deskspace-watchdog.exe` (`<pid>` as its only argument)
-  detached, so a bulk kill of `deskspace.exe` by name or a closed console
-  leaves it running. The watchdog re-parents itself once
-  (`respawn_reparented`) so ending the app's process tree cannot reach it,
-  then waits on the main process and re-shows every listview unless the event
-  was signaled; the teardown calls `signal_watchdog_clean_exit` right after
-  `desktop_icons::restore`, so the watchdog acts only on a crash. A named
-  mutex keeps a stray watchdog a no-op, and the pure `watchdog_pid` /
-  `is_watchdog` and `should_restore` decide the argument and the restore.
-- `win32/desktop_items.rs`: `enumerate_desktop_items` reads the desktop
-  view's items and positions (`IFolderView::ItemCount` / `Item` /
-  `GetItemPosition`) once OLE is up, and falls back to a name-sorted walk of
-  the Desktop folder, without positions, when the view cannot be reached.
-- `win32/icons.rs`, `IconCache`: icons are rendered by
-  `IShellItemImageFactory` at the requested pixel size; a path the factory
-  rejects falls back to the classic 32 px icon, scaled. The overlay (shortcut
-  arrow, sync badges) is drawn as Explorer draws it: `SHGetFileInfoW` with
-  `SHGFI_OVERLAYINDEX` names the overlay (this works in any process), and
-  `IImageList::GetOverlayImage` fetches its full-icon-sized image from the
-  system image list nearest the size (`SHIL_SMALL`..`SHIL_JUMBO`),
-  area-averaged to `theme.overlay_size` percent and anchored bottom-left
-  before compositing. HICONs are decoded through WIC (`d2d::decode_icon`).
-  Entries are keyed by path, pixel size, and overlay size, with
-  least-recently-used eviction at 1024 entries, or at what the windows now
-  draw if that is more; `invalidate(path)` marks every size of one path out
-  of date, and the old pixels show until the new ones load.
-  A scene never loads an icon on the UI thread. `App::refresh_space` and
-  `refresh_desktop_layer` bracket a scene with `begin_scene` and `end_scene`.
-  `icon_for` gives the cached icon or a generic one for the item's `ItemKind`,
-  and `end_scene` hands what was missing to one worker thread
-  (`icon_queue.rs`, pure), replacing what that window asked for before, so a
-  path scrolled out of view goes unread. The worker reports in batches
-  (`ICONS_LOADED`, `Event::IconsLoaded`); `take_loaded` names the windows that
-  asked, and only those draw again. A drag image and the settings preview
-  cannot draw again later, so they call `icon_now`, which loads on the UI
-  thread.
-- `shell_items.rs`, Explorer behavior for items:
-  - `Ui::open_path` runs `ShellExecuteExW` with the default context-menu verb,
-    first passing DeskSpace's foreground right on with
-    `AllowSetForegroundWindow` (spaces are never active, so opened apps would
-    stay behind). Paths are given with backslashes, so it cannot open a URL
-    (`TASKS.md` E10 adds `Ui::open_url`).
-  - `Ui::item_menu` puts the app's entries above the shell's `IContextMenu`;
-    the controller forwards owner-draw and submenu messages to it while open.
-  - `Ui::drag_out` (`SHDoDragDrop`): one item uses the shell item's own data
-    object; several use `SHCreateDataObject` over the items' ID lists relative
-    to their deepest common folder (or full IDs under the desktop when they
-    share none), so a multi-item drag carries the ID list the desktop needs to
-    drop at the pointer and accepts the drag image, plus "Shell Object
-    Offsets" (`CFSTR_SHELLIDLISTOFFSET`, from the items' current cells) so the
-    group keeps its arrangement instead of stacking in a column. Async mode is
-    forced off so the transfer ends inside the drag loop, and it reports the
-    effect and whether the drag ended over the desktop. Drag and drop is why
-    the runtime uses `OleInitialize`.
-- `dpi.rs` sets per-monitor v2 awareness; `window_dpi` / `scale_for` back the
-  runtime's `space_dpi(id)` (the space window's own monitor scale), which the
-  app reads per space. `system.rs` provides `work_area_at(point)`,
-  `virtual_desktop_rect()`, `cursor_pos()`, `drag_threshold()`,
-  `system_uses_dark_mode()`, `system_accent_color()`, and `wide` (UTF-16
-  conversion; use it rather than a local copy).
-- Info tips (`win32/info_tip.rs`, `Ui::show_info_tip` / `hide_info_tip`):
-  after the pointer rests on an item, the app shows Explorer's info tip (name,
-  shell type, size, local modification date) in one reusable native tracking
-  tooltip (`TTF_TRACK`, `TTM_TRACKPOSITION` / `TTM_TRACKACTIVATE`). The app
-  owns the hover delay with a timer; moving off, clicking, or hiding spaces
-  dismisses it.
-- `hotkey.rs`: `parse("Ctrl+Alt+D")`, `hotkey_id(index)`, and
-  register/unregister on the controller window through `Ui`. The table
-  `settings::HOTKEY_BINDINGS` drives the three bindings (section 8): each row
-  names its `HotkeyAction`, two field ids, a label, and the `WindowSettings`
-  field that stores it, and its position is its registration index;
-  `App::on_hotkey` matches on the action. An empty binding is unregistered.
+- `folder_watch.rs` is the one watcher: one worker on an I/O completion
+  port serves every watch, lists the folder, and builds a lens's list, so
+  the UI thread does no IO. Its module doc and the `FolderListing` variants
+  own the debounce, the retries, the store refusal, and the D19 follow rule.
+  The app watches the Desktop only while the layer is drawn and each lens's
+  folder while the lens exists (`App::sync_watches`).
+- A listing names the folder it read: a posted change can wait in the event
+  queue while a key's watch moves, so a lens drops a stale one. The desktop
+  layer re-reads the shell instead, and treats another folder as the Desktop
+  having moved (`app/lens.rs`).
+- `desktop_shell.rs` finds the host, `desktop_icons.rs` hides and restores
+  Explorer's listviews, and `watchdog.rs` is the crash-safe half; each
+  module doc owns its rules, and the takeover as a whole is D8's.
+- `desktop_items.rs`, `icons.rs`, and `info_tip.rs` read the shell without
+  blocking the UI thread; their module docs own the enumeration, the icon
+  cache and its worker (`icon_queue.rs`), and the tracking tooltip.
+- `shell_items.rs` is Explorer behavior for an item: open, the item menu,
+  and drag out. Its module doc and `drag_out` own the foreground hand-off,
+  the data object, and the image. Drag and drop is why the runtime uses
+  `OleInitialize`.
+- `dpi.rs` sets per-monitor v2 awareness and `system.rs` wraps the Windows
+  queries; use them rather than reading the registry or metrics again.
+- `hotkey.rs` parses and registers, and `settings::HOTKEY_BINDINGS` is the
+  one table tying each binding to its action, field ids, label, and setting;
+  its position is the registration index.
 
 ## 7. Runtime flow
 

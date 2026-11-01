@@ -1482,10 +1482,6 @@ Rules for every Q task:
 
 - [ ] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
   the desktop-layer and `Surface` paragraph (bucket c).
-- [ ] **Q4. "Desktop shell, shell items, DPI, hotkeys"**
-  (`win32/folder_watch.rs`, `desktop_shell.rs`, `desktop_icons.rs`,
-  `watchdog.rs`, `desktop_items.rs`, `icons.rs`, `shell_items.rs`, `dpi.rs`,
-  `system.rs`, `info_tip.rs`, `hotkey.rs`).
 - [ ] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
   `README.md` "Controls" describe the same controls, one for contributors
   and one for users. Decided by the maintainer, 2026-10-29: README keeps
