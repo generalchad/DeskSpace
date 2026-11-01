@@ -11,10 +11,12 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 **Urgent first:** none open. A task marked
 **[urgent]** goes ahead of everything else in its section.
 
-**Pick a task:** these are ready for any contributor:
+**Pick a task:** these are ready for any contributor, now that human checks
+are collected in section V instead of blocking:
 - section B (code health);
-- section S: S9-S12 need a screen or
-  a reviewer.
+- section S (S9-S12), C9, C10, and K8, without waiting for their checks;
+- anything else not marked **[needs decision]**, "still to design", or in
+  section D.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D. Phases 4 and 5 are complete; their
@@ -41,11 +43,12 @@ on-screen checks are in section V.
    (`refactor: split d2d.rs (K2)`). In the same commit, tick the box and move
    the task, verbatim, to the end of `archive/TASKS-done.md`.
 8. **[needs human]** tasks need an on-screen check you cannot do. Implement,
-   list exactly what to check in the commit body, add a one-row summary to
-   section V, and archive the task as in rule 7. Run any `scripts/onscreen/`
-   check that covers part of it first, and cut what it covers from the row,
-   as section O's rules say. Anything only a human can
-   record (for example L1's findings) stays here until it is recorded.
+   list exactly what to check in the commit body, add a row to section V
+   (the human test compendium), and archive the task as in rule 7. The check
+   does not block the next task; work continues while it awaits a person.
+   Run any `scripts/onscreen/` check that covers part of it first, and cut
+   what it covers from the row, as section O's rules say. Anything only a
+   human can record (for example L1's findings) is noted in the compendium.
 
 ## File map
 
@@ -1600,16 +1603,26 @@ monitor) is reported as **not covered**, never passed.
 
   Then split it into one-commit tasks here.
 
-## V. Awaiting on-screen check
+## V. Human test compendium
 
-Built and unit-tested, but not yet confirmed on screen (the R7 list). Check
-with a scratch `--config` (`./scripts/dev.ps1`), with `--on-top` over a
-high-contrast window for anything visual, in light and dark mode where it
-matters. Delete a row when it passes (say so in the commit); when only part
-passes, cut that part from the row and append it, dated, to the last section
-of `archive/ROADMAP-progress-log.md`; when it fails,
-replace it with a task or a **Found while working** line. The task text for
-each id is in `archive/TASKS-done.md`.
+Desired human checks for built, unit-tested work. They do not block
+implementation: a task lands, its check joins this list, and work continues.
+The R7 pass works through the list when a person has the screen; a release
+still waits for the rows it covers. Check with a scratch `--config`
+(`./scripts/dev.ps1`), with `--on-top` over a high-contrast window for
+anything visual, in light and dark mode where it matters. Delete a row when
+it passes (say so in the commit); when only part passes, cut that part from
+the row and append it, dated, to the last section of
+`archive/ROADMAP-progress-log.md`; when it fails, replace it with a task or a
+**Found while working** line. The task text for each id is in
+`archive/TASKS-done.md`.
+
+**First session (Windows 11, 100 %, Transparency effects on, scratch config,
+about 20-30 min).** W2, W3b-W3g, W5, W6, and W7, in that order, on section
+W's hand-made lens over a throwaway folder. W27, W35, W39, W42-W45, and B37
+are the second lens session; a row that needs a setup this machine lacks
+(Windows 10, 150 %, transparency off) is recorded as not covered and left
+for a machine that has it.
 
 | Id | What to check |
 |----|---------------|
