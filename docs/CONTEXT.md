@@ -819,91 +819,27 @@ one arm in `App::on_event`, whose match is exhaustive.
 
 ### Drops (`win32/drop_target.rs`)
 
-- Every space and the desktop layer is an OLE `IDropTarget`
-  (`RegisterDragDrop`, revoked in `WM_DESTROY`), not a `WS_EX_ACCEPTFILES`
-  window, so it chooses the drop effect and the shell shows the move/copy
-  cursor. `drag_kind` says what a
-  drag carries (`DragKind`: real files, shell items, or nothing), and the pure
-  `drop_plan` decides what a drop does (`DropPlan`) and which effect to
-  report. Every `DragEnter` logs the allowed effects, keys, kind, and offered
-  formats at `debug`.
-- A file drop becomes `SpaceEvent::FilesDropped` with a `DropAction`: `Move`
-  by default (`MOVE`), `KeepInPlace` while Shift is down (`COPY`), or `Copy`
-  from a right drop's menu. A right drag carrying files reports `MOVE` while
-  hovering over a space and, on `Drop`, shows the menu `right_drop_entries`
-  builds, owned by the space window (G5b, G5c). The chosen entry becomes the
-  `DropPlan`, the same type a left drop gets from `drop_plan`, so both take
-  one path: "Create shortcuts here" is `DropPlan::Shortcuts`, and
-  `right_drop_effect` reports what each entry means to the source; an entry
-  is greyed when the source refuses that effect. A drag carrying neither files nor shell items reports
-  `DROPEFFECT_NONE`.
-- What a drop lands in comes from the scene (`SpaceScene::drop_into`, read
-  by `space_window::drop_into`): `DropInto::Folder` for a lens. Over a lens a
-  file drop with Shift is refused, a `COPY`-only source becomes `Copy`, and
-  the right-drop menu greys "Show here without moving", because a folder
-  cannot list a file kept elsewhere.
-- As in Explorer, a `LINK` drop always makes shortcuts: a file list links when
-  Alt is held and the source allows a link, or when the source offers neither
-  `MOVE` nor `COPY`. A `CF_HDROP` counts as files only when every entry is an
-  absolute path: the Start menu puts AppUserModelIDs there (for example
-  `com.squirrel.element-desktop.Element`), so its drags are shell items. A
-  drag with real files and shell items is treated as files, so a real file
-  still moves unless Alt is held.
-- A shell-item drag (any form `SHCreateShellItemArrayFromDataObject` reads,
-  including a packaged app with no filesystem path) is accepted
-  (`shell_drop_effect` prefers `LINK`, then `COPY`, then `MOVE`) and raises
-  `SpaceEvent::ShellItemsDropped` with each item's absolute ID list, Explorer
-  display name, and filesystem path (`None` for a virtual item). The app
-  (`App::add_shortcuts`) copies a dropped `.lnk` or `.url` into the space
-  storage, so no shortcut points at a shortcut, and writes a new `.lnk` for
-  anything else (`win32/shortcuts.rs` `create_shortcut`,
-  `IShellLinkW::SetIDList` + `IPersistFile::Save`) under a clash-free name, as
-  Explorer does when such an item is dropped on a folder (F-50). The source is
-  never moved or deleted.
-- On `DragEnter` the target stores an empty "DropDescription"
-  (`DROPIMAGE_NOIMAGE`, no text) on the source's data object, so a shell
-  source such as Explorer or the desktop draws no "Move"/"Copy" hint over the
-  item image. A move marks the data object with "Performed DropEffect" so a
-  shell source does not move the files a second time; a shortcut, copy, or
-  keep-in-place drop never sets it.
-- Every file DeskSpace moves (into storage, back to the desktop) is announced
-  with `notify_moved` (`SHChangeNotify` delete + create, `FLUSHNOWAIT` so it
-  never blocks Explorer inside a drop); without it the desktop kept stale
-  icons for files already moved into a space, and dragging one dropped a path
-  that no longer existed. Dropped paths that do not exist are ignored rather
-  than listed (which showed a label with no icon).
+- Every space and the desktop layer is an OLE `IDropTarget` (`register` /
+  `revoke` around the window's life), so a drop chooses its effect and the
+  shell draws the move/copy cursor. The pure `drag_kind`, `drop_plan`, and
+  `right_drop_*` functions decide what a drag carries, what a drop does, and
+  what the source is told; the window only raises `FilesDropped` or
+  `ShellItemsDropped`.
+- A drop's destination comes from the app through the scene
+  (`SpaceScene::drop_into`), so a lens receives a folder and a space its own
+  list; the app also owns what a dropped shell item becomes
+  (`App::add_shortcuts`). Every file DeskSpace moves is announced with
+  `notify_moved` (`win32/desktop_items.rs`), so open shell views follow.
 
 ### Drag out and the drag image
 
-- Dragging an item out (`shell_items::drag_out`) sets the data object's
-  "Preferred DropEffect" to `MOVE`, so a drop on the desktop takes the file out
-  of the space instead of leaving a `- Copy`. The drop target alone performs
-  the transfer (async mode is off, so it is done when the drag returns), and
-  afterwards the app only removes the item if its file is gone. It never moves
-  the file itself after a drag: an earlier "dropped on the desktop, so move it
-  back" step turned desktop copies into `- Copy` / ` (2)` duplicates.
-- The drag image (`win32/drag_image.rs`, `win32/drag_ghost.rs`) is the picture
-  that follows the pointer, distinct from the move/copy cursor. When an item
-  drag starts, the app builds a drag scene (`scene::drag_scene`) of the whole
-  active set, members scrolled out of view included, at their grid positions,
-  and `DragImage::of_selection` renders it offscreen (`d2d::render_items`: one
-  WIC bitmap render target with a scale transform, running the space's own
-  `draw_item`, so icons, labels, and colors match), scaled down to
-  `MAX_DRAG_IMAGE` when larger and with a uniform translucency
-  (`DRAG_IMAGE_ALPHA`). The hotspot is the grab offset in the scaled group,
-  and every view of the drag shows these same pixels.
-- Inside the space a layered, click-through, topmost ghost window shows it
-  (`UpdateLayeredWindow`, premultiplied DIB), and every dragged slot is drawn
-  faded (`ItemState::Dragged`). Once the pointer leaves the space, the ghost
-  hides and `drag_out` hands the same image to the shell's drag-image manager
-  (`IDragSourceHelper2::InitializeFromBitmap`, straight-alpha DIB, since it
-  premultiplies itself; `SetFlags(0)` leaves the drop description off, so a
-  target like the desktop cannot add its "Move to ..." label and arrow). Space
-  drop targets forward all four calls to one shared `IDropTargetHelper`,
-  without which the image vanishes over a space; it is released before
-  `OleUninitialize`. Without an image the shell substitutes its own opaque,
-  oversized one, so a right drag, which goes straight to the shell with no
-  ghost, renders the same image (`App::drag_image_of`) first.
+- A drag that leaves a space is the shell's (`shell_items::drag_out`), and
+  the drop target performs the whole transfer; the app only prunes an item
+  whose file is gone. The picture is built once by the app
+  (`scene::drag_scene`, `DragImage::of_selection`) and shown two ways: the
+  in-space ghost window while rearranging, and the shell's drag-image manager
+  once the pointer leaves. A right drag goes straight to the shell, so the
+  app builds the same image for it first (`App::drag_image_of`).
 
 ### Selection, display matching, keys, and clipboard
 
