@@ -843,8 +843,7 @@ and the update feed no longer waits for signing):
    on the update feed (D6), and the set makes the automatic title icons of
    new spaces work, which a keyed build otherwise offers and fails to fetch.
 3. **On-screen verification pass** (`TASKS.md` section V, R7), lens rows
-   first, starting with the checks a script can make (`TASKS.md` section O),
-   once `smoke.ps1`'s capture failure is understood.
+   first, starting with the checks a script can make (`TASKS.md` section O).
    Confirm the built-but-unchecked behaviors before more work builds on them.
    L1's findings (`TASKS.md` section L) can be recorded in the same pass.
 4. **Release dry run on clean machines** (R12), then **v0.3.0**.
