@@ -20,7 +20,7 @@ Notable changes to DeskSpace, newest first. The format follows
   about you or your files is sent. The icon takes the title's color, so it
   follows a dark and light switch, and a space without one keeps its old
   title bar. Settings > About credits the icon sets.
-- Lenses: a space that shows a folder's live contents. "New lens." in a
+- Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and
   deleting a lens never touches it. A lens keeps its sort rule as files come

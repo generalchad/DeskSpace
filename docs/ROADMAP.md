@@ -827,7 +827,8 @@ v0.2.4 (animations, F-33, and the debug window, F-61). Takeover ships opt-in
 
 **In progress:** M2 (only the stored-file watch remains), M3 (desktop verbs,
 F-52, and entries that wait on later milestones or design), and M5's space
-icons (S1-S4 are built; the title icon and the picker follow).
+icons (the title icon and the download consent are built; the picker follows
+v0.3.0).
 Undo (D11), drawn shadows (D15), and lenses (M4 phases 1-5) have landed since
 v0.2.4 and ship in the next release. Section 5 lists what each has done.
 
@@ -1048,8 +1049,8 @@ Remaining:
    or chosen in a picker from the rename box or the space's settings, from
    a downloaded Fluent icon set (F-62, D16). Build it with or after F-28,
    which reworks the same title bar. Partial: the model, the library, the
-   cache, and the signed download are built (S1-S4); the title icon, the
-   picker, and the settings follow (S5-S13).
+   cache, the signed download, the title icon, and the consent are built (S1-S8,
+   S13, S14); the picker and the settings follow (S9-S12).
 
 Exit criteria: hide-all and peek are instant and reversible, and the fold
 policy can be set per space.
@@ -1166,8 +1167,9 @@ Remaining:
    10 describe the settings, controls, and code. `cargo deny` passes (the
    updater's `time` dependency moved the minimum Rust version to 1.88). Still
    to do (maintainer): set the `DESKSPACE_MINISIGN_KEY` secret and the public
-   `UPDATE_PUBKEY`, then sign before shipping (item 3), because unsigned
-   updates trigger SmartScreen on every version.
+   `UPDATE_PUBKEY`, which turns the feed on. It does not wait for code signing
+   (item 3; D6, amended 2026-10-31), so until then unsigned updates trigger
+   SmartScreen on every version.
 8. A winget manifest in `microsoft/winget-pkgs` for the installer, updated
    per stable release by a workflow step, after the first stable release.
 
