@@ -723,6 +723,7 @@ impl App {
             self.space_icons.state(spec.prefix),
             self.config.window.icon_downloads,
             self.space_icons.asked(),
+            deskspace_update::is_configured(),
         );
         match step {
             IconStep::Nothing | IconStep::Unavailable => {}

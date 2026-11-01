@@ -936,17 +936,6 @@ Rules for every S task:
     pane, and on the desktop. Cancel afterwards keeps both changes.
     Global's header does not edit.
 
-- [ ] **S14. Do not offer a download that cannot work (app).** **[needs
-  decision]** Found 2026-10-31: `next_step` (`app/space_icons.rs`) never asks
-  `deskspace_update::is_configured`. So a build with an empty `UPDATE_PUBKEY`
-  still asks "Show icons on spaces?" for a new space with an automatic icon,
-  then `fetch_signed` returns `NotConfigured` and no icon shows. Setting the
-  key alone does not cure it: the download also fails until S5 has published
-  the set. To decide: whether a build without a key skips the question (the
-  update controls already grey out this way, and a declined consent must not
-  be saved for it), or whether the key and S5 are simply required before any
-  release. Tests, if the code changes: `next_step` for a build with no key.
-
 ## T. Animations (ROADMAP D12, D13, F-33)
 
 Read D12 first; it is the spec. T1 is a spike only a human can judge, and
