@@ -360,21 +360,11 @@ impl App {
             FolderListing::Listed(entries) => {
                 // The icon cache keeps an icon until it is told to drop it, so
                 // a file rewritten in place would keep its old icon.
-                let changed: Vec<PathBuf> = self
+                let changed = self
                     .config
                     .desktop
                     .space(id)
-                    .map(|space| {
-                        entries
-                            .iter()
-                            .filter(|entry| {
-                                space.items().iter().any(|item| {
-                                    item.path == entry.path && item.modified != entry.modified
-                                })
-                            })
-                            .map(|entry| entry.path.clone())
-                            .collect()
-                    })
+                    .map(|space| rewritten_paths(space.items(), &entries))
                     .unwrap_or_default();
                 for path in changed {
                     self.icons.invalidate(&path);
@@ -427,6 +417,26 @@ impl App {
             self.refresh_space(ui, id);
         }
     }
+}
+
+/// The paths in `entries` that `items` already holds with another modified
+/// time. This runs on the UI thread for every listing, so it indexes the items
+/// once: comparing each entry with each item stalled every space for 9.7 s on a
+/// lens of 10,000 files.
+fn rewritten_paths(items: &[Item], entries: &[FolderEntry]) -> Vec<PathBuf> {
+    let modified: HashMap<&Path, Option<u64>> = items
+        .iter()
+        .map(|item| (item.path.as_path(), item.modified))
+        .collect();
+    entries
+        .iter()
+        .filter(|entry| {
+            modified
+                .get(entry.path.as_path())
+                .is_some_and(|held| *held != entry.modified)
+        })
+        .map(|entry| entry.path.clone())
+        .collect()
 }
 
 /// Whether a listing of `listed` is for `shown`, the folder a surface shows
@@ -491,6 +501,44 @@ mod tests {
         let mut item = Item::new(ItemId(1), path, deskspace_core::item::ItemFacts::default());
         item.kind = kind;
         item
+    }
+
+    #[test]
+    fn only_a_held_file_with_a_new_time_counts_as_rewritten() {
+        let held = |path: &str, modified| {
+            let mut item = entry(path, ItemKind::File);
+            item.modified = modified;
+            item
+        };
+        let listed = |path: &str, modified| FolderEntry {
+            path: path.into(),
+            label: String::new(),
+            kind: ItemKind::File,
+            size: Some(1),
+            modified,
+            created: None,
+            hidden: false,
+        };
+        let items = [
+            held(r"C:\f\same.txt", Some(1)),
+            held(r"C:\f\new-time.txt", Some(1)),
+            held(r"C:\f\lost-time.txt", Some(1)),
+            held(r"C:\f\gone.txt", Some(1)),
+        ];
+        let entries = [
+            listed(r"C:\f\same.txt", Some(1)),
+            listed(r"C:\f\new-time.txt", Some(2)),
+            listed(r"C:\f\lost-time.txt", None),
+            listed(r"C:\f\just-added.txt", Some(9)),
+        ];
+        assert_eq!(
+            rewritten_paths(&items, &entries),
+            [
+                PathBuf::from(r"C:\f\new-time.txt"),
+                PathBuf::from(r"C:\f\lost-time.txt"),
+            ]
+        );
+        assert!(rewritten_paths(&[], &entries).is_empty(), "a first listing");
     }
 
     #[test]
