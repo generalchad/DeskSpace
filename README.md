@@ -150,11 +150,20 @@ help inspect the look and the desktop layer.
   drag empty space for a box selection, Ctrl+A selects all). Drag a selection to
   rearrange it in a space (not one that keeps sorted), or out to another space,
   a folder, an app, or the desktop.
+- When Explorer's desktop shows item check boxes, each item gets one: with
+  auto-check-select, hover shows the box and the tick mirrors the selection,
+  and clicking an item ticks it and unticks the others; with independent
+  boxes, clicking a box toggles a tick that stays through an empty-space or
+  desktop click, and Delete, Cut, Copy, and drag act on the ticked items.
+  Ctrl+click ticks several.
 - Double-click an item to open it; right-click for Explorer's context menu,
-  with DeskSpace's Rename on top; its Delete sends the item to the Recycle Bin,
-  and dragging an item onto the desktop takes it out of the space (with the
-  desktop takeover on, it opens a new space instead). Click a selected
-  item again (slowly) to rename it.
+  with DeskSpace's Rename and "Fit to contents" on top (Fit is greyed when the
+  space cannot fit). Right-clicking an item in a multi-selection keeps the
+  selection, and Explorer's Delete there sends the item to the Recycle Bin.
+  Dragging an item onto the desktop takes it out of the space (with the
+  desktop takeover on, it opens a new space instead). Click a selected item
+  again (slowly) to rename it; loose icons on the taken-over desktop rename
+  the same ways.
 - With the desktop takeover on, right-click an empty spot of the desktop for
   the classic desktop menu (View, Sort by, New, Personalize, ...; on
   Windows 11 the one "Show more options" opens) with New space, New lens,
@@ -180,7 +189,8 @@ help inspect the look and the desktop layer.
 - Drag files from Explorer or the desktop onto a space to move them into it;
   hold Shift to leave them where they are, or Alt to add a shortcut instead.
   A right drag onto a space opens a menu to move or copy the files, create
-  shortcuts to them, or just show them.
+  shortcuts to them, or just show them; a right drag out of a space to
+  Explorer or the desktop shows the shell's own menu.
   Apps dragged from the Start menu or the taskbar become shortcuts.
 - With the desktop takeover on, dropping anything on the desktop itself opens
   a new space there with it, an item dragged out of another space included.
@@ -194,8 +204,9 @@ help inspect the look and the desktop layer.
   default. Press the hotkey again mid-way and the animation turns around.
   DeskSpace follows Windows' "Animation effects" switch: with it off,
   nothing animates.
-- The tray icon opens Settings on left-click and offers Settings, hide/show
-  spaces, new space, and exit on right-click.
+- The tray icon opens Settings on left-click (or keyboard select) and offers
+  Undo, Redo, Settings, hide/show spaces, new space, new lens, check for
+  updates, and exit on right-click.
 - Press `Ctrl+Alt+D` to hide or show the spaces. The Hotkeys settings page
   changes it and can also bind keys for a new space and for Settings. While
   spaces are hidden, the desktop's right-click menu (under "Show more options"

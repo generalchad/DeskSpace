@@ -5315,3 +5315,11 @@ until I5-I6 all land, so no partial build hides the desktop.
 
 - [x] **Q3. "Space windows"** (`win32/space_window.rs`, `win32/dwm.rs`). Keep
   the desktop-layer and `Surface` paragraph (bucket c).
+
+- [x] **Q7. One home for the controls.** `CONTEXT.md` section 8 and
+  `README.md` "Controls" describe the same controls, one for contributors
+  and one for users. Decided by the maintainer, 2026-10-29: README keeps
+  the user prose, and section 8 keeps only the rules README leaves out
+  (exact steps, ranges, and edge cases), linking to README for the rest.
+  The key recipe and the menu-entry recipe then name the one place to
+  edit.
