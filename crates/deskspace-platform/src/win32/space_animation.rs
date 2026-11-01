@@ -619,9 +619,8 @@ unsafe fn finish(window: HWND) {
         }
         if outcome == Outcome::Hidden {
             // Hidden first: moved while still shown, the window flashed at
-            // its rest rect for a frame, holding the last frame's sliver
-            // (seen 2026-10-31 on Bounce and Fly, whenever a hide's last
-            // frame still showed).
+            // its rest rect for a frame, holding the last frame's sliver,
+            // whenever a hide's last frame still showed.
             let _ = ShowWindow(window, SW_HIDE);
             move_to(window, rect);
         } else {
