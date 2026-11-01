@@ -284,6 +284,25 @@ impl Builder {
     }
 }
 
+/// The pages and fields built for a form, and the tallest page's height.
+struct PageBuild {
+    pages: Vec<HWND>,
+    fields: Vec<(Field, FieldControls)>,
+    page_height: i32,
+}
+
+/// The rail, scopes pane, and page area laid out beside each other.
+struct Panes {
+    client_width: i32,
+    command_bar_top: i32,
+    pages_x: i32,
+    header_height: i32,
+    list: Option<HWND>,
+    scopes_list: Option<HWND>,
+    dividers: Vec<(i32, i32, i32)>,
+    nav_rows: Vec<NavRow>,
+}
+
 /// Creates every control of the settings window. Fails, leaving the caller to
 /// destroy `hwnd`, if a page container cannot be created: the navigation and
 /// the field diff in `update` index pages and fields by their position in
@@ -295,7 +314,6 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         let instance = HINSTANCE(GetModuleHandleW(None)?.0);
         let dpi = GetDpiForWindow(hwnd).max(96);
         let page_width = scaled(540, dpi);
-        let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
 
         let fonts = create_fonts(dpi);
         let builder = Builder {
@@ -303,15 +321,81 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             font: fonts.body,
             heading_font: fonts.heading,
         };
-        let s = |value| builder.s(value);
-        let margin = s(12);
+        let margin = builder.s(12);
 
-        let nav = &form.nav;
+        let PageBuild {
+            pages,
+            fields,
+            page_height,
+        } = build_pages(&builder, hwnd, form, instance, page_width)?;
+        let panes = build_panes(&builder, hwnd, &form.nav, page_height, margin, page_width);
+        let (header_title, header_switch, header_button) =
+            build_header(&builder, hwnd, &form.nav, panes.pages_x, page_width, margin);
 
+        for page in &pages {
+            let _ = SetWindowPos(
+                *page,
+                Some(HWND_TOP),
+                panes.pages_x,
+                margin + panes.header_height,
+                page_width,
+                page_height,
+                SWP_NOACTIVATE,
+            );
+        }
+        show_page(&pages, form.nav.page_of(form.nav.selected).unwrap_or(0));
+        let scope_rows = form.nav.scopes.clone();
+        with_state(hwnd, |state| {
+            state.nav_rows = panes.nav_rows;
+            state.scope_rows = scope_rows;
+        });
+        let (apply, client_height) = build_command_bar(
+            &builder,
+            hwnd,
+            panes.client_width,
+            panes.command_bar_top,
+            margin,
+            form.apply_enabled,
+        );
+        place_window(hwnd, dpi, panes.client_width, client_height);
+
+        with_state(hwnd, |state| {
+            state.fields = fields;
+            state.pages = pages;
+            state.list = panes.list;
+            state.scopes_list = panes.scopes_list;
+            state.header_title = header_title;
+            state.header_switch = header_switch;
+            state.header_button = header_button;
+            state.dividers = panes.dividers;
+            state.apply = apply;
+            state.font = fonts.body;
+            state.heading_font = fonts.heading;
+            state.strong_font = fonts.strong;
+            state.glyph_font = fonts.glyph;
+            state.dpi = dpi;
+            state.command_bar_top = panes.command_bar_top;
+            state.updating = false;
+        });
+        Ok(())
+    }
+}
+
+/// Creates the page containers and every field's controls.
+unsafe fn build_pages(
+    builder: &Builder,
+    hwnd: HWND,
+    form: &SettingsForm,
+    instance: HINSTANCE,
+    page_width: i32,
+) -> Result<PageBuild, PlatformError> {
+    // SAFETY: every control is a child of one of our live page windows.
+    unsafe {
+        let pages = create_pages(hwnd, instance, form.pages.len(), page_width)?;
         let mut fields = Vec::new();
         let mut page_height = 0;
         for (&container, page) in pages.iter().zip(&form.pages) {
-            let mut y = s(16);
+            let mut y = builder.s(16);
             for field in &page.fields {
                 let index = fields.len();
                 let (controls, height) = builder.field(container, index, field, y, page_width);
@@ -319,20 +403,36 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
                 fields.push((field.clone(), controls));
                 y += height;
             }
-            page_height = page_height.max(y + s(8));
+            page_height = page_height.max(y + builder.s(8));
         }
+        Ok(PageBuild {
+            pages,
+            fields,
+            page_height,
+        })
+    }
+}
 
-        // Lay the pages beside the rail and compute the client size.
-        let (client_width, command_bar_top, list);
+/// Lays the scopes pane, the rail, and the page area beside each other.
+unsafe fn build_panes(
+    builder: &Builder,
+    hwnd: HWND,
+    nav: &SettingsNav,
+    page_height: i32,
+    margin: i32,
+    page_width: i32,
+) -> Panes {
+    // SAFETY: every list is a child of our live window.
+    unsafe {
+        let header_height = builder.s(HEADER_HEIGHT);
+        let panes_height = header_height + page_height;
+        let rail = builder.s(NAV_WIDTH);
         let mut scopes_list = None;
         let mut dividers = Vec::new();
-        let header_height = s(HEADER_HEIGHT);
-        let panes_height = header_height + page_height;
-        let rail = s(NAV_WIDTH);
         let mut x = margin;
         if !nav.scopes.is_empty() {
-            let width = s(SCOPE_WIDTH);
-            scopes_list = rail_list(&builder, hwnd, (x, margin, width, panes_height), ID_SCOPES);
+            let width = builder.s(SCOPE_WIDTH);
+            scopes_list = rail_list(builder, hwnd, (x, margin, width, panes_height), ID_SCOPES);
             if let Some(created) = scopes_list {
                 fill_list(created, nav.scopes.iter().map(|scope| scope.label.as_str()));
                 SendMessageW(
@@ -342,29 +442,50 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
                     None,
                 );
             }
-            x += width + s(6);
-            dividers.push((x - s(3), margin, margin + panes_height));
+            x += width + builder.s(6);
+            dividers.push((x - builder.s(3), margin, margin + panes_height));
         }
-        let rows = nav_rows(nav);
-        list = rail_list(&builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
+        let nav_rows = nav_rows(nav);
+        let list = rail_list(builder, hwnd, (x, margin, rail, panes_height), ID_LIST);
         if let Some(created) = list {
-            fill_list(created, rows.iter().map(NavRow::label));
-            let selected = entry_row(&rows, nav.selected);
+            fill_list(created, nav_rows.iter().map(NavRow::label));
+            let selected = entry_row(&nav_rows, nav.selected);
             SendMessageW(created, LB_SETCURSEL, Some(WPARAM(selected)), None);
         }
-        x += rail + s(6);
-        dividers.push((x - s(3), margin, margin + panes_height));
-        let pages_x = x + s(6);
-        client_width = pages_x + page_width + margin;
-        command_bar_top = margin + panes_height + margin;
+        x += rail + builder.s(6);
+        dividers.push((x - builder.s(3), margin, margin + panes_height));
+        let pages_x = x + builder.s(6);
+        Panes {
+            client_width: pages_x + page_width + margin,
+            command_bar_top: margin + panes_height + margin,
+            pages_x,
+            header_height,
+            list,
+            scopes_list,
+            dividers,
+            nav_rows,
+        }
+    }
+}
 
-        // The header lines up with the fields, which sit s(16) into a page.
-        let switch_width = s(HEADER_SWITCH_WIDTH);
-        let button_width = s(HEADER_BUTTON_WIDTH);
-        let gap = s(8);
-        let switch_x = pages_x + page_width - s(16) - switch_width;
+/// Creates the title, button, and switch above the page.
+unsafe fn build_header(
+    builder: &Builder,
+    hwnd: HWND,
+    nav: &SettingsNav,
+    pages_x: i32,
+    page_width: i32,
+    margin: i32,
+) -> (Option<HWND>, Option<HWND>, Option<HWND>) {
+    // SAFETY: every control is a child of our live window.
+    unsafe {
+        let header_height = builder.s(HEADER_HEIGHT);
+        let switch_width = builder.s(HEADER_SWITCH_WIDTH);
+        let button_width = builder.s(HEADER_BUTTON_WIDTH);
+        let gap = builder.s(8);
+        let switch_x = pages_x + page_width - builder.s(16) - switch_width;
         let button_x = switch_x - gap - button_width;
-        let title_x = pages_x + s(16);
+        let title_x = pages_x + builder.s(16);
         let header = nav.header.as_ref();
         let header_title = builder.label(
             hwnd,
@@ -372,7 +493,7 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             (
                 title_x,
                 margin,
-                (button_x - gap - title_x).max(s(40)),
+                (button_x - gap - title_x).max(builder.s(40)),
                 header_height,
             ),
         );
@@ -407,31 +528,28 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             },
         );
         apply_header(header_title, header_switch, header_button, header);
+        (header_title, header_switch, header_button)
+    }
+}
 
-        for page in &pages {
-            let _ = SetWindowPos(
-                *page,
-                Some(HWND_TOP),
-                pages_x,
-                margin + header_height,
-                page_width,
-                page_height,
-                SWP_NOACTIVATE,
-            );
-        }
-        show_page(&pages, nav.page_of(nav.selected).unwrap_or(0));
-        let scope_rows = nav.scopes.clone();
-        with_state(hwnd, |state| {
-            state.nav_rows = rows;
-            state.scope_rows = scope_rows;
-        });
-        let button_height = s(30);
-        let command_bar_height = button_height + 2 * s(14);
+/// Creates OK, Cancel, and Apply along the bottom, and returns Apply and the
+/// client height.
+unsafe fn build_command_bar(
+    builder: &Builder,
+    hwnd: HWND,
+    client_width: i32,
+    command_bar_top: i32,
+    margin: i32,
+    enabled: bool,
+) -> (Option<HWND>, i32) {
+    // SAFETY: every control is a child of our live window.
+    unsafe {
+        let button_height = builder.s(30);
+        let command_bar_height = button_height + 2 * builder.s(14);
         let client_height = command_bar_top + command_bar_height;
-
-        let button_width = s(96);
-        let gap = s(8);
-        let button_y = command_bar_top + s(14);
+        let button_width = builder.s(96);
+        let gap = builder.s(8);
+        let button_y = command_bar_top + builder.s(14);
         let mut x = client_width - margin - button_width * 3 - gap * 2;
         let mut button = |caption: &str, id: usize, default: bool| {
             let style = if default {
@@ -458,9 +576,16 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
         button("Cancel", ID_CANCEL, false);
         let apply = button("Apply", ID_APPLY, false);
         if let Some(apply) = apply {
-            let _ = EnableWindow(apply, form.apply_enabled);
+            let _ = EnableWindow(apply, enabled);
         }
+        (apply, client_height)
+    }
+}
 
+/// Sizes the frame for its client area and centers it on the pointer's monitor.
+unsafe fn place_window(hwnd: HWND, dpi: u32, client_width: i32, client_height: i32) {
+    // SAFETY: `hwnd` is our live window; the calls only read metrics or move it.
+    unsafe {
         let mut frame = RECT {
             left: 0,
             top: 0,
@@ -483,26 +608,6 @@ pub(super) unsafe fn build(hwnd: HWND, form: &SettingsForm) -> Result<(), Platfo
             height,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
-
-        with_state(hwnd, |state| {
-            state.fields = fields;
-            state.pages = pages;
-            state.list = list;
-            state.scopes_list = scopes_list;
-            state.header_title = header_title;
-            state.header_switch = header_switch;
-            state.header_button = header_button;
-            state.dividers = dividers;
-            state.apply = apply;
-            state.font = fonts.body;
-            state.heading_font = fonts.heading;
-            state.strong_font = fonts.strong;
-            state.glyph_font = fonts.glyph;
-            state.dpi = dpi;
-            state.command_bar_top = command_bar_top;
-            state.updating = false;
-        });
-        Ok(())
     }
 }
 
