@@ -233,15 +233,6 @@ user-visible change is expected. Do them in any order. The exceptions are
 B32-B36, from a review on 2026-10-21: they fix performance and correctness,
 and B33 and B36 change behavior on purpose, as each says.
 
-- [ ] **B26. Split `settings_window::build` and `update`.**
-  `win32/settings_window/build.rs` `build` (about 210 lines) and
-  `update.rs` `update` (about 125 lines) each build or diff the panes, the
-  header, and the pages in one body. Split each into `*_panes`, `*_header`,
-  and `*_pages` helpers in the same file, in the order the body already runs
-  them. Pure move. Done when: no function in either file is over about 80
-  lines. **[needs human]** check: the settings window opens, switches scopes
-  and pages, and previews as before.
-
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
 `settings/mod.rs` `build_form` (about 105). They are long because a field is
@@ -554,8 +545,8 @@ Work that collides when run in parallel:
     a column resize on release, not per move). If it has not, add the
     new actions to U3's list. Browsing and folding a group are session
     state and record nothing.
-  - B26 reworks `settings_window/build.rs`, where W8 adds a font. Keep W8's
-    edit inside one function.
+  - B26 has split `settings_window/build.rs`; add W8's font where
+    `build_header` creates the title it draws.
   - R14 (table-driven settings fields) would rewrite the pages W10, W20,
     W23, W35, and W38 build. Do not start R14 while those are open.
   - Section K: `win32/space_window.rs` is already over the 800-line
@@ -766,8 +757,8 @@ Rules for every S task:
     stays pure.
   - Scopes pane (`settings_window/paint.rs` `on_draw_scope`): the icon at
     s(16), left of the label, after the indent, dimmed with dimmed rows.
-  - Header: put the new code in a new `settings_window/header.rs`, so it
-    does not collide with B26. An owner-drawn `BUTTON` of s(20)
+  - Header: put the new code in a new `settings_window/header.rs`. An
+    owner-drawn `BUTTON` of s(20)
     square at `title_x` draws the icon. It stays disabled, and so takes no
     click or Tab stop, until S12. The title moves right by s(20) + s(8)
     while there is an icon, and `apply_header` shows, hides, and moves
@@ -1728,6 +1719,7 @@ each id is in `archive/TASKS-done.md`.
 | B23 | Key routing should not change: the F1-F5 and G1, G3 rows pass with the same keys, and Ctrl+Plus, Ctrl+Minus, and Ctrl+0 still zoom. |
 | B13 | The settings window, the custom shortcut dialog, and the installed-apps picker look as before at 100 % and 150 % in light and dark mode: every control keeps its size, font, place, colors, and tab order. |
 | B14 | Every settings page looks as before at 100 % and 150 % in light and dark mode: each field kind (heading, note, choice, toggle, slider with and without marks, color, text, button, space preview) keeps its size, label, spacing, and control position. |
+| B26 | The settings window opens, switches scopes and pages, and previews as before; the rail, scopes, header, page controls, and command bar stay in place at 100 % and 150 %. |
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Rechecked after the rail fix: "Animations" reads as a semibold header with its pages (Startup, Delete, Fold since T15) indented under it; the "Windows settings…" button's caption fits; Detail shows a plain number. Then the rest: nothing clipped at 100 % and 150 %; each effect greys the options it does not use, Delete's "Same as startup" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; the button opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |

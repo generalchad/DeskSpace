@@ -5286,3 +5286,12 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: no method in `build.rs` is over about 80 lines.
     **[needs human]** check: every settings page looks as before at 100 %
     and 150 %.
+
+- [x] **B26. Split `settings_window::build` and `update`.**
+  `win32/settings_window/build.rs` `build` (about 210 lines) and
+  `update.rs` `update` (about 125 lines) each build or diff the panes, the
+  header, and the pages in one body. Split each into `*_panes`, `*_header`,
+  and `*_pages` helpers in the same file, in the order the body already runs
+  them. Pure move. Done when: no function in either file is over about 80
+  lines. **[needs human]** check: the settings window opens, switches scopes
+  and pages, and previews as before.
