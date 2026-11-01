@@ -3,9 +3,10 @@
 //! tested here and the window side only applies frames.
 //!
 //! A transition tracks one linear value, `u`, from 0 (gone) to 1 (fully
-//! there), and a direction. What is drawn is a function of `smoothstep(u)`
-//! alone, one symmetric curve for both directions, so an Out is the In
-//! played backwards and reversing at any moment just turns the direction
+//! there), and a direction. What is drawn is a function of the effect's
+//! curve of `u` alone, smoothstep for every effect but Bounce's
+//! `bounce_ease`, one symmetric curve for both directions, so an Out is the
+//! In played backwards and reversing at any moment just turns the direction
 //! around: the next frame equals the current one.
 
 use std::time::Duration;
@@ -98,13 +99,13 @@ pub struct Geometry {
     /// The rect Roll collapses to: nothing at an edge when hiding, the title
     /// bar when folding.
     pub rolled: Rect,
-    /// The work area of the window's monitor; Fly never leaves it.
+    /// The work area of the window's monitor; Fly and Bounce never leave it.
     pub work_area: Rect,
 }
 
 impl Geometry {
     /// A window that hides and shows (or comes and goes) with `play`: Roll
-    /// collapses it into the play's side, and Fly uses `work_area`.
+    /// collapses it into the play's side, and Fly and Bounce use `work_area`.
     pub fn for_visibility(rect: Rect, work_area: Rect, play: &Play) -> Self {
         let rolled = match play.side(rect, work_area) {
             Side::Top => Rect::new(rect.x, rect.y, rect.width, 0),
@@ -194,7 +195,7 @@ pub struct TransitionFrame {
 impl TransitionFrame {
     /// Whether the frame's contents are as opaque as at rest over the whole
     /// window, so nothing behind them shows through: what moves is only the
-    /// window's rect (Roll, Fly, CRT).
+    /// window's rect (Roll, Fly, Bounce, CRT).
     pub fn covers_window(&self) -> bool {
         self.opacity >= 1.0 && self.content.covers() && self.mask.hides_nothing()
     }
@@ -348,7 +349,13 @@ impl Transition {
     }
 
     pub fn frame(&self, now: Duration) -> TransitionFrame {
-        frame(&self.play, &self.geometry, smoothstep(self.u(now)))
+        let u = self.u(now);
+        // Bounce brings its own curve; every other effect shares smoothstep.
+        let shown = match self.play.effect {
+            Effect::Bounce => bounce_ease(u),
+            _ => smoothstep(u),
+        };
+        frame(&self.play, &self.geometry, shown)
     }
 }
 
@@ -421,7 +428,7 @@ fn frame(play: &Play, geometry: &Geometry, shown: f32) -> TransitionFrame {
             },
             ..whole
         },
-        Effect::Fly => {
+        Effect::Fly | Effect::Bounce => {
             let side = play.side(geometry.rect, geometry.work_area);
             let moved = fly_rect(geometry.rect, geometry.work_area, side, gone);
             let rect = moved.intersection(geometry.work_area);
@@ -469,6 +476,26 @@ fn fly_rect(rect: Rect, work_area: Rect, side: Side, gone: f32) -> Rect {
         Side::Bottom => rect.offset(0, travel(work_area.bottom() - rect.top())),
         Side::Left => rect.offset(-travel(rect.right() - work_area.left()), 0),
         Side::Right => rect.offset(travel(work_area.right() - rect.left()), 0),
+    }
+}
+
+/// Robert Penner's easeOutBounce: a fall that lands and settles in three
+/// shrinking bounces. Four parabolic arcs, as on
+/// https://easings.net/#easeOutBounce.
+fn bounce_ease(t: f32) -> f32 {
+    const N1: f32 = 7.5625;
+    const D1: f32 = 2.75;
+    if t < 1.0 / D1 {
+        N1 * t * t
+    } else if t < 2.0 / D1 {
+        let t = t - 1.5 / D1;
+        N1 * t * t + 0.75
+    } else if t < 2.5 / D1 {
+        let t = t - 2.25 / D1;
+        N1 * t * t + 0.9375
+    } else {
+        let t = t - 2.625 / D1;
+        N1 * t * t + 0.984375
     }
 }
 
@@ -650,7 +677,10 @@ mod tests {
     }
 
     #[test]
-    fn showing_only_ever_reveals_more() {
+    fn showing_only_ever_reveals_more_except_bounce() {
+        // Bounce lands and rebounds, so its progress and its rect retreat
+        // during a bounce. Its opacity and block size still only grow, as
+        // every other effect's do.
         for effect in every_effect() {
             for edge in every_edge() {
                 let case = format!("{effect:?} from {edge:?}");
@@ -658,14 +688,17 @@ mod tests {
                 let mut last = transition.frame(ms(0));
                 for step in 1..=40 {
                     let frame = transition.frame(ms(step * 5));
-                    assert!(frame.shown >= last.shown, "{case} at {step}");
                     assert!(frame.opacity >= last.opacity, "{case} at {step}");
                     assert!(block(frame) <= block(last), "{case} at {step}");
-                    assert!(
-                        frame.rect.width * frame.rect.height >= last.rect.width * last.rect.height
-                            || effect == Effect::Crt,
-                        "{case} at {step}"
-                    );
+                    if effect != Effect::Bounce {
+                        assert!(frame.shown >= last.shown, "{case} at {step}");
+                        assert!(
+                            frame.rect.width * frame.rect.height
+                                >= last.rect.width * last.rect.height
+                                || effect == Effect::Crt,
+                            "{case} at {step}"
+                        );
+                    }
                     last = frame;
                 }
             }
@@ -678,13 +711,16 @@ mod tests {
         for effect in every_animated_effect() {
             for edge in every_edge() {
                 for way in [Way::In, Way::Out] {
-                    for at in [0, 1, 37, 100, 150, 199, 200, 260] {
+                    for at in [0, 1, 37, 72, 73, 100, 150, 199, 200, 260] {
                         let case = format!("{effect:?} from {edge:?} {way:?} at {at}");
                         let mut transition = start_from(effect, way, edge);
                         let before = transition.frame(ms(at));
                         transition.reverse(ms(at));
                         assert_eq!(transition.frame(ms(at)), before, "{case}");
-                        let next = transition.frame(ms(at + 5));
+                        // Bounce is steepest just before its first landing,
+                        // so give it a finer step to hold the same bound.
+                        let step = if effect == Effect::Bounce { 1 } else { 5 };
+                        let next = transition.frame(ms(at + step));
                         let shift = (next.shown - before.shown).abs();
                         assert!(shift < 0.1, "{case} jumps by {shift}");
                     }
@@ -781,6 +817,7 @@ mod tests {
         assert_eq!(side(Effect::Fly), Side::Right, "the nearest side");
         assert_eq!(side(Effect::Roll), Side::Top);
         assert_eq!(side(Effect::Gradient), Side::Top);
+        assert_eq!(side(Effect::Bounce), Side::Top);
         let left = Play {
             edge: Edge::Left,
             ..play(Effect::Fly, Way::Out)
@@ -809,6 +846,70 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn bounce_ease_lands_at_least_three_times_and_stays_in_range() {
+        assert_eq!(bounce_ease(0.0), 0.0);
+        assert!((bounce_ease(1.0) - 1.0).abs() < 1e-6);
+        for step in 0..=1000 {
+            let t = step as f32 / 1000.0;
+            let value = bounce_ease(t);
+            assert!((0.0..=1.0).contains(&value), "at {t}: {value}");
+        }
+        assert!(bounce_ease(0.5) < 1.0, "rebounds after the first landing");
+        // The branch boundaries are the landings; the task asks for three.
+        let landings = [1.0 / 2.75, 2.0 / 2.75, 2.5 / 2.75, 1.0];
+        let touched = landings
+            .iter()
+            .filter(|&&t| (bounce_ease(t) - 1.0).abs() < 1e-5)
+            .count();
+        assert!(touched >= 3, "touched 1 only {touched} times");
+    }
+
+    #[test]
+    fn bounce_drops_in_and_settles_without_leaving_the_work_area() {
+        let whole = geometry().rect;
+        let area = work_area();
+        for edge in every_edge() {
+            let transition = start_from(Effect::Bounce, Way::In, edge);
+            // A frame carries only the part inside the work area, so gone
+            // means empty here.
+            assert!(is_gone(&transition.frame(ms(0))), "{edge:?} starts outside");
+            for step in 0..=200 {
+                let frame = transition.frame(ms(step));
+                if frame.rect.is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    frame.rect.intersection(area),
+                    frame.rect,
+                    "{edge:?} at {step}: {:?}",
+                    frame.rect
+                );
+                match edge {
+                    Edge::Auto | Edge::Top | Edge::Bottom => {
+                        assert_eq!(frame.rect.x, whole.x, "{edge:?} keeps x");
+                    }
+                    Edge::Left | Edge::Right => {
+                        assert_eq!(frame.rect.y, whole.y, "{edge:?} keeps y");
+                    }
+                }
+            }
+            assert_eq!(transition.frame(ms(200)).rect, whole, "{edge:?} settles");
+        }
+    }
+
+    #[test]
+    fn bounce_lands_then_rebounds_before_settling() {
+        let whole = geometry().rect;
+        let transition = start(Effect::Bounce, Way::In);
+        let landed = (0..200)
+            .find(|&at| transition.frame(ms(at)).rect == whole)
+            .expect("lands");
+        let rebound = (landed..200).any(|at| transition.frame(ms(at)).rect != whole);
+        assert!(rebound, "moves off again after landing");
+        assert_eq!(transition.frame(ms(200)).rect, whole);
     }
 
     #[test]

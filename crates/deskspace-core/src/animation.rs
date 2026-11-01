@@ -30,6 +30,8 @@ pub enum Effect {
     Crt,
     /// A dissolve whose edge glows as it burns.
     Burn,
+    /// Drops in from beyond an edge and settles in shrinking bounces.
+    Bounce,
 }
 
 /// An option an effect can use, beyond the duration every effect has.
@@ -76,6 +78,7 @@ pub const EFFECTS: &[EffectSpec] = &[
     effect(Effect::Fly, "fly", &[Direction]).auto_edge(AutoEdge::Nearest),
     effect(Effect::Crt, "crt", &[]),
     effect(Effect::Burn, "burn", &[Detail]),
+    effect(Effect::Bounce, "bounce", &[Direction]),
 ];
 
 const fn effect(effect: Effect, key: &'static str, options: &'static [EffectOption]) -> EffectSpec {
@@ -433,14 +436,15 @@ mod tests {
 
     /// Every effect. The match makes a new `Effect` a compile error here, so
     /// it cannot miss its `EFFECTS` row.
-    fn every_effect() -> [Effect; 9] {
+    fn every_effect() -> [Effect; 10] {
         use Effect::*;
         let effects = [
-            None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt, Burn,
+            None, Roll, Fade, Pixelate, Gradient, Dissolve, Fly, Crt, Burn, Bounce,
         ];
         for effect in effects {
             match effect {
-                None | Roll | Fade | Pixelate | Gradient | Dissolve | Fly | Crt | Burn => {}
+                None | Roll | Fade | Pixelate | Gradient | Dissolve => {}
+                Fly | Crt | Burn | Bounce => {}
             }
         }
         effects
@@ -458,7 +462,7 @@ mod tests {
     #[test]
     fn effects_use_the_options_d12_gives_them() {
         let detail = [Effect::Pixelate, Effect::Dissolve, Effect::Burn];
-        let direction = [Effect::Roll, Effect::Gradient, Effect::Fly];
+        let direction = [Effect::Roll, Effect::Gradient, Effect::Fly, Effect::Bounce];
         for spec in EFFECTS {
             assert_eq!(spec.effect.uses(Detail), detail.contains(&spec.effect));
             assert_eq!(

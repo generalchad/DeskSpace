@@ -953,7 +953,7 @@ Paint code applies a frame without allocating; whatever an animation needs
   it plays Fade instead (D12, amended 2026-10-29, maintainer). It is one
   `EFFECTS` row plus its frame math and drawing.
 
-T19-T21 add the effects D12 plans (amended 2026-10-18). They animate
+T20-T21 add the effects D12 plans (amended 2026-10-18). They animate
 today's windows and do not wait for T1 or T12. Each one adds an effect the
 same way:
 
@@ -978,24 +978,6 @@ same way:
    section V ("Each Startup effect") rather than adding a new row, unless
    the task asks for its own check.
 
-- [ ] **T19. Bounce (core, platform).** **[needs human]**
-  - Row: `effect(Effect::Bounce, "bounce", &[Direction])`. Not in Fold.
-  - Frame math: the rect moves as Fly's does (from beyond `edge` of
-    `work_area`, clipped to it; Automatic is the top, the row's default
-    `auto_edge`), but its progress goes through a pure `bounce_ease(t: f32) ->
-    f32` instead of Fly's easing: Robert Penner's "easeOutBounce" (four
-    parabolic arcs; cite https://easings.net/#easeOutBounce beside it).
-    The out is the in played backwards, as for every effect.
-  - Tests: `bounce_ease` is 0 at 0 and 1 at 1, stays within 0..=1, and
-    touches 1 at least three times (the landings); the frame at progress
-    0 is wholly outside the work area on the chosen edge, at 1 it is the
-    space's rect, and it never leaves the work area's span on the other
-    axis (copy Fly's transition test).
-  - **[needs human]** check: Bounce on Startup (show, a new space,
-    startup) and Delete from each edge, on Acrylic and Solid at 100 % and
-    150 %: it drops in, bounces about three times shrinking, and settles
-    exactly in place; it never shows on a second monitor or over the
-    taskbar.
 - [ ] **T20. Scroll (core, platform).** **[needs human]**
   - Row: `effect(Effect::Scroll, "scroll", &[Direction])`, and add
     `Effect::Scroll` to Fold's `Offers::Only` list in `KINDS`.
@@ -1139,26 +1121,30 @@ ash, and looks the same at every DPI. One commit each, in order.
 - [ ] **T24. Each effect sets its own pace (core, app, platform).**
   **[needs human]**
   - Why: D12 (amended 2026-10-22). At the default 250 ms, Burn is over
-    before its flames read. Smoothstep, the one curve every effect uses
-    (`ease` in `render/transition.rs`), slows at both ends, while a fire
-    catches slowly and then races. An effect's pace belongs in its
-    `EFFECTS` row, so Burn needs no `if`.
+    before its flames read. Smoothstep, the curve every effect but Bounce
+    uses (`smoothstep` in `render/transition.rs`), slows at both ends, while
+    a fire catches slowly and then races. An effect's pace belongs in its
+    `EFFECTS` row, so Burn needs no `if` and Bounce no `match`.
   - `deskspace-core/src/animation.rs`:
-    - `pub enum Curve { Smooth, Kindle }`, with a `///` doc on each, and
-      `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's smoothstep;
-      move `ease` and its comment here. `Kindle` is `1 - (1 - u)²`, where
-      `u` is how much of the space is shown. An out (u from 1 to 0)
-      starts slowly and ends fast; an in starts fast and settles.
+    - `pub enum Curve { Smooth, Kindle, Bounce }`, with a `///` doc on each,
+      and `pub fn apply(self, u: f32) -> f32`. `Smooth` is today's
+      `smoothstep`; move it and its comment from `render/math.rs` here.
+      `Bounce` is T19's `bounce_ease`; move it here too. `Kindle` is
+      `1 - (1 - u)²`, where `u` is how much of the space is shown. An out
+      (u from 1 to 0) starts slowly and ends fast; an in starts fast and
+      settles.
     - `pub struct Pace { pub stretch_percent: u16, pub curve: Curve }`,
       `pub const PACE_NORMAL: Pace` (100, `Smooth`), `pub const
       PACE_STRETCH_RANGE: (u16, u16) = (50, 300)`, and `pub fn
       stretch(self, duration: Duration) -> Duration`.
     - `EffectSpec` gains `pace: Pace`, and `effect()` takes it as a fourth
       argument. Every row gets `PACE_NORMAL` except Burn, which gets
-      `Pace { stretch_percent: 200, curve: Curve::Kindle }`.
+      `Pace { stretch_percent: 200, curve: Curve::Kindle }`, and Bounce,
+      which gets `Pace { stretch_percent: 100, curve: Curve::Bounce }`.
   - `render/transition.rs`: `Transition::frame` applies
-    `self.play.effect.spec().pace.curve` where it now calls `ease`.
-    Delete `ease`.
+    `self.play.effect.spec().pace.curve` in place of the `match` that
+    chooses `bounce_ease` or `smoothstep`. Delete that match and both local
+    curve functions.
   - `deskspace-app/src/app/animation.rs`: `play_for` stretches the chosen
     duration (`spec().pace.stretch`) before `tweak.slow`. The exit
     stagger (`exit_delays`) already uses `play.duration`, so it then
@@ -1167,9 +1153,10 @@ ash, and looks the same at every DPI. One commit each, in order.
     the chosen time.
   - Tests:
     - core: every row's stretch is within `PACE_STRETCH_RANGE`; every
-      curve is 0 at 0 and 1 at 1, and never decreases over 101 even
-      samples; `Kindle.apply(0.9)` is above 0.98 (a burn barely moves in
-      its first tenth).
+      curve is 0 at 0 and 1 at 1; `Smooth` and `Kindle` never decrease over
+      101 even samples; `Bounce` stays within 0..=1 and lands at least
+      three times; `Kindle.apply(0.9)` is above 0.98 (a burn barely moves
+      in its first tenth).
     - app: `play_for` gives Burn at 250 ms a 500 ms play and Roll at
       250 ms a 250 ms one. With Burn on Startup at 1000 ms and ten
       spaces, the last one still ends within `EXIT_LIMIT` (copy the
@@ -1731,10 +1718,10 @@ each id is in `archive/TASKS-done.md`.
 
 | Id | What to check |
 |----|---------------|
-| Drawn shadows (D15) | Windows 11 with "Transparency effects" on, at 100 % and 150 % (O2 and O3 ran at 125 %), over Acrylic and Blur as well as Solid: the shadow reads as a soft shadow, not a box. With "Transparency effects" off, Solid at 16 px shows a drawn shadow while 4 and 8 px keep DWM's own; Windows 10 casts one at every radius. On a machine with a desktop host, `--placement desktop-*` casts none (O2 could not cover that here). Roll, Fly, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade it out to nothing with no ghost box left. Settings > Appearance: "Show shadow" greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each one, "Hide every shadow" hides them for the session, the "Shadow settings" box edits and saves the three settings (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` below its space. The structure and the pixels (one per space, z-order, rect, ex-styles, click-through, Clear/desktop/layer, show_shadow off, a per-space size, half the setting beside and three quarters below, both falloffs to 0, the drop band, the corner, opacity 0, and the Solid cut-out) passed O2 and O3 on 2026-10-27 at 125 % on the composition path (`archive/ROADMAP-progress-log.md`). |
+| Drawn shadows (D15) | Windows 11 with "Transparency effects" on, at 100 % and 150 % (O2 and O3 ran at 125 %), over Acrylic and Blur as well as Solid: the shadow reads as a soft shadow, not a box. With "Transparency effects" off, Solid at 16 px shows a drawn shadow while 4 and 8 px keep DWM's own; Windows 10 casts one at every radius. On a machine with a desktop host, `--placement desktop-*` casts none (O2 could not cover that here). Roll, Fly, Bounce, and CRT move and crop the shadow with the space; Fade, Dissolve, Gradient, Pixelate, and Burn fade it out to nothing with no ghost box left. Settings > Appearance: "Show shadow" greys "Shadow size" and "Shadow opacity"; Size (2–48 px) and Opacity (0–100 %) preview live and Cancel restores. `--debug` → Windows: "Outline every shadow window" draws a 1 px magenta box around each one, "Hide every shadow" hides them for the session, the "Shadow settings" box edits and saves the three settings (reflected in an open Settings window, kept on Cancel), and the Windows table lists each `DeskSpaceShadow` below its space. The structure and the pixels (one per space, z-order, rect, ex-styles, click-through, Clear/desktop/layer, show_shadow off, a per-space size, half the setting beside and three quarters below, both falloffs to 0, the drop band, the corner, opacity 0, and the Solid cut-out) passed O2 and O3 on 2026-10-27 at 125 % on the composition path (`archive/ROADMAP-progress-log.md`). |
 | Animation refactor | The 2026-10-19 animation and painter refactors change no pixels, so check that everything looks as before, at 100 % and 150 %, on Acrylic and Solid: every effect on hide, show, Delete, and Fold, and Gradient, Roll, and Fly from each edge (Automatic: Roll and Gradient from the top, Fly to the nearest edge); Pixelate, Dissolve, and Burn at detail 1 and 10; the debug window's preview on one space and on all, pressed twice mid-way, its Kind box named Startup, Delete, Fold, and slow motion; exit plays every space out in reverse reading order. Items, labels, check boxes, the focus rectangle, the rename box, the lock glyph, and the settings highlight sit where they did; the drag image, the debug badge on the window icon, and the zoom pop-up look as before. |
 | Flames follow | With Startup and Delete set to Burn at 1000 ms (or `--debug` at ¼×), change a space's rect while it burns: move or resize it in Settings and Apply mid-hide, and change the display layout mid-show. The flames stay on the space's burning edge at its new place, never left where it was; a resized space's flames stand on its new edge. No flame window is left after the burn ends. |
-| Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
+| Frame clock | On a 60 Hz and a 144 Hz display, and on a space moved to a second monitor with another refresh: Roll, Fade, Fly, Bounce, CRT, and Burn on hide and show at 1000 ms are smooth, with no hitch or jump; `--debug` at ⅒× speed is smooth too; hiding during the startup stagger, and the hotkey twice mid-animation, behave as before. With no animation running, Task Manager shows no "frame clock" thread busy and idle CPU is as before. Lock the session mid-animation: it finishes, and the app stays responsive after unlocking. |
 | No DWM shadow | Windows 11 with "Transparency effects" on, Acrylic, Blur, and Solid at 4 px and 8 px corners, at 100 % and 150 %: a space at rest has smooth rounded corners with no shadow; Fade, Dissolve, Gradient, Pixelate, and Burn on hide, show, and Delete leave no ghost box or outline at any point, and nothing pops off at the end; Roll rolls to a 1 px line with nothing left around it; CRT and Fly look as before. With "Transparency effects" off, spaces keep DWM's corners as before. |
 | Flames under apps | Without `--on-top`, with a space partly covered by an app window (an editor, a browser): Burn on hide, show, and Delete draws its flames over the space but under that app, never over it, including where the flames rise past the space's top edge; an uncovered space's flames still show in full. Switching to another app mid-burn keeps the flames under it. |
 | Window icons | At 100 % and 150 %, with the taskbar shown and auto-hidden: the settings window's taskbar button and Alt+Tab entry show the DeskSpace icon, sharp, and its title bar the small one; `--debug`'s window shows the same icon with a white bug on an amber disc in the bottom-right corner, in all three places, also on the first start of `./scripts/dev.ps1 -Settings --debug`, when both open during startup. Move the debug window to a monitor with another DPI: the icon still shows. The tray icon looks as before. |
@@ -1815,7 +1802,8 @@ each id is in `archive/TASKS-done.md`.
 | R17 | Nothing should change: the F13 and F-57 rows pass (Ctrl+wheel, the zoom keys, and the pop-up's buttons, under both presets; the pop-up hides about 2 s after the last zoom, not while hovered), and so does B28c's row. |
 | T4 (D12) | Rechecked after the rail fix: "Animations" reads as a semibold header with its pages (Startup, Delete, Fold since T15) indented under it; the "Windows settings…" button's caption fits; Detail shows a plain number. Then the rest: nothing clipped at 100 % and 150 %; each effect greys the options it does not use, Delete's "Same as startup" greys its options, "All at once" greys the delay; with Windows' "Animation effects" turned off while the window is open, every control greys and the note says why; the button opens the page with that switch (Windows 11 and 10); Cancel undoes an edit. |
 | T6 | Nothing should change: spaces on every backdrop, the desktop layer, and a desktop-hosted space (`--placement desktop-*`) paint as before, title, items, border, highlight, and scroll thumb included (the paint path was split so animations can draw through a layer). |
-| T8 (D12) | Each Startup effect, on hiding and showing (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows; checked at ¼× too (`--debug`, Animations → Speed), and with "Animate even when Windows' Animation effects is off" on, hiding and showing animate while Windows' switch is off (X17). |
+| T8 (D12) | Each Startup effect, on hiding and showing (Roll, Fade, Pixelate, Gradient, Dissolve, Fly, CRT, Burn, Bounce), from the tray, the space menu, and the hotkey, on Acrylic, Blur, Solid, and Clear spaces at 100 % and 150 %: smooth, no flash of old content when a show starts, and the blur steps on at the start of a show and off at the end of a hide; the hotkey pressed twice quickly turns it around without a jump; Fly leaves by the nearest edge and never shows on a second monitor; a file dragged onto a hiding space is refused; with Windows' "Animation effects" off, hiding and showing are instant; a desktop-hosted space (`--placement desktop-*`) still hides and shows; checked at ¼× too (`--debug`, Animations → Speed), and with "Animate even when Windows' Animation effects is off" on, hiding and showing animate while Windows' switch is off (X17). |
+| T19 (D12) | Bounce on Startup (show, a new space, startup) and Delete from each edge, on Acrylic and Solid at 100 % and 150 %: it drops in, bounces about three times shrinking, and settles exactly in place; it never shows on a second monitor or over the taskbar. |
 | T9 (D12) | Fold and unfold from the space menu and a title double-click on each backdrop: the body rolls up into the title bar with its items in place, and rolls down showing them; a second double-click mid-way turns it around; Fold set to None folds at once; moving a space right after folding it is not fought by the roll; hiding a space mid-fold hides it folded (or unfolded) and shows it the same way. |
 | T10 (D12) | Each Startup effect on a new space from the space menu, the tray, the hotkey, and a drop on the taken-over desktop: the space appears with it and no empty frame or early blur shows first; at startup with several spaces, "One after another" brings them in reading order at the set delay and "All at once" together; "Start with spaces hidden" shows nothing until shown; Fly from each edge and on a second monitor; hiding during the startup stagger hides every space, waiting ones included. |
 | T11 (D12) | Each Delete effect, and "Same as startup", deleting from the space menu and from the settings header: the space plays it, then is gone, and clicks or drops on it while it plays do nothing; deleting a space that is still flying in (a drop on the taken-over desktop that adds nothing does this) turns it around; quitting mid-animation leaves no window behind; with the spaces hidden, a delete is instant. |

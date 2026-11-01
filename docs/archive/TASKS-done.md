@@ -5193,3 +5193,22 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Done when: swapping in a 50,000-entry list stays under 8 ms on the UI
     thread with 32 patterns, and a lens of that size refreshes without a
     visible hitch (**[needs human]**).
+
+- [x] **T19. Bounce (core, platform).** **[needs human]**
+  - Row: `effect(Effect::Bounce, "bounce", &[Direction])`. Not in Fold.
+  - Frame math: the rect moves as Fly's does (from beyond `edge` of
+    `work_area`, clipped to it; Automatic is the top, the row's default
+    `auto_edge`), but its progress goes through a pure `bounce_ease(t: f32) ->
+    f32` instead of Fly's easing: Robert Penner's "easeOutBounce" (four
+    parabolic arcs; cite https://easings.net/#easeOutBounce beside it).
+    The out is the in played backwards, as for every effect.
+  - Tests: `bounce_ease` is 0 at 0 and 1 at 1, stays within 0..=1, and
+    touches 1 at least three times (the landings); the frame at progress
+    0 is wholly outside the work area on the chosen edge, at 1 it is the
+    space's rect, and it never leaves the work area's span on the other
+    axis (copy Fly's transition test).
+  - **[needs human]** check: Bounce on Startup (show, a new space,
+    startup) and Delete from each edge, on Acrylic and Solid at 100 % and
+    150 %: it drops in, bounces about three times shrinking, and settles
+    exactly in place; it never shows on a second monitor or over the
+    taskbar.

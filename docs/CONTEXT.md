@@ -774,7 +774,7 @@ one arm in `App::on_event`, whose match is exhaustive.
   `render/shadow.rs`; ROADMAP D15) kept directly below its space and above
   the desktop layer. Its corner tile is cached and its frame is filled from
   the tile and per-axis Gaussian profiles; it follows the space's rect
-  (Roll, Fly, CRT) and fades with `TransitionFrame::shadow_strength`. The painter rounds every composition
+  (Roll, Fly, Bounce, CRT) and fades with `TransitionFrame::shadow_strength`. The painter rounds every composition
   space, every Clear space, Solid spaces with other radii, chrome-less
   windows, and hosted spaces (anti-aliased fills); hosted spaces also get a window region
   so the opaque fill does not show past the corners (`Frame` in
@@ -1082,12 +1082,13 @@ one arm in `App::on_event`, whose match is exhaustive.
   alpha, or `On`).
 - Animations (ROADMAP D12): `render/transition.rs` is the pure frame math.
   A `Transition` tracks one linear progress and a direction, and every
-  frame is a function of the eased progress alone, so an Out is the In
-  played backwards and `reverse` continues from the very frame it is on.
-  A `TransitionFrame` gives the window rect (Roll, Fly, and CRT move or crop
-  it; Fly is clipped to the work area), where the space's content sits in
-  it, and the opacity, mask, and `Content` (how the contents are drawn:
-  whole, pixelated, or lit) the painter applies.
+  frame is a function of the effect's curve of that progress alone
+  (smoothstep but for Bounce's `bounce_ease`), so an Out is the In played
+  backwards and `reverse` continues from the very frame it is on.
+  A `TransitionFrame` gives the window rect (Roll, Fly, Bounce, and CRT
+  move or crop it; Fly and Bounce are clipped to the work area), where the
+  space's content sits in it, and the opacity, mask, and `Content` (how the
+  contents are drawn: whole, pixelated, or lit) the painter applies.
   The cell effects keep their math pure, on a `render::math::Grid` of
   cells covering the space, and the painter only uploads what it writes.
   Dissolve is `render/dissolve.rs`: a fixed noise value per grain-sized
