@@ -1,12 +1,19 @@
 //! The shell icon cache: base icons from the image factory, the classic
-//! fallback, and the overlays composited as Explorer draws them.
+//! fallback, and the overlays composited as Explorer draws them. A scene's
+//! icons load on a worker thread, so a slow folder never stalls the spaces.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::SIZE;
+use deskspace_core::ItemKind;
+use windows::Win32::Foundation::{HWND, LPARAM, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{DeleteObject, HBITMAP};
-use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL};
+use windows::Win32::Storage::FileSystem::{
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES,
+};
+use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::UI::Controls::{IImageList, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{
     IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHFILEINFOW,
@@ -14,12 +21,25 @@ use windows::Win32::UI::Shell::{
     SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW, SHGetImageList, SHIL_EXTRALARGE, SHIL_JUMBO,
     SHIL_LARGE, SHIL_SMALL, SIIGBF_ICONONLY,
 };
-use windows::Win32::UI::WindowsAndMessaging::DestroyIcon;
+use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, PostMessageW};
 use windows::core::{Interface, PCWSTR};
 
+use crate::icon_queue::IconQueue;
 use crate::render::Icon;
 use crate::render::d2d::{decode_bitmap, decode_icon};
 use crate::win32::shell_items::shell_path;
+use crate::win32::{messages, runtime};
+
+/// How often a busy worker reports what it loaded, so a page of icons fills
+/// in a few steps rather than one repaint per icon.
+const LOADED_REPORT_INTERVAL: Duration = Duration::from_millis(33);
+
+/// The window a loaded icon's scene goes to.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IconUser {
+    Space(u64),
+    DesktopLayer,
+}
 
 /// What a cached icon was rendered for, so two uses of one path never share
 /// the wrong pixels: an item with the shell's overlays, or a lens title's
@@ -39,6 +59,22 @@ enum IconKind {
 /// One icon: a path, the pixel size it was rendered at, and what it is for.
 type Key = (PathBuf, i32, IconKind);
 
+/// The icon drawn until an item's own has loaded.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum GenericIcon {
+    Folder,
+    File,
+}
+
+impl GenericIcon {
+    fn for_kind(kind: ItemKind) -> Self {
+        match kind {
+            ItemKind::Folder | ItemKind::Drive => Self::Folder,
+            ItemKind::File | ItemKind::Shortcut | ItemKind::Other => Self::File,
+        }
+    }
+}
+
 /// Icons decoded per path, pixel size, and overlay size, bounded by a
 /// least-recently-used limit. Evicting is always safe: scenes hold their own
 /// reference-counted `Icon`s. The size is part of the key, so a per-monitor DPI
@@ -51,11 +87,58 @@ pub struct IconCache {
     /// The entries' keys by last use, so the oldest is the first and eviction
     /// needs no scan of `entries`.
     by_age: BTreeMap<u64, Key>,
+    generic: HashMap<(GenericIcon, i32), Icon>,
+    /// The scene being built, and the icons it found missing or out of date.
+    scene: Option<IconUser>,
+    wanted: Vec<Key>,
+    scene_items: usize,
+    /// How many icons each window's last scene drew. The limit never falls
+    /// below their sum, or a repaint would evict icons still on screen and
+    /// load them again, for as long as the windows stay up.
+    demand: HashMap<IconUser, usize>,
+    worker: Option<Arc<Worker>>,
 }
 
 struct CachedIcon {
-    icon: Icon,
+    /// `None` when the shell could not draw it, so it is not asked again.
+    icon: Option<Icon>,
+    /// The file changed: draw these pixels until the new ones have loaded,
+    /// so a rewritten file does not flash the generic icon.
+    stale: bool,
     last_used: u64,
+}
+
+/// What the UI thread and the load worker share.
+struct Worker {
+    state: Mutex<WorkerState>,
+    ready: Condvar,
+}
+
+struct WorkerState {
+    queue: IconQueue<Key, IconUser>,
+    loaded: Vec<(Key, Option<Icon>)>,
+    /// A report is on its way to the UI thread, which takes everything loaded
+    /// by then, so another would be wasted.
+    reported: bool,
+    stop: bool,
+}
+
+impl Worker {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(WorkerState {
+                queue: IconQueue::new(),
+                loaded: Vec::new(),
+                reported: false,
+                stop: false,
+            }),
+            ready: Condvar::new(),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, WorkerState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 impl IconCache {
@@ -72,19 +155,96 @@ impl IconCache {
             clock: 0,
             entries: HashMap::new(),
             by_age: BTreeMap::new(),
+            generic: HashMap::new(),
+            scene: None,
+            wanted: Vec::new(),
+            scene_items: 0,
+            demand: HashMap::new(),
+            worker: None,
         }
     }
 
-    /// The icon for `path` rendered at `size` pixels square, with the shell's
-    /// overlay drawn at `overlay_size` percent of that.
-    pub fn icon_for(&mut self, path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
-        let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
-        if let Some(icon) = self.touch(&key) {
-            return Some(icon);
+    /// Starts `user`'s scene: `icon_for` now notes what it is missing, and
+    /// `end_scene` asks for those icons. Outside a scene it asks for nothing.
+    pub fn begin_scene(&mut self, user: IconUser) {
+        self.scene = Some(user);
+        self.wanted.clear();
+        self.scene_items = 0;
+    }
+
+    /// Ends the scene: asks for what it was missing, and forgets what its
+    /// window asked for before and no longer shows.
+    pub fn end_scene(&mut self) {
+        let Some(user) = self.scene.take() else {
+            return;
+        };
+        self.demand.insert(user, self.scene_items);
+        if self.worker.is_none() && self.wanted.is_empty() {
+            return;
         }
-        let icon = load_icon(path, size, overlay_size)?;
-        self.insert(key, icon.clone());
-        Some(icon)
+        let Some(worker) = self.worker() else {
+            return;
+        };
+        worker.lock().queue.set_wanted(&user, &self.wanted);
+        worker.ready.notify_one();
+        self.wanted.clear();
+    }
+
+    /// The icon to draw now for an item at `path`, rendered at `size` pixels
+    /// square with the shell's overlay at `overlay_size` percent of that. Never
+    /// touches the item's file: an icon not loaded yet is the generic one for
+    /// `kind`, and `Event::IconsLoaded` says when to draw the scene again.
+    pub fn icon_for(
+        &mut self,
+        path: &Path,
+        kind: ItemKind,
+        size: i32,
+        overlay_size: u8,
+    ) -> Option<Icon> {
+        let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
+        self.scene_items += 1;
+        let (icon, wanted) = match self.use_entry(&key) {
+            Some(entry) => (entry.icon.clone(), entry.stale),
+            None => (None, true),
+        };
+        if wanted && self.scene.is_some() {
+            self.wanted.push(key);
+        }
+        icon.or_else(|| self.generic_icon(GenericIcon::for_kind(kind), size))
+    }
+
+    /// `icon_for`, but loading a missing icon on this thread, for the few uses
+    /// that cannot draw again later: a drag image, and the settings preview.
+    pub fn icon_now(&mut self, path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
+        let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
+        if let Some(entry) = self.use_entry(&key)
+            && !entry.stale
+            && let Some(icon) = &entry.icon
+        {
+            return Some(icon.clone());
+        }
+        let icon = load_icon(path, size, overlay_size);
+        self.store(key, icon.clone(), false);
+        icon
+    }
+
+    /// Moves what the worker loaded into the cache, and returns the windows
+    /// that should draw their scenes again.
+    pub fn take_loaded(&mut self) -> Vec<IconUser> {
+        let Some(worker) = self.worker.clone() else {
+            return Vec::new();
+        };
+        let mut users = BTreeSet::new();
+        let mut state = worker.lock();
+        state.reported = false;
+        tracing::trace!(count = state.loaded.len(), "icons loaded");
+        for (key, icon) in std::mem::take(&mut state.loaded) {
+            if let Some(finished) = state.queue.finish(&key) {
+                users.extend(finished.users);
+                self.store(key, icon, finished.stale);
+            }
+        }
+        users.into_iter().collect()
     }
 
     /// The icon for a lens's folder, drawn `size` pixels square in a title bar.
@@ -100,17 +260,33 @@ impl IconCache {
         Some(icon)
     }
 
-    /// Forgets every size of the icon for `path`, so the next lookup reloads
-    /// it (for example after the file changed).
+    /// Marks every size of the icon for `path` out of date, so the next scene
+    /// reloads it (for example after the file changed).
     pub fn invalidate(&mut self, path: &Path) {
-        self.entries.retain(|key, _| key.0 != path);
-        self.by_age.retain(|_, key| key.0 != path);
+        let by_age = &mut self.by_age;
+        self.entries.retain(|key, entry| {
+            if key.0 != path {
+                return true;
+            }
+            entry.stale = true;
+            let keep = matches!(key.2, IconKind::Item { .. });
+            if !keep {
+                by_age.remove(&entry.last_used);
+            }
+            keep
+        });
+        if let Some(worker) = &self.worker {
+            worker.lock().queue.mark_stale(|key| key.0 == path);
+        }
     }
 
     /// Forgets every cached icon, so each is rendered again on next use.
     pub fn clear(&mut self) {
         self.entries.clear();
         self.by_age.clear();
+        if let Some(worker) = &self.worker {
+            worker.lock().queue.mark_stale(|_| true);
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -121,19 +297,30 @@ impl IconCache {
         self.entries.is_empty()
     }
 
-    /// Marks `key` as used now and returns its icon, when it is cached.
-    fn touch(&mut self, key: &Key) -> Option<Icon> {
+    /// Marks `key` as used now and returns its entry, when it is cached.
+    fn use_entry(&mut self, key: &Key) -> Option<&CachedIcon> {
         let entry = self.entries.get_mut(key)?;
         self.clock += 1;
         self.by_age.remove(&entry.last_used);
         entry.last_used = self.clock;
         self.by_age.insert(self.clock, key.clone());
-        Some(entry.icon.clone())
+        Some(entry)
+    }
+
+    /// Marks `key` as used now and returns its icon, when it is cached.
+    fn touch(&mut self, key: &Key) -> Option<Icon> {
+        self.use_entry(key)?.icon.clone()
     }
 
     fn insert(&mut self, key: Key, icon: Icon) {
+        self.store(key, Some(icon), false);
+    }
+
+    fn store(&mut self, key: Key, icon: Option<Icon>, stale: bool) {
         self.clock += 1;
-        if self.entries.len() >= self.capacity
+        if let Some(replaced) = self.entries.get(&key) {
+            self.by_age.remove(&replaced.last_used);
+        } else if self.entries.len() >= self.limit()
             && let Some((_, oldest)) = self.by_age.pop_first()
         {
             self.entries.remove(&oldest);
@@ -143,9 +330,43 @@ impl IconCache {
             key,
             CachedIcon {
                 icon,
+                stale,
                 last_used: self.clock,
             },
         );
+    }
+
+    fn limit(&self) -> usize {
+        self.capacity.max(self.demand.values().sum())
+    }
+
+    fn generic_icon(&mut self, generic: GenericIcon, size: i32) -> Option<Icon> {
+        if let Some(icon) = self.generic.get(&(generic, size)) {
+            return Some(icon.clone());
+        }
+        let base = match generic {
+            GenericIcon::Folder => load_generic_folder_icon(),
+            GenericIcon::File => load_generic_file_icon(),
+        }?;
+        let icon = resample(&base, size.clamp(1, 1024) as u32);
+        self.generic.insert((generic, size), icon.clone());
+        Some(icon)
+    }
+
+    /// The load worker, started the first time a scene needs it. Without a
+    /// running UI there is no window to report to, so there is none.
+    ///
+    /// While no `SHGetFileInfoW` call has finished yet in the process, calls
+    /// on other threads can succeed with a null icon: 2 or 3 of 300 on each of
+    /// 8 threads, and none in 14,400 once one call had finished (measured
+    /// 2026-10-31, Windows 11 build 26300). So one finishes here first.
+    fn worker(&mut self) -> Option<Arc<Worker>> {
+        if self.worker.is_none() {
+            let target = runtime::controller_window()?;
+            let _ = load_generic_file_icon();
+            self.worker = start_worker(target);
+        }
+        self.worker.clone()
     }
 }
 
@@ -153,6 +374,96 @@ impl Default for IconCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+impl Drop for IconCache {
+    /// Asks the worker to stop without waiting for it: a shell call on a dead
+    /// network path can block for a long time, and exit must not wait for that.
+    fn drop(&mut self) {
+        if let Some(worker) = &self.worker {
+            worker.lock().stop = true;
+            worker.ready.notify_one();
+        }
+    }
+}
+
+fn start_worker(target: HWND) -> Option<Arc<Worker>> {
+    let worker = Arc::new(Worker::new());
+    let shared = worker.clone();
+    let target = target.0 as isize;
+    let spawned = std::thread::Builder::new()
+        .name("deskspace-icons".into())
+        .spawn(move || run_worker(&shared, target));
+    match spawned {
+        Ok(_) => Some(worker),
+        Err(error) => {
+            tracing::warn!(%error, "could not start loading icons");
+            None
+        }
+    }
+}
+
+fn run_worker(worker: &Worker, target: isize) {
+    // SAFETY: this thread enters its own single-threaded apartment, as the
+    // image factory needs. It is never left: the thread-local `Graphics` holds
+    // COM objects and is dropped after this function returns, when releasing
+    // them still needs COM.
+    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let mut last_report = Instant::now();
+    while let Some(key) = next_request(worker, target, &mut last_report) {
+        let icon = match key.2 {
+            IconKind::Item { overlay_size } => load_icon(&key.0, key.1, overlay_size),
+            IconKind::Folder { available } => {
+                load_folder_icon(&key.0, key.1.clamp(1, 1024) as u32, available)
+            }
+        };
+        let mut state = worker.lock();
+        state.loaded.push((key, icon));
+        if should_report(&state, last_report.elapsed()) {
+            report_loaded(&mut state, target, &mut last_report);
+        }
+    }
+}
+
+/// Blocks until the UI thread asks for an icon, reporting what is left to
+/// report first. `None` means stop.
+fn next_request(worker: &Worker, target: isize, last_report: &mut Instant) -> Option<Key> {
+    let mut state = worker.lock();
+    loop {
+        if state.stop {
+            return None;
+        }
+        if let Some(key) = state.queue.pop() {
+            return Some(key);
+        }
+        if !state.loaded.is_empty() && !state.reported {
+            report_loaded(&mut state, target, last_report);
+        }
+        state = worker
+            .ready
+            .wait(state)
+            .unwrap_or_else(PoisonError::into_inner);
+    }
+}
+
+/// Whether to tell the UI thread now: once the queue has run dry, or when it
+/// has waited long enough for a batch.
+fn should_report(state: &WorkerState, since_last: Duration) -> bool {
+    !state.reported && (state.queue.is_empty() || since_last >= LOADED_REPORT_INTERVAL)
+}
+
+fn report_loaded(state: &mut WorkerState, target: isize, last_report: &mut Instant) {
+    // SAFETY: posting takes no pointers; a window that has gone just fails.
+    let posted = unsafe {
+        PostMessageW(
+            Some(HWND(target as *mut _)),
+            messages::ICONS_LOADED,
+            WPARAM(0),
+            LPARAM(0),
+        )
+    };
+    state.reported = posted.is_ok();
+    *last_report = Instant::now();
 }
 
 /// Renders `path` as an icon `size` pixels square, with the shell's overlay
@@ -186,7 +497,17 @@ fn load_folder_icon(path: &Path, size: u32, available: bool) -> Option<Icon> {
 /// `FILE_ATTRIBUTE_DIRECTORY`, so a folder that is gone is never touched.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow
 fn load_generic_folder_icon() -> Option<Icon> {
-    let wide = shell_path(Path::new("folder"));
+    load_attribute_icon("folder", FILE_ATTRIBUTE_DIRECTORY)
+}
+
+/// The shell's generic icon for a file with no extension, without the disk,
+/// as `load_generic_folder_icon` is.
+fn load_generic_file_icon() -> Option<Icon> {
+    load_attribute_icon("file", FILE_ATTRIBUTE_NORMAL)
+}
+
+fn load_attribute_icon(name: &str, attributes: FILE_FLAGS_AND_ATTRIBUTES) -> Option<Icon> {
+    let wide = shell_path(Path::new(name));
     let mut info = SHFILEINFOW::default();
     let flags = SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES;
     // SAFETY: `wide` is NUL-terminated and `info` is a valid out-structure. The
@@ -194,7 +515,7 @@ fn load_generic_folder_icon() -> Option<Icon> {
     unsafe {
         let result = SHGetFileInfoW(
             PCWSTR(wide.as_ptr()),
-            FILE_ATTRIBUTE_DIRECTORY,
+            attributes,
             Some(&mut info),
             std::mem::size_of::<SHFILEINFOW>() as u32,
             flags,
@@ -478,18 +799,180 @@ mod tests {
     }
 
     #[test]
-    fn invalidate_forgets_every_variant_of_a_path() {
+    fn invalidate_marks_every_item_size_and_forgets_a_folder_icon() {
         let mut cache = IconCache::new();
+        let larger = (PathBuf::from("a"), 48, key("a").2);
         cache.insert(key("a"), icon());
-        cache.insert((PathBuf::from("a"), 48, key("a").2), icon());
+        cache.insert(larger.clone(), icon());
         cache.insert(
             (PathBuf::from("a"), 32, IconKind::Folder { available: true }),
             icon(),
         );
         cache.insert(key("b"), icon());
         cache.invalidate(Path::new("a"));
-        assert_eq!(cache.len(), 1);
-        assert!(cache.entries.contains_key(&key("b")));
+        assert_eq!(cache.len(), 3);
+        assert_eq!(cache.by_age.len(), 3, "ages stay in step");
+        assert!(cache.entries[&key("a")].stale);
+        assert!(cache.entries[&larger].stale);
+        assert!(!cache.entries[&key("b")].stale);
+    }
+
+    /// A cache with a worker's shared state but no thread, so a test plays the
+    /// worker's part.
+    fn cache_with_queue() -> IconCache {
+        let mut cache = IconCache::new();
+        cache.worker = Some(Arc::new(Worker::new()));
+        // Already known, so these tests never reach the shell.
+        cache.generic.insert((GenericIcon::File, 32), icon());
+        cache
+    }
+
+    fn scene(cache: &mut IconCache, user: IconUser, paths: &[&str]) {
+        cache.begin_scene(user);
+        for path in paths {
+            cache.icon_for(Path::new(path), ItemKind::File, 32, 80);
+        }
+        cache.end_scene();
+    }
+
+    /// Plays the worker: takes every request and hands back `result` for each.
+    fn load_all(cache: &IconCache, result: Option<Icon>) -> usize {
+        let worker = cache.worker.as_ref().expect("a worker");
+        let mut state = worker.lock();
+        let mut count = 0;
+        while let Some(key) = state.queue.pop() {
+            state.loaded.push((key, result.clone()));
+            count += 1;
+        }
+        count
+    }
+
+    const SPACE: IconUser = IconUser::Space(1);
+
+    #[test]
+    fn a_missing_icon_is_asked_for_and_reaches_the_cache() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        assert!(cache.is_empty(), "nothing loads on this thread");
+        assert_eq!(load_all(&cache, Some(icon())), 1);
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        assert!(cache.touch(&key("a")).is_some());
+    }
+
+    #[test]
+    fn a_loaded_icon_is_not_asked_for_again() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        load_all(&cache, Some(icon()));
+        cache.take_loaded();
+        scene(&mut cache, SPACE, &["a"]);
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+    }
+
+    #[test]
+    fn an_icon_the_shell_cannot_draw_is_not_asked_for_again() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        load_all(&cache, None);
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        scene(&mut cache, SPACE, &["a"]);
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+    }
+
+    #[test]
+    fn only_the_windows_that_asked_draw_again() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        scene(&mut cache, IconUser::DesktopLayer, &["b"]);
+        scene(&mut cache, IconUser::Space(2), &[]);
+        load_all(&cache, Some(icon()));
+        assert_eq!(cache.take_loaded(), [SPACE, IconUser::DesktopLayer]);
+        assert!(cache.take_loaded().is_empty(), "each is reported once");
+    }
+
+    #[test]
+    fn an_icon_scrolled_out_of_view_never_loads() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["gone"]);
+        scene(&mut cache, SPACE, &["kept"]);
+        assert_eq!(load_all(&cache, Some(icon())), 1);
+        cache.take_loaded();
+        assert!(cache.touch(&key("kept")).is_some());
+        assert!(cache.touch(&key("gone")).is_none());
+    }
+
+    #[test]
+    fn a_changed_file_keeps_its_old_icon_until_the_new_one_loads() {
+        let mut cache = cache_with_queue();
+        let old = icon();
+        cache.insert(key("a"), old.clone());
+        cache.invalidate(Path::new("a"));
+        cache.begin_scene(SPACE);
+        let drawn = cache.icon_for(Path::new("a"), ItemKind::File, 32, 80);
+        cache.end_scene();
+        assert_eq!(drawn.map(|icon| icon.id()), Some(old.id()));
+        let new = icon();
+        assert_eq!(load_all(&cache, Some(new.clone())), 1);
+        cache.take_loaded();
+        assert_eq!(cache.touch(&key("a")).map(|icon| icon.id()), Some(new.id()));
+        assert!(!cache.entries[&key("a")].stale);
+        assert_eq!(cache.by_age.len(), cache.len(), "ages stay in step");
+    }
+
+    #[test]
+    fn a_file_that_changes_while_loading_is_loaded_again() {
+        let mut cache = cache_with_queue();
+        scene(&mut cache, SPACE, &["a"]);
+        let worker = cache.worker.clone().expect("a worker");
+        let popped = worker.lock().queue.pop().expect("a request");
+        cache.invalidate(Path::new("a"));
+        worker.lock().loaded.push((popped, Some(icon())));
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        scene(&mut cache, SPACE, &["a"]);
+        assert_eq!(load_all(&cache, Some(icon())), 1);
+    }
+
+    #[test]
+    fn a_scene_outside_a_window_asks_for_nothing() {
+        let mut cache = cache_with_queue();
+        cache.icon_for(Path::new("a"), ItemKind::File, 32, 80);
+        cache.end_scene();
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+    }
+
+    #[test]
+    fn a_scene_larger_than_the_cache_keeps_its_icons() {
+        let mut cache = cache_with_queue();
+        cache.capacity = 2;
+        let paths = ["a", "b", "c"];
+        scene(&mut cache, SPACE, &paths);
+        load_all(&cache, Some(icon()));
+        cache.take_loaded();
+        assert_eq!(cache.len(), 3);
+        scene(&mut cache, SPACE, &paths);
+        assert_eq!(load_all(&cache, Some(icon())), 0, "or it never settles");
+    }
+
+    #[test]
+    fn a_report_waits_for_a_batch_unless_the_queue_is_dry() {
+        let worker = Worker::new();
+        let mut state = worker.lock();
+        let soon = Duration::ZERO;
+        assert!(should_report(&state, soon), "nothing else is coming");
+        state.queue.set_wanted(&SPACE, &[key("next")]);
+        assert!(!should_report(&state, soon));
+        assert!(should_report(&state, LOADED_REPORT_INTERVAL));
+        state.reported = true;
+        assert!(!should_report(&state, LOADED_REPORT_INTERVAL));
+    }
+
+    #[test]
+    fn folders_and_drives_get_the_folder_icon_until_loaded() {
+        assert_eq!(GenericIcon::for_kind(ItemKind::Folder), GenericIcon::Folder);
+        assert_eq!(GenericIcon::for_kind(ItemKind::Drive), GenericIcon::Folder);
+        for kind in [ItemKind::File, ItemKind::Shortcut, ItemKind::Other] {
+            assert_eq!(GenericIcon::for_kind(kind), GenericIcon::File);
+        }
     }
 
     #[test]

@@ -221,7 +221,7 @@ pub fn space_scene_with_details(
                 id: item.id.0,
                 rect,
                 label: item_label(item, view.show_extensions),
-                icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+                icon: icons.icon_for(&item.path, item.kind, metrics.icon_size, theme.overlay_size),
                 state: if view.dragged.contains(&item.id) {
                     ItemState::Dragged
                 } else if view.selected.contains(&item.id) {
@@ -429,7 +429,7 @@ pub fn desktop_layer_scene(
                 cell.height,
             ),
             label: item_label(item, view.show_extensions),
-            icon: icons.icon_for(&item.path, metrics.icon_size, theme.overlay_size),
+            icon: icons.icon_for(&item.path, item.kind, metrics.icon_size, theme.overlay_size),
             state: if view.dragged.contains(&item.id) {
                 ItemState::Dragged
             } else if view.selected.contains(&item.id) {
@@ -528,7 +528,7 @@ pub fn desktop_layer_drag_scene(
                     cell.height,
                 ),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, icon_size, overlay_size),
+                icon: icons.icon_now(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,
@@ -571,7 +571,7 @@ pub fn drag_scene(
                 id: item.id.0,
                 rect: Rect::new(cell.x, content_top + cell.y, cell.width, cell.height),
                 label: item_label(item, show_extensions),
-                icon: icons.icon_for(&item.path, icon_size, overlay_size),
+                icon: icons.icon_now(&item.path, icon_size, overlay_size),
                 state: ItemState::Normal,
                 hovered: false,
                 checked: false,

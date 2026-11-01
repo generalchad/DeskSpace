@@ -54,13 +54,16 @@ pub(crate) const FOLDER_CHANGE: u32 = WM_APP + 14;
 /// To an animating space window, after each composition (`frame_clock`).
 pub(crate) const FRAME: u32 = WM_APP + 15;
 
+/// The icon worker loaded icons for `IconCache::take_loaded` to collect.
+pub(crate) const ICONS_LOADED: u32 = WM_APP + 16;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Every message above. A new one must be added here too, so the checks
     /// below cover it.
-    const ALL: [u32; 15] = [
+    const ALL: [u32; 16] = [
         TRAY_CALLBACK,
         OUTSIDE_PROBE,
         EDIT_KEY,
@@ -76,6 +79,7 @@ mod tests {
         NAV_KEY,
         FOLDER_CHANGE,
         FRAME,
+        ICONS_LOADED,
     ];
 
     #[test]

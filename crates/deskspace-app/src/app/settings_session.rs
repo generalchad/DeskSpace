@@ -108,7 +108,7 @@ impl App {
             .into_iter()
             .map(|(path, label)| PreviewItem {
                 label,
-                icon: self.icons.icon_for(&path, PREVIEW_ICON_SIZE, overlay_size),
+                icon: self.icons.icon_now(&path, PREVIEW_ICON_SIZE, overlay_size),
             })
             .collect();
         SpacePreview {

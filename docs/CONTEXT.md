@@ -1266,8 +1266,19 @@ in `ui.rs`. What spans them:
   area-averaged to `theme.overlay_size` percent and anchored bottom-left
   before compositing. HICONs are decoded through WIC (`d2d::decode_icon`).
   Entries are keyed by path, pixel size, and overlay size, with
-  least-recently-used eviction at 1024 entries; `invalidate(path)` forgets
-  every size of one path.
+  least-recently-used eviction at 1024 entries, or at what the windows now
+  draw if that is more; `invalidate(path)` marks every size of one path out
+  of date, and the old pixels show until the new ones load.
+  A scene never loads an icon on the UI thread. `App::refresh_space` and
+  `refresh_desktop_layer` bracket a scene with `begin_scene` and `end_scene`.
+  `icon_for` gives the cached icon or a generic one for the item's `ItemKind`,
+  and `end_scene` hands what was missing to one worker thread
+  (`icon_queue.rs`, pure), replacing what that window asked for before, so a
+  path scrolled out of view goes unread. The worker reports in batches
+  (`ICONS_LOADED`, `Event::IconsLoaded`); `take_loaded` names the windows that
+  asked, and only those draw again. A drag image and the settings preview
+  cannot draw again later, so they call `icon_now`, which loads on the UI
+  thread.
 - `shell_items.rs`, Explorer behavior for items:
   - `Ui::open_path` runs `ShellExecuteExW` with the default context-menu verb,
     first passing DeskSpace's foreground right on with

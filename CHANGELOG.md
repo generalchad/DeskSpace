@@ -84,6 +84,8 @@ Notable changes to DeskSpace, newest first. The format follows
 
 ### Fixed
 
+- A slow or network folder no longer stalls every space while its icons load.
+  An item shows a generic icon at once, and its own fills in, as in Explorer.
 - With the desktop takeover on: a taskbar that ended up under the desktop
   layer takes clicks again; Delete removes loose desktop icons; New › Folder
   opens a visible rename box; and an icon updates when its file changes in

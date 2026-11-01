@@ -133,6 +133,11 @@ fn with_runtime<R>(f: impl FnOnce(&mut Runtime) -> R) -> Option<R> {
     })
 }
 
+/// The controller window, once the runtime is up.
+pub(crate) fn controller_window() -> Option<HWND> {
+    with_runtime(|runtime| runtime.controller)
+}
+
 /// Delivers `event` to the handler, or queues it if the handler is already
 /// running further up the stack.
 pub(crate) fn dispatch(event: Event) {
