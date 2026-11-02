@@ -10,6 +10,7 @@ pub mod icon_match;
 pub mod icon_set;
 pub mod id;
 pub mod item;
+pub mod label;
 pub mod layout;
 pub mod lens_build;
 pub mod placement;

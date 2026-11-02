@@ -1668,10 +1668,6 @@ Small first. Each lands alone unless it says "After".
   human]** check: it shows only when the columns pass the edge, with vertical
   scrolling on and off.
 
-- [ ] **P16a. Pick the labels worth measuring (pure).** Part of P16; the design is
-  ROADMAP D25. `longest_by_chars(labels, count)` in core, and its tests. Time it on
-  50,000 labels and put the dated result in the commit body; over 8 ms, stop and ask.
-
 - [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
   the Details header menu, by the menu recipe. It records one undo entry, like Choose
   columns. Take the widths from plain data in a function, and test it. **[needs

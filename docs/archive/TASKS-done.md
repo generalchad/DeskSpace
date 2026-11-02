@@ -5645,3 +5645,7 @@ until I5-I6 all land, so no partial build hides the desktop.
     into `a_background_refresh_fills_the_cache`, then delete the first test.
     Done when: every assertion still runs, and the module has one test that
     calls the shell. Then archive P9.
+
+- [x] **P16a. Pick the labels worth measuring (pure).** Part of P16; the design is
+  ROADMAP D25. `longest_by_chars(labels, count)` in core, and its tests. Time it on
+  50,000 labels and put the dated result in the commit body; over 8 ms, stop and ask.
