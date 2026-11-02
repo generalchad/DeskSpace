@@ -168,15 +168,16 @@ thread_local! {
 }
 
 /// Process state: the answers `type_name` has loaded, shared between threads so
-/// the watch worker can warm Explorer's type names off the UI thread (B43).
-/// Never cleared.
-static SHARED_TYPE_NAMES: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+/// the watch worker can warm Explorer's type names off the UI thread. Only a
+/// real answer is kept: a shell read that failed on the worker must not hide
+/// the name from the UI thread for the rest of the session. Never cleared.
+static SHARED_TYPE_NAMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
-fn shared_type_names() -> &'static Mutex<HashMap<String, Option<String>>> {
+fn shared_type_names() -> &'static Mutex<HashMap<String, String>> {
     SHARED_TYPE_NAMES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn shared_type_name(key: &str) -> Option<Option<String>> {
+fn shared_type_name(key: &str) -> Option<String> {
     shared_type_names()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -184,7 +185,7 @@ fn shared_type_name(key: &str) -> Option<Option<String>> {
         .cloned()
 }
 
-fn remember_shared_type_name(key: String, name: Option<String>) {
+fn remember_shared_type_name(key: String, name: String) {
     shared_type_names()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -201,12 +202,14 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
         return cached;
     }
     if let Some(cached) = shared_type_name(&key) {
-        TYPE_NAMES.with(|names| names.borrow_mut().insert(key, cached.clone()));
-        return cached;
+        TYPE_NAMES.with(|names| names.borrow_mut().insert(key, Some(cached.clone())));
+        return Some(cached);
     }
     let name = load_type_name(path, is_folder);
     TYPE_NAMES.with(|names| names.borrow_mut().insert(key.clone(), name.clone()));
-    remember_shared_type_name(key, name.clone());
+    if let Some(name) = &name {
+        remember_shared_type_name(key, name.clone());
+    }
     name
 }
 
@@ -548,7 +551,7 @@ mod tests {
     #[test]
     fn a_type_name_loaded_on_another_thread_is_read_here() {
         let key = type_name_key(Path::new("probe.deskspace-shared-cache"), false);
-        remember_shared_type_name(key, Some("Shared type".into()));
+        remember_shared_type_name(key, "Shared type".into());
         let name =
             std::thread::spawn(|| type_name(Path::new("other.deskspace-shared-cache"), false))
                 .join()
