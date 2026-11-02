@@ -1689,11 +1689,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
 
-- [ ] **P15a. Give `details_columns` an offset (refactor).** Part of P15; the design
-  is ROADMAP D24. It takes an offset and shifts each `rect.x`; its one caller passes
-  0, so nothing changes on screen. Add `details_max_scroll(columns, width, padding)`.
-  Tests: the rects shift, and the maximum, including 0 when the columns fit.
-
 - [ ] **P15b. Store the sideways offset (feature).** After: P15a. Part of P15. The
   offset in `ViewCache`, read through the clamp, and passed to `details_columns`.
   Reset it to 0 where `set_scroll(id, 0)` runs on a view change. Nothing sets it yet

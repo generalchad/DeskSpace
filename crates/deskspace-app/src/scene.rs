@@ -652,6 +652,7 @@ pub(crate) fn details_view(
             space.view(),
             content_width,
             padding,
+            0,
             layout.header_height(),
             scale,
         ),
@@ -672,11 +673,13 @@ pub(crate) fn drop_mark_x(columns: &[DetailsColumnVisual], insert_at: usize) -> 
 /// The Details columns `view` shows, laid out across `content_width`: Name
 /// takes the width left over, down to `NAME_MIN_WIDTH`, unless a divider drag
 /// holds it, and the rest keep their own widths. Rects are relative to the
-/// content area.
+/// content area, shifted left by `offset` for a sideways scroll, which is
+/// clamped to what the columns need.
 pub(crate) fn details_columns(
     view: &SpaceView,
     content_width: i32,
     padding: i32,
+    offset: i32,
     header_height: i32,
     scale: f32,
 ) -> Vec<DetailsColumnVisual> {
@@ -693,7 +696,7 @@ pub(crate) fn details_columns(
         .and_then(|name| name.width)
         .map_or(rest, |held| scaled(i32::from(held)));
     let mut x = padding;
-    shown_details_columns(view)
+    let mut columns: Vec<DetailsColumnVisual> = shown_details_columns(view)
         .enumerate()
         .map(|(index, (column, width))| {
             let width = if index == 0 {
@@ -709,7 +712,24 @@ pub(crate) fn details_columns(
             x += width;
             visual
         })
-        .collect()
+        .collect();
+    let offset = offset.clamp(0, details_max_scroll(&columns, content_width, padding));
+    for column in &mut columns {
+        column.rect.x -= offset;
+    }
+    columns
+}
+
+/// How far the Details columns can scroll sideways in `content_width`, leaving
+/// `padding` at the right edge. Zero when the columns already fit.
+pub(crate) fn details_max_scroll(
+    columns: &[DetailsColumnVisual],
+    content_width: i32,
+    padding: i32,
+) -> i32 {
+    columns.last().map_or(0, |column| {
+        (column.rect.right() - content_width + padding).max(0)
+    })
 }
 
 /// The column whose header shows Explorer's arrow, and whether it points up.
@@ -1514,7 +1534,7 @@ mod tests {
             },
             ..SpaceView::default()
         };
-        let columns = details_columns(&view, 1000, 0, 24, 1.0);
+        let columns = details_columns(&view, 1000, 0, 0, 24, 1.0);
         assert_eq!(
             columns
                 .iter()
@@ -1556,12 +1576,68 @@ mod tests {
         let view = SpaceView::default()
             .with_column_width(deskspace_core::Column::Modified, 400)
             .with_name_held(Some(300));
-        let columns = details_columns(&view, 500, 0, 24, 1.0);
+        let columns = details_columns(&view, 500, 0, 0, 24, 1.0);
         assert_eq!(columns[0].rect.width, 300);
         assert_eq!(columns[1].rect.x, 300, "its left edge stays put");
         assert_eq!(columns[1].rect.right(), 700, "and its divider follows");
-        let released = details_columns(&view.with_name_held(None), 500, 0, 24, 1.0);
+        let released = details_columns(&view.with_name_held(None), 500, 0, 0, 24, 1.0);
         assert_eq!(released[0].rect.width, 120, "Name takes the rest again");
+    }
+
+    #[test]
+    fn details_columns_shift_sideways_up_to_the_scroll_limit() {
+        let view = two_column_details().with_name_held(Some(300));
+        let columns = details_columns(&view, 500, 0, 0, 24, 1.0);
+        assert_eq!(
+            details_max_scroll(&columns, 500, 0),
+            200,
+            "the two columns span 700 in 500"
+        );
+
+        let shifted = details_columns(&view, 500, 0, 150, 24, 1.0);
+        assert_eq!(shifted[0].rect.x, -150);
+        assert_eq!(shifted[1].rect.x, 150);
+        assert_eq!(shifted[1].rect.right(), 550);
+
+        let clamped = details_columns(&view, 500, 0, 999, 24, 1.0);
+        assert_eq!(
+            clamped[1].rect.right(),
+            500,
+            "the last column reaches the edge"
+        );
+    }
+
+    #[test]
+    fn the_scroll_limit_leaves_the_padding_at_the_right_edge() {
+        let view = two_column_details().with_name_held(Some(300));
+        let columns = details_columns(&view, 500, 10, 0, 24, 1.0);
+        assert_eq!(details_max_scroll(&columns, 500, 10), 220);
+
+        let shifted = details_columns(&view, 500, 10, 220, 24, 1.0);
+        assert_eq!(shifted[1].rect.right(), 490, "right padding shows");
+    }
+
+    #[test]
+    fn details_scrolls_by_nothing_when_the_columns_fit() {
+        let columns = details_columns(&two_column_details(), 1000, 0, 0, 24, 1.0);
+        assert_eq!(details_max_scroll(&columns, 1000, 0), 0);
+    }
+
+    fn two_column_details() -> SpaceView {
+        use deskspace_core::{Column, ColumnSpec};
+        SpaceView {
+            columns: ColumnSpec::sanitize(vec![
+                ColumnSpec {
+                    id: Column::Name,
+                    width: None,
+                },
+                ColumnSpec {
+                    id: Column::Modified,
+                    width: Some(400),
+                },
+            ]),
+            ..SpaceView::default()
+        }
     }
 
     #[test]

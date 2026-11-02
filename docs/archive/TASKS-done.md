@@ -5599,3 +5599,8 @@ until I5-I6 all land, so no partial build hides the desktop.
   - Nothing changes facts yet, so no behavior changes. Tests: each ignored field,
     a changed label still differs, and a kept-sorted space in another order is the
     same while a hand-ordered one is not.
+
+- [x] **P15a. Give `details_columns` an offset (refactor).** Part of P15; the design
+  is ROADMAP D24. It takes an offset and shifts each `rect.x`; its one caller passes
+  0, so nothing changes on screen. Add `details_max_scroll(columns, width, padding)`.
+  Tests: the rects shift, and the maximum, including 0 when the columns fit.
