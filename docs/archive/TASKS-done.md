@@ -5736,3 +5736,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: browse two levels down, rename the lens's folder in
     Explorer: within 5 s the lens follows with its notice, and Ctrl+Z points it
     back. Add it to W45's row.
+
+- [x] **P22. Release the catalog worker's graphics before leaving COM (fix).**
+  `refresh_in_background` (`win32/app_catalog.rs`) calls `CoUninitialize` while
+  its thread-local `Graphics` still holds COM objects, which are released later at
+  thread exit. The icon worker can leave its apartment open because it lives as
+  long as the app. This thread ends after every listing, so it should clean up.
+  - Call `d2d::release_graphics()` just before `CoUninitialize`, as
+    `runtime/mod.rs` does. That function's doc says this is its purpose. Call it
+    even when `initialized` is false.
+  - This is a thread's cleanup, so it steps over the junior line. It is one safe
+    call and changes no `unsafe` block. A senior reviews it.
+  - No test can see this. Done when: gates pass, and the picker opens, closes, and
+    opens again with icons (a section V row).

@@ -19,7 +19,7 @@ use windows::Win32::UI::Shell::{
 };
 
 use crate::input::ShellItem;
-use crate::render::Icon;
+use crate::render::{Icon, d2d};
 use crate::win32::icons::shell_item_icon;
 use crate::win32::shortcuts::shell_item;
 
@@ -71,6 +71,9 @@ pub(crate) fn refresh_in_background() {
             // uninitializes it once every COM object it made is dropped.
             let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
             let apps = list(true);
+            // Decoding the icons leaves COM objects in this thread's
+            // Direct2D/WIC state, which must be gone before COM is.
+            d2d::release_graphics();
             if initialized {
                 // SAFETY: balances the successful CoInitializeEx above.
                 unsafe { CoUninitialize() };

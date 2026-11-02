@@ -1513,19 +1513,6 @@ Small first. Each lands alone unless it says "After".
   edge for content lagging or a frame with no title. If nothing shows, delete P26
   in a commit saying so. Otherwise record which effect shows it under P26.
 
-- [ ] **P22. Release the catalog worker's graphics before leaving COM (fix).**
-  `refresh_in_background` (`win32/app_catalog.rs`) calls `CoUninitialize` while
-  its thread-local `Graphics` still holds COM objects, which are released later at
-  thread exit. The icon worker can leave its apartment open because it lives as
-  long as the app. This thread ends after every listing, so it should clean up.
-  - Call `d2d::release_graphics()` just before `CoUninitialize`, as
-    `runtime/mod.rs` does. That function's doc says this is its purpose. Call it
-    even when `initialized` is false.
-  - This is a thread's cleanup, so it steps over the junior line. It is one safe
-    call and changes no `unsafe` block. A senior reviews it.
-  - No test can see this. Done when: gates pass, and the picker opens, closes, and
-    opens again with icons (a section V row).
-
 - [ ] **P21. Hold the debug refresh during an animation (fix).** `refresh_debug`
   (`app/debug/mod.rs`) stalls every running animation for 20-60 ms once a second
   (measured 2026-10-31).
@@ -2058,6 +2045,7 @@ for a machine that has it.
 | P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
 | P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 | P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
+| P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
 
 ## Found while working
 
