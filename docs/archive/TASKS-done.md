@@ -5367,3 +5367,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     timing test and record it.
   - Done when: the gates pass and a rename on 50,000 items is well under the
     Performance rule's 8 ms.
+- [x] **B40. Load a lens title's folder icon on the icon worker (platform).**
+  - Why: `IconCache::folder_icon` calls `load_folder_icon` on the UI thread
+    while a scene is built, so a lens on a slow or disconnected folder stalls
+    every space there (found in B33).
+  - `win32/icons.rs` `folder_icon` follows `icon_for`: a cached icon (even a
+    stale one) is drawn at once; otherwise the key joins the current scene's
+    wanted list and the kind's generic folder icon is drawn. The worker
+    already knows `IconKind::Folder`, so nothing else changes.
+  - Tests: outside a scene nothing is asked for; in a scene the key is
+    queued, the generic icon is returned, and the loaded icon reaches the
+    cache and refreshes the asking space.
+  - `CONTEXT.md` section 3: a lens's title icon loads like an item's, generic
+    first.
+  - **[needs human]** check: on a slow or disconnected folder, the other
+    spaces stay responsive and the lens's title shows the generic folder
+    before its own icon (append to the B33 row in section V).

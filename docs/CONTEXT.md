@@ -272,8 +272,10 @@ long, is cut from its start so the folder shown stays in view
 (`SpaceScene::title_keeps_end`). The painter measures the title's
 DirectWrite clusters once per title, so a cut never splits a character,
 and recuts by arithmetic as the width changes.
-A lens's title bar shows its folder's own shell icon, or the generic folder
-icon while the folder is unavailable; a normal space's title bar shows none.
+A lens's title bar shows its folder's own shell icon once the icon worker has
+loaded it, and the generic folder icon until then (and while the folder is
+unavailable), so a slow folder never stalls a scene; a normal space's title
+bar shows none.
 Hovering a lens's title bar tips the folder it displays (`scene::title_tip`),
 prefixed with "Folder not available" while its folder is gone; a normal
 space's title bar tips nothing (W27).

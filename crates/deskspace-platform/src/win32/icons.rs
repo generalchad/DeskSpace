@@ -248,16 +248,20 @@ impl IconCache {
     }
 
     /// The icon for a lens's folder, drawn `size` pixels square in a title bar.
-    /// An available folder uses its own shell icon; an unavailable one gets
-    /// the shell's generic folder icon without touching the disk.
+    /// An available folder uses its own shell icon once the load worker has it;
+    /// until then, and for an unavailable one, this draws the shell's generic
+    /// folder icon, so building a scene never waits on a slow folder.
     pub fn folder_icon(&mut self, path: &Path, size: i32, available: bool) -> Option<Icon> {
         let key = (path.to_path_buf(), size, IconKind::Folder { available });
-        if let Some(icon) = self.touch(&key) {
-            return Some(icon);
+        self.scene_items += 1;
+        let (icon, wanted) = match self.use_entry(&key) {
+            Some(entry) => (entry.icon.clone(), entry.stale),
+            None => (None, true),
+        };
+        if wanted && self.scene.is_some() {
+            self.wanted.push(key);
         }
-        let icon = load_folder_icon(path, size.clamp(1, 1024) as u32, available)?;
-        self.insert(key, icon.clone());
-        Some(icon)
+        icon.or_else(|| self.generic_icon(GenericIcon::Folder, size))
     }
 
     /// Marks every size of the icon for `path` out of date, so the next scene
@@ -308,10 +312,12 @@ impl IconCache {
     }
 
     /// Marks `key` as used now and returns its icon, when it is cached.
+    #[cfg(test)]
     fn touch(&mut self, key: &Key) -> Option<Icon> {
         self.use_entry(key)?.icon.clone()
     }
 
+    #[cfg(test)]
     fn insert(&mut self, key: Key, icon: Icon) {
         self.store(key, Some(icon), false);
     }
@@ -1054,24 +1060,42 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_title_icon_loads_available_and_unavailable() {
-        // SAFETY: the shell APIs below need COM; this thread lives for the
-        // test, so the apartment is released with the test process.
-        let _ = unsafe {
-            windows::Win32::System::Com::CoInitializeEx(
-                None,
-                windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
-            )
-        };
+    fn a_folder_title_icon_is_generic_until_the_worker_loads_it() {
         let missing = Path::new("C:/nowhere/DeskSpace title icon test");
-        assert!(load_generic_folder_icon().is_some());
-        let mut cache = IconCache::new();
-        // An available folder uses its own icon; an unavailable one the
-        // generic icon; the two never share a cache entry.
-        assert!(cache.folder_icon(&std::env::temp_dir(), 16, true).is_some());
+        let folder_key = |available| (missing.to_path_buf(), 16, IconKind::Folder { available });
+        let mut cache = cache_with_queue();
+        cache.generic.insert((GenericIcon::Folder, 16), icon());
+
+        // Outside a scene nothing is asked for, and the generic icon is drawn.
         assert!(cache.folder_icon(missing, 16, true).is_some());
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+
+        // In a scene, the generic icon is drawn now and the real one is queued.
+        cache.begin_scene(SPACE);
+        assert!(cache.folder_icon(missing, 16, true).is_some());
+        cache.end_scene();
+        assert!(
+            cache.touch(&folder_key(true)).is_none(),
+            "nothing loads on this thread"
+        );
+        assert_eq!(load_all(&cache, Some(icon())), 1);
+        assert_eq!(cache.take_loaded(), [SPACE]);
+        assert!(cache.touch(&folder_key(true)).is_some());
+
+        // Once loaded, the folder is not asked for again.
+        cache.begin_scene(SPACE);
+        cache.folder_icon(missing, 16, true);
+        cache.end_scene();
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+
+        // An unavailable folder keeps its own entry, so the two never share.
+        cache.begin_scene(SPACE);
         assert!(cache.folder_icon(missing, 16, false).is_some());
-        assert_eq!(cache.len(), 3);
+        cache.end_scene();
+        assert_eq!(load_all(&cache, Some(icon())), 1);
+        cache.take_loaded();
+        assert!(cache.touch(&folder_key(false)).is_some());
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]

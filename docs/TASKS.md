@@ -238,23 +238,6 @@ and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
 same kind: they are the costs left over from B33/B37, against the 50,000-file
 bar in section W's Performance rules.
 
-- [ ] **B40. Load a lens title's folder icon on the icon worker (platform).**
-  - Why: `IconCache::folder_icon` calls `load_folder_icon` on the UI thread
-    while a scene is built, so a lens on a slow or disconnected folder stalls
-    every space there (found in B33).
-  - `win32/icons.rs` `folder_icon` follows `icon_for`: a cached icon (even a
-    stale one) is drawn at once; otherwise the key joins the current scene's
-    wanted list and the kind's generic folder icon is drawn. The worker
-    already knows `IconKind::Folder`, so nothing else changes.
-  - Tests: outside a scene nothing is asked for; in a scene the key is
-    queued, the generic icon is returned, and the loaded icon reaches the
-    cache and refreshes the asking space.
-  - `CONTEXT.md` section 3: a lens's title icon loads like an item's, generic
-    first.
-  - **[needs human]** check: on a slow or disconnected folder, the other
-    spaces stay responsive and the lens's title shows the generic folder
-    before its own icon (append to the B33 row in section V).
-
 - [ ] **B41. Load the Shortcuts preview's icons on the icon worker (app,
   platform).**
   - Why: `space_preview` calls `icon_now` for every item, so opening the
@@ -1812,7 +1795,7 @@ for a machine that has it.
 | Space icons: consent and download (D16, S8) | With a scratch config and a build without the signing key: set Settings > New spaces > Icon to Automatic, make the default title "Games", and use New space. The prompt "Show icons on spaces?" appears once and names the set, its author, and its license; "Download icons" logs a NotConfigured failure in the log and shows no icon, and nothing else breaks. "No thanks" saves Never and never asks again; set General > Icon downloads back to "Ask first" and the next new space asks again. With the published set and a key in the build: the same steps download it once, every automatic space shows its icon, and the next start reads the cache with no network (`-Verbosity 1`). A `-Fresh` first launch shows no prompt, because the seeded space has no icon. General's note says where the download comes from and that nothing is sent. |
 | S5 (F-62) | Once `DESKSPACE_MINISIGN_KEY` and `UPDATE_PUBKEY` are set, run "Publish icon set" for `fluent`: the release is a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`, and the repository's "Latest" badge still points at the app. A second run fails at the check for an existing release. Then a keyed build's new space asks once, downloads, and shows its title icon. |
 | B37 | With a `dev.ps1` scratch config, a lens on a folder of 50,000 files, ungrouped and grouped by Type: copy files into the folder, change Sort by, toggle Show hidden files, and type in Show only. Other spaces keep responding and the lens never hitches; its list follows a moment later. The selection survives a refresh, and an item renamed with F2 stays selected once the listing arrives. Sort by, then Cancel in Settings, returns the old order. A locked lens places its items instead of stacking them. Change folder…, a browse, and Exit during a big refresh leave no stray list and do not hang. |
-| B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
+| B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive, and its title shows the generic folder before the folder's own icon. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
