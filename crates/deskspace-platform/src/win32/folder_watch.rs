@@ -144,6 +144,7 @@ pub(crate) struct FolderWatch {
 struct PendingWatch {
     path: PathBuf,
     store: PathBuf,
+    root: Option<PathBuf>,
     listing: SharedListing,
     builder: Option<LensBuilder>,
 }
@@ -227,14 +228,18 @@ impl FolderWatch {
     }
 
     /// Watches `path` for `key`, refusing it when it resolves to `store` or
-    /// inside it. `builder` turns a lens's listings into its item list; a
-    /// watch without one posts empty lists. Does nothing when that key already
-    /// watches the same path; another path replaces the key's watch.
+    /// inside it. `root` is the lens's own folder when `path` is a subfolder
+    /// below it: its handle is opened there and reads below it, while `path` is
+    /// what gets listed, so renaming that folder stays possible. `builder`
+    /// turns a lens's listings into its item list; a watch without one posts
+    /// empty lists. Does nothing when that key already watches the same path;
+    /// another path replaces the key's watch.
     pub(crate) fn watch(
         &mut self,
         key: WatchKey,
         path: &Path,
         store: &Path,
+        root: Option<&Path>,
         builder: Option<LensBuilder>,
     ) -> Result<(), PlatformError> {
         if self.is_watching(key, path) {
@@ -262,6 +267,7 @@ impl FolderWatch {
                 PendingWatch {
                     path: path.to_path_buf(),
                     store: store.to_path_buf(),
+                    root: root.map(Path::to_path_buf),
                     listing,
                     builder,
                 },
@@ -491,6 +497,7 @@ impl Worker {
         let Some(PendingWatch {
             path,
             store,
+            root,
             listing,
             builder,
         }) = pending
@@ -501,6 +508,7 @@ impl Worker {
         let mut folder = Folder {
             path,
             store,
+            root,
             listing,
             builder,
             open: None,
@@ -512,7 +520,8 @@ impl Worker {
         let listing = match folder.open(self.port, read_key) {
             Ok(()) => {
                 self.by_read.insert(read_key, slot);
-                folder.list()
+                let listing = folder.list();
+                folder.prefer_moved(listing)
             }
             Err(OpenFailure::Refused(resolved)) => {
                 tracing::warn!(
@@ -635,12 +644,17 @@ impl Worker {
             }
         };
         if failed {
+            let listing = self
+                .folders
+                .get(&slot)
+                .map(|folder| folder.prefer_moved(FolderListing::Unavailable))
+                .unwrap_or(FolderListing::Unavailable);
             self.close_open(slot);
             if let Some(folder) = self.folders.get_mut(&slot) {
                 folder.retry_at = Some(now_ms + RETRY_MS);
             }
             self.bursts.remove(slot);
-            self.publish(slot, FolderListing::Unavailable);
+            self.publish(slot, listing);
         } else {
             self.bursts.mark(slot, now_ms);
         }
@@ -653,6 +667,7 @@ impl Worker {
                 continue;
             };
             let listing = folder.list();
+            let listing = folder.prefer_moved(listing);
             let listed = matches!(listing, FolderListing::Listed(_));
             folder.retry_at = (!listed).then_some(now_ms + RETRY_MS);
             if !listed {
@@ -709,14 +724,18 @@ impl Worker {
                 let Some(folder) = self.folders.get_mut(&slot) else {
                     continue;
                 };
-                match folder.list() {
+                let listing = folder.list();
+                let listing = folder.prefer_moved(listing);
+                match listing {
                     FolderListing::Listed(list) => {
                         folder.retry_at = None;
                         Some(FolderListing::Listed(list))
                     }
-                    FolderListing::Unavailable
-                    | FolderListing::Refused
-                    | FolderListing::Moved { .. } => {
+                    listing @ FolderListing::Moved { .. } => {
+                        folder.retry_at = Some(now_ms + RETRY_MS);
+                        Some(listing)
+                    }
+                    FolderListing::Unavailable | FolderListing::Refused => {
                         folder.retry_at = Some(now_ms + RETRY_MS);
                         None
                     }
@@ -764,7 +783,10 @@ impl Worker {
             .filter_map(|(slot, folder)| folder.moved().map(|listing| (*slot, listing)))
             .collect();
         for (slot, listing) in gone {
-            let path = self.folders.get(&slot).map(|folder| folder.path.clone());
+            let path = self
+                .folders
+                .get(&slot)
+                .map(|folder| folder.watch_path().to_path_buf());
             if let Some(path) = path {
                 tracing::debug!(path = %path.display(), ?listing, "watched folder moved or disappeared");
             }
@@ -867,10 +889,16 @@ struct CanceledRead {
 
 /// One watched folder.
 struct Folder {
+    /// The folder whose contents are listed: a lens's own folder, or the
+    /// subfolder it shows while browsed.
     path: PathBuf,
-    /// DeskSpace's storage folder as a final path. The folder is refused when
+    /// DeskSpace's storage folder as a final path. A folder is refused when
     /// its own final path is this or inside it.
     store: PathBuf,
+    /// The lens's own folder whose handle is watched, when `path` is a
+    /// subfolder below it. `None` for a watch on the folder it lists and for
+    /// the Desktop.
+    root: Option<PathBuf>,
     listing: SharedListing,
     /// Turns a lens's listings into its item list. The Desktop's watch has
     /// none: the layer re-reads the shell.
@@ -882,24 +910,45 @@ struct Folder {
 }
 
 impl Folder {
-    /// Opens the folder if it is not open and starts its read under
-    /// `read_key`. A folder that resolves to the store or inside it is closed
-    /// again before any read starts. The final path comes from the handle
-    /// just opened, on this worker, so the UI thread never waits on it.
+    /// The folder whose handle is open. A browsed lens watches its own folder,
+    /// not the subfolder it lists, because Windows refuses to rename a folder
+    /// while a directory below it is open.
+    fn watch_path(&self) -> &Path {
+        self.root.as_deref().unwrap_or(&self.path)
+    }
+
+    /// Opens the watched folder if it is not open and starts its read under
+    /// `read_key`, watching below it when it lists a subfolder. A folder that
+    /// resolves to the store or inside it is closed again before any read
+    /// starts. The final path comes from the handle just opened, on this
+    /// worker, so the UI thread never waits on it.
     fn open(&mut self, port: HANDLE, read_key: usize) -> Result<(), OpenFailure> {
         if self.open.is_some() {
             return Ok(());
         }
-        let mut open = open_folder(&self.path, port, read_key).map_err(OpenFailure::Failed)?;
+        let watch_path = self.watch_path();
+        let subtree = self.root.is_some();
+        let mut open =
+            open_folder(watch_path, port, read_key, subtree).map_err(OpenFailure::Failed)?;
         // Some file systems cannot name a final path; `canonicalize` fails
         // there too, and the store check has always fallen back to the path
         // as given, with its `..` steps taken (no IO).
         let resolved = final_path(open.directory).unwrap_or_else(|error| {
-            tracing::debug!(%error, path = %self.path.display(), "no final path; checking the path as given");
-            std::path::absolute(&self.path).unwrap_or_else(|_| self.path.clone())
+            tracing::debug!(%error, path = %watch_path.display(), "no final path; checking the path as given");
+            std::path::absolute(watch_path).unwrap_or_else(|_| watch_path.to_path_buf())
         });
         if is_inside(&resolved, &self.store) {
             // No read started, so nothing is left to wait for.
+            let _ = open.close();
+            return Err(OpenFailure::Refused(resolved));
+        }
+        // The subfolder a browsed lens lists is a path inside the watched
+        // root, so it is checked on its own too: it may be a junction into
+        // the store even when the root is not.
+        if subtree
+            && let Ok(resolved) = std::fs::canonicalize(&self.path)
+            && is_inside(&resolved, &self.store)
+        {
             let _ = open.close();
             return Err(OpenFailure::Refused(resolved));
         }
@@ -911,32 +960,44 @@ impl Folder {
         Ok(())
     }
 
-    /// What an open folder's path names now, when that is no longer a folder
-    /// to list: `Unavailable` when it is gone, or `Refused` when it resolves
-    /// into the store. The open handle follows a renamed folder, but a
-    /// listing reads the path, so a junction into the store put in the old
-    /// folder's place would be listed.
+    /// What the watched folder's path names now, when that is no longer a
+    /// folder: `Unavailable` when it is gone, or `Refused` when the watched or
+    /// listed folder resolves into the store. The open handle follows a
+    /// renamed folder, but a listing reads the path, so a junction into the
+    /// store put in the old folder's place would be listed.
     /// A folder renamed or moved where a lens may follow it (`follows_to`)
     /// is `Moved` instead of `Unavailable`; the open handle names where it
-    /// went.
+    /// went. A browsed lens's own folder is the one watched, so its new path
+    /// is reported to the app, which follows it and drops the subfolder.
     fn moved(&self) -> Option<FolderListing> {
-        if !self.path.is_dir() {
+        let watch_path = self.watch_path();
+        if !watch_path.is_dir() {
             let to = self
                 .open
                 .as_ref()
                 .and_then(|open| final_path(open.directory).ok())
                 .map(|to| plain_path(&to))
-                .filter(|to| follows_to(&self.path, to, &self.store) && to.is_dir());
-            return Some(
-                to.map_or(FolderListing::Unavailable, |to| FolderListing::Moved {
-                    to,
-                    root: None,
-                }),
-            );
+                .filter(|to| follows_to(watch_path, to, &self.store) && to.is_dir());
+            return Some(match to {
+                Some(to) => FolderListing::Moved { to },
+                None => FolderListing::Unavailable,
+            });
         }
-        std::fs::canonicalize(&self.path)
-            .is_ok_and(|resolved| is_inside(&resolved, &self.store))
+        let into_store = |path: &Path| {
+            std::fs::canonicalize(path).is_ok_and(|resolved| is_inside(&resolved, &self.store))
+        };
+        (into_store(watch_path) || (self.root.is_some() && into_store(&self.path)))
             .then_some(FolderListing::Refused)
+    }
+
+    /// The listing to report for `listing`, preferring a moved root to a
+    /// subfolder that is gone: a change burst can list the old subfolder a
+    /// moment before the path check sees that the lens's own folder moved.
+    fn prefer_moved(&self, listing: FolderListing) -> FolderListing {
+        match listing {
+            FolderListing::Unavailable => self.moved().unwrap_or(FolderListing::Unavailable),
+            other => other,
+        }
     }
 
     /// The folder's current contents as a finished list, or `Unavailable` with
@@ -976,6 +1037,10 @@ struct OpenFolder {
     buffer: Vec<u8>,
     overlapped: Box<OVERLAPPED>,
     pending: bool,
+    /// Whether a change below the watched folder counts too. A browsed lens
+    /// watches its own folder, so changes inside the subfolder it shows are
+    /// only reported with this set.
+    subtree: bool,
 }
 
 impl OpenFolder {
@@ -992,7 +1057,7 @@ impl OpenFolder {
                 self.directory,
                 self.buffer.as_mut_ptr().cast(),
                 self.buffer.len() as u32,
-                false,
+                self.subtree,
                 filter(),
                 None,
                 Some(&mut *self.overlapped),
@@ -1039,7 +1104,12 @@ impl OpenFolder {
 
 /// Opens `path` for overlapped change reads and registers it with `port`
 /// under `read_key`.
-fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder, PlatformError> {
+fn open_folder(
+    path: &Path,
+    port: HANDLE,
+    read_key: usize,
+    subtree: bool,
+) -> Result<OpenFolder, PlatformError> {
     let name = wide(&path.to_string_lossy());
     // SAFETY: `name` is NUL-terminated. The directory is opened for overlapped
     // change reads; every error path below closes it before returning.
@@ -1069,6 +1139,7 @@ fn open_folder(path: &Path, port: HANDLE, read_key: usize) -> Result<OpenFolder,
         buffer: vec![0u8; BUFFER_BYTES],
         overlapped: Box::default(),
         pending: false,
+        subtree,
     })
 }
 
@@ -1385,7 +1456,7 @@ mod tests {
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &watched, &no_store(), None)
+                .watch(WatchKey::Desktop, &watched, &no_store(), None, None)
                 .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             std::fs::rename(&watched, &renamed).unwrap();
@@ -1402,6 +1473,166 @@ mod tests {
         // path never is, so compare the folder's own name.
         assert_eq!(to.file_name(), new.file_name(), "moved to {to:?}");
         assert_eq!(plain_path(&to), to, "the path reads plain");
+    }
+
+    /// A browsed lens watches its own folder, so renaming that folder works
+    /// and the watch reports the new path for the lens to follow (ROADMAP
+    /// D19).
+    #[test]
+    fn a_browsed_lens_reports_where_its_own_folder_went() {
+        let parent = scratch_folder("browsed-rename");
+        let root = parent.join("root");
+        let shown = root.join("A").join("B");
+        std::fs::create_dir_all(&shown).unwrap();
+        let watched = shown.clone();
+        let watched_root = root.clone();
+        let renamed_root = parent.join("new-root");
+        let seen = Arc::new(Mutex::new(None));
+        let result = Arc::clone(&seen);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(
+                    WatchKey::Desktop,
+                    &watched,
+                    &no_store(),
+                    Some(&watched_root),
+                    None,
+                )
+                .unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            // The handle is on `root`, so this rename is not blocked by the
+            // subfolder it lists.
+            std::fs::rename(&watched_root, &renamed_root).unwrap();
+            *result.lock().unwrap() = first_non_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&parent);
+        assert!(finished, "the watch did not finish");
+        let seen = seen.lock().unwrap().take();
+        let Some(FolderListing::Moved { to }) = seen else {
+            panic!("expected Moved, got {seen:?}");
+        };
+        // The temp folder may be spelled with a short name, and the final
+        // path never is, so compare the folder's own name.
+        assert_eq!(
+            to.file_name().and_then(|name| name.to_str()),
+            Some("new-root")
+        );
+    }
+
+    /// A browsed lens sees a file added to the subfolder it shows, though its
+    /// handle is on the folder above it.
+    #[test]
+    fn a_browsed_lens_sees_changes_in_the_subfolder_it_shows() {
+        let root = scratch_folder("browsed-subtree");
+        let shown = root.join("A").join("B");
+        std::fs::create_dir_all(&shown).unwrap();
+        let watched = shown.clone();
+        let watched_root = root.clone();
+        let added = shown.join("new.txt");
+        let counts = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&counts);
+        let finished = finishes(move || {
+            let builder = LensBuilder::new(
+                LensRules::default(),
+                deskspace_core::Desktop::new().reserve_item_ids(),
+                &[],
+            );
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(
+                    WatchKey::Space(deskspace_core::SpaceId(7)),
+                    &watched,
+                    &no_store(),
+                    Some(&watched_root),
+                    Some(builder),
+                )
+                .unwrap();
+            let before = first_listing(&watch, FIRST_SLOT);
+            std::fs::write(&added, "").unwrap();
+            let after = first_listing(&watch, FIRST_SLOT);
+            let count = |listing: Option<FolderListing>| match listing {
+                Some(FolderListing::Listed(list)) => list.items.len(),
+                _ => usize::MAX,
+            };
+            *seen.lock().unwrap() = vec![count(before), count(after)];
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(finished, "the watch did not finish");
+        assert_eq!(
+            std::mem::take(&mut *counts.lock().unwrap()),
+            vec![0, 1],
+            "the subfolder's new file was listed"
+        );
+    }
+
+    /// A change burst that finds the subfolder gone because the lens's own
+    /// folder moved reports the move, not a vanished subfolder, so the app
+    /// follows it even when the two signals race.
+    #[test]
+    fn a_burst_that_saw_the_root_move_reports_the_move() {
+        let parent = scratch_folder("browsed-race");
+        let root = parent.join("root");
+        let shown = root.join("A").join("B");
+        std::fs::create_dir_all(&shown).unwrap();
+        std::fs::write(shown.join("old.txt"), "").unwrap();
+        let watched = shown.clone();
+        let watched_root = root.clone();
+        let renamed_root = parent.join("new-root");
+        let seen = Arc::new(Mutex::new(None));
+        let result = Arc::clone(&seen);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(
+                    WatchKey::Desktop,
+                    &watched,
+                    &no_store(),
+                    Some(&watched_root),
+                    None,
+                )
+                .unwrap();
+            assert!(first_listing(&watch, FIRST_SLOT).is_some());
+            // A change under the root arms a burst; the rename lands before it
+            // lists, so the burst itself has to notice the move.
+            std::fs::write(watched.join("new.txt"), "").unwrap();
+            std::fs::rename(&watched_root, &renamed_root).unwrap();
+            *result.lock().unwrap() = first_non_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&parent);
+        assert!(finished, "the watch did not finish");
+        let seen = seen.lock().unwrap().take();
+        let Some(FolderListing::Moved { to }) = seen else {
+            panic!("expected Moved, got {seen:?}");
+        };
+        assert_eq!(
+            to.file_name().and_then(|name| name.to_str()),
+            Some("new-root")
+        );
+    }
+
+    /// A subfolder that is a junction into the store is refused while the
+    /// lens's own folder is still watched (W25).
+    #[test]
+    fn a_browsed_lens_refuses_a_subfolder_that_leads_into_the_store() {
+        let (scratch, link, final_store) = store_with_junction("browsed-junction");
+        let root = scratch.clone();
+        let listed = Arc::new(Mutex::new(None));
+        let seen = Arc::clone(&listed);
+        let finished = finishes(move || {
+            let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
+            watch
+                .watch(WatchKey::Desktop, &link, &final_store, Some(&root), None)
+                .unwrap();
+            *seen.lock().unwrap() = first_listing(&watch, FIRST_SLOT);
+            watch.stop();
+        });
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(finished, "the watch did not finish");
+        assert_eq!(listed.lock().unwrap().take(), Some(FolderListing::Refused));
     }
 
     #[test]
@@ -1428,7 +1659,7 @@ mod tests {
         let stopped = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &path, &no_store(), None)
+                .watch(WatchKey::Desktop, &path, &no_store(), None, None)
                 .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             watch.stop();
@@ -1447,11 +1678,11 @@ mod tests {
         let served = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &old_path, &no_store(), None)
+                .watch(WatchKey::Desktop, &old_path, &no_store(), None, None)
                 .unwrap();
             assert!(first_listing(&watch, FIRST_SLOT).is_some());
             watch
-                .watch(WatchKey::Desktop, &new_path, &no_store(), None)
+                .watch(WatchKey::Desktop, &new_path, &no_store(), None, None)
                 .unwrap();
             assert!(matches!(
                 first_listing(&watch, FIRST_SLOT + 1),
@@ -1485,7 +1716,9 @@ mod tests {
                 &[],
             );
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
-            watch.watch(key, &path, &no_store(), Some(builder)).unwrap();
+            watch
+                .watch(key, &path, &no_store(), None, Some(builder))
+                .unwrap();
             let first = first_listing(&watch, FIRST_SLOT);
             let rules = LensRules {
                 include: vec!["*.pdf".into()],
@@ -1525,7 +1758,7 @@ mod tests {
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &path, &no_store(), None)
+                .watch(WatchKey::Desktop, &path, &no_store(), None, None)
                 .unwrap();
             *seen.lock().unwrap() =
                 first_change(&watch, FIRST_SLOT).map(|(key, folder, _)| (key, folder));
@@ -1572,7 +1805,7 @@ mod tests {
         let finished = finishes(move || {
             let mut watch = FolderWatch::start(HWND::default(), 0).unwrap();
             watch
-                .watch(WatchKey::Desktop, &link, &final_store, None)
+                .watch(WatchKey::Desktop, &link, &final_store, None, None)
                 .unwrap();
             *seen.lock().unwrap() = first_listing(&watch, FIRST_SLOT);
             watch.stop();
@@ -1590,6 +1823,7 @@ mod tests {
         let folder = |path: &Path| Folder {
             path: path.to_path_buf(),
             store: final_store.clone(),
+            root: None,
             listing: Arc::new(Mutex::new(None)),
             builder: None,
             open: None,
@@ -1602,5 +1836,23 @@ mod tests {
         assert_eq!(moved, Some(FolderListing::Refused));
         assert_eq!(plain, None, "a folder outside the store is still fine");
         assert_eq!(gone, Some(FolderListing::Unavailable));
+    }
+
+    /// A browsed lens's shown subfolder is checked for the store on its own,
+    /// because the handle is on the lens's own folder (W25).
+    #[test]
+    fn a_browsed_subfolder_that_leads_into_the_store_is_refused() {
+        let (scratch, link, final_store) = store_with_junction("browsed-moved");
+        let folder = Folder {
+            path: link,
+            store: final_store,
+            root: Some(scratch.clone()),
+            listing: Arc::new(Mutex::new(None)),
+            builder: None,
+            open: None,
+            retry_at: None,
+        };
+        assert_eq!(folder.moved(), Some(FolderListing::Refused));
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 }

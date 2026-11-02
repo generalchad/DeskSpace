@@ -5718,3 +5718,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     changes. With `None`, keep today's `ReturnHome`.
   - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
     browsed.
+
+- [x] **P11. Follow a lens's folder while it browses a subfolder (fix).** A
+  browsed lens watched only the subfolder (`follow_moved_folder`, `app/lens.rs`).
+  Rename the lens's own folder meanwhile and the watch reported the subfolder's
+  new path, so the lens returned home and showed "Folder not available" rather
+  than following, which it does when not browsed (D19).
+  - A suffix match cannot decide this alone: `Root\A` moved to `Other\A` also
+    ends in `A`. The test is whether the old root is gone too, and that is IO, so
+    it belongs on the worker (W25: the UI thread never waits on a folder).
+  - **P11c.** Watch the lens's own folder while it browses, and list the
+    subfolder it shows. `Ui::watch_folder` passes the root, `Folder::open` holds
+    its handle there and reads below it, `Folder::list` lists the subfolder, and
+    `Folder::moved` reports the root's new path, so a rename is followed and the
+    browse is dropped. A subfolder that is gone reports `Unavailable`, and the
+    app returns to the lens's own folder.
+  - **[needs human]** check: browse two levels down, rename the lens's folder in
+    Explorer: within 5 s the lens follows with its notice, and Ctrl+Z points it
+    back. Add it to W45's row.

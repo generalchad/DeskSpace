@@ -26,8 +26,6 @@ const FREE_OFF_THREAD_FROM: usize = 1_000;
 enum Moved {
     /// The lens now shows the new path; run these effects.
     Followed(Vec<super::effect::Effect>),
-    /// A browsed lens returns to its own folder, given here.
-    ReturnHome(PathBuf),
     /// The space is gone, or the change did not apply.
     Ignored,
 }
@@ -45,19 +43,41 @@ impl App {
     /// The subfolder lens `id` shows, relative to its own folder: empty at
     /// its own folder, and for a normal space.
     pub(super) fn subfolder_of(&self, id: SpaceId) -> PathBuf {
-        let Some(view) = self
+        self.browsed_entry(id)
+            .map(|browsed| browsed.sub.clone())
+            .unwrap_or_default()
+    }
+
+    /// The browse record that still belongs to lens `id`, if any: a lens whose
+    /// own folder changed no longer has one.
+    fn browsed_entry(&self, id: SpaceId) -> Option<&Browsed> {
+        let view = self
             .config
             .desktop
             .space(id)
-            .and_then(|space| space.folder_view())
-        else {
-            return PathBuf::new();
-        };
+            .and_then(|space| space.folder_view())?;
         self.browsed
             .get(&id)
             .filter(|browsed| browsed.root == view.path)
-            .map(|browsed| browsed.sub.clone())
-            .unwrap_or_default()
+    }
+
+    /// The lens's own folder while it shows a subfolder below it, so its watch
+    /// holds the handle there and renaming the folder stays possible.
+    fn browsed_root(&self, id: SpaceId) -> Option<PathBuf> {
+        self.browsed_entry(id).map(|browsed| browsed.root.clone())
+    }
+
+    /// The lens's own folder to show when `listing` says the subfolder it
+    /// browsed into is gone, or `None` when the lens has none to leave. A
+    /// store junction is refused instead, so the lens says it is unavailable
+    /// rather than quietly going up a level (W25).
+    fn home_for_missing_subfolder(&self, id: SpaceId, listing: &FolderListing) -> Option<PathBuf> {
+        match listing {
+            FolderListing::Unavailable => {
+                self.browsed_entry(id).map(|browsed| browsed.root.clone())
+            }
+            _ => None,
+        }
     }
 
     /// The folder lens `id` shows, or `None` for a normal space. Every file
@@ -124,17 +144,7 @@ impl App {
     /// to.
     /// It runs after every event, so it borrows rather than copies the path.
     pub(super) fn is_browsed(&self, id: SpaceId) -> bool {
-        let Some(view) = self
-            .config
-            .desktop
-            .space(id)
-            .and_then(|space| space.folder_view())
-        else {
-            return false;
-        };
-        self.browsed
-            .get(&id)
-            .is_some_and(|browsed| browsed.root == view.path)
+        self.browsed_entry(id).is_some()
     }
 
     /// Points lens `id` (on `root`) at `sub` below its own folder, or at its
@@ -209,11 +219,21 @@ impl App {
                 }
                 continue;
             }
+            let root = match key {
+                WatchKey::Desktop => None,
+                WatchKey::Space(id) => self.browsed_root(id),
+            };
             let builder = match key {
                 WatchKey::Desktop => None,
                 WatchKey::Space(id) => self.new_lens_builder(id),
             };
-            ui.watch_folder(key, &path, self.storage.final_root(), builder);
+            ui.watch_folder(
+                key,
+                &path,
+                self.storage.final_root(),
+                root.as_deref(),
+                builder,
+            );
         }
     }
 
@@ -276,8 +296,16 @@ impl App {
             free_off_thread(items_of(listing));
             return;
         }
-        if let FolderListing::Moved { to, root } = listing {
-            self.on_lens_moved(ui, id, &to, root.as_deref());
+        if let FolderListing::Moved { to } = listing {
+            self.on_lens_moved(ui, id, &to);
+            return;
+        }
+        if let Some(root) = self.home_for_missing_subfolder(id, &listing) {
+            // A renamed or deleted subfolder leaves the browse behind, but the
+            // lens's own folder is still there to show.
+            tracing::info!(space = %id, "the subfolder a lens showed is gone; returning to its own folder");
+            self.listed.remove(&id);
+            self.show_subfolder(ui, id, root, PathBuf::new());
             return;
         }
         if let FolderListing::Listed(list) = &listing
@@ -351,10 +379,9 @@ impl App {
         }
     }
 
-    /// Acts on the folder lens `id` shows having moved to `to`, or on its own
-    /// folder having moved to `root` while it browsed a subfolder (ROADMAP D19).
-    fn on_lens_moved(&mut self, ui: &mut Ui, id: SpaceId, to: &Path, root: Option<&Path>) {
-        match self.follow_moved_folder(id, to, root) {
+    /// Acts on the folder lens `id` shows having moved to `to` (ROADMAP D19).
+    fn on_lens_moved(&mut self, ui: &mut Ui, id: SpaceId, to: &Path) {
+        match self.follow_moved_folder(id, to) {
             Moved::Followed(effects) => {
                 self.run(ui, effects);
                 self.sync_watches(ui);
@@ -362,17 +389,15 @@ impl App {
                 Self::set_timer(ui, Timer::Notice, NOTICE_MS);
                 self.refresh_space(ui, id);
             }
-            Moved::ReturnHome(root) => self.show_subfolder(ui, id, root, PathBuf::new()),
             Moved::Ignored => {}
         }
     }
 
     /// The model half of `on_lens_moved`, without a `Ui`. A lens follows its
     /// own folder as one "Change folder" undo entry and says where it went on
-    /// its notice bar. A lens browsed into a subfolder that moved returns to
-    /// its own folder, unless the worker reports where that folder went too
-    /// (`root`), and then it follows that as an unbrowsed lens would.
-    fn follow_moved_folder(&mut self, id: SpaceId, to: &Path, root: Option<&Path>) -> Moved {
+    /// its notice bar. A browsed lens watches that same folder, so it follows
+    /// the move too and `sync_watches` drops the subfolder it showed.
+    fn follow_moved_folder(&mut self, id: SpaceId, to: &Path) -> Moved {
         let Some((view, current)) = self.config.desktop.space(id).and_then(|space| {
             space
                 .folder_view()
@@ -381,26 +406,18 @@ impl App {
         }) else {
             return Moved::Ignored;
         };
-        let followed = match root {
-            Some(root) if self.is_browsed(id) => root,
-            _ if self.is_browsed(id) => {
-                tracing::info!(space = %id, to = %to.display(), "a browsed lens's folder moved; returning to the lens's own folder");
-                return Moved::ReturnHome(view.path);
-            }
-            _ => to,
-        };
         let mut next = view;
-        next.path = followed.to_path_buf();
+        next.path = to.to_path_buf();
         let title = lens_title(&next, &current, &self.profile);
         let at = self.space_center(id);
         let (applied, effects) = self.set_lens_folder(id, next.path, title, at);
         if !applied {
             return Moved::Ignored;
         }
-        tracing::info!(space = %id, to = %followed.display(), "a lens followed its moved folder");
+        tracing::info!(space = %id, to = %to.display(), "a lens followed its moved folder");
         self.unavailable_lenses.remove(&id);
         self.notices
-            .insert(id, format!("{FOLDER_MOVED_NOTICE}\n{}", followed.display()));
+            .insert(id, format!("{FOLDER_MOVED_NOTICE}\n{}", to.display()));
         Moved::Followed(effects)
     }
 
@@ -810,7 +827,7 @@ mod tests {
         app.unavailable_lenses.insert(lens);
         let to = Path::new(r"C:\Archive\Projects");
         assert!(matches!(
-            app.follow_moved_folder(lens, to, None),
+            app.follow_moved_folder(lens, to),
             Moved::Followed(_)
         ));
         let space = app.config.desktop.space(lens).unwrap();
@@ -822,35 +839,6 @@ mod tests {
             Some("Folder moved:\nC:\\Archive\\Projects")
         );
         assert_eq!(app.undo.undo_label(), Some("Change folder"));
-    }
-
-    #[test]
-    fn a_browsed_lens_whose_folder_moved_returns_to_its_own_folder() {
-        let mut app = app();
-        let root = PathBuf::from(r"C:\Users\me\Downloads");
-        let lens = fixtures::create_lens(
-            &mut app.config.desktop,
-            "Lens",
-            Rect::new(0, 0, 240, 120),
-            r"C:\Users\me\Downloads",
-        );
-        app.browsed.insert(
-            lens,
-            Browsed {
-                root: root.clone(),
-                sub: PathBuf::from("Photos"),
-            },
-        );
-        let moved = app.follow_moved_folder(lens, Path::new(r"C:\Users\me\Pictures\Photos"), None);
-        assert!(matches!(moved, Moved::ReturnHome(home) if home == root));
-        let space = app.config.desktop.space(lens).unwrap();
-        assert_eq!(
-            space.folder_view().unwrap().path,
-            root,
-            "the lens keeps its folder"
-        );
-        assert!(app.notices.is_empty());
-        assert_eq!(app.undo.undo_label(), None);
     }
 
     #[test]
@@ -869,11 +857,7 @@ mod tests {
                 sub: PathBuf::from(r"Photos\2026"),
             },
         );
-        let moved = app.follow_moved_folder(
-            lens,
-            Path::new(r"C:\Users\me\Archive\Photos\2026"),
-            Some(Path::new(r"C:\Users\me\Archive")),
-        );
+        let moved = app.follow_moved_folder(lens, Path::new(r"C:\Users\me\Archive"));
         assert!(matches!(moved, Moved::Followed(_)));
         let space = app.config.desktop.space(lens).unwrap();
         assert_eq!(
@@ -921,6 +905,74 @@ mod tests {
         assert_eq!(
             app.lens_folder(lens),
             Some(PathBuf::from(r"C:\Users\me\Documents"))
+        );
+    }
+
+    #[test]
+    fn only_a_browsed_lens_names_its_own_folder_to_the_watch() {
+        let mut app = app();
+        let root = PathBuf::from(r"C:\Users\me\Downloads");
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        assert_eq!(app.browsed_root(lens), None, "a lens on its own folder");
+        app.browsed.insert(
+            lens,
+            Browsed {
+                root: root.clone(),
+                sub: PathBuf::from("Photos"),
+            },
+        );
+        assert_eq!(app.browsed_root(lens), Some(root));
+        fixtures::apply(
+            &mut app.config.desktop,
+            Command::SetLensFolder {
+                id: lens,
+                path: r"C:\Users\me\Documents".into(),
+                title: "Documents".into(),
+            },
+        );
+        assert_eq!(
+            app.browsed_root(lens),
+            None,
+            "a browse left under the old folder is not reported"
+        );
+    }
+
+    #[test]
+    fn a_browsed_lens_returns_home_only_when_its_subfolder_is_unavailable() {
+        let mut app = app();
+        let root = PathBuf::from(r"C:\Users\me\Downloads");
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        assert_eq!(
+            app.home_for_missing_subfolder(lens, &FolderListing::Unavailable),
+            None,
+            "a lens on its own folder has none to leave"
+        );
+        app.browsed.insert(
+            lens,
+            Browsed {
+                root: root.clone(),
+                sub: PathBuf::from("Photos"),
+            },
+        );
+        assert_eq!(
+            app.home_for_missing_subfolder(lens, &FolderListing::Unavailable),
+            Some(root),
+            "a vanished subfolder goes back to the lens's own folder"
+        );
+        assert_eq!(
+            app.home_for_missing_subfolder(lens, &FolderListing::Refused),
+            None,
+            "a store junction stays unavailable"
         );
     }
 

@@ -771,6 +771,11 @@ A native, lightweight, offline Windows desktop organizer that:
     pop-up, so later messages reuse it.
   - A lens browsed into a subfolder (D18) whose subfolder moves returns
     to its own folder.
+  - Amended 2026-11-02 (maintainer): a browsed lens holds its watch on its
+    own folder and lists the subfolder it shows, because Windows refuses to
+    rename a folder while a directory below it has an open handle. Renaming
+    the lens's own folder therefore stays possible, and the lens follows it;
+    a renamed subfolder still returns to the lens's own folder.
   - F2 on a lens's title stays a nickname, never a folder rename (W46).
     Renaming the folder from DeskSpace is a later, explicit
     "Rename folder…" in the lens menu.

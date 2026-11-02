@@ -1638,24 +1638,6 @@ These are in the order we would take them. Each lands alone.
   - The gap between the check and the step is too short to hit by hand, so the
     tests carry this. **[needs human]** check: U5's and U7's rows still pass.
 
-- [ ] **P11. Follow a lens's folder while it browses a subfolder (fix).** A
-  browsed lens watches only the subfolder (`follow_moved_folder`, `app/lens.rs`).
-  Rename the lens's own folder meanwhile and the watch reports the subfolder's
-  new path, so the lens returns home and shows "Folder not available" rather than
-  following, which it does when not browsed (D19).
-  - A suffix match cannot decide this alone: `Root\A` moved to `Other\A` also
-    ends in `A`. The test is whether the old root is gone too, and that is IO, so
-    it belongs on the worker (W25: the UI thread never waits on a folder).
-  - P11c is the part that remains, on the watch worker.
-  - [ ] **P11c.** After: P11a, P11b. Pass the lens's root with a browsed watch, as
-    W25 passes the store. `Folder::moved` calls `root_after_move(root, shown, to)`,
-    and reports `Moved { to, root: Some(new) }` only when the old root is no longer a
-    folder and `follows_to` allows the new one. Today's return home remains for
-    every other case, which W45's row requires.
-  - **[needs human]** check: browse two levels down, rename the lens's folder in
-    Explorer: within 5 s the lens follows with its notice, and Ctrl+Z points it
-    back. Add it to W45's row.
-
 - [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
   Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
   Alt tap (`handle_watched`, `win32/keyboard.rs`). The original note worried
@@ -2048,7 +2030,7 @@ for a machine that has it.
 | W43 (F-64) | In a lens browsed two levels down, at 100 % and 150 %: the Back button sits left of the folder icon and goes up one level per click (a double-click goes up two, and never folds the space); Backspace, Alt+Left, Alt+Up, and the mouse's back button over the lens do the same. A click on the button makes that lens current, so Backspace then continues up it; a press on its top-left corner resizes instead. At the lens's own folder the button is gone, Backspace reaches the desktop as before, and Alt+Left does not move the selection. Backspace in a rename edits the text and does not go back. Compare the button's size and place with Explorer's (provisional 24 px, 4 px inset); it has no hover highlight yet. |
 | W35 (F-22) | On a Downloads lens's Lens page, type `*.pdf` in Show only: only PDFs and the folders remain, as you type. Add `*.tmp` to Hide: they go. Type `; ` and extra spaces mid-list: the text stays as typed, the caret does not jump. A filter that matches nothing shows "No items match the filter". Cancel puts the lens back; Apply keeps it over a restart. Typing on a 50,000-file lens never stalls the spaces; the list follows about a quarter of a second behind (B37), and half a second with many patterns: note whether that lag reads as slow. |
 | W46 (F-07) | Rename a lens's title to a nickname with F2 (nothing selected), then F2 again, clear it, Enter: the title shows the folder's name and the Lens page shows "Folder name". Ctrl+Z gives the nickname back. With the Lenses page's "Show as" set to Full path, clearing shows the full path; set to Custom, clearing shows the folder's name. Clearing the title of a normal space, or of a lens that already follows its folder, changes nothing. |
-| W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. |
+| W45 (F-67) | With a `dev.ps1` scratch config, make a lens on a scratch folder. Rename the folder in Explorer: within 5 s the lens shows the new path and keeps its items, its title follows (under "Folder name"), and a bar along its bottom reads "Folder moved:" and the path for about 3 s, readable on Acrylic, Blur, Solid, and Clear at 100 % and 150 %. Ctrl+Z points it back (it then says "Folder not available"). Move the folder elsewhere on the same drive: it follows. Move it to another drive, or delete it in Explorer: "Folder not available", and it never lists the Recycle Bin. Browse into a subfolder and rename that subfolder: the lens returns to its own folder with no bar. Browse two levels down, then rename the lens's own folder in Explorer: the rename succeeds (the watch no longer holds the subfolder), within 5 s the lens follows the new root with its notice and drops the browse, and Ctrl+Z points it back. |
 | W47 (D17) | Sort a space by Date, descending, with View ▸ Status bar on, then press Ctrl+Shift+6 and Ctrl+Shift+2, pick View ▸ List, and click the status bar's Details button: Sort by ▸ still shows Date and Descending, Keep sorted is as it was, and the status bar stays. |
 | W27 (F-07) | Hover a lens's title bar: after the usual delay a tip shows the folder the lens displays (a browsed subfolder's path, matching the title's `Root › Sub`), and it leaves with the pointer. An unavailable lens's tip reads "Folder not available" and the path. A normal space's title shows no tip. Hover the title until the tip shows, then F2: the tip goes and the edit is uncovered; moving within the title during the rename shows none. |
 | W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
@@ -2080,3 +2062,7 @@ for a machine that has it.
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
+
+- `folder_watch.rs`: a browsed lens's subtree read re-lists the subfolder it
+  shows on a change anywhere under the lens's folder; filter the notify
+  records to the shown path if a large, busy tree makes it list too often.

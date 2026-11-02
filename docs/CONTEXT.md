@@ -259,10 +259,12 @@ and its path in place of items (`SpaceScene::placeholder`).
 A lens whose folder was renamed or moved where it may follow (D19) is
 re-pointed with `SetLensFolder`, one "Change folder" undo entry, and shows
 "Folder moved:" and the new path on its notice bar (`SpaceScene::notice`,
-from `App::notices`) until `Timer::Notice` clears it about 3 s later. A
-lens browsed into a subfolder returns to its own folder instead; if its own
-folder was the one renamed, it then shows "Folder not available", since only
-the subfolder's watch saw the move.
+from `App::notices`) until `Timer::Notice` clears it about 3 s later.
+A browsed lens's watch holds its handle on the lens's own folder and lists the
+subfolder it shows, so renaming that folder is not blocked by an open handle
+below it; the lens follows the move and drops the browse. A subfolder that
+is renamed or deleted instead leaves its path unavailable, and the lens
+returns to its own folder.
 Opening a folder in a lens (double-click or Enter) shows it in place
 (D18): `App::browsed` keeps, per lens and for the session only, the
 subfolder shown and the lens folder it was browsed under, and
@@ -869,7 +871,9 @@ in `ui.rs`. What spans them:
   the UI thread does no IO. Its module doc and the `FolderListing` variants
   own the debounce, the retries, the store refusal, and the D19 follow rule.
   The app watches the Desktop only while the layer is drawn and each lens's
-  folder while the lens exists (`App::sync_watches`).
+  own folder while the lens exists (`App::sync_watches`); a browsed lens
+  lists the subfolder it shows but keeps its handle on the lens's own
+  folder, so that folder can still be renamed.
 - A listing names the folder it read: a posted change can wait in the event
   queue while a key's watch moves, so a lens drops a stale one. The desktop
   layer re-reads the shell instead, and treats another folder as the Desktop
