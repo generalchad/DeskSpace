@@ -5653,3 +5653,13 @@ until I5-I6 all land, so no partial build hides the desktop.
 - [x] **P18a. Fix `Show-Backdrop`'s synopsis (scripts).** It says "non-topmost";
   the code and its own description say topmost (`scripts/onscreen/OnScreen.psm1`).
   Change the one word.
+
+- [x] **P23. Honor `--new-space` with no running instance (fix).** `cli.rs` says
+  it will "start with one", and `bootstrap.rs`'s comment agrees, but no space is
+  created. Copy `--settings`: a `new_space_on_start` field on `App`, set in
+  `bootstrap::run` as `app.layer` is, and taken with `std::mem::take` in
+  `on_started`, next to `open_settings_on_start`, calling `create_space(ui,
+  cursor_pos())` as `Event::NewSpace` does.
+  - **[needs human]** check: with DeskSpace not running, `deskspace --config
+    <scratch> --new-space` starts with one more space than the config holds. With
+    it running, the same command adds one space and starts no second process.

@@ -1525,16 +1525,6 @@ Small first. Each lands alone unless it says "After".
   - No test can see this. Done when: gates pass, and the picker opens, closes, and
     opens again with icons (a section V row).
 
-- [ ] **P23. Honor `--new-space` with no running instance (fix).** `cli.rs` says
-  it will "start with one", and `bootstrap.rs`'s comment agrees, but no space is
-  created. Copy `--settings`: a `new_space_on_start` field on `App`, set in
-  `bootstrap::run` as `app.layer` is, and taken with `std::mem::take` in
-  `on_started`, next to `open_settings_on_start`, calling `create_space(ui,
-  cursor_pos())` as `Event::NewSpace` does.
-  - **[needs human]** check: with DeskSpace not running, `deskspace --config
-    <scratch> --new-space` starts with one more space than the config holds. With
-    it running, the same command adds one space and starts no second process.
-
 - [ ] **P21. Hold the debug refresh during an animation (fix).** `refresh_debug`
   (`app/debug/mod.rs`) stalls every running animation for 20-60 ms once a second
   (measured 2026-10-31).
@@ -2137,6 +2127,7 @@ for a machine that has it.
 | P6 (grouped fit) | Group a space by Type in Details and in List, choose Fit to contents: no scroll and no clipped row. Fold a group and fit again: it shrinks. |
 | P7 (resize minimum) | Shrink a Details, a Content, and a Tiles space from the bottom and the top, at 100 % and 150 %, with the status bar on and off: each stops at one whole row, and the header is not clipped. |
 | P8 (label size) | Set the label size to 160 % and look at Small icons, List, Details, Tiles, and Content, normal and compact: no clipped text, at 100 % and 150 %. |
+| P23 (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
 
 ## Found while working
 

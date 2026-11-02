@@ -891,20 +891,22 @@ in `ui.rs`. What spans them:
    `RUST_LOG` overrides both), then calls `bootstrap::run`. `--debug` adds a
    console layer (`debug_log.rs`) with its own level, and every build logs
    panics at error.
-2. `bootstrap::run`: with `--show`, hands off to a running instance and exits
-   before loading anything. Otherwise it enables DPI awareness, loads or
-   creates `Config` (migrating older files; `--reset` backs up the old file
-   and refuses to start if the backup fails), merges legacy per-space overrides
-   into looks (saving if anything changed), seeds a "Desktop" space if there
-   are none (filled from the desktop folder unless `--no-icons`), and calls
-   `deskspace_platform::run`. Placement is `--placement` when given, else
-   top-level. `--show` overrides `--hidden` and start-hidden.
+2. `bootstrap::run`: with `--show`, `--new-space`, or `--settings`, hands off
+   to a running instance and exits before loading anything. Otherwise it enables
+   DPI awareness, loads or creates `Config` (migrating older files; `--reset`
+   backs up the old file and refuses to start if the backup fails), merges
+   legacy per-space overrides into looks (saving if anything changed), seeds a
+   "Desktop" space if there are none (filled from the desktop folder unless
+   `--no-icons`), and calls `deskspace_platform::run`. Placement is
+   `--placement` when given, else top-level. `--show` overrides `--hidden` and
+   start-hidden.
 3. On `Started`, the app sets the menu and settings dark mode, registers every
    binding in `HOTKEY_BINDINGS`, syncs the desktop "Show spaces" verb and the
    start-with-Windows Run value, reads Explorer's display options and the
    desktop items, applies takeover and start-hidden, creates one window per
    space with its style and scene, re-flows every space, prunes items whose
-   files are gone, and optionally opens settings (`--settings`).
+   files are gone, creates a space when `--new-space` could not hand off, and
+   optionally opens settings (`--settings`).
 4. Pointer events update selection and hover (re-pushing that space's scene),
    drag spaces through `SetSpaceRect` (moving the window), resize them through
    `ResizeSpace` from the border band, scroll them on the wheel (per-space

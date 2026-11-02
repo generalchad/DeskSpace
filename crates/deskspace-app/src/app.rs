@@ -564,6 +564,9 @@ pub struct App {
     hotkeys: Hotkeys,
     settings_ui: SettingsUi,
     open_settings_on_start: bool,
+    /// Whether `--new-space` started this process rather than handing the
+    /// request to a running one. `Started` consumes it.
+    pub(crate) new_space_on_start: bool,
     /// The desktop layer's flags and the shell entries it draws.
     pub(crate) layer: LayerState,
     /// Update checking and installation state (`app/update.rs`).
@@ -606,6 +609,7 @@ impl App {
             hotkeys: Hotkeys::default(),
             settings_ui: SettingsUi::default(),
             open_settings_on_start: open_settings,
+            new_space_on_start: false,
             layer: LayerState::default(),
             update: UpdateState::default(),
             space_icons: SpaceIcons::default(),
@@ -842,6 +846,9 @@ impl App {
             dark = self.system.dark(),
             "spaces created"
         );
+        if std::mem::take(&mut self.new_space_on_start) {
+            self.create_space(ui, cursor_pos());
+        }
         if std::mem::take(&mut self.open_settings_on_start) {
             self.open_settings(ui);
         }
