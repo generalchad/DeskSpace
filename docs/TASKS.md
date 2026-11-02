@@ -1530,13 +1530,6 @@ Small first. Each lands alone unless it says "After".
   - Tests in the cache, which can set `demand` directly: the limit falls after a
     forget, and the next store evicts down to it, oldest first. No shell calls.
 
-- [ ] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
-  Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
-  `app/undo.rs`. A pure move with no change in order or logic. It sits in code that
-  moves user files, so it steps over the junior line. The move cannot change what a
-  step does, and the tests in `app/undo.rs` prove it. A senior reviews it. Done when:
-  the same tests pass unchanged.
-
 - [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
   `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
   cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session

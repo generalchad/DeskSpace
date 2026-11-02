@@ -404,53 +404,65 @@ impl App {
         let len = files.len();
         for step in 0..len {
             let index = if undo { len - 1 - step } else { step };
-            let ok = match &files[index] {
-                FileChange::Moved { from, to } => {
-                    let (src, dst) = if undo {
-                        (to.clone(), from.clone())
-                    } else {
-                        (from.clone(), to.clone())
-                    };
-                    self.reverse_move(ui, &src, &dst)
-                }
-                FileChange::Renamed { from, to } => {
-                    let (src, dst) = if undo {
-                        (to.clone(), from.clone())
-                    } else {
-                        (from.clone(), to.clone())
-                    };
-                    self.reverse_rename(ui, &src, &dst)
-                }
-                FileChange::Created { path } => {
-                    let target = path.clone();
-                    match self.reverse_created(ui, &target) {
-                        Some(at) => {
-                            files[index] = FileChange::Recycled {
-                                original: target,
-                                at,
-                            };
-                            true
-                        }
-                        None => false,
-                    }
-                }
-                FileChange::Recycled { original, at } => {
-                    let target = original.clone();
-                    let since = *at;
-                    match self.reverse_recycled(ui, &target, since) {
-                        Some(restored) => {
-                            files[index] = FileChange::Created { path: restored };
-                            true
-                        }
-                        None => false,
-                    }
-                }
-            };
-            if !ok {
+            if !self.reverse_step(ui, files, index, undo) {
                 return false;
             }
         }
         true
+    }
+
+    /// Reverses one change in `files` and returns whether it could be applied.
+    /// A `Created` change becomes `Recycled` and the other way round, so
+    /// applying the same step again reverses it.
+    fn reverse_step(
+        &mut self,
+        ui: &mut Option<&mut Ui>,
+        files: &mut [FileChange],
+        index: usize,
+        undo: bool,
+    ) -> bool {
+        match &files[index] {
+            FileChange::Moved { from, to } => {
+                let (src, dst) = if undo {
+                    (to.clone(), from.clone())
+                } else {
+                    (from.clone(), to.clone())
+                };
+                self.reverse_move(ui, &src, &dst)
+            }
+            FileChange::Renamed { from, to } => {
+                let (src, dst) = if undo {
+                    (to.clone(), from.clone())
+                } else {
+                    (from.clone(), to.clone())
+                };
+                self.reverse_rename(ui, &src, &dst)
+            }
+            FileChange::Created { path } => {
+                let target = path.clone();
+                match self.reverse_created(ui, &target) {
+                    Some(at) => {
+                        files[index] = FileChange::Recycled {
+                            original: target,
+                            at,
+                        };
+                        true
+                    }
+                    None => false,
+                }
+            }
+            FileChange::Recycled { original, at } => {
+                let target = original.clone();
+                let since = *at;
+                match self.reverse_recycled(ui, &target, since) {
+                    Some(restored) => {
+                        files[index] = FileChange::Created { path: restored };
+                        true
+                    }
+                    None => false,
+                }
+            }
+        }
     }
 
     fn reverse_created(&self, ui: &mut Option<&mut Ui>, path: &Path) -> Option<SystemTime> {

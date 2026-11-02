@@ -5763,3 +5763,10 @@ until I5-I6 all land, so no partial build hides the desktop.
     Hold the lock only for the read. A senior reviews it.
   - **[needs human]** check: in a debug build with `--debug` open, preview Bounce
     repeatedly: no hitch once a second, and the panel updates when it stops.
+
+- [x] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
+  Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
+  `app/undo.rs`. A pure move with no change in order or logic. It sits in code that
+  moves user files, so it steps over the junior line. The move cannot change what a
+  step does, and the tests in `app/undo.rs` prove it. A senior reviews it. Done when:
+  the same tests pass unchanged.
