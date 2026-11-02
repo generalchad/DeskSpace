@@ -13,7 +13,6 @@ R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
 **Pick a task:** these are ready for any contributor, now that human checks
 are collected in section V instead of blocking:
-- section B (code health);
 - section S (S9-S12), C10, and K8, without waiting for their checks;
 - anything else not marked **[needs decision]**, "still to design", or in
   section D.
