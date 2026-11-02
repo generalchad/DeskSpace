@@ -20,6 +20,10 @@ Notable changes to DeskSpace, newest first. The format follows
   about you or your files is sent. The icon takes the title's color, so it
   follows a dark and light switch, and a space without one keeps its old
   title bar. Settings > About credits the icon sets.
+- DeskSpace entries on the desktop's right-click menu: New space, DeskSpace
+  Settings, and Show spaces while the spaces are hidden. Each opens the
+  running app's window or adds the space there, without starting a second
+  copy.
 - Lenses: a space that shows a folder's live contents. "New lens…" in a
   space's menu, the tray, and the desktop menu asks for a folder and shows it;
   files dropped, pasted, or added as shortcuts go into that folder, and
