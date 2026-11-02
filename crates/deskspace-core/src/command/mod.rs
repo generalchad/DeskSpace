@@ -315,7 +315,7 @@ impl Desktop {
             }
             Command::SetLensTitle { id, title, text } => self.apply_set_lens_title(id, title, text),
             Command::SetLensView { id, view } => self.apply_set_lens_view(id, view),
-            Command::SyncLens { id, items } => self.apply_sync_lens(id, items, layout),
+            Command::SyncLens { id, items } => self.apply_sync_lens(id, items, layout, bounds),
             Command::MoveSpace { id, delta } => self.apply_move_space(id, delta, layout, bounds),
             Command::SetSpaceRect { id, rect } => {
                 self.apply_set_space_rect(id, rect, layout, bounds)

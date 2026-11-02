@@ -230,7 +230,10 @@ an `ItemId` survives a refresh. Ids come from a block the watch reserved
 (`App::note_renamed_lens_item`). The worker posts the finished `LensList`, and the
 app swaps it in with `Command::SyncLens`, which only places the items; the list
 it replaces is freed off the UI thread (`Desktop::take_retired_items`, in
-`App::dispatch`). A list names the `LensRules` it was built under, and one that
+`App::dispatch`). A lens that would need more than its monitor's work area for
+its items stops at that edge and scrolls, and stays that size for later
+listings, so a huge folder never makes a window millions of pixels tall. A list
+names the `LensRules` it was built under, and one that
 no longer matches the lens, like one for a folder it no longer shows, is dropped.
 A change of rules goes to the worker through `App::sync_watches`, and it builds
 again from its last listing without reading the folder. A grouped lens's display

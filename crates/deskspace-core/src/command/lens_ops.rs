@@ -90,12 +90,15 @@ impl Desktop {
     /// Swaps in `items`, a list a `LensBuilder` finished, and lays them out.
     /// This runs on the UI thread, so it does nothing that grows with the list
     /// but place it. A locked lens keeps its size, and its items still need
-    /// places, as `Reflow` gives them.
+    /// places, as `Reflow` gives them. A lens that would need more than the
+    /// work area stops growing there and scrolls (a big folder must never make
+    /// a window millions of pixels tall).
     pub(super) fn apply_sync_lens(
         &mut self,
         id: SpaceId,
         items: Vec<Item>,
         layout: GridSpec,
+        bounds: Rect,
     ) -> CommandOutcome {
         let Some(space) = self.space_mut(id) else {
             return CommandOutcome::NotFound;
@@ -108,6 +111,13 @@ impl Desktop {
             position_items(space, layout);
         } else {
             arrange_space(space, layout);
+            if space.rect.width > bounds.width || space.rect.height > bounds.height {
+                space.rect.width = space.rect.width.min(bounds.width);
+                space.rect.height = space.rect.height.min(bounds.height);
+                space.rect = clamp_to_bounds(space.rect, bounds);
+                space.user_sized = true;
+                position_items(space, layout);
+            }
         }
         self.retire_items(replaced);
         CommandOutcome::Applied
@@ -119,7 +129,8 @@ mod tests {
     use super::*;
     use crate::command::{Command, CommandOutcome};
     use crate::geometry::{Point, Size};
-    use crate::item::{ItemFacts, ItemKind, SortKey};
+    use crate::id::ItemId;
+    use crate::item::{Item, ItemFacts, ItemKind, SortKey};
     use crate::lens_build::{LensBuilder, LensRules};
     use crate::sort::SortRule;
     use crate::source::FolderEntry;
@@ -240,6 +251,58 @@ mod tests {
             ["a", "b"],
             "the worker rebuilds the list under the new rule"
         );
+    }
+
+    #[test]
+    fn a_lens_too_large_for_the_work_area_stops_growing_and_scrolls() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let items: Vec<Item> = (0..2_000)
+            .map(|n| {
+                Item::new(
+                    ItemId(n),
+                    format!("C:/folder/file{n}.txt"),
+                    ItemFacts::default(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            desktop.apply(Command::SyncLens { id, items }, bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(space.items().len(), 2_000);
+        assert!(space.rect.width <= bounds().width);
+        assert!(
+            space.rect.height <= bounds().height,
+            "a big lens stays inside the work area"
+        );
+        assert!(
+            space.user_sized(),
+            "the overflow pins the lens so later listings scroll"
+        );
+        assert!(
+            space.items().last().unwrap().position.y > space.content_rect().height,
+            "the rest of the list is below the visible content"
+        );
+    }
+
+    #[test]
+    fn a_lens_that_fits_still_sizes_to_its_items() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        let items = vec![Item::new(
+            ItemId(1),
+            "C:/folder/a.txt",
+            ItemFacts::default(),
+        )];
+        assert_eq!(
+            desktop.apply(Command::SyncLens { id, items }, bounds()),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert!(!space.user_sized(), "a lens that fits stays auto-sized");
+        assert!(space.rect.height < bounds().height);
     }
 
     #[test]

@@ -1858,3 +1858,9 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   at most 60, and it never shrinks. Suggested: forget the preview user when
   the settings window leaves the space. Found in the B39-B43 review,
   2026-11-01.
+- `layout.rs` `arrange_space`: only `SyncLens` now caps an auto-sized lens at
+  the work area. `AddItem`, `MoveItem`, and `AutoArrange` still call
+  `arrange_space` through `rearrange` without bounds, so a normal space with
+  more items than fit can grow taller than the monitor. Suggested: pass the
+  work area into `arrange_space` (or `rearrange`) and cap and pin it the same
+  way. Found while fixing the 50,000-file lens freeze, 2026-11-02.
