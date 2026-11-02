@@ -302,11 +302,12 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       true }`. Either way it is a previewed edit that Cancel undoes, like any
       other settings change.
   - Three commits:
-    - **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
+    - [x] **C10a (config, pure):** `deskspace-config/src/theme_file.rs` with
       `ThemeFile { format, name, author, look: SpaceLook }`, `load(path)` and
       `save(path)` returning `ConfigError`, and `themes_dir()` on
       `ConfigStore`. Tests: round trip, missing fields default, out-of-range
-      values clamp, unknown keys ignored, a newer `format` loads.
+      values clamp, unknown keys ignored, a newer `format` loads. Landed in
+      `feat: add the theme-file format (C10a)`.
     - **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
       `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
       the open side if it has none.
