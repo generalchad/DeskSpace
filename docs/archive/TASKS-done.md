@@ -5036,3 +5036,15 @@ until I5-I6 all land, so no partial build hides the desktop.
     every view; an icon view reflows into whole columns and then scrolls. A
     core test covers the cap. The menu's placement, greyed state, and
     desktop absence are in section V.
+
+- [x] **P19. Make the size-column test pass on newer Windows (test).**
+  **[urgent]** `cargo test --workspace` fails on Windows build 26300, so the
+  gates are red before any change: `scene::tests::
+  the_header_and_rows_show_the_spaces_own_columns_in_its_order` expects `"2 KB"`
+  and gets `"2 KiB"`. The app is right. `details_cells` uses the shell's
+  `format_kb`, whose unit follows the locale and Windows build, which
+  `a_kilobyte_size_carries_its_unit` in `desktop_items.rs` already allows for.
+  - Compare with `format_kb(2048)` rather than a literal, as the platform's
+    tests compare with the raw call, and add the same one-line comment on why.
+    `scene.rs` already imports `format_kb`.
+  - Done when: `cargo test --workspace` passes here. Behavior does not change.

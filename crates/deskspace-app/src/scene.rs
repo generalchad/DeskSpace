@@ -1501,7 +1501,12 @@ mod tests {
                 ..ItemFacts::default()
             },
         );
-        assert_eq!(details_cells(&view, &item), ["2 KB", ""]);
+        // The unit follows the locale and Windows build ("KB" or "KiB"), so
+        // compare with the shell's own formatter rather than a literal.
+        assert_eq!(
+            details_cells(&view, &item),
+            [format_kb(2048), String::new()]
+        );
     }
 
     #[test]

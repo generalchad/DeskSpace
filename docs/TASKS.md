@@ -8,8 +8,8 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Urgent first:** P19, which turns the gates green on newer Windows. A task marked
-**[urgent]** goes ahead of everything else in its section.
+**Urgent first:** a task marked **[urgent]** goes ahead of everything else in
+its section.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
@@ -1734,19 +1734,7 @@ Who takes what:
 
 ### Juniors and interns
 
-P19 first; then any order, except that P3 and P4 go before S5.
-
-- [ ] **P19. Make the size-column test pass on newer Windows (test).**
-  **[urgent]** `cargo test --workspace` fails on Windows build 26300, so the
-  gates are red before any change: `scene::tests::
-  the_header_and_rows_show_the_spaces_own_columns_in_its_order` expects `"2 KB"`
-  and gets `"2 KiB"`. The app is right. `details_cells` uses the shell's
-  `format_kb`, whose unit follows the locale and Windows build, which
-  `a_kilobyte_size_carries_its_unit` in `desktop_items.rs` already allows for.
-  - Compare with `format_kb(2048)` rather than a literal, as the platform's
-    tests compare with the raw call, and add the same one-line comment on why.
-    `scene.rs` already imports `format_kb`.
-  - Done when: `cargo test --workspace` passes here. Behavior does not change.
+P1 first; then any order, except that P3 and P4 go before S5.
 
 - [ ] **P1. Fix four small doc errors (docs).** No code changes.
   - `ROADMAP.md` D17 says List, Details, Tiles, and Content place items by
