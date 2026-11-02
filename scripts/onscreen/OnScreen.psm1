@@ -303,7 +303,7 @@ function Get-DeskSpaceWindows {
 function Show-Backdrop {
     <#
     .SYNOPSIS
-        A plain, non-topmost window of one color over the primary monitor.
+        A plain, topmost window of one color over the primary monitor.
 
     .DESCRIPTION
         The `--on-top` spaces draw above it, so a check can read the space's

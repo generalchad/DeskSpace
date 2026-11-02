@@ -1512,10 +1512,6 @@ Small first. Each lands alone unless it says "After".
   edge for content lagging or a frame with no title. If nothing shows, delete P26
   in a commit saying so. Otherwise record which effect shows it under P26.
 
-- [ ] **P18a. Fix `Show-Backdrop`'s synopsis (scripts).** It says "non-topmost";
-  the code and its own description say topmost (`scripts/onscreen/OnScreen.psm1`).
-  Change the one word.
-
 - [ ] **P22. Release the catalog worker's graphics before leaving COM (fix).**
   `refresh_in_background` (`win32/app_catalog.rs`) calls `CoUninitialize` while
   its thread-local `Graphics` still holds COM objects, which are released later at
