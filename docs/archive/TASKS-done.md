@@ -5048,3 +5048,19 @@ until I5-I6 all land, so no partial build hides the desktop.
     tests compare with the raw call, and add the same one-line comment on why.
     `scene.rs` already imports `format_kb`.
   - Done when: `cargo test --workspace` passes here. Behavior does not change.
+
+- [x] **P1. Fix four small doc errors (docs).** No code changes.
+  - `ROADMAP.md` D17 says List, Details, Tiles, and Content place items by
+    order. Small icons does too, since W16 (`ViewMode::places_by_order` in
+    `view.rs`). Add a dated amendment saying so, and that the three larger
+    icon views keep the grid. Keep the original sentence: a decision's history
+    stays readable.
+  - `CONTEXT.md` section 3 lists `space_icons` twice in the module table.
+    Delete the shorter row, the one that does not mention download consent.
+  - `CONTEXT.md` section 10, "Explorer display matching", says the view mode
+    "waits for M4 phase 4". That phase is done. Read `D17` and
+    `win32/display_settings.rs`, then reword the sentence to say what is true
+    today. If you cannot tell, ask.
+  - `ENGINEERING.md` section 6, the Keys table: the `WATCH_BACK` row has lost
+    its two-space indent. Restore it.
+  - Done when: the gates pass, and the four sentences read correctly.

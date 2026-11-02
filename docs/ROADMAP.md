@@ -641,7 +641,8 @@ A native, lightweight, offline Windows desktop organizer that:
     alone, as it leaves a customized Custom look alone. List, Details,
     Tiles, and Content place items by their order and never write
     `Item.position`, so switching back to an icon view restores a hand
-    arrangement.
+    arrangement. (Amended 2026-11-02: Small icons places items by order too,
+    since W16; the three larger icon views keep the grid.)
   - *One sort rule for both kinds:* `SortRule { key, descending,
     folders_first }`. A space keeps its last rule, and "Keep sorted"
     decides whether it holds as items come and go. A lens is always kept

@@ -100,7 +100,6 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `visibility` | show/hide, the desktop "Show spaces" verb, start with Windows |
   | `hotkeys` | `Hotkeys`: registering, re-registering, and releasing the global hotkeys |
   | `info_tip` | the hover info tip |
-  | `space_icons` | `SpaceIcons`: the title icons' sets, loaded off the main thread, the automatic match memo, and the glyph cache (D16) |
   | `debug` | the debug window's panel and actions, and the log console's feed (ROADMAP D14) |
   | `update` | `UpdateState`, update checks, downloads, the quiet-moment install, `InstallOnExit` |
 
@@ -1688,7 +1687,8 @@ section numbers stable.
   (Japanese, Chinese, ...) is deferred. An item rename goes through the shell,
   so a name clash shows Explorer's conflict prompt.
 - **Explorer display matching is broad but not total.** Explorer's view mode
-  (list/details) is not mapped (it waits for M4 phase 4), and only the
+  is not mapped: a space keeps its own view (D17), and the desktop offers
+  only its three icon views (F-40), so there is no mode to follow. Only the
   desktop's own options are read, so a check-box setting enabled in one
   Explorer window is not reflected. Matching is part of the look, so a
   customized space can turn it off for itself.
