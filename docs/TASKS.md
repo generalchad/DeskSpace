@@ -1734,8 +1734,6 @@ Who takes what:
 
 ### Juniors and interns
 
-Any order, except that P3 and P4 go before S5.
-
 - [ ] **P9. Find what slows the platform's tests (test).**
   `deskspace-platform`'s unit tests took 5 s on 2026-11-02 (327 tests, down from
   16 s on 2026-10-21). Every other crate takes under 0.1 s. The time goes to
