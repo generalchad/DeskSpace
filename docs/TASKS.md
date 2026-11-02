@@ -8,14 +8,17 @@ Only open work lives here. Finished tasks are moved, verbatim, to
 `archive/TASKS-done.md` (history only; its file and line pointers predate the
 R1 and K splits). Built-but-unconfirmed work is listed in section V.
 
-**Urgent first:** none open. A task marked
+**Urgent first:** P19, which turns the gates green on newer Windows. A task marked
 **[urgent]** goes ahead of everything else in its section.
 
 **Pick a task:** these are ready for any contributor:
 - section B (code health);
 - Q2-Q6;
+- section P's "Juniors and interns" list, the best place for a first task;
 - section S: S5 and S9-S12 need a screen or
   a reviewer.
+
+Section P's "Seniors only" list is for experienced contributors.
 
 L1 needs a maintainer's on-screen findings. Skip tasks marked **[needs
 decision]** and everything in section D. Phases 4 and 5 are complete; their
@@ -1713,6 +1716,369 @@ Rules for every Q task:
   The key recipe and the menu-entry recipe then name the one place to
   edit.
 
+## P. Pay down what we found while working
+
+The **Found while working** list, triaged on 2026-11-02 against the code. "How
+to work a task" applies. Each task says whether it changes behavior; a bug fix
+that does gets a section V row (rule 8).
+
+Who takes what:
+
+- **Juniors and interns:** the change is local and the task states the design.
+  A unit test or the compiler proves most of it. It touches no `unsafe` code,
+  thread, hook, or user file. If the code does not match the task, stop and
+  ask (rule 4); that is the expected move, not a failure.
+- **Seniors only:** the change can lose a file, stall the UI, or break key
+  input, or design is left to do. A senior may amend the design a task
+  proposes, and records the change in the commit body.
+
+### Juniors and interns
+
+P19 first; then any order, except that P3 and P4 go before S5.
+
+- [ ] **P19. Make the size-column test pass on newer Windows (test).**
+  **[urgent]** `cargo test --workspace` fails on Windows build 26300, so the
+  gates are red before any change: `scene::tests::
+  the_header_and_rows_show_the_spaces_own_columns_in_its_order` expects `"2 KB"`
+  and gets `"2 KiB"`. The app is right. `details_cells` uses the shell's
+  `format_kb`, whose unit follows the locale and Windows build, which
+  `a_kilobyte_size_carries_its_unit` in `desktop_items.rs` already allows for.
+  - Compare with `format_kb(2048)` rather than a literal, as the platform's
+    tests compare with the raw call, and add the same one-line comment on why.
+    `scene.rs` already imports `format_kb`.
+  - Done when: `cargo test --workspace` passes here. Behavior does not change.
+
+- [ ] **P1. Fix four small doc errors (docs).** No code changes.
+  - `ROADMAP.md` D17 says List, Details, Tiles, and Content place items by
+    order. Small icons does too, since W16 (`ViewMode::places_by_order` in
+    `view.rs`). Add a dated amendment saying so, and that the three larger
+    icon views keep the grid. Keep the original sentence: a decision's history
+    stays readable.
+  - `CONTEXT.md` section 3 lists `space_icons` twice in the module table.
+    Delete the shorter row, the one that does not mention download consent.
+  - `CONTEXT.md` section 10, "Explorer display matching", says the view mode
+    "waits for M4 phase 4". That phase is done. Read `D17` and
+    `win32/display_settings.rs`, then reword the sentence to say what is true
+    today. If you cannot tell, ask.
+  - `ENGINEERING.md` section 6, the Keys table: the `WATCH_BACK` row has lost
+    its two-space indent. Restore it.
+  - Done when: the gates pass, and the four sentences read correctly.
+
+- [ ] **P2. Dismiss the info tip when an item rename starts (fix).**
+  `app/rename.rs` `begin_rename` calls `self.dismiss_info_tip(ui)`, so a tip
+  already showing does not cover the box. `begin_item_rename` does not, so
+  pressing F2 on an item whose tip is showing leaves the tip over the box.
+  - Add the same call to `begin_item_rename`, after the `let Some(entry)`
+    check, with a one-line comment saying why.
+  - `begin_item_rename` takes a `Ui`, so no unit test can reach it.
+  - **[needs human]** check: hover an item until its tip shows, then press F2:
+    the tip goes and the box is uncovered, on a space and on a loose desktop
+    icon with takeover on.
+
+- [ ] **P3. Delete the icon set's unused credits (refactor).** `IconSet.info`
+  is parsed and saved, but only `trim`'s tests read it. The real set's `info`
+  is empty, since upstream keeps that block in `info.json`. The About note and
+  `NOTICE` take their credits from the `ICON_SETS` row.
+  - `deskspace-core/src/icon_set.rs`: delete `IconSet.info`, `IconSetInfo`,
+    `IconSetAuthor`, and `IconSetLicense`.
+  - `deskspace-config/src/icons.rs`: delete `info: upstream.info` from `trim`
+    and the assertions on `set.info`. Keep `"info"` in the test's JSON: it now
+    proves an unknown key is ignored.
+  - Done when: `rg "IconSetInfo|\.info\b" crates` finds no icon-set use, and
+    the gates pass. Behavior does not change.
+
+- [ ] **P4. Leave deprecated icons out of search and matching (fix).** Iconify
+  marks a deprecated icon `"hidden": true` (48 of the 2887 kept Fluent icons in
+  1.2.60), and DeskSpace does not read the flag, so automatic matching can pick
+  one. A name a config has already saved must still draw (`ENGINEERING.md`
+  section 2, rule 3).
+  - `deskspace-core/src/icon_set.rs`: add `hidden: bool` to `IconData` and
+    `IconAlias`, with `#[serde(skip_serializing_if = "std::ops::Not::not")]`.
+    `canonical` and `glyph` do not change.
+  - `names()` leaves out a hidden icon, a hidden alias, and an alias that leads
+    to a hidden icon. Add `all_names()`, which is today's `names()`.
+  - `deskspace-config/examples/icon_set.rs`: write the names file from
+    `all_names()`. That file guards every name a config may hold, so
+    `assets/icons/fluent-names.txt` stays as it is and S5's `git diff` step
+    stays clean.
+  - `deskspace-config/src/icons.rs` `trim`: copy an alias's `hidden`, which
+    `..IconAlias::default()` drops today. The test JSON's `tall` icon is
+    already hidden; extend the assertions.
+  - Tests: a hidden icon is not in `names()` but `glyph` still draws it; an
+    alias of one is not listed either; `icon_match` does not pick it.
+  - No revision bump while S5 is open, as no set is published. Check with `gh
+    release view icons-fluent-r1`; if it exists, stop and ask.
+
+- [ ] **P5. Name what `base_layout` is told (refactor).** `app/view.rs`
+  `base_layout` takes `scale: f32, title_scale: f32, fixed_icon: bool`. Two
+  floats and a bool read the same at a call site, and `false` says nothing.
+  - Add `enum Cells { Look, FixedView }` and `struct LayoutScale { icon: f32,
+    title: f32, cells: Cells }` beside it, and take one `LayoutScale`.
+    `Cells::Look` is today's `fixed_icon == false`.
+  - Update `layout_for`, `effective_layout`, and the two tests that call it.
+  - Done when: the same tests pass with no change to their asserted values.
+    Behavior does not change.
+
+- [ ] **P6. Fit a grouped space to its groups (fix).** `fit_size`
+  (`view_layout.rs`) builds a `ViewLayout` with no grouping. A grouped space
+  therefore falls short by its header rows and scrolls, a folded group still
+  counts, and a grouped List is measured sideways though it stacks downward.
+  - `Command::FitToContents` gains `grouping: Option<Arc<Grouping>>`, and
+    `fit_size` takes it and calls `.with_grouping(grouping)` on its layout. This
+    is simpler than carrying a finished extent, as the task first suggested:
+    `ViewLayout` stays the one place that does the geometry.
+  - `App::fit_command` passes `self.shown_grouping(space)`. The compiler lists
+    the rest; tests pass `None`.
+  - Tests in `command/mod.rs`, copying the fit test near `ViewMetrics::for_view`
+    there: a grouped Details and a grouped List, each fitted, have
+    `max_scroll == 0`; a folded group makes the fit shorter.
+  - `CONTEXT.md` section 4, the `FitToContents` paragraph: name the grouping.
+  - **[needs human]** check: group a space by Type in Details and in List,
+    choose Fit to contents: no scroll and no clipped row. Fold a group and fit
+    again: it shrinks.
+
+- [ ] **P7. A resize minimum that follows the view (fix).**
+  `apply_resize_space` uses `GridSpec::min_space_size`, one icon cell, in every
+  view. A Details or Content space cannot shrink to one row, and a space fitted
+  to one row is smaller than a resize would then allow.
+  - Add `ViewMetrics::min_size(self, chrome: i32, fit_columns: bool, min_width:
+    i32) -> Size`. Height is `chrome + padding * 2 + cell.height`. Width is
+    `padding * 2 + cell.width` when `fit_columns`, otherwise `min_width`.
+  - `apply_resize_space`, which already works out `chrome` and `fit_columns`,
+    passes `layout.min_space_size().width` as `min_width`. Move those two lets
+    above `resize_rect`.
+  - Tests: an icon view with no status bar has exactly today's minimum (nothing
+    moves for existing users); a Details space shrinks to its title, header, and
+    one row; for every `ViewMode` where `places_by_order()`, a fit of one item
+    is never below `min_size`. So no extra clamp is needed; if that test fails,
+    stop and ask.
+  - `ROADMAP.md` D22: add a dated sentence recording the minimum. Section V row
+    W48: delete "A very short result ... looks wrong."
+  - **[needs human]** check: shrink a Details, a Content, and a Tiles space from
+    the bottom and the top, at 100 % and 150 %, with the status bar on and off:
+    each stops at one whole row, and the header is not clipped.
+
+- [ ] **P8. Rows that grow with the label size (fix).** `ViewMetrics::for_view`
+  uses fixed rows, but the labels follow the look's `label_size` (up to 160 %,
+  `LABEL_SIZE_RANGE`), so at a large size the text clips in a row.
+  - `for_view` gains `label_size: u8`. An order-placed view's row heights
+    (`small_icons.1`, `list.1`, `details_row`, `tile.1`, `content_row`) become
+    `row.max(row * label_size / 100)` before `scaled`, so 100 % and below change
+    nothing. The header, the group header, and every width stay as they are. The
+    icon views ignore it.
+  - App: three callers repeat the same line (`view_layout`, `fit_command`, and
+    `drag.rs`). Add `App::metrics_of(id) -> ViewMetrics` and use it there and
+    in `selection.rs`. `scene.rs` has the look at hand.
+  - Tests: at 100 % every row is unchanged, in normal and compact cells; at
+    160 % each row is taller and the header is not; below 100 % nothing shrinks.
+  - The constants themselves stay provisional; W33's row in section V measures
+    them. **[needs human]** check: set the label size to 160 % and look at
+    Small icons, List, Details, Tiles, and Content, normal and compact: no
+    clipped text, at 100 % and 150 %.
+
+- [ ] **P9. Find what slows the platform's tests (test).**
+  `deskspace-platform`'s unit tests took 5 s on 2026-11-02 (327 tests, down from
+  16 s on 2026-10-21). Every other crate takes under 0.1 s. The time goes to
+  tests that call the real shell, such as
+  `win32::app_catalog::tests::a_background_refresh_fills_the_cache`.
+  - Run each test alone (`cargo test -p deskspace-platform --lib -- --exact
+    <name>`, names from `-- --list`) and record the ten slowest in the commit
+    body. Ignore the first run, which also builds.
+  - For each one, find the decision it checks, pull that into a function that
+    takes plain data, and test the function. Keep at most one real-shell check
+    per module.
+  - Make one commit per module. Never delete a test without a replacement
+    checking the same decision. If no plain-data seam exists, leave the test and
+    say so in the commit body.
+  - Done when: the commit bodies give the time before and after, and no module
+    has more than one test that calls the shell.
+
+### Seniors only
+
+These are in the order we would take them. Each lands alone; P13 waits for B33.
+
+- [ ] **P10. Roll back a part-done undo (fix; user files).** ROADMAP D11 says
+  undo applies a whole entry or changes nothing. `App::reverse_files`
+  (`app/undo.rs`) checks every step first, but a step can still fail midway, for
+  example when the Recycle Bin loses one of two deleted items in the gap. The
+  earlier steps stay applied while the entry is dropped as stale, and the alert
+  says only that DeskSpace can't undo it. A restored file then sits unlisted in
+  the store until a prune.
+  - Design: split the loop body into `reverse_step(ui, files, index, undo) ->
+    bool`. On a failure, walk the steps already applied in the opposite order
+    and call `reverse_step` with `!undo`. A `Created` / `Recycled` step has
+    swapped variant by then, so running it again is its own reverse.
+  - If the rollback succeeds, nothing has changed, so today's "can't undo" alert
+    is enough: keep it. If it fails, stop, log every path with `tracing::warn!`,
+    and show a different alert naming the files that are not where they were.
+    Never retry, and never overwrite: a move's destination may have been taken
+    in the meantime.
+  - Rollback passes through `ui.restore_recycled`, which finds a file by time
+    (`since`). Update `at` when a step recycles again, as the loop already does.
+  - Tests with `ui: None` (the `.test-recycle` path): a two-step undo and redo
+    whose second step fails leaves every file where it began; a failed rollback
+    takes the second alert. The existing `stale_file_entry_touches_no_file` is
+    the model.
+  - The gap between the check and the step is too short to hit by hand, so the
+    tests carry this. **[needs human]** check: U5's and U7's rows still pass.
+
+- [ ] **P11. Follow a lens's folder while it browses a subfolder (fix).** A
+  browsed lens watches only the subfolder (`follow_moved_folder`, `app/lens.rs`).
+  Rename the lens's own folder meanwhile and the watch reports the subfolder's
+  new path, so the lens returns home and shows "Folder not available" rather than
+  following, which it does when not browsed (D19).
+  - A suffix match cannot decide this alone: `Root\A` moved to `Other\A` also
+    ends in `A`. The test is whether the old root is gone too, and that is IO, so
+    it belongs on the worker (W25: the UI thread never waits on a folder).
+  - Design: pass the lens's root with a browsed watch, as W25 passes the store.
+    `Folder::moved` computes `root_after_move(root, shown, to) -> Option<PathBuf>`,
+    which is pure: `to` minus `shown`'s path below `root`, when `to` ends with it.
+    It reports `Moved { to, root: Some(new) }` only when the old root is no
+    longer a folder and `follows_to` allows the new one.
+  - App: `Moved::Followed` for the root, with the notice and its undo entry. The
+    lens shows its own folder, as a followed lens does. Today's return home
+    remains for every other case, which W45's row requires.
+  - Tests: `root_after_move` with a rename, a move, a nested subfolder, and no
+    match; `follow_moved_folder` for each `Moved` result.
+  - **[needs human]** check: browse two levels down, rename the lens's folder in
+    Explorer: within 5 s the lens follows with its notice, and Ctrl+Z points it
+    back. Add it to W45's row.
+
+- [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
+  Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
+  Alt tap (`handle_watched`, `win32/keyboard.rs`). The original note worried
+  about a menu showing. `handle_watched` only swallows while the desktop shell
+  has the foreground, so an app's menu cannot show; keyboard cues on the desktop
+  are all that is left.
+  - **First reproduce it.** With an item selected, press each combination and
+    watch for focus cues or any change on the desktop. If nothing shows, on
+    Windows 11 and 10, delete this task in a commit saying so, with no code.
+  - If it shows: after a swallowed key with `mods.alt`, `SendInput` a down and up
+    of an unassigned virtual key (0xE8, as AutoHotkey's `A_MenuMaskKey` does).
+    Keep the choice in a pure function with a test.
+  - `hook_proc` sees that injected key too and has no `LLKHF_INJECTED` check.
+    Confirm it passes through `watched_key`, `typeahead_char`, and
+    `handle_editing` unconsumed, and that the hook stays within its time limit.
+    `ENGINEERING.md`'s Keys table gets a line.
+  - **[needs human]** check: the three combinations show no cue, Alt+Tab and
+    Alt+F4 still work, and a rename still cancels on Alt.
+
+- [ ] **P13. Keep a normal space's item facts fresh (feature; after B33).** A
+  normal space's item reads its dates and size once, when added. An item saved
+  before W29 has no Date created and sorts as the oldest; every item's `size` and
+  `modified` go stale (`CONTEXT.md` section 10). A lens re-reads them on each
+  listing.
+  - Design: at startup, B33's worker reads `item_facts` for each normal space's
+    items and posts them in one batch per space. A new `Command::RefreshItemFacts
+    { space, facts }` (the Command recipe) changes only facts that differ, and
+    `Applied` only then. It records no undo entry. A kept-sorted space re-sorts;
+    any other keeps its order and positions.
+  - **The catch:** `UndoEntry::can_undo` compares whole `Space` values, and this
+    arrives after the user may have acted, so it would mark earlier entries
+    stale. Proposed: compare through a new `Space::same_ignoring_facts`. Restoring
+    an old snapshot then brings old facts back until the next start, which is
+    harmless. Look at this first; it is the one real decision here.
+  - B33's queue drops paths scrolled out of view. These jobs must not be dropped,
+    and must yield to icon requests, so scrolling stays smooth.
+  - Tests: only changed facts count as `Applied`; a refresh leaves undo available;
+    a missing file keeps its old facts rather than zeroing them.
+  - `CONTEXT.md` section 10: update the sentence. **[needs human]** check: start
+    on a config with a few hundred items on a slow disk: no stall, and sorting by
+    Date created orders an old item correctly.
+
+- [ ] **P14. Give the fixed icon views their own cell.** **[needs decision]**
+  A fixed view scales the whole grid by icon size over 48 px (`fixed_icon_scale`,
+  `app/view.rs`). With the default 96 × 104 cell, Large icons gets a 192 × 208
+  cell and Extra large about 512 × 555, so three Extra large columns need about
+  1,500 px. W12's check does not mention this.
+  - Proposed (maintainer to confirm): measure Explorer's Medium, Large, and Extra
+    large cells at 100 % and 150 % and make them constants beside `NORMAL_CELLS`,
+    so a fixed view uses that cell and never the look's. The look's spacing then
+    applies only to "Settings icon size".
+  - Settle first: what a hand arrangement saved under the old cell does
+    (`ENGINEERING.md` section 2, rule 3), so check whether a release has shipped
+    these views; and whether `ViewMetrics::for_view` takes over from `base_layout`'s
+    scaling, which P5 names.
+  - Record the decision in `ROADMAP.md`, amending D17.
+
+- [ ] **P15. Scroll Details sideways (design, then split).** Columns past the
+  space's width are cut off (`scene.rs` `details_columns`), and W30 makes that
+  easy to reach: every column on takes 560 px at 96 DPI. Explorer scrolls
+  sideways. Today a space has one scroll offset and `ViewLayout` one
+  `ScrollAxis`, so this is a second axis through the whole input path. Settle:
+  - where the second offset lives (`ViewCache`, beside the scroll) and who clamps
+    it after a resize, a column change, or a view change;
+  - what must follow it: hit tests, the marquee, the rename box, the drag drop
+    index, the divider and header drags (`app/columns.rs`), and the painter, with
+    no allocation per frame;
+  - the header's behavior: it scrolls with the columns but not with the rows;
+  - input and chrome: Shift+wheel, the horizontal wheel, and a second indicator,
+    as Explorer has them; and how Name's "takes the rest" reads once columns pass
+    the edge (W31's row);
+  - a 50,000-row lens stays within section W's Performance rule.
+
+  Then split it into one-commit tasks here, and drop the note from W30's row.
+
+- [ ] **P16. Measure labels (design, then split).** Two Explorer behaviors wait
+  for this: the Details header menu's "Size all columns to fit" (W30) and List
+  columns sized to the longest label (W17 uses a fixed 200 px and an ellipsis).
+  Settle:
+  - the seam: the app is Win32-free and scenes are data, so name the `Ui` method
+    and what it takes (font, size, strings), or put it in the worker;
+  - the cost: 50,000 labels cannot be measured on the UI thread (section W's
+    Performance rule). Decide on a cache, a sample, or the worker (B37's), and
+    what shows until it answers;
+  - Explorer's limit on a List column's width, measured, and whether a width
+    change re-flows;
+  - how it fits R18 (longer translated labels), so there is one way to measure.
+
+  Then split it into one-commit tasks here: the seam, then each behavior.
+
+- [ ] **P17. Keyboard support for the Shortcuts preview (accessibility, M7).**
+  The Shortcuts page's preview (`win32/settings_window/preview.rs`) is not a Tab
+  stop, and its X and + are mouse-only. Take it with M7 item 4, not before.
+  - `WS_TABSTOP` on the field: `IsDialogMessage` (`runtime/mod.rs`) then gives it
+    Tab. `WM_GETDLGCODE` asks for the arrow keys and Enter and leaves Tab and Esc
+    to the dialog, so Esc still cancels.
+  - Add a focused target to `PreviewView`, moved by a pure function on
+    `PreviewLayout` with tests. Scroll it into view, and draw a focus rectangle
+    only while the window has focus (`WM_SETFOCUS`, `WM_KILLFOCUS`).
+  - Delete raises what the X's click raises, and Enter on the + what its click
+    raises, through `on_click`'s events. So a lens's Recycle Bin question still
+    shows. Remember the window may be gone after a dispatch (`ENGINEERING.md`
+    section 6, Re-entrancy).
+  - Delete the "no keyboard support" sentence from the file's header.
+  - **[needs human]** check: Tab in and out; arrows, Delete, and Enter, on a space
+    and a lens, at 100 % and 150 %, light and dark.
+
+- [ ] **P18. Find why the on-screen harness reads the wallpaper (scripts).**
+  `scripts/onscreen/smoke.ps1`, run by an agent on the maintainer's machine on
+  2026-10-31, read the wallpaper instead of the backdrop and the space, though
+  both windows reported visible at their rects. O2 and O3 passed on the same
+  machine on 2026-10-27, so a state or an update changed, not necessarily the
+  code. `shadows.ps1 -Pixels` depends on the same capture.
+  - Unproven suspects, to rule out in order:
+    1. The windows are cloaked (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`). A
+       cloaked window reports visible with a rect but is not composed, which
+       fits the symptom. Another virtual desktop would do this.
+    2. The session: locked (`IsWorkstationLocked` exists), disconnected, or not
+       the active console.
+    3. A Windows update changed what `GetDC(NULL)` with `BitBlt` and `CAPTUREBLT`
+       returns.
+    4. `Show-Backdrop` creates its window on PowerShell's thread, which pumps no
+       messages. This does not explain the space, though.
+  - Run it from the maintainer's own terminal as well as an agent's, to split the
+    environment from the code. `Assert-Check` the cloak state so the next failure
+    explains itself.
+  - Never run this while the maintainer has a build running: `Start-DeskSpace`
+    calls `dev.ps1`, which stops one.
+  - Stop and ask before reaching for `Windows.Graphics.Capture`, as `smoke.ps1`
+    says.
+  - While there: `Show-Backdrop`'s synopsis says "non-topmost", while the code
+    and its own description say topmost. Fix the synopsis.
+  - Done when: `smoke.ps1` passes, or the cause is written down here with what
+    would fix it.
+
 ## D. Reserved (strong model or maintainer; do not start)
 
 Each needs design work first. Ids are `R`-numbered so they do not collide with
@@ -1987,92 +2353,3 @@ each id is in `archive/TASKS-done.md`.
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
-
-- `app/files.rs` and the other `AddItem` callers: a normal space's item
-  takes its dates once, when it is added, and nothing refreshes them, so an
-  item saved before W29 has no Date created and sorts as the oldest. A lens
-  re-reads it on every listing. Suggested task: refresh a normal space's
-  item facts at startup off the UI thread (with B33's worker). Found in
-  W29, 2026-10-29.
-- `win32/keyboard.rs` `handle_watched`: swallowing an Alt combination (Alt+Enter, and since W43 Alt+Left and Alt+Up) leaves the foreground window a lone Alt tap, which can show its menu or keyboard cues; inject a masking key (an unassigned VK) as other hook tools do. Found in W43's review, 2026-10-29.
-- `app/lens.rs` `follow_moved_folder`: a lens browsed into a subfolder watches only that subfolder, so renaming the lens's own folder meanwhile reports the subfolder's new path; the lens returns home and shows "Folder not available" instead of following. Suggested task: when the moved path ends with the browsed subfolder, ask the worker whether the old root still exists, and follow the root if not. Found in W45, 2026-10-29.
-- `app/undo.rs` `reverse_files`: the checks run first, but a file step can
-  still fail midway (the Recycle Bin emptied of one of two deleted items),
-  leaving the earlier steps applied while the entry is dropped as stale; a
-  restored file then sits in the store unlisted until a prune. Suggested
-  task: roll back the steps already applied when a later one fails.
-- `app/menus.rs` `add_files`: U7 asked for `Created` records here, but
-  "Add files…" moves (ROADMAP D3, as a drop does), so U5's `Moved` record
-  already undoes it and none was added. Suggested fix: drop it from the
-  task text if a U task is ever reopened.
-- `win32/settings_window/preview.rs`: the Shortcuts page's space preview has
-  no keyboard support (not a Tab stop; its X and + are mouse-only).
-  Suggested task: arrow-key focus, Delete for the X, and Enter on the +
-  tile (ROADMAP M7 accessibility).
-- `deskspace-platform` tests: the crate's tests take about 16 s
-  (2026-10-21), while every other crate's take under 0.1 s. The time
-  goes to tests that call the real shell. Run alone,
-  `win32::app_catalog::tests::a_background_refresh_fills_the_cache` takes
-  about 3 s more than an empty test. Suggested task: find what each slow
-  test waits for, and test the decision on plain data instead, keeping
-  at most one real-shell check per module.
-- **Readability, W12:** the task calls `LargeIcons` "a 96 px cell", but this
-  codebase's grid cell is twice the base 48 px icon (a 96 px cell at 100 %),
-  so a fixed 96 px icon gets a 192 px cell. The task/word should say "icon",
-  or the fixed views need their own cell rule. Noted while implementing W12.
-- **app/view.rs:** `base_layout` now takes a `fixed_icon: bool` beside
-  `theme`, `grid`, `scale`, and `title_scale`. The call sites are still
-  readable, but a small `LayoutScale` (fixed view vs look) would make the
-  fixed-vs-look choice harder to misread when W14 adds more view fields.
-- **W16 Small icons:** the inline cell is 200 × 22 px at 96 DPI, with a 2 px
-  gap, because those are plausible Explorer values but have not been measured
-  on screen. Confirm them (and the row height at a larger label size, which
-  the cell does not follow yet) during W16's check, then fix the constants in
-  `view_layout.rs` and record the measurement.
-- **W17 List:** `LIST_COLUMN_WIDTH` (200 px) and `LIST_CELL_HEIGHT` (22 px)
-  are the same provisional values as Small icons, not measured. Confirm them
-  during W17's check and record the measurement.
-- **W17 List labels:** each label is ellipsized at the column's right edge, as
-  W17 asks; Explorer instead sizes a column to the longest label in the folder
-  (up to a limit). Measuring the labels is left for later.
-- **Docs, D17 vs W16:** D17 calls Small icons one of the "four icon views"
-  and says only List, Details, Tiles, and Content place items by order, while
-  W16 (and W12's note) puts Small icons' labels beside the icon in inline
-  cells, so it now places items by order. W16 was followed. Suggested: amend
-  D17 to say the three large icon views keep the grid and Small icons is an
-  order-placed inline view with a fixed 16 px icon.
-
-- `deskspace-config/src/icons.rs` `trim`: Iconify marks deprecated icons
-  `"hidden": true` (48 of the 2887 kept Fluent icons in 1.2.60). DeskSpace
-  does not read the flag, so they are matched and listed like any icon.
-  Suggested: read `hidden` in `IconData` and leave hidden icons out of
-  `IconSet::names` (search and matching) while still drawing a saved one.
-- `@iconify-json/fluent`'s `icons.json` has no `info` block (it is in
-  `info.json`), so the trimmed set's `info` is empty. The credits come
-  from the `ICON_SETS` row, which the About note and `NOTICE` use.
-- `app/rename.rs` `begin_item_rename`: an item tip already shown when F2
-  starts an item rename stays over the rename box, the same hole W27
-  closes for the title rename (`dismiss_info_tip` in `begin_rename`).
-  Suggested: dismiss it there too. Found in W27, 2026-10-30.
-- Details header menu: Explorer's "Size all columns to fit" is left out,
-  since it needs text measurement. Suggested: add it once a column can
-  measure its labels. Found in W30, 2026-10-31.
-- `scene.rs` `details_columns`: columns past the space's width are cut off,
-  because Details has no sideways scroll, and W30 makes that easy to reach
-  (every column on takes 560 px at 96 DPI). Explorer scrolls sideways.
-  Suggested task: a horizontal scroll for Details in `ViewLayout`. Found in
-  W30, 2026-10-31.
-- `command/space_ops.rs` `apply_fit_to_contents`: `fit_size` knows nothing of
-  groups, so Fit to contents on a grouped space falls short by its header rows
-  and scrolls. Suggested: carry the extent, not the metrics, in the command.
-  Found in W37, 2026-10-31.
-- `scripts/onscreen/smoke.ps1` fails on the maintainer's machine as run by an
-  agent (2026-10-31): the screen capture reads the wallpaper rather than the
-  backdrop and the space, though both windows report visible at their rects.
-  `shadows.ps1 -Pixels` will be affected too. Not yet understood. Found in W37.
-- `command/space_ops.rs` `apply_resize_space`: the minimum is still one icon
-  cell (`GridSpec::min_space_size`), so a Details or Content space cannot
-  shrink to one row even though its fit uses rows, and a fit at that minimum
-  can land below it. Suggested: a view-aware minimum (one cell, or one row in
-  a row view) and clamp the fitted rect to it. Found in C11, 2026-10-31.
-
