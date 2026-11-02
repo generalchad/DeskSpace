@@ -1219,6 +1219,45 @@ mod tests {
     }
 
     #[test]
+    fn a_huge_lens_scene_carries_only_the_visible_page() {
+        let mut desktop = Desktop::new();
+        let id = crate::fixtures::create_lens(
+            &mut desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            "C:/folder",
+        );
+        let items: Vec<Item> = (0..2_000)
+            .map(|n| {
+                Item::new(
+                    ItemId(n),
+                    format!("C:/folder/file{n}.txt"),
+                    ItemFacts::default(),
+                )
+            })
+            .collect();
+        assert!(
+            desktop
+                .apply(Command::SyncLens { id, items }, Rect::new(0, 0, 1920, 1080))
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        let theme = Theme::default();
+        let scene = space_scene(
+            space,
+            surface_look(&theme, &theme.palette(true)),
+            ViewState::default(),
+            &mut IconCache::new(),
+        );
+        assert!(
+            scene.items.len() < 200,
+            "only the page that fits is drawn, not all {} items",
+            space.items().len()
+        );
+        assert!(!scene.items.is_empty());
+    }
+
+    #[test]
     fn items_are_placed_below_the_title_in_window_coordinates() {
         let space = space();
         let theme = Theme::default();
