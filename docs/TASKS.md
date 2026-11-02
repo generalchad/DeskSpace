@@ -234,9 +234,7 @@ matching on `Surface` at the call site.
 Each is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. Do them in any order. The exceptions are
 B32-B36, from a review on 2026-10-21: they fix performance and correctness,
-and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
-same kind: they are the costs left over from B33/B37, against the 50,000-file
-bar in section W's Performance rules.
+and B33 and B36 change behavior on purpose, as each says.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
