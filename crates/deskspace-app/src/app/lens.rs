@@ -1016,6 +1016,10 @@ mod tests {
                 Default::default(),
             );
         });
+        time("the Shortcuts preview of the lens", &mut || {
+            let preview = app.space_preview(Some(lens));
+            assert_eq!(preview.items.len(), 50_000);
+        });
         for key in [
             deskspace_core::SortKey::Name,
             deskspace_core::SortKey::Kind,
