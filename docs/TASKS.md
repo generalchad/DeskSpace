@@ -1427,6 +1427,19 @@ Rules for every K task:
   - Done when: `mod.rs` is under about 800 lines of non-test code and the
     K rules above hold.
 
+- [ ] **K9. Split `win32/icons.rs`.** 793 lines of non-test code (measured
+  2026-11-02), and the next change would pass the guideline, so it goes before P24.
+  Turn it into `win32/icons/mod.rs` plus:
+  - `worker.rs`: `start_worker`, `run_worker`, `next_request`, `should_report`,
+    and `report_loaded`, with `Worker` and `WorkerState`, and their tests.
+  - `load.rs`: everything that reads an icon from the shell, from `load_icon` to
+    `composite_overlay`, including `shell_item_icon` and `resample`, and their tests.
+  - `mod.rs` keeps `IconUser`, `IconKind`, `Key`, `GenericIcon`, `CachedIcon`, and
+    `IconCache`. It re-exports `shell_item_icon` and `resample`, so `app_catalog` and
+    the other callers do not change.
+  - Done when: `mod.rs` is well under 800 lines of non-test code and the K rules
+    above hold.
+
 ## Q. Move the why next to the code (shrink `CONTEXT.md` section 6)
 
 `CONTEXT.md` section 6 explains many Win32 quirks in prose far from the code
@@ -1477,24 +1490,223 @@ Who takes what:
   input, or design is left to do. A senior may amend the design a task
   proposes, and records the change in the commit body.
 
+A large task is split where a part can land alone, as C10 is: `P10a`, `P10b`,
+each its own commit. Archive each part as it lands, and its parent with the last
+one. A junior task that has to step over the line above says why and names a
+senior to review it. A part marked **[needs decision]** waits for the maintainer,
+and the parts after it wait too.
+
 ### Juniors and interns
 
-- [ ] **P9. Find what slows the platform's tests (test).**
-  `deskspace-platform`'s unit tests took 5 s on 2026-11-02 (327 tests, down from
-  16 s on 2026-10-21). Every other crate takes under 0.1 s. The time goes to
-  tests that call the real shell, such as
-  `win32::app_catalog::tests::a_background_refresh_fills_the_cache`.
-  - Run each test alone (`cargo test -p deskspace-platform --lib -- --exact
-    <name>`, names from `-- --list`) and record the ten slowest in the commit
-    body. Ignore the first run, which also builds.
-  - For each one, find the decision it checks, pull that into a function that
-    takes plain data, and test the function. Keep at most one real-shell check
-    per module.
-  - Make one commit per module. Never delete a test without a replacement
-    checking the same decision. If no plain-data seam exists, leave the test and
-    say so in the commit body.
-  - Done when: the commit bodies give the time before and after, and no module
-    has more than one test that calls the shell.
+Small first. Each lands alone unless it says "After".
+
+- [ ] **P9. Find what slows the platform's tests (test).** The per-module work
+  is two parts from done. The glyph cache has landed, and `file_op` needs no
+  change. `f656993`'s body has the ten slowest and the times. Never delete a test
+  without a replacement checking the same decision.
+  - [ ] **P9a. Shorten the watch's path check under test.** **[needs decision]**
+    `a_renamed_folder_reports_where_it_went` takes 5 s only because it waits for
+    `CHECK_MS` (`win32/folder_watch.rs`). Proposed: `const CHECK_MS: u64 = if
+    cfg!(test) { 200 } else { 5_000 };`, with a comment saying why. Do not touch
+    `RETRY_MS` or the worker. If another test starts to fail, stop and ask.
+    Done when: the commit body gives the crate's time before and after.
+  - [ ] **P9b. One shell test in `app_catalog`.** Pull the sort in `list` into
+    `sorted_by_name(apps)` and test it on plain `CatalogApp`s. Move the id list
+    and Store app checks from `the_applications_folder_lists_apps_with_id_lists`
+    into `a_background_refresh_fills_the_cache`, then delete the first test.
+    Done when: every assertion still runs, and the module has one test that
+    calls the shell. Then archive P9.
+
+- [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
+  **[needs human]** The first step of P12. With an item selected, press
+  Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the
+  desktop, on Windows 11 and on Windows 10. If nothing shows on either, delete P12
+  in a commit saying so. Otherwise record what shows under P12.
+
+- [ ] **P26a. See whether content still trails its edge (no code).**
+  **[needs human]** The first step of P26. On a space with a title and items,
+  play Roll, Fly, and Bounce from the debug window at 100 % and 150 %. Watch the
+  edge for content lagging or a frame with no title. If nothing shows, delete P26
+  in a commit saying so. Otherwise record which effect shows it under P26.
+
+- [ ] **P18a. Fix `Show-Backdrop`'s synopsis (scripts).** It says "non-topmost";
+  the code and its own description say topmost (`scripts/onscreen/OnScreen.psm1`).
+  Change the one word.
+
+- [ ] **P22. Release the catalog worker's graphics before leaving COM (fix).**
+  `refresh_in_background` (`win32/app_catalog.rs`) calls `CoUninitialize` while
+  its thread-local `Graphics` still holds COM objects, which are released later at
+  thread exit. The icon worker can leave its apartment open because it lives as
+  long as the app. This thread ends after every listing, so it should clean up.
+  - Call `d2d::release_graphics()` just before `CoUninitialize`, as
+    `runtime/mod.rs` does. That function's doc says this is its purpose. Call it
+    even when `initialized` is false.
+  - This is a thread's cleanup, so it steps over the junior line. It is one safe
+    call and changes no `unsafe` block. A senior reviews it.
+  - No test can see this. Done when: gates pass, and the picker opens, closes, and
+    opens again with icons (a section V row).
+
+- [ ] **P23. Honor `--new-space` with no running instance (fix).** `cli.rs` says
+  it will "start with one", and `bootstrap.rs`'s comment agrees, but no space is
+  created. Copy `--settings`: a `new_space_on_start` field on `App`, set in
+  `bootstrap::run` as `app.layer` is, and taken with `std::mem::take` in
+  `on_started`, next to `open_settings_on_start`, calling `create_space(ui,
+  cursor_pos())` as `Event::NewSpace` does.
+  - **[needs human]** check: with DeskSpace not running, `deskspace --config
+    <scratch> --new-space` starts with one more space than the config holds. With
+    it running, the same command adds one space and starts no second process.
+
+- [ ] **P21. Hold the debug refresh during an animation (fix).** `refresh_debug`
+  (`app/debug/mod.rs`) stalls every running animation for 20-60 ms once a second
+  (measured 2026-10-31).
+  - `frame_clock.rs`: `pub(crate) fn any_animating() -> bool` over
+    `clock().windows.is_empty()`. Then `Ui::is_animating` in
+    `runtime/ui_chrome.rs`.
+  - `refresh_debug`: after its "window closed" check, return early while
+    `ui.is_animating()`. Leave the timer running, so the panel catches up on the
+    next tick. Do not touch `feed_debug_log`.
+  - This reads a lock the frame thread shares, so it steps over the junior line.
+    Hold the lock only for the read. A senior reviews it.
+  - **[needs human]** check: in a debug build with `--debug` open, preview Bounce
+    repeatedly: no hitch once a second, and the panel updates when it stops.
+
+- [ ] **P20. Keep the selection when undoing a lens rename (fix).** `reverse_rename`
+  (`app/undo.rs`) brings the file back under a path the watch worker has no id for,
+  so the next listing gives the item a new id and it comes back unselected. A
+  lens's items stay out of undo (`Space::undo_snapshot`), so the model still holds
+  the path the file just left.
+  - Add `lens_item_at(&self, path) -> Option<(SpaceId, ItemId, Option<u64>)>` beside
+    `note_renamed_lens_item` (`app/lens.rs`): only lens spaces, and `item.path ==
+    path`. Use `==`, not `storage::same_path`: `from` is the exact path the rename
+    wrote, and `same_path` would run once per item in a 50,000-file lens.
+  - In `reverse_rename`, on success with a `Ui`, call `ui.note_lens_item` with the
+    space's `WatchKey`, the new path `to`, the item's id, and its `modified`.
+    Change nothing about how the file is renamed.
+  - Tests: `lens_item_at` finds a lens's item, and ignores a normal space's item at
+    the same path.
+  - **[needs human]** check: rename an item in a lens, Ctrl+Z: it stays selected.
+    Ctrl+Y: still selected. Give it its own row in section V.
+
+- [ ] **P25. Cap a normal space at the work area (fix).** `apply_sync_lens` stops a
+  lens growing past `bounds`, but `AddItem`, `MoveItem`, and `AutoArrange` call
+  `arrange_space` with no bounds, so a full space can grow taller than the monitor.
+  - `command/mod.rs`: move the cap out of `apply_sync_lens` into `fn
+    cap_to_bounds(space, layout, bounds)` (the `if` and its body, as they are), and
+    make `apply_sync_lens` call it.
+  - `rearrange` takes `bounds` and calls it, for an unlocked space, after
+    `arrange_space`. Pass `bounds` through `apply_add_item`, `apply_move_item`, and
+    `apply_auto_arrange`, which calls it too.
+  - **Leave `apply_reflow` alone.** The cap pins the space (`user_sized = true`). A
+    reflow runs on every icon-size preview in Settings, so dragging that slider
+    would pin the space for good, and Cancel would not unpin it.
+  - Tests in `command/mod.rs` (copy
+    `a_lens_too_large_for_the_work_area_stops_growing_and_scrolls`), one each for
+    `AddItem`, `MoveItem`, and `AutoArrange`; and a space that fits is not pinned. If
+    an existing test's bounds now cap its space, stop and ask.
+  - **[needs human]** check: drop items on a space until it reaches the bottom of
+    the monitor: it stops and scrolls. Ctrl+Z puts it back.
+
+- [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
+  removes an entry from `IconCache::demand`, so the limit only rises. A previewed
+  space adds at most 60 for good, and a deleted space's scene stays counted, which
+  for a large lens is much more.
+  - `IconCache::forget_user(user)`: remove it from `demand`, and when a worker exists
+    call `queue.set_wanted(&user, &[])`, so it stops loading icons nobody will draw.
+  - `store` evicts once per insert, so a lower limit would never shrink the cache.
+    Turn its eviction into a `while` that runs until the entries are under the limit.
+    A replaced key still evicts nothing.
+  - Call it for `IconUser::SettingsPreview` in `app/settings_session.rs`, with the
+    old scope, read before `select_scope` in `ScopeChanged`, and on Ok and Cancel.
+    Call it for `IconUser::Space` beside both `view_cache.forget(id)` calls
+    (`app/files.rs`, `app/undo.rs`). Undoing that delete makes a new scene, which
+    registers again.
+  - Tests in the cache, which can set `demand` directly: the limit falls after a
+    forget, and the next store evicts down to it, oldest first. No shell calls.
+
+- [ ] **P11a. Teach the app a browsed lens's moved root (refactor).** Part of P11.
+  - `FolderListing::Moved` gains `root: Option<PathBuf>`. The worker passes `None`,
+    so nothing changes on screen yet. That one line is all that changes in
+    `folder_watch.rs`, plus its test's pattern (`Moved { to, .. }`).
+  - `on_lens_moved` and `follow_moved_folder` take `root`. On a browsed lens with
+    `Some(root)`, follow `root` exactly as an unbrowsed lens follows `to`: same undo
+    entry, same notice. `sync_watches` already forgets the browse once the path
+    changes. With `None`, keep today's `ReturnHome`.
+  - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
+    browsed.
+
+- [ ] **P11b. Work out where a browsed lens's root went (pure).** Part of P11.
+  `pub fn root_after_move(root, shown, to) -> Option<PathBuf>` in
+  `deskspace-core/src/source.rs`, beside `FolderView`. The path of `shown` below
+  `root` is the tail. The answer is `to` with that tail removed.
+  - `None` when `shown` is not below `root`, when `shown` is `root`, or when `to`
+    does not end with the tail.
+  - Compare components ignoring case, because Windows does and `to` comes from the
+    file system. Keep `to`'s spelling in the answer.
+  - Tests: a rename, a move, a nested subfolder, a different case, no match, and
+    `shown == root`. Do not call it from the worker; P11c does.
+
+- [ ] **P13a. Compare spaces ignoring item facts (refactor).** **[needs decision]**
+  Part of P13. `UndoEntry::can_undo` and `can_redo` compare whole `Space` values.
+  Add `Space::same_ignoring_facts` in core and use it there.
+  - Destructure both `Space` and `Item` with no `..`, so a new field makes the
+    compiler ask. Ignored: `size`, `modified`, `created`, `compressed`, `encrypted`.
+  - Proposed, and beyond P13's first idea: refreshing a kept-sorted space re-sorts
+    it, which changes its order and positions, and that would still mark entries
+    stale. So when `keeps_sorted()`, also ignore item order and `position`, matching
+    items by id.
+  - Nothing changes facts yet, so no behavior changes. Tests: each ignored field,
+    a changed label still differs, and a kept-sorted space in another order is the
+    same while a hand-ordered one is not.
+
+- [ ] **P13b. `Command::RefreshItemFacts` (feature, core only).** After: P13a. Part
+  of P13. The Command recipe's steps 1, 2, and 4, with `{ space, facts: Vec<(ItemId,
+  ItemFacts)> }`. Sets only the five facts above and no other field. `Applied` only if
+  one differed, else `Rejected`. A kept-sorted space re-sorts and re-positions; any
+  other keeps order and positions. A lens is `Rejected`, because its listing owns
+  its facts. Nothing dispatches it yet; P13d does, as C10a landed before C10c.
+
+- [ ] **P13c. Tell a missing file from an empty one (refactor).** Part of P13.
+  `item_facts` returns the default for an unreadable path, so a refresh would zero a
+  file on a sleeping drive. Add `read_item_facts(path) -> Option<ItemFacts>`
+  (`win32/desktop_items.rs`), and make `item_facts` call it with
+  `.unwrap_or_default()`. Test: a missing path is `None`.
+
+- [ ] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
+  Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
+  `app/undo.rs`. A pure move with no change in order or logic. It sits in code that
+  moves user files, so it steps over the junior line. The move cannot change what a
+  step does, and the tests in `app/undo.rs` prove it. A senior reviews it. Done when:
+  the same tests pass unchanged.
+
+- [ ] **P18b. Make a failed capture explain itself (scripts).** Part of P18. In
+  `scripts/onscreen/OnScreen.psm1`, add `Get-CaptureState`: each DeskSpace window's
+  cloak state (`DwmGetWindowAttribute`, `DWMWA_CLOAKED`), the session
+  (`IsWorkstationLocked` is there already; add the session id and whether it is the
+  console's), and the input desktop's name. `smoke.ps1` and `shadows.ps1 -Pixels`
+  print it, and `Assert-Check` a window is not cloaked, before they read pixels.
+  - Never run these while the maintainer has a build running: `Start-DeskSpace`
+    calls `dev.ps1`, which stops one.
+  - Done when: a run prints the state, and with a space on another virtual desktop
+    the check fails and names the cloak.
+
+- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** After:
+  P14a. Part of P14. In Explorer, at 100 % and 150 %, measure one cell's width and
+  height, gap included, in Medium, Large, and Extra large icons. Record the numbers
+  in P14c, with the date.
+
+- [ ] **P14c. Give the fixed icon views their own cell (fix).** After: P14b. Part of
+  P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
+  Option<Size>`, measured in 96-DPI pixels with a comment saying so and when. If the
+  150 % numbers are not 1.5 times the 100 % ones, stop and ask. `Cells::FixedView`
+  carries that `Size`, which `layout_for` fills in from the space's mode. In
+  `base_layout` (`app/view.rs`), give it its own arm, shaped like the `Cells::Look`
+  arm: the cell times `scale.title`, which is the DPI alone, and `gap = 0`.
+  - `ViewMetrics::for_view` needs no change: it hands an icon view the `GridSpec`,
+    and `arrange_space` reads that too, so `base_layout` is the one place.
+  - Amend D17 in `ROADMAP.md`. Tests: each view's cell, DPI scaling, and a look's
+    spacing changes "Settings icon size" and no fixed view.
+  - **[needs human]** check: three Extra large columns fit where Explorer's do.
+    Update W12's row.
 
 ### Seniors only
 
@@ -1507,8 +1719,8 @@ These are in the order we would take them. Each lands alone.
   earlier steps stay applied while the entry is dropped as stale, and the alert
   says only that DeskSpace can't undo it. A restored file then sits unlisted in
   the store until a prune.
-  - Design: split the loop body into `reverse_step(ui, files, index, undo) ->
-    bool`. On a failure, walk the steps already applied in the opposite order
+  - After: P10a, which pulls out `reverse_step`.
+  - Design: on a failure, walk the steps already applied in the opposite order
     and call `reverse_step` with `!undo`. A `Created` / `Recycled` step has
     swapped variant by then, so running it again is its own reverse.
   - If the rollback succeeds, nothing has changed, so today's "can't undo" alert
@@ -1533,16 +1745,13 @@ These are in the order we would take them. Each lands alone.
   - A suffix match cannot decide this alone: `Root\A` moved to `Other\A` also
     ends in `A`. The test is whether the old root is gone too, and that is IO, so
     it belongs on the worker (W25: the UI thread never waits on a folder).
-  - Design: pass the lens's root with a browsed watch, as W25 passes the store.
-    `Folder::moved` computes `root_after_move(root, shown, to) -> Option<PathBuf>`,
-    which is pure: `to` minus `shown`'s path below `root`, when `to` ends with it.
-    It reports `Moved { to, root: Some(new) }` only when the old root is no
-    longer a folder and `follows_to` allows the new one.
-  - App: `Moved::Followed` for the root, with the notice and its undo entry. The
-    lens shows its own folder, as a followed lens does. Today's return home
-    remains for every other case, which W45's row requires.
-  - Tests: `root_after_move` with a rename, a move, a nested subfolder, and no
-    match; `follow_moved_folder` for each `Moved` result.
+  - P11a (the app) and P11b (the pure path rule) are in the junior list. P11c is the
+    part that remains, on the watch worker.
+  - [ ] **P11c.** After: P11a, P11b. Pass the lens's root with a browsed watch, as
+    W25 passes the store. `Folder::moved` calls `root_after_move(root, shown, to)`,
+    and reports `Moved { to, root: Some(new) }` only when the old root is no longer a
+    folder and `follows_to` allows the new one. Today's return home remains for
+    every other case, which W45's row requires.
   - **[needs human]** check: browse two levels down, rename the lens's folder in
     Explorer: within 5 s the lens follows with its notice, and Ctrl+Z points it
     back. Add it to W45's row.
@@ -1553,9 +1762,7 @@ These are in the order we would take them. Each lands alone.
   about a menu showing. `handle_watched` only swallows while the desktop shell
   has the foreground, so an app's menu cannot show; keyboard cues on the desktop
   are all that is left.
-  - **First reproduce it.** With an item selected, press each combination and
-    watch for focus cues or any change on the desktop. If nothing shows, on
-    Windows 11 and 10, delete this task in a commit saying so, with no code.
+  - After: P12a, which reproduces it and may delete this task.
   - If it shows: after a swallowed key with `mods.alt`, `SendInput` a down and up
     of an unassigned virtual key (0xE8, as AutoHotkey's `A_MenuMaskKey` does).
     Keep the choice in a pure function with a test.
@@ -1570,89 +1777,111 @@ These are in the order we would take them. Each lands alone.
   normal space's item reads its dates and size once, when added. An item saved
   before W29 has no Date created and sorts as the oldest; every item's `size` and
   `modified` go stale (`CONTEXT.md` section 10). A lens re-reads them on each
-  listing.
-  - Design: at startup, B33's worker reads `item_facts` for each normal space's
-    items and posts them in one batch per space. A new `Command::RefreshItemFacts
-    { space, facts }` (the Command recipe) changes only facts that differ, and
-    `Applied` only then. It records no undo entry. A kept-sorted space re-sorts;
-    any other keeps its order and positions.
-  - **The catch:** `UndoEntry::can_undo` compares whole `Space` values, and this
-    arrives after the user may have acted, so it would mark earlier entries
-    stale. Proposed: compare through a new `Space::same_ignoring_facts`. Restoring
-    an old snapshot then brings old facts back until the next start, which is
-    harmless. Look at this first; it is the one real decision here.
+  listing. P13a-P13c are in the junior list, so this task is the part that remains:
+  - [ ] **P13d. Read the facts on the worker, and apply them.** After: P13a-P13c.
+    At startup, B33's worker calls `read_item_facts` for each normal space's items
+    and posts them in one batch per space, leaving out a missing file. A new
+    `Event` hands a batch to the app, which dispatches `RefreshItemFacts` through
+    `commit` with no undo entry open, or holds it until any open entry finishes.
   - B33's queue drops paths scrolled out of view. These jobs must not be dropped,
     and must yield to icon requests, so scrolling stays smooth.
-  - Tests: only changed facts count as `Applied`; a refresh leaves undo available;
-    a missing file keeps its old facts rather than zeroing them.
+  - Tests: a refresh leaves undo available.
   - `CONTEXT.md` section 10: update the sentence. **[needs human]** check: start
     on a config with a few hundred items on a slow disk: no stall, and sorting by
     Date created orders an old item correctly.
 
-- [ ] **P14. Give the fixed icon views their own cell.** **[needs decision]**
-  A fixed view scales the whole grid by icon size over 48 px (`fixed_icon_scale`,
-  `app/view.rs`). With the default 96 × 104 cell, Large icons gets a 192 × 208
-  cell and Extra large about 512 × 555, so three Extra large columns need about
-  1,500 px. W12's check does not mention this.
-  - Proposed (maintainer to confirm): measure Explorer's Medium, Large, and Extra
-    large cells at 100 % and 150 % and make them constants beside `NORMAL_CELLS`,
-    so a fixed view uses that cell and never the look's. The look's spacing then
-    applies only to "Settings icon size".
-  - Settle first: what a hand arrangement saved under the old cell does
-    (`ENGINEERING.md` section 2, rule 3), so check whether a release has shipped
-    these views; and whether `ViewMetrics::for_view` takes over from `base_layout`'s
-    scaling, which P5 names.
-  - Record the decision in `ROADMAP.md`, amending D17.
+- [ ] **P14. Give the fixed icon views their own cell.** A fixed view scales the
+  whole grid by icon size over 48 px (`fixed_icon_scale`, `app/view.rs`). With the
+  default 96 × 104 cell, Large icons gets a 192 × 208 cell and Extra large about
+  512 × 555, so three Extra large columns need about 1,500 px. W12's check does not
+  mention this. P14b and P14c are in the junior list.
+  - [ ] **P14a. Confirm the behavior.** **[needs decision]** Proposed: a fixed view
+    uses Explorer's measured cell and never the look's, so the look's spacing applies
+    only to "Settings icon size". Nothing already shipped is at stake: W12 is in no
+    release tag (the newest is v0.2.4, checked 2026-11-02), so no user has a space
+    saved under the old cell, as long as this lands before the next release. Record
+    the decision in `ROADMAP.md`, amending D17.
 
-- [ ] **P15. Scroll Details sideways (design, then split).** Columns past the
-  space's width are cut off (`scene.rs` `details_columns`), and W30 makes that
-  easy to reach: every column on takes 560 px at 96 DPI. Explorer scrolls
-  sideways. Today a space has one scroll offset and `ViewLayout` one
-  `ScrollAxis`, so this is a second axis through the whole input path. Settle:
-  - where the second offset lives (`ViewCache`, beside the scroll) and who clamps
-    it after a resize, a column change, or a view change;
-  - what must follow it: hit tests, the marquee, the rename box, the drag drop
-    index, the divider and header drags (`app/columns.rs`), and the painter, with
-    no allocation per frame;
-  - the header's behavior: it scrolls with the columns but not with the rows;
-  - input and chrome: Shift+wheel, the horizontal wheel, and a second indicator,
-    as Explorer has them; and how Name's "takes the rest" reads once columns pass
-    the edge (W31's row);
-  - a 50,000-row lens stays within section W's Performance rule.
+- [ ] **P15. Scroll Details sideways.** **[needs decision]** Columns past the
+  space's width are cut off (`scene.rs` `details_columns`), and W30 makes that easy
+  to reach: every column on takes 560 px at 96 DPI. Explorer scrolls sideways.
+  - Proposed design, for the maintainer to confirm:
+    - The offset is session state in `ViewCache`, beside the scroll. It is clamped
+      where it is read, with `details_max_scroll(columns, width, padding)`, so a
+      resize, a column change, or a view change needs no code of its own.
+    - `details_columns`, which has one caller, shifts each column's `rect.x` by the
+      offset. Header paint, cell paint, `divider_at`, `column_drop_index`, and the
+      header's hit test all read those rects, so they follow with no new code. So
+      the header scrolls with the columns, and never with the rows.
+    - A wheel notch already rebuilds the scene (`scroll_by`), and a scene holds only
+      visible rows, so a 50,000-row lens costs what vertical scrolling costs.
+    - List keeps its one `ScrollAxis`. Only Details gets a second offset.
+  - Then, one commit each. The first four are junior, once this is decided:
+    - [ ] **P15a.** `details_columns` takes an offset; its caller passes 0. No change
+      on screen. Test: the rects shift, and `details_max_scroll`.
+    - [ ] **P15b.** After: P15a. The `ViewCache` offset, read through the clamp and
+      reset to 0 where `set_scroll(id, 0)` is on a view change. Test the clamp after a
+      narrower width.
+    - [ ] **P15c.** After: P15b. `scroll_by_x`, like `scroll_by`, and Shift+wheel
+      calling it. `Event`'s `Wheel` gains `shift`, read from the `Modifiers` the
+      space window already has.
+    - [ ] **P15d.** After: P15b. A second indicator, by the "new visual" recipe,
+      next to the scene's existing one. Scene tests.
+    - [ ] **P15e (senior).** After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the
+      space window (`win32/space_window.rs`, or `mouse.rs` after K8).
+    - [ ] **P15f (senior).** After: P15b. Go through what holds an x and may not
+      read those rects: the rename box, the marquee, the drag drop index, and paint
+      clipping cells at the content's edge. Fix each or show it needs nothing, and
+      scroll Name into view when a rename starts. Drop the note from W30's row, and
+      judge W31's "Name takes the rest" past the edge.
 
-  Then split it into one-commit tasks here, and drop the note from W30's row.
-
-- [ ] **P16. Measure labels (design, then split).** Two Explorer behaviors wait
-  for this: the Details header menu's "Size all columns to fit" (W30) and List
-  columns sized to the longest label (W17 uses a fixed 200 px and an ellipsis).
-  Settle:
-  - the seam: the app is Win32-free and scenes are data, so name the `Ui` method
-    and what it takes (font, size, strings), or put it in the worker;
-  - the cost: 50,000 labels cannot be measured on the UI thread (section W's
-    Performance rule). Decide on a cache, a sample, or the worker (B37's), and
-    what shows until it answers;
-  - Explorer's limit on a List column's width, measured, and whether a width
-    change re-flows;
-  - how it fits R18 (longer translated labels), so there is one way to measure.
-
-  Then split it into one-commit tasks here: the seam, then each behavior.
+- [ ] **P16. Measure labels.** **[needs decision]** Two Explorer behaviors wait for
+  this: the Details header menu's "Size all columns to fit" (W30) and List columns
+  sized to the longest label (W17 uses a fixed 200 px and an ellipsis).
+  - Proposed design, for the maintainer to confirm:
+    - The seam is `Ui::measure_label_widths(&[&str], font) -> Vec<i32>` over
+      DirectWrite (`CreateTextLayout`, as `d2d/title.rs` uses it). The app stays
+      Win32-free. R18 uses the same method for longer translated labels, so there is
+      one way to measure.
+    - No worker and no cache, so nothing has to show "until it answers". Character
+      count picks the candidates: scan the labels without measuring, keep the
+      longest 64, and measure only those. The scan is plain arithmetic, and a wide
+      label short on characters is off by a few pixels at worst, so add a small slack.
+    - Fit-to-columns measures Name that way, and the other columns on their visible
+      rows, because dates and sizes are nearly one length and are only formatted for
+      visible rows (section W, Performance).
+  - Then, one commit each:
+    - [ ] **P16a (junior).** `longest_by_chars(labels, count)` in core, and its
+      tests. Time it on 50,000 labels and put the dated result in the commit body;
+      over 8 ms, stop and ask.
+    - [ ] **P16b (senior).** The `Ui` method, with a test that "WWW" measures wider
+      than "iii".
+    - [ ] **P16c (junior).** After: P16a, P16b. "Size all columns to fit" in the
+      header menu, by the menu recipe. It records one undo entry, like Choose
+      columns.
+    - [ ] **P16d (no code).** **[needs human]** Measure Explorer's limit on a List
+      column's width, and whether a change re-flows. Record it in P16e.
+    - [ ] **P16e (senior).** After: P16a, P16b, P16d. List's cell width follows the
+      longest label: where it is stored, and when it is measured again. A
+      `SyncLens` is the likely trigger, and no scene or wheel notch may measure.
 
 - [ ] **P17. Keyboard support for the Shortcuts preview (accessibility, M7).**
   The Shortcuts page's preview (`win32/settings_window/preview.rs`) is not a Tab
   stop, and its X and + are mouse-only. Take it with M7 item 4, not before.
-  - `WS_TABSTOP` on the field: `IsDialogMessage` (`runtime/mod.rs`) then gives it
-    Tab. `WM_GETDLGCODE` asks for the arrow keys and Enter and leaves Tab and Esc
-    to the dialog, so Esc still cancels.
-  - Add a focused target to `PreviewView`, moved by a pure function on
-    `PreviewLayout` with tests. Scroll it into view, and draw a focus rectangle
-    only while the window has focus (`WM_SETFOCUS`, `WM_KILLFOCUS`).
-  - Delete raises what the X's click raises, and Enter on the + what its click
-    raises, through `on_click`'s events. So a lens's Recycle Bin question still
-    shows. Remember the window may be gone after a dispatch (`ENGINEERING.md`
-    section 6, Re-entrancy).
-  - Delete the "no keyboard support" sentence from the file's header.
-  - **[needs human]** check: Tab in and out; arrows, Delete, and Enter, on a space
-    and a lens, at 100 % and 150 %, light and dark.
+  - [ ] **P17a (senior).** `WS_TABSTOP` on the field: `IsDialogMessage`
+    (`runtime/mod.rs`) then gives it Tab. `WM_GETDLGCODE` asks for the arrow keys and
+    Enter and leaves Tab and Esc to the dialog, so Esc still cancels. Add a focused
+    target to `PreviewView`, and draw a focus rectangle only while the window has
+    focus (`WM_SETFOCUS`, `WM_KILLFOCUS`).
+  - [ ] **P17b (junior).** After: P17a. Move the target with a pure function on
+    `PreviewLayout`, with tests, called from the arrow keys. Scroll it into view.
+  - [ ] **P17c (senior).** After: P17b. Delete raises what the X's click raises, and
+    Enter on the + what its click raises, through `on_click`'s events. So a lens's
+    Recycle Bin question still shows. Remember the window may be gone after a dispatch
+    (`ENGINEERING.md` section 6, Re-entrancy). Delete the "no keyboard support"
+    sentence from the file's header.
+  - **[needs human]** check, with P17c: Tab in and out; arrows, Delete, and Enter, on
+    a space and a lens, at 100 % and 150 %, light and dark.
 
 - [ ] **P18. Make the on-screen harness explain a wallpaper capture (scripts).**
   `scripts/onscreen/smoke.ps1`, run by an agent on the maintainer's machine on
@@ -1674,18 +1903,26 @@ These are in the order we would take them. Each lands alone.
     4. `Show-Backdrop` creates its window on PowerShell's thread, which pumps no
        messages. This does not explain the space, though.
     5. The input desktop, or a display asleep at that moment.
-  - Run it from the maintainer's own terminal as well as an agent's, to split the
-    environment from the code. `Assert-Check` the cloak state so the next failure
-    explains itself.
+  - P18a and P18b are in the junior list. This task is what is left after them: if
+    a capture fails again, read what P18b prints, and run it from the maintainer's
+    own terminal as well as an agent's, to split the environment from the code. Until
+    then there is nothing to do.
   - Never run this while the maintainer has a build running: `Start-DeskSpace`
     calls `dev.ps1`, which stops one.
   - Stop and ask before reaching for `Windows.Graphics.Capture`, as `smoke.ps1`
     says.
-  - While there: `Show-Backdrop`'s synopsis says "non-topmost", while the code
-    and its own description say topmost. Fix the synopsis.
-  - Done when: a failed capture reports the cloak, session, and input-desktop
-    state, or the cause is written down here with what
-    would fix it.
+  - Done when: the cause is written down here with what would fix it, or the
+    maintainer closes it because it has not come back.
+
+- [ ] **P26. Stop content trailing a resizing animation's edge (fix).** After: P26a,
+  which may delete this task. A composition surface of a new size reaches the screen
+  a composition or two after `SetWindowPos` (`apply`, `win32/space_animation.rs`), so
+  while Roll, Fly, or Bounce changes the window's size its content can trail its edge.
+  Before Bounce was slowed, the first frame past the screen's edge showed a title-less
+  box for one frame (captured 2026-10-31). Moving a whole-size window under a region
+  would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which
+  the app answers by reflowing the model. So that answer must tell an animation's
+  move from a real one. Design first, and bring it to the maintainer.
 
 ## D. Reserved (strong model or maintainer; do not start)
 
@@ -1982,28 +2219,3 @@ for a machine that has it.
 ## Found while working
 
 One line per issue noticed but not fixed: file, symptom, suggested task.
-
-- `app/undo.rs` `reverse_rename`: undoing a rename in a lens brings the file back under its old path, and the worker no longer knows that path's id, so the item comes back unselected. Suggested: tell the worker as `App::note_renamed_lens_item` does. Found while fixing lens undo, 2026-10-31.
-- `app/debug/mod.rs` `refresh_debug`: while the debug window is open, its 1 Hz refresh stalls every running animation on the UI thread, about 20-60 ms in a debug build (2026-10-31, measured frame by frame), so a preview's motion hitches once a second that a real play does not have. Suggested: skip the refresh while a space animates. Found while tuning Bounce, 2026-10-31.
-- `win32/space_animation.rs` `apply`: a composition surface of a new size reaches the screen a composition or two after `SetWindowPos`, so while Roll, Fly, or Bounce changes the window's size its content can trail its edge. Before Bounce was slowed, the first frame past the screen's edge showed a title-less box for one frame (captured 2026-10-31). Moving a whole-size window under a region instead would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which the app answers by reflowing the model. Found while tuning Bounce, 2026-10-31.
-- `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.
-- `app/bootstrap.rs`: `--new-space` with no running instance starts
-  normally and adds no space, so a stale verb left by a crash opens the app
-  without the requested space. The verbs normally exist only while the app
-  runs. Suggested: carry the flag into the app and create one after
-  `Started`. Found in C9, 2026-11-01.
-- `win32/icons.rs` is at 793 lines of non-test code, just under the 800
-  guideline after B40 and B41. Suggested: a K split of the cache, the worker,
-  and the Win32 loaders before the next change to it. Found in the B39-B43
-  review, 2026-11-01.
-- `win32/icons.rs` `IconCache::demand`: a `SettingsPreview` entry stays after
-  its page closes, so every space ever previewed raises the cache's limit by
-  at most 60, and it never shrinks. Suggested: forget the preview user when
-  the settings window leaves the space. Found in the B39-B43 review,
-  2026-11-01.
-- `layout.rs` `arrange_space`: only `SyncLens` now caps an auto-sized lens at
-  the work area. `AddItem`, `MoveItem`, and `AutoArrange` still call
-  `arrange_space` through `rearrange` without bounds, so a normal space with
-  more items than fit can grow taller than the monitor. Suggested: pass the
-  work area into `arrange_space` (or `rearrange`) and cap and pin it the same
-  way. Found while fixing the 50,000-file lens freeze, 2026-11-02.
