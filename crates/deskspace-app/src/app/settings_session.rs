@@ -205,14 +205,13 @@ impl App {
         }
     }
 
-    /// A Shortcuts preview's icons arrived: rebuild the form if it still shows
-    /// that space, so the picture fills in.
+    /// A Shortcuts preview's icons arrived: rebuild the form if the window
+    /// still shows that space's Shortcuts page, so the picture fills in only
+    /// while it is on screen.
     pub(super) fn refresh_preview(&mut self, ui: &mut Ui, id: SpaceId) {
-        let showing = self
-            .settings_ui
-            .session
-            .as_ref()
-            .is_some_and(|session| session.scope == Some(id));
+        let showing = self.settings_ui.session.as_ref().is_some_and(|session| {
+            session.scope == Some(id) && session.page == settings::page::SHORTCUTS
+        });
         if showing {
             self.refresh_settings(ui);
         }
