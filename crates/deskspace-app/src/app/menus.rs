@@ -190,6 +190,7 @@ impl App {
         let effects = self.record_effects("Fit to contents", self.fit_command(id), at, Vec::new());
         if !effects.is_empty() {
             self.view_cache.set_scroll(id, 0);
+            self.view_cache.set_scroll_x(id, 0);
         }
         effects
     }

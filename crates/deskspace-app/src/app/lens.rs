@@ -152,6 +152,7 @@ impl App {
             self.selection.clear_items();
         }
         self.view_cache.set_scroll(id, 0);
+        self.view_cache.set_scroll_x(id, 0);
         self.unavailable_lenses.remove(&id);
         self.sync_lens(ui, id, Vec::new());
         self.sync_watches(ui);

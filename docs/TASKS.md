@@ -1672,12 +1672,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
 
-- [ ] **P15b. Store the sideways offset (feature).** After: P15a. Part of P15. The
-  offset in `ViewCache`, read through the clamp, and passed to `details_columns`.
-  Reset it to 0 where `set_scroll(id, 0)` runs on a view change. Nothing sets it yet
-  but tests. Test: a stored offset clamps after the space narrows, and grows back
-  no further than it was stored.
-
 - [ ] **P15c. Shift+wheel scrolls Details sideways (feature).** After: P15b. Part of
   P15. `scroll_by_x`, like `scroll_by`, and `on_wheel` calling it when `shift` is
   held in Details; every other view keeps today's wheel. `SpaceEvent::Wheel` gains

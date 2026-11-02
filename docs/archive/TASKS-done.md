@@ -5621,3 +5621,9 @@ until I5-I6 all land, so no partial build hides the desktop.
   file on a sleeping drive. Add `read_item_facts(path) -> Option<ItemFacts>`
   (`win32/desktop_items.rs`), and make `item_facts` call it with
   `.unwrap_or_default()`. Test: a missing path is `None`.
+
+- [x] **P15b. Store the sideways offset (feature).** After: P15a. Part of P15. The
+  offset in `ViewCache`, read through the clamp, and passed to `details_columns`.
+  Reset it to 0 where `set_scroll(id, 0)` runs on a view change. Nothing sets it yet
+  but tests. Test: a stored offset clamps after the space narrows, and grows back
+  no further than it was stored.

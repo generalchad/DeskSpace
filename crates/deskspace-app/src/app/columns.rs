@@ -165,6 +165,7 @@ impl App {
             space.content_rect().width,
             self.layout_for(id).padding,
             space_dpi(id.0),
+            self.view_cache.scroll_x_of(id),
         )
     }
 

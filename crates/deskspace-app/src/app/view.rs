@@ -110,6 +110,10 @@ pub(crate) struct ViewCache {
     /// Scroll offset in pixels. May exceed the current maximum after a
     /// resize, so the app reads it through `App::scroll_of`, which clamps.
     scroll: HashMap<SpaceId, i32>,
+    /// Sideways offset of a Details header in pixels. May exceed the current
+    /// maximum after a resize, so the scene reads it through
+    /// `details_max_scroll`, which clamps.
+    scroll_x: HashMap<SpaceId, i32>,
     /// Each space's icon factor at its last re-flow: a fixed view's factor,
     /// or `App::icon_scale`'s, without DPI. A change to it can keep the
     /// space's size first (`App::keep_size_on_zoom`).
@@ -217,6 +221,15 @@ impl ViewCache {
         self.scroll.insert(id, px);
     }
 
+    /// The stored sideways offset, unclamped; 0 when never scrolled.
+    pub(super) fn scroll_x_of(&self, id: SpaceId) -> i32 {
+        self.scroll_x.get(&id).copied().unwrap_or(0)
+    }
+
+    pub(super) fn set_scroll_x(&mut self, id: SpaceId, px: i32) {
+        self.scroll_x.insert(id, px);
+    }
+
     /// Records `id`'s icon factor and returns the one from its last re-flow.
     fn record_icon_scale(&mut self, id: SpaceId, factor: f32) -> Option<f32> {
         self.icon_scales.insert(id, factor)
@@ -227,6 +240,7 @@ impl ViewCache {
         self.groupings.remove(&id);
         self.folded_groups.remove(&id);
         self.scroll.remove(&id);
+        self.scroll_x.remove(&id);
         self.icon_scales.remove(&id);
     }
 }
@@ -343,6 +357,10 @@ impl App {
             },
             dragged: self.pointer.dragged_on(surface),
             scroll: self.surface_scroll(surface),
+            scroll_x: match surface {
+                Surface::Space(id) => self.view_cache.scroll_x_of(id),
+                Surface::Desktop => 0,
+            },
             show_check_boxes: check_boxes != CheckBoxMode::Hidden,
             check_boxes_persistent: check_boxes == CheckBoxMode::Independent,
             checked: self.selection.checked.clone(),
@@ -1091,6 +1109,7 @@ impl App {
         let (applied, effects) = self.change_view(id, view, at, label);
         self.run(ui, effects);
         if applied {
+            self.view_cache.set_scroll_x(id, 0);
             self.reflow_space(ui, id);
             self.resnapshot_settings(ui, id);
         }
@@ -1602,14 +1621,52 @@ mod tests {
         let mut cache = ViewCache::default();
         let id = SpaceId(1);
         assert_eq!(cache.scroll_of(id), 0);
+        assert_eq!(cache.scroll_x_of(id), 0);
         cache.set_scroll(id, 40);
+        cache.set_scroll_x(id, 25);
         assert_eq!(cache.record_icon_scale(id, 1.0), None);
         assert_eq!(cache.record_icon_scale(id, 1.5), Some(1.0));
         assert_eq!(cache.scroll_of(id), 40);
+        assert_eq!(cache.scroll_x_of(id), 25);
 
         cache.forget(id);
         assert_eq!(cache.scroll_of(id), 0);
+        assert_eq!(cache.scroll_x_of(id), 0);
         assert_eq!(cache.record_icon_scale(id, 1.5), None, "no stale factor");
+    }
+
+    #[test]
+    fn a_sideways_offset_clamps_and_grows_back_to_what_was_stored() {
+        use deskspace_core::{Column, ColumnSpec};
+
+        let view = SpaceView {
+            columns: ColumnSpec::sanitize(vec![
+                ColumnSpec {
+                    id: Column::Name,
+                    width: None,
+                },
+                ColumnSpec {
+                    id: Column::Modified,
+                    width: Some(400),
+                },
+            ]),
+            ..SpaceView::default()
+        }
+        .with_name_held(Some(300));
+        let mut cache = ViewCache::default();
+        let id = SpaceId(1);
+        cache.set_scroll_x(id, 300);
+
+        // The columns span 700. In 500 the most they scroll is 200, so the
+        // stored 300 is clamped there.
+        let narrow = crate::scene::details_columns(&view, 500, 0, cache.scroll_x_of(id), 24, 1.0);
+        assert_eq!(narrow.last().unwrap().rect.right(), 500);
+        assert_eq!(cache.scroll_x_of(id), 300, "the stored value keeps");
+
+        // Back in 200 the limit is 500, so the stored 300 shows again, and
+        // the offset never grows past what was stored.
+        let wide = crate::scene::details_columns(&view, 200, 0, cache.scroll_x_of(id), 24, 1.0);
+        assert_eq!(wide.last().unwrap().rect.right(), 400);
     }
 
     /// An app with a known Explorer display snapshot. `space_dpi` is `1.0`

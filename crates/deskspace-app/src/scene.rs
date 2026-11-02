@@ -72,6 +72,9 @@ pub struct ViewState {
     /// Pixels the content is scrolled along its view's axis; already clamped
     /// by the caller.
     pub scroll: i32,
+    /// Pixels a Details header is scrolled sideways, clamped to what its
+    /// columns need when the scene is built.
+    pub scroll_x: i32,
     /// Draw a check box on each item, from Explorer's view options.
     pub show_check_boxes: bool,
     /// Show check boxes always (independent item check boxes) rather than only
@@ -322,14 +325,20 @@ pub fn space_scene_with_details(
             view.scroll,
             content_area,
         ),
-        details: details_view(space, &view_layout, content.width, layout.padding, scale).map(
-            |mut details| {
-                details.drop_mark = view
-                    .column_drop
-                    .and_then(|insert_at| drop_mark_x(&details.columns, insert_at));
-                details
-            },
-        ),
+        details: details_view(
+            space,
+            &view_layout,
+            content.width,
+            layout.padding,
+            scale,
+            view.scroll_x,
+        )
+        .map(|mut details| {
+            details.drop_mark = view
+                .column_drop
+                .and_then(|insert_at| drop_mark_x(&details.columns, insert_at));
+            details
+        }),
         status: status_bar(space, &view),
         editing: None,
         editing_item: None,
@@ -641,6 +650,7 @@ pub(crate) fn details_view(
     content_width: i32,
     padding: i32,
     scale: f32,
+    scroll_x: i32,
 ) -> Option<DetailsView> {
     if space.view().mode != ViewMode::Details {
         return None;
@@ -652,7 +662,7 @@ pub(crate) fn details_view(
             space.view(),
             content_width,
             padding,
-            0,
+            scroll_x,
             layout.header_height(),
             scale,
         ),
@@ -1447,6 +1457,7 @@ mod tests {
             space.content_rect().width,
             GridSpec::default().padding,
             1.0,
+            0,
         )
         .unwrap();
         assert_eq!(
@@ -1719,6 +1730,7 @@ mod tests {
             space.content_rect().width,
             GridSpec::default().padding,
             1.0,
+            0,
         )
         .unwrap();
         assert_eq!(view.sorted, Some((3, false)), "Size, pointing down");

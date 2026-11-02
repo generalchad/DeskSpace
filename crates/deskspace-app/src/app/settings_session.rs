@@ -319,6 +319,7 @@ impl App {
                 let at = self.space_center(id);
                 if self.commit(ui, self.fit_command(id), at).is_applied() {
                     self.view_cache.set_scroll(id, 0);
+                    self.view_cache.set_scroll_x(id, 0);
                 }
                 self.refresh_settings(ui);
             }
