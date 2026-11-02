@@ -1556,25 +1556,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: rename an item in a lens, Ctrl+Z: it stays selected.
     Ctrl+Y: still selected. Give it its own row in section V.
 
-- [ ] **P25. Cap a normal space at the work area (fix).** `apply_sync_lens` stops a
-  lens growing past `bounds`, but `AddItem`, `MoveItem`, and `AutoArrange` call
-  `arrange_space` with no bounds, so a full space can grow taller than the monitor.
-  - `command/mod.rs`: move the cap out of `apply_sync_lens` into `fn
-    cap_to_bounds(space, layout, bounds)` (the `if` and its body, as they are), and
-    make `apply_sync_lens` call it.
-  - `rearrange` takes `bounds` and calls it, for an unlocked space, after
-    `arrange_space`. Pass `bounds` through `apply_add_item`, `apply_move_item`, and
-    `apply_auto_arrange`, which calls it too.
-  - **Leave `apply_reflow` alone.** The cap pins the space (`user_sized = true`). A
-    reflow runs on every icon-size preview in Settings, so dragging that slider
-    would pin the space for good, and Cancel would not unpin it.
-  - Tests in `command/mod.rs` (copy
-    `a_lens_too_large_for_the_work_area_stops_growing_and_scrolls`), one each for
-    `AddItem`, `MoveItem`, and `AutoArrange`; and a space that fits is not pinned. If
-    an existing test's bounds now cap its space, stop and ask.
-  - **[needs human]** check: drop items on a space until it reaches the bottom of
-    the monitor: it stops and scrolls. Ctrl+Z puts it back.
-
 - [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
   removes an entry from `IconCache::demand`, so the limit only rises. A previewed
   space adds at most 60 for good, and a deleted space's scene stays counted, which
@@ -2128,6 +2109,7 @@ for a machine that has it.
 | P7 (resize minimum) | Shrink a Details, a Content, and a Tiles space from the bottom and the top, at 100 % and 150 %, with the status bar on and off: each stops at one whole row, and the header is not clipped. |
 | P8 (label size) | Set the label size to 160 % and look at Small icons, List, Details, Tiles, and Content, normal and compact: no clipped text, at 100 % and 150 %. |
 | P23 (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
+| P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
 
 ## Found while working
 

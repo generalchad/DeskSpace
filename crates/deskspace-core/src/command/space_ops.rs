@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::CommandOutcome;
+use super::{CommandOutcome, cap_to_bounds};
 use crate::desktop::Desktop;
 use crate::geometry::{Point, Rect};
 use crate::grouping::Grouping;
@@ -318,9 +318,17 @@ impl Desktop {
         })
     }
 
-    pub(super) fn apply_auto_arrange(&mut self, id: SpaceId, layout: GridSpec) -> CommandOutcome {
+    pub(super) fn apply_auto_arrange(
+        &mut self,
+        id: SpaceId,
+        layout: GridSpec,
+        bounds: Rect,
+    ) -> CommandOutcome {
         self.with_space(id, |space| {
             arrange_space(space, layout);
+            if !space.locked {
+                cap_to_bounds(space, layout, bounds);
+            }
             CommandOutcome::Applied
         })
     }

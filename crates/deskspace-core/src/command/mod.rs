@@ -20,7 +20,7 @@ use crate::grouping::Grouping;
 use crate::icon::SpaceIcon;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
-use crate::layout::{GridSpec, arrange_space, position_items};
+use crate::layout::{GridSpec, arrange_space, clamp_to_bounds, position_items};
 use crate::sort::SortRule;
 use crate::source::{FolderView, LensTitle};
 use crate::space::{ResizeEdges, Space, SpaceLook};
@@ -356,13 +356,13 @@ impl Desktop {
             Command::RestoreSpaces { spaces } => self.apply_restore_spaces(spaces, layout),
             Command::ToggleLock { id } => self.apply_toggle_lock(id),
             Command::ToggleFold { id } => self.apply_toggle_fold(id),
-            Command::AutoArrange { id } => self.apply_auto_arrange(id, layout),
+            Command::AutoArrange { id } => self.apply_auto_arrange(id, layout, bounds),
             Command::SnapAll => self.apply_snap_all(layout, bounds),
             Command::AddItem { space, path, facts } => {
-                self.apply_add_item(space, path, facts, layout)
+                self.apply_add_item(space, path, facts, layout, bounds)
             }
             Command::RemoveItem { id } => self.apply_remove_item(id, layout),
-            Command::MoveItem { id, target } => self.apply_move_item(id, target, layout),
+            Command::MoveItem { id, target } => self.apply_move_item(id, target, layout, bounds),
             Command::ReorderItem { id, index } => self.apply_reorder_item(id, index, layout),
             Command::ReorderItems { ids, index } => self.apply_reorder_items(&ids, index, layout),
             Command::RenameItem { id, path, label } => {
@@ -389,8 +389,8 @@ impl Desktop {
     }
 
     /// Arranges space `id` to fit its items (a no-op when it is gone), holding
-    /// a kept sort first.
-    fn rearrange(&mut self, id: SpaceId, layout: GridSpec) {
+    /// a kept sort first, and stops it growing past the work area.
+    fn rearrange(&mut self, id: SpaceId, layout: GridSpec, bounds: Rect) {
         if let Some(space) = self.space_mut(id) {
             let sorted = hold_kept_order(space);
             arrange_space(space, layout);
@@ -398,6 +398,9 @@ impl Desktop {
             // still needs its items placed.
             if sorted && space.locked {
                 position_items(space, layout);
+            }
+            if !space.locked {
+                cap_to_bounds(space, layout, bounds);
             }
         }
     }
@@ -420,6 +423,18 @@ fn hold_kept_order(space: &mut Space) -> bool {
     }
     space.view.sort.sort_items(&mut space.items);
     true
+}
+
+/// Stops a space that would grow past the work area there, pinning it so later
+/// layouts keep its size, and places its items for the narrower rect.
+fn cap_to_bounds(space: &mut Space, layout: GridSpec, bounds: Rect) {
+    if space.rect.width > bounds.width || space.rect.height > bounds.height {
+        space.rect.width = space.rect.width.min(bounds.width);
+        space.rect.height = space.rect.height.min(bounds.height);
+        space.rect = clamp_to_bounds(space.rect, bounds);
+        space.user_sized = true;
+        position_items(space, layout);
+    }
 }
 
 #[cfg(test)]
@@ -2269,6 +2284,88 @@ mod tests {
             .map(|item| item.position)
             .collect();
         assert_eq!(after, positions, "order and positions stay");
+    }
+
+    #[test]
+    fn add_item_stops_a_full_space_at_the_work_area() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let narrow = Rect::new(0, 0, 300, 400);
+        assert_eq!(
+            desktop.apply(
+                Command::AddItem {
+                    space: id,
+                    path: "C:/a.txt".into(),
+                    facts: ItemFacts::default(),
+                },
+                narrow
+            ),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert!(space.rect.width <= narrow.width);
+        assert!(space.user_sized(), "the overflow pins the space");
+    }
+
+    #[test]
+    fn moving_an_item_into_a_full_space_stops_it_at_the_work_area() {
+        let mut desktop = Desktop::new();
+        let source = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let target = desktop.add_space("B", Rect::new(400, 0, 100, 100));
+        assert_eq!(
+            desktop.apply(
+                Command::AddItem {
+                    space: source,
+                    path: "C:/a.txt".into(),
+                    facts: ItemFacts::default(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        let item = desktop.space(source).unwrap().items[0].id;
+        let narrow = Rect::new(0, 0, 300, 400);
+        assert_eq!(
+            desktop.apply(Command::MoveItem { id: item, target }, narrow),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(target).unwrap();
+        assert!(space.rect.width <= narrow.width);
+        assert!(space.user_sized(), "the overflow pins the space");
+    }
+
+    #[test]
+    fn auto_arrange_stops_a_full_space_at_the_work_area() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        let narrow = Rect::new(0, 0, 300, 400);
+        assert_eq!(
+            desktop.apply(Command::AutoArrange { id }, narrow),
+            CommandOutcome::Applied
+        );
+        let space = desktop.space(id).unwrap();
+        assert!(space.rect.width <= narrow.width);
+        assert!(space.user_sized(), "the overflow pins the space");
+    }
+
+    #[test]
+    fn a_space_that_fits_its_work_area_is_not_pinned() {
+        let mut desktop = Desktop::new();
+        let id = desktop.add_space("A", Rect::new(0, 0, 100, 100));
+        for path in ["C:/a.txt", "C:/b.txt"] {
+            assert_eq!(
+                desktop.apply(
+                    Command::AddItem {
+                        space: id,
+                        path: path.into(),
+                        facts: ItemFacts::default(),
+                    },
+                    bounds()
+                ),
+                CommandOutcome::Applied
+            );
+        }
+        assert!(!desktop.space(id).unwrap().user_sized());
     }
 
     #[test]

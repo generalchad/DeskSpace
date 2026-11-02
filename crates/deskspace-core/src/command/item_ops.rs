@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use super::{CommandOutcome, hold_kept_order};
 use crate::desktop::Desktop;
+use crate::geometry::Rect;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
 use crate::layout::{GridSpec, position_items};
@@ -15,6 +16,7 @@ impl Desktop {
         path: PathBuf,
         facts: ItemFacts,
         layout: GridSpec,
+        bounds: Rect,
     ) -> CommandOutcome {
         match self.space(space) {
             None => return CommandOutcome::NotFound,
@@ -24,7 +26,7 @@ impl Desktop {
         }
         let item = Item::new(self.take_item_id(), path, facts);
         self.add_item(space, item);
-        self.rearrange(space, layout);
+        self.rearrange(space, layout, bounds);
         CommandOutcome::Applied
     }
 
@@ -42,6 +44,7 @@ impl Desktop {
         id: ItemId,
         target: SpaceId,
         layout: GridSpec,
+        bounds: Rect,
     ) -> CommandOutcome {
         if self.item(id).is_none() {
             return CommandOutcome::NotFound;
@@ -61,7 +64,7 @@ impl Desktop {
         if !self.move_item(id, target) {
             return CommandOutcome::Rejected;
         }
-        self.rearrange(target, layout);
+        self.rearrange(target, layout, bounds);
         if let Some(source) = source {
             self.close_gap(source, layout);
         }

@@ -384,7 +384,9 @@ ones a variant's doc cannot show.
   Explorer's own size, never a DPI move), so an icon-size change keeps every
   space's size and re-flows its columns, as an Explorer window does. Settings
   Cancel lets the spaces its preview pinned fit their items again
-  (`Session::pinned`).
+  (`Session::pinned`). `AddItem`, `MoveItem`, and `AutoArrange` stop a space
+  at its work area's width and height too, pinning it and scrolling its items
+  (C12, D23).
 - `SortSpace { id, rule: SortRule }` sorts by the rule's key (name, type,
   size, or modified), direction, and folders-first, and keeps the rule as the
   space's own; a lens uses the same rule in `SyncLens`.

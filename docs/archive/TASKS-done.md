@@ -5663,3 +5663,22 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: with DeskSpace not running, `deskspace --config
     <scratch> --new-space` starts with one more space than the config holds. With
     it running, the same command adds one space and starts no second process.
+
+- [x] **P25. Cap a normal space at the work area (fix).** `apply_sync_lens` stops a
+  lens growing past `bounds`, but `AddItem`, `MoveItem`, and `AutoArrange` call
+  `arrange_space` with no bounds, so a full space can grow taller than the monitor.
+  - `command/mod.rs`: move the cap out of `apply_sync_lens` into `fn
+    cap_to_bounds(space, layout, bounds)` (the `if` and its body, as they are), and
+    make `apply_sync_lens` call it.
+  - `rearrange` takes `bounds` and calls it, for an unlocked space, after
+    `arrange_space`. Pass `bounds` through `apply_add_item`, `apply_move_item`, and
+    `apply_auto_arrange`, which calls it too.
+  - **Leave `apply_reflow` alone.** The cap pins the space (`user_sized = true`). A
+    reflow runs on every icon-size preview in Settings, so dragging that slider
+    would pin the space for good, and Cancel would not unpin it.
+  - Tests in `command/mod.rs` (copy
+    `a_lens_too_large_for_the_work_area_stops_growing_and_scrolls`), one each for
+    `AddItem`, `MoveItem`, and `AutoArrange`; and a space that fits is not pinned. If
+    an existing test's bounds now cap its space, stop and ask.
+  - **[needs human]** check: drop items on a space until it reaches the bottom of
+    the monitor: it stops and scrolls. Ctrl+Z puts it back.

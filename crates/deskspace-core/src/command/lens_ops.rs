@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::CommandOutcome;
+use super::{CommandOutcome, cap_to_bounds};
 use crate::desktop::Desktop;
 use crate::geometry::Rect;
 use crate::id::SpaceId;
@@ -111,13 +111,7 @@ impl Desktop {
             position_items(space, layout);
         } else {
             arrange_space(space, layout);
-            if space.rect.width > bounds.width || space.rect.height > bounds.height {
-                space.rect.width = space.rect.width.min(bounds.width);
-                space.rect.height = space.rect.height.min(bounds.height);
-                space.rect = clamp_to_bounds(space.rect, bounds);
-                space.user_sized = true;
-                position_items(space, layout);
-            }
+            cap_to_bounds(space, layout, bounds);
         }
         self.retire_items(replaced);
         CommandOutcome::Applied
