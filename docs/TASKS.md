@@ -1504,10 +1504,11 @@ Small first. Each lands alone unless it says "After".
   is two parts from done. The glyph cache has landed, and `file_op` needs no
   change. `f656993`'s body has the ten slowest and the times. Never delete a test
   without a replacement checking the same decision.
-  - [ ] **P9a. Shorten the watch's path check under test.** **[needs decision]**
+  - [ ] **P9a. Shorten the watch's path check under test.**
     `a_renamed_folder_reports_where_it_went` takes 5 s only because it waits for
-    `CHECK_MS` (`win32/folder_watch.rs`). Proposed: `const CHECK_MS: u64 = if
-    cfg!(test) { 200 } else { 5_000 };`, with a comment saying why. Do not touch
+    `CHECK_MS` (`win32/folder_watch.rs`). Decided (maintainer, 2026-11-02): `const
+    CHECK_MS: u64 = if cfg!(test) { 200 } else { 5_000 };`, with a comment saying
+    why. Do not touch
     `RETRY_MS` or the worker. If another test starts to fail, stop and ask.
     Done when: the commit body gives the crate's time before and after.
   - [ ] **P9b. One shell test in `app_catalog`.** Pull the sort in `list` into
@@ -1645,15 +1646,14 @@ Small first. Each lands alone unless it says "After".
   - Tests: a rename, a move, a nested subfolder, a different case, no match, and
     `shown == root`. Do not call it from the worker; P11c does.
 
-- [ ] **P13a. Compare spaces ignoring item facts (refactor).** **[needs decision]**
-  Part of P13. `UndoEntry::can_undo` and `can_redo` compare whole `Space` values.
+- [ ] **P13a. Compare spaces ignoring item facts (refactor).** Part of P13; the rule
+  is ROADMAP D11. `UndoEntry::can_undo` and `can_redo` compare whole `Space` values.
   Add `Space::same_ignoring_facts` in core and use it there.
   - Destructure both `Space` and `Item` with no `..`, so a new field makes the
     compiler ask. Ignored: `size`, `modified`, `created`, `compressed`, `encrypted`.
-  - Proposed, and beyond P13's first idea: refreshing a kept-sorted space re-sorts
-    it, which changes its order and positions, and that would still mark entries
-    stale. So when `keeps_sorted()`, also ignore item order and `position`, matching
-    items by id.
+  - Refreshing a kept-sorted space re-sorts it, which changes its order and
+    positions, and that would still mark entries stale. So when `keeps_sorted()`,
+    also ignore item order and `position`, matching items by id.
   - Nothing changes facts yet, so no behavior changes. Tests: each ignored field,
     a changed label still differs, and a kept-sorted space in another order is the
     same while a hand-ordered one is not.
@@ -1689,10 +1689,10 @@ Small first. Each lands alone unless it says "After".
   - Done when: a run prints the state, and with a space on another virtual desktop
     the check fails and names the cloak.
 
-- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** After:
-  P14a. Part of P14. In Explorer, at 100 % and 150 %, measure one cell's width and
-  height, gap included, in Medium, Large, and Extra large icons. Record the numbers
-  in P14c, with the date.
+- [ ] **P14b. Measure Explorer's fixed-view cells (no code).** **[needs human]** Part
+  of P14. In Explorer, at 100 % and 150 %, measure one cell's width and height, gap
+  included, in Medium, Large, and Extra large icons. Record the numbers in P14c,
+  with the date.
 
 - [ ] **P14c. Give the fixed icon views their own cell (fix).** After: P14b. Part of
   P14. In `view_layout.rs`, beside `NORMAL_CELLS`, `pub fn fixed_view_cell(mode) ->
@@ -1703,10 +1703,48 @@ Small first. Each lands alone unless it says "After".
   arm: the cell times `scale.title`, which is the DPI alone, and `gap = 0`.
   - `ViewMetrics::for_view` needs no change: it hands an icon view the `GridSpec`,
     and `arrange_space` reads that too, so `base_layout` is the one place.
-  - Amend D17 in `ROADMAP.md`. Tests: each view's cell, DPI scaling, and a look's
-    spacing changes "Settings icon size" and no fixed view.
+  - Tests: each view's cell, DPI scaling, and a look's spacing changes "Settings icon
+    size" and no fixed view.
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
+
+- [ ] **P15a. Give `details_columns` an offset (refactor).** Part of P15; the design
+  is ROADMAP D24. It takes an offset and shifts each `rect.x`; its one caller passes
+  0, so nothing changes on screen. Add `details_max_scroll(columns, width, padding)`.
+  Tests: the rects shift, and the maximum, including 0 when the columns fit.
+
+- [ ] **P15b. Store the sideways offset (feature).** After: P15a. Part of P15. The
+  offset in `ViewCache`, read through the clamp, and passed to `details_columns`.
+  Reset it to 0 where `set_scroll(id, 0)` runs on a view change. Nothing sets it yet
+  but tests. Test: a stored offset clamps after the space narrows, and grows back
+  no further than it was stored.
+
+- [ ] **P15c. Shift+wheel scrolls Details sideways (feature).** After: P15b. Part of
+  P15. `scroll_by_x`, like `scroll_by`, and `on_wheel` calling it when `shift` is
+  held in Details; every other view keeps today's wheel. `SpaceEvent::Wheel` gains
+  `shift`, read from the `Modifiers` `on_mouse_wheel` already has. If K8 has moved
+  it, that is `mouse.rs`. Take the decision in a function that takes plain data, and
+  test it. **[needs human]** check: Shift+wheel over a Details space with every column
+  on, at 100 % and 150 %; the header stays with its columns.
+
+- [ ] **P15d. A second scroll indicator (feature).** After: P15b. Part of P15. By the
+  "new visual" recipe, next to the indicator `scene.rs` already builds, along the
+  bottom of a Details space whose columns pass the edge. Scene tests. **[needs
+  human]** check: it shows only when the columns pass the edge, with vertical
+  scrolling on and off.
+
+- [ ] **P16a. Pick the labels worth measuring (pure).** Part of P16; the design is
+  ROADMAP D25. `longest_by_chars(labels, count)` in core, and its tests. Time it on
+  50,000 labels and put the dated result in the commit body; over 8 ms, stop and ask.
+
+- [ ] **P16c. "Size all columns to fit" (feature).** After: P16a, P16b. Part of P16. In
+  the Details header menu, by the menu recipe. It records one undo entry, like Choose
+  columns. Take the widths from plain data in a function, and test it. **[needs
+  human]** check: on a space and a 50,000-file lens, no column clips and no stall.
+
+- [ ] **P16d. Measure Explorer's List column (no code).** **[needs human]** Part of
+  P16. Measure Explorer's limit on a List column's width, and whether a change
+  re-flows. Record it in P16e, with the date.
 
 ### Seniors only
 
@@ -1794,76 +1832,32 @@ These are in the order we would take them. Each lands alone.
   whole grid by icon size over 48 px (`fixed_icon_scale`, `app/view.rs`). With the
   default 96 × 104 cell, Large icons gets a 192 × 208 cell and Extra large about
   512 × 555, so three Extra large columns need about 1,500 px. W12's check does not
-  mention this. P14b and P14c are in the junior list.
-  - [ ] **P14a. Confirm the behavior.** **[needs decision]** Proposed: a fixed view
-    uses Explorer's measured cell and never the look's, so the look's spacing applies
-    only to "Settings icon size". Nothing already shipped is at stake: W12 is in no
-    release tag (the newest is v0.2.4, checked 2026-11-02), so no user has a space
-    saved under the old cell, as long as this lands before the next release. Record
-    the decision in `ROADMAP.md`, amending D17.
+  mention this. The behavior is decided (ROADMAP D17, amended 2026-11-02). P14b and
+  P14c are in the junior list. **Land them before the next release:** W12 is in no
+  release tag (the newest is v0.2.4, checked 2026-11-02), so no saved space needs a
+  migration until one ships.
 
-- [ ] **P15. Scroll Details sideways.** **[needs decision]** Columns past the
-  space's width are cut off (`scene.rs` `details_columns`), and W30 makes that easy
-  to reach: every column on takes 560 px at 96 DPI. Explorer scrolls sideways.
-  - Proposed design, for the maintainer to confirm:
-    - The offset is session state in `ViewCache`, beside the scroll. It is clamped
-      where it is read, with `details_max_scroll(columns, width, padding)`, so a
-      resize, a column change, or a view change needs no code of its own.
-    - `details_columns`, which has one caller, shifts each column's `rect.x` by the
-      offset. Header paint, cell paint, `divider_at`, `column_drop_index`, and the
-      header's hit test all read those rects, so they follow with no new code. So
-      the header scrolls with the columns, and never with the rows.
-    - A wheel notch already rebuilds the scene (`scroll_by`), and a scene holds only
-      visible rows, so a 50,000-row lens costs what vertical scrolling costs.
-    - List keeps its one `ScrollAxis`. Only Details gets a second offset.
-  - Then, one commit each. The first four are junior, once this is decided:
-    - [ ] **P15a.** `details_columns` takes an offset; its caller passes 0. No change
-      on screen. Test: the rects shift, and `details_max_scroll`.
-    - [ ] **P15b.** After: P15a. The `ViewCache` offset, read through the clamp and
-      reset to 0 where `set_scroll(id, 0)` is on a view change. Test the clamp after a
-      narrower width.
-    - [ ] **P15c.** After: P15b. `scroll_by_x`, like `scroll_by`, and Shift+wheel
-      calling it. `Event`'s `Wheel` gains `shift`, read from the `Modifiers` the
-      space window already has.
-    - [ ] **P15d.** After: P15b. A second indicator, by the "new visual" recipe,
-      next to the scene's existing one. Scene tests.
-    - [ ] **P15e (senior).** After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the
-      space window (`win32/space_window.rs`, or `mouse.rs` after K8).
-    - [ ] **P15f (senior).** After: P15b. Go through what holds an x and may not
-      read those rects: the rename box, the marquee, the drag drop index, and paint
-      clipping cells at the content's edge. Fix each or show it needs nothing, and
-      scroll Name into view when a rename starts. Drop the note from W30's row, and
-      judge W31's "Name takes the rest" past the edge.
+- [ ] **P15. Scroll Details sideways.** Columns past the space's width are cut off
+  (`scene.rs` `details_columns`), and W30 makes that easy to reach: every column on
+  takes 560 px at 96 DPI. The design is ROADMAP D24. P15a-P15d are in the junior
+  list, so these are the parts that remain:
+  - [ ] **P15e.** After: P15b. The tilt wheel: `WM_MOUSEHWHEEL` in the space window
+    (`win32/space_window.rs`, or `mouse.rs` after K8).
+  - [ ] **P15f.** After: P15b. Go through what holds an x and may not read those
+    rects: the rename box, the marquee, the drag drop index, and paint clipping cells
+    at the content's edge. Fix each or show it needs nothing, and scroll Name into
+    view when a rename starts. Drop the note from W30's row, and judge W31's "Name
+    takes the rest" past the edge.
 
-- [ ] **P16. Measure labels.** **[needs decision]** Two Explorer behaviors wait for
-  this: the Details header menu's "Size all columns to fit" (W30) and List columns
-  sized to the longest label (W17 uses a fixed 200 px and an ellipsis).
-  - Proposed design, for the maintainer to confirm:
-    - The seam is `Ui::measure_label_widths(&[&str], font) -> Vec<i32>` over
-      DirectWrite (`CreateTextLayout`, as `d2d/title.rs` uses it). The app stays
-      Win32-free. R18 uses the same method for longer translated labels, so there is
-      one way to measure.
-    - No worker and no cache, so nothing has to show "until it answers". Character
-      count picks the candidates: scan the labels without measuring, keep the
-      longest 64, and measure only those. The scan is plain arithmetic, and a wide
-      label short on characters is off by a few pixels at worst, so add a small slack.
-    - Fit-to-columns measures Name that way, and the other columns on their visible
-      rows, because dates and sizes are nearly one length and are only formatted for
-      visible rows (section W, Performance).
-  - Then, one commit each:
-    - [ ] **P16a (junior).** `longest_by_chars(labels, count)` in core, and its
-      tests. Time it on 50,000 labels and put the dated result in the commit body;
-      over 8 ms, stop and ask.
-    - [ ] **P16b (senior).** The `Ui` method, with a test that "WWW" measures wider
-      than "iii".
-    - [ ] **P16c (junior).** After: P16a, P16b. "Size all columns to fit" in the
-      header menu, by the menu recipe. It records one undo entry, like Choose
-      columns.
-    - [ ] **P16d (no code).** **[needs human]** Measure Explorer's limit on a List
-      column's width, and whether a change re-flows. Record it in P16e.
-    - [ ] **P16e (senior).** After: P16a, P16b, P16d. List's cell width follows the
-      longest label: where it is stored, and when it is measured again. A
-      `SyncLens` is the likely trigger, and no scene or wheel notch may measure.
+- [ ] **P16. Measure labels.** Two Explorer behaviors wait for this: the Details
+  header menu's "Size all columns to fit" (W30) and List columns sized to the longest
+  label (W17 uses a fixed 200 px and an ellipsis). The design is ROADMAP D25. P16a,
+  P16c, and P16d are in the junior list, so these are the parts that remain:
+  - [ ] **P16b.** The `Ui` method, over `CreateTextLayout` as `d2d/title.rs` uses it,
+    with a test that "WWW" measures wider than "iii".
+  - [ ] **P16e.** After: P16a, P16b, P16d. List's cell width follows the longest
+    label: where it is stored, and when it is measured again. A `SyncLens` is the
+    likely trigger, and no scene or wheel notch may measure.
 
 - [ ] **P17. Keyboard support for the Shortcuts preview (accessibility, M7).**
   The Shortcuts page's preview (`win32/settings_window/preview.rs`) is not a Tab
@@ -1990,7 +1984,8 @@ the ROADMAP decision ids (`D1`-`D9`).
     platform holding catalogs;
   - the fallback chain (region, language, English) and plural rules;
   - how the settings window fits longer labels (measure or wrap; start from
-    the layout constants in `settings_window/build.rs`).
+    the layout constants in `settings_window/build.rs`, and from its `DT_CALCRECT`
+    call, since D25's measuring is for what Direct2D draws).
 
   Then split M9 items 2-5 into one-commit tasks here. If R14 lands first, a
   field's label belongs in its row.

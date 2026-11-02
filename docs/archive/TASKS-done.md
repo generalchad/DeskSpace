@@ -5572,3 +5572,10 @@ until I5-I6 all land, so no partial build hides the desktop.
     them. **[needs human]** check: set the label size to 160 % and look at
     Small icons, List, Details, Tiles, and Content, normal and compact: no
     clipped text, at 100 % and 150 %.
+
+- [x] **P14a. Confirm the behavior.** **[needs decision]** Proposed: a fixed view
+  uses Explorer's measured cell and never the look's, so the look's spacing applies
+  only to "Settings icon size". Nothing already shipped is at stake: W12 is in no
+  release tag (the newest is v0.2.4, checked 2026-11-02), so no user has a space
+  saved under the old cell, as long as this lands before the next release. Record
+  the decision in `ROADMAP.md`, amending D17.

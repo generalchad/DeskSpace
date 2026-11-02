@@ -289,7 +289,12 @@ A native, lightweight, offline Windows desktop organizer that:
     items are not part of this (amended 2026-10-31, maintainer): they are a
     live view of its folder, replaced by every listing, so an entry neither
     stores nor compares them. A lens brought back keeps showing what it holds,
-    or lists its folder if it shows another.
+    or lists its folder if it shows another. Item facts are not part of it
+    either (amended 2026-11-02, maintainer; lands with `TASKS.md` P13a): a refresh
+    of an item's size, dates, or attributes leaves an entry good, and on a
+    kept-sorted space so do the order and positions that refresh changes.
+    Restoring an entry brings its old facts back until the next refresh, which is
+    harmless.
   - *Model:* a restore is a `Command` that puts back exactly the stored
     spaces, so the model still changes only through `Command`s. Ids are
     never reused within a session, so a restored space or item cannot
@@ -657,7 +662,12 @@ A native, lightweight, offline Windows desktop organizer that:
     Tiles, and Content place items by their order and never write
     `Item.position`, so switching back to an icon view restores a hand
     arrangement. (Amended 2026-11-02: Small icons places items by order too,
-    since W16; the three larger icon views keep the grid.)
+    since W16; the three larger icon views keep the grid.) (Amended 2026-11-02,
+    maintainer; lands with `TASKS.md` P14c: those three views use Explorer's
+    measured cell and never the look's, so the look's spacing applies only to
+    "Settings icon size". Scaling the whole cell by icon size made three Extra
+    large columns about 1,500 px wide. No release has these views yet, so this
+    lands before the next one, and no saved space needs a migration.)
   - *One sort rule for both kinds:* `SortRule { key, descending,
     folders_first }`. A space keeps its last rule, and "Keep sorted"
     decides whether it holds as items come and go. A lens is always kept
@@ -805,6 +815,39 @@ A native, lightweight, offline Windows desktop organizer that:
     monitor; an icon view that is capped scrolls. This closes the gap where
     only the order-placed views were capped.
   - Work items: `TASKS.md` C12.
+
+- **D24. Details scrolls sideways (2026-11-02, maintainer).** Columns past a
+  space's width are cut off today; Explorer scrolls them.
+  - The offset is session state in `ViewCache`, beside the scroll, and is never
+    saved. It is clamped where it is read, with
+    `details_max_scroll(columns, width, padding)`, so a resize, a column change, or
+    a view change needs no code of its own.
+  - `details_columns` shifts each column's `rect.x` by the offset, in that one
+    place. Header and cell painting, `divider_at`, `column_drop_index`, and the
+    header's hit test read those rects, so they follow it. The header scrolls with
+    the columns and never with the rows.
+  - It costs what vertical scrolling costs: a notch rebuilds the scene, and a scene
+    holds only the visible rows.
+  - List keeps its one `ScrollAxis`. Only Details gets a second offset.
+  - Input is Shift+wheel and the tilt wheel, with a second indicator, as Explorer
+    has them.
+  - Work items: `TASKS.md` P15.
+
+- **D25. Measuring labels in a space (2026-11-02, maintainer).** For "Size all
+  columns to fit" and List columns sized to the longest label.
+  - The seam is `Ui::measure_label_widths(&[&str], font) -> Vec<i32>` over
+    DirectWrite, which is what draws these labels. The app stays Win32-free.
+  - There is no worker and no cache, so nothing has to show "until it answers".
+    Character count picks the candidates: scan the labels without measuring, keep
+    the longest 64, and measure only those. A wide label short on characters can
+    come out a few pixels short, so the width gets a small slack.
+  - Fitting columns measures Name that way, and the other columns on their visible
+    rows: dates and sizes are nearly one length, and are formatted only for visible
+    rows.
+  - No scene or wheel notch measures.
+  - This is for what Direct2D draws. The settings window's native controls draw
+    with GDI and already measure with `DT_CALCRECT`, so R18 starts from that.
+  - Work items: `TASKS.md` P16.
 
 ## 3. Guiding principles
 
