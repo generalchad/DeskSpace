@@ -205,6 +205,44 @@ mod tests {
     }
 
     #[test]
+    fn changing_a_lens_rule_leaves_its_order_to_the_worker() {
+        let mut desktop = Desktop::new();
+        let id = lens(&mut desktop, "C:/folder");
+        sync(
+            &mut desktop,
+            id,
+            vec![
+                entry("b.txt", ItemKind::File),
+                entry("a.txt", ItemKind::File),
+            ],
+        );
+        assert_eq!(labels(&desktop, id), ["a", "b"]);
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        keep_sorted: true,
+                        sort: SortRule {
+                            key: SortKey::Name,
+                            descending: true,
+                            folders_first: false,
+                        },
+                        ..SpaceView::default()
+                    },
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(
+            labels(&desktop, id),
+            ["a", "b"],
+            "the worker rebuilds the list under the new rule"
+        );
+    }
+
+    #[test]
     fn a_lens_always_keeps_sorted() {
         let mut desktop = Desktop::new();
         let id = lens(&mut desktop, "C:/folder");
