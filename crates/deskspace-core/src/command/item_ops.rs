@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::{CommandOutcome, hold_kept_order};
+use super::CommandOutcome;
 use crate::desktop::Desktop;
 use crate::id::{ItemId, SpaceId};
 use crate::item::{Item, ItemFacts};
@@ -139,13 +139,15 @@ impl Desktop {
             return CommandOutcome::NotFound;
         };
         self.with_space(source, |space| {
-            let Some(item) = space.item_mut(id) else {
+            let Some(index) = space.items.iter().position(|item| item.id == id) else {
                 return CommandOutcome::NotFound;
             };
+            let item = &mut space.items[index];
             item.path = path;
             item.label = label;
             // A rename can change where a kept sort puts the item.
-            if hold_kept_order(space) {
+            if space.keeps_sorted() {
+                space.view.sort.move_into_order(&mut space.items, index);
                 position_items(space, layout);
             }
             CommandOutcome::Applied

@@ -5349,3 +5349,21 @@ until I5-I6 all land, so no partial build hides the desktop.
     flag/event round trip is unit-tested. **[needs human]** check: right-click
     the desktop and use "New space" and "DeskSpace Settings"; the entries are
     gone after a clean exit.
+- [x] **B39. Move one renamed item instead of re-sorting the space (core).**
+  - Why: `apply_rename_item` calls `hold_kept_order`, which sorts every item
+    in a lens or kept-sorted space on the UI thread. On 50,000 lens items that
+    is about 24 ms (found in B37).
+  - `sort.rs`: `SortRule::move_into_order(&mut Vec<Item>, index)`, which
+    removes the item and re-inserts it where a binary search puts it. Among
+    items the rule calls equal, it keeps the item's old relative place, so
+    the result matches a stable `sort_items`.
+  - `command/item_ops.rs` `apply_rename_item`: after the path and label
+    change, when `space.keeps_sorted()`, call `move_into_order` instead of
+    `hold_kept_order`, then `position_items`. `rearrange` and every other
+    caller keep the full sort.
+  - Tests: for every `SortKey` and both directions, the moved list equals a
+    full `sort_items`, including ties and items moved to either end; a lens
+    rename keeps its order and places the item. Add the rename to the release
+    timing test and record it.
+  - Done when: the gates pass and a rename on 50,000 items is well under the
+    Performance rule's 8 ms.

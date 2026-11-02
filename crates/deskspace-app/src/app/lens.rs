@@ -1005,6 +1005,17 @@ mod tests {
             app.undo.note_space(&app.config.desktop, lens);
             app.undo.cancel();
         });
+        time("rename one item, kept order", &mut || {
+            let id = app.config.desktop.space(lens).unwrap().items()[25_000].id;
+            app.dispatch(
+                Command::RenameItem {
+                    id,
+                    path: PathBuf::from(r"C:\Users\me\Big\zzzz renamed.pdf"),
+                    label: "zzzz renamed".into(),
+                },
+                Default::default(),
+            );
+        });
         for key in [
             deskspace_core::SortKey::Name,
             deskspace_core::SortKey::Kind,
