@@ -1736,18 +1736,6 @@ Who takes what:
 
 Any order, except that P3 and P4 go before S5.
 
-- [ ] **P3. Delete the icon set's unused credits (refactor).** `IconSet.info`
-  is parsed and saved, but only `trim`'s tests read it. The real set's `info`
-  is empty, since upstream keeps that block in `info.json`. The About note and
-  `NOTICE` take their credits from the `ICON_SETS` row.
-  - `deskspace-core/src/icon_set.rs`: delete `IconSet.info`, `IconSetInfo`,
-    `IconSetAuthor`, and `IconSetLicense`.
-  - `deskspace-config/src/icons.rs`: delete `info: upstream.info` from `trim`
-    and the assertions on `set.info`. Keep `"info"` in the test's JSON: it now
-    proves an unknown key is ignored.
-  - Done when: `rg "IconSetInfo|\.info\b" crates` finds no icon-set use, and
-    the gates pass. Behavior does not change.
-
 - [ ] **P4. Leave deprecated icons out of search and matching (fix).** Iconify
   marks a deprecated icon `"hidden": true` (48 of the 2887 kept Fluent icons in
   1.2.60), and DeskSpace does not read the flag, so automatic matching can pick

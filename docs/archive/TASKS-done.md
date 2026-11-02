@@ -5075,3 +5075,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: hover an item until its tip shows, then press F2:
     the tip goes and the box is uncovered, on a space and on a loose desktop
     icon with takeover on.
+
+- [x] **P3. Delete the icon set's unused credits (refactor).** `IconSet.info`
+  is parsed and saved, but only `trim`'s tests read it. The real set's `info`
+  is empty, since upstream keeps that block in `info.json`. The About note and
+  `NOTICE` take their credits from the `ICON_SETS` row.
+  - `deskspace-core/src/icon_set.rs`: delete `IconSet.info`, `IconSetInfo`,
+    `IconSetAuthor`, and `IconSetLicense`.
+  - `deskspace-config/src/icons.rs`: delete `info: upstream.info` from `trim`
+    and the assertions on `set.info`. Keep `"info"` in the test's JSON: it now
+    proves an unknown key is ignored.
+  - Done when: `rg "IconSetInfo|\.info\b" crates` finds no icon-set use, and
+    the gates pass. Behavior does not change.

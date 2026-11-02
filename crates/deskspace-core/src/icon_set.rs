@@ -17,7 +17,6 @@ const MAX_ALIAS_STEPS: usize = 8;
 #[serde(default, rename_all = "camelCase")]
 pub struct IconSet {
     pub prefix: String,
-    pub info: IconSetInfo,
     pub icons: BTreeMap<String, IconData>,
     pub aliases: BTreeMap<String, IconAlias>,
     /// The size of an icon that gives none.
@@ -29,7 +28,6 @@ impl Default for IconSet {
     fn default() -> Self {
         Self {
             prefix: String::new(),
-            info: IconSetInfo::default(),
             icons: BTreeMap::new(),
             aliases: BTreeMap::new(),
             width: DEFAULT_SIZE,
@@ -64,29 +62,6 @@ impl IconAlias {
     fn is_plain(&self) -> bool {
         self.rotate.is_multiple_of(4) && !self.h_flip && !self.v_flip
     }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct IconSetInfo {
-    pub name: String,
-    pub author: IconSetAuthor,
-    pub license: IconSetLicense,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct IconSetAuthor {
-    pub name: String,
-    pub url: String,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct IconSetLicense {
-    pub title: String,
-    pub spdx: String,
-    pub url: String,
 }
 
 /// One icon ready to draw.

@@ -259,7 +259,6 @@ pub fn trim(upstream: IconSet, spec: &IconSetSpec) -> IconSet {
         .collect();
     IconSet {
         prefix: spec.prefix.to_owned(),
-        info: upstream.info,
         icons,
         aliases,
         width,
@@ -329,8 +328,6 @@ mod tests {
     fn an_iconify_file_parses_with_unknown_keys() {
         let set = upstream();
         assert_eq!(set.prefix, "test");
-        assert_eq!(set.info.author.name, "Nobody");
-        assert_eq!(set.info.license.spdx, "MIT");
         assert_eq!(set.icons.len(), 5);
         assert!(set.aliases["back-20-regular"].h_flip);
         assert_eq!(set.icons["home-24-regular"].width, Some(24));
@@ -340,7 +337,6 @@ mod tests {
     fn trim_keeps_renames_and_drops_as_stated() {
         let set = trim(upstream(), &SPEC);
         assert_eq!(set.prefix, "test");
-        assert_eq!(set.info.name, "Test");
         assert_eq!(set.names(), ["abode", "home", "house", "tall"]);
         // A chain is flattened to the icon it leads to.
         assert_eq!(set.aliases["abode"].parent, "home");
