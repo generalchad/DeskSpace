@@ -1,6 +1,6 @@
 //! Where a space's items come from: the space itself, or a folder it mirrors.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +96,38 @@ impl FolderView {
         self.exclude = clamp_patterns(self.exclude);
         self
     }
+}
+
+/// Where a lens's own folder went when a subfolder it shows was moved. `shown`
+/// is the browsed folder and `to` where the watch reports it now; the path of
+/// `shown` below `root` is the tail, and the answer is `to` with that tail
+/// removed. `None` when `shown` is not below `root`, is `root` itself, or `to`
+/// does not end with the tail.
+pub fn root_after_move(root: &Path, shown: &Path, to: &Path) -> Option<PathBuf> {
+    let root: Vec<Component<'_>> = root.components().collect();
+    let shown: Vec<Component<'_>> = shown.components().collect();
+    if shown.len() <= root.len() || !components_match(&shown[..root.len()], &root) {
+        return None;
+    }
+    let tail = &shown[root.len()..];
+    let to: Vec<Component<'_>> = to.components().collect();
+    if to.len() <= tail.len() || !components_match(&to[to.len() - tail.len()..], tail) {
+        return None;
+    }
+    let mut new_root = PathBuf::new();
+    for component in &to[..to.len() - tail.len()] {
+        new_root.push(component.as_os_str());
+    }
+    Some(new_root)
+}
+
+/// Whether two component lists name the same path, ignoring case, as Windows
+/// compares paths and as `to`'s own spelling comes from the file system.
+fn components_match(a: &[Component<'_>], b: &[Component<'_>]) -> bool {
+    a.iter().zip(b).all(|(a, b)| {
+        a.as_os_str().to_string_lossy().to_lowercase()
+            == b.as_os_str().to_string_lossy().to_lowercase()
+    })
 }
 
 fn clamp_patterns(patterns: Vec<String>) -> Vec<String> {
@@ -343,5 +375,69 @@ mod tests {
         .unwrap();
         assert_eq!(view.path, PathBuf::from("C:/Temp"));
         assert!(!view.show_hidden);
+    }
+
+    #[test]
+    fn a_moved_root_follows_from_a_browsed_subfolder() {
+        let root = Path::new(r"C:\Work");
+        let shown = Path::new(r"C:\Work\A");
+        assert_eq!(
+            root_after_move(root, shown, Path::new(r"C:\Work2\A")),
+            Some(PathBuf::from(r"C:\Work2")),
+            "a rename of the root"
+        );
+        assert_eq!(
+            root_after_move(root, shown, Path::new(r"D:\Stuff\A")),
+            Some(PathBuf::from(r"D:\Stuff")),
+            "a move of the root"
+        );
+        assert_eq!(
+            root_after_move(root, Path::new(r"C:\Work\A\B"), Path::new(r"C:\New\A\B")),
+            Some(PathBuf::from(r"C:\New")),
+            "a nested subfolder"
+        );
+    }
+
+    #[test]
+    fn a_moved_root_keeps_the_spelling_of_its_new_path() {
+        assert_eq!(
+            root_after_move(
+                Path::new(r"C:\Work"),
+                Path::new(r"c:\work\A"),
+                Path::new(r"c:\WORK2\a")
+            ),
+            Some(PathBuf::from(r"c:\WORK2"))
+        );
+    }
+
+    #[test]
+    fn a_moved_root_needs_the_browsed_tail() {
+        assert_eq!(
+            root_after_move(
+                Path::new(r"C:\Work"),
+                Path::new(r"C:\Work\A"),
+                Path::new(r"C:\Other\B")
+            ),
+            None,
+            "to does not end with the tail"
+        );
+        assert_eq!(
+            root_after_move(
+                Path::new(r"C:\Work"),
+                Path::new(r"D:\Work\A"),
+                Path::new(r"D:\Work\A")
+            ),
+            None,
+            "shown is not below root"
+        );
+        assert_eq!(
+            root_after_move(
+                Path::new(r"C:\Work"),
+                Path::new(r"C:\Work"),
+                Path::new(r"C:\Work2")
+            ),
+            None,
+            "shown is root"
+        );
     }
 }

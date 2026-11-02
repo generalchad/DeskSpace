@@ -1628,17 +1628,6 @@ Small first. Each lands alone unless it says "After".
   - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
     browsed.
 
-- [ ] **P11b. Work out where a browsed lens's root went (pure).** Part of P11.
-  `pub fn root_after_move(root, shown, to) -> Option<PathBuf>` in
-  `deskspace-core/src/source.rs`, beside `FolderView`. The path of `shown` below
-  `root` is the tail. The answer is `to` with that tail removed.
-  - `None` when `shown` is not below `root`, when `shown` is `root`, or when `to`
-    does not end with the tail.
-  - Compare components ignoring case, because Windows does and `to` comes from the
-    file system. Keep `to`'s spelling in the answer.
-  - Tests: a rename, a move, a nested subfolder, a different case, no match, and
-    `shown == root`. Do not call it from the worker; P11c does.
-
 - [ ] **P13b. `Command::RefreshItemFacts` (feature, core only).** After: P13a. Part
   of P13. The Command recipe's steps 1, 2, and 4, with `{ space, facts: Vec<(ItemId,
   ItemFacts)> }`. Sets only the five facts above and no other field. `Applied` only if
