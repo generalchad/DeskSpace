@@ -34,6 +34,21 @@ impl SortRule {
         items.sort_by(|a, b| self.compare(a, b));
     }
 
+    /// Moves the item at `index` to where this rule puts it among the others,
+    /// by binary search, and returns its new index. The rest of `items` must
+    /// already be in this rule's order. Among items the rule calls equal it
+    /// keeps the item's old relative place, so the result is what a stable
+    /// `sort_items` would give.
+    pub(crate) fn move_into_order(&self, items: &mut Vec<Item>, index: usize) -> usize {
+        let item = items.remove(index);
+        let less = items.partition_point(|other| self.compare(other, &item) == Ordering::Less);
+        let equal_end =
+            items.partition_point(|other| self.compare(other, &item) != Ordering::Greater);
+        let at = less.max(index.min(equal_end));
+        items.insert(at, item);
+        at
+    }
+
     /// Orders two items by the rule. Ties use natural name order, so `file2`
     /// comes before `file10`. "Folders first" holds in both directions, as
     /// Explorer's does: it is a group order, not part of the key.
@@ -166,6 +181,72 @@ mod tests {
         assert!(!SortRule::default().descending);
         assert!(!SortRule::default().folders_first);
         assert!(SortRule::default().is_default());
+    }
+
+    #[test]
+    fn moving_one_item_matches_a_stable_sort() {
+        let base = || {
+            vec![
+                item("b", ItemKind::File, 10, 3),
+                item("a", ItemKind::Folder, 0, 1),
+                item("c", ItemKind::File, 10, 3),
+                item("a", ItemKind::File, 10, 1),
+                item("d", ItemKind::File, 1, 3),
+            ]
+        };
+        for key in [
+            SortKey::Name,
+            SortKey::Kind,
+            SortKey::Size,
+            SortKey::Modified,
+            SortKey::Created,
+        ] {
+            for descending in [false, true] {
+                for folders_first in [false, true] {
+                    let rule = rule(key, descending, folders_first);
+                    let mut sorted = base();
+                    for (n, item) in sorted.iter_mut().enumerate() {
+                        item.id = ItemId(n as u64 + 1);
+                    }
+                    rule.sort_items(&mut sorted);
+                    for index in 0..sorted.len() {
+                        for label in ["0", "a", "b", "e", "zzz"] {
+                            let mut moved = sorted.clone();
+                            moved[index].label = label.to_string();
+                            let id = moved[index].id;
+                            let mut expected = moved.clone();
+                            rule.sort_items(&mut expected);
+                            let at = rule.move_into_order(&mut moved, index);
+                            assert_eq!(
+                                moved, expected,
+                                "{key:?}, descending {descending}, folders first \
+                                 {folders_first}: moving {} to {label:?}",
+                                sorted[index].label
+                            );
+                            assert_eq!(moved[at].id, id, "returns the new index");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn moving_an_item_already_in_place_keeps_its_index() {
+        let rule = rule(SortKey::Name, false, false);
+        let mut items = vec![
+            item("a", ItemKind::File, 1, 1),
+            item("b", ItemKind::File, 1, 1),
+            item("c", ItemKind::File, 1, 1),
+        ];
+        assert_eq!(rule.move_into_order(&mut items, 1), 1);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
     }
 
     #[test]

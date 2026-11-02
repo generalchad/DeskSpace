@@ -1337,6 +1337,32 @@ mod tests {
     }
 
     #[test]
+    fn renaming_a_kept_sorted_item_moves_it_into_place() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 0, 0),
+            item(2, "b", ItemKind::File, 0, 0),
+            item(3, "c", ItemKind::File, 0, 0),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        let renamed = desktop.space(id).unwrap().items[1].id;
+        assert_eq!(
+            desktop.apply(
+                Command::RenameItem {
+                    id: renamed,
+                    path: "C:/missing/z".into(),
+                    label: "z".into(),
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["a", "c", "z"]);
+        let item = &desktop.space(id).unwrap().items[2];
+        assert_eq!(item.id, renamed);
+        assert_eq!(item.position, desktop.layout.grid_position(2));
+    }
+
+    #[test]
     fn reorder_items_rejects_an_empty_selection() {
         let (mut desktop, _) = space_with_items(vec![item(1, "a", ItemKind::File, 0, 0)]);
         assert_eq!(
