@@ -252,6 +252,7 @@ pub fn trim(upstream: IconSet, spec: &IconSetSpec) -> IconSet {
             icons.contains_key(&parent).then_some(())?;
             let alias = IconAlias {
                 parent,
+                hidden: upstream.aliases[name].hidden,
                 ..IconAlias::default()
             };
             Some((short(name)?, alias))
@@ -314,7 +315,8 @@ mod tests {
             "abode-20-regular": { "parent": "house-20-regular" },
             "back-20-regular": { "parent": "home-20-regular", "hFlip": true },
             "house-20-filled": { "parent": "home-20-filled" },
-            "odd-20-regular": { "parent": "home-24-regular" }
+            "odd-20-regular": { "parent": "home-24-regular" },
+            "oldhouse-20-regular": { "parent": "home-20-regular", "hidden": true }
         },
         "width": 20,
         "height": 20
@@ -330,6 +332,7 @@ mod tests {
         assert_eq!(set.prefix, "test");
         assert_eq!(set.icons.len(), 5);
         assert!(set.aliases["back-20-regular"].h_flip);
+        assert!(set.aliases["oldhouse-20-regular"].hidden);
         assert_eq!(set.icons["home-24-regular"].width, Some(24));
     }
 
@@ -337,7 +340,13 @@ mod tests {
     fn trim_keeps_renames_and_drops_as_stated() {
         let set = trim(upstream(), &SPEC);
         assert_eq!(set.prefix, "test");
-        assert_eq!(set.names(), ["abode", "home", "house", "tall"]);
+        assert_eq!(set.names(), ["abode", "home", "house"]);
+        assert_eq!(
+            set.all_names(),
+            ["abode", "home", "house", "oldhouse", "tall"]
+        );
+        assert!(set.icons["tall"].hidden);
+        assert!(set.aliases["oldhouse"].hidden);
         // A chain is flattened to the icon it leads to.
         assert_eq!(set.aliases["abode"].parent, "home");
         assert_eq!(set.aliases["house"].parent, "home");

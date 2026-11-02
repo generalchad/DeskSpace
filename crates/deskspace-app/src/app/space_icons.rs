@@ -284,6 +284,7 @@ mod tests {
                 body: "<path d=\"M0 0h8v8H0z\"/>".to_owned(),
                 width: None,
                 height: None,
+                hidden: false,
             },
         );
         IconSet {

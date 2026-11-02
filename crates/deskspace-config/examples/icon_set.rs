@@ -82,7 +82,7 @@ fn run_trim(spec: &IconSetSpec, upstream: &Path, out_dir: &Path) -> Result<()> {
     let out = out_dir.join(spec.file_name());
     std::fs::write(&out, serde_json::to_vec(&set)?)?;
 
-    let mut names = set.names().join("\n");
+    let mut names = set.all_names().join("\n");
     names.push('\n');
     if let Some(parent) = names_path.parent() {
         std::fs::create_dir_all(parent)?;

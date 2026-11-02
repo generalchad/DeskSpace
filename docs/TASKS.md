@@ -1736,28 +1736,6 @@ Who takes what:
 
 Any order, except that P3 and P4 go before S5.
 
-- [ ] **P4. Leave deprecated icons out of search and matching (fix).** Iconify
-  marks a deprecated icon `"hidden": true` (48 of the 2887 kept Fluent icons in
-  1.2.60), and DeskSpace does not read the flag, so automatic matching can pick
-  one. A name a config has already saved must still draw (`ENGINEERING.md`
-  section 2, rule 3).
-  - `deskspace-core/src/icon_set.rs`: add `hidden: bool` to `IconData` and
-    `IconAlias`, with `#[serde(skip_serializing_if = "std::ops::Not::not")]`.
-    `canonical` and `glyph` do not change.
-  - `names()` leaves out a hidden icon, a hidden alias, and an alias that leads
-    to a hidden icon. Add `all_names()`, which is today's `names()`.
-  - `deskspace-config/examples/icon_set.rs`: write the names file from
-    `all_names()`. That file guards every name a config may hold, so
-    `assets/icons/fluent-names.txt` stays as it is and S5's `git diff` step
-    stays clean.
-  - `deskspace-config/src/icons.rs` `trim`: copy an alias's `hidden`, which
-    `..IconAlias::default()` drops today. The test JSON's `tall` icon is
-    already hidden; extend the assertions.
-  - Tests: a hidden icon is not in `names()` but `glyph` still draws it; an
-    alias of one is not listed either; `icon_match` does not pick it.
-  - No revision bump while S5 is open, as no set is published. Check with `gh
-    release view icons-fluent-r1`; if it exists, stop and ask.
-
 - [ ] **P5. Name what `base_layout` is told (refactor).** `app/view.rs`
   `base_layout` takes `scale: f32, title_scale: f32, fixed_icon: bool`. Two
   floats and a bool read the same at a call site, and `false` says nothing.

@@ -288,4 +288,13 @@ mod tests {
         let set = set(&["film"], &[]);
         assert!(search("photo", &set, &[("photo", "gone")]).is_empty());
     }
+
+    #[test]
+    fn a_deprecated_icon_is_never_picked() {
+        let mut set = set(&["camera", "photo"], &[]);
+        set.icons.get_mut("photo").unwrap().hidden = true;
+        assert_eq!(best_icon("Photos", &set, &[]), None);
+        assert!(search("photo", &set, &[]).is_empty());
+        assert_eq!(search("", &set, &[]), ["camera"]);
+    }
 }

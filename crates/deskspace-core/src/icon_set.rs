@@ -45,6 +45,9 @@ pub struct IconData {
     pub width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
+    /// Iconify marks a deprecated icon hidden, so it should not be offered.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 /// Another name for an icon, optionally turned or flipped. DeskSpace draws
@@ -56,6 +59,9 @@ pub struct IconAlias {
     pub rotate: u8,
     pub h_flip: bool,
     pub v_flip: bool,
+    /// Iconify marks a deprecated alias hidden, so it should not be offered.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl IconAlias {
@@ -101,8 +107,18 @@ impl IconSet {
         })
     }
 
-    /// Every icon and every plain alias that leads to one, sorted.
+    /// Every name that is current: every icon and every plain alias that leads
+    /// to one, leaving out a deprecated icon, alias, or alias target.
     pub fn names(&self) -> Vec<&str> {
+        self.all_names()
+            .into_iter()
+            .filter(|name| self.is_shown(name))
+            .collect()
+    }
+
+    /// Every name a config may hold: every icon and every plain alias that
+    /// leads to one, deprecated ones included.
+    pub fn all_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self
             .icons
             .keys()
@@ -113,6 +129,14 @@ impl IconSet {
         names.sort_unstable();
         names.dedup();
         names
+    }
+
+    /// Whether `name` is current rather than deprecated.
+    fn is_shown(&self, name: &str) -> bool {
+        let Some(key) = self.canonical(name) else {
+            return false;
+        };
+        !self.icons[key].hidden && !self.aliases.get(name).is_some_and(|alias| alias.hidden)
     }
 }
 
@@ -199,5 +223,27 @@ pub(crate) mod tests {
     fn names_lists_icons_and_plain_aliases_sorted() {
         let set = set(&["zebra", "apple"], &[("fruit", "apple")]);
         assert_eq!(set.names(), ["apple", "fruit", "zebra"]);
+    }
+
+    #[test]
+    fn a_deprecated_icon_and_its_alias_are_not_offered() {
+        let mut set = set(
+            &["current", "deprecated"],
+            &[("old", "deprecated"), ("older", "current")],
+        );
+        set.icons.get_mut("deprecated").unwrap().hidden = true;
+        assert_eq!(set.names(), ["current", "older"]);
+        assert_eq!(set.all_names(), ["current", "deprecated", "old", "older"]);
+        // A config that already saved one still draws it.
+        assert!(set.glyph("deprecated").is_some());
+        assert!(set.glyph("old").is_some());
+    }
+
+    #[test]
+    fn a_deprecated_alias_is_not_offered() {
+        let mut set = set(&["image"], &[("picture", "image"), ("photo", "image")]);
+        set.aliases.get_mut("photo").unwrap().hidden = true;
+        assert_eq!(set.names(), ["image", "picture"]);
+        assert!(set.glyph("photo").is_some());
     }
 }
