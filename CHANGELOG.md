@@ -98,6 +98,8 @@ Notable changes to DeskSpace, newest first. The format follows
 - A locked lens places its items instead of stacking them.
 - A slow or network folder no longer stalls every space while its icons load.
   An item shows a generic icon at once, and its own fills in, as in Explorer.
+- Renaming an item in a big lens, grouping one by Type for the first time, and
+  opening the Shortcuts page on it no longer stall the spaces.
 - With the desktop takeover on: a taskbar that ended up under the desktop
   layer takes clicks again; Delete removes loose desktop icons; New › Folder
   opens a visible rename box; and an icon updates when its file changes in
