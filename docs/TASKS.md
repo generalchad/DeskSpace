@@ -234,7 +234,97 @@ matching on `Surface` at the call site.
 Each is a behavior-preserving refactor: the test count only grows, and no
 user-visible change is expected. Do them in any order. The exceptions are
 B32-B36, from a review on 2026-10-21: they fix performance and correctness,
-and B33 and B36 change behavior on purpose, as each says.
+and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
+same kind: they are the costs left over from B33/B37, against the 50,000-file
+bar in section W's Performance rules.
+
+- [ ] **B39. Move one renamed item instead of re-sorting the space (core).**
+  - Why: `apply_rename_item` calls `hold_kept_order`, which sorts every item
+    in a lens or kept-sorted space on the UI thread. On 50,000 lens items that
+    is about 24 ms (found in B37).
+  - `sort.rs`: `SortRule::move_into_order(&mut Vec<Item>, index)`, which
+    removes the item and re-inserts it where a binary search puts it. Among
+    items the rule calls equal, it keeps the item's old relative place, so
+    the result matches a stable `sort_items`.
+  - `command/item_ops.rs` `apply_rename_item`: after the path and label
+    change, when `space.keeps_sorted()`, call `move_into_order` instead of
+    `hold_kept_order`, then `position_items`. `rearrange` and every other
+    caller keep the full sort.
+  - Tests: for every `SortKey` and both directions, the moved list equals a
+    full `sort_items`, including ties and items moved to either end; a lens
+    rename keeps its order and places the item. Add the rename to the release
+    timing test and record it.
+  - Done when: the gates pass and a rename on 50,000 items is well under the
+    Performance rule's 8 ms.
+
+- [ ] **B40. Load a lens title's folder icon on the icon worker (platform).**
+  - Why: `IconCache::folder_icon` calls `load_folder_icon` on the UI thread
+    while a scene is built, so a lens on a slow or disconnected folder stalls
+    every space there (found in B33).
+  - `win32/icons.rs` `folder_icon` follows `icon_for`: a cached icon (even a
+    stale one) is drawn at once; otherwise the key joins the current scene's
+    wanted list and the kind's generic folder icon is drawn. The worker
+    already knows `IconKind::Folder`, so nothing else changes.
+  - Tests: outside a scene nothing is asked for; in a scene the key is
+    queued, the generic icon is returned, and the loaded icon reaches the
+    cache and refreshes the asking space.
+  - `CONTEXT.md` section 3: a lens's title icon loads like an item's, generic
+    first.
+  - **[needs human]** check: on a slow or disconnected folder, the other
+    spaces stay responsive and the lens's title shows the generic folder
+    before its own icon (append to the B33 row in section V).
+
+- [ ] **B41. Load the Shortcuts preview's icons on the icon worker (app,
+  platform).**
+  - Why: `space_preview` calls `icon_now` for every item, so opening the
+    Shortcuts page on a 50,000-file lens loads every icon on the UI thread
+    (found in B33).
+  - `win32/icons.rs`: `IconUser::SettingsPreview(u64)`; and `icon_ready`, a
+    cached-or-generic lookup that asks for nothing.
+  - `app/settings_session.rs` `space_preview`: begin a
+    `SettingsPreview(space)` scene, ask `icon_for` for at most
+    `PREVIEW_ICON_LIMIT` items, use `icon_ready` for the rest, and end the
+    scene. `Event::IconsLoaded` refreshes the open settings form when the
+    user is the scoped space's preview.
+  - Tests: `icon_ready` asks for nothing; a preview scene queues no more than
+    `PREVIEW_ICON_LIMIT`; a preview icon reaching the cache refreshes the
+    form. Record the release timing of building a 50,000-item preview.
+  - **[needs human]** check: with a big lens, the Shortcuts page opens without
+    a stall, its first icons fill in, and scrolling past the limit shows the
+    generic folder/file icons.
+
+- [ ] **B42. Free a stopped watch's finished listing on the worker
+  (platform).**
+  - Why: `FolderWatch::unwatch` can drop the last reference to a finished
+    `FolderListing` on the UI thread, about 5 ms for a big lens. It is rare,
+    but it is the one list the worker does not free (found in B37).
+  - Add a `retired` map shared with the worker. `unwatch` moves the slot's
+    `SharedListing` there instead of dropping it; `Worker::remove` takes it
+    and frees it on the watch thread. A failed remove packet leaves it for
+    `stop`, where the process is ending.
+  - Tests: retiring a slot moves its listing out of `listings`; the worker's
+    take leaves the map empty.
+  - Done when: the gates pass; say in the commit body why no behavior
+    changes.
+
+- [ ] **B43. Warm Explorer's type names off the UI thread (platform,
+  app).**
+  - Why: grouping by Type calls `type_name` for every distinct extension
+    while `sync_grouping` walks a 50,000-item lens on the UI thread. On a
+    seven-extension folder that is 13.6 ms the first time, over the
+    Performance rule's 8 ms; the grouping walk alone is about 3.6 ms
+    (measured 2026-11-01, release; found in B37).
+  - `win32/desktop_items.rs`: keep the thread-local cache as the fast path,
+    and add a process-wide cache that both threads fill and read. A miss
+    loads once, then fills both.
+  - `prewarm_type_names(entries)` loads each distinct extension (and the
+    folder name) once. `win32/folder_list.rs` `list_folder` calls it after
+    listing, so the watch worker pays the shell calls for a lens.
+  - Tests: distinct keys dedupe case and share the folder key; a name warmed
+    on another thread is read on this one without loading shell. Add a
+    cross-thread warm and the re-timed groupings to the release timing test.
+  - Done when: after a worker listing, `sync_grouping` for every key is under
+    8 ms, and the timings are recorded.
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
@@ -1840,11 +1930,7 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   shrink to one row even though its fit uses rows, and a fit at that minimum
   can land below it. Suggested: a view-aware minimum (one cell, or one row in
   a row view) and clamp the fitted rect to it. Found in C11, 2026-10-31.
-- `command/item_ops.rs` `apply_rename_item`: renaming an item in a lens re-sorts the whole list on the UI thread (`hold_kept_order`), about 24 ms on 50,000 already sorted items. Suggested: move the one item by binary search, which a lens's kept order allows. Found in B37.
 - `app/undo.rs` `reverse_rename`: undoing a rename in a lens brings the file back under its old path, and the worker no longer knows that path's id, so the item comes back unselected. Suggested: tell the worker as `App::note_renamed_lens_item` does. Found while fixing lens undo, 2026-10-31.
-- `win32/folder_watch.rs` `FolderWatch::unwatch`: a finished list still waiting in the slot is freed on the UI thread when its watch stops. Rare, and at most about 5 ms. Found in B37.
-- `win32/icons.rs` `load_folder_icon`, through `IconCache::folder_icon`: a lens's title icon still loads on the UI thread while its scene is built, so a lens on a slow folder can stall every space there. Suggested: give it to the icon worker, drawing the generic folder icon first. Found in B33, 2026-10-31.
-- `app/settings_session.rs` `space_preview`: the Shortcuts page loads an icon for every item of the space on the UI thread (`icon_now`), so opening it on a big lens stalls. Suggested: show only the visible items, or load them on the worker and update the preview. Found in B33, 2026-10-31.
 - `app/debug/mod.rs` `refresh_debug`: while the debug window is open, its 1 Hz refresh stalls every running animation on the UI thread, about 20-60 ms in a debug build (2026-10-31, measured frame by frame), so a preview's motion hitches once a second that a real play does not have. Suggested: skip the refresh while a space animates. Found while tuning Bounce, 2026-10-31.
 - `win32/space_animation.rs` `apply`: a composition surface of a new size reaches the screen a composition or two after `SetWindowPos`, so while Roll, Fly, or Bounce changes the window's size its content can trail its edge. Before Bounce was slowed, the first frame past the screen's edge showed a title-less box for one frame (captured 2026-10-31). Moving a whole-size window under a region instead would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which the app answers by reflowing the model. Found while tuning Bounce, 2026-10-31.
 - `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.
