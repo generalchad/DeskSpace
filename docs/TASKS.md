@@ -231,10 +231,10 @@ matching on `Surface` at the call site.
 
 ## B. Code health (any contributor)
 
-Each is a behavior-preserving refactor: the test count only grows, and no
-user-visible change is expected. Do them in any order. The exceptions are
-B32-B36, from a review on 2026-10-21: they fix performance and correctness,
-and B33 and B36 change behavior on purpose, as each says.
+All B tasks are archived (`archive/TASKS-done.md`). A new one is a
+behavior-preserving refactor: the test count only grows, and no user-visible
+change is expected. The recent exceptions were B32-B36 (performance and
+correctness) and B39-B43 (the lens-performance costs left by B33/B37).
 
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
@@ -1850,3 +1850,12 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
   without the requested space. The verbs normally exist only while the app
   runs. Suggested: carry the flag into the app and create one after
   `Started`. Found in C9, 2026-11-01.
+- `win32/icons.rs` is at 793 lines of non-test code, just under the 800
+  guideline after B40 and B41. Suggested: a K split of the cache, the worker,
+  and the Win32 loaders before the next change to it. Found in the B39-B43
+  review, 2026-11-01.
+- `win32/icons.rs` `IconCache::demand`: a `SettingsPreview` entry stays after
+  its page closes, so every space ever previewed raises the cache's limit by
+  at most 60, and it never shrinks. Suggested: forget the preview user when
+  the settings window leaves the space. Found in the B39-B43 review,
+  2026-11-01.
