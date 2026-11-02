@@ -1500,17 +1500,6 @@ and the parts after it wait too.
 
 Small first. Each lands alone unless it says "After".
 
-- [ ] **P9. Find what slows the platform's tests (test).** The per-module work
-  is two parts from done. The glyph cache has landed, and `file_op` needs no
-  change. `f656993`'s body has the ten slowest and the times. Never delete a test
-  without a replacement checking the same decision.
-  - [ ] **P9b. One shell test in `app_catalog`.** Pull the sort in `list` into
-    `sorted_by_name(apps)` and test it on plain `CatalogApp`s. Move the id list
-    and Store app checks from `the_applications_folder_lists_apps_with_id_lists`
-    into `a_background_refresh_fills_the_cache`, then delete the first test.
-    Done when: every assertion still runs, and the module has one test that
-    calls the shell. Then archive P9.
-
 - [ ] **P12a. See whether a swallowed Alt shows anything (no code).**
   **[needs human]** The first step of P12. With an item selected, press
   Alt+Enter, Alt+Left, and Alt+Up, and watch for focus cues or any change on the

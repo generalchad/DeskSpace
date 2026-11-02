@@ -5634,3 +5634,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   one differed, else `Rejected`. A kept-sorted space re-sorts and re-positions; any
   other keeps order and positions. A lens is `Rejected`, because its listing owns
   its facts. Nothing dispatches it yet; P13d does, as C10a landed before C10c.
+
+- [x] **P9. Find what slows the platform's tests (test).** The per-module work
+  is two parts from done. The glyph cache has landed, and `file_op` needs no
+  change. `f656993`'s body has the ten slowest and the times. Never delete a test
+  without a replacement checking the same decision.
+  - [x] **P9b. One shell test in `app_catalog`.** Pull the sort in `list` into
+    `sorted_by_name(apps)` and test it on plain `CatalogApp`s. Move the id list
+    and Store app checks from `the_applications_folder_lists_apps_with_id_lists`
+    into `a_background_refresh_fills_the_cache`, then delete the first test.
+    Done when: every assertion still runs, and the module has one test that
+    calls the shell. Then archive P9.

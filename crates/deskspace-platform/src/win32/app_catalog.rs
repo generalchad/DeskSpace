@@ -90,15 +90,21 @@ pub(crate) fn refresh_in_background() {
 /// Every app in the Applications folder, sorted by name, with icons when
 /// `with_icons` is set.
 fn list(with_icons: bool) -> Vec<CatalogApp> {
-    let mut apps: Vec<CatalogApp> = enumerate()
-        .into_iter()
-        .map(|(item, shell)| CatalogApp {
-            icon: with_icons
-                .then(|| shell_item_icon(&shell, CATALOG_ICON_SIZE))
-                .flatten(),
-            item,
-        })
-        .collect();
+    sorted_by_name(
+        enumerate()
+            .into_iter()
+            .map(|(item, shell)| CatalogApp {
+                icon: with_icons
+                    .then(|| shell_item_icon(&shell, CATALOG_ICON_SIZE))
+                    .flatten(),
+                item,
+            })
+            .collect(),
+    )
+}
+
+/// The apps in name order, ignoring case, as the picker lists them.
+fn sorted_by_name(mut apps: Vec<CatalogApp>) -> Vec<CatalogApp> {
     apps.sort_by_cached_key(|app| app.item.name.to_lowercase());
     apps
 }
@@ -142,23 +148,26 @@ fn enumerate() -> Vec<(ShellItem, IShellItem)> {
 mod tests {
     use super::*;
 
+    fn app(name: &str) -> CatalogApp {
+        CatalogApp {
+            item: ShellItem {
+                name: name.into(),
+                path: None,
+                id_list: Vec::new(),
+            },
+            icon: None,
+        }
+    }
+
     #[test]
-    fn the_applications_folder_lists_apps_with_id_lists() {
-        // SAFETY: initializes COM for this test thread only.
-        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-        let apps = list(false);
-        assert!(!apps.is_empty(), "every Windows install has some apps");
-        assert!(apps.iter().all(|app| !app.item.id_list.is_empty()));
-        // Store apps have no filesystem path; they must still be listed.
-        assert!(
-            apps.iter().any(|app| app.item.path.is_none()),
-            "Store apps are listed"
+    fn sorted_by_name_orders_ignoring_case() {
+        let apps = sorted_by_name(vec![app("banana"), app("Apple"), app("cherry")]);
+        assert_eq!(
+            apps.iter()
+                .map(|app| app.item.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Apple", "banana", "cherry"]
         );
-        let names: Vec<String> = apps
-            .iter()
-            .map(|app| app.item.name.to_lowercase())
-            .collect();
-        assert!(names.is_sorted(), "sorted by name");
     }
 
     #[test]
@@ -169,9 +178,21 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         let apps = cached().expect("the listing finished");
+        assert!(!apps.is_empty(), "every Windows install has some apps");
+        assert!(apps.iter().all(|app| !app.item.id_list.is_empty()));
+        // Store apps have no filesystem path; they must still be listed.
+        assert!(
+            apps.iter().any(|app| app.item.path.is_none()),
+            "Store apps are listed"
+        );
         assert!(
             apps.iter().any(|app| app.icon.is_some()),
             "icons are cached"
         );
+        let names: Vec<String> = apps
+            .iter()
+            .map(|app| app.item.name.to_lowercase())
+            .collect();
+        assert!(names.is_sorted(), "sorted by name");
     }
 }
