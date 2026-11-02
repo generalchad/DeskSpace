@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use deskspace_core::geometry::Point;
 use deskspace_core::{Command, Desktop, Space, SpaceId};
-use deskspace_platform::{OnCollision, Ui, notify_moved};
+use deskspace_platform::{OnCollision, Ui, WatchKey, notify_moved};
 
 use crate::storage::StoreError;
 
@@ -543,6 +543,14 @@ impl App {
         if ok {
             self.icons.invalidate(from);
             self.icons.invalidate(to);
+            // A lens keeps its items out of undo, so the model still names
+            // `from`. Tell its worker about `to`, so the next listing keeps the
+            // item's id and with it the selection.
+            if let (Some(ui), Some((space, item, modified))) =
+                (ui.as_deref_mut(), self.lens_item_at(from))
+            {
+                ui.note_lens_item(WatchKey::Space(space), to.to_path_buf(), item, modified);
+            }
         }
         ok
     }

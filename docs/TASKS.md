@@ -1539,23 +1539,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: in a debug build with `--debug` open, preview Bounce
     repeatedly: no hitch once a second, and the panel updates when it stops.
 
-- [ ] **P20. Keep the selection when undoing a lens rename (fix).** `reverse_rename`
-  (`app/undo.rs`) brings the file back under a path the watch worker has no id for,
-  so the next listing gives the item a new id and it comes back unselected. A
-  lens's items stay out of undo (`Space::undo_snapshot`), so the model still holds
-  the path the file just left.
-  - Add `lens_item_at(&self, path) -> Option<(SpaceId, ItemId, Option<u64>)>` beside
-    `note_renamed_lens_item` (`app/lens.rs`): only lens spaces, and `item.path ==
-    path`. Use `==`, not `storage::same_path`: `from` is the exact path the rename
-    wrote, and `same_path` would run once per item in a 50,000-file lens.
-  - In `reverse_rename`, on success with a `Ui`, call `ui.note_lens_item` with the
-    space's `WatchKey`, the new path `to`, the item's id, and its `modified`.
-    Change nothing about how the file is renamed.
-  - Tests: `lens_item_at` finds a lens's item, and ignores a normal space's item at
-    the same path.
-  - **[needs human]** check: rename an item in a lens, Ctrl+Z: it stays selected.
-    Ctrl+Y: still selected. Give it its own row in section V.
-
 - [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
   removes an entry from `IconCache::demand`, so the limit only rises. A previewed
   space adds at most 60 for good, and a deleted space's scene stays counted, which
@@ -2110,6 +2093,7 @@ for a machine that has it.
 | P8 (label size) | Set the label size to 160 % and look at Small icons, List, Details, Tiles, and Content, normal and compact: no clipped text, at 100 % and 150 %. |
 | P23 (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
 | P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
+| P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 
 ## Found while working
 

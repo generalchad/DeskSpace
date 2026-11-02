@@ -312,6 +312,25 @@ impl App {
             .is_some_and(|rules| rules == list.rules)
     }
 
+    /// The lens item whose model path is exactly `path`, with its space, id,
+    /// and modified time. Only a lens's items: undo stores a normal space's, so
+    /// restoring one already re-points it. The exact `==` keeps this cheap on a
+    /// big lens, and the caller passes the path a rename wrote.
+    pub(super) fn lens_item_at(&self, path: &Path) -> Option<(SpaceId, ItemId, Option<u64>)> {
+        self.config
+            .desktop
+            .spaces()
+            .iter()
+            .filter(|space| space.is_lens())
+            .find_map(|space| {
+                space
+                    .items()
+                    .iter()
+                    .find(|item| item.path == path)
+                    .map(|item| (space.id, item.id, item.modified))
+            })
+    }
+
     /// Tells lens `id`'s worker where an item the model re-pointed now is, so
     /// the next listing keeps its id. A rename's new path is otherwise unknown
     /// to the worker, and a normal space has no worker to tell.
@@ -544,6 +563,48 @@ mod tests {
             app.desired_watches(Some("C:/Users/me/Desktop".into()))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn lens_item_at_finds_a_lens_item_and_ignores_a_normal_space() {
+        let mut app = app();
+        let path = r"C:\Users\me\Downloads\report.txt";
+        let lens = fixtures::create_lens(
+            &mut app.config.desktop,
+            "Lens",
+            Rect::new(0, 0, 240, 120),
+            r"C:\Users\me\Downloads",
+        );
+        fixtures::sync_lens(
+            &mut app.config.desktop,
+            lens,
+            vec![FolderEntry {
+                path: path.into(),
+                label: "report".into(),
+                kind: ItemKind::File,
+                size: Some(4),
+                modified: Some(9),
+                created: Some(5),
+                hidden: false,
+            }],
+        );
+        let item = app.config.desktop.space(lens).unwrap().items()[0].id;
+
+        // A normal space listing the same path does not win.
+        let normal = fixtures::create_space(
+            &mut app.config.desktop,
+            "Normal",
+            Rect::new(300, 0, 240, 120),
+        );
+        fixtures::add_item(&mut app.config.desktop, normal, path);
+        assert_eq!(
+            app.lens_item_at(Path::new(path)),
+            Some((lens, item, Some(9)))
+        );
+
+        let only_normal = r"C:\Users\me\Documents\only.txt";
+        fixtures::add_item(&mut app.config.desktop, normal, only_normal);
+        assert_eq!(app.lens_item_at(Path::new(only_normal)), None);
     }
 
     fn entry(path: &str, kind: ItemKind) -> Item {

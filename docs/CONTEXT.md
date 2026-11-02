@@ -729,6 +729,8 @@ one arm in `App::on_event`, whose match is exhaustive.
   item, or the title with no item selected; a slow second click starts an item
   rename. An item rename goes through `IFileOperation::RenameItem` and
   `Command::RenameItem`; the desktop layer re-syncs and keeps it selected.
+  Undoing a lens item's rename also tells the watch the path it now has, so
+  the next listing keeps its id and selection.
 - **Other keys**: `Ui::watch_selection_keys` watches outside a rename, and
   `ENGINEERING.md`'s Keys table owns which key needs which flag. The watch
   runs only while the desktop has the foreground, so another app keeps
