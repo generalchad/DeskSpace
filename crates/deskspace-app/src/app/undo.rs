@@ -291,12 +291,30 @@ fn same_space_state(desktop: &Desktop, id: SpaceId, expected: &Option<(usize, Sp
 pub(super) enum StepOutcome {
     Empty,
     Stale(String),
+    /// A file step failed and putting the earlier ones back failed too, so
+    /// `paths` are not where they were.
+    RollbackFailed {
+        label: String,
+        paths: Vec<PathBuf>,
+    },
     Applied {
         touched: Vec<SpaceId>,
         windows_changed: bool,
         folded: Vec<SpaceId>,
         files_changed: bool,
     },
+}
+
+/// What reversing an entry's files did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Reversed {
+    /// Every change was applied.
+    Done,
+    /// A change failed and the ones before it were put back; the entry is
+    /// stale.
+    Stale,
+    /// A change failed and putting the earlier ones back failed too.
+    Failed(Vec<PathBuf>),
 }
 
 fn stale_undo_text(label: &str) -> String {
@@ -307,12 +325,46 @@ fn stale_redo_text(label: &str) -> String {
     format!("DeskSpace can't redo \u{201C}{label}\u{201D}, because the space changed since.")
 }
 
+fn rollback_failed_text(action: &str, label: &str, paths: &[PathBuf]) -> String {
+    let paths: Vec<String> = paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    format!(
+        "DeskSpace could not put these files back after {action} \u{201C}{label}\u{201D}. \
+         They are not where they were:\n{}",
+        paths.join("\n")
+    )
+}
+
+/// The path a change's file is known by from the entry's state before it was
+/// reversed: where an undo or redo is trying to put it back.
+fn original_path(change: &FileChange, undo: bool) -> PathBuf {
+    match change {
+        FileChange::Moved { from, to } | FileChange::Renamed { from, to } => {
+            if undo {
+                to.clone()
+            } else {
+                from.clone()
+            }
+        }
+        FileChange::Created { path } => path.clone(),
+        FileChange::Recycled { original, .. } => original.clone(),
+    }
+}
+
 impl App {
     pub(super) fn undo(&mut self, ui: &mut Ui) {
         match self.apply_undo_step(Some(ui)) {
             StepOutcome::Empty => {}
             StepOutcome::Stale(label) => {
                 ui.alert("DeskSpace can't undo", &stale_undo_text(&label));
+            }
+            StepOutcome::RollbackFailed { label, paths } => {
+                ui.alert(
+                    "DeskSpace could not undo",
+                    &rollback_failed_text("undoing", &label, &paths),
+                );
             }
             StepOutcome::Applied {
                 touched,
@@ -328,6 +380,12 @@ impl App {
             StepOutcome::Empty => {}
             StepOutcome::Stale(label) => {
                 ui.alert("DeskSpace can't redo", &stale_redo_text(&label));
+            }
+            StepOutcome::RollbackFailed { label, paths } => {
+                ui.alert(
+                    "DeskSpace could not redo",
+                    &rollback_failed_text("redoing", &label, &paths),
+                );
             }
             StepOutcome::Applied {
                 touched,
@@ -355,8 +413,15 @@ impl App {
         if !entry.can_undo(&self.config.desktop, |path| path.exists()) {
             return StepOutcome::Stale(entry.label);
         }
-        if !self.reverse_files(&mut ui, &mut entry.files, true) {
-            return StepOutcome::Stale(entry.label);
+        match self.reverse_files(&mut ui, &mut entry.files, true) {
+            Reversed::Done => {}
+            Reversed::Stale => return StepOutcome::Stale(entry.label),
+            Reversed::Failed(paths) => {
+                return StepOutcome::RollbackFailed {
+                    label: entry.label,
+                    paths,
+                };
+            }
         }
         let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
             .spaces
@@ -377,8 +442,15 @@ impl App {
         if !entry.can_redo(&self.config.desktop, |path| path.exists()) {
             return StepOutcome::Stale(entry.label);
         }
-        if !self.reverse_files(&mut ui, &mut entry.files, false) {
-            return StepOutcome::Stale(entry.label);
+        match self.reverse_files(&mut ui, &mut entry.files, false) {
+            Reversed::Done => {}
+            Reversed::Stale => return StepOutcome::Stale(entry.label),
+            Reversed::Failed(paths) => {
+                return StepOutcome::RollbackFailed {
+                    label: entry.label,
+                    paths,
+                };
+            }
         }
         let restore: Vec<(SpaceId, Option<(usize, Space)>)> = entry
             .spaces
@@ -394,21 +466,60 @@ impl App {
 
     /// Reverses `files` in reverse order on undo, or forward order on redo.
     /// Caller has already checked every change with `can_undo` or `can_redo`
-    /// before touching the first file.
+    /// before touching the first file. A step that fails after earlier ones
+    /// were applied puts those back, so the undo or redo either applies the
+    /// whole entry or leaves it as it was.
     fn reverse_files(
         &mut self,
         ui: &mut Option<&mut Ui>,
         files: &mut [FileChange],
         undo: bool,
-    ) -> bool {
+    ) -> Reversed {
+        let before = files.to_vec();
         let len = files.len();
         for step in 0..len {
             let index = if undo { len - 1 - step } else { step };
             if !self.reverse_step(ui, files, index, undo) {
-                return false;
+                return self.roll_back(ui, files, &before, step, undo);
             }
         }
-        true
+        Reversed::Done
+    }
+
+    /// Puts back the steps `reverse_files` applied before one failed, newest
+    /// first, and reports the files left out of place when that fails too. A
+    /// `Created` change has become `Recycled` by then, and the other way
+    /// round, so the same step with the direction flipped is its own reverse.
+    fn roll_back(
+        &mut self,
+        ui: &mut Option<&mut Ui>,
+        files: &mut [FileChange],
+        before: &[FileChange],
+        applied: usize,
+        undo: bool,
+    ) -> Reversed {
+        let len = files.len();
+        for step in (0..applied).rev() {
+            let index = if undo { len - 1 - step } else { step };
+            if !self.reverse_step(ui, files, index, !undo) {
+                let mut paths = Vec::new();
+                for remaining in (0..=step).rev() {
+                    let index = if undo { len - 1 - remaining } else { remaining };
+                    let path = original_path(&before[index], undo);
+                    if !paths.contains(&path) {
+                        paths.push(path);
+                    }
+                }
+                for path in &paths {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "undo rollback could not put a file back"
+                    );
+                }
+                return Reversed::Failed(paths);
+            }
+        }
+        Reversed::Stale
     }
 
     /// Reverses one change in `files` and returns whether it could be applied.
@@ -1257,6 +1368,134 @@ mod tests {
         assert!(stored_a.exists() && stored_b.exists());
         assert!(!original_b.exists());
         assert_eq!(std::fs::read_to_string(&original_a).unwrap(), "new file");
+    }
+
+    #[test]
+    fn a_part_done_undo_puts_the_applied_files_back() {
+        let scratch = Scratch::new("part-done-undo");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+
+        // The first undo step moves this one back into the store.
+        let stored = app.storage.root().join("stored.txt");
+        let released = desktop_dir.join("released.txt");
+        std::fs::write(&released, "released").unwrap();
+        // The second undo step has neither end in the store, so it fails.
+        let outer_a = desktop_dir.join("outer-a.txt");
+        let outer_b = desktop_dir.join("outer-b.txt");
+        std::fs::write(&outer_b, "outer").unwrap();
+
+        app.undo.begin("Move 2 items");
+        app.undo.note_file(FileChange::Moved {
+            from: outer_a.clone(),
+            to: outer_b.clone(),
+        });
+        app.undo.note_file(FileChange::Moved {
+            from: stored.clone(),
+            to: released.clone(),
+        });
+        app.undo.finish(&app.config.desktop);
+
+        assert_eq!(
+            app.apply_undo(),
+            StepOutcome::Stale("Move 2 items".to_string())
+        );
+        assert_eq!(std::fs::read_to_string(&released).unwrap(), "released");
+        assert!(!stored.exists());
+        assert_eq!(std::fs::read_to_string(&outer_b).unwrap(), "outer");
+        assert!(!outer_a.exists());
+        assert!(app.undo.undo.is_empty(), "the stale entry is dropped");
+    }
+
+    #[test]
+    fn a_part_done_redo_puts_the_applied_files_back() {
+        let scratch = Scratch::new("part-done-redo");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+
+        // Redo walks forward: this one goes back into the store.
+        let stored = app.storage.root().join("stored.txt");
+        let released = desktop_dir.join("released.txt");
+        std::fs::write(&stored, "stored").unwrap();
+        // This one has neither end in the store, so it fails.
+        let outer_a = desktop_dir.join("outer-a.txt");
+        let outer_b = desktop_dir.join("outer-b.txt");
+        std::fs::write(&outer_a, "outer").unwrap();
+
+        app.undo.begin("Move 2 items");
+        app.undo.note_file(FileChange::Moved {
+            from: stored.clone(),
+            to: released.clone(),
+        });
+        app.undo.note_file(FileChange::Moved {
+            from: outer_a.clone(),
+            to: outer_b.clone(),
+        });
+        app.undo.finish(&app.config.desktop);
+        let entry = app.undo.undo.pop().unwrap();
+        app.undo.redo.push(entry);
+
+        assert_eq!(
+            app.apply_redo(),
+            StepOutcome::Stale("Move 2 items".to_string())
+        );
+        assert_eq!(std::fs::read_to_string(&stored).unwrap(), "stored");
+        assert!(!released.exists());
+        assert_eq!(std::fs::read_to_string(&outer_a).unwrap(), "outer");
+        assert!(!outer_b.exists());
+        assert!(app.undo.redo.is_empty(), "the stale entry is dropped");
+    }
+
+    #[test]
+    fn a_failed_rollback_names_the_files_out_of_place() {
+        let scratch = Scratch::new("rollback-failed");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+
+        let stored = app.storage.root().join("stored.txt");
+        let released = desktop_dir.join("released.txt");
+        let mut files = vec![FileChange::Moved {
+            from: stored,
+            to: released.clone(),
+        }];
+        let before = files.clone();
+        // The undo step ran, but its file is now gone, so putting it back
+        // cannot work.
+        let mut ui: Option<&mut Ui> = None;
+        let reversed = app.roll_back(&mut ui, &mut files, &before, 1, true);
+        assert_eq!(reversed, Reversed::Failed(vec![released.clone()]));
+
+        let text = rollback_failed_text("undoing", "Move item", std::slice::from_ref(&released));
+        assert!(text.contains("Move item"));
+        assert!(text.contains(&released.display().to_string()));
+    }
+
+    #[test]
+    fn a_failed_redo_rollback_names_where_the_file_was() {
+        let scratch = Scratch::new("rollback-failed-redo");
+        let desktop_dir = scratch.0.join("Desktop");
+        std::fs::create_dir_all(&desktop_dir).unwrap();
+        let mut app = test_app_in(&scratch.0);
+        std::fs::create_dir_all(app.storage.root()).unwrap();
+
+        let stored = app.storage.root().join("stored.txt");
+        let released = desktop_dir.join("released.txt");
+        let mut files = vec![FileChange::Moved {
+            from: stored.clone(),
+            to: released,
+        }];
+        let before = files.clone();
+        // The redo step ran, so the file is at `to`; putting it back at
+        // `from` fails because that copy is gone.
+        let mut ui: Option<&mut Ui> = None;
+        let reversed = app.roll_back(&mut ui, &mut files, &before, 1, false);
+        assert_eq!(reversed, Reversed::Failed(vec![stored]));
     }
 
     #[test]

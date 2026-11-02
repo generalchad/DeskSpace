@@ -1579,31 +1579,6 @@ Small first. Each lands alone unless it says "After".
 
 These are in the order we would take them. Each lands alone.
 
-- [ ] **P10. Roll back a part-done undo (fix; user files).** ROADMAP D11 says
-  undo applies a whole entry or changes nothing. `App::reverse_files`
-  (`app/undo.rs`) checks every step first, but a step can still fail midway, for
-  example when the Recycle Bin loses one of two deleted items in the gap. The
-  earlier steps stay applied while the entry is dropped as stale, and the alert
-  says only that DeskSpace can't undo it. A restored file then sits unlisted in
-  the store until a prune.
-  - After: P10a, which pulls out `reverse_step`.
-  - Design: on a failure, walk the steps already applied in the opposite order
-    and call `reverse_step` with `!undo`. A `Created` / `Recycled` step has
-    swapped variant by then, so running it again is its own reverse.
-  - If the rollback succeeds, nothing has changed, so today's "can't undo" alert
-    is enough: keep it. If it fails, stop, log every path with `tracing::warn!`,
-    and show a different alert naming the files that are not where they were.
-    Never retry, and never overwrite: a move's destination may have been taken
-    in the meantime.
-  - Rollback passes through `ui.restore_recycled`, which finds a file by time
-    (`since`). Update `at` when a step recycles again, as the loop already does.
-  - Tests with `ui: None` (the `.test-recycle` path): a two-step undo and redo
-    whose second step fails leaves every file where it began; a failed rollback
-    takes the second alert. The existing `stale_file_entry_touches_no_file` is
-    the model.
-  - The gap between the check and the step is too short to hit by hand, so the
-    tests carry this. **[needs human]** check: U5's and U7's rows still pass.
-
 - [ ] **P12. Mask a swallowed Alt combination, if it matters (fix; key hook).**
   Swallowing Alt+Enter, Alt+Left, or Alt+Up leaves the foreground window a lone
   Alt tap (`handle_watched`, `win32/keyboard.rs`). The original note worried
@@ -2026,6 +2001,7 @@ for a machine that has it.
 | P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 | P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
 | P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
+| P10 | U5's and U7's rows still pass: undo and redo of deletes, pastes, moves, and renames behave as before. The rollback itself is test-carried, because the gap between the check and the failing step is too short to hit by hand. |
 
 ## Found while working
 

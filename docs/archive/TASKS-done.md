@@ -5770,3 +5770,28 @@ until I5-I6 all land, so no partial build hides the desktop.
   moves user files, so it steps over the junior line. The move cannot change what a
   step does, and the tests in `app/undo.rs` prove it. A senior reviews it. Done when:
   the same tests pass unchanged.
+
+- [x] **P10. Roll back a part-done undo (fix; user files).** ROADMAP D11 says
+  undo applies a whole entry or changes nothing. `App::reverse_files`
+  (`app/undo.rs`) checks every step first, but a step can still fail midway, for
+  example when the Recycle Bin loses one of two deleted items in the gap. The
+  earlier steps stay applied while the entry is dropped as stale, and the alert
+  says only that DeskSpace can't undo it. A restored file then sits unlisted in
+  the store until a prune.
+  - After: P10a, which pulls out `reverse_step`.
+  - Design: on a failure, walk the steps already applied in the opposite order
+    and call `reverse_step` with `!undo`. A `Created` / `Recycled` step has
+    swapped variant by then, so running it again is its own reverse.
+  - If the rollback succeeds, nothing has changed, so today's "can't undo" alert
+    is enough: keep it. If it fails, stop, log every path with `tracing::warn!`,
+    and show a different alert naming the files that are not where they were.
+    Never retry, and never overwrite: a move's destination may have been taken
+    in the meantime.
+  - Rollback passes through `ui.restore_recycled`, which finds a file by time
+    (`since`). Update `at` when a step recycles again, as the loop already does.
+  - Tests with `ui: None` (the `.test-recycle` path): a two-step undo and redo
+    whose second step fails leaves every file where it began; a failed rollback
+    takes the second alert. The existing `stale_file_entry_touches_no_file` is
+    the model.
+  - The gap between the check and the step is too short to hit by hand, so the
+    tests carry this. **[needs human]** check: U5's and U7's rows still pass.

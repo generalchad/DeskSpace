@@ -295,6 +295,11 @@ A native, lightweight, offline Windows desktop organizer that:
     kept-sorted space so do the order and positions that refresh changes.
     Restoring an entry brings its old facts back until the next refresh, which is
     harmless.
+  - Amended 2026-11-02 (maintainer): a file step can still fail after the
+    checks, for example when the Recycle Bin loses one of two deleted items.
+    The steps already applied are then put back in reverse order; if that
+    fails too, the entry is dropped and the alert names the files that are not
+    where they were.
   - *Model:* a restore is a `Command` that puts back exactly the stored
     spaces, so the model still changes only through `Command`s. Ids are
     never reused within a session, so a restored space or item cannot
