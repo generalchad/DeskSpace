@@ -5579,3 +5579,11 @@ until I5-I6 all land, so no partial build hides the desktop.
   release tag (the newest is v0.2.4, checked 2026-11-02), so no user has a space
   saved under the old cell, as long as this lands before the next release. Record
   the decision in `ROADMAP.md`, amending D17.
+
+- [x] **P9a. Shorten the watch's path check under test.**
+  `a_renamed_folder_reports_where_it_went` takes 5 s only because it waits for
+  `CHECK_MS` (`win32/folder_watch.rs`). Decided (maintainer, 2026-11-02): `const
+  CHECK_MS: u64 = if cfg!(test) { 200 } else { 5_000 };`, with a comment saying
+  why. Do not touch
+  `RETRY_MS` or the worker. If another test starts to fail, stop and ask.
+  Done when: the commit body gives the crate's time before and after.

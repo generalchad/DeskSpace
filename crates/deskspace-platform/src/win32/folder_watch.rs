@@ -56,8 +56,9 @@ const RETRY_MS: u64 = 5_000;
 
 /// How often the worker checks that an open watch's path still names a folder.
 /// Renaming a watched folder moves its handle with it, so the pending read may
-/// never fail and the lens would keep the old items.
-const CHECK_MS: u64 = 5_000;
+/// never fail and the lens would keep the old items. Tests wait for one check,
+/// so they get a short interval instead of the production one.
+const CHECK_MS: u64 = if cfg!(test) { 200 } else { 5_000 };
 
 /// How long a stopping worker waits for its canceled reads to come back.
 /// Canceling a change read completes at once; this only bounds a broken one,

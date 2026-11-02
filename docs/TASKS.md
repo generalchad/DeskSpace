@@ -1504,13 +1504,6 @@ Small first. Each lands alone unless it says "After".
   is two parts from done. The glyph cache has landed, and `file_op` needs no
   change. `f656993`'s body has the ten slowest and the times. Never delete a test
   without a replacement checking the same decision.
-  - [ ] **P9a. Shorten the watch's path check under test.**
-    `a_renamed_folder_reports_where_it_went` takes 5 s only because it waits for
-    `CHECK_MS` (`win32/folder_watch.rs`). Decided (maintainer, 2026-11-02): `const
-    CHECK_MS: u64 = if cfg!(test) { 200 } else { 5_000 };`, with a comment saying
-    why. Do not touch
-    `RETRY_MS` or the worker. If another test starts to fail, stop and ask.
-    Done when: the commit body gives the crate's time before and after.
   - [ ] **P9b. One shell test in `app_catalog`.** Pull the sort in `list` into
     `sorted_by_name(apps)` and test it on plain `CatalogApp`s. Move the id list
     and Store app checks from `the_applications_folder_lists_apps_with_id_lists`
