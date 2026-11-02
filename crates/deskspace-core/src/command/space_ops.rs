@@ -118,10 +118,12 @@ impl Desktop {
     ) -> CommandOutcome {
         self.with_space(id, |space| {
             let kept = space.keeps_sorted();
+            let previous = space.view.sort;
             space.view = view;
-            // Turning the choice on sorts at once, so a space never claims an
-            // order it does not hold.
-            if space.keeps_sorted() && !kept {
+            // Turning the choice on, or changing the rule it holds, sorts at
+            // once, so a space never claims an order it does not hold. A lens
+            // leaves it to the watch worker, which rebuilds the list.
+            if space.keeps_sorted() && (space.view.sort != previous || !kept) && !space.is_lens() {
                 space.view.sort.sort_items(&mut space.items);
                 position_items(space, layout);
             }

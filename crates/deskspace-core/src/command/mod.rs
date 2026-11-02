@@ -1622,6 +1622,39 @@ mod tests {
     }
 
     #[test]
+    fn changing_a_kept_sort_rule_sorts_a_normal_space_at_once() {
+        let (mut desktop, id) = space_with_items(vec![
+            item(1, "a", ItemKind::File, 300, 1),
+            item(2, "b", ItemKind::File, 100, 1),
+            item(3, "c", ItemKind::File, 200, 1),
+        ]);
+        keep_sorted(&mut desktop, id, SortRule::default());
+        assert_eq!(labels(&desktop, id), ["a", "b", "c"]);
+        assert_eq!(
+            desktop.apply(
+                Command::SetSpaceView {
+                    id,
+                    view: SpaceView {
+                        keep_sorted: true,
+                        sort: SortRule {
+                            key: SortKey::Size,
+                            ..SortRule::default()
+                        },
+                        ..SpaceView::default()
+                    },
+                },
+                bounds()
+            ),
+            CommandOutcome::Applied
+        );
+        assert_eq!(labels(&desktop, id), ["b", "c", "a"], "by size");
+        assert_eq!(
+            desktop.space(id).unwrap().items[0].position,
+            desktop.layout.grid_position(0)
+        );
+    }
+
+    #[test]
     fn a_kept_sorted_space_puts_a_new_item_in_order() {
         let (mut desktop, id) = space_with_items(vec![
             item(1, "b", ItemKind::File, 1, 1),
