@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId, ViewMetrics};
+use deskspace_core::{Command, ItemId, ResizeEdges, SpaceId};
 
 use deskspace_platform::{DragImage, Ui, drag_threshold, space_dpi, virtual_desktop_rect};
 
@@ -173,14 +173,10 @@ impl App {
         point: Point,
     ) -> bool {
         let layout = self.layout_for(id);
-        let Some(metrics) = self
-            .config
-            .desktop
-            .space(id)
-            .map(|space| ViewMetrics::for_view(space.view(), layout, space_dpi(id.0)))
-        else {
+        if self.config.desktop.space(id).is_none() {
             return false;
-        };
+        }
+        let metrics = self.metrics_of(id);
         let (active_edges, active) = resize_edges_now(
             edges,
             origin,

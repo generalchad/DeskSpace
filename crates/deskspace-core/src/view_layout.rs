@@ -124,10 +124,12 @@ pub struct ViewMetrics {
 impl ViewMetrics {
     /// The metrics for `view` on a display of `display_scale` (1.0 is 96 DPI).
     /// An icon view hands off to `grid` as it is; an order-placed view uses its
-    /// own cell, scaled for the display rather than the look.
-    pub fn for_view(view: &SpaceView, grid: GridSpec, display_scale: f32) -> Self {
+    /// own cell, scaled for the display rather than the look. Its rows also grow
+    /// with `label_size` (a percentage), so a larger label is not clipped.
+    pub fn for_view(view: &SpaceView, grid: GridSpec, display_scale: f32, label_size: u8) -> Self {
         let scale = display_scale.max(0.1);
         let scaled = |value: i32| ((value as f32 * scale).round() as i32).max(1);
+        let grown = |row: i32| row.max(row * label_size as i32 / 100);
         let cells = if view.compact {
             &COMPACT_CELLS
         } else {
@@ -143,13 +145,17 @@ impl ViewMetrics {
                     ..Self::for_grid(grid)
                 };
             }
-            ViewMode::SmallIcons => (cells.small_icons, cells.gap, 0),
-            ViewMode::List => (cells.list, cells.gap, 0),
-            ViewMode::Tiles => (cells.tile, cells.gap, 0),
+            ViewMode::SmallIcons => (
+                (cells.small_icons.0, grown(cells.small_icons.1)),
+                cells.gap,
+                0,
+            ),
+            ViewMode::List => ((cells.list.0, grown(cells.list.1)), cells.gap, 0),
+            ViewMode::Tiles => ((cells.tile.0, grown(cells.tile.1)), cells.gap, 0),
             // Rows touch, as Explorer's do; the width is the content width,
             // worked out by the layout.
-            ViewMode::Details => ((1, cells.details_row), 0, cells.details_header),
-            ViewMode::Content => ((1, cells.content_row), 0, 0),
+            ViewMode::Details => ((1, grown(cells.details_row)), 0, cells.details_header),
+            ViewMode::Content => ((1, grown(cells.content_row)), 0, 0),
         };
         Self {
             cell: Size::new(scaled(cell.0), scaled(cell.1)),
@@ -955,8 +961,8 @@ mod tests {
                 ..normal.clone()
             };
             let (normal, compact) = (
-                ViewMetrics::for_view(&normal, grid, 1.0),
-                ViewMetrics::for_view(&compact, grid, 1.0),
+                ViewMetrics::for_view(&normal, grid, 1.0, 100),
+                ViewMetrics::for_view(&compact, grid, 1.0, 100),
             );
             assert!(compact.cell.height < normal.cell.height, "{mode:?}");
             assert_eq!(compact.cell.width, normal.cell.width, "{mode:?}");
@@ -967,8 +973,8 @@ mod tests {
             ..SpaceView::default().with_mode(ViewMode::Details)
         };
         assert!(
-            ViewMetrics::for_view(&details(true), grid, 1.0).header
-                < ViewMetrics::for_view(&details(false), grid, 1.0).header
+            ViewMetrics::for_view(&details(true), grid, 1.0, 100).header
+                < ViewMetrics::for_view(&details(false), grid, 1.0, 100).header
         );
     }
 
@@ -987,8 +993,8 @@ mod tests {
                 ..normal.clone()
             };
             assert_eq!(
-                ViewMetrics::for_view(&compact, grid, 1.5),
-                ViewMetrics::for_view(&normal, grid, 1.5),
+                ViewMetrics::for_view(&compact, grid, 1.5, 100),
+                ViewMetrics::for_view(&normal, grid, 1.5, 100),
                 "{mode:?}"
             );
         }
@@ -1119,11 +1125,13 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::SmallIcons),
             grid,
             1.0,
+            100,
         );
         let large = ViewMetrics::for_view(
             &SpaceView::default().with_mode(ViewMode::SmallIcons),
             grid,
             1.5,
+            100,
         );
         assert_eq!(base.cell, Size::new(200, 22));
         assert_eq!(large.cell, Size::new(300, 33));
@@ -1132,15 +1140,87 @@ mod tests {
         assert_eq!(base.padding, grid.padding, "the look's edge padding");
         // List is an inline cell too.
         assert_eq!(
-            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::List), grid, 1.0).cell,
+            ViewMetrics::for_view(
+                &SpaceView::default().with_mode(ViewMode::List),
+                grid,
+                1.0,
+                100
+            )
+            .cell,
             Size::new(200, 22)
         );
         // An icon view ignores the display scale; its grid is already scaled.
         assert_eq!(
-            ViewMetrics::for_view(&SpaceView::default().with_mode(ViewMode::Icons), grid, 1.5).cell,
+            ViewMetrics::for_view(
+                &SpaceView::default().with_mode(ViewMode::Icons),
+                grid,
+                1.5,
+                100
+            )
+            .cell,
             ViewMetrics::for_grid(grid).cell
         );
         assert_eq!(crate::view::SMALL_ICON_PX, 16);
+    }
+
+    #[test]
+    fn a_larger_label_grows_order_placed_rows_but_not_headers() {
+        let grid = GridSpec::default();
+        for compact in [false, true] {
+            let cells = if compact {
+                &COMPACT_CELLS
+            } else {
+                &NORMAL_CELLS
+            };
+            for mode in [
+                ViewMode::SmallIcons,
+                ViewMode::List,
+                ViewMode::Details,
+                ViewMode::Tiles,
+                ViewMode::Content,
+            ] {
+                let view = SpaceView {
+                    compact,
+                    ..SpaceView::default().with_mode(mode)
+                };
+                let row = match mode {
+                    ViewMode::SmallIcons => cells.small_icons.1,
+                    ViewMode::List => cells.list.1,
+                    ViewMode::Details => cells.details_row,
+                    ViewMode::Tiles => cells.tile.1,
+                    ViewMode::Content => cells.content_row,
+                    _ => unreachable!(),
+                };
+                let base = ViewMetrics::for_view(&view, grid, 1.0, 100);
+                assert_eq!(base.cell.height, row, "{mode:?} at 100 %");
+                let large = ViewMetrics::for_view(&view, grid, 1.0, 160);
+                assert!(
+                    large.cell.height > base.cell.height,
+                    "{mode:?}, compact {compact}: a larger label grows the row"
+                );
+                assert_eq!(large.cell.width, base.cell.width, "{mode:?}");
+                assert_eq!(large.header, base.header, "{mode:?}: the header stays");
+                assert_eq!(large.group_header, base.group_header, "{mode:?}");
+                assert_eq!(
+                    ViewMetrics::for_view(&view, grid, 1.0, 80),
+                    base,
+                    "{mode:?}: below 100 % nothing shrinks"
+                );
+            }
+        }
+        for mode in [
+            ViewMode::Icons,
+            ViewMode::ExtraLargeIcons,
+            ViewMode::LargeIcons,
+            ViewMode::MediumIcons,
+        ] {
+            let view = SpaceView::default().with_mode(mode);
+            assert_eq!(
+                ViewMetrics::for_view(&view, grid, 1.5, 160),
+                ViewMetrics::for_view(&view, grid, 1.5, 100),
+                "{mode:?} ignores the label size"
+            );
+        }
     }
 
     #[test]
@@ -1151,6 +1231,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Details),
             grid,
             1.0,
+            100,
         );
         let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 5, metrics);
         assert_eq!(layout.header_height(), NORMAL_CELLS.details_header);
@@ -1183,11 +1264,13 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Details),
             GridSpec::default(),
             1.0,
+            100,
         );
         let large = ViewMetrics::for_view(
             &SpaceView::default().with_mode(ViewMode::Details),
             GridSpec::default(),
             1.5,
+            100,
         );
         assert_eq!((base.header, base.cell.height), (25, 22));
         assert_eq!((large.header, large.cell.height), (38, 33));
@@ -1199,6 +1282,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Details),
             GridSpec::default(),
             1.0,
+            100,
         );
         let layout = ViewLayout::new(ViewMode::Details, Size::new(360, 200), 20, metrics);
         assert_eq!(
@@ -1218,6 +1302,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Tiles),
             GridSpec::default(),
             1.0,
+            100,
         );
         assert_eq!(metrics.cell, Size::new(210, 60));
         let layout = ViewLayout::new(ViewMode::Tiles, Size::new(460, 300), 5, metrics);
@@ -1235,6 +1320,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Content),
             GridSpec::default(),
             1.0,
+            100,
         );
         let layout = ViewLayout::new(ViewMode::Content, Size::new(360, 200), 3, metrics);
         assert_eq!(layout.header_height(), 0);

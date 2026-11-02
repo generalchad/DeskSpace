@@ -5158,3 +5158,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: shrink a Details, a Content, and a Tiles space from
     the bottom and the top, at 100 % and 150 %, with the status bar on and off:
     each stops at one whole row, and the header is not clipped.
+
+- [x] **P8. Rows that grow with the label size (fix).** `ViewMetrics::for_view`
+  uses fixed rows, but the labels follow the look's `label_size` (up to 160 %,
+  `LABEL_SIZE_RANGE`), so at a large size the text clips in a row.
+  - `for_view` gains `label_size: u8`. An order-placed view's row heights
+    (`small_icons.1`, `list.1`, `details_row`, `tile.1`, `content_row`) become
+    `row.max(row * label_size / 100)` before `scaled`, so 100 % and below change
+    nothing. The header, the group header, and every width stay as they are. The
+    icon views ignore it.
+  - App: three callers repeat the same line (`view_layout`, `fit_command`, and
+    `drag.rs`). Add `App::metrics_of(id) -> ViewMetrics` and use it there and
+    in `selection.rs`. `scene.rs` has the look at hand.
+  - Tests: at 100 % every row is unchanged, in normal and compact cells; at
+    160 % each row is taller and the header is not; below 100 % nothing shrinks.
+  - The constants themselves stay provisional; W33's row in section V measures
+    them. **[needs human]** check: set the label size to 160 % and look at
+    Small icons, List, Details, Tiles, and Content, normal and compact: no
+    clipped text, at 100 % and 150 %.

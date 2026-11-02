@@ -616,8 +616,12 @@ mod tests {
 
     /// Fits the space and returns its rect and how far it can still scroll.
     fn fit(desktop: &mut Desktop, id: SpaceId, mode: ViewMode) -> (Rect, i32) {
-        let metrics =
-            ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(mode),
+            desktop.layout,
+            1.0,
+            100,
+        );
         assert!(
             desktop
                 .apply(
@@ -661,8 +665,12 @@ mod tests {
         mode: ViewMode,
         grouping: Grouping,
     ) -> (Rect, i32) {
-        let metrics =
-            ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(mode),
+            desktop.layout,
+            1.0,
+            100,
+        );
         let grouping = Arc::new(grouping);
         assert!(
             desktop
@@ -983,6 +991,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Details),
             layout,
             1.0,
+            100,
         );
         let edges = ResizeEdges {
             right: true,
@@ -1053,6 +1062,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::Details),
             layout,
             1.0,
+            100,
         );
         let edges = ResizeEdges {
             bottom: true,
@@ -1090,8 +1100,12 @@ mod tests {
             let (rect, scroll) = fit(&mut desktop, id, mode);
             assert_eq!(scroll, 0, "{mode:?}: one item fits");
             let space = desktop.space(id).unwrap();
-            let metrics =
-                ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+            let metrics = ViewMetrics::for_view(
+                &SpaceView::default().with_mode(mode),
+                desktop.layout,
+                1.0,
+                100,
+            );
             let chrome = space.title_height + space.unfolded_status_bar_height() + metrics.header;
             let min = metrics.min_size(
                 chrome,
@@ -1110,6 +1124,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::List),
             desktop.layout,
             1.0,
+            100,
         );
         let edges = ResizeEdges {
             right: true,
@@ -1143,6 +1158,7 @@ mod tests {
             &SpaceView::default().with_mode(ViewMode::List),
             desktop.layout,
             1.0,
+            100,
         );
         let edges = ResizeEdges {
             left: true,
@@ -1192,7 +1208,7 @@ mod tests {
             space.rect = Rect::new(0, 0, 300, 300);
             space.user_sized = true;
         }
-        let metrics = ViewMetrics::for_view(&view, desktop.layout, 1.0);
+        let metrics = ViewMetrics::for_view(&view, desktop.layout, 1.0, 100);
         let edges = ResizeEdges {
             bottom: true,
             ..ResizeEdges::NONE

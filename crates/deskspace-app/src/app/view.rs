@@ -552,8 +552,24 @@ impl App {
     /// scale the scene builder uses.
     pub(super) fn view_layout(&self, id: SpaceId) -> Option<ViewLayout> {
         let space = self.config.desktop.space(id)?;
-        let metrics = ViewMetrics::for_view(space.view(), self.layout_for(id), space_dpi(id.0));
+        let metrics = self.metrics_of(id);
         Some(ViewLayout::for_space(space, metrics).with_grouping(self.shown_grouping(space)))
+    }
+
+    /// The cells space `id` draws its view with: its layout, monitor DPI, and
+    /// label size.
+    pub(super) fn metrics_of(&self, id: SpaceId) -> ViewMetrics {
+        let view = self
+            .config
+            .desktop
+            .space(id)
+            .map_or_else(SpaceView::default, |space| space.view().clone());
+        ViewMetrics::for_view(
+            &view,
+            self.layout_for(id),
+            space_dpi(id.0),
+            self.theme_for(id).label_size,
+        )
     }
 
     /// The display order `space` is drawn in, if it groups its items.
@@ -1022,11 +1038,10 @@ impl App {
     /// drawn with.
     pub(super) fn fit_command(&self, id: SpaceId) -> Command {
         let space = self.config.desktop.space(id);
-        let view = space.map_or_else(SpaceView::default, |space| space.view().clone());
         let grouping = space.and_then(|space| self.shown_grouping(space));
         Command::FitToContents {
             id,
-            metrics: ViewMetrics::for_view(&view, self.layout_for(id), space_dpi(id.0)),
+            metrics: self.metrics_of(id),
             grouping,
         }
     }

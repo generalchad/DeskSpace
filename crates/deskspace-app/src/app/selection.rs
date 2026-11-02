@@ -556,6 +556,7 @@ mod tests {
             &deskspace_core::SpaceView::default().with_mode(mode),
             deskspace_core::GridSpec::default(),
             1.0,
+            100,
         );
         let layout =
             deskspace_core::ViewLayout::new(mode, deskspace_core::Size::new(640, 400), 7, metrics);
