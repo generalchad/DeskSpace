@@ -5749,3 +5749,17 @@ until I5-I6 all land, so no partial build hides the desktop.
     call and changes no `unsafe` block. A senior reviews it.
   - No test can see this. Done when: gates pass, and the picker opens, closes, and
     opens again with icons (a section V row).
+
+- [x] **P21. Hold the debug refresh during an animation (fix).** `refresh_debug`
+  (`app/debug/mod.rs`) stalls every running animation for 20-60 ms once a second
+  (measured 2026-10-31).
+  - `frame_clock.rs`: `pub(crate) fn any_animating() -> bool` over
+    `clock().windows.is_empty()`. Then `Ui::is_animating` in
+    `runtime/ui_chrome.rs`.
+  - `refresh_debug`: after its "window closed" check, return early while
+    `ui.is_animating()`. Leave the timer running, so the panel catches up on the
+    next tick. Do not touch `feed_debug_log`.
+  - This reads a lock the frame thread shares, so it steps over the junior line.
+    Hold the lock only for the read. A senior reviews it.
+  - **[needs human]** check: in a debug build with `--debug` open, preview Bounce
+    repeatedly: no hitch once a second, and the panel updates when it stops.

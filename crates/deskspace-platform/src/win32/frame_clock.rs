@@ -46,6 +46,12 @@ fn clock() -> MutexGuard<'static, Clock> {
     CLOCK.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Whether any window is playing an animation now. The frame thread shares
+/// this lock, so it is taken for the read alone and released at once.
+pub(crate) fn any_animating() -> bool {
+    !clock().windows.is_empty()
+}
+
 /// A window's frames: it gets one after every composition while this
 /// lives. An animation holds it, so its frames stop when it ends, however
 /// it ends, the window's destruction included.

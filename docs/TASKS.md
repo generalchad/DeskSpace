@@ -1513,20 +1513,6 @@ Small first. Each lands alone unless it says "After".
   edge for content lagging or a frame with no title. If nothing shows, delete P26
   in a commit saying so. Otherwise record which effect shows it under P26.
 
-- [ ] **P21. Hold the debug refresh during an animation (fix).** `refresh_debug`
-  (`app/debug/mod.rs`) stalls every running animation for 20-60 ms once a second
-  (measured 2026-10-31).
-  - `frame_clock.rs`: `pub(crate) fn any_animating() -> bool` over
-    `clock().windows.is_empty()`. Then `Ui::is_animating` in
-    `runtime/ui_chrome.rs`.
-  - `refresh_debug`: after its "window closed" check, return early while
-    `ui.is_animating()`. Leave the timer running, so the panel catches up on the
-    next tick. Do not touch `feed_debug_log`.
-  - This reads a lock the frame thread shares, so it steps over the junior line.
-    Hold the lock only for the read. A senior reviews it.
-  - **[needs human]** check: in a debug build with `--debug` open, preview Bounce
-    repeatedly: no hitch once a second, and the panel updates when it stops.
-
 - [ ] **P24. Let the icon cache forget a window (fix).** After: K9. Nothing ever
   removes an entry from `IconCache::demand`, so the limit only rises. A previewed
   space adds at most 60 for good, and a deleted space's scene stays counted, which
@@ -2046,6 +2032,7 @@ for a machine that has it.
 | P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
 | P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 | P22 | Open "From installed apps…" from a space's Shortcuts page and from the custom shortcut dialog: it lists apps with icons. Close it, wait for the background refresh (with `--debug`, "cached the installed apps"), and open it again: the apps and icons still show, with no failure or stall. Do it twice in a row. |
+| P21 | In a debug build with `--debug` open, preview Bounce repeatedly on a space: the animation stays smooth (no hitch once a second), and the debug panel updates again once it stops. |
 
 ## Found while working
 

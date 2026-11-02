@@ -431,6 +431,11 @@ impl App {
             Self::clear_timer(ui, Timer::DebugRefresh);
             return;
         }
+        // Reading the windows for the panel stalls every running animation.
+        // Leave the timer armed and catch up on the next tick.
+        if ui.is_animating() {
+            return;
+        }
         self.check_taskbars(ui);
         self.push_debug_panel(ui);
     }

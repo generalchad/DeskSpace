@@ -237,6 +237,11 @@ impl Ui {
         debug_hwnd().is_some()
     }
 
+    /// Whether any window is playing an animation now.
+    pub fn is_animating(&self) -> bool {
+        crate::win32::frame_clock::any_animating()
+    }
+
     /// Posts `TaskbarCreated` to the controller, as Explorer does when it
     /// restarts, so the tray icon and takeover recover as they would then.
     pub fn simulate_taskbar_created(&mut self) {
