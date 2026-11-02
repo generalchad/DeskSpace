@@ -5401,3 +5401,16 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: with a big lens, the Shortcuts page opens without
     a stall, its first icons fill in, and scrolling past the limit shows the
     generic folder/file icons.
+- [x] **B42. Free a stopped watch's finished listing on the worker
+  (platform).**
+  - Why: `FolderWatch::unwatch` can drop the last reference to a finished
+    `FolderListing` on the UI thread, about 5 ms for a big lens. It is rare,
+    but it is the one list the worker does not free (found in B37).
+  - Add a `retired` map shared with the worker. `unwatch` moves the slot's
+    `SharedListing` there instead of dropping it; `Worker::remove` takes it
+    and frees it on the watch thread. A failed remove packet leaves it for
+    `stop`, where the process is ending.
+  - Tests: retiring a slot moves its listing out of `listings`; the worker's
+    take leaves the map empty.
+  - Done when: the gates pass; say in the commit body why no behavior
+    changes.
