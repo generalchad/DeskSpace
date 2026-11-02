@@ -498,6 +498,12 @@ default in `Default`.
   revision. The cache is trusted once written: only the download is
   verified, and a cached file that does not parse is deleted so the next
   need fetches it again.
+- `ThemeFile` (`theme_file.rs`, F-58) is the shared-look file: `format = 1`,
+  a `name`, an optional `author`, and a `[look]` table holding a `SpaceLook`.
+  Missing fields default, out-of-range values clamp on load, unknown keys are
+  ignored, and a newer `format` loads with a warning. `themes_dir()` is a
+  `themes` folder beside the config, so a scratch `--config` has its own.
+  The file dialogs and settings buttons follow (C10b, C10c).
 - `window.icon_downloads` (D16) is `Ask` by default: the app reads a set
   from the cache first, and only `Allowed` downloads a missing one (the
   signed file). `Ask` shows one question a session and saves the answer;
