@@ -5109,3 +5109,13 @@ until I5-I6 all land, so no partial build hides the desktop.
     alias of one is not listed either; `icon_match` does not pick it.
   - No revision bump while S5 is open, as no set is published. Check with `gh
     release view icons-fluent-r1`; if it exists, stop and ask.
+
+- [x] **P5. Name what `base_layout` is told (refactor).** `app/view.rs`
+  `base_layout` takes `scale: f32, title_scale: f32, fixed_icon: bool`. Two
+  floats and a bool read the same at a call site, and `false` says nothing.
+  - Add `enum Cells { Look, FixedView }` and `struct LayoutScale { icon: f32,
+    title: f32, cells: Cells }` beside it, and take one `LayoutScale`.
+    `Cells::Look` is today's `fixed_icon == false`.
+  - Update `layout_for`, `effective_layout`, and the two tests that call it.
+  - Done when: the same tests pass with no change to their asserted values.
+    Behavior does not change.

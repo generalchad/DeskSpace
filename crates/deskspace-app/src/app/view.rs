@@ -263,6 +263,22 @@ impl LayerState {
     }
 }
 
+/// Whether a grid takes its cell from the look, or from a fixed view's own
+/// icon size.
+pub(super) enum Cells {
+    Look,
+    FixedView,
+}
+
+/// What `base_layout` scales a grid by, and where its cell comes from.
+pub(super) struct LayoutScale {
+    /// The icon factor.
+    pub(super) icon: f32,
+    /// The title bar's factor: the DPI alone, so a zoom leaves it alone.
+    pub(super) title: f32,
+    pub(super) cells: Cells,
+}
+
 impl App {
     /// Creates windows for new spaces and destroys windows of removed ones.
     pub(super) fn sync_windows(&mut self, ui: &mut Ui) {
@@ -451,23 +467,20 @@ impl App {
         Some(px as f32 / ITEM_ICON_SIZE as f32)
     }
 
-    /// `grid` scaled for an icon/DPI scale, with the title bar scaled by
-    /// `title_scale` (the DPI alone, so a zoom leaves it alone). When
-    /// `fixed_icon` is false and `theme` mirrors Explorer, its item spacing
-    /// (the full cell size in physical pixels) replaces the cell and gap, so
-    /// the grid step matches the desktop exactly. A fixed icon view keeps its
-    /// own scaled grid. The stored grids are never scaled, so the settings form
-    /// keeps editing logical values.
+    /// `grid` scaled by `scale`, with the title bar scaled by `scale.title`.
+    /// When `scale.cells` is `Cells::Look` and `theme` mirrors Explorer, its
+    /// item spacing (the full cell size in physical pixels) replaces the cell
+    /// and gap, so the grid step matches the desktop exactly. A fixed icon view
+    /// keeps its own scaled grid. The stored grids are never scaled, so the
+    /// settings form keeps editing logical values.
     pub(super) fn base_layout(
         &self,
         theme: &Theme,
         grid: GridSpec,
-        scale: f32,
-        title_scale: f32,
-        fixed_icon: bool,
+        scale: LayoutScale,
     ) -> GridSpec {
-        let mut layout = grid.scaled_with_title(scale, title_scale);
-        if !fixed_icon
+        let mut layout = grid.scaled_with_title(scale.icon, scale.title);
+        if matches!(scale.cells, Cells::Look)
             && theme.match_explorer()
             && let Some(spacing) = self.system.shell().icon_spacing
         {
@@ -480,13 +493,19 @@ impl App {
 
     /// The scaled grid for one space, including its monitor's DPI.
     pub(super) fn layout_for(&self, id: SpaceId) -> GridSpec {
-        let fixed_icon = self.fixed_icon_scale(id).is_some();
+        let cells = if self.fixed_icon_scale(id).is_some() {
+            Cells::FixedView
+        } else {
+            Cells::Look
+        };
         self.base_layout(
             self.theme_for(id),
             self.grid_for(id),
-            self.space_scale(id),
-            space_dpi(id.0),
-            fixed_icon,
+            LayoutScale {
+                icon: self.space_scale(id),
+                title: space_dpi(id.0),
+                cells,
+            },
         )
     }
 
@@ -497,9 +516,11 @@ impl App {
         self.base_layout(
             theme,
             self.config.desktop.layout,
-            self.icon_scale(theme),
-            1.0,
-            false,
+            LayoutScale {
+                icon: self.icon_scale(theme),
+                title: 1.0,
+                cells: Cells::Look,
+            },
         )
     }
 
@@ -1593,9 +1614,11 @@ mod tests {
         let layout = app.base_layout(
             &app.config.theme,
             app.config.desktop.layout,
-            1.0,
-            1.0,
-            false,
+            LayoutScale {
+                icon: 1.0,
+                title: 1.0,
+                cells: Cells::Look,
+            },
         );
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
@@ -1614,9 +1637,11 @@ mod tests {
         let layout = app.base_layout(
             &app.config.theme,
             app.config.desktop.layout,
-            1.0,
-            1.0,
-            false,
+            LayoutScale {
+                icon: 1.0,
+                title: 1.0,
+                cells: Cells::Look,
+            },
         );
         assert_eq!(
             (layout.cell_width, layout.cell_height, layout.gap),
