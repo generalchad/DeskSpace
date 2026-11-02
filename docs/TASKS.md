@@ -238,20 +238,6 @@ and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
 same kind: they are the costs left over from B33/B37, against the 50,000-file
 bar in section W's Performance rules.
 
-- [ ] **B42. Free a stopped watch's finished listing on the worker
-  (platform).**
-  - Why: `FolderWatch::unwatch` can drop the last reference to a finished
-    `FolderListing` on the UI thread, about 5 ms for a big lens. It is rare,
-    but it is the one list the worker does not free (found in B37).
-  - Add a `retired` map shared with the worker. `unwatch` moves the slot's
-    `SharedListing` there instead of dropping it; `Worker::remove` takes it
-    and frees it on the watch thread. A failed remove packet leaves it for
-    `stop`, where the process is ending.
-  - Tests: retiring a slot moves its listing out of `listings`; the worker's
-    take leaves the map empty.
-  - Done when: the gates pass; say in the commit body why no behavior
-    changes.
-
 - [ ] **B43. Warm Explorer's type names off the UI thread (platform,
   app).**
   - Why: grouping by Type calls `type_name` for every distinct extension

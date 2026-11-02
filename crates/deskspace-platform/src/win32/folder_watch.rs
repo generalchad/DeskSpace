@@ -91,6 +91,22 @@ const FIRST_READ_KEY: usize = 4;
 /// posted change arrives.
 type SharedListing = Arc<Mutex<Option<FolderListing>>>;
 
+/// Moves `slot`'s listing from the UI's map to the worker's, so the worker
+/// frees a big lens's list off the UI thread. A slot without a listing does
+/// nothing.
+fn retire_listing(
+    listings: &mut HashMap<usize, SharedListing>,
+    retired: &Mutex<HashMap<usize, SharedListing>>,
+    slot: usize,
+) {
+    if let Some(listing) = listings.remove(&slot) {
+        retired
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(slot, listing);
+    }
+}
+
 /// What the UI has told a lens's watch since the worker last looked, by slot.
 /// The newest rules replace older ones, so a burst of edits (typing in a filter
 /// field) builds the list once.
@@ -110,6 +126,9 @@ pub(crate) struct FolderWatch {
     additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
     /// The lens updates the worker has not handled yet, by slot.
     updates: Arc<Mutex<HashMap<usize, LensUpdate>>>,
+    /// Listings the UI stopped watching and handed to the worker, so a big
+    /// lens's list is freed on the watch thread, not the UI thread.
+    retired: Arc<Mutex<HashMap<usize, SharedListing>>>,
     /// The slot and path behind each app-level key.
     active: HashMap<WatchKey, ActiveWatch>,
     /// The app-level key behind each slot, to decode a posted change.
@@ -148,6 +167,8 @@ impl FolderWatch {
         let pending = Arc::clone(&additions);
         let updates = Arc::new(Mutex::new(HashMap::new()));
         let pending_updates = Arc::clone(&updates);
+        let retired = Arc::new(Mutex::new(HashMap::new()));
+        let worker_retired = Arc::clone(&retired);
         // A raw `HWND`/`HANDLE` is not `Send`, so carry them as `isize` and
         // rebuild them on the worker, which only ever posts to the window.
         let target_raw = target.0 as isize;
@@ -161,6 +182,7 @@ impl FolderWatch {
                     message,
                     additions: pending,
                     updates: pending_updates,
+                    retired: worker_retired,
                     folders: HashMap::new(),
                     by_read: HashMap::new(),
                     canceled: HashMap::new(),
@@ -179,6 +201,7 @@ impl FolderWatch {
                 thread: Some(thread),
                 additions,
                 updates,
+                retired,
                 active: HashMap::new(),
                 slots: HashMap::new(),
                 listings: HashMap::new(),
@@ -298,7 +321,7 @@ impl FolderWatch {
             return;
         };
         self.slots.remove(&active.slot);
-        self.listings.remove(&active.slot);
+        retire_listing(&mut self.listings, &self.retired, active.slot);
         self.updates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -393,6 +416,7 @@ struct Worker {
     message: u32,
     additions: Arc<Mutex<HashMap<usize, PendingWatch>>>,
     updates: Arc<Mutex<HashMap<usize, LensUpdate>>>,
+    retired: Arc<Mutex<HashMap<usize, SharedListing>>>,
     folders: HashMap<usize, Folder>,
     /// The slot behind each open read's completion key.
     by_read: HashMap<usize, usize>,
@@ -549,6 +573,10 @@ impl Worker {
         self.bursts.remove(slot);
         self.close_open(slot);
         self.folders.remove(&slot);
+        self.retired
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&slot);
     }
 
     /// Closes `slot`'s handle, if it is open, and cancels its pending read.
@@ -779,6 +807,10 @@ impl Worker {
             self.close_open(slot);
         }
         self.folders.clear();
+        self.retired
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         self.drain_canceled();
     }
 
@@ -1174,6 +1206,26 @@ mod tests {
     #[test]
     fn an_idle_watch_waits_forever() {
         assert_eq!(Coalescer::default().wait_ms(10_000), INFINITE);
+    }
+
+    #[test]
+    fn a_stopped_watch_hands_its_listing_to_the_worker() {
+        let mut listings = HashMap::new();
+        let listing: SharedListing = Arc::new(Mutex::new(None));
+        listings.insert(4, Arc::clone(&listing));
+        let retired = Mutex::new(HashMap::new());
+        retire_listing(&mut listings, &retired, 4);
+        assert!(listings.is_empty(), "the UI no longer holds the list");
+        let handed = retired.lock().unwrap().remove(&4).expect("handed over");
+        assert!(Arc::ptr_eq(&handed, &listing));
+    }
+
+    #[test]
+    fn retiring_a_slot_without_a_listing_does_nothing() {
+        let mut listings = HashMap::new();
+        let retired = Mutex::new(HashMap::new());
+        retire_listing(&mut listings, &retired, 9);
+        assert!(retired.lock().unwrap().is_empty());
     }
 
     #[test]
