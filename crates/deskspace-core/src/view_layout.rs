@@ -183,6 +183,19 @@ impl ViewMetrics {
         chrome + fit_length(height - chrome, self.cell.height, self.gap, self.padding)
     }
 
+    /// The smallest a space can be resized to in this view: one cell high
+    /// below `chrome`, and one cell wide when `fit_columns`, else `min_width`.
+    pub fn min_size(self, chrome: i32, fit_columns: bool, min_width: i32) -> Size {
+        Size::new(
+            if fit_columns {
+                self.padding * 2 + self.cell.width
+            } else {
+                min_width
+            },
+            chrome + self.padding * 2 + self.cell.height,
+        )
+    }
+
     /// `rect` rounded to whole cells along the dragged `edges`, keeping the
     /// opposite edge fixed. `fit_columns` is false for a view whose rows fill
     /// the width, so only its height fits (D22).

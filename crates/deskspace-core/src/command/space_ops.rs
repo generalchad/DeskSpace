@@ -177,12 +177,11 @@ impl Desktop {
             if space.locked || space.folded || !edges.any() {
                 return CommandOutcome::Rejected;
             }
-            let min = layout.min_space_size();
+            let chrome = space.title_height + space.unfolded_status_bar_height() + metrics.header;
+            let fit_columns = !space.view().mode.rows_fill_width();
+            let min = metrics.min_size(chrome, fit_columns, layout.min_space_size().width);
             let resized = resize_rect(space.rect, edges, to, min, layout.snap, bounds);
             space.rect = if layout.fit_to_grid {
-                let chrome =
-                    space.title_height + space.unfolded_status_bar_height() + metrics.header;
-                let fit_columns = !space.view().mode.rows_fill_width();
                 clamp_to_bounds(
                     metrics.fit_rect(resized, edges, chrome, fit_columns),
                     bounds,

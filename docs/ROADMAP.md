@@ -773,6 +773,10 @@ A native, lightweight, offline Windows desktop organizer that:
   - The resize dead zone is half an item's shorter side (a row view uses its
     row height), never less than half `snap`, so a wide List cell does not
     make the grab sluggish.
+  - Amended 2026-11-02: the smallest a space resizes to follows its view:
+    one cell high below the title, status bar, and any header, and one cell
+    wide when the view has columns. Details and Content keep the icon grid's
+    minimum width.
   - Work items: `TASKS.md` C11.
 
 - **D23. Fit to contents on an item's menu (2026-10-31, maintainer).**

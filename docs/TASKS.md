@@ -1736,27 +1736,6 @@ Who takes what:
 
 Any order, except that P3 and P4 go before S5.
 
-- [ ] **P7. A resize minimum that follows the view (fix).**
-  `apply_resize_space` uses `GridSpec::min_space_size`, one icon cell, in every
-  view. A Details or Content space cannot shrink to one row, and a space fitted
-  to one row is smaller than a resize would then allow.
-  - Add `ViewMetrics::min_size(self, chrome: i32, fit_columns: bool, min_width:
-    i32) -> Size`. Height is `chrome + padding * 2 + cell.height`. Width is
-    `padding * 2 + cell.width` when `fit_columns`, otherwise `min_width`.
-  - `apply_resize_space`, which already works out `chrome` and `fit_columns`,
-    passes `layout.min_space_size().width` as `min_width`. Move those two lets
-    above `resize_rect`.
-  - Tests: an icon view with no status bar has exactly today's minimum (nothing
-    moves for existing users); a Details space shrinks to its title, header, and
-    one row; for every `ViewMode` where `places_by_order()`, a fit of one item
-    is never below `min_size`. So no extra clamp is needed; if that test fails,
-    stop and ask.
-  - `ROADMAP.md` D22: add a dated sentence recording the minimum. Section V row
-    W48: delete "A very short result ... looks wrong."
-  - **[needs human]** check: shrink a Details, a Content, and a Tiles space from
-    the bottom and the top, at 100 % and 150 %, with the status bar on and off:
-    each stops at one whole row, and the header is not clipped.
-
 - [ ] **P8. Rows that grow with the label size (fix).** `ViewMetrics::for_view`
   uses fixed rows, but the labels follow the look's `label_size` (up to 160 %,
   `LABEL_SIZE_RANGE`), so at a large size the text clips in a row.
@@ -2238,7 +2217,7 @@ each id is in `archive/TASKS-done.md`.
 | W39 (F-09) | On a space in Large icons, Ctrl+wheel down walks Medium icons, Small icons, List, Details, Tiles, Content and stops; wheel up walks back and stops at Extra large icons; no zoom pop-up shows for a step. Ctrl+Plus and Ctrl+Minus step the same way, Ctrl+0 returns to "Settings icon size", and each step is one Undo entry ("Undo Change view"). A space on "Settings icon size" zooms as before (the F13 row still passes). |
 | W28 (F-07) | On a normal space and a lens: View ▸ "File name extensions" checks what the space shows now and choosing it flips Show and Hide; the View page offers Automatic, Show, and Hide, and Cancel restores. Under Automatic, Match Explorer follows Explorer's own setting (checked and unchecked, with the preset switched while the window is open), Custom hides. F2 on an item selects only the name part while extensions show. |
 | W30 (F-63) | On a normal space and a lens in Details, at 100 % and 150 %: right-click the header. Each column you check or uncheck shows or goes at once, its cells line up under its header, and Name is on and grey. A column brought back lands last. The choice survives a restart, and Ctrl+Z puts it back ("Undo Choose columns"). Right-clicking the header leaves the selection alone, including with rows scrolled under it. Hide the sorted column: the items keep their order and no arrow shows. With every column on in a narrow space, note how the right-hand columns are cut off (no sideways scroll yet). |
-| W48 (D17) | Fill a space, then in Small icons, Tiles, Details, Content, and List, at 100 % and 150 %, choose Fit to contents from the menu and from the Layout page: the space hugs its items with no scroll bar and no clipped last row (List keeps its height and takes the width; the rest keep their width), with the status bar on and off. With more items than fit, it stops at the work area and scrolls. Ctrl+Z restores the size. A very short result is allowed to be shorter than a resize would allow: note whether that looks wrong. Add items and Fit again: it is still offered. |
+| W48 (D17) | Fill a space, then in Small icons, Tiles, Details, Content, and List, at 100 % and 150 %, choose Fit to contents from the menu and from the Layout page: the space hugs its items with no scroll bar and no clipped last row (List keeps its height and takes the width; the rest keep their width), with the status bar on and off. With more items than fit, it stops at the work area and scrolls. Ctrl+Z restores the size. Add items and Fit again: it is still offered. |
 | W31 (F-63) | On a space and a lens in Details, at 100 % and 150 %: over a header divider the pointer is the resize cursor. Drag a column's right divider: it follows the pointer, the rows follow, the columns may pass the edge, and on release Name takes the rest and the columns shift flush: judge that shift. The divider right of Name resizes the next column with no shift. Esc during a drag puts the width back and leaves the selection. A divider press does not sort; a click elsewhere on a header still does. Smooth on a 50,000-file lens, and a listing arriving mid-drag (copy files into the folder) does not end it. One Ctrl+Z restores the width, and it survives a restart. Compare the grab distance with Explorer's (provisional 4 px each way). |
 | W32 (F-63) | On a space and a lens in Details, at 100 % and 150 %: drag a header past the other columns: an insertion mark shows between headers, readable on Acrylic, Blur, Solid, and Clear, and the columns do not move until release. Esc removes the mark and changes nothing. Name shows no mark and stays first, and nothing lands before it. A click without a drag sorts, now on release rather than on press: note whether that feels slower. One Ctrl+Z restores the order, and it survives a restart. Cell text follows its column. |
 | W33 (D18) | Measure against Explorer's Compact view (Folder Options > View > Decrease space between items) at 100 % and 150 %, with DeskSpace's row sizes in `COMPACT_CELLS` provisional (`view_layout.rs`) and `NORMAL_CELLS` never measured either: Small icons, List, Details and its header, Tiles, Content. Correct the constants and record the measurement. Text and icons must not clip in a compact row. View ▸ "Compact view" and the View page's toggle agree, Cancel restores, it survives a restart, and the icon views do not change. |
@@ -2250,6 +2229,7 @@ each id is in `archive/TASKS-done.md`.
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
 | P2 (info tip) | Hover an item until its tip shows, then press F2: the tip goes and the rename box is uncovered, on a space and on a loose desktop icon with takeover on. |
 | P6 (grouped fit) | Group a space by Type in Details and in List, choose Fit to contents: no scroll and no clipped row. Fold a group and fit again: it shrinks. |
+| P7 (resize minimum) | Shrink a Details, a Content, and a Tiles space from the bottom and the top, at 100 % and 150 %, with the status bar on and off: each stops at one whole row, and the header is not clipped. |
 
 ## Found while working
 

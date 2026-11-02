@@ -5137,3 +5137,24 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: group a space by Type in Details and in List,
     choose Fit to contents: no scroll and no clipped row. Fold a group and fit
     again: it shrinks.
+
+- [x] **P7. A resize minimum that follows the view (fix).**
+  `apply_resize_space` uses `GridSpec::min_space_size`, one icon cell, in every
+  view. A Details or Content space cannot shrink to one row, and a space fitted
+  to one row is smaller than a resize would then allow.
+  - Add `ViewMetrics::min_size(self, chrome: i32, fit_columns: bool, min_width:
+    i32) -> Size`. Height is `chrome + padding * 2 + cell.height`. Width is
+    `padding * 2 + cell.width` when `fit_columns`, otherwise `min_width`.
+  - `apply_resize_space`, which already works out `chrome` and `fit_columns`,
+    passes `layout.min_space_size().width` as `min_width`. Move those two lets
+    above `resize_rect`.
+  - Tests: an icon view with no status bar has exactly today's minimum (nothing
+    moves for existing users); a Details space shrinks to its title, header, and
+    one row; for every `ViewMode` where `places_by_order()`, a fit of one item
+    is never below `min_size`. So no extra clamp is needed; if that test fails,
+    stop and ask.
+  - `ROADMAP.md` D22: add a dated sentence recording the minimum. Section V row
+    W48: delete "A very short result ... looks wrong."
+  - **[needs human]** check: shrink a Details, a Content, and a Tiles space from
+    the bottom and the top, at 100 % and 150 %, with the status bar on and off:
+    each stops at one whole row, and the header is not clipped.

@@ -1016,6 +1016,94 @@ mod tests {
     }
 
     #[test]
+    fn an_icon_view_resize_stops_at_the_icon_minimum() {
+        let (mut desktop, id) = space_in_view(ViewMode::Icons, Rect::new(0, 0, 300, 300), 3);
+        let metrics = ViewMetrics::for_grid(desktop.layout);
+        let edges = ResizeEdges {
+            right: true,
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(-100, -100),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        assert_eq!(
+            space.rect.size(),
+            desktop.layout.min_space_size(),
+            "an icon view with no status bar keeps today's minimum"
+        );
+    }
+
+    #[test]
+    fn a_details_resize_stops_at_its_title_header_and_one_row() {
+        let (mut desktop, id) = space_in_view(ViewMode::Details, Rect::new(0, 0, 500, 400), 12);
+        let layout = desktop.layout;
+        let metrics = ViewMetrics::for_view(
+            &SpaceView::default().with_mode(ViewMode::Details),
+            layout,
+            1.0,
+        );
+        let edges = ResizeEdges {
+            bottom: true,
+            ..ResizeEdges::NONE
+        };
+        assert!(
+            desktop
+                .apply(
+                    Command::ResizeSpace {
+                        id,
+                        edges,
+                        to: Point::new(500, -100),
+                        metrics,
+                    },
+                    bounds()
+                )
+                .is_applied()
+        );
+        let space = desktop.space(id).unwrap();
+        let chrome = space.title_height + space.unfolded_status_bar_height() + metrics.header;
+        let min = metrics.min_size(chrome, false, layout.min_space_size().width);
+        assert_eq!(space.rect.height, min.height);
+    }
+
+    #[test]
+    fn a_fitted_row_view_is_never_below_the_resize_minimum() {
+        for mode in [
+            ViewMode::SmallIcons,
+            ViewMode::List,
+            ViewMode::Details,
+            ViewMode::Tiles,
+            ViewMode::Content,
+        ] {
+            let (mut desktop, id) = space_in_view(mode, Rect::new(0, 0, 400, 400), 1);
+            let (rect, scroll) = fit(&mut desktop, id, mode);
+            assert_eq!(scroll, 0, "{mode:?}: one item fits");
+            let space = desktop.space(id).unwrap();
+            let metrics =
+                ViewMetrics::for_view(&SpaceView::default().with_mode(mode), desktop.layout, 1.0);
+            let chrome = space.title_height + space.unfolded_status_bar_height() + metrics.header;
+            let min = metrics.min_size(
+                chrome,
+                !mode.rows_fill_width(),
+                desktop.layout.min_space_size().width,
+            );
+            assert!(rect.width >= min.width, "{mode:?}: {rect:?} vs {min:?}");
+            assert!(rect.height >= min.height, "{mode:?}: {rect:?} vs {min:?}");
+        }
+    }
+
+    #[test]
     fn a_list_resize_fits_its_own_cells() {
         let (mut desktop, id) = space_in_view(ViewMode::List, Rect::new(0, 0, 300, 300), 20);
         let metrics = ViewMetrics::for_view(
