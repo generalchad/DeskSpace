@@ -5615,3 +5615,9 @@ until I5-I6 all land, so no partial build hides the desktop.
     file system. Keep `to`'s spelling in the answer.
   - Tests: a rename, a move, a nested subfolder, a different case, no match, and
     `shown == root`. Do not call it from the worker; P11c does.
+
+- [x] **P13c. Tell a missing file from an empty one (refactor).** Part of P13.
+  `item_facts` returns the default for an unreadable path, so a refresh would zero a
+  file on a sleeping drive. Add `read_item_facts(path) -> Option<ItemFacts>`
+  (`win32/desktop_items.rs`), and make `item_facts` call it with
+  `.unwrap_or_default()`. Test: a missing path is `None`.

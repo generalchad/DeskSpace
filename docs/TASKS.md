@@ -1635,12 +1635,6 @@ Small first. Each lands alone unless it says "After".
   other keeps order and positions. A lens is `Rejected`, because its listing owns
   its facts. Nothing dispatches it yet; P13d does, as C10a landed before C10c.
 
-- [ ] **P13c. Tell a missing file from an empty one (refactor).** Part of P13.
-  `item_facts` returns the default for an unreadable path, so a refresh would zero a
-  file on a sleeping drive. Add `read_item_facts(path) -> Option<ItemFacts>`
-  (`win32/desktop_items.rs`), and make `item_facts` call it with
-  `.unwrap_or_default()`. Test: a missing path is `None`.
-
 - [ ] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
   Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
   `app/undo.rs`. A pure move with no change in order or logic. It sits in code that

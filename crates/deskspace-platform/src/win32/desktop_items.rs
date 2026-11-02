@@ -133,24 +133,27 @@ fn enumerate_via_folder(
     Ok(entries)
 }
 
-/// What the file system says about `path`, read once when an item is listed;
-/// nothing watches it afterwards, so the values can go stale. An unreadable
-/// path yields `ItemFacts::default()`. The compressed and encrypted attributes
-/// drive Explorer's label colors:
+/// What the file system says about `path`, or `None` when it cannot be read.
+/// The compressed and encrypted attributes drive Explorer's label colors:
 /// <https://learn.microsoft.com/windows/win32/fileio/file-attribute-constants>
-pub fn item_facts(path: &Path) -> ItemFacts {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return ItemFacts::default();
-    };
+pub fn read_item_facts(path: &Path) -> Option<ItemFacts> {
+    let metadata = std::fs::metadata(path).ok()?;
     let attributes = metadata.file_attributes();
-    ItemFacts {
+    Some(ItemFacts {
         is_folder: metadata.is_dir(),
         size: metadata.is_file().then_some(metadata.len()),
         modified: metadata.modified().ok().and_then(epoch_seconds),
         created: metadata.created().ok().and_then(epoch_seconds),
         compressed: attributes & FILE_ATTRIBUTE_COMPRESSED.0 != 0,
         encrypted: attributes & FILE_ATTRIBUTE_ENCRYPTED.0 != 0,
-    }
+    })
+}
+
+/// What the file system says about `path`, read once when an item is listed;
+/// nothing watches it afterwards, so the values can go stale. An unreadable
+/// path yields `ItemFacts::default()`.
+pub fn item_facts(path: &Path) -> ItemFacts {
+    read_item_facts(path).unwrap_or_default()
 }
 
 /// `time` in seconds since the Unix epoch, or `None` before it.
@@ -616,6 +619,7 @@ mod tests {
         let file_facts = item_facts(&file);
         let folder_facts = item_facts(&folder);
         let missing_facts = item_facts(&folder.join("missing.txt"));
+        let missing = read_item_facts(&folder.join("missing.txt"));
         let _ = std::fs::remove_dir_all(&folder);
 
         assert!(!file_facts.is_folder);
@@ -625,5 +629,6 @@ mod tests {
         assert!(folder_facts.is_folder);
         assert_eq!(folder_facts.size, None);
         assert_eq!(missing_facts, ItemFacts::default());
+        assert_eq!(missing, None, "a missing path is not an empty one");
     }
 }
