@@ -162,6 +162,9 @@ impl App {
         if let Some(dot) = base_end {
             text.select_range(0, dot);
         }
+        // The pointer may rest on the item with its tip already shown; the edit
+        // takes its place.
+        self.dismiss_info_tip(ui);
         self.edit.begin(EditSession {
             surface,
             target: EditTarget::Item {

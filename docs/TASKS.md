@@ -1736,17 +1736,6 @@ Who takes what:
 
 Any order, except that P3 and P4 go before S5.
 
-- [ ] **P2. Dismiss the info tip when an item rename starts (fix).**
-  `app/rename.rs` `begin_rename` calls `self.dismiss_info_tip(ui)`, so a tip
-  already showing does not cover the box. `begin_item_rename` does not, so
-  pressing F2 on an item whose tip is showing leaves the tip over the box.
-  - Add the same call to `begin_item_rename`, after the `let Some(entry)`
-    check, with a one-line comment saying why.
-  - `begin_item_rename` takes a `Ui`, so no unit test can reach it.
-  - **[needs human]** check: hover an item until its tip shows, then press F2:
-    the tip goes and the box is uncovered, on a space and on a loose desktop
-    icon with takeover on.
-
 - [ ] **P3. Delete the icon set's unused credits (refactor).** `IconSet.info`
   is parsed and saved, but only `trim`'s tests read it. The real set's `info`
   is empty, since upstream keeps that block in `info.json`. The About note and
@@ -2321,6 +2310,7 @@ each id is in `archive/TASKS-done.md`.
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |
+| P2 (info tip) | Hover an item until its tip shows, then press F2: the tip goes and the rename box is uncovered, on a space and on a loose desktop icon with takeover on. |
 
 ## Found while working
 

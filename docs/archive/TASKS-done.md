@@ -5064,3 +5064,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   - `ENGINEERING.md` section 6, the Keys table: the `WATCH_BACK` row has lost
     its two-space indent. Restore it.
   - Done when: the gates pass, and the four sentences read correctly.
+
+- [x] **P2. Dismiss the info tip when an item rename starts (fix).**
+  `app/rename.rs` `begin_rename` calls `self.dismiss_info_tip(ui)`, so a tip
+  already showing does not cover the box. `begin_item_rename` does not, so
+  pressing F2 on an item whose tip is showing leaves the tip over the box.
+  - Add the same call to `begin_item_rename`, after the `let Some(entry)`
+    check, with a one-line comment saying why.
+  - `begin_item_rename` takes a `Ui`, so no unit test can reach it.
+  - **[needs human]** check: hover an item until its tip shows, then press F2:
+    the tip goes and the box is uncovered, on a space and on a loose desktop
+    icon with takeover on.
