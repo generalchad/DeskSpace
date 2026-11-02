@@ -238,25 +238,6 @@ and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
 same kind: they are the costs left over from B33/B37, against the 50,000-file
 bar in section W's Performance rules.
 
-- [ ] **B43. Warm Explorer's type names off the UI thread (platform,
-  app).**
-  - Why: grouping by Type calls `type_name` for every distinct extension
-    while `sync_grouping` walks a 50,000-item lens on the UI thread. On a
-    seven-extension folder that is 13.6 ms the first time, over the
-    Performance rule's 8 ms; the grouping walk alone is about 3.6 ms
-    (measured 2026-11-01, release; found in B37).
-  - `win32/desktop_items.rs`: keep the thread-local cache as the fast path,
-    and add a process-wide cache that both threads fill and read. A miss
-    loads once, then fills both.
-  - `prewarm_type_names(entries)` loads each distinct extension (and the
-    folder name) once. `win32/folder_list.rs` `list_folder` calls it after
-    listing, so the watch worker pays the shell calls for a lens.
-  - Tests: distinct keys dedupe case and share the folder key; a name warmed
-    on another thread is read on this one without loading shell. Add a
-    cross-thread warm and the re-timed groupings to the release timing test.
-  - Done when: after a worker listing, `sync_grouping` for every key is under
-    8 ms, and the timings are recorded.
-
 Not listed here on purpose: `settings/pages.rs` `look_pages` (about 205
 lines), `settings/apply.rs` `apply_look_field` (about 110), and
 `settings/mod.rs` `build_form` (about 105). They are long because a field is

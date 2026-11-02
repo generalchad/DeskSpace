@@ -22,6 +22,7 @@ use deskspace_core::item::ItemKind;
 use deskspace_core::source::FolderEntry;
 
 use crate::error::PlatformError;
+use crate::win32::desktop_items::prewarm_type_names;
 use crate::win32::system::wide;
 
 /// 100 ns steps in one second.
@@ -73,6 +74,7 @@ pub(crate) fn list_folder(path: &Path) -> Result<Vec<FolderEntry>, PlatformError
             Err(error) => return Err(error.into()),
         }
     }
+    prewarm_type_names(&entries);
     Ok(entries)
 }
 

@@ -234,8 +234,11 @@ it replaces is freed off the UI thread (`Desktop::take_retired_items`, in
 no longer matches the lens, like one for a folder it no longer shows, is dropped.
 A change of rules goes to the worker through `App::sync_watches`, and it builds
 again from its last listing without reading the folder. A grouped lens's display
-order stays on the UI thread: on 50,000 items it takes about 3.5 ms, 7.4 ms by
-Type, and 14 ms the first time each extension is seen (2026-10-31). They are never written to the config,
+order stays on the UI thread: on 50,000 items it takes about 3.5 ms, and
+7.4 ms by Type, the figure accepted when B37 landed. Explorer's first type
+name for each extension is loaded by the watch worker when it lists the
+folder, into a cache shared with the UI thread, so the UI thread no longer
+pays that 14 ms spike. They are never written to the config,
 and `Config::migrate` drops any a hand-edited file lists. `AddItem` and
 `MoveItem` into a lens are `Rejected`; file changes there are shell
 operations: a drop on a lens moves
