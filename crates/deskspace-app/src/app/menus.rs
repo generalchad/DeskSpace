@@ -578,7 +578,7 @@ impl App {
         else {
             return;
         };
-        let paths = ui.pick_files(&format!("Add files to \u{201C}{title}\u{201D}"));
+        let paths = ui.pick_files(&format!("Add files to \u{201C}{title}\u{201D}"), &[]);
         if !paths.is_empty() {
             self.add_dropped(ui, id, at, paths, DropAction::Move);
         }

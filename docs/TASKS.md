@@ -308,9 +308,10 @@ drop side is `win32/drop_target.rs` (`DragKind`, `drag_kind`, `DropPlan`,
       `ConfigStore`. Tests: round trip, missing fields default, out-of-range
       values clamp, unknown keys ignored, a newer `format` loads. Landed in
       `feat: add the theme-file format (C10a)`.
-    - **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
+    - [x] **C10b (platform):** `Ui::pick_save_path(filter, default_name)` over
       `IFileSaveDialog`, beside `Ui::pick_files`, and a filter argument on
-      the open side if it has none.
+      the open side if it has none. Landed in
+      `feat: expose the save dialog and filtered open dialog (C10b)`.
     - **C10c (app):** two buttons on the Colors page ("Save theme…", "Load
       theme…"): two `ButtonAction` variants and their arms in
       `App::on_settings_button` (the "new global setting" recipe's button

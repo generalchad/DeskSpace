@@ -98,16 +98,34 @@ impl Ui {
 
     /// Opens the standard file Open dialog titled `title` and returns the files
     /// the user picked, or an empty list when they cancelled. Multi-select is
-    /// on and the dialog starts on the Desktop folder. Blocks in a modal loop;
-    /// other events are queued meanwhile.
-    pub fn pick_files(&mut self, title: &str) -> Vec<std::path::PathBuf> {
+    /// on and the dialog starts on the Desktop folder; `filter` lists (name,
+    /// pattern) pairs and selects the first. Blocks in a modal loop; other
+    /// events are queued meanwhile.
+    pub fn pick_files(&mut self, title: &str, filter: &[(&str, &str)]) -> Vec<std::path::PathBuf> {
         let Some(owner) = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))
         else {
             return Vec::new();
         };
         // SAFETY: `owner` is a live window owned by this thread, and the dialog
         // is modal for the duration of the call.
-        unsafe { crate::win32::dialog::pick_files(owner, title) }
+        unsafe { crate::win32::dialog::pick_files(owner, title, filter) }
+    }
+
+    /// Opens the standard Save dialog titled `title` and returns the path the
+    /// user chose, or `None` when they cancelled. `filter` lists (name,
+    /// pattern) pairs and selects the first; `default_name`'s extension is
+    /// added to a name typed without one. Blocks in a modal loop; other events
+    /// are queued meanwhile.
+    pub fn pick_save_path(
+        &mut self,
+        title: &str,
+        default_name: &str,
+        filter: &[(&str, &str)],
+    ) -> Option<std::path::PathBuf> {
+        let owner = with_runtime(|runtime| runtime.settings.unwrap_or(runtime.controller))?;
+        // SAFETY: `owner` is a live window owned by this thread, and the dialog
+        // is modal for the duration of the call.
+        unsafe { crate::win32::dialog::pick_save_path(owner, title, default_name, filter) }
     }
 
     /// Opens the standard "Select folder" dialog titled `title` and returns the
