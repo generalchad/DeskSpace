@@ -927,7 +927,12 @@ impl Folder {
                 .and_then(|open| final_path(open.directory).ok())
                 .map(|to| plain_path(&to))
                 .filter(|to| follows_to(&self.path, to, &self.store) && to.is_dir());
-            return Some(to.map_or(FolderListing::Unavailable, |to| FolderListing::Moved { to }));
+            return Some(
+                to.map_or(FolderListing::Unavailable, |to| FolderListing::Moved {
+                    to,
+                    root: None,
+                }),
+            );
         }
         std::fs::canonicalize(&self.path)
             .is_ok_and(|resolved| is_inside(&resolved, &self.store))
@@ -1390,7 +1395,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&parent);
         assert!(finished, "the watch did not finish");
         let seen = seen.lock().unwrap().take();
-        let Some(FolderListing::Moved { to }) = seen else {
+        let Some(FolderListing::Moved { to, .. }) = seen else {
             panic!("expected Moved, got {seen:?}");
         };
         // The temp folder may be spelled with a short name, and the final

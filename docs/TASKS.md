@@ -1557,17 +1557,6 @@ Small first. Each lands alone unless it says "After".
   - Tests in the cache, which can set `demand` directly: the limit falls after a
     forget, and the next store evicts down to it, oldest first. No shell calls.
 
-- [ ] **P11a. Teach the app a browsed lens's moved root (refactor).** Part of P11.
-  - `FolderListing::Moved` gains `root: Option<PathBuf>`. The worker passes `None`,
-    so nothing changes on screen yet. That one line is all that changes in
-    `folder_watch.rs`, plus its test's pattern (`Moved { to, .. }`).
-  - `on_lens_moved` and `follow_moved_folder` take `root`. On a browsed lens with
-    `Some(root)`, follow `root` exactly as an unbrowsed lens follows `to`: same undo
-    entry, same notice. `sync_watches` already forgets the browse once the path
-    changes. With `None`, keep today's `ReturnHome`.
-  - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
-    browsed.
-
 - [ ] **P10a. Pull `reverse_step` out of `reverse_files` (refactor).** Part of P10.
   Split the loop body into `reverse_step(ui, files, index, undo) -> bool` in
   `app/undo.rs`. A pure move with no change in order or logic. It sits in code that
@@ -1657,8 +1646,7 @@ These are in the order we would take them. Each lands alone.
   - A suffix match cannot decide this alone: `Root\A` moved to `Other\A` also
     ends in `A`. The test is whether the old root is gone too, and that is IO, so
     it belongs on the worker (W25: the UI thread never waits on a folder).
-  - P11a (the app) and P11b (the pure path rule) are in the junior list. P11c is the
-    part that remains, on the watch worker.
+  - P11c is the part that remains, on the watch worker.
   - [ ] **P11c.** After: P11a, P11b. Pass the lens's root with a browsed watch, as
     W25 passes the store. `Folder::moved` calls `root_after_move(root, shown, to)`,
     and reports `Moved { to, root: Some(new) }` only when the old root is no longer a

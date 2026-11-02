@@ -5707,3 +5707,14 @@ until I5-I6 all land, so no partial build hides the desktop.
   it, that is `mouse.rs`. Take the decision in a function that takes plain data, and
   test it. **[needs human]** check: Shift+wheel over a Details space with every column
   on, at 100 % and 150 %; the header stays with its columns.
+
+- [x] **P11a. Teach the app a browsed lens's moved root (refactor).** Part of P11.
+  - `FolderListing::Moved` gains `root: Option<PathBuf>`. The worker passes `None`,
+    so nothing changes on screen yet. That one line is all that changes in
+    `folder_watch.rs`, plus its test's pattern (`Moved { to, .. }`).
+  - `on_lens_moved` and `follow_moved_folder` take `root`. On a browsed lens with
+    `Some(root)`, follow `root` exactly as an unbrowsed lens follows `to`: same undo
+    entry, same notice. `sync_watches` already forgets the browse once the path
+    changes. With `None`, keep today's `ReturnHome`.
+  - Tests: `follow_moved_folder` for browsed with a root, browsed without, and not
+    browsed.

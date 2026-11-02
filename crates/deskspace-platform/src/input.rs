@@ -85,8 +85,10 @@ pub enum FolderListing {
     Unavailable,
     /// The folder was renamed or moved to `to` on the same volume, outside
     /// the Recycle Bin and the store. The worker keeps watching the old path
-    /// until the app points the watch at `to`.
-    Moved { to: PathBuf },
+    /// until the app points the watch at `to`. `root` is where the lens's own
+    /// folder went, when the worker watched one of that lens's subfolders and
+    /// the root moved with it.
+    Moved { to: PathBuf, root: Option<PathBuf> },
     /// The folder resolves to DeskSpace's storage folder or inside it, for
     /// example through a junction, so it is not watched. The worker retries
     /// it like a missing folder.
