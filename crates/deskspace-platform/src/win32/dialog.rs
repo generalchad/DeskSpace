@@ -299,12 +299,21 @@ pub(crate) unsafe fn window_text(control: HWND) -> String {
 /// Opens the standard file Open dialog over `owner` and returns the files the
 /// user picked, or an empty list when they cancelled. Multi-select is on and
 /// the dialog starts on the Desktop folder; only existing filesystem items are
-/// offered, so every returned path names a real file (F-55).
+/// offered, so every returned path names a real file (F-55). A non-empty
+/// `filter` lists (name, pattern) pairs such as `("Theme files",
+/// "*.deskspace-theme.toml")` and selects the first.
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileopendialog
 /// https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-_fileopendialogoptions
-pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
+pub(crate) unsafe fn pick_files(owner: HWND, title: &str, filter: &[(&str, &str)]) -> Vec<PathBuf> {
     // SAFETY: as `open_dialog` requires.
-    unsafe { open_dialog(owner, title, FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT) }
+    unsafe {
+        open_dialog(
+            owner,
+            title,
+            FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT,
+            filter,
+        )
+    }
 }
 
 /// Opens the Open dialog in "Select folder" mode over `owner` and returns the
@@ -312,16 +321,33 @@ pub(crate) unsafe fn pick_files(owner: HWND, title: &str) -> Vec<PathBuf> {
 /// folders are offered, so a library or "This PC" cannot be picked.
 pub(crate) unsafe fn pick_folder(owner: HWND, title: &str) -> Option<PathBuf> {
     // SAFETY: as `open_dialog` requires.
-    unsafe { open_dialog(owner, title, FOS_PICKFOLDERS) }
+    unsafe { open_dialog(owner, title, FOS_PICKFOLDERS, &[]) }
         .into_iter()
         .next()
 }
 
 /// The Open dialog over `owner`, titled `title`, with `options` added to its
-/// defaults and `FOS_FORCEFILESYSTEM`, starting on the Desktop. Returns the
-/// picked paths, empty when cancelled. `owner` must be a live window of this
-/// thread, with OLE initialized.
-unsafe fn open_dialog(owner: HWND, title: &str, options: FILEOPENDIALOGOPTIONS) -> Vec<PathBuf> {
+/// defaults and `FOS_FORCEFILESYSTEM`, starting on the Desktop. `filter` lists
+/// (name, pattern) pairs such as `("Theme files", "*.deskspace-theme.toml")`;
+/// the first is selected. Returns the picked paths, empty when cancelled.
+/// `owner` must be a live window of this thread, with OLE initialized.
+unsafe fn open_dialog(
+    owner: HWND,
+    title: &str,
+    options: FILEOPENDIALOGOPTIONS,
+    filter: &[(&str, &str)],
+) -> Vec<PathBuf> {
+    let names: Vec<(Vec<u16>, Vec<u16>)> = filter
+        .iter()
+        .map(|(name, pattern)| (wide(name), wide(pattern)))
+        .collect();
+    let specs: Vec<COMDLG_FILTERSPEC> = names
+        .iter()
+        .map(|(name, pattern)| COMDLG_FILTERSPEC {
+            pszName: PCWSTR(name.as_ptr()),
+            pszSpec: PCWSTR(pattern.as_ptr()),
+        })
+        .collect();
     // SAFETY: OLE is initialized on this thread; the dialog is modal over
     // `owner` and released when it goes out of scope.
     unsafe {
@@ -341,6 +367,9 @@ unsafe fn open_dialog(owner: HWND, title: &str, options: FILEOPENDIALOGOPTIONS) 
         }
         let title = wide(title);
         let _ = picker.SetTitle(PCWSTR(title.as_ptr()));
+        if !specs.is_empty() {
+            let _ = picker.SetFileTypes(&specs);
+        }
         if let Ok(desktop) =
             SHGetKnownFolderItem::<IShellItem>(&FOLDERID_Desktop, KF_FLAG_DEFAULT, None)
         {
