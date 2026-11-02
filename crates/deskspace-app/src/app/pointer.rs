@@ -12,7 +12,7 @@ use crate::settings::STATUS_BUTTONS;
 use super::drag::Drag;
 use super::selection::marquee_selection;
 
-use super::{App, RESIZE_BORDER, Surface, Timer, WHEEL_DELTA};
+use super::{App, RESIZE_BORDER, Surface, Timer};
 
 /// How long the pointer must rest on an item before its info tip appears,
 /// matching Explorer's tooltip delay.
@@ -166,8 +166,14 @@ impl App {
                 ..
             } => self.begin_right_press(ui, surface, Point::new(x, y)),
             SpaceEvent::MouseMove { x, y } => self.on_pointer_move(ui, surface, Point::new(x, y)),
-            SpaceEvent::Wheel { x, y, delta, ctrl } => {
-                self.on_wheel(ui, surface, Point::new(x, y), delta, ctrl);
+            SpaceEvent::Wheel {
+                x,
+                y,
+                delta,
+                ctrl,
+                shift,
+            } => {
+                self.on_wheel(ui, surface, Point::new(x, y), delta, ctrl, shift);
             }
             SpaceEvent::MouseUp {
                 button: MouseButton::Left,
@@ -513,14 +519,6 @@ impl App {
         }
     }
 
-    fn on_wheel(&mut self, ui: &mut Ui, surface: Surface, point: Point, delta: i32, ctrl: bool) {
-        if ctrl {
-            self.adjust_icon_size(ui, surface, delta);
-        } else if let Surface::Space(id) = surface {
-            self.scroll_by(ui, id, point, delta);
-        }
-    }
-
     pub(super) fn update_cursor(&self, ui: &mut Ui, id: SpaceId, point: Point) {
         let edges = self
             .config
@@ -535,28 +533,6 @@ impl App {
             cursor_for(edges)
         };
         ui.set_space_cursor(id.0, cursor);
-    }
-
-    pub(super) fn scroll_by(&mut self, ui: &mut Ui, id: SpaceId, point: Point, delta: i32) {
-        let Some(space) = self.config.desktop.space(id) else {
-            return;
-        };
-        let Some(layout) = self.view_layout(id) else {
-            return;
-        };
-        let max = layout.max_scroll(space.content_rect().size());
-        let current = self.scroll_of(id);
-        let next = (current - delta * layout.scroll_step() / WHEEL_DELTA).clamp(0, max);
-        if next == current {
-            return;
-        }
-        self.view_cache.set_scroll(id, next);
-        // Items moved under a still cursor, so the hovered one changed too.
-        let surface = Surface::Space(id);
-        self.pointer.hovered = self
-            .surface_item_at(surface, point)
-            .map(|item| (surface, item));
-        self.refresh_space(ui, id);
     }
 
     pub(super) fn update_hover(&mut self, ui: &mut Ui, surface: Surface, point: Point) {

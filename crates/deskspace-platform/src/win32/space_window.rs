@@ -997,7 +997,7 @@ unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
         x: loword(lparam.0),
         y: hiword(lparam.0),
     }];
-    let Modifiers { ctrl, .. } = modifiers(wparam);
+    let Modifiers { ctrl, shift } = modifiers(wparam);
     // SAFETY: `window` is a live space window and `point` a valid one-element
     // buffer.
     unsafe {
@@ -1011,6 +1011,7 @@ unsafe fn on_mouse_wheel(window: HWND, wparam: WPARAM, lparam: LPARAM) {
                 y: point[0].y,
                 delta,
                 ctrl,
+                shift,
             },
         );
     }

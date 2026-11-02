@@ -169,6 +169,31 @@ impl App {
         )
     }
 
+    /// How far space `id`'s Details columns can scroll sideways. Zero when it
+    /// does not show a Details header.
+    pub(super) fn details_scroll_limit(&self, id: SpaceId) -> i32 {
+        let Some(space) = self.config.desktop.space(id) else {
+            return 0;
+        };
+        let Some(layout) = self.view_layout(id) else {
+            return 0;
+        };
+        if space.view().mode != ViewMode::Details {
+            return 0;
+        }
+        let width = space.content_rect().width;
+        let padding = self.layout_for(id).padding;
+        let columns = crate::scene::details_columns(
+            space.view(),
+            width,
+            padding,
+            0,
+            layout.header_height(),
+            space_dpi(id.0),
+        );
+        crate::scene::details_max_scroll(&columns, width, padding)
+    }
+
     /// The Details header drawn in space `id`, and `point` relative to the
     /// content area, when `point` is on the header row.
     fn details_header_at(&self, id: SpaceId, point: Point) -> Option<(DetailsView, Point)> {

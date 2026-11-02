@@ -5699,3 +5699,11 @@ until I5-I6 all land, so no partial build hides the desktop.
     the same path.
   - **[needs human]** check: rename an item in a lens, Ctrl+Z: it stays selected.
     Ctrl+Y: still selected. Give it its own row in section V.
+
+- [x] **P15c. Shift+wheel scrolls Details sideways (feature).** After: P15b. Part of
+  P15. `scroll_by_x`, like `scroll_by`, and `on_wheel` calling it when `shift` is
+  held in Details; every other view keeps today's wheel. `SpaceEvent::Wheel` gains
+  `shift`, read from the `Modifiers` `on_mouse_wheel` already has. If K8 has moved
+  it, that is `mouse.rs`. Take the decision in a function that takes plain data, and
+  test it. **[needs human]** check: Shift+wheel over a Details space with every column
+  on, at 100 % and 150 %; the header stays with its columns.

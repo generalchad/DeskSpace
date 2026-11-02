@@ -35,6 +35,7 @@ mod undo;
 mod update;
 mod view;
 mod visibility;
+mod wheel;
 mod zoom;
 
 use animation::AnimationTweak;

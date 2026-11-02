@@ -98,8 +98,9 @@ help inspect the look and the desktop layer.
 ## Controls
 
 - Drag a space title bar to move it; drag an edge or corner to resize it. The
-  wheel scrolls a space whose items do not fit, and Ctrl+wheel changes the
-  icon size: under "Match Explorer's display" (the default) it resizes the
+  wheel scrolls a space whose items do not fit, Shift+wheel scrolls a Details
+  space's columns sideways, and Ctrl+wheel changes the icon size: under "Match
+  Explorer's display" (the default) it resizes the
   desktop's own icons and the spaces together, as Ctrl+wheel on the desktop
   does; under "Custom" it changes DeskSpace's icon size. On a space showing
   one of Explorer's views (Extra large icons through Content), Ctrl+wheel,

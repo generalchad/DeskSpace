@@ -89,6 +89,7 @@ platform, data-driven UI) are `ENGINEERING.md` section 3.
   | `hit` | surface lookups (`surface_item_at`, `surface_palette`, `find_item_by_file`) |
   | `selection` | `Selection`, keyboard selection (`on_navigate`, `on_typed`), `active_items` |
   | `pointer` | `PointerState`, mouse events, resize, hover, marquee |
+  | `wheel` | `on_wheel`, `scroll_by`, `scroll_by_x`, and the plain-data `wheel_action` that picks zoom, sideways, vertical, or nothing |
   | `zoom` | icon-size zoom (`ZoomLevel`), Ctrl+wheel, Reset, and the zoom pop-up |
   | `drag` | `Drag`, drag-to-rearrange, the drag image, and drag out |
   | `columns` | a Details header: a click sorts on release, a drag reorders, a divider drag resizes |
@@ -946,6 +947,9 @@ exact steps, ranges, edge cases, and the code behind them.
 **Spaces**
 
 - Moving snaps to the grid; resizing follows the view's cells (ROADMAP D22).
+- Shift+wheel on a Details space scrolls its columns sideways, within
+  `details_max_scroll`; every other view keeps the plain wheel for its own
+  axis. Only Details has a second offset (D24).
 - Ctrl+wheel: under the default "Match Explorer's display" preset it sets
   the desktop's own icon size, 8 px a notch between 16 and 256, and matching
   spaces follow (ROADMAP D9); under Custom it changes the global size 10 % a

@@ -77,6 +77,7 @@ Where each kind of code lives. Paths are under `crates/`.
 | What a space looks like, refresh/re-flow, takeover | `deskspace-app/src/app/view.rs` |
 | Surface (space or desktop layer) lookups | `deskspace-app/src/app/hit.rs` |
 | Mouse, resize, hover | `deskspace-app/src/app/pointer.rs` |
+| The mouse wheel: zoom, Details sideways, the view's axis | `deskspace-app/src/app/wheel.rs` |
 | Ctrl+wheel, zoom, the zoom pop-up's behavior | `deskspace-app/src/app/zoom.rs` |
 | Drag, drag image, drag out | `deskspace-app/src/app/drag.rs` |
 | Dragging a Details header or its dividers | `deskspace-app/src/app/columns.rs` |
@@ -1604,14 +1605,6 @@ Small first. Each lands alone unless it says "After".
   - **[needs human]** check: three Extra large columns fit where Explorer's do.
     Update W12's row.
 
-- [ ] **P15c. Shift+wheel scrolls Details sideways (feature).** After: P15b. Part of
-  P15. `scroll_by_x`, like `scroll_by`, and `on_wheel` calling it when `shift` is
-  held in Details; every other view keeps today's wheel. `SpaceEvent::Wheel` gains
-  `shift`, read from the `Modifiers` `on_mouse_wheel` already has. If K8 has moved
-  it, that is `mouse.rs`. Take the decision in a function that takes plain data, and
-  test it. **[needs human]** check: Shift+wheel over a Details space with every column
-  on, at 100 % and 150 %; the header stays with its columns.
-
 - [ ] **P15d. A second scroll indicator (feature).** After: P15b. Part of P15. By the
   "new visual" recipe, next to the indicator `scene.rs` already builds, along the
   bottom of a Details space whose columns pass the edge. Scene tests. **[needs
@@ -2094,6 +2087,7 @@ for a machine that has it.
 | P23 (new space on start) | With DeskSpace not running, `deskspace --config <scratch> --new-space` starts with one more space than the config holds. With it running, the same command adds one space and starts no second process. |
 | P25 (space cap) | Drop items on a space until it reaches the bottom of the monitor: it stops and scrolls. Ctrl+Z puts it back. |
 | P20 (lens rename undo) | Rename an item in a lens, Ctrl+Z: it stays selected. Ctrl+Y: still selected. |
+| P15c (Details sideways) | Shift+wheel over a Details space with every column on, at 100 % and 150 %: the columns scroll sideways and the header stays with them. |
 
 ## Found while working
 
