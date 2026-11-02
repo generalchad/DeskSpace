@@ -238,25 +238,6 @@ and B33 and B36 change behavior on purpose, as each says. B39-B43 are the
 same kind: they are the costs left over from B33/B37, against the 50,000-file
 bar in section W's Performance rules.
 
-- [ ] **B41. Load the Shortcuts preview's icons on the icon worker (app,
-  platform).**
-  - Why: `space_preview` calls `icon_now` for every item, so opening the
-    Shortcuts page on a 50,000-file lens loads every icon on the UI thread
-    (found in B33).
-  - `win32/icons.rs`: `IconUser::SettingsPreview(u64)`; and `icon_ready`, a
-    cached-or-generic lookup that asks for nothing.
-  - `app/settings_session.rs` `space_preview`: begin a
-    `SettingsPreview(space)` scene, ask `icon_for` for at most
-    `PREVIEW_ICON_LIMIT` items, use `icon_ready` for the rest, and end the
-    scene. `Event::IconsLoaded` refreshes the open settings form when the
-    user is the scoped space's preview.
-  - Tests: `icon_ready` asks for nothing; a preview scene queues no more than
-    `PREVIEW_ICON_LIMIT`; a preview icon reaching the cache refreshes the
-    form. Record the release timing of building a 50,000-item preview.
-  - **[needs human]** check: with a big lens, the Shortcuts page opens without
-    a stall, its first icons fill in, and scrolling past the limit shows the
-    generic folder/file icons.
-
 - [ ] **B42. Free a stopped watch's finished listing on the worker
   (platform).**
   - Why: `FolderWatch::unwatch` can drop the last reference to a finished
@@ -1796,6 +1777,7 @@ for a machine that has it.
 | S5 (F-62) | Once `DESKSPACE_MINISIGN_KEY` and `UPDATE_PUBKEY` are set, run "Publish icon set" for `fluent`: the release is a pre-release named `icons-fluent-r1`, with the `.json` and `.sig`, and the repository's "Latest" badge still points at the app. A second run fails at the check for an existing release. Then a keyed build's new space asks once, downloads, and shows its title icon. |
 | B37 | With a `dev.ps1` scratch config, a lens on a folder of 50,000 files, ungrouped and grouped by Type: copy files into the folder, change Sort by, toggle Show hidden files, and type in Show only. Other spaces keep responding and the lens never hitches; its list follows a moment later. The selection survives a refresh, and an item renamed with F2 stays selected once the listing arrives. Sort by, then Cancel in Settings, returns the old order. A locked lens places its items instead of stacking them. Change folder…, a browse, and Exit during a big refresh leave no stray list and do not hang. |
 | B33 | A lens on a folder of a few thousand images scrolls without stalls, and its icons fill in. Generic icons show first and each becomes its own, on a lens, a normal space, and the takeover layer, with shortcut arrows and sync badges still drawn. A file rewritten in place keeps its old icon until the new one loads, with no generic flash. A lens on a slow or unplugged network folder leaves every other space responsive, and its title shows the generic folder before the folder's own icon. Note whether the generic flash at startup looks wrong beside a Startup animation. Two lenses on one folder both fill in. |
+| B41 | With a 50,000-file lens in a scratch config, open Settings and select the lens's Shortcuts page: the page appears without a stall, its first page of icons fills in a moment later, and scrolling past that page shows the generic folder and file icons. The X and + tiles still work. |
 | F-40 on Windows 10 (D18) | On a Windows 10 desktop, right-click an empty spot → View: confirm it offers only Large, Medium, and Small icons, ignoring Auto arrange icons, Align icons to grid, and Show desktop icons; then choose Small icons and confirm the labels sit below the icons. Windows 11 passed 2026-10-31; this row closes the Windows 10 half of W41. |
 | C11 (D22) | On a space and a lens, at 100 % and 150 %, with "Snap resized spaces to whole columns and rows" on: in the icon views a resize still lands on whole icon cells; in Small icons, List, and Tiles it lands on those views' own cells; in Details and Content only the height fits whole rows, the width follows the 16 px "Snap to grid" step, and the header is not clipped. With the status bar on, the last row is whole. The resize starts after a short dead zone (about half a row) in every view. Turn the setting off: the dragged size stays, snapped only to "Snap to grid". |
 | C12 (D23) | Right-click an item in a space: "Fit to contents" sits above Explorer's own entries and is greyed on a locked space and on one that already fits. Choose it on a resized icon-view space: the space fits its items, stays inside the work area (it scrolls if they do not fit), and Ctrl+Z reads "Undo Fit to contents". A desktop item's menu has no Fit entry. |

@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use deskspace_config::IconDownloads;
 use deskspace_core::geometry::{Point, Rect};
-use deskspace_core::{Command, SpaceId};
-use deskspace_platform::{FieldValue, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build};
+use deskspace_core::{Command, ItemKind, SpaceId};
+use deskspace_platform::{
+    FieldValue, IconUser, PreviewItem, SettingsEvent, SpacePreview, Ui, windows_build,
+};
 
 use crate::scene::item_label;
 use crate::settings::{self, ButtonAction, FieldEffect, ScopeKind, Session, SpaceSnapshot};
@@ -23,6 +25,11 @@ const HIGHLIGHT_MS: u32 = 1200;
 /// preview draws them at 40 px at 100 % scaling, so 64 px stays sharp up to
 /// 150 %.
 const PREVIEW_ICON_SIZE: i32 = 64;
+
+/// How many of a preview's items ask the icon worker for their own icon. The
+/// rest draw their kind's generic icon: the page is a picture, not a
+/// scrollable file list, and a 50,000-item lens must not queue 50,000 loads.
+const PREVIEW_ICON_LIMIT: usize = 60;
 
 /// The open settings window's state: its session, the preview it still owes
 /// the spaces, and the space it highlights.
@@ -88,7 +95,7 @@ impl App {
     /// What the Shortcuts page shows for the space `scope`: its title, its
     /// colors as opaque fills, and its items' labels and icons as the space
     /// draws them. Empty for Global, which never lists the page.
-    fn space_preview(&mut self, scope: Option<SpaceId>) -> SpacePreview {
+    pub(super) fn space_preview(&mut self, scope: Option<SpaceId>) -> SpacePreview {
         let Some(space) = scope.and_then(|id| self.config.desktop.space(id)) else {
             return SpacePreview::default();
         };
@@ -96,19 +103,34 @@ impl App {
         let show_extensions = self.shows_extensions(Surface::Space(id));
         let overlay_size = space.theme(&self.config.theme).overlay_size;
         let title = space.title().to_owned();
-        let entries: Vec<(PathBuf, String)> = space
+        let entries: Vec<(PathBuf, ItemKind, String)> = space
             .items()
             .iter()
-            .map(|item| (item.path.clone(), item_label(item, show_extensions)))
-            .collect();
-        let (fill, title_fill, text) = settings::space_preview_colors(&self.palette_for(id));
-        let items = entries
-            .into_iter()
-            .map(|(path, label)| PreviewItem {
-                label,
-                icon: self.icons.icon_now(&path, PREVIEW_ICON_SIZE, overlay_size),
+            .map(|item| {
+                (
+                    item.path.clone(),
+                    item.kind,
+                    item_label(item, show_extensions),
+                )
             })
             .collect();
+        let (fill, title_fill, text) = settings::space_preview_colors(&self.palette_for(id));
+        self.icons.begin_scene(IconUser::SettingsPreview(id.0));
+        let items = entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, (path, kind, label))| {
+                let icon = if index < PREVIEW_ICON_LIMIT {
+                    self.icons
+                        .icon_for(&path, kind, PREVIEW_ICON_SIZE, overlay_size)
+                } else {
+                    self.icons
+                        .icon_ready(&path, kind, PREVIEW_ICON_SIZE, overlay_size)
+                };
+                PreviewItem { label, icon }
+            })
+            .collect();
+        self.icons.end_scene();
         SpacePreview {
             title,
             fill,
@@ -180,6 +202,19 @@ impl App {
     pub(super) fn refresh_settings(&mut self, ui: &mut Ui) {
         if let Some(form) = self.settings_form() {
             ui.update_settings(&form);
+        }
+    }
+
+    /// A Shortcuts preview's icons arrived: rebuild the form if it still shows
+    /// that space, so the picture fills in.
+    pub(super) fn refresh_preview(&mut self, ui: &mut Ui, id: SpaceId) {
+        let showing = self
+            .settings_ui
+            .session
+            .as_ref()
+            .is_some_and(|session| session.scope == Some(id));
+        if showing {
+            self.refresh_settings(ui);
         }
     }
 
@@ -525,5 +560,41 @@ impl App {
                 self.sync_watches(ui);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use deskspace_config::{Config, ConfigStore};
+
+    fn app() -> App {
+        let store = ConfigStore::with_path("C:/nowhere/deskspace.toml");
+        App::new(Config::new(), store, false, false)
+    }
+
+    #[test]
+    fn the_shortcuts_preview_asks_for_only_a_page_of_icons() {
+        let mut app = app();
+        let space = crate::fixtures::create_space(
+            &mut app.config.desktop,
+            "Space",
+            deskspace_core::Rect::new(0, 0, 240, 120),
+        );
+        for n in 0..(PREVIEW_ICON_LIMIT + 5) {
+            crate::fixtures::add_item(
+                &mut app.config.desktop,
+                space,
+                &format!("C:/missing/{n}.txt"),
+            );
+        }
+        let preview = app.space_preview(Some(space));
+        assert_eq!(preview.items.len(), PREVIEW_ICON_LIMIT + 5);
+        assert_eq!(
+            app.icons.wanted_len(),
+            PREVIEW_ICON_LIMIT,
+            "only the first page asks for its own icon"
+        );
     }
 }

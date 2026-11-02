@@ -790,6 +790,9 @@ in `ui.rs`. What spans them:
   "Customize this space" switch is on, its always-enabled View page (the view
   mode, the status bar, the extension choice, and the sort rule, which
   preview through `SetSpaceView`), and its always-enabled Shortcuts page.
+  That page's preview asks the icon worker for its first page of icons and
+  draws generic ones for the rest, so opening it on a big lens never loads
+  every icon on the UI thread.
   A lens also lists a Lens page: its folder (or "Folder not available"), Open
   folder and Change folder…, its Title (Show as and a custom title, which
   preview through `SetLensTitle`), Show hidden files, which previews

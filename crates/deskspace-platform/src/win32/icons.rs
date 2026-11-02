@@ -39,6 +39,9 @@ const LOADED_REPORT_INTERVAL: Duration = Duration::from_millis(33);
 pub enum IconUser {
     Space(u64),
     DesktopLayer,
+    /// The settings window's Shortcuts preview of space `u64`, which asks for
+    /// only the icons its first page shows.
+    SettingsPreview(u64),
 }
 
 /// What a cached icon was rendered for, so two uses of one path never share
@@ -87,7 +90,9 @@ pub struct IconCache {
     /// The entries' keys by last use, so the oldest is the first and eviction
     /// needs no scan of `entries`.
     by_age: BTreeMap<u64, Key>,
-    generic: HashMap<(GenericIcon, i32), Icon>,
+    /// The generic icon per kind and size, including a failed shell read, so a
+    /// missing one is not asked for again on every item.
+    generic: HashMap<(GenericIcon, i32), Option<Icon>>,
     /// The scene being built, and the icons it found missing or out of date.
     scene: Option<IconUser>,
     wanted: Vec<Key>,
@@ -214,7 +219,7 @@ impl IconCache {
     }
 
     /// `icon_for`, but loading a missing icon on this thread, for the few uses
-    /// that cannot draw again later: a drag image, and the settings preview.
+    /// that cannot draw again later: a drag image, and the takeover layer.
     pub fn icon_now(&mut self, path: &Path, size: i32, overlay_size: u8) -> Option<Icon> {
         let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
         if let Some(entry) = self.use_entry(&key)
@@ -226,6 +231,28 @@ impl IconCache {
         let icon = load_icon(path, size, overlay_size);
         self.store(key, icon.clone(), false);
         icon
+    }
+
+    /// The icon to draw now for an item at `path`: the cached one when there is
+    /// one, else the generic icon for `kind`. Asks for nothing, for the part of
+    /// a picture that is not a scene's request, such as the settings preview's
+    /// items past its first page.
+    pub fn icon_ready(
+        &mut self,
+        path: &Path,
+        kind: ItemKind,
+        size: i32,
+        overlay_size: u8,
+    ) -> Option<Icon> {
+        let key = (path.to_path_buf(), size, IconKind::Item { overlay_size });
+        let icon = self.use_entry(&key).and_then(|entry| entry.icon.clone());
+        icon.or_else(|| self.generic_icon(GenericIcon::for_kind(kind), size))
+    }
+
+    /// The requests the current scene still wants. For tests that check how
+    /// many icons a caller asks for.
+    pub fn wanted_len(&self) -> usize {
+        self.wanted.len()
     }
 
     /// Moves what the worker loaded into the cache, and returns the windows
@@ -347,16 +374,16 @@ impl IconCache {
     }
 
     fn generic_icon(&mut self, generic: GenericIcon, size: i32) -> Option<Icon> {
-        if let Some(icon) = self.generic.get(&(generic, size)) {
-            return Some(icon.clone());
+        if let Some(cached) = self.generic.get(&(generic, size)) {
+            return cached.clone();
         }
         let base = match generic {
             GenericIcon::Folder => load_generic_folder_icon(),
             GenericIcon::File => load_generic_file_icon(),
-        }?;
-        let icon = resample(&base, size.clamp(1, 1024) as u32);
+        };
+        let icon = base.map(|base| resample(&base, size.clamp(1, 1024) as u32));
         self.generic.insert((generic, size), icon.clone());
-        Some(icon)
+        icon
     }
 
     /// The load worker, started the first time a scene needs it. Without a
@@ -829,7 +856,7 @@ mod tests {
         let mut cache = IconCache::new();
         cache.worker = Some(Arc::new(Worker::new()));
         // Already known, so these tests never reach the shell.
-        cache.generic.insert((GenericIcon::File, 32), icon());
+        cache.generic.insert((GenericIcon::File, 32), Some(icon()));
         cache
     }
 
@@ -863,6 +890,31 @@ mod tests {
         assert_eq!(load_all(&cache, Some(icon())), 1);
         assert_eq!(cache.take_loaded(), [SPACE]);
         assert!(cache.touch(&key("a")).is_some());
+    }
+
+    #[test]
+    fn icon_ready_draws_the_generic_icon_and_asks_for_nothing() {
+        let mut cache = cache_with_queue();
+        cache.generic.insert((GenericIcon::File, 32), Some(icon()));
+        cache.begin_scene(SPACE);
+        assert!(
+            cache
+                .icon_ready(Path::new("a"), ItemKind::File, 32, 80)
+                .is_some()
+        );
+        cache.end_scene();
+        assert_eq!(cache.wanted_len(), 0);
+        assert_eq!(load_all(&cache, Some(icon())), 0);
+    }
+
+    #[test]
+    fn icon_ready_uses_a_cached_icon() {
+        let mut cache = cache_with_queue();
+        let held = icon();
+        cache.insert(key("a"), held.clone());
+        let drawn = cache.icon_ready(Path::new("a"), ItemKind::File, 32, 80);
+        assert_eq!(drawn.map(|icon| icon.id()), Some(held.id()));
+        assert_eq!(cache.wanted_len(), 0);
     }
 
     #[test]
@@ -1064,7 +1116,9 @@ mod tests {
         let missing = Path::new("C:/nowhere/DeskSpace title icon test");
         let folder_key = |available| (missing.to_path_buf(), 16, IconKind::Folder { available });
         let mut cache = cache_with_queue();
-        cache.generic.insert((GenericIcon::Folder, 16), icon());
+        cache
+            .generic
+            .insert((GenericIcon::Folder, 16), Some(icon()));
 
         // Outside a scene nothing is asked for, and the generic icon is drawn.
         assert!(cache.folder_icon(missing, 16, true).is_some());

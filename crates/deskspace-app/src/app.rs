@@ -930,6 +930,9 @@ impl EventHandler for App {
                     match user {
                         IconUser::Space(id) => self.refresh_space(ui, SpaceId(id)),
                         IconUser::DesktopLayer => self.refresh_desktop_layer(ui),
+                        IconUser::SettingsPreview(id) => {
+                            self.refresh_preview(ui, SpaceId(id));
+                        }
                     }
                 }
             }

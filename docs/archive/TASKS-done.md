@@ -5383,3 +5383,21 @@ until I5-I6 all land, so no partial build hides the desktop.
   - **[needs human]** check: on a slow or disconnected folder, the other
     spaces stay responsive and the lens's title shows the generic folder
     before its own icon (append to the B33 row in section V).
+- [x] **B41. Load the Shortcuts preview's icons on the icon worker (app,
+  platform).**
+  - Why: `space_preview` calls `icon_now` for every item, so opening the
+    Shortcuts page on a 50,000-file lens loads every icon on the UI thread
+    (found in B33).
+  - `win32/icons.rs`: `IconUser::SettingsPreview(u64)`; and `icon_ready`, a
+    cached-or-generic lookup that asks for nothing.
+  - `app/settings_session.rs` `space_preview`: begin a
+    `SettingsPreview(space)` scene, ask `icon_for` for at most
+    `PREVIEW_ICON_LIMIT` items, use `icon_ready` for the rest, and end the
+    scene. `Event::IconsLoaded` refreshes the open settings form when the
+    user is the scoped space's preview.
+  - Tests: `icon_ready` asks for nothing; a preview scene queues no more than
+    `PREVIEW_ICON_LIMIT`; a preview icon reaching the cache refreshes the
+    form. Record the release timing of building a 50,000-item preview.
+  - **[needs human]** check: with a big lens, the Shortcuts page opens without
+    a stall, its first icons fill in, and scrolling past the limit shows the
+    generic folder/file icons.
