@@ -1639,18 +1639,6 @@ Small first. Each lands alone unless it says "After".
   - Tests: a rename, a move, a nested subfolder, a different case, no match, and
     `shown == root`. Do not call it from the worker; P11c does.
 
-- [ ] **P13a. Compare spaces ignoring item facts (refactor).** Part of P13; the rule
-  is ROADMAP D11. `UndoEntry::can_undo` and `can_redo` compare whole `Space` values.
-  Add `Space::same_ignoring_facts` in core and use it there.
-  - Destructure both `Space` and `Item` with no `..`, so a new field makes the
-    compiler ask. Ignored: `size`, `modified`, `created`, `compressed`, `encrypted`.
-  - Refreshing a kept-sorted space re-sorts it, which changes its order and
-    positions, and that would still mark entries stale. So when `keeps_sorted()`,
-    also ignore item order and `position`, matching items by id.
-  - Nothing changes facts yet, so no behavior changes. Tests: each ignored field,
-    a changed label still differs, and a kept-sorted space in another order is the
-    same while a hand-ordered one is not.
-
 - [ ] **P13b. `Command::RefreshItemFacts` (feature, core only).** After: P13a. Part
   of P13. The Command recipe's steps 1, 2, and 4, with `{ space, facts: Vec<(ItemId,
   ItemFacts)> }`. Sets only the five facts above and no other field. `Applied` only if

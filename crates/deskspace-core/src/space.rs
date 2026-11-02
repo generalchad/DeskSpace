@@ -257,6 +257,69 @@ impl Space {
         self.source.folder()
     }
 
+    /// Whether `other` is this space as a refresh leaves it: the item facts
+    /// (`size`, `modified`, `created`, `compressed`, `encrypted`) are ignored.
+    /// A space that keeps its order sorted re-sorts and re-places its items on
+    /// a refresh, so there the items are matched by id; a hand-ordered space
+    /// keeps its order and positions.
+    pub fn same_ignoring_facts(&self, other: &Self) -> bool {
+        let Self {
+            id,
+            title,
+            rect,
+            source,
+            view,
+            items,
+            locked,
+            icon,
+            folded,
+            custom,
+            look,
+            legacy_opacity,
+            legacy_tint,
+            legacy_text,
+            legacy_icon_size,
+            title_height,
+            user_sized,
+        } = self;
+        let Self {
+            id: other_id,
+            title: other_title,
+            rect: other_rect,
+            source: other_source,
+            view: other_view,
+            items: other_items,
+            locked: other_locked,
+            icon: other_icon,
+            folded: other_folded,
+            custom: other_custom,
+            look: other_look,
+            legacy_opacity: other_legacy_opacity,
+            legacy_tint: other_legacy_tint,
+            legacy_text: other_legacy_text,
+            legacy_icon_size: other_legacy_icon_size,
+            title_height: other_title_height,
+            user_sized: other_user_sized,
+        } = other;
+        id == other_id
+            && title == other_title
+            && rect == other_rect
+            && source == other_source
+            && view == other_view
+            && locked == other_locked
+            && icon == other_icon
+            && folded == other_folded
+            && custom == other_custom
+            && look == other_look
+            && legacy_opacity == other_legacy_opacity
+            && legacy_tint == other_legacy_tint
+            && legacy_text == other_legacy_text
+            && legacy_icon_size == other_legacy_icon_size
+            && title_height == other_title_height
+            && user_sized == other_user_sized
+            && items_match_ignoring_facts(items, other_items, self.keeps_sorted())
+    }
+
     /// This space as undo stores and compares it (D11). A lens's items are a
     /// live view of its folder, not something a user action made: its worker
     /// replaces them with every list, so storing them would make every undo
@@ -497,6 +560,61 @@ impl Space {
     }
 }
 
+/// Whether two item lists match, ignoring their file facts. A kept-sorted
+/// space may list the same items in another order, so it compares them by id.
+fn items_match_ignoring_facts(a: &[Item], b: &[Item], sorted: bool) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    if sorted {
+        let mut a = a.to_vec();
+        let mut b = b.to_vec();
+        a.sort_by_key(|item| item.id);
+        b.sort_by_key(|item| item.id);
+        a.iter()
+            .zip(&b)
+            .all(|(a, b)| item_matches_ignoring_facts(a, b, true))
+    } else {
+        a.iter()
+            .zip(b)
+            .all(|(a, b)| item_matches_ignoring_facts(a, b, false))
+    }
+}
+
+/// Whether two items match, ignoring the file facts a refresh updates and,
+/// when `ignore_position`, the position a re-sort moves.
+fn item_matches_ignoring_facts(a: &Item, b: &Item, ignore_position: bool) -> bool {
+    let Item {
+        id,
+        path,
+        label,
+        kind,
+        position,
+        size: _,
+        modified: _,
+        created: _,
+        compressed: _,
+        encrypted: _,
+    } = a;
+    let Item {
+        id: other_id,
+        path: other_path,
+        label: other_label,
+        kind: other_kind,
+        position: other_position,
+        size: _,
+        modified: _,
+        created: _,
+        compressed: _,
+        encrypted: _,
+    } = b;
+    id == other_id
+        && path == other_path
+        && label == other_label
+        && kind == other_kind
+        && (ignore_position || position == other_position)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -633,5 +751,63 @@ mod tests {
         assert_eq!(look.theme.icon_size, crate::theme::ICON_SIZE_RANGE.0);
         assert_eq!(look.gap, GAP_RANGE.1);
         assert_eq!(look.padding, GAP_RANGE.0);
+    }
+
+    fn item(id: u64) -> Item {
+        Item::new(
+            ItemId(id),
+            format!("C:/Users/me/file{id}.txt"),
+            crate::item::ItemFacts::default(),
+        )
+    }
+
+    #[test]
+    fn item_facts_do_not_make_a_space_differ() {
+        let mut space = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 200, 200));
+        space.items.push(item(1));
+        let fact_changes: [fn(&mut Item); 5] = [
+            |item| item.size = Some(10),
+            |item| item.modified = Some(20),
+            |item| item.created = Some(30),
+            |item| item.compressed = true,
+            |item| item.encrypted = true,
+        ];
+        for change in fact_changes {
+            let mut after = space.clone();
+            change(&mut after.items[0]);
+            assert!(space.same_ignoring_facts(&after));
+        }
+
+        let mut after = space.clone();
+        after.items[0].label = "Other".into();
+        assert!(!space.same_ignoring_facts(&after), "a label still differs");
+
+        let mut after = space.clone();
+        after.title = "Elsewhere".into();
+        assert!(!space.same_ignoring_facts(&after), "a title still differs");
+    }
+
+    #[test]
+    fn a_kept_sorted_space_matches_its_items_in_any_order() {
+        let mut a = Space::new(SpaceId(1), "Work", Rect::new(0, 0, 200, 200));
+        a.items = vec![item(1), item(2)];
+        a.items[0].position = Point::new(0, 0);
+        a.items[1].position = Point::new(96, 0);
+
+        let mut b = a.clone();
+        b.items.reverse();
+        b.items[0].position = Point::new(96, 0);
+        b.items[1].position = Point::new(0, 0);
+        assert!(
+            !a.same_ignoring_facts(&b),
+            "a hand-ordered space keeps its order and positions"
+        );
+
+        a.view.keep_sorted = true;
+        b.view.keep_sorted = true;
+        assert!(
+            a.same_ignoring_facts(&b),
+            "a kept-sorted space matches items by id"
+        );
     }
 }

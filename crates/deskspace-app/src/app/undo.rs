@@ -109,7 +109,7 @@ impl UndoEntry {
     pub(super) fn can_undo(&self, desktop: &Desktop, exists: impl Fn(&Path) -> bool) -> bool {
         self.spaces
             .iter()
-            .all(|change| space_state(desktop, change.id) == change.after)
+            .all(|change| same_space_state(desktop, change.id, &change.after))
             && self.files.iter().all(|file| file.can_undo(&exists))
     }
 
@@ -118,7 +118,7 @@ impl UndoEntry {
     pub(super) fn can_redo(&self, desktop: &Desktop, exists: impl Fn(&Path) -> bool) -> bool {
         self.spaces
             .iter()
-            .all(|change| space_state(desktop, change.id) == change.before)
+            .all(|change| same_space_state(desktop, change.id, &change.before))
             && self.files.iter().all(|file| file.can_redo(&exists))
     }
 }
@@ -272,6 +272,18 @@ fn space_state(desktop: &Desktop, id: SpaceId) -> Option<(usize, Space)> {
         .enumerate()
         .find(|(_, space)| space.id == id)
         .map(|(index, space)| (index, space.undo_snapshot()))
+}
+
+/// Whether the space at `id` still matches `expected`, ignoring the item facts
+/// a refresh may have updated since the entry was recorded.
+fn same_space_state(desktop: &Desktop, id: SpaceId, expected: &Option<(usize, Space)>) -> bool {
+    match (space_state(desktop, id), expected) {
+        (None, None) => true,
+        (Some((index, space)), Some((expected_index, expected_space))) => {
+            index == *expected_index && space.same_ignoring_facts(expected_space)
+        }
+        (None, Some(_)) | (Some(_), None) => false,
+    }
 }
 
 /// Outcome of an undo or redo step.

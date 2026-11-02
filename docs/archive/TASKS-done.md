@@ -5587,3 +5587,15 @@ until I5-I6 all land, so no partial build hides the desktop.
   why. Do not touch
   `RETRY_MS` or the worker. If another test starts to fail, stop and ask.
   Done when: the commit body gives the crate's time before and after.
+
+- [x] **P13a. Compare spaces ignoring item facts (refactor).** Part of P13; the rule
+  is ROADMAP D11. `UndoEntry::can_undo` and `can_redo` compare whole `Space` values.
+  Add `Space::same_ignoring_facts` in core and use it there.
+  - Destructure both `Space` and `Item` with no `..`, so a new field makes the
+    compiler ask. Ignored: `size`, `modified`, `created`, `compressed`, `encrypted`.
+  - Refreshing a kept-sorted space re-sorts it, which changes its order and
+    positions, and that would still mark entries stale. So when `keeps_sorted()`,
+    also ignore item order and `position`, matching items by id.
+  - Nothing changes facts yet, so no behavior changes. Tests: each ignored field,
+    a changed label still differs, and a kept-sorted space in another order is the
+    same while a hand-ordered one is not.
