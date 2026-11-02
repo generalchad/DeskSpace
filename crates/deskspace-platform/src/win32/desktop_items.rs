@@ -2,14 +2,16 @@
 //! with a folder-walk fallback.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use deskspace_core::geometry::Point;
 use deskspace_core::grouping::LocalDay;
-use deskspace_core::item::ItemFacts;
+use deskspace_core::item::{ItemFacts, ItemKind};
+use deskspace_core::source::FolderEntry;
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::Globalization::{
     DATE_SHORTDATE, GetDateFormatEx, GetTimeFormatEx, TIME_FORMAT_FLAGS,
@@ -159,24 +161,67 @@ fn epoch_seconds(time: std::time::SystemTime) -> Option<u64> {
 }
 
 thread_local! {
-    // Process state: `type_name`'s answer per extension, because Explorer's
-    // type name is stable for the process and `SHGetFileInfoW` is too slow per
-    // Details row. Filled lazily by `type_name`; never cleared.
+    // Process state: `type_name`'s answer per extension on this thread, the
+    // fast path for Details rows and grouping. Filled lazily by `type_name`
+    // from the shared cache or the shell; never cleared.
     static TYPE_NAMES: RefCell<HashMap<String, Option<String>>> = RefCell::new(HashMap::new());
+}
+
+/// Process state: the answers `type_name` has loaded, shared between threads so
+/// the watch worker can warm Explorer's type names off the UI thread (B43).
+/// Never cleared.
+static SHARED_TYPE_NAMES: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+
+fn shared_type_names() -> &'static Mutex<HashMap<String, Option<String>>> {
+    SHARED_TYPE_NAMES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn shared_type_name(key: &str) -> Option<Option<String>> {
+    shared_type_names()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(key)
+        .cloned()
+}
+
+fn remember_shared_type_name(key: String, name: Option<String>) {
+    shared_type_names()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(key, name);
 }
 
 /// Explorer's type name for `path`, for example "Text Document" or
 /// "File folder", read from its extension and attributes and never from the
-/// disk. Cached by extension, so a folder of a thousand `.txt` files asks the
-/// shell once.
+/// disk. Cached by extension on this thread and in the shared cache, so a
+/// folder of a thousand `.txt` files asks the shell once.
 pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     let key = type_name_key(path, is_folder);
     if let Some(cached) = TYPE_NAMES.with(|names| names.borrow().get(&key).cloned()) {
         return cached;
     }
+    if let Some(cached) = shared_type_name(&key) {
+        TYPE_NAMES.with(|names| names.borrow_mut().insert(key, cached.clone()));
+        return cached;
+    }
     let name = load_type_name(path, is_folder);
-    TYPE_NAMES.with(|names| names.borrow_mut().insert(key, name.clone()));
+    TYPE_NAMES.with(|names| names.borrow_mut().insert(key.clone(), name.clone()));
+    remember_shared_type_name(key, name.clone());
     name
+}
+
+/// Loads Explorer's type name for every distinct extension in `entries`, and
+/// for the folder name, once. The watch worker calls this after listing a
+/// folder, so grouping by Type on the UI thread reads the shared cache instead
+/// of asking the shell for each extension while it walks every item.
+pub(crate) fn prewarm_type_names(entries: &[FolderEntry]) {
+    let mut seen = HashSet::new();
+    for entry in entries {
+        let is_folder = entry.kind == ItemKind::Folder;
+        if seen.insert(type_name_key(&entry.path, is_folder)) {
+            let _ = type_name(&entry.path, is_folder);
+        }
+    }
 }
 
 /// The key `type_name` caches under: the lowercased extension, or a marker for
@@ -498,6 +543,40 @@ mod tests {
         assert_eq!(type_name_key(Path::new("b.txt"), false), "txt");
         assert_eq!(type_name_key(Path::new("no-extension"), false), "");
         assert_eq!(type_name_key(Path::new("archive.zip"), true), "<folder>");
+    }
+
+    #[test]
+    fn a_type_name_loaded_on_another_thread_is_read_here() {
+        let key = type_name_key(Path::new("probe.deskspace-shared-cache"), false);
+        remember_shared_type_name(key, Some("Shared type".into()));
+        let name =
+            std::thread::spawn(|| type_name(Path::new("other.deskspace-shared-cache"), false))
+                .join()
+                .expect("the reading thread");
+        assert_eq!(name.as_deref(), Some("Shared type"));
+    }
+
+    fn entry(path: &str, kind: ItemKind) -> FolderEntry {
+        FolderEntry {
+            path: PathBuf::from(path),
+            label: String::new(),
+            kind,
+            size: None,
+            modified: None,
+            created: None,
+            hidden: false,
+        }
+    }
+
+    #[test]
+    fn prewarming_caches_each_distinct_extension() {
+        prewarm_type_names(&[
+            entry("a.txt", ItemKind::File),
+            entry("b.txt", ItemKind::File),
+            entry("sub", ItemKind::Folder),
+        ]);
+        assert!(shared_type_name("txt").is_some());
+        assert!(shared_type_name("<folder>").is_some());
     }
 
     #[test]

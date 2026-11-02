@@ -1020,6 +1020,33 @@ mod tests {
             let preview = app.space_preview(Some(lens));
             assert_eq!(preview.items.len(), 50_000);
         });
+        time("warm type names off the UI thread", &mut || {
+            let mut seen = std::collections::HashSet::new();
+            let names: Vec<(PathBuf, bool)> = entries
+                .iter()
+                .filter(|entry| {
+                    let key = if entry.kind == ItemKind::Folder {
+                        "<folder>".to_string()
+                    } else {
+                        entry
+                            .path
+                            .extension()
+                            .and_then(|extension| extension.to_str())
+                            .unwrap_or_default()
+                            .to_ascii_lowercase()
+                    };
+                    seen.insert(key)
+                })
+                .map(|entry| (entry.path.clone(), entry.kind == ItemKind::Folder))
+                .collect();
+            std::thread::spawn(move || {
+                for (path, is_folder) in names {
+                    let _ = deskspace_platform::type_name(&path, is_folder);
+                }
+            })
+            .join()
+            .expect("the warming thread");
+        });
         for key in [
             deskspace_core::SortKey::Name,
             deskspace_core::SortKey::Kind,
