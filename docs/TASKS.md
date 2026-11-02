@@ -1848,3 +1848,8 @@ One line per issue noticed but not fixed: file, symptom, suggested task.
 - `app/debug/mod.rs` `refresh_debug`: while the debug window is open, its 1 Hz refresh stalls every running animation on the UI thread, about 20-60 ms in a debug build (2026-10-31, measured frame by frame), so a preview's motion hitches once a second that a real play does not have. Suggested: skip the refresh while a space animates. Found while tuning Bounce, 2026-10-31.
 - `win32/space_animation.rs` `apply`: a composition surface of a new size reaches the screen a composition or two after `SetWindowPos`, so while Roll, Fly, or Bounce changes the window's size its content can trail its edge. Before Bounce was slowed, the first frame past the screen's edge showed a title-less box for one frame (captured 2026-10-31). Moving a whole-size window under a region instead would avoid it, but a window that leaves its monitor can get `WM_DPICHANGED`, which the app answers by reflowing the model. Found while tuning Bounce, 2026-10-31.
 - `win32/app_catalog.rs` `refresh_in_background`: calls `CoUninitialize` while its thread-local `Graphics` still holds COM objects, which are released later at thread exit. `win32/icons.rs` `run_worker` leaves its apartment open for this reason. Suggested: do the same here. Found in B33, 2026-10-31.
+- `app/bootstrap.rs`: `--new-space` with no running instance starts
+  normally and adds no space, so a stale verb left by a crash opens the app
+  without the requested space. The verbs normally exist only while the app
+  runs. Suggested: carry the flag into the app and create one after
+  `Started`. Found in C9, 2026-11-01.
